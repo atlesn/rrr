@@ -33,8 +33,8 @@ sub source {
 
 	$message->{'topic'} = "aaa/bbb/ccc";
 
-	print "source: new timestamp of message is: " . $message->{'timestamp'} . "\n";
-	print "array ptr: " . $message->{'rrr_array_ptr'} . "\n";
+#	print "source: new timestamp of message is: " . $message->{'timestamp'} . "\n";
+#	print "array ptr: " . $message->{'rrr_array_ptr'} . "\n";
 
 	$message->set_tag_str("my_tag", "my_string");
 	$message->set_tag_str("my_tag", "my_string");
@@ -45,11 +45,11 @@ sub source {
 
 	# Should be 4 now
 
-	print "getting tag\n";
+#	print "getting tag\n";
 	my @values = $message->get_tag("my_tag");
-	print ("done, length: " . ($#values + 1) . " (@values)\n");
+#	print ("done, length: " . ($#values + 1) . " (@values)\n");
 
-	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
+#	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
 
 	my $blob = "aaaaaaaaa";
 	$message->push_tag_blob("my_blob", $blob, length $blob);
@@ -69,7 +69,13 @@ sub source {
 	$message->push_tag_fixp("my_fixp_3", 3.141592);
 	$message->push_tag_fixp("my_fixp_4", 6666);
 	$message->push_tag_blob("my_blob", $bin, length $bin);
+
+
 	$message->send();
+
+	my $fixp = $message->get_tag_at("my_fixp_4", 0);
+
+#	print "my_fixp_4: $fixp\n";
 
 	# Return 1 for success and 0 for error
 	return 1;

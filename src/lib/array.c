@@ -398,10 +398,14 @@ int rrr_array_parse_data_from_definition (
 	return ret;
 }
 
-int rrr_array_definition_collection_clone (
+static int __rrr_array_clone (
 		struct rrr_array *target,
-		const struct rrr_array *source
+		const struct rrr_array *source,
+		int clone_data
 ) {
+	if (target->node_count != 0) {
+		RRR_BUG("BUG: Target was not empty in rrr_array_clone\n");
+	}
 	memset(target, '\0', sizeof(*target));
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);
@@ -412,9 +416,20 @@ int rrr_array_definition_collection_clone (
 		}
 		memcpy(template, node, sizeof(*template));
 
-		template->data = NULL;
+		if (clone_data && template->data != NULL) {
+			if ((template->data = malloc(template->total_stored_length)) == NULL) {
+				RRR_MSG_0("Could not allocate memory for data in __rrr_array_clone\n");
+				goto out_err;
+			}
+			memcpy(template->data, node->data, template->total_stored_length);
+		}
+		else {
+			template->data = NULL;
+		}
 
+		template->tag = NULL;
 		if (template->tag_length > 0) {
+			// Do not use strdup, no \0 at the end
 			template->tag = malloc(template->tag_length);
 			if (template->tag == NULL) {
 				RRR_MSG_0("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
@@ -439,6 +454,33 @@ int rrr_array_definition_collection_clone (
 		return 1;
 }
 
+int rrr_array_definition_clone (
+		struct rrr_array *target,
+		const struct rrr_array *source
+) {
+	return __rrr_array_clone(target, source, 0);
+}
+
+int rrr_array_append_from (
+		struct rrr_array *target,
+		const struct rrr_array *source
+) {
+	int ret = 0;
+
+	struct rrr_array tmp = {0};
+
+	if ((ret = __rrr_array_clone(&tmp, source, 1)) != 0) {
+		RRR_MSG_0("Could not clone array in rrr_array_append_from\n");
+		goto out;
+	}
+
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target, &tmp);
+
+	out:
+	rrr_array_clear(&tmp);
+	return ret;
+}
+
 static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
@@ -448,7 +490,9 @@ static int __rrr_array_push_value_64_with_tag (
 ) {
 	struct rrr_type_value *new_value = NULL;
 
-	if (rrr_type_value_new (
+	int ret = 0;
+
+	if ((ret = rrr_type_value_new (
 			&new_value,
 			definition,
 			flags,
@@ -457,20 +501,27 @@ static int __rrr_array_push_value_64_with_tag (
 			sizeof(uint64_t),
 			1,
 			0 // <!-- Don't send store length, import function will allocate
-	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag\n");
-		return 1;
+	)) != 0) {
+		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	rrr_length parsed_bytes = 0;
+	if ((ret = new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value)))) != 0) {
+		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
 	}
 
 	RRR_LL_APPEND(collection, new_value);
+	new_value = NULL;
 
-	rrr_length parsed_bytes = 0;
-	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
-		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag\n");
-		return 1;
+	out:
+	if (new_value != NULL) {
+		rrr_type_value_destroy(new_value);
 	}
-
-	return 0;
+	return ret;
 }
 
 int rrr_array_push_value_u64_with_tag (
@@ -501,20 +552,6 @@ int rrr_array_push_value_i64_with_tag (
 	);
 }
 
-int rrr_array_push_value_fixp_with_tag (
-		struct rrr_array *collection,
-		const char *tag,
-		rrr_fixp value
-) {
-	return __rrr_array_push_value_64_with_tag(
-			collection,
-			tag,
-			(uint64_t ) value,
-			&rrr_type_definition_fixp,
-			1
-	);
-}
-
 static int __rrr_array_push_value_x_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
@@ -533,7 +570,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			1,
 			value_size
 	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_push_value_str_with_tag_with_size\n");
+		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
 		return 1;
 	}
 
@@ -543,6 +580,20 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 	memcpy(new_value->data, value, value_size);
 
 	return 0;
+}
+
+int rrr_array_push_value_fixp_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		rrr_fixp value
+) {
+	return __rrr_array_push_value_x_with_tag_with_size (
+			collection,
+			tag,
+			(const char *) &value,
+			sizeof(value),
+			&rrr_type_definition_fixp
+	);
 }
 
 int rrr_array_push_value_str_with_tag_with_size (
@@ -762,7 +813,7 @@ static int __rrr_array_parse_from_buffer (
 		RRR_BUG("Definition was not valid in __rrr_array_parse_from_buffer\n");
 	}
 
-	if (rrr_array_definition_collection_clone(target, definition) != 0) {
+	if (rrr_array_definition_clone(target, definition) != 0) {
 		RRR_MSG_0("Could not clone definitions in __rrr_array_parse_from_buffer\n");
 		ret = RRR_ARRAY_PARSE_HARD_ERR;
 		goto out;
@@ -846,7 +897,7 @@ int rrr_array_new_message_from_buffer (
 		const struct rrr_array *definition
 ) {
 	struct rrr_msg_msg *message = NULL;
-	struct rrr_array definitions;
+	struct rrr_array definitions = {0};
 	int ret = 0;
 
 	if ((ret = __rrr_array_parse_from_buffer(&definitions, parsed_bytes, buf, buf_len, definition)) != 0) {

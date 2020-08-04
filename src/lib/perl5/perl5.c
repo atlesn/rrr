@@ -824,8 +824,14 @@ static int __rrr_perl5_hv_to_message_extract_array (
 	// New style array handling
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	if (array != NULL) {
-		rrr_array_dump(array);
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&array_tmp, array);
+		if (rrr_array_append_from (
+				&array_tmp,
+				array
+		) != 0) {
+			RRR_MSG_0("Failed to clone array values in __rrr_perl5_hv_to_message_extract_array\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	// av_len returns -1 when array is empty

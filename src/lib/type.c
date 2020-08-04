@@ -937,13 +937,13 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in __rrr_type_import_dec\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_fixpc\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in __rrr_type_import_dec\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_fixp\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in __rrr_type_import_dec\n");
+		RRR_BUG("import length was not 0 in __rrr_type_import_fixp\n");
 	}
 
 	int64_t fixp = 0;

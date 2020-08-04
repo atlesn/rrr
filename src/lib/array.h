@@ -82,7 +82,11 @@ int rrr_array_parse_data_from_definition (
 		const char *data,
 		const rrr_length length
 );
-int rrr_array_definition_collection_clone (
+int rrr_array_definition_clone (
+		struct rrr_array *target,
+		const struct rrr_array *source
+);
+int rrr_array_append_from (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
