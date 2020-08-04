@@ -88,19 +88,22 @@ rrr_perl5_message_ip_set (message,ip,port)
 	const char *ip
 	UV port
 
+#define PPCODE_PUSH_AV_TO_STACK()						\
+		int len = av_len(RETVAL) + 1;					\
+		if (len > 0) {									\
+			EXTEND(SP, len);							\
+			for (int i = 0; i < len; i++) {				\
+				PUSHs(sv_2mortal(av_shift(RETVAL)));	\
+			}											\
+		}												\
+		SvREFCNT_dec((SV*)RETVAL)
+
 AV *
 rrr_perl5_message_ip_get (message)
 	HV *message
 	PPCODE:
 		RETVAL = rrr_perl5_message_ip_get(message);
-		int len = av_len(RETVAL) + 1;
-		if (len > 0) {
-			EXTEND(SP, len);	
-			for (int i = 0; i < len; i++) {
-				PUSHs(sv_2mortal(av_shift(RETVAL)));
-			}
-		}
-		SvREFCNT_dec((SV*)RETVAL);
+		PPCODE_PUSH_AV_TO_STACK();
 
 unsigned int
 rrr_perl5_message_ip_clear (message)
@@ -121,16 +124,21 @@ rrr_perl5_message_get_tag(message,tag)
 	const char *tag
 	PPCODE:
 		RETVAL = rrr_perl5_message_get_tag(message,tag);
-		int len = av_len(RETVAL) + 1;
-		if (len > 0) {
-			EXTEND(SP, len);	
-			for (int i = 0; i < len; i++) {
-				PUSHs(sv_2mortal(av_shift(RETVAL)));
-			}
-		}
-		SvREFCNT_dec((SV*)RETVAL);
+		PPCODE_PUSH_AV_TO_STACK();
 		
 SV *rrr_perl5_message_get_tag_at(message,tag,pos)
 	HV *message
 	const char *tag
 	size_t pos
+
+AV *rrr_perl5_message_get_tag_names (message)
+	HV *message
+	PPCODE:
+		RETVAL = rrr_perl5_message_get_tag_names(message);
+		PPCODE_PUSH_AV_TO_STACK();
+
+AV *rrr_perl5_message_get_tag_counts (message)
+	HV *message
+	PPCODE:
+		RETVAL = rrr_perl5_message_get_tag_counts(message);
+		PPCODE_PUSH_AV_TO_STACK();

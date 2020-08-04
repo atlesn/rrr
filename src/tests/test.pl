@@ -72,6 +72,9 @@ sub process {
 		return 0;
 	}
 
+	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
+	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+
 	$message->send();
 
 	$message->clear_array();

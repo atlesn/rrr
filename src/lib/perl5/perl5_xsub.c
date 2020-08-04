@@ -535,7 +535,9 @@ AV *rrr_perl5_message_get_tag (HV *hv, const char *tag) {
 
 	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
 		// Note : Tags may be duplicated in array
-		if (node->tag != NULL && strcmp(node->tag, tag) == 0) {
+		if (	(node->tag != NULL && *(node->tag) != '\0' && *tag != '\0' && strcmp(node->tag, tag) == 0)
+				|| (*tag == '\0' && (node->tag == NULL || *(node->tag) == '\0'))
+		) {
 			const struct rrr_perl5_type_definition *definition = rrr_perl5_type_get_from_id(node->definition->type);
 
 			if (definition == NULL) {
@@ -592,6 +594,55 @@ SV *rrr_perl5_message_get_tag_at (HV *hv, const char *tag, size_t pos) {
 	}
 
 	return result;
+}
+
+AV *rrr_perl5_message_get_tag_names (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
+
+	int ret = 0;
+
+	AV *array_tags = newAV();
+
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+
+	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
+		if (node->tag != NULL && *(node->tag) != '\0') {
+			av_push(array_tags, newSVpv(node->tag, node->tag_length));
+		}
+		else {
+			av_push(array_tags, newSVpv("", 0));
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	if (ret != 0) {
+		av_clear(array_tags);
+		RRR_MSG_0("Warning: Error in Perl5 get_tag_names while getting values for array tag\n");
+	}
+	return array_tags;
+}
+
+AV *rrr_perl5_message_get_tag_counts (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
+
+	int ret = 0;
+
+	AV *array_counts = newAV();
+
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+
+	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
+		av_push(array_counts, newSVuv(node->element_count));
+	RRR_LL_ITERATE_END();
+
+	out:
+	if (ret != 0) {
+		av_clear(array_counts);
+		RRR_MSG_0("Warning: Error in Perl5 get_tag_count while getting counts for array tag\n");
+	}
+	return array_counts;
 }
 
 SV *rrr_perl5_settings_get (HV *settings, const char *key) {

@@ -47,6 +47,8 @@ SV *rrr_perl5_message_ip_get_protocol (HV *hv);
 unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol);
 AV *rrr_perl5_message_get_tag (HV *hv, const char *tag);
 SV *rrr_perl5_message_get_tag_at (HV *hv, const char *tag, size_t pos);
+AV *rrr_perl5_message_get_tag_names (HV *hv);
+AV *rrr_perl5_message_get_tag_counts (HV *hv);
 SV *rrr_perl5_settings_get (HV *settings, const char *key);
 int rrr_perl5_settings_set (HV *settings, const char *key, const char *value);
 int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string);

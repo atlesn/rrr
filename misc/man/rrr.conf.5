@@ -89,6 +89,31 @@ The general syntax for an array parsing specification is a comma separated list 
 .PP
 .Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
 .PP
+The arrays are special as it is possible to have multiple values at each position. Each position has one or more values
+of the exact same type and length, and may or may not have a tag (string name) identifying the particular position. Tag
+names are also not unique, multiple positions may have the same tag name also with different types.
+.PP
+The reason for having this "2D" like structure is to group data together when receiving in such a way that it is easy
+to find the different values afterwards.
+.PP
+Below follows a graphical representaion of an array with many values. Note that there for demonstration purposes
+are two values named
+.B same_tag,
+and that the eight byte sequence with ASCII-characters is split into two values. The string type may be of any length
+enclosed by quotes "". The quotes will be removed when the value is parsed. At the second array position, there are nine
+values, and at the sixth position there are two values.
+.PP
+.nf
++--------+-----------------+---------------------------+----------+----------+-------------+----+
+| my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
+|   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
++--------+-----------------+---------------------------+----------+----------+-------------+----+
+.PP
+An array parsing specification to produce a dataset like this (assuming the integers are 1 byte wide):
+.PP
+.Dl be1#my_int,be1@9#my_integers,str,be1#same_tag,be1#same_tag,blob4@2#split_blob,sep1
+.fi
+.PP
 Refer to the
 .B ARRAY DEFINITION
 section of
@@ -667,18 +692,69 @@ sub process {
 
 	# $debug->msg(1, "process: new timestamp of message is: " . $message->{'timestamp'} . "\\n");
 
-	# Push an array value to the message array
-	push @{$message->{'array_values'}}, "My array string value";
-	push @{$message->{'array_tags'}}, "tag_for_string_value";
-	push @{$message->{'array_types'}}, "str";
+	# NOTE ! To understand how message arrays work, look in the MESSAGES section in the
+	# man page of rrr.conf for a graphical representation (furter up if you're already in the man page).
+
+	# Push some values of dirrent types onto the message array. Since
+	# we use the same tag name "tag" for many values, multiple values
+	# with the same tag will exist within the array.
+	$message->push_tag_blob ("tag", "blob", 4);
+	$message->push_tag_str ("tag", "str");
+	$message->push_tag_h ("tag", 666);
+	$message->push_tag_fixp ("tag", 666);
 
 	# Set some integer values
 	my @my_integers = (1, 2, 3, 4);
-	
-	# Push the integer values into the message array. Remember the backslash to make a reference.
-	push @{$message->{'array_values'}}, \\@my_integers;
-	push @{$message->{'array_tags'}}, "tag_for_integer_value";
-	push @{$message->{'array_types'}}, "h"; 
+
+	# This function will accept both array values and other values. If
+	# an array reference is passed, like here, the values will be added
+	# to the same tag. If they are strings, their length -must- be equal.
+
+	# If different length strings are required, push them into separate
+	# tags like above. The RRR type is chosen based on the first value
+	# in the array, type h (host endian integer) will be chosen here.
+	$message->push_tag ("tag", \@my_integers);
+
+	# This will get all matching values for a particular tag. Regardless
+	# of wether duplicate tags have more than one element in the or not,
+	# they will all be put into the same result array. Here, all the values
+	# added above (four added one by one and four from the array) will
+	# be put into @values_result which will end up having eight elements.
+	my @values_result = $message->get_tag ("tag");
+
+	# The set_* functions will delete all matching tag names from the array
+	# and then push the new value. The type of any existing does not matter,
+	# all tags with matching tag name in the array will be removed.
+	$message->set_tag_blob ("tag", "blob", 4);
+	$message->set_tag_str ("tag", "str");
+	$message->set_tag_fixp ("tag", 666);
+	$message->set_tag_h ("tag", 1);
+
+	# It is allowed to have empty tag names, just use "" as tag
+	$message->set_tag_h("", 0);
+
+	# Since set_tag_h is the last value, the number '1' is the only
+	# element in the array now with the tag "tag". This func
+	my @array_with_only_one_value = $message->get_tag ("tag");
+
+	# It is possible to retrieve a particular element at position X if
+	# the position of a value is known. Since we know there is a
+	# number with the tag "tag" in the array, we can ask for index 0.
+
+	# The order of the elements returned will be the same as with the
+	# get_tag function, the order in which the values were added to
+	# the array. This statement will print out the number '1'.
+	print "The value is: " . $message->get_tag_at ("tag", 0) . "\n";
+
+	# These two functions returns arrays containing the tag names
+	# at each array position, or the value count at each position. If
+	# there is no tag name at a position, an empty "" value is returned.
+	# All array position always has at least one element.
+	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
+	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+
+	# This will clear all values from the array
+	$message->clear_tag("tag");
 
 	# Pass on the modified message
 	$message->send();
