@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "perl5.h"
 #include "perl5_types.h"
+#include "perl5_hv_macros.h"
 
 #include "../../build_directory.h"
 #include "../common.h"
@@ -191,7 +192,7 @@ static void __rrr_perl5_remove_ctx (struct rrr_perl5_ctx *ctx) {
 	__rrr_perl5_ctx_unlock();
 }
 
-static struct rrr_perl5_ctx *__rrr_perl5_find_ctx (const PerlInterpreter *interpreter) {
+struct rrr_perl5_ctx *rrr_perl5_find_ctx (const PerlInterpreter *interpreter) {
 	__rrr_perl5_ctx_lock();
 
 	struct rrr_perl5_ctx *ret = NULL;
@@ -205,7 +206,7 @@ static struct rrr_perl5_ctx *__rrr_perl5_find_ctx (const PerlInterpreter *interp
 		test = test->next;
 	}
 
-	RRR_BUG("Context not found in __rrr_perl5_find_ctx\n");
+	RRR_BUG("Context not found in rrr_perl5_find_ctx\n");
 
 	out:
 	__rrr_perl5_ctx_unlock();
@@ -417,8 +418,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	    	goto out_error;																			\
 		}} while (0)
 
-// TODO : Consider removing this struct, it only has one field
-struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
+struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
     struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
     if (message_hv == NULL) {
     	RRR_MSG_0("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
@@ -485,6 +485,18 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
 struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
 	return __rrr_perl5_allocate_message_hv(ctx);
+}
+
+SV *rrr_perl5_deep_dereference(SV *sv) {
+	int max = 50;
+	while (SvROK(sv)) {
+		sv = SvRV(sv);
+		if (--max == 0) {
+			RRR_MSG_0("Too many nested references (50 or more) in _rrr_perl5_deep_dereference\n");
+			return NULL;
+		}
+	}
+	return sv;
 }
 
 void rrr_perl5_destruct_settings_hv (
@@ -674,19 +686,7 @@ void rrr_perl5_destruct_message_hv (
 
 	free(source);
 }
-
-static SV *__rrr_perl5_deep_dereference(SV *sv) {
-	int max = 50;
-	while (SvROK(sv)) {
-		sv = SvRV(sv);
-		if (--max == 0) {
-			RRR_MSG_0("Too many nested references (50 or more) in _rrr_perl5_deep_dereference\n");
-			return NULL;
-		}
-	}
-	return sv;
-}
-
+/*
 static int __rrr_perl5_hv_to_message_array_store_field (
 		struct rrr_array *target,
 		struct rrr_perl5_ctx *ctx,
@@ -723,7 +723,7 @@ static int __rrr_perl5_hv_to_message_array_store_field (
     	goto out;
     }
 
-    if ((values = __rrr_perl5_deep_dereference(values)) == NULL) {
+    if ((values = rrr_perl5_deep_dereference(values)) == NULL) {
     	RRR_MSG_0("Could not dereference value in __rrr_perl5_hv_to_message_array_store_field\n");
     	ret = 1;
     	goto out;
@@ -765,33 +765,7 @@ static int __rrr_perl5_hv_to_message_array_store_field (
 	}
     return ret;
 }
-
-#define DEFINE_AND_FETCH_FROM_HV(name,hv_name)										\
-	SV *name = NULL;																\
-	do {SV **tmp = hv_fetch(hv, RRR_QUOTE(name), strlen(RRR_QUOTE(name)), 1);		\
-		if (tmp == NULL || *tmp == NULL) {											\
-			RRR_MSG_0("Could not fetch SV from HV\n");							\
-			ret = 1; goto out;														\
-		}																			\
-		name = *tmp; (void)(name);													\
-	} while(0)
-
-#define CHECK_IS_AV(name)																						\
-	do {if (SvTYPE(name) != SVt_PVAV) {																			\
-		check_av_error_count++;																					\
-		RRR_MSG_0("Warning: " RRR_QUOTE(name) " was not a perl array while extracting array from perl5\n");	\
-	}} while (0)
-
-#define DEFINE_AND_FETCH_FROM_AV(name,av_name,i)													\
-	SV *name = NULL;																				\
-	do {SV **tmp = av_fetch(av_name, i, 1);															\
-	if (tmp == NULL || *tmp == NULL) {																\
-		RRR_MSG_0("Could not fetch SV from array in __rrr_perl5_hv_to_message_extract_array\n");	\
-		ret = 1;																					\
-		goto out;																					\
-	}																								\
-	name = *tmp; } while(0)
-
+*/
 static int __rrr_perl5_hv_to_message_extract_array (
 		struct rrr_msg_msg **target,
 		struct rrr_perl5_ctx *ctx,
@@ -805,10 +779,10 @@ static int __rrr_perl5_hv_to_message_extract_array (
 	struct rrr_msg_msg *message_tmp = NULL;
 	struct rrr_array array_tmp = {0};
 	HV *hv = source->hv;
-
-	DEFINE_AND_FETCH_FROM_HV(array_values, hv);
-	DEFINE_AND_FETCH_FROM_HV(array_tags, hv);
-	DEFINE_AND_FETCH_FROM_HV(array_types, hv);
+/*
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(array_values, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(array_tags, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(array_types, hv);
 
 	AV *array_values_final = (AV *) __rrr_perl5_deep_dereference(array_values);
 	AV *array_tags_final = (AV *) __rrr_perl5_deep_dereference(array_tags);
@@ -821,9 +795,9 @@ static int __rrr_perl5_hv_to_message_extract_array (
 	}
 
 	int check_av_error_count = 0;
-	CHECK_IS_AV(array_values_final);
-	CHECK_IS_AV(array_tags_final);
-	CHECK_IS_AV(array_types_final);
+	RRR_PERL5_CHECK_IS_AV(array_values_final);
+	RRR_PERL5_CHECK_IS_AV(array_tags_final);
+	RRR_PERL5_CHECK_IS_AV(array_types_final);
 
 	if (check_av_error_count == 0) {
 		// OK, all of the arrays are actually AVs. Continue.
@@ -846,21 +820,29 @@ static int __rrr_perl5_hv_to_message_extract_array (
 		ret = 1;
 		goto out;
 	}
+*/
+	// New style array handling
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+	if (array != NULL) {
+		rrr_array_dump(array);
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&array_tmp, array);
+	}
 
 	// av_len returns -1 when array is empty
-	if (av_len(array_values_final) < 0) {
+	if (/*av_len(array_values_final) < 0 && */RRR_LL_COUNT(&array_tmp) == 0) {
 		// No array values
 		ret = 0;
 		goto out;
 	}
 
+	/*
 	// av_len returns index of last item, use <=
 	for (int i = 0; i <= av_len(array_values_final); i++) {
 		SV **tmp;
 
-		DEFINE_AND_FETCH_FROM_AV(value, array_values_final, i);
-		DEFINE_AND_FETCH_FROM_AV(tag, array_tags_final, i);
-		DEFINE_AND_FETCH_FROM_AV(type, array_types_final, i);
+		RRR_PERL5_DEFINE_AND_FETCH_FROM_AV(value, array_values_final, i);
+		RRR_PERL5_DEFINE_AND_FETCH_FROM_AV(tag, array_tags_final, i);
+		RRR_PERL5_DEFINE_AND_FETCH_FROM_AV(type, array_types_final, i);
 
 		if (__rrr_perl5_hv_to_message_array_store_field(&array_tmp, ctx, value, tag, type) != 0) {
 			RRR_MSG_0("Could not store field from array in __rrr_perl5_hv_to_message_extract_array\n");
@@ -868,7 +850,7 @@ static int __rrr_perl5_hv_to_message_extract_array (
 			goto out;
 		}
 	}
-
+*/
 	if (rrr_array_new_message_from_collection (
 			&message_tmp,
 			&array_tmp,
@@ -909,9 +891,9 @@ int rrr_perl5_hv_to_message (
 	struct rrr_msg_msg *target = *target_final;
 	HV *hv = source->hv;
 
-	DEFINE_AND_FETCH_FROM_HV(data, hv);
-	DEFINE_AND_FETCH_FROM_HV(data_length, hv);
-	DEFINE_AND_FETCH_FROM_HV(topic, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(data, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(data_length, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(topic, hv);
 
 	STRLEN new_data_len = 0;
 	SvUTF8_off(data);
@@ -937,7 +919,7 @@ int rrr_perl5_hv_to_message (
     // Sets default address length to 0
     rrr_msg_addr_init(target_addr);
 
-	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
 
 	STRLEN ip_so_type_len = 0;
 	char *so_type_str = SvPVutf8_force(ip_so_type, ip_so_type_len);
@@ -964,7 +946,7 @@ int rrr_perl5_hv_to_message (
 
 	target_addr->protocol = protocol;
 
-	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
 
 	uint64_t addr_len_tmp = SvUV(ip_addr_len);
 	if (addr_len_tmp > 0) {
@@ -975,7 +957,7 @@ int rrr_perl5_hv_to_message (
 			goto out;
 		}
 
-		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
+		RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
 		SvUTF8_off(ip_addr);
 
 		STRLEN addr_len_tmp_actual = 0;
@@ -1010,8 +992,8 @@ int rrr_perl5_hv_to_message (
 		target = new_message;
 	}
 
-	DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
 
 	target->type_and_class = SvUV(type_and_class);
 	target->timestamp = SvUV(timestamp);
@@ -1044,7 +1026,7 @@ int rrr_perl5_hv_to_message (
 	out:
 	return ret;
 }
-
+/*
 static int __rrr_perl5_message_hv_create_array (
 		SV **result,
 		struct rrr_perl5_message_hv *message_hv,
@@ -1067,8 +1049,7 @@ static int __rrr_perl5_message_hv_create_array (
 
     return 0;
 }
-
-#define AV_STORE_OR_FREE(target,i,sv)																\
+#define RRR_PERL5_AV_STORE_OR_FREE(target,i,sv)														\
 	do { SV *tmp = (sv);																			\
 	if (*av_store(target, i, tmp) != tmp) {															\
 		RRR_MSG_0("Could not store item array in __rrr_perl5_message_hv_arrays_populate\n");		\
@@ -1077,24 +1058,31 @@ static int __rrr_perl5_message_hv_create_array (
 		goto out;																					\
 	}} while (0)
 
-struct store_element_callback_data {
-	AV *target_array;
+*/
+/*
+struct arrays_populate_set_element_callback_data {
+	SV *result;
+	const int target_idx;
 };
 
-static int __rrr_perl5_message_hv_arrays_populate_store_element_callback(RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS) {
+static int __rrr_perl5_message_hv_arrays_populate_set_element_callback(RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
     (void)(idx);
     (void)(def_orig);
 
-	struct store_element_callback_data *callback_data = arg;
-	av_push(callback_data->target_array, sv);
-	SvREFCNT_inc(sv);
+	struct arrays_populate_set_element_callback_data *callback_data = arg;
+
+	if (idx == callback_data->target_idx) {
+		callback_data->result = sv;
+		SvREFCNT_inc(sv);
+	}
 
 	return 0;
 }
-
+*/
+/*
 static int __rrr_perl5_message_hv_arrays_populate (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
@@ -1169,9 +1157,9 @@ static int __rrr_perl5_message_hv_arrays_populate (
 
 		// struct rrr_perl5_ctx *ctx, struct rrr_type_value *value, int *(callback)(RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS), void *callback_arg
 
-		struct store_element_callback_data callback_data = { items };
+		struct rrr_perl5_arrays_populate_push_element_callback_data callback_data = { items };
 
-		if (definition->to_sv(ctx, node, __rrr_perl5_message_hv_arrays_populate_store_element_callback, &callback_data)) {
+		if (definition->to_sv(ctx, node, __rrr_perl5_message_hv_arrays_populate_push_element_callback, &callback_data)) {
 			RRR_MSG_0("Error while converting value to SV in __rrr_perl5_message_hv_arrays_populate\n");
 			ret = 1;
 			goto out;
@@ -1185,12 +1173,13 @@ static int __rrr_perl5_message_hv_arrays_populate (
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
-
-int rrr_perl5_message_to_hv (
+*/
+static int __rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
 		const struct rrr_msg_msg *message,
-		struct rrr_msg_addr *message_addr
+		struct rrr_msg_addr *message_addr,
+		struct rrr_array *array
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -1198,20 +1187,26 @@ int rrr_perl5_message_to_hv (
 	int ret = 0;
 
 	if (!RRR_MSG_IS_RRR_MESSAGE(message)) {
-		RRR_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
+		RRR_BUG("Message to __rrr_perl5_message_to_hv was not a VL message\n");
 	}
 
     HV *hv = message_hv->hv;
 
-	DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
-	DEFINE_AND_FETCH_FROM_HV(data, hv);
-	DEFINE_AND_FETCH_FROM_HV(data_length, hv);
-	DEFINE_AND_FETCH_FROM_HV(topic, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(data, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(data_length, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(topic, hv);
 
-	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
-	DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
-	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(rrr_array_ptr, hv);
+
+	SvFLAGS(rrr_array_ptr) &= ~(SVf_PROTECT|SVf_READONLY);
+	sv_setiv(rrr_array_ptr, (IV) array);
+	SvFLAGS(rrr_array_ptr) |= SVf_PROTECT|SVf_READONLY;
 
     SvUTF8_off(ip_addr);
     SvUTF8_off(data);
@@ -1230,12 +1225,22 @@ int rrr_perl5_message_to_hv (
     sv_setuv(data_length, MSG_DATA_LENGTH(message));
     sv_setpvn(data, MSG_DATA_PTR(message), MSG_DATA_LENGTH(message));
 
+    // New style array handling
+    rrr_array_clear(array);
+    if (MSG_IS_ARRAY(message)) {
+		if (rrr_array_message_append_to_collection(array, message) != 0) {
+			RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_to_hv\n");
+			ret = 1;
+			goto out;
+		}
+    }
+
     // Must always be called also when message is not an array
-	if (__rrr_perl5_message_hv_arrays_populate(message_hv, ctx, message) != 0) {
-		RRR_MSG_0("Could not populate arrays in rrr_perl5_message_to_hv\n");
+/*	if (__rrr_perl5_message_hv_arrays_populate(message_hv, ctx, message) != 0) {
+		RRR_MSG_0("Could not populate arrays in __rrr_perl5_message_to_hv\n");
 		ret = 1;
 		goto out;
-	}
+	}*/
 
 	uint64_t addr_len_tmp;
 	if (message_addr != NULL && (addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr)) > 0) {
@@ -1278,7 +1283,8 @@ int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
 		const struct rrr_msg_msg *message,
-		struct rrr_msg_addr *message_addr
+		struct rrr_msg_addr *message_addr,
+		struct rrr_array *array
 ) {
     int ret = 0;
 
@@ -1288,7 +1294,13 @@ int rrr_perl5_message_to_new_hv (
     	goto out;
     }
 
-    if ((ret = rrr_perl5_message_to_hv(message_hv, ctx, message, message_addr)) != 0) {
+    if ((ret = __rrr_perl5_message_to_hv (
+    		message_hv,
+			ctx,
+			message,
+			message_addr,
+			array
+	)) != 0) {
     	RRR_MSG_0("Error in rrr_perl5_message_to_new_hv\n");
     	goto out;
     }
@@ -1302,115 +1314,4 @@ int rrr_perl5_message_to_new_hv (
     return ret;
 }
 
-int rrr_perl5_message_send (HV *hv) {
-	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
-	struct rrr_perl5_message_hv *message_new_hv = NULL;
 
-	int ret = TRUE;
-
-	SvREFCNT_inc(hv);
-	message_new_hv = __rrr_perl5_allocate_message_hv_with_hv (ctx, hv);
-	if (message_new_hv == NULL) {
-		RRR_MSG_0("Could not allocate message hv in rrr_perl5_message_send\n");
-		ret = FALSE;
-		goto out;
-	}
-
-	struct rrr_msg_addr addr_msg;
-	struct rrr_msg_msg *message_new = NULL;
-	if (rrr_msg_msg_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
-		RRR_MSG_0("Could not allocate new message in rrr_perl5_message_send\n");
-		ret = FALSE;
-		goto out;
-	}
-	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
-		ret = FALSE;
-		goto out;
-	}
-
-	// Takes ownership of memory of message (but not address message)
-	ctx->send_message(message_new, &addr_msg, ctx->private_data);
-	message_new = NULL;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(message_new);
-	if (message_new_hv != NULL) {
-		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
-	}
-	return TRUE;
-}
-
-SV *rrr_perl5_settings_get (HV *settings, const char *key) {
-	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
-
-	char *value = ctx->get_setting(key, ctx->private_data);
-	SV *ret = NULL;
-
-	if (value != NULL) {
-		ret = newSVpv(value, strlen(value));
-	}
-	else {
-		ret = newSV(0);
-		sv_set_undef(ret);
-	}
-
-	RRR_FREE_IF_NOT_NULL(value);
-
-	return ret;
-}
-
-int rrr_perl5_settings_set (HV *settings, const char *key, const char *value) {
-	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
-
-	int ret = ctx->set_setting(key, value, ctx->private_data);
-
-	return (ret == 0 ? TRUE : FALSE);
-}
-
-static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *string, int always_print) {
-	(void)(debug);
-
-	if (!RRR_DEBUGLEVEL_OK(debuglevel)) {
-		RRR_MSG_0("Received unknown debuglevel %i in __rrr_perl5_debug_print\n", debuglevel);
-		return FALSE;
-	}
-
-	// Unsure if error in the script may cause string to become NULL. If not, this should
-	// be an RRR_BUG
-	if (string == NULL) {
-		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
-		return FALSE;
-	}
-
-	if (always_print) {
-		RRR_MSG_X(debuglevel, "%s", string);
-	}
-	else {
-		RRR_DBG_X(debuglevel, "%s", string);
-	}
-
-	return TRUE;
-}
-
-int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string) {
-	return __rrr_perl5_debug_print(debug, debuglevel, string, 1); // Always print
-}
-
-int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string) {
-	return __rrr_perl5_debug_print(debug, debuglevel, string, 0); // Print if debuglevel is active
-}
-
-int rrr_perl5_debug_err (HV *debug, const char *string) {
-	// Unsure if error in the script may cause string to become NULL. If not, this should
-	// be an RRR_BUG
-	if (string == NULL) {
-		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
-		return FALSE;
-	}
-
-	RRR_MSG_ERR("%s", string);
-	return TRUE;
-}

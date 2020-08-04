@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/gnu.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/array.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -345,8 +346,16 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct rrr_perl5_message_hv *hv_message = NULL;
 	struct rrr_msg_addr addr_msg_tmp = *message_addr;
 
+	struct rrr_array array_tmp = {0};
+
 	// We prefer to send NULL for empty address messages when spawning.
-	if ((ret = rrr_perl5_message_to_new_hv(&hv_message, ctx, message, (is_spawn_ctx ? NULL : &addr_msg_tmp))) != 0) {
+	if ((ret = rrr_perl5_message_to_new_hv (
+			&hv_message,
+			ctx,
+			message,
+			(is_spawn_ctx ? NULL : &addr_msg_tmp),
+			&array_tmp
+	)) != 0) {
 		RRR_MSG_0("Could not create rrr_perl5_message_hv struct in worker_process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -369,6 +378,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
 }

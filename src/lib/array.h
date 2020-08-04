@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "util/linked_list.h"
 #include "type.h"
+#include "fixed_point.h"
 
 #define RRR_ARRAY_VERSION 7
 
@@ -95,6 +96,11 @@ int rrr_array_push_value_i64_with_tag (
 		const char *tag,
 		int64_t value
 );
+int rrr_array_push_value_fixp_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		rrr_fixp value
+);
 int rrr_array_push_value_str_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
@@ -120,6 +126,10 @@ int rrr_array_get_value_unsigned_64_by_tag (
 );
 void rrr_array_clear (
 		struct rrr_array *collection
+);
+void rrr_array_clear_by_tag (
+		struct rrr_array *collection,
+		const char *tag
 );
 struct rrr_type_value *rrr_array_value_get_by_index (
 		struct rrr_array *definition,

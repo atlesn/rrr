@@ -33,8 +33,42 @@ sub source {
 
 	$message->{'topic'} = "aaa/bbb/ccc";
 
-	print "source:  new timestamp of message is: " . $message->{'timestamp'} . "\n";
+	print "source: new timestamp of message is: " . $message->{'timestamp'} . "\n";
+	print "array ptr: " . $message->{'rrr_array_ptr'} . "\n";
 
+	$message->set_tag_str("my_tag", "my_string");
+	$message->set_tag_str("my_tag", "my_string");
+	$message->set_tag_str("my_tag", "my_string");
+	$message->push_tag_str("my_tag", "my_string 2");
+	$message->push_tag_str("my_tag", "my_string 3");
+	$message->push_tag_str("my_tag", "my_string 4");
+
+	# Should be 4 now
+
+	print "getting tag\n";
+	my @values = $message->get_tag("my_tag");
+	print ("done, length: " . ($#values + 1) . " (@values)\n");
+
+	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
+
+	my $blob = "aaaaaaaaa";
+	$message->push_tag_blob("my_blob", $blob, length $blob);
+
+	my @array = ("4", "3", "2");
+	my $bin = pack 'H*', 'ab6501d0e75f12020c14da1545a5';
+
+	$message->push_tag("my_auto_1", "aaa");
+	$message->push_tag("my_auto_2", 2222);
+	$message->push_tag("my_auto_3", -2222);
+	$message->push_tag("my_auto_4", \@array);
+	$message->push_tag("my_auto_4", \@array);
+	$message->push_tag("my_auto_5_bin", $bin);
+	$message->push_tag("my_auto_6", 3.141592);
+	$message->push_tag_fixp("my_fixp_1", "16#ad4e65.eeee");
+	$message->push_tag_fixp("my_fixp_2", "10#3.141592");
+	$message->push_tag_fixp("my_fixp_3", 3.141592);
+	$message->push_tag_fixp("my_fixp_4", 6666);
+	$message->push_tag_blob("my_blob", $bin, length $bin);
 	$message->send();
 
 	# Return 1 for success and 0 for error

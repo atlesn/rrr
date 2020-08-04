@@ -443,14 +443,15 @@ static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
 		uint64_t value,
-		int is_signed
+		const struct rrr_type_definition *definition,
+		int flags
 ) {
 	struct rrr_type_value *new_value = NULL;
 
 	if (rrr_type_value_new (
 			&new_value,
-			&rrr_type_definition_h,
-			(is_signed ? RRR_TYPE_FLAG_SIGNED : 0),
+			definition,
+			flags,
 			strlen(tag),
 			tag,
 			sizeof(uint64_t),
@@ -477,7 +478,13 @@ int rrr_array_push_value_u64_with_tag (
 		const char *tag,
 		uint64_t value
 ) {
-	return __rrr_array_push_value_64_with_tag(collection, tag, value, 0);
+	return __rrr_array_push_value_64_with_tag(
+			collection,
+			tag,
+			value,
+			&rrr_type_definition_h,
+			0
+	);
 }
 
 int rrr_array_push_value_i64_with_tag (
@@ -485,7 +492,27 @@ int rrr_array_push_value_i64_with_tag (
 		const char *tag,
 		int64_t value
 ) {
-	return __rrr_array_push_value_64_with_tag(collection, tag, (uint64_t) value, 1);
+	return __rrr_array_push_value_64_with_tag(
+			collection,
+			tag,
+			(uint64_t ) value,
+			&rrr_type_definition_h,
+			1
+	);
+}
+
+int rrr_array_push_value_fixp_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		rrr_fixp value
+) {
+	return __rrr_array_push_value_64_with_tag(
+			collection,
+			tag,
+			(uint64_t ) value,
+			&rrr_type_definition_fixp,
+			1
+	);
 }
 
 static int __rrr_array_push_value_x_with_tag_with_size (
@@ -604,6 +631,17 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 void rrr_array_clear (struct rrr_array *collection) {
 	RRR_LL_DESTROY(collection,struct rrr_type_value,rrr_type_value_destroy(node));
+}
+
+void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+		if (node->tag == NULL) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if (strcmp(node->tag, tag) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (
@@ -1152,7 +1190,7 @@ int rrr_array_message_append_to_collection (
 		const struct rrr_msg_msg *message_orig
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
-		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");
+		RRR_BUG("Message was not array in rrr_array_message_append_to_collection\n");
 	}
 
 	// Modules should also check for array version to make sure they support any recent changes.

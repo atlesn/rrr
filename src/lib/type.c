@@ -1163,6 +1163,10 @@ int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
+	if (node->total_stored_length == 0) {
+		RRR_BUG("BUG: Length was 0 in __rrr_type_bin_to_str\n");
+	}
+
 	rrr_length output_size = node->total_stored_length * 2 + 1;
 
 	// Valgrind complains about invalid writes for some reason
@@ -1178,7 +1182,10 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	char *wpos = result;
 	for (int i = 0; i < (int) node->total_stored_length; i++) {
-		sprintf(wpos, "%02x", *(node->data + i));
+		// Must pass in unsigned to sprintf or else extra FFFF might
+		// be printed if value char is negative
+		unsigned char c = (unsigned char) *(node->data + i);
+		sprintf(wpos, "%02x", c);
 		wpos += 2;
 	}
 	result[output_size - 1] = '\0';
@@ -1189,6 +1196,10 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
+	if (node->total_stored_length == 0) {
+		RRR_BUG("BUG: Length was 0 in __rrr_type_str_to_str\n");
+	}
+
 	char *result = malloc(node->total_stored_length + 1);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_str_to_str\n");
