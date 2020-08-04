@@ -165,7 +165,7 @@ int rrr_perl5_type_auto_sv_to_fixp (
 		rrr_fixp fixp;
 		if (sizeof(IV) >= sizeof(rrr_fixp) && SvIOK(sv)) {
 			fixp = SvIV(sv);
-//			printf("Direct IV to FIXP conversion %lu\n", fixp);
+			printf("Direct IV to FIXP conversion %lu\n", fixp);
 		}
 		else if (SvNOK(sv)) {
 			NV nv = SvNV(sv);
@@ -174,21 +174,23 @@ int rrr_perl5_type_auto_sv_to_fixp (
 				ret = 1;
 				goto out;
 			}
-//			printf("Double to FIXP conversion %f -> %lu\n", nv, fixp);
+			printf("Double to FIXP conversion %f -> %lu\n", nv, fixp);
 		}
 		else {
 			const char *endptr;
 			if (rrr_fixp_str_to_fixp(&fixp, num_str, str_len, &endptr) != 0) {
-				RRR_MSG_0("Warning: Conversion to RRR fixed pointer failed for value '%s'\n");
+				RRR_MSG_0("Warning: Conversion to RRR fixed pointer failed for value '%s'\n",
+						num_str);
 				ret = 1;
 				goto out;
 			}
 			if (endptr - num_str != str_len) {
-				RRR_MSG_0("Warning: Conversion to RRR fixed pointer failed for value '%s', possible junk data at the end of string.\n");
+				RRR_MSG_0("Warning: Conversion to RRR fixed pointer failed for value '%s', possible junk data at the end of string.\n",
+						num_str);
 				ret = 1;
 				goto out;
 			}
-//			printf("String to FIXP conversion %s -> %lu\n", num_str, fixp);
+			printf("String to FIXP conversion %s -> %lu\n", num_str, fixp);
 		}
 		*result = fixp;
 	}

@@ -45,13 +45,13 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 	struct rrr_perl5_message_hv *message_new_hv = NULL;
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	SvREFCNT_inc(hv);
 	message_new_hv = rrr_perl5_allocate_message_hv_with_hv (ctx, hv);
 	if (message_new_hv == NULL) {
 		RRR_MSG_0("Could not allocate message hv in rrr_perl5_message_send\n");
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 
@@ -59,11 +59,11 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	struct rrr_msg_msg *message_new = NULL;
 	if (rrr_msg_msg_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate new message in rrr_perl5_message_send\n");
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 
@@ -76,86 +76,86 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	if (message_new_hv != NULL) {
 		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
 	}
-	return TRUE;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_clear_array (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 
-	int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear(array);
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_push_tag_blob (HV *hv, const char *tag, const char *value, size_t size) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	if (rrr_array_push_value_blob_with_tag_with_size(array, tag, value, size) != 0) {
 		RRR_MSG_0("Failed to push string to array in rrr_perl5_message_set_tag_str\n");
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_push_tag_str (HV *hv, const char *tag, const char *str) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	if (rrr_array_push_value_str_with_tag(array, tag, str) != 0) {
 		RRR_MSG_0("Failed to push string to array in rrr_perl5_message_set_tag_str\n");
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_push_tag_h (HV *hv, const char *tag, SV *sv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	if (SvUOK(sv)) {
 		if (rrr_array_push_value_u64_with_tag(array, tag, SvUV(sv)) != 0) {
 			RRR_MSG_0("Warning: Failed to push unsigned value to array in push_tag_h\n");
-			ret = FALSE;
+			ret = 1;
 			goto out;
 		}
 	}
 	else {
 		if (rrr_array_push_value_i64_with_tag(array, tag, SvIV(sv)) != 0) {
 			RRR_MSG_0("Warning: Failed to push signed value to array in push_tag_h\n");
-			ret = FALSE;
+			ret = 1;
 			goto out;
 		}
 	}
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_push_tag_fixp (HV *hv, const char *tag, SV *sv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_fixp fixp;
@@ -165,19 +165,19 @@ unsigned int rrr_perl5_message_push_tag_fixp (HV *hv, const char *tag, SV *sv) {
 
 	if (rrr_perl5_type_auto_sv_to_fixp(&fixp, ctx, sv_tmp) != 0) {
 		RRR_MSG_0("Failed to convert SV to fixed point in Perl5 push_tag_fixp\n");
-		ret = false;
+		ret = 1;
 		goto out;
 	}
 
 	if (rrr_array_push_value_fixp_with_tag(array, tag, fixp) != 0) {
 		RRR_MSG_0("Warning: Failed to push fixed pointer value to array in Perl5 push_tag_fixp\n");
-		ret = FALSE;
+		ret = 1;
 		goto out;
 	}
 
 	out:
 	SvREFCNT_dec(sv_tmp);
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 static int __rrr_perl5_message_push_tag (struct rrr_array *target, const char *tag, SV *values) {
@@ -244,87 +244,96 @@ static int __rrr_perl5_message_push_tag (struct rrr_array *target, const char *t
 unsigned int rrr_perl5_message_push_tag (HV *hv, const char *tag, SV *values) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 
     if ((values = rrr_perl5_deep_dereference(values)) == NULL) {
     	RRR_MSG_0("Could not dereference value in rrr_perl5_message_push_tag\n");
-    	ret = FALSE;
+    	ret = 1;
     	goto out;
     }
 
      if ((ret = __rrr_perl5_message_push_tag(array, tag, values)) != 0) {
 		RRR_MSG_0("Warning: Failed to push value(s) to array in Perl5 push_tag\n");
-		ret = FALSE;
+		ret = 1;
+		goto out;
 	}
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_set_tag_blob (HV *hv, const char *tag, const char *value, size_t size) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear_by_tag(array, tag);
-	ret = rrr_perl5_message_push_tag_blob(hv, tag, value, size);
+
+	ret = (rrr_perl5_message_push_tag_blob(hv, tag, value, size) == TRUE ? 0 : 1);
+
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_set_tag_str (HV *hv, const char *tag, const char *str) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear_by_tag(array, tag);
-	ret = rrr_perl5_message_push_tag_str(hv, tag, str);
+
+	ret = (rrr_perl5_message_push_tag_str(hv, tag, str) == TRUE ? 0 : 1);
+
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_set_tag_h (HV *hv, const char *tag, SV *values) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear_by_tag(array, tag);
-	ret = rrr_perl5_message_push_tag_h(hv, tag, values);
+
+	ret = (rrr_perl5_message_push_tag_h(hv, tag, values) == TRUE ? 0 : 1);
+
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_set_tag_fixp (HV *hv, const char *tag, SV *values) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear_by_tag(array, tag);
-	ret = rrr_perl5_message_push_tag_fixp(hv, tag, values);
+
+	ret = (rrr_perl5_message_push_tag_fixp(hv, tag, values) == TRUE ? 0 : 1);
+
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_clear_tag (HV *hv, const char *tag) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 
-	unsigned int ret = TRUE;
+	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_array_clear_by_tag(array, tag);
 
 	out:
-	return ret;
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 unsigned int rrr_perl5_message_ip_set (HV *hv, const char *ip, UV uv) {
@@ -619,14 +628,14 @@ static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *strin
 
 	if (!RRR_DEBUGLEVEL_OK(debuglevel)) {
 		RRR_MSG_0("Received unknown debuglevel %i in __rrr_perl5_debug_print\n", debuglevel);
-		return FALSE;
+		return 1;
 	}
 
 	// Unsure if error in the script may cause string to become NULL. If not, this should
 	// be an RRR_BUG
 	if (string == NULL) {
 		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
-		return FALSE;
+		return 1;
 	}
 
 	if (always_print) {
@@ -636,15 +645,15 @@ static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *strin
 		RRR_DBG_X(debuglevel, "%s", string);
 	}
 
-	return TRUE;
+	return 0;
 }
 
 int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string) {
-	return __rrr_perl5_debug_print(debug, debuglevel, string, 1); // Always print
+	return (__rrr_perl5_debug_print(debug, debuglevel, string, 1) == 0 ? TRUE : FALSE); // 1 = Always print
 }
 
 int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string) {
-	return __rrr_perl5_debug_print(debug, debuglevel, string, 0); // Print if debuglevel is active
+	return (__rrr_perl5_debug_print(debug, debuglevel, string, 0) == 0 ? TRUE : FALSE); // 0 = Print if debuglevel is active
 }
 
 int rrr_perl5_debug_err (HV *debug, const char *string) {
