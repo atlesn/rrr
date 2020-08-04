@@ -516,10 +516,18 @@ int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_se
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
 		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
-
 		if (ret != 0) {
 			RRR_MSG_0("Could not get string of '%s' while converting to unsigned integer\n", setting->name);
 			goto out;
+		}
+
+		for (unsigned const char *pos = (unsigned const char *) tmp_string; *pos != '\0'; pos++) {
+			if (*pos < '0' || *pos > '9') {
+				RRR_MSG_0("Unknown character '%c' in supposed unsigned integer '%s'\n",
+						*pos, tmp_string);
+				ret = 1;
+				goto out;
+			}
 		}
 
 		char *end;
