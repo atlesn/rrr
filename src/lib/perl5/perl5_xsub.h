@@ -40,6 +40,11 @@ unsigned int rrr_perl5_message_set_tag_str (HV *hv, const char *tag, const char 
 unsigned int rrr_perl5_message_set_tag_h (HV *hv, const char *tag, SV *values);
 unsigned int rrr_perl5_message_set_tag_fixp (HV *hv, const char *tag, SV *values);
 unsigned int rrr_perl5_message_clear_tag (HV *hv, const char *tag);
+unsigned int rrr_perl5_message_ip_set (HV *hv, const char *ip, UV uv);
+AV *rrr_perl5_message_ip_get (HV *hv);
+unsigned int rrr_perl5_message_ip_clear (HV *hv);
+SV *rrr_perl5_message_ip_get_protocol (HV *hv);
+unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol);
 AV *rrr_perl5_message_get_tag (HV *hv, const char *tag);
 SV *rrr_perl5_message_get_tag_at (HV *hv, const char *tag, size_t pos);
 SV *rrr_perl5_settings_get (HV *settings, const char *key);

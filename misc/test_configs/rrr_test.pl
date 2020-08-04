@@ -33,7 +33,7 @@ sub source {
 
 	$message->{'topic'} = "aaa/bbb/ccc";
 
-#	print "source: new timestamp of message is: " . $message->{'timestamp'} . "\n";
+	print "source: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 #	print "array ptr: " . $message->{'rrr_array_ptr'} . "\n";
 
 	$message->set_tag_str("my_tag", "my_string");
@@ -45,11 +45,10 @@ sub source {
 
 	# Should be 4 now
 
-#	print "getting tag\n";
 	my @values = $message->get_tag("my_tag");
-#	print ("done, length: " . ($#values + 1) . " (@values)\n");
 
-#	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
+	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
+	print "getting tag: @values\n";
 
 	my $blob = "aaaaaaaaa";
 	$message->push_tag_blob("my_blob", $blob, length $blob);
@@ -71,13 +70,43 @@ sub source {
 	$message->push_tag_blob("my_blob", $bin, length $bin);
 
 	$message->send();
+
+	my $fixp = $message->get_tag_at("my_fixp_4", 0);
+	print "my_fixp_4: $fixp\n";
+
 	$message->clear_array();
 	#$message->{'timestamp'} += 1000000;
 	$message->send();
 
-	my $fixp = $message->get_tag_at("my_fixp_4", 0);
+	$message->ip_set("127.0.0.1", 456);
+	my ($ip, $port) = $message->ip_get();
+	print "IP: $ip PORT: $port\n";
 
-#	print "my_fixp_4: $fixp\n";
+	$message->ip_set("20a0:55::4", 456);
+	my ($ip6, $port6) = $message->ip_get();
+	print "IP: $ip6 PORT: $port6\n";
+
+	$message->ip_clear();
+	my ($ip_cleared, $port_cleared) = $message->ip_get();
+
+	print "After clear: " . (defined $ip_cleared ? $ip_cleared : "undefined") . "\n";
+
+	my @values = (1,2,3);
+
+	$message->clear_array();
+	$message->push_tag_blob ("tag", "blob", 4);
+	$message->push_tag_str ("tag", "str");
+	$message->push_tag_h ("tag", 666);
+	$message->push_tag_fixp ("tag", 666);
+	$message->push_tag ("tag", \@values);
+	$message->set_tag_blob ("tag", "blob", 4);
+	$message->set_tag_str ("tag", "str");
+	$message->set_tag_h ("tag", \@values);
+	$message->set_tag_fixp ("tag", \@values);
+	$message->get_tag ("tag");
+	$message->get_tag_at ("tag", 0);
+
+	$message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;

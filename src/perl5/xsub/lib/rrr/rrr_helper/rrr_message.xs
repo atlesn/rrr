@@ -81,6 +81,39 @@ unsigned int
 rrr_perl5_message_clear_tag(message,tag)
 	HV *message
 	const char *tag
+	
+unsigned int
+rrr_perl5_message_ip_set (message,ip,port)
+	HV *message
+	const char *ip
+	UV port
+
+AV *
+rrr_perl5_message_ip_get (message)
+	HV *message
+	PPCODE:
+		RETVAL = rrr_perl5_message_ip_get(message);
+		int len = av_len(RETVAL) + 1;
+		if (len > 0) {
+			EXTEND(SP, len);	
+			for (int i = 0; i < len; i++) {
+				PUSHs(sv_2mortal(av_shift(RETVAL)));
+			}
+		}
+		SvREFCNT_dec((SV*)RETVAL);
+
+unsigned int
+rrr_perl5_message_ip_clear (message)
+	HV *message
+
+SV *
+rrr_perl5_message_ip_get_protocol (message)
+	HV *message
+
+unsigned int
+rrr_perl5_message_ip_set_protocol (message, protocol)
+	HV *message
+	const char *protocol
 
 AV *
 rrr_perl5_message_get_tag(message,tag)
@@ -88,9 +121,12 @@ rrr_perl5_message_get_tag(message,tag)
 	const char *tag
 	PPCODE:
 		RETVAL = rrr_perl5_message_get_tag(message,tag);
-		while (av_len(RETVAL) >= 0) {
-			SV *test = av_shift(RETVAL);
-			PUSHs(sv_2mortal(test));
+		int len = av_len(RETVAL) + 1;
+		if (len > 0) {
+			EXTEND(SP, len);	
+			for (int i = 0; i < len; i++) {
+				PUSHs(sv_2mortal(av_shift(RETVAL)));
+			}
 		}
 		SvREFCNT_dec((SV*)RETVAL);
 		

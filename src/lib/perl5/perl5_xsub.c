@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../util/rrr_time.h"
 #include "../fixed_point.h"
+#include "../rrr_strerror.h"
 
 unsigned int rrr_perl5_message_send (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
@@ -324,6 +325,175 @@ unsigned int rrr_perl5_message_clear_tag (HV *hv, const char *tag) {
 
 	out:
 	return ret;
+}
+
+unsigned int rrr_perl5_message_ip_set (HV *hv, const char *ip, UV uv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0;
+
+	struct sockaddr_storage result = {0};
+	struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) &result;
+	struct sockaddr_in *in = (struct sockaddr_in *) &result;
+
+	socklen_t addr_len = 0;
+
+	if (uv > UINT16_MAX) {
+		RRR_MSG_0("Warning: Port number was too large in Perl5 ip_set\n");
+		ret = 1;
+		goto out;
+	}
+
+	uint16_t port = uv;
+
+	if (inet_pton(AF_INET, ip, &(in->sin_addr)) == 1) {
+		in->sin_family = AF_INET;
+		in->sin_port = htons(port);
+		addr_len = sizeof(*in);
+	}
+	else if (inet_pton(AF_INET6, ip, &(in6->sin6_addr)) == 1) {
+		in6->sin6_family = AF_INET6;
+		in6->sin6_port = htons(port);
+		addr_len = sizeof(*in6);
+	}
+	else {
+		RRR_MSG_0("Warning: Could not convert '%s' to internal address representation in Perl5 ip_set, possibly invalid address format.\n",
+				ip);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr,hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr_len,hv);
+
+	sv_setpvn(ip_addr, (char *) &result, (STRLEN) addr_len);
+	sv_setuv(ip_addr_len, addr_len);
+
+	out:
+	return (ret == 0 ? TRUE : FALSE);
+}
+
+AV *rrr_perl5_message_ip_get (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	AV *result = newAV();
+
+	int ret = 0; // Just a dummy, we return empty array on failure
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr,hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr_len,hv);
+
+	// Must initialize result values here
+	uint16_t result_port = 0;
+	char result_string[INET6_ADDRSTRLEN];
+	*result_string = '\0';
+
+	UV addr_len = SvUV(ip_addr_len);
+	STRLEN addr_len_storage;
+	char *addr = SvPV(ip_addr, addr_len_storage);
+
+	if (addr_len_storage != addr_len) {
+		RRR_MSG_0("Warning: Mismatch between address length in ip_addr and stated length in ip_addr_len in Perl5 ip_get, cannot get address\n");
+		goto out;
+	}
+
+	struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) addr;
+	struct sockaddr_in *in = (struct sockaddr_in *) addr;
+
+	if (addr_len == sizeof(*in6)) {
+		if (inet_ntop(AF_INET6, &in6->sin6_addr, result_string, sizeof(result_string)) == NULL) {
+			RRR_MSG_0("Could not convert IP6 address to string in ip_get of Perl5: %s\n", rrr_strerror(errno));
+			goto out;
+		}
+		result_port = ntohs(in6->sin6_port);
+	}
+	else if (addr_len == sizeof(*in)) {
+		if (inet_ntop(AF_INET, &in->sin_addr, result_string, sizeof(result_string)) == NULL) {
+			RRR_MSG_0("Could not convert IP4 address to string in ip_get of Perl5: %s\n", rrr_strerror(errno));
+			goto out;
+		}
+		result_port = ntohs(in->sin_port);
+	}
+	else if (addr_len == 0) {
+		// Return undefined
+		goto out;
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown address length %lu in ip_get of Perl5\n", addr_len);
+		goto out;
+	}
+
+	av_push(result, newSVpv(result_string, strlen(result_string)));
+	av_push(result, newSVuv(result_port));
+
+	out:
+	return result;
+}
+
+unsigned int rrr_perl5_message_ip_clear (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0;
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr,hv);
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_addr_len,hv);
+
+	sv_setuv(ip_addr_len, 0);
+	sv_setpv(ip_addr, "");
+
+	out:
+	return (ret == 0 ? TRUE : FALSE);
+}
+
+SV *rrr_perl5_message_ip_get_protocol (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0; // Dummy
+
+	SV *result = newSVpv("udp", 3);
+	SvUTF8_on(result);
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
+
+	STRLEN len;
+
+	char *proto = SvPVutf8_force(ip_so_type, len);
+
+	if (len == 3 && strncasecmp(proto, "tcp", 3)) {
+		SvPV_set(result, "tcp");
+		SvPV_set(ip_so_type, "tcp");
+	}
+	else {
+		SvPV_set(ip_so_type, "udp");
+	}
+
+	out:
+	return result;
+}
+
+unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = 0;
+
+	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
+
+	if (strcasecmp(protocol, "tcp") == 0) {
+		SvUTF8_on(ip_so_type);
+		sv_setpv(ip_so_type, "tcp");
+	}
+	else if (strcasecmp(protocol, "udp") == 0) {
+		SvUTF8_on(ip_so_type);
+		sv_setpv(ip_so_type, "udp");
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown protocol '%s' given to Perl5 set_protocol, must be 'udp' or 'tcp'\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return (ret == 0 ? TRUE : FALSE);
 }
 
 struct rrr_perl5_arrays_populate_push_element_callback_data {
