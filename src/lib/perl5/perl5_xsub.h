@@ -39,6 +39,7 @@ unsigned int rrr_perl5_message_set_tag_blob (HV *hv, const char *tag, const char
 unsigned int rrr_perl5_message_set_tag_str (HV *hv, const char *tag, const char *str);
 unsigned int rrr_perl5_message_set_tag_h (HV *hv, const char *tag, SV *values);
 unsigned int rrr_perl5_message_set_tag_fixp (HV *hv, const char *tag, SV *values);
+unsigned int rrr_perl5_message_clear_tag (HV *hv, const char *tag);
 AV *rrr_perl5_message_get_tag (HV *hv, const char *tag);
 SV *rrr_perl5_message_get_tag_at (HV *hv, const char *tag, size_t pos);
 SV *rrr_perl5_settings_get (HV *settings, const char *key);

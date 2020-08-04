@@ -77,6 +77,11 @@ rrr_perl5_message_set_tag_fixp(message,tag,values)
 	const char *tag
 	SV *values
 
+unsigned int
+rrr_perl5_message_clear_tag(message,tag)
+	HV *message
+	const char *tag
+
 AV *
 rrr_perl5_message_get_tag(message,tag)
 	HV *message

@@ -314,6 +314,18 @@ unsigned int rrr_perl5_message_set_tag_fixp (HV *hv, const char *tag, SV *values
 	return ret;
 }
 
+unsigned int rrr_perl5_message_clear_tag (HV *hv, const char *tag) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	unsigned int ret = TRUE;
+
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+	rrr_array_clear_by_tag(array, tag);
+
+	out:
+	return ret;
+}
+
 struct rrr_perl5_arrays_populate_push_element_callback_data {
 	AV *target_array;
 };
