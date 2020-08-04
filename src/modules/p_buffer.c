@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
+#include "../lib/util/rrr_time.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_holder/message_holder.h"
@@ -40,18 +41,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct buffer_data {
 	struct rrr_instance_thread_data *thread_data;
+	rrr_setting_uint message_ttl_seconds;
+	uint64_t message_ttl_us;
 };
 
-int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-//	printf ("buffer got entry %p\n", entry);
-
+static int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_thread_data *thread_data = arg;
+	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
+
 	struct rrr_msg_msg *message = entry->message;
+
+	int ret = 0;
+
+	if (data->message_ttl_us > 0) {
+		uint64_t limit = rrr_time_get_64() - data->message_ttl_us;
+		//printf("TTL %" PRIu64 "<>%" PRIu64 "\n", limit, message->timestamp);
+		if (message->timestamp < limit) {
+			RRR_MSG_0("Warning: Received message in buffer instance %s with expired TTL, limit is set to %u seconds. Dropping message.\n",
+					INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
+			goto drop;
+		}
+	}
 
 	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
@@ -62,6 +77,7 @@ int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				INSTANCE_D_NAME(thread_data));
 	}
 
+	drop:
 	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
@@ -82,12 +98,12 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return 0;
 }
 
-void buffer_data_cleanup(void *arg) {
+static void buffer_data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
 	(void)(data);
 }
 
-int buffer_data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
+static int buffer_data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 
 	data->thread_data = thread_data;
@@ -95,6 +111,23 @@ int buffer_data_init(struct buffer_data *data, struct rrr_instance_thread_data *
 	if (ret != 0) {
 		buffer_data_cleanup(data);
 	}
+	return ret;
+}
+
+static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("buffer_ttl_seconds", message_ttl_seconds, 0);
+
+	if (data->message_ttl_seconds > UINT32_MAX) {
+		RRR_MSG_0("buffer_ttl_seconds too large in instance %s, maximum is %llu\n", config->name, UINT32_MAX);
+		ret = 1;
+		goto out;
+	}
+
+	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
+
+	out:
 	return ret;
 }
 
@@ -116,6 +149,10 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
+	if (buffer_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
+		goto out_message;
+	}
+
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
@@ -132,6 +169,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 		}
 	}
 
+	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread_data->thread);
 
 	//pthread_cleanup_pop(1);

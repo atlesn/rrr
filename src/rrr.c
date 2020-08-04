@@ -91,6 +91,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
 		{0,							's',	"stats",				"[-s|--stats]"},
+// Not implemented (yet). TTL check is present in duplicator and buffer modules
+//		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"ttl",					"[-t|--time-to-live]"},
 		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},

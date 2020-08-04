@@ -41,14 +41,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct duplicator_data {
 	struct rrr_instance_thread_data *thread_data;
+	rrr_setting_uint message_ttl_seconds;
+	uint64_t message_ttl_us;
 };
 
-void data_cleanup(void *arg) {
+static void duplicator_data_cleanup(void *arg) {
 	struct duplicator_data *data = arg;
 	(void)(data);
 }
 
-int data_init(struct duplicator_data *data, struct rrr_instance_thread_data *thread_data) {
+static int duplicator_data_init(struct duplicator_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 
 	data->thread_data = thread_data;
@@ -64,18 +66,48 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	const struct rrr_msg_msg *message = entry->message;
 
+	int ret = 0;
+
+	if (data->message_ttl_us > 0) {
+		uint64_t limit = rrr_time_get_64() - data->message_ttl_us;
+		//printf("TTL %" PRIu64 "<>%" PRIu64 "\n", limit, message->timestamp);
+		if (message->timestamp < limit) {
+			RRR_MSG_0("Warning: Received message in duplicator instance %s with expired TTL, limit is set to %u seconds. Dropping message.\n",
+					INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
+			goto drop;
+		}
+	}
+
 	RRR_DBG_3("duplicator instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(long long unsigned int) message->timestamp
 	);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
 	);
 
+	drop:
 	rrr_msg_msg_holder_unlock(entry);
+	return ret;
+}
+
+static int duplicator_parse_config (struct duplicator_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("duplicator_ttl_seconds", message_ttl_seconds, 0);
+
+	if (data->message_ttl_seconds > UINT32_MAX) {
+		RRR_MSG_0("duplicator_ttl_seconds too large in instance %s, maximum is %llu\n", config->name, UINT32_MAX);
+		ret = 1;
+		goto out;
+	}
+
+	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
+
+	out:
 	return ret;
 }
 
@@ -83,19 +115,23 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct duplicator_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
+	if (duplicator_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("duplicator thread thread_data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(duplicator_data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+
+	if (duplicator_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
+		goto out_message;
+	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
@@ -116,6 +152,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 		}
 	}
 
+	out_message:
 	RRR_DBG_1 ("Thread duplicator %p exiting\n", thread_data->thread);
 
 //	pthread_cleanup_pop(1);

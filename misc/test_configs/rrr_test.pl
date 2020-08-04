@@ -29,7 +29,7 @@ sub source {
 	my $message = shift;
 
 	# Do some modifications
-	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
+	#$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
 	$message->{'topic'} = "aaa/bbb/ccc";
 
@@ -72,7 +72,7 @@ sub source {
 
 	$message->send();
 	$message->clear_array();
-	$message->timestamp += 1000000;
+	#$message->{'timestamp'} += 1000000;
 	$message->send();
 
 	my $fixp = $message->get_tag_at("my_fixp_4", 0);
@@ -88,28 +88,28 @@ sub process {
 	my $message = shift;
 
 	# Do some modifications to the message
-	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
+	#$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
-	print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
+	#print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
-	my $message_text = get_from_tag_or_default($message, "log_message", "no message");
-	chomp $message_text;
+	#my $message_text = get_from_tag_or_default($message, "log_message", "no message");
+	#chomp $message_text;
 
-	print "log prefix: '" . get_from_tag_or_default($message, "log_prefix", "no prefix") . "'\n";
-	print "log message: '$message_text'\n";
+	#print "log prefix: '" . get_from_tag_or_default($message, "log_prefix", "no prefix") . "'\n";
+	#print "log message: '$message_text'\n";
 
-	my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
+	#my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
 
 	# Create an array in the message and write some values
-	push_tag_str($message, "value_a", "This is the 'a' value");
-	push_tag_h($message, "value_number", 12345);
-	push_tag_array($message, "value_numbers", \@numbers, "h");
-	push_tag_blob($message, "value_blob", "abcd");
+	#push_tag_str($message, "value_a", "This is the 'a' value");
+	#push_tag_h($message, "value_number", 12345);
+	#push_tag_array($message, "value_numbers", \@numbers, "h");
+	#push_tag_blob($message, "value_blob", "abcd");
 
 	$message->{'ip_so_type'} = "tcp";
 
 	# This can be used to duplicate a message if called multiple times
-	# $message->send();
+	$message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;
