@@ -31,9 +31,9 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la buffer.la \
+lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la \
-	duplicator.la mqttbroker.la mqttclient.la socket.la \
+	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 

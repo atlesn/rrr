@@ -521,6 +521,7 @@ int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_se
 			goto out;
 		}
 
+		// strtoull will accept negative numbers, we need to check here first
 		for (unsigned const char *pos = (unsigned const char *) tmp_string; *pos != '\0'; pos++) {
 			if (*pos < '0' || *pos > '9') {
 				RRR_MSG_0("Unknown character '%c' in supposed unsigned integer '%s'\n",

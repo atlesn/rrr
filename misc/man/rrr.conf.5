@@ -71,8 +71,8 @@ module=...
 .PP
 If an instance is specified as sender in more than one other instance, these will compete
 about messages from it. Use the
-.B duplicator
-module if a message is to be processed by multiple modules, for instance when different modules should process messages
+.B buffer
+module and enable duplication if a message is to be processed by multiple modules, for instance when different modules should process messages
 with different topics. Instances may also not use themselves as senders.
 .SH MESSAGES
 A message consists of at least a timestamp (in microseconds) and either arbitary data or
@@ -270,19 +270,14 @@ Delete messages which are not point measurements and information messages. Defau
 MQTT topic to apply to generated messages and any forwarded point messages.
 .El
 .SS buffer (P)
-The buffer collects all messages from all senders and wait for them to be collected by another instance.
+The buffer collects all messages from all senders and wait for them to be collected by other instances.
 .Bl -tag -width -indent
 .It buffer_ttl_seconds=SECONDS
 Any message received with timestamp older than the specified amount of seconds will be dropped. Useful in situations
 where messages circulate between modules.
-.El
-.SS duplicator (P)
-The duplicator works like buffer only that it creates one output buffer for every reader and duplicates the
-data it reads from other modules for each reader. The readers of duplicator are detected automatically.
-.Bl -tag -width -indent
-.It duplicator_ttl_seconds=SECONDS
-Same as
-.B buffer_ttl_seconds.
+.It buffer_do_duplicate={yes|no}
+If set to yes, incoming messages will be duplicated so that one copy is received by every reader. If set to no,
+the readers will compete over the messages. Defaults to no. 
 .El
 .SS ipclient (PI)
 The ipclient module collects any messages from senders and sends them over the network to another 
