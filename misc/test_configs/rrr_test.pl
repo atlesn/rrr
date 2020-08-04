@@ -70,7 +70,9 @@ sub source {
 	$message->push_tag_fixp("my_fixp_4", 6666);
 	$message->push_tag_blob("my_blob", $bin, length $bin);
 
-
+	$message->send();
+	$message->clear_array();
+	$message->timestamp += 1000000;
 	$message->send();
 
 	my $fixp = $message->get_tag_at("my_fixp_4", 0);

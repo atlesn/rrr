@@ -29,6 +29,7 @@ struct SV;
 struct HV;
 
 unsigned int rrr_perl5_message_send (HV *hv);
+unsigned int rrr_perl5_message_clear_array (HV *hv);
 unsigned int rrr_perl5_message_push_tag_blob (HV *hv, const char *tag, const char *value, size_t size);
 unsigned int rrr_perl5_message_push_tag_str (HV *hv, const char *tag, const char *str);
 unsigned int rrr_perl5_message_push_tag_h (HV *hv, const char *tag, SV *sv);

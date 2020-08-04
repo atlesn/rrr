@@ -18,6 +18,10 @@ rrr_perl5_message_send(message)
 	HV *message
 
 unsigned int
+rrr_perl5_message_clear_array(message)
+	HV *message
+
+unsigned int
 rrr_perl5_message_push_tag_blob(message,tag,value,size)
  	HV *message
  	const char *tag

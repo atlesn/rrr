@@ -78,6 +78,18 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	return TRUE;
 }
 
+unsigned int rrr_perl5_message_clear_array (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+
+	int ret = TRUE;
+
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+	rrr_array_clear(array);
+
+	out:
+	return ret;
+}
+
 unsigned int rrr_perl5_message_push_tag_blob (HV *hv, const char *tag, const char *value, size_t size) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
