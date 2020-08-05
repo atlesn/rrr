@@ -1,8 +1,15 @@
-rrr (1.7-3ubuntu1) focal; urgency=medium
+rrr (1.7-4ubuntu1) focal; urgency=medium
 
   * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Fri, 31 Jul 2020 00:18:50 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 00:18:43 +0200
+
+rrr (1.7-4) buster; urgency=medium
+
+  * Fix concurrent access due to missing locks in stats engine
+    causing crashes.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 00:15:03 +0200
 
 rrr (1.7-3) buster; urgency=medium
 
