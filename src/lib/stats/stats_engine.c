@@ -44,11 +44,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
+#define	RRR_STATS_ENGINE_LOG_TRUNCTATED_MESSAGE	"*** STATS LOG MESSAGE OVERLOAD, LOG IS TRUNCATED ***\n"
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
 	int first_log_journal_messages_sent;
 };
+
+static void __rrr_stats_engine_unlock_void (void *arg) {
+	pthread_mutex_t *lock = arg;
+	pthread_mutex_unlock(lock);
+}
 
 static void __rrr_stats_engine_log_listener (
 		unsigned short loglevel_translated,
@@ -67,6 +73,7 @@ static void __rrr_stats_engine_log_listener (
 	(void)(prefix);
 
 	pthread_mutex_lock(&stats->journal_lock);
+	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
 
 	size_t msg_size = strlen(message) + 1;
 
@@ -92,7 +99,7 @@ static void __rrr_stats_engine_log_listener (
 	new_message = NULL;
 
 	out:
-	pthread_mutex_unlock(&stats->journal_lock);
+	pthread_cleanup_pop(1);
 	if (message != NULL) {
 		rrr_stats_message_destroy(new_message);
 	}
@@ -196,6 +203,19 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		goto out_destroy_client_collection;
 	}
 
+	if (rrr_stats_message_init (
+			&stats->log_clipped_message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			0,
+			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL,
+			RRR_STATS_ENGINE_LOG_TRUNCTATED_MESSAGE,
+			strlen(RRR_STATS_ENGINE_LOG_TRUNCTATED_MESSAGE) + 1
+	) != 0) {
+		RRR_MSG_0("Could not initialize log clipped message in rrr_stats_engine_init\n");
+		ret = 1;
+		goto out_destroy_journal_lock;
+	}
+
 	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats);
 
 	RRR_DBG_1("Statistics engine started, listening at %s, log hook handle is %i\n",
@@ -203,7 +223,8 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	stats->initialized = 1;
 
 	goto out;
-
+	out_destroy_journal_lock:
+		pthread_mutex_destroy(&stats->journal_lock);
 	out_destroy_client_collection:
 		rrr_socket_client_collection_clear(&stats->client_collection);
 	out_close_socket:
@@ -290,7 +311,7 @@ int __rrr_stats_engine_unicast_send_intermediate (
 }
 
 static int __rrr_stats_engine_pack_message (
-		struct rrr_stats_message *message,
+		const struct rrr_stats_message *message,
 		int (*callback)(
 				struct rrr_msg *data,
 				size_t size,
@@ -397,6 +418,21 @@ static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_eng
 		struct rrr_socket_client *socket_client = node;
 
 		if (client->first_log_journal_messages_sent == 0) {
+			// If journal is busy, just don't do anything.
+			pthread_mutex_lock(&stats->journal_lock);
+
+			pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+
+			// If there are more than 100 messages in the queue, clean up by removing entries from the beginning
+			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+				if (RRR_LL_COUNT(&stats->log_journal) > 100) {
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				else {
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, 0; rrr_stats_message_destroy(node));
+
 			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
 				// Ignore errors
 				__rrr_stats_engine_pack_message(node, __rrr_stats_engine_unicast_send_intermediate, socket_client);
@@ -405,6 +441,8 @@ static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_eng
 					RRR_LL_ITERATE_LAST();
 				}
 			RRR_LL_ITERATE_END();
+
+			pthread_cleanup_pop(1);
 
 			client->first_log_journal_messages_sent = 1;
 		}
@@ -419,20 +457,38 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 	}
 
 	again:
+
+	pthread_mutex_lock(&stats->journal_lock);
+	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+
+	int max = 100;
+
 	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
 		if (start_sending) {
 			// Ignore errors
 			__rrr_stats_engine_pack_message(node, __rrr_stats_engine_multicast_send_intermediate, stats);
 			if (node == stats->log_journal_last_sent_message) {
-				// The rest will be sent by the normal send function
 				RRR_LL_ITERATE_LAST();
 			}
 			stats->log_journal_last_sent_message = node;
+
+			if (--max == 0) {
+				// Overload situation, truncate log
+				stats->log_clipped_message.timestamp = rrr_time_get_64();
+				__rrr_stats_engine_pack_message(&stats->log_clipped_message, __rrr_stats_engine_multicast_send_intermediate, stats);
+
+				// Skip ahead in list, pretend we have sent the last one
+				stats->log_journal_last_sent_message = RRR_LL_LAST(&stats->log_journal);
+				RRR_LL_ITERATE_LAST();
+			}
+
 		}
 		else if (node == stats->log_journal_last_sent_message) {
 			start_sending = 1;
 		}
 	RRR_LL_ITERATE_END();
+
+	pthread_cleanup_pop(1);
 
 	if (start_sending == 0) {
 		start_sending = 1;
@@ -441,6 +497,9 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 }
 
 static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats) {
+	pthread_mutex_lock(&stats->journal_lock);
+	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+
 	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
 		if (RRR_LL_COUNT(&stats->log_journal) > RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES) {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -449,6 +508,8 @@ static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats)
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, rrr_stats_message_destroy(node));
+
+	pthread_cleanup_pop(1);
 }
 
 static void __rrr_stats_engine_log_journal_tick (struct rrr_stats_engine *stats) {
