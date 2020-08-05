@@ -79,6 +79,8 @@ sub process {
 	my @fixps = $message->get_tag_all("my_fixp");
 	printf "Fixed points: @fixps\n";
 
+	$message->clear_tag ("my_fixp");
+
 	foreach my $fixp (@fixps) {
 		if ($fixp ne "16#000000000a.000000") {
 			print "Fixed point failure\n";
@@ -86,8 +88,25 @@ sub process {
 		}
 	}
 
-	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
-	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+	my @tag_names = $message->get_tag_names ();
+	my @tag_counts = $message->get_tag_counts ();
+
+	print "Tag names: " . join(",", @tag_names) . "\n";
+	print "Tag counts: " . join(",", @tag_counts) . "\n";
+	print "Position count: " . $message->count_positions() . "\n";
+
+	if (@tag_names != @tag_counts || @tag_counts != $message->count_positions()) {
+		print "Array position count error\n";
+		return 0;
+	}
+
+	for (my $i = 0; $i < @tag_counts; $i++) {
+		my @position = $message->get_position($i);
+		if ($tag_counts[$i] != $#position + 1) {
+			print "Array value count error\n";
+			return;
+		}
+	}
 
 	$message->ip_set("127.0.0.1", 666);
 
