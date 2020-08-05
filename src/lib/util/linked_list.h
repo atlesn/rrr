@@ -182,13 +182,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_SHIFT(head)													\
 	RRR_LL_FIRST(head);	/* Shift is used with assignment */					\
-	do {if ((head)->ptr_last == (head)->ptr_first) {						\
-		(head)->ptr_first = NULL;											\
-		(head)->ptr_last = NULL;											\
-	} else {																\
-		(head)->ptr_first = (head)->ptr_first->ptr_next;					\
-		(head)->ptr_first->ptr_prev = NULL;									\
-	} (head)->node_count--; } while (0)
+	do {if ((head)->ptr_first != NULL) {									\
+		if ((head)->ptr_last == (head)->ptr_first) {						\
+			(head)->ptr_first = NULL;										\
+			(head)->ptr_last = NULL;										\
+		} else {															\
+			(head)->ptr_first = (head)->ptr_first->ptr_next;				\
+			(head)->ptr_first->ptr_prev = NULL;								\
+		} (head)->node_count--;												\
+	}} while (0)
 
 #define RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)					\
 	do {if ((source)->ptr_first != NULL) {									\
