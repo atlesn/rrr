@@ -45,9 +45,9 @@ sub source {
 
 	# Should be 4 now
 
-	my @values = $message->get_tag("my_tag");
+	my @values = $message->get_tag_all("my_tag");
 
-	print "getting tag at: " . $message->get_tag_at("my_tag", 1) . "\n";
+	print "getting tag at: " . $values[1] . "\n";
 	print "getting tag: @values\n";
 
 	my $blob = "aaaaaaaaa";
@@ -64,14 +64,39 @@ sub source {
 	$message->push_tag("my_auto_5_bin", $bin);
 	$message->push_tag("my_auto_6", 3.141592);
 	$message->push_tag_fixp("my_fixp_1", "16#ad4e65.eeee");
-	$message->push_tag_fixp("my_fixp_2", "10#3.141592");
-	$message->push_tag_fixp("my_fixp_3", 3.141592);
-	$message->push_tag_fixp("my_fixp_4", 6666);
+	$message->push_tag_fixp("my_fixp_pi_10", "10#3.141592");
+	$message->push_tag_fixp("my_fixp_pi_double", 3.141592 + 0);
+	$message->push_tag_fixp("my_fixp_4", 0x29b - 1);
+	$message->push_tag_fixp("my_fixp_5", "16#a");
+	$message->push_tag_fixp("my_fixp_6", "10#10");
+	$message->push_tag_fixp("my_fixp_7", "16#0.8");
+	$message->push_tag_fixp("my_fixp_8", "10#0.5");
+	$message->push_tag_fixp("my_fixp_9", -2);
 	$message->push_tag_blob("my_blob", $bin, length $bin);
 
 #	$message->send();
 
-	my $fixp = $message->get_tag_at("my_fixp_4", 0);
+	$message->set_tag_fixp("my_fixp_5", ($message->get_tag_all("my_fixp_5"))[0]);
+
+	my $fixp_5 = ($message->get_tag_all("my_fixp_5"))[0];
+	my $fixp_6 = ($message->get_tag_all("my_fixp_6"))[0];
+
+	print "my_fixp_5 $fixp_5 == my_fixp_6 $fixp_6\n";
+
+	my $fixp_7 = ($message->get_tag_all("my_fixp_7"))[0];
+	my $fixp_8 = ($message->get_tag_all("my_fixp_8"))[0];
+
+	print "my_fixp_7 $fixp_7 == my_fixp_8 $fixp_8\n";
+	
+	my $fixp_9 = ($message->get_tag_all("my_fixp_9"))[0];
+	print "my_fixp_9 $fixp_9\n";
+
+	my $fixp_pi_10 = ($message->get_tag_all("my_fixp_pi_10"))[0];
+	my $fixp_pi_double = ($message->get_tag_all("my_fixp_pi_double"))[0];
+
+	print "my_fixp_pi_10: $fixp_pi_10, my_fixp_pi_double: $fixp_pi_double\n";
+
+	my $fixp = ($message->get_tag_all("my_fixp_4"))[0];
 	print "my_fixp_4: $fixp\n";
 
 	$message->clear_array();
@@ -99,7 +124,7 @@ sub source {
 	$message->set_tag_str ("tag", "str");
 	$message->set_tag_h ("tag", \@values);
 	$message->set_tag_fixp ("tag", 666);
-	$message->get_tag ("tag");
+	$message->get_tag_all ("tag");
 	$message->push_tag_blob ("tag", "blob", 4);
 	$message->push_tag_str ("tag", "str");
 	$message->push_tag_h ("", 666);
@@ -108,9 +133,11 @@ sub source {
 	$message->push_tag ("a", \@values);
 	$message->push_tag ("b", \@values);
 	$message->push_tag ("c", \@values);
-	
-	print "Number 666: " . $message->get_tag_at ("", 0) . "\n";
-	print "Multiple values: " . join(",", $message->get_tag ('tag')) . "\n";
+
+	print "Get a position: " . join (",", $message->get_position(2)) . "\n";
+	print "Array position count: " . $message->count_positions() . "\n";
+	print "Number 666: " . ($message->get_tag_all(""))[0] . "\n";
+	print "Multiple values: " . join(",", $message->get_tag_all("tag")) . "\n";
 	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
 	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
 

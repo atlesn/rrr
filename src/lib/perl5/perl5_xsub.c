@@ -523,7 +523,33 @@ static int __rrr_perl5_message_hv_arrays_populate_push_element_callback(RRR_PERL
 	return 0;
 }
 
-AV *rrr_perl5_message_get_tag (HV *hv, const char *tag) {
+int __rrr_perl5_message_type_to_sv (AV *target, struct rrr_perl5_ctx *ctx, struct rrr_type_value *node) {
+	const struct rrr_perl5_type_definition *definition = rrr_perl5_type_get_from_id(node->definition->type);
+
+	if (definition == NULL) {
+		RRR_MSG_0("Warning: Unknown array value type %u for tag %s in Perl5, cannot add to array\n",
+				node->definition->type, node->tag);
+		return 1;
+	}
+
+	if (definition->to_sv == NULL) {
+		RRR_MSG_0("Warning: Cannot convert array value type '%s' in tag '%s' to Perl5 type, unsupported type\n",
+				definition->definition->identifier, node->tag);
+		return 1;
+	}
+
+	struct rrr_perl5_arrays_populate_push_element_callback_data callback_data = { target };
+
+	if (definition->to_sv(ctx, node, __rrr_perl5_message_hv_arrays_populate_push_element_callback, &callback_data)) {
+		RRR_MSG_0("Warning: Error while converting value from tag %s to Perl5 type\n",
+				node->tag);
+		return 1;
+	}
+
+	return 0;
+}
+
+AV *rrr_perl5_message_get_tag_all (HV *hv, const char *tag) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
@@ -533,66 +559,79 @@ AV *rrr_perl5_message_get_tag (HV *hv, const char *tag) {
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 
+	int i = 0;
 	RRR_LL_ITERATE_BEGIN(array, struct rrr_type_value);
 		// Note : Tags may be duplicated in array
 		if (	(node->tag != NULL && *(node->tag) != '\0' && *tag != '\0' && strcmp(node->tag, tag) == 0)
 				|| (*tag == '\0' && (node->tag == NULL || *(node->tag) == '\0'))
 		) {
-			const struct rrr_perl5_type_definition *definition = rrr_perl5_type_get_from_id(node->definition->type);
-
-			if (definition == NULL) {
-				RRR_MSG_0("Warning: Unknown array value type %u for tag %s in Perl5 get_tag, cannot add to array\n",
-						node->definition->type, node->tag);
-				RRR_LL_ITERATE_NEXT();
-			}
-
-			if (definition->to_sv == NULL) {
-				RRR_MSG_0("Warning: Cannot convert array value type '%s' in tag '%s' to Perl5 type in get_tag, unsupported type\n",
-						definition->definition->identifier, node->tag);
-				RRR_LL_ITERATE_NEXT();
-			}
-
-			struct rrr_perl5_arrays_populate_push_element_callback_data callback_data = { array_values };
-
-			if (definition->to_sv(ctx, node, __rrr_perl5_message_hv_arrays_populate_push_element_callback, &callback_data)) {
-				RRR_MSG_0("Warning: Error while converting value from tag %s to Perl5 type in get_tag\n",
-						node->tag);
-				RRR_LL_ITERATE_NEXT();
+			if (__rrr_perl5_message_type_to_sv(array_values, ctx, node) != 0) {
+				RRR_MSG_0("Warning: Conversion error in Perl5 get_tag_all at array position %i\n", i);
 			}
 		}
+		i++;
 	RRR_LL_ITERATE_END();
 
 	out:
 	if (ret != 0) {
-		av_clear(array_values);
-		RRR_MSG_0("Warning: Error in Perl5 get_tag while getting values for array tag\n");
+		SvREFCNT_dec((SV*)array_values);
+		array_values = NULL;
 	}
 
 	return array_values;
 }
 
-SV *rrr_perl5_message_get_tag_at (HV *hv, const char *tag, size_t pos) {
+AV *rrr_perl5_message_get_position (HV *hv, UV pos) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
-	SV *result = NULL;
+	int ret = 0;
 
-	AV *array_values = rrr_perl5_message_get_tag (hv, tag);
-	SV **ref = av_fetch(array_values, pos, 0);
+	AV *array_values = newAV();
 
-	if (ref != NULL) {
-		result = *ref;
-		SvREFCNT_inc(result);
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+
+	// Memory not managed here
+	struct rrr_type_value *value = rrr_array_value_get_by_index (array, pos);
+	if (value == NULL) {
+		ret = 1;
+		goto out;
 	}
 
-	SvREFCNT_dec((SV*)array_values);
+	if (__rrr_perl5_message_type_to_sv(array_values, ctx, value) != 0) {
+		RRR_MSG_0("Warning: Conversion error in Perl5 get_position at array position %u\n", pos);
+		ret = 1;
+		goto out;
+	}
 
 	out:
-	if (result == NULL) {
-		result = newSViv(0);
-		sv_set_undef(result);
+	if (ret != 0) {
+		SvREFCNT_dec((SV*)array_values);
+		array_values = NULL;
+	}
+	return array_values;
+}
+
+SV *rrr_perl5_message_count_positions (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
+
+	int ret = 0;
+	SV *result = newSVuv(0);
+
+	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
+
+	int count = rrr_array_count(array);
+	if (count < 0) {
+		RRR_BUG("BUG: Array count was <0 in rrr_perl5_message_count_positions\n");
 	}
 
+	SvUV_set(result, count);
+
+	out:
+	if (ret != 0) {
+		sv_setsv(result, &PL_sv_undef);
+	}
 	return result;
 }
 
@@ -617,8 +656,9 @@ AV *rrr_perl5_message_get_tag_names (HV *hv) {
 
 	out:
 	if (ret != 0) {
-		av_clear(array_tags);
 		RRR_MSG_0("Warning: Error in Perl5 get_tag_names while getting values for array tag\n");
+		SvREFCNT_dec((SV*)array_tags);
+		array_tags = NULL;
 	}
 	return array_tags;
 }
@@ -639,8 +679,9 @@ AV *rrr_perl5_message_get_tag_counts (HV *hv) {
 
 	out:
 	if (ret != 0) {
-		av_clear(array_counts);
 		RRR_MSG_0("Warning: Error in Perl5 get_tag_count while getting counts for array tag\n");
+		SvREFCNT_dec((SV*)array_counts);
+		array_counts = NULL;
 	}
 	return array_counts;
 }

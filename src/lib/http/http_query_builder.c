@@ -108,7 +108,7 @@ int rrr_http_query_builder_append_type_value_as_escaped_string (
 	if (RRR_TYPE_IS_FIXP(value->definition->type)) {
 		char buf[512];
 
-		if ((ret = rrr_fixp_to_str(buf, 511, *((rrr_fixp*) value->data))) != 0) {
+		if ((ret = rrr_fixp_to_str_double(buf, 511, *((rrr_fixp*) value->data))) != 0) {
 			RRR_MSG_0("Could not convert fixed point to string in  __rrr_http_query_builder_append_type_value_raw\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;

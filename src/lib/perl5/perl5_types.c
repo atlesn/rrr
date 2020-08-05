@@ -73,8 +73,17 @@ static int __rrr_perl5_type_to_sv_64 (RRR_PERL5_TYPE_TO_SV_ARGS) {
 
 	ELEMENT_LOOP_BEGIN;
 		SV *sv = NULL;
+		char tmp[64];
 
-		if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) || value->definition->type == RRR_TYPE_FIXP) {
+		if (value->definition->type == RRR_TYPE_FIXP) {
+			if (rrr_fixp_to_str_16(tmp, (ssize_t) sizeof(tmp), *((rrr_fixp*) pos))) {
+				RRR_MSG_0("Failed to convert fixed pointer in __rrr_perl5_type_to_sv_64\n");
+				ret = 1;
+				goto out;
+			}
+			sv = newSVpv(tmp, strlen(tmp));
+		}
+		else if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
 			sv = newSViv(*((IV*) pos));
 		}
 		else {
@@ -162,10 +171,18 @@ int rrr_perl5_type_auto_sv_to_fixp (
 			RRR_MSG_0("Warning: Perl5 integer value is too small to hold RRR fixed pointer on this system (64 bits are required). Cannot convert Perl5 integer directly, attempting to convert using double or string instead\n");
 		}
 
+		// If a scalar was created inside a perl script and not by C API,
+		// it is unlikely that we will end up in another function than the
+		// string converter. When we export the fixp to the perl script,
+		// we also use the 16# - style which is guaranteed not to change
+		// the actual value, this may be imported by this string converter.
+
+//		printf ("IOK: %u UOK: %u looks_like_number: %u\n", SvIOK(sv), SvUOK(sv), looks_like_number(sv));
+
 		rrr_fixp fixp;
-		if (sizeof(IV) >= sizeof(rrr_fixp) && SvIOK(sv)) {
+		if (sizeof(IV) >= sizeof(rrr_fixp) && (SvIOK(sv) || SvUOK(sv))) {
 			fixp = SvIV(sv);
-			printf("Direct IV to FIXP conversion %lu\n", fixp);
+//			printf("Direct IV to FIXP conversion %lu\n", fixp);
 		}
 		else if (SvNOK(sv)) {
 			NV nv = SvNV(sv);
@@ -174,7 +191,7 @@ int rrr_perl5_type_auto_sv_to_fixp (
 				ret = 1;
 				goto out;
 			}
-			printf("Double to FIXP conversion %f -> %lu\n", nv, fixp);
+//			printf("Double to FIXP conversion %f -> %lu\n", nv, fixp);
 		}
 		else {
 			const char *endptr;
@@ -190,7 +207,7 @@ int rrr_perl5_type_auto_sv_to_fixp (
 				ret = 1;
 				goto out;
 			}
-			printf("String to FIXP conversion %s -> %lu\n", num_str, fixp);
+//			printf("String to FIXP conversion %s -> %lu\n", num_str, fixp);
 		}
 		*result = fixp;
 	}

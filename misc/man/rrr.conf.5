@@ -1,4 +1,4 @@
-.Dd 2020-07-11
+.Dd 2020-08-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -695,6 +695,13 @@ sub process {
 	# NOTE ! To understand how message arrays work, look in the MESSAGES section in the
 	# man page of rrr.conf for a graphical representation (furter up if you're already in the man page).
 
+	# An RRR array consits of several positions which each may have one or more value of a certiain
+	# type and length. A position may or may not have an identification tag, and several positions
+	# may have the same tag. An RRR message either contains raw data of some sort or an RRR array.
+
+	# If array values are pushed to the message in a Perl5 script, any data in the message
+	# will not be forwarded.
+
 	# Push some values of dirrent types onto the message array. Since
 	# we use the same tag name "tag" for many values, multiple values
 	# with the same tag will exist within the array.
@@ -706,8 +713,8 @@ sub process {
 	# Set some integer values
 	my @my_integers = (1, 2, 3, 4);
 
-	# This function will accept both array values and other values. If
-	# an array reference is passed, like here, the values will be added
+	# The following function will accept both array values and other values.
+	# If an array reference is passed, like here, the values will be added
 	# to the same tag. If they are strings, their length -must- be equal.
 
 	# If different length strings are required, push them into separate
@@ -734,17 +741,15 @@ sub process {
 	$message->set_tag_h("", 0);
 
 	# Since set_tag_h is the last value, the number '1' is the only
-	# element in the array now with the tag "tag". This func
-	my @array_with_only_one_value = $message->get_tag ("tag");
+	# element in the array now with the tag "tag". The get_tag_all
+	# function will otherwise retrieve all values at all matching tags.
+	my @array_with_only_one_value = $message->get_tag_all ("tag");
 
-	# It is possible to retrieve a particular element at position X if
-	# the position of a value is known. Since we know there is a
-	# number with the tag "tag" in the array, we can ask for index 0.
-
-	# The order of the elements returned will be the same as with the
-	# get_tag function, the order in which the values were added to
-	# the array. This statement will print out the number '1'.
-	print "The value is: " . $message->get_tag_at ("tag", 0) . "\n";
+	# It is possible to retrieve a particular element at a certain position
+	# if the position of a value is known. Since we know there is a
+	# number with the tag "tag" in the array, we can get the first element
+	# returned.
+	my $value = ($message->get_tag_all("tag"))[0];
 
 	# These two functions returns arrays containing the tag names
 	# at each array position, or the value count at each position. If
@@ -752,6 +757,10 @@ sub process {
 	# All array position always has at least one element.
 	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
 	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+
+	# Get all values at a particular position
+	print "Get a position: " . join (",", $message->get_position(0)) . "\n";
+	print "Array position count: " . $message->count_positions() . "\n";
 
 	# This will clear all values from the array
 	$message->clear_tag("tag");

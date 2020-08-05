@@ -76,7 +76,7 @@ int rrr_test_fixp(void) {
 	}
 
 	char buf[512];
-	if ((ret = rrr_fixp_to_str(buf, 511, fixp_a)) != 0) {
+	if ((ret = rrr_fixp_to_str_double(buf, 511, fixp_a)) != 0) {
 		TEST_MSG("Conversion from fixed point to string failed\n");
 		goto out;
 	}
@@ -86,7 +86,7 @@ int rrr_test_fixp(void) {
 		goto out;
 	}
 
-	if ((ret = rrr_fixp_to_str(buf, 511, fixp_c)) != 0) {
+	if ((ret = rrr_fixp_to_str_double(buf, 511, fixp_c)) != 0) {
 		TEST_MSG("Conversion from fixed point to string failed\n");
 		goto out;
 	}

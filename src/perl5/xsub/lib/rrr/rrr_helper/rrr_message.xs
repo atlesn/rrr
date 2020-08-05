@@ -89,6 +89,10 @@ rrr_perl5_message_ip_set (message,ip,port)
 	UV port
 
 #define PPCODE_PUSH_AV_TO_STACK()						\
+		if (RETVAL == NULL) {							\
+			EXTEND(SP, 1);								\
+			XSRETURN_UNDEF; /* Push undef and return */	\
+		}												\
 		int len = av_len(RETVAL) + 1;					\
 		if (len > 0) {									\
 			EXTEND(SP, len);							\
@@ -119,17 +123,24 @@ rrr_perl5_message_ip_set_protocol (message, protocol)
 	const char *protocol
 
 AV *
-rrr_perl5_message_get_tag(message,tag)
+rrr_perl5_message_get_tag_all(message,tag)
 	HV *message
 	const char *tag
 	PPCODE:
-		RETVAL = rrr_perl5_message_get_tag(message,tag);
+		RETVAL = rrr_perl5_message_get_tag_all(message,tag);
 		PPCODE_PUSH_AV_TO_STACK();
 		
-SV *rrr_perl5_message_get_tag_at(message,tag,pos)
+AV *
+rrr_perl5_message_get_position (message,pos)
 	HV *message
-	const char *tag
-	size_t pos
+	UV pos
+	PPCODE:
+		RETVAL = rrr_perl5_message_get_position(message,pos);
+		PPCODE_PUSH_AV_TO_STACK();
+
+SV *
+rrr_perl5_message_count_positions (message)
+	HV *message
 
 AV *rrr_perl5_message_get_tag_names (message)
 	HV *message

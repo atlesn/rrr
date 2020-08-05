@@ -54,7 +54,7 @@ sub process {
 	$result += $message->push_tag_fixp ("tag", 666);
 	$result += $message->push_tag ("tag", \@values);
 
-	my @values_result = $message->get_tag ("tag");	# Returns array of length 7
+	my @values_result = $message->get_tag_all ("tag");# Returns array of length 7
 	$result += $#values_result + 1;
 
 	$result += $message->set_tag_blob ("tag", "blob", 4);
@@ -62,10 +62,10 @@ sub process {
 	$result += $message->set_tag_fixp ("tag", 666);
 	$result += $message->set_tag_h ("tag", 1);
 
-	$result += $message->get_tag ("tag");		# Returns array of length 1
-	$result += $message->get_tag_at ("tag", 0);	# Returns the value 1
+	$result += $message->get_tag_all ("tag");	# Returns array of length 1
+	$result += ($message->get_tag_all ("tag"))[0];	# Returns the value 1
 
-	$result += $message->clear_tag("tag");
+	$result += $message->clear_tag ("tag");
 
 	if ($result != 19) {
 		print ("Result $result<>19\n");
