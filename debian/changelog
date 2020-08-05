@@ -1,3 +1,12 @@
+rrr (1.9-0) buster; urgency=medium
+
+  * Removed duplicator module, functionality is now in buffer module
+  * Create array manipulation helper functions in Perl5
+  * Remove old style array handling in Perl5
+  * Add TTL check for messages in buffer module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 05 Aug 2020 12:35:40 +0200
+
 rrr (1.8-1) buster; urgency=medium
 
   * Fix bug causing multiple configuration parameters not to work
