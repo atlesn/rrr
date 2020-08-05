@@ -135,10 +135,13 @@ int rrr_fixp_to_str_16 (char *target, ssize_t target_size, rrr_fixp source) {
 	int wpos = 0;
 	for (int pos = 0; pos < (int) sizeof(buf); pos++) {
 		unsigned char cur = buf[pos];
-		unsigned char l = cur & 0x0f;
 		unsigned char h = (cur & 0xf0) >> 4;
+		unsigned char l = cur & 0x0f;
 		tmp_b[wpos++] = h + (h > 9 ? 'a' - 10 : '0');
 		tmp_b[wpos++] = l + (l > 9 ? 'a' - 10 : '0');
+		if (pos == 4) {
+			tmp_b[wpos++] = '.';
+		}
 	}
 
 	tmp_b[wpos] = '\0';

@@ -67,13 +67,62 @@ sub process {
 
 	$result += $message->clear_tag ("tag");
 
-	if ($result != 19) {
-		print ("Result $result<>19\n");
+	$result += $message->push_tag_fixp("my_fixp", "16#a");
+	$result += $message->push_tag_fixp("my_fixp", "10#10");
+	$result += $message->push_tag_fixp("my_fixp", ($message->get_tag_all("my_fixp"))[0]);
+
+	if ($result != 22) {
+		print ("Result $result<>22\n");
 		return 0;
+	}
+
+	my @fixps = $message->get_tag_all("my_fixp");
+	printf "Fixed points: @fixps\n";
+
+	foreach my $fixp (@fixps) {
+		if ($fixp ne "16#000000000a.000000") {
+			print "Fixed point failure\n";
+			return 0;
+		}
 	}
 
 	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
 	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+
+	$message->ip_set("127.0.0.1", 666);
+
+	my ($ip_orig, $port_orig) = $message->ip_get();
+	$message->ip_set($ip_orig, $port_orig);
+
+	my ($ip, $port) = $message->ip_get();
+	print "IP4: $ip:$port\n";
+
+	if ($ip ne "127.0.0.1" || $port != 666) {
+		print "IP4 failure";
+		return 0;
+	}
+
+	$message->ip_set("1::1", 666);
+
+	my ($ip6_orig, $port6_orig) = $message->ip_get();
+	$message->ip_set($ip6_orig, $port6_orig);
+
+	my ($ip_6, $port_6) = $message->ip_get();
+	print "IP6: $ip_6:$port_6\n";
+
+	if ($ip_6 ne "1::1" || $port_6 != 666) {
+		print "IP6 failure\n";
+		return 0;
+	}
+
+	$message->ip_clear();
+
+	my ($ip_none, $port_none) = $message->ip_get();
+
+	if (defined $ip_none || defined $port_none) {
+		print "IP clear failure\n";
+	}
+
 
 	$message->send();
 
