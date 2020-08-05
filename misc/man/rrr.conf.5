@@ -108,11 +108,11 @@ values, and at the sixth position there are two values.
 | my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
 |   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
 +--------+-----------------+---------------------------+----------+----------+-------------+----+
+.fi
 .PP
 An array parsing specification to produce a dataset like this (assuming the integers are 1 byte wide):
 .PP
 .Dl be1#my_int,be1@9#my_integers,str,be1#same_tag,be1#same_tag,blob4@2#split_blob,sep1
-.fi
 .PP
 Refer to the
 .B ARRAY DEFINITION

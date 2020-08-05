@@ -600,13 +600,16 @@ On the network, all multibyte fields are in Big Endian format.
 ## ARRAY DEFINITION
 Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
 
-A definition is a comma separated list of different types. Some types need to have a specified length, and other types
-figure out the length automatically. RRR will always make sure that it is possible to determine the length
-of each record, this is necessary to be able to separate the records from each other upon receival. If you are unsure about
-whether a definition is valid, just try to use it and RRR will give you an error message if it isn't.
+An RRR array consist of multiple positions where each position has one or more value of a certain type and length,
+possible tagged with a name.
 
-Sequential fixed length values of the same type may be grouped together in a single item, and each item may be tagged to
-ease the extraction of data in later processing.
+A definition is a comma separated list describing the different positions. Some types need to have a specified length, and other types
+figure out the length automatically. RRR will always make sure that it is possible to determine the length
+of each record, this is necessary to be able to separate the records from each other upon receival. In a single position,
+all sizes must be equal.
+
+If you are unsure about
+whether a definition is valid, just try to use it and RRR will give you an error message if it isn't.
 
 Below is the specification of an array definition, followed by more detailed explanations.
 
@@ -616,6 +619,38 @@ Below is the specification of an array definition, followed by more detailed exp
 - `length` - Length in bytes of the type (if required)
 - `count` - Item count of the specific type, defaults to 1 if not specified
 - `tag` - Optional custom identifier tag of the type
+
+## EXAMPLE
+
+Let's say we have incoming messages on an UDP port and wish to parse it. We use the IP module to
+receive the messages.
+
+- The message begins with 10 integeres af 1 bytes each, whereof the last nine are to be grouped together
+- After this, there is a quoted string of arbitary which we have to parse, but which we mostly ignore later
+- Then, two integeres with one byte each follows
+- At the end there is an 8 byte arbitary value which is to be split into two parts followed by a carraige return which we do not use
+
+	+--------+-----------------+---------------------------+----------+----------+-------------+----+
+	| my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
+	|   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
+	+--------+-----------------+---------------------------+----------+----------+-------------+----+
+
+We give the different values names (tags) so that we can address them afterwards in other module.
+
+The array configuration for the IP module will look like this:
+
+	ip_input_types=be1#my_int,be1@9#my_integers,str,be1#same_tag,be1#same_tag,blob4@2#split_blob,sep1
+
+The internal RRR array will always preserve the location of the different elements. The tags are not in a
+hash table, the array is always stored as it was first parsed.
+
+If the same message is to be converted back to raw data and sent over the network, let's say from the 
+IP module, the data will be written out excatly as it was received, including the quotes on the string.
+
+It is also possible to for instance put such raw data into MQTT messages.
+
+The Perl5 and Python3 modules have functionality for array manipulation if messages need to be modified
+or processed in some way inside of RRR.
 
 ### FIXED LENGTH TYPES
 These types require the `length` field to be specified.
