@@ -1378,6 +1378,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 					0,
 					delivery_entry_count
 			);
+
 			tick = 0;
 			data->read_error_count = 0;
 			data->messages_count_read = 0;
