@@ -330,9 +330,13 @@ int rrr_mqtt_client_connect (
 			goto out;
 		}
 	}
+	else {
+		// Always set clean start if there is no client ID
+		connect->connect_flags |= 1<<1;
+	}
 
-	connect->keep_alive = keep_alive;
 	connect->connect_flags |= (clean_start != 0)<<1;
+	connect->keep_alive = keep_alive;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
 
