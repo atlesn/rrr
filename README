@@ -37,7 +37,7 @@ To send data to RRR, the data should be in some form of predictable binary or te
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
 
-Messsage processing in RRR is designed to work with as little state as possible. By default, messages are passed through
+Message processing in RRR is designed to work with as little state as possible. By default, messages are passed through
 without the need for any complex data structures in memory or persistently open TCP connections.
 This design enhances stability, but also requires that larger applications using RRR have the same mentality. For network connections
 which require some state, like MQTT, RRR will transparently make sure that a connection is available at all times, relieving
@@ -132,6 +132,9 @@ Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If y
 MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
 on the Ubuntu branch (`git checkout ubuntu`).
 
+Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
+built from the `debian-testing` branch.
+
 ### COMPILE
 
 Compiling the source requires some basic knowledge on how to build a program using Autotools. Usually,
@@ -215,13 +218,45 @@ To view log output instead of statistics, run `rrr_stats -j`.
 
 Note that if you produce a lot of debug output, having `rrr_stats` running can cause crashes. By default, RRR only prints out errors and warnings.
 
+## SECURITY
+
+If you use RRR for networking tasks, please note that there are no authentication or any kind of security
+on many network functions. Although some modules have rate limiting causing them to drop incoming data if
+they are overloaded, this is merely to avoid filling up memory with buffered messages.
+
+If RRR is configured to read raw data from other hosts, this should happend on *closed networks* protected
+by a firewall. A firewall should run on a separate machine to prevent accidental openings, do not rely
+on software firewall rules on the machine running RRR.
+
+The MQTT modules support both TLS and authentication. It is recommended, if security is needed, to use a
+custom CA-certificate to validate certificates when receiving and making connections. The brokers
+and clients must then use certificates signed with this CA-certificate to identify themselves. It is not safe
+to rely on external CA-authorities, these are only safe when connecting to remote hosts using DNS. Anyone may
+obtain such certificates.
+
+In the configuration, specify a *ca_path* or *ca_file* to prevent the TLS library to look in standard system
+directories for public CA-certificates. Even better: If the public certificates are not used for anything else,
+delete them.
+
+Make sure that *plain* listening mode is disabled for modules if you wish to require TLS, and also double check
+afterwards that RRR does not listen to unsafe ports.
+
+Note that RRR does not check for revoked certificates. If some certificate has been leaked and is compromised,
+the CA-certificate used to signed this and all other certificates must be removed from all hosts and replaced. RRR
+does not validate hostnames in certificates.
+
+The HTTP modules can also use TLS in this setup for authentication, but there are no usernames or passwords. The
+*ipclient* module, providing assured delivery over UDP, has no TLS. This also goes for the raw networking *ip* module.  
+
+With the default RRR configuration file (dummy configuration), no networking is started. 
+
 ## MODULES
 
 Here's a short list of modules to start with, more are listed in the `rrr.conf` man page.
 
 ### ip (read and send data records using UDP and TCP)
 This module handles inbound and outbound IP traffic. It can parse incoming data and organize it into RRR arrays,
-and also send data to external hosts based on address information it the messages it receives from other modules.
+and also send data to external hosts based on address information in the messages it receives from other modules.
 
 The IP module is the binding link between RRR and external devices using IP networking. The module will handle
 both TCP and UDP simultaneously. If using TCP, one connection is by default created for every outbound message. This
@@ -233,11 +268,11 @@ being detected.
 
 Serial to ethernet converters often split up messages into many datagrams by default, make sure they are configured
 correctly and check that there is only one message per datagram with a network analyzer like `Wireshark`. If fragmentation
-is is a problem or the messages are too big to fit in single datagrams, use TCP instead.
+is a problem or the messages are too big to fit in single datagrams, use TCP instead.
 
 #### Usage example with barcode reader and ACK messages
 A simple setup using the IP module can be to process barcodes from a scanner and send ACK back. The IP information
-in an RRR message (where it came from) is always preserved internally RRR. This makes it possible to simply return a message to
+in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return a message to
 the IP module if we wish to send a reply.
 
 1. Scanner sends a barcode to RRR using UDP (for instance STX 'BLABLA128' ETX)
@@ -319,7 +354,7 @@ a look at `man rrr.conf`.
 ### mqttclient (run an MQTT client)
 Starts an MQTT client which can connect to any MQTT server. Messages can be read from other modules and published
 to a MQTT broker, and it is possible to subscribe to topics to receive messages other modules can receive. Two RRR MQTT
-clients can exchange RRR messages through any MQTT broker, and an arbitary number of clients can run in each RRR program.
+clients can exchange RRR messages through any MQTT broker, and an arbitrary number of clients can run in each RRR program.
 
 Below follows an example configuration which uses RRR to receive data records from an external MQTT client and save it to
 an InfluxDB database:
@@ -350,7 +385,7 @@ an InfluxDB database:
 	influxdb_tags=hostname
 	influxdb_fields=uptime,loadavg->load
 
-Use your faviourite MQTT client to publish a message with a data record to the RRR broker
+Use your favorite MQTT client to publish a message with a data record to the RRR broker
 which the RRR MQTT client then receives and parses. Refer to the `ARRAY DEFINITION` section
 below on how to specifiy different data types.
 
@@ -365,7 +400,7 @@ The `ipclient` module keeps track of all messages and makes sure that they are d
 
 The module may function both as a server which accepts connections and a client (also simultaneously).
 
-An RRR native protocol is used to transfer messages which means that and RRR program only can communicate with other RRR
+An RRR native protocol is used to transfer messages which means that an RRR program only can communicate with other RRR
 programs using this module.
 
 ### mysql (store messages to database)
@@ -376,11 +411,11 @@ Reads messages from other modules and stores them in a an InfluxDB database.
 
 ### socket (read data records from a UNIX socket)
 The socket module listens on a socket and parses data records it receives before forwarding them
-as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`. This
+as RRR messages to other modules. It expects to receive records with data types defined in an `array definition`. This
 is useful when it's practical to pass over data to RRR locally using scripts.
 
-A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in it's
-arguments, and an RRR array message for every record is created and sent in to RRR over the socket.
+A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in its
+arguments, and an RRR array message for every record is created and sent into RRR over the socket.
 
 Below follows an example configuration where a data record is created locally and then sent to RRR using `rrr_post`
 to be saved in an InfluxDB database.
@@ -413,7 +448,7 @@ Use `rrr_post` to parse the input data record, which in this case is provided on
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
 objects which resemble RRR internals are provided.
 
-A custom python program might look like this, checkout `man rrr.conf` on how to make it run.
+A custom python program might look like this, check out `man rrr.conf` on how to make it run.
 
        from rrr_helper import *
        import time
@@ -469,12 +504,12 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
 ### perl5 (generate and/or modify messages by a custom perl script)
-The perl5 module makes it possible to process and generate messages in a custom 
-written perl script. The first and only argument to the source- and generate-functions
+The perl5 module makes it possible to process and generate messages in a custom-written
+perl script. The first and only argument to the source- and generate-functions
 is always a message. Modifications to the message in the script will be done to the
 original message, hence there is no need to return the message.
 
-A message can however be duplicated one or more times by calling it's send()-method.
+A message can however be duplicated one or more times by calling its send()-method.
 
 Below follows an example perl script.
 
@@ -526,7 +561,7 @@ Below follows an example perl script.
 
 		print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
-		# This can be used to duplicate a message, no need if we are not duplicating
+		# This can be used to duplicate a message. Not needed if we are not duplicating
 		# $message->send();
 
 		# Return 1 for success and 0 for error
@@ -535,9 +570,9 @@ Below follows an example perl script.
 
 ### cmodule (generate and/or modify messages by a custom C module)
 A C-module has `config`, `source` and `process` functions just like Perl and Python scripts, and the excact same internal
-RRR framework handles this semantics.
+RRR framework handles these semantics.
 
-Custom C-modules is usually compiled inside the RRR source tree. Read `/src/cmodules/README` for information on how to do this, usually
+Custom C-modules are usually compiled inside the RRR source tree. Read `/src/cmodules/README` for information on how to do this, usually
 only a single C-file is needed to create a module.
 
 ### raw (drain output from other modules)
@@ -560,26 +595,26 @@ information and/or value it stores.
   * `Source-address`
     IP-address of a sender for messages which originated remotely.
 
-On the network, all multibyte fiels are in Big Endian format.
+On the network, all multibyte fields are in Big Endian format.
 
 ## ARRAY DEFINITION
 Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
 
 A definition is a comma separated list of different types. Some types need to have a specified length, and other types
-figure out the length automatically. RRR will always make sure that it is possible to determin the length
+figure out the length automatically. RRR will always make sure that it is possible to determine the length
 of each record, this is necessary to be able to separate the records from each other upon receival. If you are unsure about
 whether a definition is valid, just try to use it and RRR will give you an error message if it isn't.
 
-Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
+Sequential fixed length values of the same type may be grouped together in a single item, and each item may be tagged to
 ease the extraction of data in later processing.
 
-The specification of an array definition is like this, and below follows more detailed explanations.
+Below is the specification of an array definition, followed by more detailed explanations.
 
 	type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 	
 - `type` - Identifier name of the type
 - `length` - Length in bytes of the type (if required)
-- `count` - Item count of the sepcific type, defaults to 1 if not specified
+- `count` - Item count of the specific type, defaults to 1 if not specified
 - `tag` - Optional custom identifier tag of the type
 
 ### FIXED LENGTH TYPES
@@ -587,40 +622,40 @@ These types require the `length` field to be specified.
 
 - `be` - Unsigned number in big endian binary format. Length must be in the range 1-8.
 - `le` - Unsigned number in little endian binary format. Length must be in the range 1-8.
-- `h` - Unsigned number in the endianess of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
-- `blob` - Arbitary binary data. Lengt must be in the range 1-1024.
-- `sep` - One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR and TAB. Length
-must be in the range 1-64.
-- `stx` - One or more STX or SOH characters.  Length must be in the range 1-64.
+- `h` - Unsigned number in the endianness of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
+- `blob` - Arbitrary binary data. Length must be in the range 1-1024.
+- `sep` - One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR and TAB.
+Length must be in the range 1-64.
+- `stx` - One or more STX or SOH characters. Length must be in the range 1-64.
 
 Types `be`, `le` and `h` may be followed by an `s` after the length specifier to indicate that the input number is signed. If instead
-`u` or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
+`u` or nothing is set here, the value is treated as unsigned. No other types may have the sign flag set.
 
 ### WEAK DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have length set. They
+The lengths of these types are identified automatically and must not be set. They
 cannot be at the end of a definition, nor follow after each other.
 
 - `ustr` - An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
 - `istr` - A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
 - `fixp` - The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
-and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and
+and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits are the integer and
 24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10.
 
 ### STRONG DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have a length set. They may be at the end of a defintion.
+The lengths of these types are identified automatically and must not be set. They may be at the end of a definition.
 
-- `msg` - A full RRR message complete with headers and checksums. A message has it's length inside the message header.
-- `str` - An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
-surrounding quotes are not included in the final string.
-- `nsep` - Match any numbers of bytes untill a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be
-included  in  the  result, a sep should follow afterwards to take care of it.
+- `msg` - A full RRR message complete with headers and checksums. A message has its length inside the message header.
+- `str` - An arbitrary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \.
+The surrounding quotes are not included in the final string.
+- `nsep` - Match any numbers of bytes until a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be
+included in the result, a sep should follow afterwards to take care of it.
 
 ### NOTES
 
-* A space is not considered a separator, as spaces is often exist inside different messages.
-* The `nsep` type is not a complete negation of the `sep` type, the latter matches many more characters. The reason behind this is that messages with arbitary text and an end delimeter
-then can be matched using the simple definition `nsep,sep1`. The `nsep` will match letters, punctuations, spaces etc., and the `sep1` will match for instance
-a newline or ETX byte.
+* A space is not considered a separator, as spaces often exist inside different messages.
+* The `nsep` type is not a complete negation of the `sep` type, the latter matches many more characters. The reason behind this is that messages with
+arbitrary text and an end delimeter then can be matched using the simple definition `nsep,sep1`. The `nsep` will match letters, punctuations, spaces etc.,
+and the `sep1` will match for instance a newline or ETX byte.
 
 ## CONTACT
 

@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 
+// Uncomment for debug purposes
+//#define RRR_LOG_DISABLE_PRINT
+
 #define RRR_LOG_HOOK_MAX 5
 
 static volatile int rrr_log_is_initialized = 0;
@@ -292,10 +295,12 @@ void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const c
 
 	// Don't call the hooks here due to potential lock problems
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	printf(RRR_LOG_HEADER_FORMAT,
 			RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
 			prefix
 	);
+#endif
 
 	vprintf(__format, args);
 
@@ -308,7 +313,9 @@ void rrr_log_printf_plain (const char *__restrict __format, ...) {
 
 	LOCK_BEGIN;
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	vprintf(__format, args);
+#endif
 
 	LOCK_END;
 
@@ -318,7 +325,10 @@ void rrr_log_printf_plain (const char *__restrict __format, ...) {
 void rrr_log_printn_plain (const char *value, size_t value_size) {
 	LOCK_BEGIN;
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	printf("%.*s", (int) value_size, value);
+#endif
+
 
 	LOCK_END;
 }
@@ -334,11 +344,13 @@ void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__
 
 	LOCK_BEGIN;
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	printf(RRR_LOG_HEADER_FORMAT,
 			loglevel_translated,
 			prefix
 	);
 	vprintf(__format, args);
+#endif
 
 	LOCK_END;
 
@@ -366,8 +378,10 @@ void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, c
 
 	LOCK_BEGIN;
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	fprintf(file, RRR_LOG_HEADER_FORMAT, loglevel_translated, prefix);
 	vfprintf(file, __format, args);
+#endif
 
 	LOCK_END;
 

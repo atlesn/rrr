@@ -5,6 +5,10 @@ package main;
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use rrr::rrr_helper::rrr_debug;
+
+my $debug = { };
+bless $debug, rrr::rrr_helper::rrr_debug;
 
 my $global_settings = undef;
 

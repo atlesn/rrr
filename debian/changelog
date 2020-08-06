@@ -1,3 +1,16 @@
+rrr (1.7-4) buster; urgency=medium
+
+  * Fix concurrent access due to missing locks in stats engine
+    causing crashes.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 00:15:03 +0200
+
+rrr (1.7-3) buster; urgency=medium
+
+  * Restart RRR service in post-installation script
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 31 Jul 2020 00:05:51 +0200
+
 rrr (1.7-2) buster; urgency=medium
 
   * Change default prefix of journal message topic by removing

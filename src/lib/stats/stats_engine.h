@@ -28,10 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../linked_list.h"
 #include "../socket/rrr_socket_client.h"
+#include "stats_message.h"
 
 #define RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS 1000
-
-struct rrr_stats_message;
 
 struct rrr_stats_named_message_list {
 	RRR_LL_NODE(struct rrr_stats_named_message_list);
@@ -59,6 +58,7 @@ struct rrr_stats_engine {
 	uint64_t next_send_time;
 	struct rrr_stats_log_journal log_journal;
 	const struct rrr_stats_message *log_journal_last_sent_message;
+	struct rrr_stats_message log_clipped_message; // Protected by log_journal lock
 };
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats);
