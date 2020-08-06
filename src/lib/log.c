@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 
-// Uncomment for debug purposes
+// Uncomment for debug purposes, logs are only delivered to hooks
 //#define RRR_LOG_DISABLE_PRINT
 
 #define RRR_LOG_HOOK_MAX 5

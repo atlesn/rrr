@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "string_builder.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
 
 void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
 	ssize_t length = strlen(str);

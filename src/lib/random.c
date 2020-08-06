@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "random.h"
-#include "rrr_time.h"
+#include "util/rrr_time.h"
 
 static volatile int rrr_rand_initialized = 0;
 static pthread_mutex_t rrr_rand_lock = PTHREAD_MUTEX_INITIALIZER;

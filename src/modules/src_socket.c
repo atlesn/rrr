@@ -31,19 +31,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/settings.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
-#include "../lib/messages.h"
-#include "../lib/socket/rrr_socket.h"
-#include "../lib/socket/rrr_socket_client.h"
 #include "../lib/read.h"
 #include "../lib/array.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/utf8.h"
 #include "../lib/message_broker.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/socket/rrr_socket.h"
+#include "../lib/socket/rrr_socket_client.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/utf8.h"
+#include "../lib/util/rrr_time.h"
 
 struct socket_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -161,15 +161,15 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 struct read_data_receive_message_callback_data {
 	struct socket_data *data;
-	struct rrr_ip_buffer_entry *entry;
+	struct rrr_msg_msg_holder *entry;
 };
 
-int read_rrr_message_callback (struct rrr_message **message, void *arg) {
+int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *arg) {
 	struct read_data_receive_message_callback_data *callback_data = arg;
 	struct socket_data *data = callback_data->data;
 
 	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
-		if (rrr_message_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
+		if (rrr_msg_msg_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
 			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
@@ -191,7 +191,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
 	ssize_t parsed_bytes;
 	if ((ret = rrr_array_new_message_from_buffer (
@@ -217,7 +217,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 	return ret;
 }
 
-int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct socket_data *data = arg;
 
 	int ret = 0;
@@ -229,14 +229,14 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 
 	if (data->receive_rrr_message != 0) {
 		struct rrr_read_common_receive_message_callback_data read_callback_data = {
-				read_rrr_message_callback,
+				read_rrr_msg_msg_callback,
 				NULL,
 				NULL,
 				&socket_callback_data
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
-				sizeof(struct rrr_socket_msg),
+				sizeof(struct rrr_msg),
 				4096,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
@@ -256,7 +256,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
-				sizeof(struct rrr_socket_msg),
+				sizeof(struct rrr_msg),
 				4096,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
@@ -269,7 +269,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		}
 	}
 
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	if (message == NULL) {
 		ret = RRR_MESSAGE_BROKER_DROP;
@@ -283,7 +283,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 

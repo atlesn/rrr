@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "socket/rrr_socket_msg.h"
-#include "utf8.h"
+#include "messages/msg.h"
+#include "util/utf8.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
@@ -55,7 +55,7 @@ struct rrr_setting {
 };
 
 struct rrr_setting_packed {
-	RRR_SOCKET_MSG_HEAD;
+	RRR_MSG_HEAD;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
 	rrr_u32 type;
 	rrr_u32 was_used;
@@ -80,7 +80,7 @@ struct rrr_settings_list {
 	unsigned int length;
 };
 
-struct rrr_socket_msg *rrr_setting_safe_cast (
+struct rrr_msg *rrr_setting_safe_cast (
 		struct rrr_setting_packed *setting
 );
 void rrr_settings_list_destroy (

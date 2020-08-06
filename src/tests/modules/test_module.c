@@ -28,9 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../test.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
-#include "../../lib/messages.h"
+#include "../../lib/messages/msg_msg.h"
 #include "../../lib/instance_config.h"
-#include "../../lib/macro_utils.h"
+#include "../../lib/util/macro_utils.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;

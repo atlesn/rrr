@@ -24,14 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "../message_addr.h"
+#include "../messages/msg_addr.h"
 #include "cmodule_defines.h"
 
 struct rrr_instance_thread_data;
 struct rrr_stats_instance;
 struct rrr_poll_collection;
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_cmodule;
 
 void rrr_cmodule_helper_loop (

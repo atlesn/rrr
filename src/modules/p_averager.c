@@ -30,22 +30,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/messages.h"
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_util.h"
-#include "../lib/ip_buffer_entry_collection.h"
-#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_util.h"
+#include "../lib/message_holder/message_holder_collection.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_broker.h"
 
 struct averager_data {
 	struct rrr_instance_thread_data *thread_data;
-	struct rrr_ip_buffer_entry_collection input_list;
-	struct rrr_ip_buffer_entry_collection output_list;
+	struct rrr_msg_msg_holder_collection input_list;
+	struct rrr_msg_msg_holder_collection output_list;
 
 	// Set this to 1 when others may read from our buffer
 	int preserve_point_measurements;
@@ -67,31 +66,31 @@ struct averager_data {
 
 // Messages when polling from sender comes in here
 int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	struct rrr_instance_thread_data *thread_data = arg;
 	struct averager_data *averager_data = thread_data->private_data;
 
 	int ret = 0;
 
-	struct rrr_ip_buffer_entry *dup_entry = NULL;
-	struct rrr_message *dup_message = NULL;
+	struct rrr_msg_msg_holder *dup_entry = NULL;
+	struct rrr_msg_msg *dup_message = NULL;
 
 	if (MSG_IS_MSG(message) && MSG_IS_ARRAY(message)) {
-		rrr_ip_buffer_entry_incref_while_locked(entry);
+		rrr_msg_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->input_list, entry);
 
 		if (averager_data->preserve_point_measurements == 1) {
 			dup_entry = NULL;
 
-			if (rrr_ip_buffer_entry_util_clone_no_locking(&dup_entry, entry) != 0) {
+			if (rrr_msg_msg_holder_util_clone_no_locking(&dup_entry, entry) != 0) {
 				RRR_MSG_0("Could not duplicate message in poll_callback of averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
 			}
 
-			rrr_ip_buffer_entry_lock(dup_entry);
+			rrr_msg_msg_holder_lock(dup_entry);
 
 			dup_message = dup_entry->message;
 			dup_entry->message = NULL;
@@ -99,7 +98,7 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 			if (averager_data->msg_topic != NULL) {
 				// This will re-allocate the message
-				if (rrr_message_topic_set(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
+				if (rrr_msg_msg_topic_set(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
 					RRR_MSG_0("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
@@ -109,9 +108,9 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			dup_message = NULL;
 
 			// Due to linked list
-			rrr_ip_buffer_entry_incref_while_locked(dup_entry);
+			rrr_msg_msg_holder_incref_while_locked(dup_entry);
 
-			rrr_ip_buffer_entry_unlock(dup_entry);
+			rrr_msg_msg_holder_unlock(dup_entry);
 
 			RRR_LL_APPEND(&averager_data->output_list, dup_entry);
 		}
@@ -123,16 +122,16 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	else {
 		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", writing to output buffer\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
-		rrr_ip_buffer_entry_incref_while_locked(entry);
+		rrr_msg_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->output_list, entry);
 	}
 
 	out:
 		if (dup_entry != NULL) {
-			rrr_ip_buffer_entry_decref(dup_entry);
+			rrr_msg_msg_holder_decref(dup_entry);
 		}
 		RRR_FREE_IF_NOT_NULL(dup_message);
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_msg_msg_holder_unlock(entry);
 		return ret;
 }
 
@@ -141,16 +140,16 @@ void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t min_time = time_now - timespan_useconds;
 
-	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock(node);
-		struct rrr_message *message = node->message;
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_msg_holder);
+		rrr_msg_msg_holder_lock(node);
+		struct rrr_msg_msg *message = node->message;
 		if (message->timestamp < min_time) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else {
-			rrr_ip_buffer_entry_unlock(node);
+			rrr_msg_msg_holder_unlock(node);
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
 }
 
 struct averager_calculation {
@@ -195,9 +194,9 @@ static int __averager_get_64_from_array (uint64_t *result, struct averager_data 
 int averager_process_message (
 		struct averager_data *averager_data,
 		struct averager_calculation *calculation,
-		struct rrr_ip_buffer_entry *entry_locked
+		struct rrr_msg_msg_holder *entry_locked
 ) {
-	struct rrr_message *message = entry_locked->message;
+	struct rrr_msg_msg *message = entry_locked->message;
 	struct rrr_array array_tmp = {0};
 
 	int ret = 0;
@@ -264,12 +263,12 @@ struct averager_spawn_message_callback_data {
 	struct averager_data *data;
 };
 
-int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void *arg) {
+int averager_spawn_message_callback (struct rrr_msg_msg_holder *new_entry, void *arg) {
 	struct averager_spawn_message_callback_data *callback_data = arg;
 
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
 	if (rrr_array_new_message_from_collection (
 			&message,
@@ -289,7 +288,7 @@ int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(new_entry);
+	rrr_msg_msg_holder_unlock(new_entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -302,7 +301,7 @@ int averager_spawn_message (
 	uint64_t max,
 	uint64_t min
 ) {
-//	struct rrr_message *message = NULL;
+//	struct rrr_msg_msg *message = NULL;
 
 	struct rrr_array array_tmp = {0};
 
@@ -363,14 +362,14 @@ int averager_calculate_average(struct averager_data *data) {
 
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock(node);
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_msg_holder);
+		rrr_msg_msg_holder_lock(node);
 		if ((ret = averager_process_message(data, &calculation, node)) != 0) {
-			rrr_ip_buffer_entry_unlock(node);
+			rrr_msg_msg_holder_unlock(node);
 			RRR_LL_ITERATE_LAST();
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
 
 	if (ret != 0) {
 		goto out;
@@ -410,8 +409,8 @@ void averager_data_cleanup(void *arg) {
 	struct averager_data *data = (struct averager_data *) arg;
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
-	rrr_ip_buffer_entry_collection_clear (&data->input_list);
-	rrr_ip_buffer_entry_collection_clear (&data->output_list);
+	rrr_msg_msg_holder_collection_clear (&data->input_list);
+	rrr_msg_msg_holder_collection_clear (&data->output_list);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 

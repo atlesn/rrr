@@ -35,18 +35,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_parse.h"
 #include "mqtt_assemble.h"
 
-#include "../ip.h"
-#include "../ip_accept_data.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
 #include "../buffer.h"
-#include "../rrr_time.h"
 #include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
 
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_OK;
 
-	if (no_repeat == 0 || connection->last_event != event) {
+	if (connection->event_handler != NULL && (no_repeat == 0 || connection->last_event != event)) {
 		ret = connection->event_handler (
 				connection,
 				event,
@@ -113,7 +113,7 @@ int rrr_mqtt_conn_update_state (
 		RRR_MQTT_CONN_STATE_SET (connection,
 				RRR_MQTT_P_GET_REASON_V5(packet) == RRR_MQTT_P_5_REASON_OK
 					? RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED | RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED
-					: RRR_MQTT_CONN_STATE_DISCONNECT_WAIT
+					: RRR_MQTT_CONN_STATE_CLOSE_WAIT
 		);
 	}
 	else if (packet_type == RRR_MQTT_P_TYPE_DISCONNECT) {
@@ -126,7 +126,8 @@ int rrr_mqtt_conn_update_state (
 			RRR_MSG_0("Received DISCONNECT while not allowed\n");
 			return RRR_MQTT_SOFT_ERROR;
 		}
-		RRR_MQTT_CONN_STATE_SET (connection, RRR_MQTT_CONN_STATE_DISCONNECT_WAIT);
+
+		RRR_MQTT_CONN_STATE_SET (connection, RRR_MQTT_CONN_STATE_CLOSE_WAIT);
 	}
 	else {
 		RRR_BUG("Unknown control packet %u in rrr_mqtt_connection_update_state_iterator_ctx\n", packet_type);
@@ -189,9 +190,9 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 
 	out_nolock:
 	// Force state transition even when sending disconnect packet fails
-	if (!RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
-		RRR_DBG_1 ("Sending disconnect packet failed, force state transition to DISCONNECT WAIT\n");
-		connection->state_flags = RRR_MQTT_CONN_STATE_DISCONNECT_WAIT;
+	if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
+		RRR_DBG_1 ("Sending disconnect packet failed, force state transition to CLOSE_WAIT\n");
+		connection->state_flags = RRR_MQTT_CONN_STATE_CLOSE_WAIT;
 	}
 	return ret;
 }
@@ -200,6 +201,10 @@ static void __rrr_mqtt_connection_close (
 		struct rrr_mqtt_conn *connection
 ) {
 	RRR_MQTT_CONN_STATE_SET(connection, RRR_MQTT_CONN_STATE_CLOSED);
+}
+
+static void __rrr_mqtt_connection_will_properties_destroy (struct rrr_mqtt_conn_will_properties *will_properties) {
+	rrr_mqtt_property_collection_clear(&will_properties->user_properties);
 }
 
 static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
@@ -221,6 +226,9 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	RRR_FREE_IF_NOT_NULL(connection->client_id);
 	RRR_FREE_IF_NOT_NULL(connection->username);
+
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(connection->will_publish);
+	__rrr_mqtt_connection_will_properties_destroy(&connection->will_properties);
 
 	free(connection);
 }
@@ -292,6 +300,30 @@ static int __rrr_mqtt_conn_new (
 		return ret;
 }
 
+static int __rrr_mqtt_connection_disconnect_call_event_handler_if_needed (
+		struct rrr_mqtt_conn *connection
+) {
+	int ret = 0;
+
+	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
+	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_SOFT_ERROR)) != RRR_MQTT_OK) {
+		RRR_MSG_0("Error from event handler in __rrr_mqtt_connection_disconnect_call_event_handler_if_needed, return was %i. ", ret);
+		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
+			RRR_MSG_0("Error was critical.\n");
+			goto out;
+		}
+		RRR_MSG_0("Error was non-critical, proceeding with destroy.\n");
+		ret = RRR_MQTT_OK;
+	}
+
+	// Prevents further event handler calls
+	connection->event_handler = NULL;
+	connection->event_handler_static_arg = NULL;
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_connection_in_iterator_disconnect (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -300,31 +332,57 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 
 	int ret = RRR_MQTT_OK;
 
-	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED(connection)) {
-		RRR_BUG("Connection %p state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n",
-				connection);
+//	printf("in iteratore disconnect state: %u\n", connection->state_flags);
+
+	// The session system must be informed (through broker/client event handlers) before close_wait expires
+	// in case the client re-connects before close_wait has finished. This prevents the new connection
+	// from experiencing the session being destroyed shortly after connecting.
+	if ((ret = __rrr_mqtt_connection_disconnect_call_event_handler_if_needed(connection)) != 0) {
+		goto out;
 	}
 
-	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
-	if (!RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
-		ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
-		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-			RRR_MSG_0("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
-			goto out;
+	// Check if we should send disconnect packet. When the disconnect packet has been sent, state
+	// will transition to CLOSE_WAIT. If a disconnect packet is already received or sent otherwise
+	// by non-error means, state is already CLOSE_WAIT here. For severe errors with V3.1 we do not
+	// send the packet, these errors will set a disconnect reason >= 0x80.
+	if (!RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {
+		if (connection->disconnect_reason_v5_ >= 0x80) {
+			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(connection->disconnect_reason_v5_);
+			RRR_MSG_0("Severe error %u ('%s') for connection with client id '%s', must disconnect now\n",
+					connection->disconnect_reason_v5_,
+					(reason != NULL ? reason->description : "unknown error"),
+					(connection->client_id != NULL ? connection->client_id : "")
+			);
 		}
-		// Ignore soft errors when sending DISCONNECT packet here.
-		ret = 0;
+
+		if ((connection->protocol_version != NULL && connection->protocol_version->id == RRR_MQTT_VERSION_5)
+				|| connection->disconnect_reason_v5_ < 0x80
+		) {
+			ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
+			if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
+				RRR_MSG_0("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
+				goto out;
+			}
+			// Ignore other errors when sending DISCONNECT packet here.
+			ret = 0;
+		}
+		else {
+			// For V3.1, close connection immediately without sending DISCONNECT
+			RRR_DBG_1 ("Force state transition to CLOSE_WAIT\n");
+			connection->state_flags = RRR_MQTT_CONN_STATE_CLOSE_WAIT;
+		}
 	}
 
 	if (connection->close_wait_time_usec > 0) {
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if neeeded)\n",
+			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
 					connection,
 					(connection->client_id != NULL ? connection->client_id : "(empty)"),
 					connection->disconnect_reason_v5_
 			);
+
 			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
 				__rrr_mqtt_connection_close (connection);
 			}
@@ -339,17 +397,6 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		}
 		RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
 				connection, connection->disconnect_reason_v5_);
-	}
-
-	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
-	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_SOFT_ERROR)) != RRR_MQTT_OK) {
-		RRR_MSG_0("Error from event handler in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy, return was %i. ", ret);
-		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-			RRR_MSG_0("Error was critical.\n");
-			goto out;
-		}
-		RRR_MSG_0("Error was non-critical, proceeding with destroy.\n");
-		ret = RRR_MQTT_OK;
 	}
 
 	out:
@@ -377,6 +424,93 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		}
 	}
 
+	return ret;
+}
+
+int rrr_mqtt_conn_set_will_data_from_connect (
+		uint8_t *reason_v5,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_p_publish *publish = NULL;
+
+	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' in MQTT broker\n",
+			connection->client_id,
+			connect->will_topic,
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect)
+	);
+
+	struct rrr_mqtt_common_parse_will_properties_callback_data callback_data = {
+			&connect->will_properties,
+			0,
+			&connection->will_properties
+	};
+
+	if (rrr_mqtt_property_collection_iterate (
+			&connect->will_properties,
+			rrr_mqtt_common_parse_will_properties_callback,
+			&callback_data
+	) != 0) {
+		*reason_v5 = callback_data.reason_v5;
+		if (ret != RRR_MQTT_SOFT_ERROR) {
+			RRR_MSG_0("Hard error while iterating will properties in rrr_mqtt_conn_set_will_data_from_connect\n");
+		}
+		goto out;
+	}
+
+	if (rrr_mqtt_p_new_publish (
+			&publish,
+			connect->will_topic,
+			connect->will_message,
+			connect->will_message_size,
+			connect->protocol_version
+	) != 0) {
+		RRR_MSG_0("Could not allocate publish in rrr_mqtt_conn_set_will_data_from_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	// These fields are present in both CONNECT will properties and PUBLISH properties. They
+	// are copied directly to the new will PUBLISH.
+	uint8_t will_property_list[] = {
+			RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
+			RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL,
+			RRR_MQTT_PROPERTY_CONTENT_TYPE,
+			RRR_MQTT_PROPERTY_RESPONSE_TOPIC,
+			RRR_MQTT_PROPERTY_CORRELATION_DATA,
+			RRR_MQTT_PROPERTY_USER_PROPERTY
+	};
+
+	RRR_MQTT_P_LOCK_IN(publish);
+		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect));
+		RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect));
+
+		publish->will_delay_interval = connection->will_properties.will_delay_interval;
+
+		if (rrr_mqtt_property_collection_add_selected_from_collection (
+				&publish->properties,
+				&connect->will_properties,
+				will_property_list,
+				sizeof(will_property_list)/sizeof(*will_property_list)
+		) != 0) {
+			RRR_MSG_0("Error while copying will properties to publish in rrr_mqtt_conn_set_will_data_from_connect\n");
+			ret = 1;
+			RRR_MQTT_P_LOCK_BREAK();
+		}
+	RRR_MQTT_P_LOCK_OUT(publish);
+
+	if (ret != 0) {
+		goto out;
+	}
+
+	connection->will_publish = publish;
+	publish = NULL;
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 	return ret;
 }
 
@@ -459,7 +593,7 @@ int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 	struct rrr_mqtt_conn_check_alive_callback_data *callback_data = rrr_mqtt_conn_check_alive_callback_data;
 	callback_data->alive = 1;
 
-	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection) ||
+	if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection) ||
 		RRR_MQTT_CONN_STATE_IS_CLOSED(connection) ||
 		connection->session == NULL
 	) {
@@ -528,6 +662,11 @@ struct rrr_mqtt_conn_read_callback_data {
 	void *handler_callback_arg;
 };
 
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, reason) 	\
+		if ((connection)->disconnect_reason_v5_ == 0) {						\
+			(connection)->disconnect_reason_v5_ = reason;					\
+		}
+
 static int __rrr_mqtt_conn_read_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -542,6 +681,9 @@ static int __rrr_mqtt_conn_read_get_target_size (
 
 	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
 		if ((ret & (RRR_MQTT_INTERNAL_ERROR|RRR_MQTT_SOFT_ERROR)) != 0) {
+			if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
+				RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_MALFORMED_PACKET);
+			}
 			ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
 			goto out;
 		}
@@ -576,11 +718,16 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	__rrr_mqtt_connection_update_last_read_time (connection);
 
 	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
-		ret = RRR_READ_SOFT_ERROR;
+		RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_MALFORMED_PACKET);
+		// Parse might return INCOMPLETE which indicates a malformed packet
+		if (ret != RRR_MQTT_INTERNAL_ERROR) {
+			ret = RRR_MQTT_SOFT_ERROR;
+		}
 		goto out;
 	}
 
 	if (!RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
+		// Unclear who's fault it is if this happens
 		RRR_MSG_0("Reading is done for a packet but parsing did not complete. Closing connection.\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -630,6 +777,9 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	}
 
 	out:
+	if (ret == RRR_MQTT_SOFT_ERROR) {
+		RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_PROTOCOL_ERROR);
+	}
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(packet);
 	return ret;
 }
@@ -690,6 +840,11 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	out:
+	if (ret != 0) {
+		if (connection->disconnect_reason_v5_ == 0) {
+			connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;
+		}
+	}
 	return ret;
 }
 

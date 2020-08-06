@@ -27,15 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/buffer.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 
@@ -52,7 +52,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
-	struct rrr_message *reading = entry->message;
+	struct rrr_msg_msg *reading = entry->message;
 
 	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
@@ -60,7 +60,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	if (raw_data->print_data != 0) {
 		// Use high debuglevel to force suppression of messages in journal module
 
-		if (rrr_message_topic_get(&topic_tmp, reading) != 0 ) {
+		if (rrr_msg_msg_topic_get(&topic_tmp, reading) != 0 ) {
 			RRR_MSG_0("Error while getting topic from message in raw_poll_callback\n");
 			ret = 1;
 			goto out;
@@ -90,7 +90,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 

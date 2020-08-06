@@ -30,33 +30,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../buffer.h"
 #include "../modules.h"
-#include "../ip_buffer_entry.h"
-#include "../ip_buffer_entry_struct.h"
-#include "../message_addr.h"
-#include "../message_log.h"
-#include "../messages.h"
+#include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
+#include "../messages/msg_msg.h"
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
-#include "../macro_utils.h"
+#include "../message_holder/message_holder.h"
+#include "../message_holder/message_holder_struct.h"
+#include "../util/macro_utils.h"
 //#include "../ip_util.h"
 
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_thread_data *thread_data;
-	const struct rrr_message *message;
+	const struct rrr_msg_msg *message;
 	int count;
-	struct rrr_message_addr addr_message;
+	struct rrr_msg_addr addr_message;
 };
 
-static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
 
 	int ret = 0;
 
-	struct rrr_message *message_new = rrr_message_duplicate(callback_data->message);
+	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
 		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
@@ -66,7 +66,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 
 	//printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message));
 
-	rrr_ip_buffer_entry_set_unlocked (
+	rrr_msg_msg_holder_set_unlocked (
 			entry,
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
@@ -81,7 +81,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&callback_data->addr_message, '\0', sizeof(callback_data->addr_message));
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -112,8 +112,8 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 		int *sent_total,
 		struct rrr_cmodule *cmodule,
 		pid_t worker_handle_pid,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
+		struct rrr_msg_msg *msg,
+		const struct rrr_msg_addr *msg_addr
 ) {
 	int ret = 0;
 	int pid_was_found = 0;
@@ -165,21 +165,21 @@ static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 		int *count,
 		struct rrr_instance_thread_data *thread_data,
 		pid_t fork_pid,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_msg_msg_holder *entry
 ) {
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
-	struct rrr_message_addr addr_msg;
+	struct rrr_msg_addr addr_msg;
 	int ret = 0;
 
-	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
+	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_message_holder_addr_differ);
 
 	// cmodule send will always free or take care of message memory
 	entry->message = NULL;
 
 //	printf ("perl5_input_callback: message %p\n", message);
 
-	rrr_message_addr_init(&addr_msg);
+	rrr_msg_addr_init(&addr_msg);
 	if (entry->addr_len > 0) {
 		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
 		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, entry->addr_len);
@@ -244,7 +244,7 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -301,8 +301,8 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
-	const struct rrr_message *msg = data;
-	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+	const struct rrr_msg_msg *msg = data;
+	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
 		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %i+%lu != %lu\n",
@@ -313,7 +313,7 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 }
 
 int __rrr_cmodule_helper_from_fork_log_callback (
-		const struct rrr_message_log *msg_log,
+		const struct rrr_msg_log *msg_log,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
@@ -352,29 +352,29 @@ int __rrr_cmodule_helper_read_from_fork_setting_callback (
 }
 
 static int __rrr_cmodule_helper_read_from_fork_control_callback (
-		const struct rrr_socket_msg *msg,
+		const struct rrr_msg *msg,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
-	struct rrr_socket_msg msg_copy = *msg;
+	struct rrr_msg msg_copy = *msg;
 
 	(void)(data_size);
 
-	if (RRR_SOCKET_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
+	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
 		if (callback_data->worker->config_complete != 0) {
 			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
 		}
 		callback_data->worker->config_complete = 1;
-		RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
+		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
 	}
 
 	// CTRL type is returned by FLAGS() macro, clear it to
 	// make sure no unknown flags are set
-	RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_SOCKET_MSG_TYPE_CTRL);
+	RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_TYPE_CTRL);
 
-	if (RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy) != 0) {
+	if (RRR_MSG_CTRL_FLAGS(&msg_copy) != 0) {
 		RRR_BUG("Unknown flags %u in control message from worker fork %s\n",
-				RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
+				RRR_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
 	}
 
 	return 0;
@@ -383,18 +383,18 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_read_from_fork_callback_data *callback_data = arg;
 
-	const struct rrr_socket_msg *msg = data;
+	const struct rrr_msg *msg = data;
 
-	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
+	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
 	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_message_log *) msg, data_size, callback_data);
+	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
+		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(msg)) {
+	else if (RRR_MSG_IS_SETTING(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
 	}
-	else if (RRR_SOCKET_MSG_IS_CTRL(msg)) {
+	else if (RRR_MSG_IS_CTRL(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_control_callback(msg, data_size, callback_data);
 	}
 

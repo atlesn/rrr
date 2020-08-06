@@ -29,9 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_util.h"
 
-#include "../posix.h"
-#include "../gnu.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||

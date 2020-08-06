@@ -31,12 +31,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <signal.h>
 
+#include "util/rrr_time.h"
+#include "util/macro_utils.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
-#include "rrr_time.h"
 #include "rrr_strerror.h"
 #include "log.h"
-#include "macro_utils.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
 //#define VL_THREAD_INCAPACITATE_WATCHDOGS

@@ -29,17 +29,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/message_broker.h"
-#include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
-#include "../lib/macro_utils.h"
+#include "../lib/stats/stats_instance.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/macro_utils.h"
 
 struct dummy_data {
 	int no_generation;
@@ -102,12 +102,12 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int dummy_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct dummy_data *data = arg;
 
 	int ret = 0;
 
-	struct rrr_message *reading = NULL;
+	struct rrr_msg_msg *reading = NULL;
 
 	uint64_t time = rrr_time_get_64();
 
@@ -116,7 +116,7 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
 	}
 
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			&reading,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -136,7 +136,7 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 

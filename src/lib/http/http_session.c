@@ -31,15 +31,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_part.h"
 
-#include "../posix.h"
-#include "../gnu.h"
-#include "../base64.h"
-#include "../linked_list.h"
 #include "../net_transport/net_transport.h"
 #include "../random.h"
 #include "../read.h"
-#include "../rrr_time.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/gnu.h"
+#include "../util/base64.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../util/macro_utils.h"
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);

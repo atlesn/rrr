@@ -29,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/instance_config.h"
 #include "lib/threads.h"
 
+#define RRR_MAIN_DEFAULT_MESSAGE_TTL_S 30
+
 struct rrr_main_check_wait_for_data {
 	struct rrr_instance_metadata_collection *instances;
 };
@@ -178,8 +180,31 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		return EXIT_FAILURE;
 	}
 
+	unsigned int no_watchdog_timers = 0;
+	unsigned int no_thread_restart = 0;
+	unsigned int rfc5424_loglevel_output = 0;
+	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
+
+	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
+	if (message_ttl_s_string != NULL) {
+		if (cmd_convert_uint64_10(message_ttl_s_string, &message_ttl_us) != 0) {
+			RRR_MSG_0(
+					"Could not understand time-to-live argument '%s', use a number\n",
+					message_ttl_s_string);
+			return EXIT_FAILURE;
+		}
+
+		// Make sure things does not get outahand during multiplication. Input from user
+		// is in seconds, convert to microseconds
+		if (message_ttl_us > UINT32_MAX) {
+			RRR_MSG_0("Value of time-to-live was too big, maximum is %lu\n", UINT32_MAX);
+			return EXIT_FAILURE;
+		}
+
+		message_ttl_us *= 1000 * 1000;
+	}
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
@@ -223,10 +248,6 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
 
-	unsigned int no_watchdog_timers = 0;
-	unsigned int no_thread_restart = 0;
-	unsigned int rfc5424_loglevel_output = 0;
-
 	if (cmd_exists(cmd, "no_watchdog_timers", 0)) {
 		no_watchdog_timers = 1;
 	}
@@ -239,12 +260,17 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		rfc5424_loglevel_output = 1;
 	}
 
+	if (cmd_exists(cmd, "loglevel-translation", 0)) {
+		rfc5424_loglevel_output = 1;
+	}
+
 	rrr_config_init (
 			debuglevel,
 			debuglevel_on_exit,
 			no_watchdog_timers,
 			no_thread_restart,
-			rfc5424_loglevel_output
+			rfc5424_loglevel_output,
+			message_ttl_us
 	);
 
 	return 0;

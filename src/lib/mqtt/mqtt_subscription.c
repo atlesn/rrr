@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_topic.h"
 
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 // On new data fields, remember to also update rrr_mqtt_subscription_replace_and_destroy
 int rrr_mqtt_subscription_destroy (
@@ -67,6 +67,8 @@ int rrr_mqtt_subscription_new (
 		ret = 1;
 		goto out;
 	}
+
+	memset(sub, '\0', sizeof(*sub));
 
 	if (topic_filter == NULL || *topic_filter == '\0') {
 		RRR_MSG_0("Zero-length or NULL topic filter while creating subscription, tagging subscription as invalid\n");
@@ -149,12 +151,12 @@ static void __rrr_mqtt_subscription_move_data_and_zero_source (
 	memset(source, '\0', sizeof(*source));
 }
 
-void rrr_mqtt_subscription_replace_and_destroy (
+static void __rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription *target,
-		struct rrr_mqtt_subscription *source
+		struct rrr_mqtt_subscription **source
 ) {
-	if (source->ptr_next != NULL) {
-		RRR_BUG("source->next was not NULL, part of a collection in rrr_mqtt_subscription_replace_and_destroy\n");
+	if ((*source)->ptr_next != NULL) {
+		RRR_BUG("BUG: source->next was not NULL, part of a collection in rrr_mqtt_subscription_replace_and_destroy\n");
 	}
 	/*
 	 * 1. Free the original dynamically allocated data in target
@@ -166,12 +168,13 @@ void rrr_mqtt_subscription_replace_and_destroy (
 	 */
 	RRR_LL_REPLACE_NODE (
 			target,
-			source,
+			*source,
 			struct rrr_mqtt_subscription,
-			__rrr_mqtt_subscription_move_data_and_zero_source(target, source)
+			__rrr_mqtt_subscription_move_data_and_zero_source(target, *source)
 	);
 
-	rrr_mqtt_subscription_destroy(source);
+	rrr_mqtt_subscription_destroy(*source);
+	*source = NULL;
 }
 
 static int __rrr_mqtt_subscription_match_publish (
@@ -191,10 +194,15 @@ static int __rrr_mqtt_subscription_match_publish (
 	return ret;
 }
 
-int rrr_mqtt_subscription_collection_match_publish_callback (
+// Callback is called once per matching subscription
+int rrr_mqtt_subscription_collection_match_publish_with_callback (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
+		int (*match_callback) (
+				const struct rrr_mqtt_p_publish *publish,
+				const struct rrr_mqtt_subscription *subscription,
+				void *callback_arg
+		),
 		void *callback_arg,
 		int *match_count_final
 ) {
@@ -239,11 +247,10 @@ int rrr_mqtt_subscription_collection_match_publish (
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
-			ret = RRR_MQTT_TOKEN_MATCH;
 			RRR_LL_ITERATE_LAST();
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
-			RRR_MSG_0("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			RRR_MSG_0("Error from matcher in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			RRR_LL_ITERATE_LAST();
 		}
@@ -262,12 +269,12 @@ void rrr_mqtt_subscription_collection_dump (
 		const struct rrr_mqtt_subscription_collection *subscriptions
 ) {
 	int i = 0;
-	RRR_MSG_0("=== DUMPING SUBSCRIPTIONS IN SESSION COLLECTION %p ===\n", subscriptions);
+	RRR_MSG_1("=== DUMPING SUBSCRIPTIONS IN COLLECTION %p ===\n", subscriptions);
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		i++;
-		RRR_MSG_0("%i: %s\n", i, node->topic_filter);
+		RRR_MSG_1("%i: %s\n", i, node->topic_filter);
 	RRR_LL_ITERATE_END();
-	RRR_MSG_0("===\n");
+	RRR_MSG_1("===\n");
 }
 
 void rrr_mqtt_subscription_collection_clear (
@@ -385,8 +392,7 @@ int rrr_mqtt_subscription_collection_iterate (
 }
 
 struct push_unique_callback_data {
-	struct rrr_mqtt_subscription *subscription;
-	int did_replace;
+	struct rrr_mqtt_subscription **subscription;
 };
 
 static int __rrr_mqtt_subscription_collection_push_unique_callback (
@@ -397,19 +403,20 @@ static int __rrr_mqtt_subscription_collection_push_unique_callback (
 
 	int ret = RRR_MQTT_SUBSCRIPTION_ITERATE_OK;
 
-	if (strcmp(subscription->topic_filter, callback_data->subscription->topic_filter) == 0) {
-		rrr_mqtt_subscription_replace_and_destroy(subscription, callback_data->subscription);
-
-		callback_data->subscription = subscription;
-		callback_data->did_replace = 1;
-
+	if (strcmp(subscription->topic_filter, (*callback_data->subscription)->topic_filter) == 0) {
+		__rrr_mqtt_subscription_replace_and_destroy(subscription, callback_data->subscription);
 		ret |= RRR_MQTT_SUBSCRIPTION_ITERATE_STOP;
 	}
 
 	return ret;
 }
 
-static int __rrr_mqtt_subscription_collection_add_unique (
+// NOTE : Check for REPLACED return value when calling.
+// NOTE : Should set subscription to NULL and take ownership or
+//        destroy, but might not set NULL if there are errors.
+//        Caller must check for this and free if needed, usually
+//        just always call the destroy function afterwards.
+int rrr_mqtt_subscription_collection_add_unique (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription **subscription,
 		int put_at_end
@@ -418,11 +425,12 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 
 	if (RRR_LL_IS_EMPTY(target)) {
 		RRR_LL_APPEND(target, *subscription);
+		*subscription = NULL;
 		goto out;
 	}
 
 	struct push_unique_callback_data callback_data = {
-			*subscription, 0
+			subscription
 	};
 
 	ret = rrr_mqtt_subscription_collection_iterate (
@@ -437,9 +445,8 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 		goto out;
 	}
 
-	if (callback_data.did_replace == 1) {
+	if (*(callback_data.subscription) == NULL) {
 		ret = RRR_MQTT_SUBSCRIPTION_REPLACED;
-		*subscription = callback_data.subscription;
 	}
 	else {
 		if (put_at_end == 1) {
@@ -448,6 +455,7 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 		else {
 			RRR_LL_UNSHIFT(target, *subscription);
 		}
+		*subscription = NULL;
 	}
 
 	out:
@@ -516,13 +524,6 @@ int rrr_mqtt_subscription_collection_remove_topic (
 	return 0;
 }
 
-int rrr_mqtt_subscription_collection_push_unique (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription **subscription
-) {
-	return __rrr_mqtt_subscription_collection_add_unique (target, subscription, 0);
-}
-
 int rrr_mqtt_subscription_collection_push_unique_str (
 		struct rrr_mqtt_subscription_collection *target,
 		const char *topic,
@@ -553,88 +554,67 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 		}
 	}
 
-	if (__rrr_mqtt_subscription_collection_add_unique (target, &subscription, 0) != 0) {
-		RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
-		ret = 1;
-		goto out;
+	if ((ret = rrr_mqtt_subscription_collection_add_unique (target, &subscription, 0)) != RRR_MQTT_SUBSCRIPTION_OK) {
+		if (ret == RRR_MQTT_SUBSCRIPTION_REPLACED) {
+			ret = RRR_MQTT_SUBSCRIPTION_OK;
+		}
+		else {
+			RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	subscription = NULL;
 
 	out:
+	// Destroy function checks for NULL
 	rrr_mqtt_subscription_destroy(subscription);
-	return ret;
-}
-
-int rrr_mqtt_subscription_collection_append_unique (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription **subscription
-) {
-	return __rrr_mqtt_subscription_collection_add_unique (target, subscription, 1);
-}
-
-int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
-) {
-	int ret = RRR_MQTT_SUBSCRIPTION_OK;
-
-	// NOTE : append_unique will steal all the pointers from the source
-	//        which means the list cannot be used afterwards
-	RRR_LL_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
-		if (include_invalid_entries != 0 || node->qos_or_reason_v5 <= 2) {
-			ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
-
-			if (ret != 0) {
-				RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
-				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-				RRR_LL_ITERATE_BREAK();
-			}
-		}
-		else {
-			rrr_mqtt_subscription_destroy(node);
-		}
-	RRR_LL_ITERATE_END();
-
-	RRR_LL_DANGEROUS_CLEAR_HEAD(source);
-
 	return ret;
 }
 
 int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
 		const struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
+		int include_invalid_entries,
+		int (*new_subscrition_callback)(const struct rrr_mqtt_subscription *subscription, void *arg),
+		void *new_subscrition_callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	struct rrr_mqtt_subscription_collection *new_source = NULL;
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_subscription);
+		if (include_invalid_entries == 0 && node->qos_or_reason_v5 > 2) {
+			RRR_LL_ITERATE_NEXT();
+		}
 
-	if ((ret = rrr_mqtt_subscription_collection_clone(&new_source, source)) != 0) {
-		RRR_MSG_0("Could not clone collection in rrr_mqtt_subscription_collection_copy_from_collection_unique\n");
-		goto out;
-	}
+		struct rrr_mqtt_subscription *subscription_tmp = NULL;
+		if (rrr_mqtt_subscription_clone(&subscription_tmp, node) != 0) {
+			RRR_MSG_0("Failed to clone subscription in rrr_mqtt_subscription_collection_append_unique_copy_from_collection\n");
+			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+			goto out;
+		}
 
-	if ((ret = rrr_mqtt_subscription_collection_append_unique_take_from_collection (
-			target,
-			new_source,
-			include_invalid_entries
-	)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Could not append to collection in rrr_mqtt_subscription_collection_copy_from_collection_unique\n");
-		goto out;
-	}
+		ret = rrr_mqtt_subscription_collection_add_unique(target, &subscription_tmp, 1);
+		rrr_mqtt_subscription_destroy(subscription_tmp); // Destroy function checks for NULL
 
-	if (!RRR_LL_IS_EMPTY(new_source)) {
-		RRR_BUG("new source was not empty in rrr_mqtt_subscription_collection_append_unique_copy_from_collection\n");
-	}
+		if ((ret & RRR_MQTT_SUBSCRIPTION_REPLACED) == 0) {
+			if (new_subscrition_callback != NULL) {
+				ret = new_subscrition_callback(node, new_subscrition_callback_arg);
+			}
+		}
+		else {
+			ret &= ~(RRR_MQTT_SUBSCRIPTION_REPLACED);
+		}
+
+		if (ret != 0) {
+			RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_append_unique_take_from_collection return was %i\n", ret);
+			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
 
 	out:
-	if (new_source != NULL) {
-		rrr_mqtt_subscription_collection_destroy(new_source);
-	}
 	return ret;
-
 }
 
 int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (

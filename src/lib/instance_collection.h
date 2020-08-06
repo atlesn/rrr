@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SENDERS_H
 #define RRR_SENDERS_H
 
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 struct rrr_instance_metadata; /* From instances.h */
 

@@ -1,3 +1,29 @@
+rrr (1.9-0) buster; urgency=medium
+
+  * Removed duplicator module, functionality is now in buffer module
+  * Create array manipulation helper functions in Perl5
+  * Remove old style array handling in Perl5
+  * Add TTL check for messages in buffer module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 05 Aug 2020 12:35:40 +0200
+
+rrr (1.8-1) buster; urgency=medium
+
+  * Fix bug causing multiple configuration parameters not to work
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 17:44:39 +0200
+
+rrr (1.8-0) buster; urgency=medium
+
+  * Support will messages and retain in MQTT broker.
+  * Misc. compliance fixes in MQTT broker.
+  * Misc. fixes in connection handling in MQTT commonn
+  * New configuration parameters in IP module to put timed out messages
+    to output queue
+  * Smaller packaging fixes (Debian)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 14:56:38 +0200
+
 rrr (1.7-4) buster; urgency=medium
 
   * Fix concurrent access due to missing locks in stats engine
@@ -52,6 +78,7 @@ rrr (1.5-4) buster; urgency=medium
   * Misc. smaller fixes 
 
  -- Atle Solbakken <atle@goliathdns.no>  Mon, 20 Jul 2020 19:36:07 +0200
+>>>>>>> 5d27f110f7a11536d567a03541ce293f0c5cf316
 
 rrr (1.5-3) buster; urgency=medium
 

@@ -28,10 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "fixed_point.h"
 #include "socket/rrr_socket.h"
-#include "socket/rrr_socket_msg.h"
-#include "messages.h"
-#include "rrr_endian.h"
-#include "macro_utils.h"
+#include "messages/msg.h"
+#include "messages/msg_msg.h"
+#include "util/rrr_endian.h"
+#include "util/macro_utils.h"
 
 static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -456,19 +456,19 @@ static int __rrr_type_import_stx (RRR_TYPE_IMPORT_ARGS) {
 }
 
 static int __rrr_type_msg_to_host_single (
-		struct rrr_message *msg,
+		struct rrr_msg_msg *msg_msg,
 		rrr_length max_size
 ) {
-	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) msg;
+	struct rrr_msg *msg = (struct rrr_msg *) msg_msg;
 
 	int ret = 0;
 	rrr_length target_size = 0;
 
 	{
 		rrr_length target_size_tmp = 0;
-		if (rrr_socket_msg_get_target_size_and_check_checksum (
+		if (rrr_msg_get_target_size_and_check_checksum (
 				&target_size_tmp,
-				socket_msg,
+				msg,
 				max_size
 		) != 0) {
 			RRR_MSG_0("Invalid header for message in __rrr_type_convert_msg_to_host_single\n");
@@ -485,19 +485,19 @@ static int __rrr_type_msg_to_host_single (
 		goto out;
 	}
 
-	if (rrr_socket_msg_head_to_host_and_verify(socket_msg, target_size) != 0) {
+	if (rrr_msg_head_to_host_and_verify(msg, target_size) != 0) {
 		RRR_MSG_0("Error while verifying message in  __rrr_type_convert_msg_to_host_single\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_socket_msg_check_data_checksum_and_length(socket_msg, target_size) != 0) {
+	if (rrr_msg_check_data_checksum_and_length(msg, target_size) != 0) {
 		RRR_MSG_0("Invalid checksum for message data in __rrr_type_convert_msg_to_host_single\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_message_to_host_and_verify(msg, target_size) != 0) {
+	if (rrr_msg_msg_to_host_and_verify(msg_msg, target_size) != 0) {
 		RRR_MSG_0("Message was invalid in __rrr_type_convert_msg_to_host_single\n");
 		ret = 1;
 		goto out;
@@ -516,12 +516,12 @@ static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 	rrr_length pos = 0;
 	rrr_length count = 0;
 	while (pos < node->total_stored_length) {
-		struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) (node->data + pos);
-		struct rrr_message *msg = (struct rrr_message *) socket_msg;
+		struct rrr_msg *msg = (struct rrr_msg *) (node->data + pos);
+		struct rrr_msg_msg *msg_msg = (struct rrr_msg_msg *) msg;
 
 		rrr_length max_size = node->total_stored_length - pos;
 
-		if (__rrr_type_msg_to_host_single (msg, max_size) != 0) {
+		if (__rrr_type_msg_to_host_single (msg_msg, max_size) != 0) {
 			RRR_MSG_0("Could not convert message in __rrr_type_msg_to_host\n");
 			ret = 1;
 			goto out;
@@ -551,20 +551,20 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 
 	RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(target_size_total);
 
-	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) start;
+	struct rrr_msg *msg = (struct rrr_msg *) start;
 
 	rrr_length count = 0;
 	while (remaining_size > 0) {
-		if ((size_t) remaining_size < (sizeof (struct rrr_message) - 1)) {
+		if ((size_t) remaining_size < (sizeof (struct rrr_msg_msg) - 1)) {
 			ret = RRR_TYPE_PARSE_INCOMPLETE;
 			goto out;
 		}
 
 		rrr_length target_size = 0;
 		{
-			if (rrr_socket_msg_get_target_size_and_check_checksum (
+			if (rrr_msg_get_target_size_and_check_checksum (
 					&target_size,
-					socket_msg,
+					msg,
 					(rrr_length) remaining_size
 			) != 0) {
 				RRR_MSG_0("Invalid header for message in __rrr_type_import_msg\n");
@@ -733,9 +733,9 @@ static int __rrr_type_msg_pack_or_export (
 		void *wpos = target + pos;
 		void *rpos = node->data + pos;
 
-		struct rrr_message *msg_at_source = rpos;
+		struct rrr_msg_msg *msg_at_source = rpos;
 
-		if (MSG_TOTAL_SIZE(msg_at_source) < sizeof(struct rrr_message) - 1) {
+		if (MSG_TOTAL_SIZE(msg_at_source) < sizeof(struct rrr_msg_msg) - 1) {
 			RRR_MSG_0("Message too short in __rrr_type_msg_pack_or_export\n");
 			return 1;
 		}
@@ -746,12 +746,12 @@ static int __rrr_type_msg_pack_or_export (
 		}
 
 		memcpy(wpos, rpos, MSG_TOTAL_SIZE(msg_at_source));
-		struct rrr_message *msg_at_target = wpos;
+		struct rrr_msg_msg *msg_at_target = wpos;
 
 		pos += MSG_TOTAL_SIZE(msg_at_target);
 
-		rrr_message_prepare_for_network(msg_at_target);
-		rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) msg_at_target);
+		rrr_msg_msg_prepare_for_network(msg_at_target);
+		rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_at_target);
 	}
 
 	if (pos != node->total_stored_length) {
@@ -875,16 +875,16 @@ static int __get_import_length_istr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	(void)(node);
 
-	if (buf_size < sizeof(struct rrr_socket_msg)) {
+	if (buf_size < sizeof(struct rrr_msg)) {
 		return RRR_TYPE_PARSE_INCOMPLETE;
 	}
 
 	{
 		rrr_length import_length_tmp = 0;
 
-		int ret = rrr_socket_msg_get_target_size_and_check_checksum (
+		int ret = rrr_msg_get_target_size_and_check_checksum (
 				&import_length_tmp,
-				(struct rrr_socket_msg *) buf,
+				(struct rrr_msg *) buf,
 				buf_size
 		);
 
@@ -937,13 +937,13 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in __rrr_type_import_dec\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_fixpc\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in __rrr_type_import_dec\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_fixp\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in __rrr_type_import_dec\n");
+		RRR_BUG("import length was not 0 in __rrr_type_import_fixp\n");
 	}
 
 	int64_t fixp = 0;
@@ -1163,6 +1163,10 @@ int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
+	if (node->total_stored_length == 0) {
+		RRR_BUG("BUG: Length was 0 in __rrr_type_bin_to_str\n");
+	}
+
 	rrr_length output_size = node->total_stored_length * 2 + 1;
 
 	// Valgrind complains about invalid writes for some reason
@@ -1178,7 +1182,10 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	char *wpos = result;
 	for (int i = 0; i < (int) node->total_stored_length; i++) {
-		sprintf(wpos, "%02x", *(node->data + i));
+		// Must pass in unsigned to sprintf or else extra FFFF might
+		// be printed if value char is negative
+		unsigned char c = (unsigned char) *(node->data + i);
+		sprintf(wpos, "%02x", c);
 		wpos += 2;
 	}
 	result[output_size - 1] = '\0';
@@ -1189,6 +1196,10 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
+	if (node->total_stored_length == 0) {
+		RRR_BUG("BUG: Length was 0 in __rrr_type_str_to_str\n");
+	}
+
 	char *result = malloc(node->total_stored_length + 1);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_str_to_str\n");

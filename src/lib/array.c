@@ -27,15 +27,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "array.h"
-#include "rrr_endian.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
-#include "messages.h"
+#include "messages/msg_msg_struct.h"
+#include "messages/msg_msg.h"
 #include "type.h"
-#include "rrr_time.h"
 #include "map.h"
-#include "gnu.h"
+#include "util/rrr_time.h"
+#include "util/gnu.h"
+#include "util/rrr_endian.h"
 
 static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -397,10 +398,14 @@ int rrr_array_parse_data_from_definition (
 	return ret;
 }
 
-int rrr_array_definition_collection_clone (
+static int __rrr_array_clone (
 		struct rrr_array *target,
-		const struct rrr_array *source
+		const struct rrr_array *source,
+		int clone_data
 ) {
+	if (target->node_count != 0) {
+		RRR_BUG("BUG: Target was not empty in rrr_array_clone\n");
+	}
 	memset(target, '\0', sizeof(*target));
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);
@@ -411,9 +416,20 @@ int rrr_array_definition_collection_clone (
 		}
 		memcpy(template, node, sizeof(*template));
 
-		template->data = NULL;
+		if (clone_data && template->data != NULL) {
+			if ((template->data = malloc(template->total_stored_length)) == NULL) {
+				RRR_MSG_0("Could not allocate memory for data in __rrr_array_clone\n");
+				goto out_err;
+			}
+			memcpy(template->data, node->data, template->total_stored_length);
+		}
+		else {
+			template->data = NULL;
+		}
 
+		template->tag = NULL;
 		if (template->tag_length > 0) {
+			// Do not use strdup, no \0 at the end
 			template->tag = malloc(template->tag_length);
 			if (template->tag == NULL) {
 				RRR_MSG_0("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
@@ -438,37 +454,74 @@ int rrr_array_definition_collection_clone (
 		return 1;
 }
 
+int rrr_array_definition_clone (
+		struct rrr_array *target,
+		const struct rrr_array *source
+) {
+	return __rrr_array_clone(target, source, 0);
+}
+
+int rrr_array_append_from (
+		struct rrr_array *target,
+		const struct rrr_array *source
+) {
+	int ret = 0;
+
+	struct rrr_array tmp = {0};
+
+	if ((ret = __rrr_array_clone(&tmp, source, 1)) != 0) {
+		RRR_MSG_0("Could not clone array in rrr_array_append_from\n");
+		goto out;
+	}
+
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target, &tmp);
+
+	out:
+	rrr_array_clear(&tmp);
+	return ret;
+}
+
 static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
 		uint64_t value,
-		int is_signed
+		const struct rrr_type_definition *definition,
+		int flags
 ) {
 	struct rrr_type_value *new_value = NULL;
 
-	if (rrr_type_value_new (
+	int ret = 0;
+
+	if ((ret = rrr_type_value_new (
 			&new_value,
-			&rrr_type_definition_h,
-			(is_signed ? RRR_TYPE_FLAG_SIGNED : 0),
+			definition,
+			flags,
 			strlen(tag),
 			tag,
 			sizeof(uint64_t),
 			1,
 			0 // <!-- Don't send store length, import function will allocate
-	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag\n");
-		return 1;
+	)) != 0) {
+		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	rrr_length parsed_bytes = 0;
+	if ((ret = new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value)))) != 0) {
+		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
 	}
 
 	RRR_LL_APPEND(collection, new_value);
+	new_value = NULL;
 
-	rrr_length parsed_bytes = 0;
-	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
-		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag\n");
-		return 1;
+	out:
+	if (new_value != NULL) {
+		rrr_type_value_destroy(new_value);
 	}
-
-	return 0;
+	return ret;
 }
 
 int rrr_array_push_value_u64_with_tag (
@@ -476,7 +529,13 @@ int rrr_array_push_value_u64_with_tag (
 		const char *tag,
 		uint64_t value
 ) {
-	return __rrr_array_push_value_64_with_tag(collection, tag, value, 0);
+	return __rrr_array_push_value_64_with_tag(
+			collection,
+			tag,
+			value,
+			&rrr_type_definition_h,
+			0
+	);
 }
 
 int rrr_array_push_value_i64_with_tag (
@@ -484,7 +543,13 @@ int rrr_array_push_value_i64_with_tag (
 		const char *tag,
 		int64_t value
 ) {
-	return __rrr_array_push_value_64_with_tag(collection, tag, (uint64_t) value, 1);
+	return __rrr_array_push_value_64_with_tag(
+			collection,
+			tag,
+			(uint64_t ) value,
+			&rrr_type_definition_h,
+			1
+	);
 }
 
 static int __rrr_array_push_value_x_with_tag_with_size (
@@ -505,7 +570,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			1,
 			value_size
 	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_push_value_str_with_tag_with_size\n");
+		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
 		return 1;
 	}
 
@@ -515,6 +580,20 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 	memcpy(new_value->data, value, value_size);
 
 	return 0;
+}
+
+int rrr_array_push_value_fixp_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		rrr_fixp value
+) {
+	return __rrr_array_push_value_x_with_tag_with_size (
+			collection,
+			tag,
+			(const char *) &value,
+			sizeof(value),
+			&rrr_type_definition_fixp
+	);
 }
 
 int rrr_array_push_value_str_with_tag_with_size (
@@ -603,6 +682,17 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 void rrr_array_clear (struct rrr_array *collection) {
 	RRR_LL_DESTROY(collection,struct rrr_type_value,rrr_type_value_destroy(node));
+}
+
+void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+		if (node->tag == NULL) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if (strcmp(node->tag, tag) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (
@@ -723,7 +813,7 @@ static int __rrr_array_parse_from_buffer (
 		RRR_BUG("Definition was not valid in __rrr_array_parse_from_buffer\n");
 	}
 
-	if (rrr_array_definition_collection_clone(target, definition) != 0) {
+	if (rrr_array_definition_clone(target, definition) != 0) {
 		RRR_MSG_0("Could not clone definitions in __rrr_array_parse_from_buffer\n");
 		ret = RRR_ARRAY_PARSE_HARD_ERR;
 		goto out;
@@ -798,7 +888,7 @@ int rrr_array_parse_from_buffer_with_callback (
 }
 
 int rrr_array_new_message_from_buffer (
-		struct rrr_message **target,
+		struct rrr_msg_msg **target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -806,8 +896,8 @@ int rrr_array_new_message_from_buffer (
 		ssize_t topic_length,
 		const struct rrr_array *definition
 ) {
-	struct rrr_message *message = NULL;
-	struct rrr_array definitions;
+	struct rrr_msg_msg *message = NULL;
+	struct rrr_array definitions = {0};
 	int ret = 0;
 
 	if ((ret = __rrr_array_parse_from_buffer(&definitions, parsed_bytes, buf, buf_len, definition)) != 0) {
@@ -841,13 +931,13 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const char *topic,
 		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct rrr_message *message, void *arg),
+		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	ssize_t parsed_bytes = 0;
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 	if ((ret = rrr_array_new_message_from_buffer(
 			&message,
 			&parsed_bytes,
@@ -1074,11 +1164,11 @@ ssize_t rrr_array_new_message_estimate_size (
 ) {
 	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	return total_data_length + sizeof(struct rrr_message) - 1;
+	return total_data_length + sizeof(struct rrr_msg_msg) - 1;
 }
 
 int rrr_array_new_message_from_collection (
-		struct rrr_message **final_message,
+		struct rrr_msg_msg **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
@@ -1090,7 +1180,7 @@ int rrr_array_new_message_from_collection (
 
 	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	struct rrr_message *message = rrr_message_new_array(time, topic_length, total_data_length);
+	struct rrr_msg_msg *message = rrr_msg_msg_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
 		RRR_MSG_0("Could not create message for data collection\n");
 		ret = RRR_ARRAY_PARSE_HARD_ERR;
@@ -1138,7 +1228,7 @@ int rrr_array_new_message_from_collection (
 		RRR_DBG_NOPREFIX("\n");*/
 	}
 
-	*final_message = (struct rrr_message *) message;
+	*final_message = (struct rrr_msg_msg *) message;
 	message = NULL;
 
 	out:
@@ -1148,10 +1238,10 @@ int rrr_array_new_message_from_collection (
 
 int rrr_array_message_append_to_collection (
 		struct rrr_array *target,
-		const struct rrr_message *message_orig
+		const struct rrr_msg_msg *message_orig
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
-		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");
+		RRR_BUG("Message was not array in rrr_array_message_append_to_collection\n");
 	}
 
 	// Modules should also check for array version to make sure they support any recent changes.

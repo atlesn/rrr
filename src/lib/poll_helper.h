@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "instance_collection.h"
 #include "modules.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
 #define RRR_POLL_NO_SENDERS_OK	(1<<11)

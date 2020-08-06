@@ -29,33 +29,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include "../lib/log.h"
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/linked_list.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/message_addr.h"
-#include "../lib/message_log.h"
 #include "../lib/modules.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
 #include "../lib/perl5/perl5.h"
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/rrr_strerror.h"
-#include "../lib/socket/rrr_socket_msg.h"
 #include "../lib/common.h"
+#include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
-#include "../lib/message_broker.h"
-#include "../lib/gnu.h"
+#include "../lib/messages/msg.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
+#include "../lib/messages/msg_log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
-#include "../lib/macro_utils.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/macro_utils.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/array.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -64,7 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
 #define PERL5_MMAP_SIZE (1024*1024*2)
-#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
+#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_MSG_CTRL_F_USR_A
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -84,8 +86,8 @@ struct perl5_child_data {
 };
 
 static int xsub_send_message (
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		void *private_data
 ) {
 	struct perl5_child_data *child_data = private_data;
@@ -342,10 +344,18 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
 
 	struct rrr_perl5_message_hv *hv_message = NULL;
-	struct rrr_message_addr addr_msg_tmp = *message_addr;
+	struct rrr_msg_addr addr_msg_tmp = *message_addr;
+
+	struct rrr_array array_tmp = {0};
 
 	// We prefer to send NULL for empty address messages when spawning.
-	if ((ret = rrr_perl5_message_to_new_hv(&hv_message, ctx, message, (is_spawn_ctx ? NULL : &addr_msg_tmp))) != 0) {
+	if ((ret = rrr_perl5_message_to_new_hv (
+			&hv_message,
+			ctx,
+			message,
+			(is_spawn_ctx ? NULL : &addr_msg_tmp),
+			&array_tmp
+	)) != 0) {
 		RRR_MSG_0("Could not create rrr_perl5_message_hv struct in worker_process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -368,6 +378,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
 }

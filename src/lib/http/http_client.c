@@ -31,11 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_client_config.h"
 
-#include "../posix.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
-#include "../gnu.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 int rrr_http_client_data_init (
 		struct rrr_http_client_data *data,

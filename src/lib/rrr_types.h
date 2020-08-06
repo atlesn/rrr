@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stddef.h>
 
-#include "macro_utils.h"
+#include "util/macro_utils.h"
 
 /*
  * These types are used to detect underflow and overflow situations. The normal

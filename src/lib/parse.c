@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
 
 int rrr_parse_check_eof (const struct rrr_parse_pos *pos) {
 	return (pos->pos >= pos->size);

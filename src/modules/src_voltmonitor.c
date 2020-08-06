@@ -47,16 +47,16 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 
 #include "../lib/log.h"
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/array.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/array.h"
 #include "../lib/message_broker.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/rrr_time.h"
 
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -406,12 +406,12 @@ struct volmonitor_spawn_message_callback_data {
 	uint64_t time_now;
 };
 
-static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int voltmonitor_spawn_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct volmonitor_spawn_message_callback_data *callback_data = arg;
 
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
 	if (rrr_array_new_message_from_collection (
 			&message,
@@ -432,7 +432,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -494,10 +494,10 @@ static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
 	return ret;
 }
 
-int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_entry *entry) {
+int inject (struct rrr_instance_thread_data *thread_data, struct rrr_msg_msg_holder *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
 
@@ -524,7 +524,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 	}
 
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 

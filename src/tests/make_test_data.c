@@ -29,10 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-#include "../lib/rrr_endian.h"
-#include "../lib/messages_head.h"
-#include "../lib/socket/rrr_socket_msg_checksum.h"
-#include "../lib/socket/rrr_socket_msg_head.h"
+#include "../lib/messages/msg_msg_struct.h"
+#include "../lib/messages/msg_checksum.h"
+#include "../lib/messages/msg_head.h"
+#include "../lib/util/rrr_endian.h"
 
 /* Remember to disable compiler alignment */
 struct test_data {
@@ -53,7 +53,7 @@ struct test_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct rrr_message msg;
+	struct rrr_msg_msg msg;
 } __attribute__((packed));
 
 void test_data_init (struct test_data *data) {
@@ -87,14 +87,14 @@ void test_data_init (struct test_data *data) {
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	data->msg.msg_size = sizeof(struct rrr_message) - 1;
-	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
+	data->msg.msg_size = sizeof(struct rrr_msg_msg) - 1;
+	data->msg.msg_type = RRR_MSG_TYPE_MESSAGE;
 	data->msg.topic_length = 0;
 	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);
 	MSG_SET_CLASS(&data->msg, MSG_CLASS_DATA);
 
 	MSG_TO_BE(&data->msg);
-	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) &data->msg);
 }
 
 int main (int argc, char **argv) {

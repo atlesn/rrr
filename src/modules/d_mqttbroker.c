@@ -41,14 +41,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/rrr_time.h"
-#include "../lib/ip.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/net_transport/net_transport_config.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/macro_utils.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
@@ -381,6 +381,9 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 	}
 
+	// DO NOT use signed, let it overflow
+	unsigned long int consecutive_nothing_happened = 0;
+
 	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
@@ -403,7 +406,19 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 
 		if (plain_something_happened + tls_something_happened == 0) {
+			consecutive_nothing_happened++;
+		}
+		else {
+			consecutive_nothing_happened = 0;
+		}
+
+		if (consecutive_nothing_happened > 5000) {
+			printf("Broker long sleep %lu\n", consecutive_nothing_happened);
 			rrr_posix_usleep(50000); // 50 ms
+		}
+		if (consecutive_nothing_happened > 50) {
+			printf("Broker short sleep %lu\n", consecutive_nothing_happened);
+			rrr_posix_usleep(2000); // 2ms
 		}
 
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {

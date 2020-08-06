@@ -44,22 +44,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/message_broker.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/rrr_time.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/socket/rrr_socket.h"
-#include "../lib/utf8.h"
-#include "../lib/linked_list.h"
 #include "../lib/map.h"
 #include "../lib/array.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/gnu.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/utf8.h"
+#include "../lib/util/linked_list.h"
 
 //#define RRR_BENCHMARK_ENABLE
 #include "../lib/benchmark.h"
@@ -154,7 +154,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
-	rrr_mqtt_property_collection_destroy(&data->connect_properties);
+	rrr_mqtt_property_collection_clear(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }
@@ -624,7 +624,7 @@ static int mqttclient_message_data_to_payload (
 		char **result,
 		ssize_t *result_size,
 
-		struct rrr_message *reading
+		struct rrr_msg_msg *reading
 ) {
 	*result = NULL;
 	*result_size = 0;
@@ -648,7 +648,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_thread_data *thread_data = arg;
 	struct mqtt_client_data *private_data = thread_data->private_data;
 	struct rrr_mqtt_p_publish *publish = NULL;
-	struct rrr_message *reading = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *reading = (struct rrr_msg_msg *) entry->message;
 
 	char *payload = NULL;
 	ssize_t payload_size = 0;
@@ -736,9 +736,9 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 		reading->msg_size = msg_size;
 
-		rrr_message_prepare_for_network(reading);
+		rrr_msg_msg_prepare_for_network(reading);
 
-		rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) reading);
+		rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) reading);
 
 		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
 				&publish->properties,
@@ -802,7 +802,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 	else {
-		if ((ret = rrr_message_to_string(&payload, reading)) != 0) {
+		if ((ret = rrr_msg_msg_to_string(&payload, reading)) != 0) {
 			RRR_MSG_0("could not convert message to string for PUBLISH payload in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			goto out_free;
@@ -834,15 +834,15 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
 	return ret;
 }
 
-static int mqttclient_try_create_rrr_message_with_publish_data (
-		struct rrr_message **result,
+static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
+		struct rrr_msg_msg **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
 ) {
@@ -862,7 +862,7 @@ static int mqttclient_try_create_rrr_message_with_publish_data (
 
 	ssize_t topic_len = strlen(publish->topic);
 
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			result,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -886,8 +886,8 @@ static int mqttclient_try_create_rrr_message_with_publish_data (
 	return ret;
 }
 
-static int mqttclient_try_get_rrr_message_from_publish (
-		struct rrr_message **result,
+static int mqttclient_try_get_rrr_msg_msg_from_publish (
+		struct rrr_msg_msg **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
 ) {
@@ -897,13 +897,13 @@ static int mqttclient_try_get_rrr_message_from_publish (
 		goto out_nolock;
 	}
 
-	struct rrr_message *message = (struct rrr_message *) publish->payload->payload_start;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) publish->payload->payload_start;
 	rrr_length message_actual_length = 0;
 
 	{
 		rrr_slength message_actual_length_signed = publish->payload->length;
 		if (message_actual_length_signed < 0) {
-			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_message_from_publish\n");
+			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_msg_msg_from_publish\n");
 		}
 		if (message_actual_length_signed > RRR_LENGTH_MAX) {
 			RRR_MSG_0("Received RRR message in publish was too long in mqttclient instance %s: %" PRIrrrsl " > %lu\n",
@@ -912,7 +912,7 @@ static int mqttclient_try_get_rrr_message_from_publish (
 		message_actual_length = (rrr_length) message_actual_length_signed;
 	}
 
-	if (message_actual_length < sizeof(struct rrr_socket_msg)) {
+	if (message_actual_length < sizeof(struct rrr_msg)) {
 		RRR_DBG_1("RRR Message of unknown length %" PRIrrrl " in mqtt client instance %s\n",
 				message_actual_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -923,9 +923,9 @@ static int mqttclient_try_get_rrr_message_from_publish (
 	RRR_MQTT_P_LOCK(publish->payload);
 
 	rrr_length message_stated_length = 0;
-	if (rrr_socket_msg_get_target_size_and_check_checksum (
+	if (rrr_msg_get_target_size_and_check_checksum (
 			&message_stated_length,
-			(struct rrr_socket_msg *) message,
+			(struct rrr_msg *) message,
 			message_actual_length)
 	) {
 		RRR_DBG_1("RRR Message of size %li with corrupted header in mqtt client instance %s\n",
@@ -939,25 +939,25 @@ static int mqttclient_try_get_rrr_message_from_publish (
 		goto out;
 	}
 
-	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, message_actual_length) != 0) {
+	if (rrr_msg_head_to_host_and_verify((struct rrr_msg *) message, message_actual_length) != 0) {
 		RRR_DBG_1("RRR Message with invalid header in mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, message_actual_length) != 0) {
+	if (rrr_msg_check_data_checksum_and_length((struct rrr_msg *) message, message_actual_length) != 0) {
 		RRR_MSG_0("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (rrr_message_to_host_and_verify(message, message_actual_length) != 0) {
+	if (rrr_msg_msg_to_host_and_verify(message, message_actual_length) != 0) {
 		RRR_MSG_0("RRR message_final was invalid in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	*result = malloc(message_actual_length);
 	if (*result == NULL) {
-		RRR_MSG_0("Could not allocate memory in mqttclient_try_get_rrr_message_from_publish\n");
+		RRR_MSG_0("Could not allocate memory in mqttclient_try_get_rrr_msg_msg_from_publish\n");
 		ret = 1;
 		goto out;
 	}
@@ -971,7 +971,7 @@ static int mqttclient_try_get_rrr_message_from_publish (
 }
 
 static int mqttclient_try_create_array_message_from_publish (
-		struct rrr_message **result,
+		struct rrr_msg_msg **result,
 		ssize_t *parsed_bytes,
 		struct rrr_mqtt_p_publish *publish,
 		ssize_t read_pos,
@@ -1036,10 +1036,10 @@ static int mqttclient_try_create_array_message_from_publish (
 
 struct receive_publish_create_entry_callback_data {
 	struct mqtt_client_data *data;
-	const struct rrr_message *message;
+	const struct rrr_msg_msg *message;
 };
 
-static int mqttclient_receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int mqttclient_receive_publish_create_entry_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct receive_publish_create_entry_callback_data *data = arg;
 
 	int ret = 0;
@@ -1057,11 +1057,11 @@ static int mqttclient_receive_publish_create_entry_callback (struct rrr_ip_buffe
 	entry->data_length = msg_size;
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
-static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_message *message, struct mqtt_client_data *data) {
+static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_msg_msg *message, struct mqtt_client_data *data) {
 	int ret = 0;
 
 	struct receive_publish_create_entry_callback_data callback_data = {
@@ -1097,7 +1097,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	int ret = 0;
 
 	struct mqtt_client_data *data = arg;
-	struct rrr_message *message_final = NULL;
+	struct rrr_msg_msg *message_final = NULL;
 
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
@@ -1113,26 +1113,26 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 		}
 	}
 
-	// is_rrr_message is set to 1 if we want the data to be a message. It is set to zero
+	// is_rrr_msg_msg is set to 1 if we want the data to be a message. It is set to zero
 	// again if the data turns out not to be a message after all. If receive_rrr_message
 	// is not set, data which is not auto-detected as message (V5 only) will be wrapped
-	// inside a new rrr_message. If do_receive_rrr_message is set and the data is incorrect,
+	// inside a new rrr_msg_msg. If do_receive_rrr_message is set and the data is incorrect,
 	// it will be dropped.
-	int is_rrr_message = data->do_receive_rrr_message;
-	int expecting_rrr_message = data->do_receive_rrr_message;
+	int is_rrr_msg_msg = data->do_receive_rrr_message;
+	int expecting_rrr_msg_msg = data->do_receive_rrr_message;
 
 	if (content_type != NULL) {
 		RRR_DBG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
 				INSTANCE_D_NAME(data->thread_data), content_type);
 
 		if (strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
-			is_rrr_message = 1;
+			is_rrr_msg_msg = 1;
 		}
 	}
 
 	// Try to extract a message from the data of the publish
-	if (is_rrr_message != 0) {
-		if ((ret = mqttclient_try_get_rrr_message_from_publish (
+	if (is_rrr_msg_msg != 0) {
+		if ((ret = mqttclient_try_get_rrr_msg_msg_from_publish (
 				&message_final,
 				publish,
 				data
@@ -1142,7 +1142,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 			goto out;
 		}
 
-		if (message_final == NULL && expecting_rrr_message != 0) {
+		if (message_final == NULL && expecting_rrr_msg_msg != 0) {
 			RRR_MSG_0("Received supposed RRR message_final turned out not to be, dropping it in mqtt client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			goto out;
@@ -1188,7 +1188,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 
 	// Try to create a message with the data being the data of the publish. This will return
 	// NULL in message_final if there is no data in the publish message.
-	if ((ret = mqttclient_try_create_rrr_message_with_publish_data (
+	if ((ret = mqttclient_try_create_rrr_msg_msg_with_publish_data (
 			&message_final,
 			publish,
 			data
@@ -1204,7 +1204,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	}
 
 	// Try to create a message with the data being the topic of the publish
-	if (rrr_message_new_with_data (
+	if (rrr_msg_msg_new_with_data (
 			&message_final,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,

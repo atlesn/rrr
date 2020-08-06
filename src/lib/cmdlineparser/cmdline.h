@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdline_defines.h"
 
 #include "../../../config.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 struct cmd_arg_value {
 	RRR_LL_NODE(struct cmd_arg_value);

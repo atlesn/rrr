@@ -22,7 +22,7 @@ endif
 
 if RRR_WITH_PERL5
 libadd_perl5 = librrrperl5.la
-librrrperl5_la_SOURCES = perl5/perl5.c perl5/perl5_xsi.c perl5/perl5_types.c
+librrrperl5_la_SOURCES = perl5/perl5.c perl5/perl5_xsi.c perl5/perl5_types.c perl5/perl5_xsub.c
 librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
@@ -34,8 +34,8 @@ mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
-socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
-			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
+socket =	socket/rrr_socket.c socket/rrr_socket_read.c \
+			socket/rrr_socket_common.c socket/rrr_socket_client.c 
 
 http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
@@ -46,23 +46,33 @@ cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
+util = util/gnu.c util/base64.c util/crc32.c util/posix.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
+
+ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
+
+udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
+
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
+
+
+messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
 endif
 
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c rrr_config.c \
-					ip.c ip_accept_data.c ip_util.c rrr_time.c \
-					ip_buffer_entry.c ip_buffer_entry_util.c ip_buffer_entry_collection.c \
+librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
-					message_broker.c \
-					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
-					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
-					utf8.c gnu.c base64.c map.c string_builder.c random.c \
-					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
-					${net_transport} ${net_transport_tls}
+					message_broker.c map.c \
+					read.c rrr_mmap.c mmap_channel.c \
+					instances.c instance_collection.c poll_helper.c modules.c \
+					string_builder.c random.c \
+					fixed_point.c passwd.c \
+					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
+					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
+					${messages}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 
@@ -72,7 +82,7 @@ librrr_conversion_warning_la_CFLAGS = -Wconversion ${AM_CFLAGS}
 librrr_conversion_warning_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_readdir = librrr_readdir.la
-librrr_readdir_la_SOURCES = rrr_readdir.c
+librrr_readdir_la_SOURCES = util/rrr_readdir.c
 librrr_readdir_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_READDIR ${AM_CFLAGS}
 librrr_readdir_la_LDFLAGS = -lpthread -ldl -lm
 

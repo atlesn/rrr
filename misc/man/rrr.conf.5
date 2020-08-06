@@ -1,4 +1,4 @@
-.Dd 2020-07-11
+.Dd 2020-08-05
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -71,8 +71,8 @@ module=...
 .PP
 If an instance is specified as sender in more than one other instance, these will compete
 about messages from it. Use the
-.B duplicator
-module if a message is to be processed by multiple modules, for instance when different modules should process messages
+.B buffer
+module and enable duplication if a message is to be processed by multiple modules, for instance when different modules should process messages
 with different topics. Instances may also not use themselves as senders.
 .SH MESSAGES
 A message consists of at least a timestamp (in microseconds) and either arbitary data or
@@ -88,6 +88,31 @@ Python scripts. Fields from an HTTP request can be mapped into an array, and an 
 The general syntax for an array parsing specification is a comma separated list of types with length and item count specifications. 
 .PP
 .Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
+.PP
+The arrays are special as it is possible to have multiple values at each position. Each position has one or more values
+of the exact same type and length, and may or may not have a tag (string name) identifying the particular position. Tag
+names are also not unique, multiple positions may have the same tag name also with different types.
+.PP
+The reason for having this "2D" like structure is to group data together when receiving in such a way that it is easy
+to find the different values afterwards.
+.PP
+Below follows a graphical representaion of an array with many values. Note that there for demonstration purposes
+are two values named
+.B same_tag,
+and that the eight byte sequence with ASCII-characters is split into two values. The string type may be of any length
+enclosed by quotes "". The quotes will be removed when the value is parsed. At the second array position, there are nine
+values, and at the sixth position there are two values.
+.PP
+.nf
++--------+-----------------+---------------------------+----------+----------+-------------+----+
+| my_int |   my_integers   |                           | same_tag | same_tag | split_blob  |    |
+|   1    |1|2|3|4|5|6|7|8|9| "String data without tag" |    11    |    12    | blob | abcd | CR |
++--------+-----------------+---------------------------+----------+----------+-------------+----+
+.fi
+.PP
+An array parsing specification to produce a dataset like this (assuming the integers are 1 byte wide):
+.PP
+.Dl be1#my_int,be1@9#my_integers,str,be1#same_tag,be1#same_tag,blob4@2#split_blob,sep1
 .PP
 Refer to the
 .B ARRAY DEFINITION
@@ -188,12 +213,25 @@ contents sent as is.
 .It ip_preserve_order={yes|no}
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
 like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
-.It ip_drop_on_error={yes|no}
-When a TCP connection is refused or times out, drop messages. Defaults to no.
 .It ip_persistent_connections
 After a packet is sent, don't close the TCP connection causing it to be re-used. Defaults to no.
 .It ip_send_timeout=SECONDS
-If messages are not successfully sent within this time, drop them. Default is not timeout (same as 0).
+If messages are not successfully sent within this time, perform the action specified in
+.B ip_timeout_action.
+Default is not timeout (same as 0).
+.It ip_timeout_action={retry|drop|return}
+What do do when a message times out after being undeliverable. In case of
+.B retry,
+ keep trying indefinitely (default).
+ .B drop
+ will cause the message to be dropped, and
+ .B return
+ will put the message into output queue for readers to pick up. The latter is useful if an application for instance wishes to change
+ the destination address if the target host is unreachable, and possibly log errors. If
+ .B retry
+ is used, then
+ .B ip_send_timeout
+ must be set to zero or left undefined. 
 .It ip_target_host=HOST
 .It ip_target_port=PORT
 .It ip_target_protocol=PROTOCOL
@@ -257,10 +295,15 @@ Delete messages which are not point measurements and information messages. Defau
 MQTT topic to apply to generated messages and any forwarded point messages.
 .El
 .SS buffer (P)
-The buffer collects all messages from all senders and wait for them to be collected by another instance.
-.SS duplicator (P)
-The duplicator works like buffer only that it creates one output buffer for every reader and duplicates the
-data it reads from other modules for each reader. The readers of duplicator are detected automatically.
+The buffer collects all messages from all senders and wait for them to be collected by other instances.
+.Bl -tag -width -indent
+.It buffer_ttl_seconds=SECONDS
+Any message received with timestamp older than the specified amount of seconds will be dropped. Useful in situations
+where messages circulate between modules.
+.It buffer_do_duplicate={yes|no}
+If set to yes, incoming messages will be duplicated so that one copy is received by every reader. If set to no,
+the readers will compete over the messages. Defaults to no. 
+.El
 .SS ipclient (PI)
 The ipclient module collects any messages from senders and sends them over the network to another 
 .B RRR
@@ -453,41 +496,9 @@ modified as needed. To pass the message back to RRR, the
 of the message must be called. If the message should not be passed on, simply skip
 the call to this method. The method may be called multiple times if required.
 .PP
-It is possible to work with RRR array messages in the Perl script. This is done by
-adding values to or removing values from three control arrays which are always defined
-in a message hash. The number of elements in these arrays must always be equal, this is
-strictly enforced. Each array item is this defined by having a value in each of the three
-control arrays. An array value must be at the same position in each of the three arrays.
-.PP
-If the control arrays have no values, the message will not be treated as an array message in RRR.
-.PP
-The three control arrays in the message hash are:
-.Bl -tag -width -indent
-.It array_values
-The actual data of each array value. If an array value has multiple data values, they must be put inside another array and a reference to this must be set in array_values.
-.It array_tags
-The tag of the array value. Set an empty string if no tag is to be set.
-.It array_types
-The type of the value in string form. Possible values are
-.B str
-(string value),
-.B h
-(integer value),
-.B fixp
-(fixed pointer value),
-.B ustr
-(unsigned number as string),
-.B istr
-(signed number as string),
-.B nsep
-(non-separator/whitespace characters),
-.B sep
-(a separator character),
-.B blob
-(binary data) and
-.B msg
-(complete encoded RRR message)
-.El
+It is possible to work with RRR array messages in the Perl script. This is done
+through calling dedicated functions on the message object received by source and
+process functions. The functions available are listed in the example scripts with comments.
 More details about types are found in 
 .Xr rrr_post(1)
 .PP
@@ -552,6 +563,18 @@ In addition,
 .B ip_so_type
 can be either "udp" or "tcp" to describe a protocol type. Some modules may use this parameter. It can also be empty.
 .PP
+The IP information in a message can be accessed and modified through helper functions. IPv4 and IPv6 both work
+with these transparently.
+.PP
+.Bl -tag -width -indent
+.It my ($ip, $port) = $message->ip_get();
+Get IP (as text) and port from the message. Returns undefined if there is no IP information in the message.
+.It $message->ip_set($ip, $port);
+Set IP and port in a message. The $ip is in string representation (like 2a0a::1 or 4.4.4.4). Returns 1 on success and 0 on failure.
+.It $message->ip_clear();
+Delete IP information from a message. Always returns 1.
+.El
+.PP
 The following additional parameters are available in the rrr_message hash reference:
 .Bl -tag -width -indent
 .It topic
@@ -559,7 +582,8 @@ The MQTT topic of the messsage.
 .It timestamp
 The timestamp of the message.
 .It data
-The raw data of the message (ignored when arrays are being used)
+The raw data of the message (ignored when array is being used). Updates to the message array will not affect this field, but data
+will be cleared if the message is sent with array fields set.
 .It data_length
 The length of the data.
 .It type_and_class
@@ -649,18 +673,78 @@ sub process {
 
 	# $debug->msg(1, "process: new timestamp of message is: " . $message->{'timestamp'} . "\\n");
 
-	# Push an array value to the message array
-	push @{$message->{'array_values'}}, "My array string value";
-	push @{$message->{'array_tags'}}, "tag_for_string_value";
-	push @{$message->{'array_types'}}, "str";
+	# NOTE ! To understand how message arrays work, look in the MESSAGES section in the
+	# man page of rrr.conf for a graphical representation (furter up if you're already in the man page).
+
+	# An RRR array consits of several positions which each may have one or more value of a certiain
+	# type and length. A position may or may not have an identification tag, and several positions
+	# may have the same tag. An RRR message either contains raw data of some sort or an RRR array.
+
+	# If array values are pushed to the message in a Perl5 script, any data in the message
+	# will not be forwarded.
+
+	# Push some values of dirrent types onto the message array. Since
+	# we use the same tag name "tag" for many values, multiple values
+	# with the same tag will exist within the array.
+	$message->push_tag_blob ("tag", "blob", 4);
+	$message->push_tag_str ("tag", "str");
+	$message->push_tag_h ("tag", 666);
+	$message->push_tag_fixp ("tag", 666);
 
 	# Set some integer values
 	my @my_integers = (1, 2, 3, 4);
-	
-	# Push the integer values into the message array. Remember the backslash to make a reference.
-	push @{$message->{'array_values'}}, \\@my_integers;
-	push @{$message->{'array_tags'}}, "tag_for_integer_value";
-	push @{$message->{'array_types'}}, "h"; 
+
+	# The following function will accept both array values and other values.
+	# If an array reference is passed, like here, the values will be added
+	# to the same tag. If they are strings, their length -must- be equal.
+
+	# If different length strings are required, push them into separate
+	# tags like above. The RRR type is chosen based on the first value
+	# in the array, type h (host endian integer) will be chosen here.
+	$message->push_tag ("tag", \@my_integers);
+
+	# This will get all matching values for a particular tag. Regardless
+	# of wether duplicate tags have more than one element in the or not,
+	# they will all be put into the same result array. Here, all the values
+	# added above (four added one by one and four from the array) will
+	# be put into @values_result which will end up having eight elements.
+	my @values_result = $message->get_tag ("tag");
+
+	# The set_* functions will delete all matching tag names from the array
+	# and then push the new value. The type of any existing does not matter,
+	# all tags with matching tag name in the array will be removed.
+	$message->set_tag_blob ("tag", "blob", 4);
+	$message->set_tag_str ("tag", "str");
+	$message->set_tag_fixp ("tag", 666);
+	$message->set_tag_h ("tag", 1);
+
+	# It is allowed to have empty tag names, just use "" as tag
+	$message->set_tag_h("", 0);
+
+	# Since set_tag_h is the last value, the number '1' is the only
+	# element in the array now with the tag "tag". The get_tag_all
+	# function will otherwise retrieve all values at all matching tags.
+	my @array_with_only_one_value = $message->get_tag_all ("tag");
+
+	# It is possible to retrieve a particular element at a certain position
+	# if the position of a value is known. Since we know there is a
+	# number with the tag "tag" in the array, we can get the first element
+	# returned.
+	my $value = ($message->get_tag_all("tag"))[0];
+
+	# These two functions returns arrays containing the tag names
+	# at each array position, or the value count at each position. If
+	# there is no tag name at a position, an empty "" value is returned.
+	# All array position always has at least one element.
+	print "Tag names: " . join(",", $message->get_tag_names ()) . "\n";
+	print "Tag counts: " . join(",", $message->get_tag_counts ()) . "\n";
+
+	# Get all values at a particular position
+	print "Get a position: " . join (",", $message->get_position(0)) . "\n";
+	print "Array position count: " . $message->count_positions() . "\n";
+
+	# This will clear all values from the array
+	$message->clear_tag("tag");
 
 	# Pass on the modified message
 	$message->send();
@@ -1035,11 +1119,7 @@ TOPIC $SYS/#
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP
-\(bu Retained topics
-.br
-\(bu Will topics
-.br
-\(bu Authorization (simple username/password implemented)
+\(bu AUTH packet (simple username/password implemented)
 .PP
 .SS mqttclient (PA)
 An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and

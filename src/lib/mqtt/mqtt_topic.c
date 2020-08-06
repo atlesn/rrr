@@ -21,13 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdlib.h>
+#include <util/utf8.h>
 
 #include "../log.h"
 
 #include "mqtt_topic.h"
 
-#include "../utf8.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 struct topic_name_seq {
 	uint32_t c1;
@@ -103,6 +103,10 @@ int rrr_mqtt_topic_validate_name_with_end (
 		const char *topic_name,
 		const char *end
 ) {
+	if (topic_name == end) {
+		return 1;
+	}
+
 	struct topic_name_seq seq = { 0, 0, topic_name };
 
 	return rrr_utf8_validate_and_iterate (
@@ -116,7 +120,11 @@ int rrr_mqtt_topic_validate_name_with_end (
 int rrr_mqtt_topic_validate_name (
 		const char *topic_name
 ) {
-	return rrr_mqtt_topic_validate_name_with_end(
+	if (topic_name == NULL || *topic_name == '\0') {
+		return 1;
+	}
+
+	return rrr_mqtt_topic_validate_name_with_end (
 			topic_name,
 			topic_name + strlen(topic_name)
 	);
@@ -187,7 +195,7 @@ int rrr_mqtt_topic_match_tokens_recursively_acl (
 	else if (*(token_master->data) == '+' || *(token_slave->data) == '+') {
 //		printf ("Preliminary match by slave or master +\n");
 		if (*(token_master->data) == '$') {
-			printf ("Mismatch by master $\n");
+//			printf ("Mismatch by master $\n");
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 		// + matches everything on this level, continue

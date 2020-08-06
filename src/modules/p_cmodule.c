@@ -32,17 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/rrr_strerror.h"
-#include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/macro_utils.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
@@ -288,7 +288,7 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	struct rrr_message *message_copy = rrr_message_duplicate(message);
+	struct rrr_msg_msg *message_copy = rrr_msg_msg_duplicate(message);
 	if (message_copy == NULL) {
 		RRR_MSG_0("Could not allocate message in cmodule_process_callback\n");
 		ret = 1;

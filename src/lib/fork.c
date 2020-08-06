@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
-#include "posix.h"
 #include "fork.h"
 #include "log.h"
 #include "rrr_strerror.h"
 #include "common.h"
+#include "util/posix.h"
 
 #define RRR_FORK_HANDLER_VERIFY_SELF()																	\
 	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {							\

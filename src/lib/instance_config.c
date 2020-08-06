@@ -26,10 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "settings.h"
 #include "instance_config.h"
-#include "linked_list.h"
 #include "map.h"
 #include "array.h"
-#include "gnu.h"
+#include "util/gnu.h"
+#include "util/linked_list.h"
 
 int rrr_instance_config_string_set (
 		char **target,
