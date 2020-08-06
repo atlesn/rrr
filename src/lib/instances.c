@@ -190,7 +190,7 @@ static struct rrr_instance_metadata *__rrr_instance_load_module_and_save (
 
 	struct rrr_module_load_data start_data;
 	if (rrr_module_load(&start_data, module_name, library_paths) != 0) {
-		RRR_MSG_0 ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
+		RRR_MSG_0 ("Module '%s' could not be loaded (in load_instance_module for instance '%s')\n",
 				module_name, instance_config->name);
 		ret = NULL;
 		goto out;
