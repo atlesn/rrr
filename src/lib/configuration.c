@@ -134,6 +134,8 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 		goto out;
 	}
 
+	int line_orig = pos->line;
+
 	pos->pos++;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (rrr_parse_check_eof(pos)) {
@@ -142,9 +144,20 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 		goto out;
 	}
 
+	if (pos->line != line_orig) {
+		RRR_MSG_0("Unexpected newline after = at line %d, parameter value missing\n", pos->line);
+		ret = 1;
+		goto out;
+	}
+
 	int value_begin;
 	int value_end;
 	rrr_parse_non_newline(pos, &value_begin, &value_end);
+
+	// Ignore trailing spaces
+	while (value_end > value_begin && (pos->data[value_end] == ' ' || pos->data[value_end] == '\t')) {
+			value_end--;
+	}
 
 	if (value_end < value_begin) {
 		RRR_MSG_0("Expected value after = at line %d\n", pos->line);
