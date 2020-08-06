@@ -413,11 +413,11 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 
 		if (consecutive_nothing_happened > 5000) {
-			printf("Broker long sleep %lu\n", consecutive_nothing_happened);
+//			printf("Broker long sleep %lu\n", consecutive_nothing_happened);
 			rrr_posix_usleep(50000); // 50 ms
 		}
 		if (consecutive_nothing_happened > 50) {
-			printf("Broker short sleep %lu\n", consecutive_nothing_happened);
+//			printf("Broker short sleep %lu\n", consecutive_nothing_happened);
 			rrr_posix_usleep(2000); // 2ms
 		}
 
