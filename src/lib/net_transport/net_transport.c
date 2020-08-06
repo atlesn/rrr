@@ -413,6 +413,12 @@ void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *
 	RRR_LL_DESTROY(collection, struct rrr_net_transport, rrr_net_transport_destroy(node));
 }
 
+void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport);
+		rrr_net_transport_common_cleanup(node);
+	RRR_LL_ITERATE_END();
+}
+
 void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 ) {

@@ -1685,6 +1685,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	reconnect:
 
+	// Do this to avoid connection build-up on persistent error conditions
+	rrr_mqtt_client_close_all_connections(data->mqtt_client_data);
+
 	if (rrr_thread_check_encourage_stop(thread_data->thread) == 1) {
 		goto out_destroy_client;
 	}

@@ -268,6 +268,12 @@ int rrr_mqtt_client_unsubscribe (
 		return (ret != 0);
 }
 
+void rrr_mqtt_client_close_all_connections (
+		struct rrr_mqtt_client_data *data
+) {
+	rrr_net_transport_collection_cleanup(&data->mqtt_data.transport->transports);
+}
+
 struct rrr_mqtt_client_property_override {
 	struct rrr_mqtt_property *property;
 };

@@ -69,6 +69,9 @@ int rrr_mqtt_client_unsubscribe (
 		struct rrr_mqtt_session **session,
 		const struct rrr_mqtt_subscription_collection *subscriptions
 );
+void rrr_mqtt_client_close_all_connections (
+		struct rrr_mqtt_client_data *data
+);
 int rrr_mqtt_client_connect (
 		int *transport_handle,
 		struct rrr_mqtt_session **session,
