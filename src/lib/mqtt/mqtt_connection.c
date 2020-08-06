@@ -842,7 +842,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	out:
 	if (ret != 0) {
 		if (connection->disconnect_reason_v5_ == 0) {
-			connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;
+			connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 	}
 	return ret;

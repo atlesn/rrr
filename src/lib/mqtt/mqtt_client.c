@@ -268,6 +268,12 @@ int rrr_mqtt_client_unsubscribe (
 		return (ret != 0);
 }
 
+void rrr_mqtt_client_close_all_connections (
+		struct rrr_mqtt_client_data *data
+) {
+	rrr_net_transport_collection_cleanup(&data->mqtt_data.transport->transports);
+}
+
 struct rrr_mqtt_client_property_override {
 	struct rrr_mqtt_property *property;
 };
@@ -330,9 +336,13 @@ int rrr_mqtt_client_connect (
 			goto out;
 		}
 	}
+	else {
+		// Always set clean start if there is no client ID
+		connect->connect_flags |= 1<<1;
+	}
 
-	connect->keep_alive = keep_alive;
 	connect->connect_flags |= (clean_start != 0)<<1;
+	connect->keep_alive = keep_alive;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
 

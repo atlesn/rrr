@@ -1237,16 +1237,19 @@ static int mqttclient_do_subscribe (struct mqtt_client_data *data) {
 		RRR_BUG("received_suback_packet_id was not 0 in mqtt client do_subscribe\n");
 	}
 
-	if (rrr_mqtt_client_subscribe (
+	int ret = RRR_MQTT_OK;
+
+	if ((ret = rrr_mqtt_client_subscribe (
 			data->mqtt_client_data,
 			&data->session,
 			data->requested_subscriptions
-	) != 0) {
-		RRR_MSG_0("Could not subscribe to topics in mqtt client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return 1;
+	)) != 0) {
+		RRR_MSG_0("Could not subscribe to topics in mqtt client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+		return ret;
 	}
-	return 0;
+
+	return ret;
 }
 
 static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
@@ -1254,48 +1257,54 @@ static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
 		RRR_BUG("received_unsuback_packet_id was not 0 in mqtt client do_subscribe\n");
 	}
 
-	if (rrr_mqtt_client_unsubscribe (
+	int ret = RRR_MQTT_OK;
+
+	if ((ret = rrr_mqtt_client_unsubscribe (
 			data->mqtt_client_data,
 			&data->session,
 			data->requested_subscriptions
-	) != 0) {
-		RRR_MSG_0("Could not unsubscribe to topics in mqtt client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return 1;
+	)) != 0) {
+		RRR_MSG_0("Could not unsubscribe to topics in mqtt client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+		return ret;
 	}
-	return 0;
+	return ret;
 }
 
 static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
+	int ret = RRR_MQTT_SOFT_ERROR; // Default is soft failure
+
 	while (rrr_thread_check_encourage_stop(data->thread_data->thread) != 1) {
 		int alive = 0;
 		int send_allowed = 0;
 
-		if (rrr_mqtt_client_connection_check_alive (
+		if ((ret = rrr_mqtt_client_connection_check_alive (
 				&alive,
 				&send_allowed,
 				data->mqtt_client_data,
 				data->transport_handle
-		)) {
+		)) != 0) {
 			RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive\n",
 					INSTANCE_D_NAME(data->thread_data));
-			return 1;
+			goto out;
 		}
 
 		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
 		int something_happened = 0;
-		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
+		if ((ret = rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data)) != 0) {
 			RRR_MSG_0("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(data->thread_data));
-			return 1;
+			goto out;
 		}
 
 		if (alive != 1) {
-			return 1;
+			ret = RRR_MQTT_SOFT_ERROR;
+			goto out;
 		}
 
 		if (send_allowed != 0) {
-			return 0;
+			ret = RRR_MQTT_OK;
+			goto out;
 		}
 
 		if (something_happened == 0) {
@@ -1303,11 +1312,12 @@ static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
 		}
 	}
 
-	return 1;
+	out:
+	return ret;
 }
 
 static int mqttclient_late_client_identifier_update (struct mqtt_client_data *data) {
-	int ret = 0;
+	int ret = RRR_MQTT_OK;
 
 	struct rrr_mqtt_session_properties properties = {0};
 	char *identifier_tmp = NULL;
@@ -1322,19 +1332,17 @@ static int mqttclient_late_client_identifier_update (struct mqtt_client_data *da
 	}
 
 	// Make sure CONNACK has arrived
-	if (mqttclient_wait_send_allowed(data) != 0) {
-		ret = 1;
+	if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
 		goto out;
 	}
 
-	if (rrr_mqtt_client_get_session_properties (
+	if ((ret = rrr_mqtt_client_get_session_properties (
 			&properties,
 			data->mqtt_client_data,
 			data->transport_handle
-	) != 0) {
-		RRR_MSG_0("Error while getting session properties in mqttclient_late_client_identifier_update of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
+	)) != 0) {
+		RRR_MSG_0("Error while getting session properties in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1343,23 +1351,21 @@ static int mqttclient_late_client_identifier_update (struct mqtt_client_data *da
 		goto out;
 	}
 
-	if (rrr_mqtt_property_get_blob_as_str (
+	if ((ret = rrr_mqtt_property_get_blob_as_str (
 			&identifier_tmp,
 			properties.assigned_client_identifier
-	) != 0) {
-		RRR_MSG_0("Error while getting assigned name in mqttclient_late_client_identifier_update of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
+	)) != 0) {
+		RRR_MSG_0("Error while getting assigned name in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
-	if (rrr_mqtt_client_late_set_client_identifier (
+	if ((ret = rrr_mqtt_client_late_set_client_identifier (
 			data->mqtt_client_data,
 			identifier_tmp
-	) != 0) {
-		RRR_MSG_0("Error while setting client identifier in mqttclient_late_client_identifier_update of MQTT client instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
+	)) != 0) {
+		RRR_MSG_0("Error while setting client identifier in mqttclient_late_client_identifier_update of MQTT client instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1372,6 +1378,8 @@ static int mqttclient_late_client_identifier_update (struct mqtt_client_data *da
 }
 
 static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
+	int ret = RRR_MQTT_OK;
+
 	uint64_t subscription_sent_time = 0;
 	int subscription_send_attempts = 0;
 	int subscription_done = 0;
@@ -1381,21 +1389,21 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 	int unsubscription_done = 0;
 
 	if (rrr_mqtt_subscription_collection_count(data->requested_subscriptions) == 0) {
-		return 0;
+		goto out;
 	}
 
 	// Subscription loop
 	while (rrr_thread_check_encourage_stop(data->thread_data->thread) != 1) {
 		// This will also do sending/receiving
-		if (mqttclient_wait_send_allowed(data) != 0) {
-			return 1;
+		if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
+			goto out;
 		}
 
 		if (subscription_done == 0) {
 			if (subscription_sent_time == 0) {
 				data->received_suback_packet_id = 0;
-				if (mqttclient_do_subscribe(data) != 0) {
-					return 1;
+				if ((ret = mqttclient_do_subscribe(data)) != 0) {
+					goto out;
 				}
 				subscription_send_attempts++;
 				subscription_sent_time = rrr_time_get_64();
@@ -1406,7 +1414,8 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 			else if (rrr_time_get_64() > subscription_sent_time + (RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS * 1000)) {
 				if (subscription_send_attempts > RRR_MQTT_SUBACK_RESEND_MAX) {
 					RRR_MSG_0("MQTT client %s giving up waiting for SUBACK\n", INSTANCE_D_NAME(data->thread_data));
-					return 1;
+					ret = RRR_MQTT_SOFT_ERROR;
+					goto out;
 				}
 
 				subscription_sent_time = 0;
@@ -1416,8 +1425,8 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 		else if (data->do_debug_unsubscribe_cycle != 0 && unsubscription_done == 0) {
 			if (unsubscription_sent_time == 0) {
 				data->received_unsuback_packet_id = 0;
-				if (mqttclient_do_unsubscribe(data) != 0) {
-					return 1;
+				if ((ret = mqttclient_do_unsubscribe(data)) != 0) {
+					goto out;
 				}
 				unsubscription_send_attempts++;
 				unsubscription_sent_time = rrr_time_get_64();
@@ -1432,7 +1441,8 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 			else if (rrr_time_get_64() > unsubscription_sent_time + (RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS * 1000)) {
 				if (unsubscription_send_attempts > RRR_MQTT_SUBACK_RESEND_MAX) {
 					RRR_MSG_0("MQTT client %s giving up waiting for SUBACK\n", INSTANCE_D_NAME(data->thread_data));
-					return 1;
+					ret = RRR_MQTT_SOFT_ERROR;
+					goto out;
 				}
 
 				unsubscription_sent_time = 0;
@@ -1444,10 +1454,13 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 		}
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_start) {
+	int ret = RRR_MQTT_SOFT_ERROR;
+
 	int i_first = data->connect_attempts;
 	if (i_first < 1 || (uint64_t) i_first != (uint64_t) data->connect_attempts) {
 		i_first = 0x7fffffff; // One 7, seven f's
@@ -1465,7 +1478,8 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 		if (rrr_poll_do_poll_discard (&discarded_count, data->thread_data, data->thread_data->poll) != 0) {
 			RRR_MSG_0("Polling from senders failed while discarding messages upon connect retry in mqttclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
-			return 1;
+			ret = RRR_MQTT_INTERNAL_ERROR;
+			goto out;
 		}
 
 		data->total_discarded_count += discarded_count;
@@ -1482,16 +1496,17 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(data->thread_data->thread) != 1; i--) {
 		rrr_thread_update_watchdog_time(data->thread_data->thread);
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' username '%s' attempt %i/%i\n",
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' username '%s' client-ID '%s' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data),
 				data->server,
 				data->server_port,
 				(data->username != NULL ? data->username : ""),
+				(data->client_identifier != NULL ? data->client_identifier : ""),
 				i,
 				i_first
 		);
 
-		if (rrr_mqtt_client_connect (
+		if ((ret = rrr_mqtt_client_connect (
 				&data->transport_handle,
 				&data->session,
 				data->mqtt_client_data,
@@ -1503,30 +1518,44 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 				data->username,
 				data->password,
 				&data->connect_properties
-		) != 0) {
+		)) != 0) {
+			if (ret & RRR_MQTT_INTERNAL_ERROR) {
+				RRR_MSG_0("Internal error from rrr_mqtt_client_connect in MQTT client instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
 			if (i == 0) {
 				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
-					RRR_MSG_0("MQTT client instance %s: %i connection attempts failed, trying again.\n",
+					RRR_MSG_0("MQTT client instance %s: %i connection attempts failed, trying again. Return was %i.\n",
 							INSTANCE_D_NAME(data->thread_data),
-							i_first
+							i_first,
+							ret
 					);
+					ret = RRR_MQTT_OK;
 					is_retry = 1;
 					goto reconnect;
 				}
 
-				RRR_MSG_0("Could not connect to mqtt server '%s' port %llu in instance %s, restarting.\n",
-						data->server, data->server_port, INSTANCE_D_NAME(data->thread_data));
+				RRR_MSG_0("Could not connect to mqtt server '%s' port %llu in instance %s, restarting. Return was %i.\n",
+						data->server,
+						data->server_port,
+						INSTANCE_D_NAME(data->thread_data),
+						ret
+				);
 
-				return 1;
+				ret = RRR_MQTT_SOFT_ERROR;
+				break;
 			}
 			rrr_posix_usleep (100 * 1000);
 		}
 		else {
+			ret = RRR_MQTT_OK;
 			break;
 		}
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static void mqttlient_update_stats (
@@ -1656,16 +1685,31 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	reconnect:
 
-	if (mqttclient_connect_loop(data, clean_start) != 0) {
+	// Do this to avoid connection build-up on persistent error conditions
+	rrr_mqtt_client_close_all_connections(data->mqtt_client_data);
+
+	if (rrr_thread_check_encourage_stop(thread_data->thread) == 1) {
 		goto out_destroy_client;
 	}
 
-	if (mqttclient_subscription_loop(data) != 0) {
+	int ret_tmp = 0;
+
+	if ((ret_tmp = mqttclient_connect_loop(data, clean_start)) != RRR_MQTT_OK) {
 		goto out_destroy_client;
 	}
 
-	if (mqttclient_late_client_identifier_update(data) != 0) {
-		goto out_destroy_client;
+	if ((ret_tmp = mqttclient_subscription_loop(data)) != RRR_MQTT_OK) {
+		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+			goto out_destroy_client;
+		}
+		goto reconnect;
+	}
+
+	if ((ret_tmp = mqttclient_late_client_identifier_update(data)) != RRR_MQTT_OK) {
+		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
+			goto out_destroy_client;
+		}
+		goto reconnect;
 	}
 
 	uint64_t startup_time = rrr_time_get_64() + RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000;
@@ -1695,14 +1739,15 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		int alive = 0;
 		int send_allowed = 0;
 
-		if (rrr_mqtt_client_connection_check_alive (
+		if ((ret_tmp = rrr_mqtt_client_connection_check_alive (
 				&alive,
 				&send_allowed,
 				data->mqtt_client_data,
 				data->transport_handle
-		)) {
-			RRR_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
-					INSTANCE_D_NAME(thread_data));
+		)) != 0) {
+			// Only returns OK or INTERNAL_ERROR
+			RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive return was %i\n",
+					INSTANCE_D_NAME(thread_data), ret_tmp);
 			goto out_destroy_client;
 		}
 
@@ -1717,12 +1762,17 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
 
 		RRR_BENCHMARK_IN(mqtt_client_tick);
-		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
-			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_destroy_client;
-		}
+		ret_tmp = rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data);
 		RRR_BENCHMARK_OUT(mqtt_client_tick);
+		if (ret_tmp != RRR_MQTT_OK) {
+			if ((ret_tmp & RRR_MQTT_INTERNAL_ERROR) != 0) {
+				RRR_MSG_0("Error in mqtt client instance %s while running tasks return was %i\n",
+						INSTANCE_D_NAME(thread_data), ret_tmp);
+				break;
+			}
+			goto reconnect;
+		}
+
 
 		if (counters.incomplete_qos_publish_counter > RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT ||
 			counters.buffer_size > RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT
@@ -1746,12 +1796,16 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		RRR_BENCHMARK_IN(mqtt_client_deliver);
-		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data) != 0) {
-			RRR_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_destroy_client;
-		}
+		ret_tmp = rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data);
 		RRR_BENCHMARK_OUT(mqtt_client_deliver);
+		if (ret_tmp != RRR_MQTT_OK) {
+			if ((ret_tmp & RRR_MQTT_INTERNAL_ERROR) != 0) {
+				RRR_MSG_0("Error while iterating local delivery queue in mqtt client instance %s return was %i\n",
+						INSTANCE_D_NAME(thread_data), ret_tmp);
+				break;
+			}
+			goto reconnect;
+		}
 
 		// When adjusting sleep algorithm, test throughput properly afterwards with different configurations
 
@@ -1776,7 +1830,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			}
 			else {
 				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				rrr_poll_do_poll_delete (thread_data, thread_data->poll, mqttclient_poll_callback, poll_sleep);
+				if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, mqttclient_poll_callback, poll_sleep) != 0) {
+					RRR_MSG_0("Error while polling from senders in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
+					break;
+				}
 				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 			}
 		}
