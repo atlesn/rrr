@@ -67,6 +67,7 @@ sub source {
 	$message->push_tag("my_auto_3", -2222);
 	$message->push_tag("my_auto_4", \@array);
 	$message->push_tag("my_auto_4", \@array);
+	sleep(0.005);
 	$message->push_tag("my_auto_5_bin", $bin);
 	$message->push_tag("my_auto_6", 3.141592);
 	$message->push_tag_fixp("my_fixp_1", "16#ad4e65.eeee");
@@ -74,6 +75,7 @@ sub source {
 	$message->push_tag_fixp("my_fixp_pi_double", 3.141592 + 0);
 	$message->push_tag_fixp("my_fixp_4", 0x29b - 1);
 	$message->push_tag_fixp("my_fixp_5", "16#a");
+	sleep(0.005);
 	$message->push_tag_fixp("my_fixp_6", "10#10");
 	$message->push_tag_fixp("my_fixp_7", "16#0.8");
 	$message->push_tag_fixp("my_fixp_8", "10#0.5");
