@@ -1,3 +1,11 @@
+rrr (1.9-2) buster; urgency=medium
+
+  * Fixes in configuration file parsing, allow spaces after parameters
+  * Fix proper connect retry vs restart in MQTT client
+  * Other small fixes in MQTT client 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 23:43:34 +0200
+
 rrr (1.9-1) buster; urgency=medium
 
   * Merge security fix from 1.7-4
