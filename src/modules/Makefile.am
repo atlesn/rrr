@@ -61,9 +61,6 @@ ipclient_la_SOURCES = p_ipclient.c
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c
 
-duplicator_la_LDFLAGS = ${module_ldflags}
-duplicator_la_SOURCES = p_duplicator.c
-
 ip_la_LDFLAGS = ${module_ldflags}
 ip_la_SOURCES = p_ip.c
 
