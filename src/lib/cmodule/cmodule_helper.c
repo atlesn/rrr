@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#include "../ip_util.h"
 
 struct rrr_cmodule_helper_read_callback_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
@@ -163,7 +163,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 
 static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 		int *count,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		pid_t fork_pid,
 		struct rrr_msg_msg_holder *entry
 ) {
@@ -212,7 +212,7 @@ struct rrr_cmodule_helper_poll_callback_data {
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
 	int input_count = 0;
@@ -220,7 +220,7 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	// We have to check this here because we don't know wether the
 	// fork has exited, in which case we will retry messages for a
 	// long time and hang
-	if (rrr_thread_check_encourage_stop(thread_data->thread)) {
+	if (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data))) {
 		ret = RRR_FIFO_SEARCH_STOP;
 		goto out;
 	}
@@ -250,7 +250,7 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 
 static int __rrr_cmodule_helper_poll_delete (
 		int *count,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *poll,
 		pid_t target_pid,
 		int wait_ms,
@@ -283,10 +283,8 @@ static int __rrr_cmodule_helper_poll_delete (
 struct rrr_cmodule_helper_reader_thread_data {
 	struct rrr_thread_collection *thread_collection;
 
-	struct rrr_instance_thread_data *parent_thread_data;
+	struct rrr_instance_runtime_data *parent_thread_data;
 	struct rrr_stats_instance *stats;
-
-	int thread_became_ghost;
 };
 
 
@@ -467,7 +465,7 @@ static int __rrr_cmodule_helper_read_from_forks (
 static int __rrr_cmodule_helper_read_thread_read_from_forks (
 		int *read_count,
 		int *config_complete,
-		struct rrr_instance_thread_data *parent_thread_data,
+		struct rrr_instance_runtime_data *parent_thread_data,
 		int read_max
 ) {
 	int ret = 0;
@@ -586,7 +584,7 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 // Memory in input variables must be available throughout the lifetime of the thread
 static int __rrr_cmodule_helper_threads_start (
 		struct rrr_cmodule_helper_reader_thread_data *data,
-		struct rrr_instance_thread_data *parent_thread_data,
+		struct rrr_instance_runtime_data *parent_thread_data,
 		struct rrr_stats_instance *stats
 ) {
 	int ret = 0;
@@ -616,16 +614,15 @@ static int __rrr_cmodule_helper_threads_start (
 	data->parent_thread_data = parent_thread_data;
 	data->stats = stats;
 
-	if ((thread = rrr_thread_preload_and_register (
+	if ((thread = rrr_thread_allocate_preload_and_register (
 			thread_collection,
 			__rrr_cmodule_helper_reader_thread_entry,
 			NULL,
 			NULL,
 			NULL,
-			NULL, // We don't call cleanup_ghost_data, so this can be NULL
 			RRR_THREAD_START_PRIORITY_NORMAL,
-			data,
-			name
+			name,
+			data
 	)) == NULL) {
 		RRR_MSG_0("Could not preload thread '%s' in  instance %s\n",
 				name, INSTANCE_D_NAME(parent_thread_data));
@@ -648,7 +645,7 @@ static int __rrr_cmodule_helper_threads_start (
 
 	goto out;
 	out_destroy_collection:
-		rrr_thread_destroy_collection(thread_collection, 0);
+		rrr_thread_destroy_collection(thread_collection);
 		// Set everything to zero to avoid confusing cleanup functions
 		memset(data, '\0', sizeof(*data));
 
@@ -656,34 +653,23 @@ static int __rrr_cmodule_helper_threads_start (
 		return ret;
 }
 
-// We shouldn't really end up here, but...
-static void __rrr_cmodule_helper_ghost_handler (struct rrr_thread *thread) {
-	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
-
-	// See threads_cleanup()-function
-	data->thread_became_ghost = 1;
-}
-
 static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	struct rrr_cmodule_helper_reader_thread_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		rrr_thread_stop_and_join_all(data->thread_collection, __rrr_cmodule_helper_ghost_handler);
-		rrr_thread_destroy_collection(data->thread_collection, 0);
+		rrr_thread_stop_and_join_all_no_unlock(data->thread_collection);
+		rrr_thread_destroy_collection(data->thread_collection);
 		data->thread_collection = NULL;
 	}
 
-	// Since the reader threads might continue to use our memory after they
-	// begin to run again, we cannot proceed.
-	if (data->thread_became_ghost != 0) {
-		RRR_MSG_0("Could not stop reader threads in cmodule instance %s. Can't continue.",
+	if (rrr_thread_is_ghost(INSTANCE_D_THREAD(data->parent_thread_data))) {
+		RRR_BUG("Could not stop reader threads in cmodule instance %s. Can't continue.",
 				INSTANCE_D_NAME(data->parent_thread_data));
-		exit(EXIT_FAILURE);
 	}
 }
 
 void rrr_cmodule_helper_loop (
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
 		struct rrr_poll_collection *poll,
 		pid_t fork_pid
@@ -717,8 +703,8 @@ void rrr_cmodule_helper_loop (
 	unsigned int consecutive_nothing_happened = 0;
 
 	uint64_t next_stats_time = 0;
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && fork_pid != 0) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
+		rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(thread_data));
 
 		if (rrr_thread_check_any_stopped(reader_thread_data.thread_collection)) {
 			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -844,12 +830,12 @@ void rrr_cmodule_helper_loop (
 }
 
 int rrr_cmodule_helper_parse_config (
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
 		const char *config_suffix
 ) {
 	struct rrr_cmodule_config_data *data = &(INSTANCE_D_CMODULE(thread_data)->config_data);
-	struct rrr_instance_config *config = INSTANCE_D_CONFIG(thread_data);
+	struct rrr_instance_config_data *config = INSTANCE_D_CONFIG(thread_data);
 
 	int ret = 0;
 
@@ -911,7 +897,7 @@ int rrr_cmodule_helper_parse_config (
 
 int rrr_cmodule_helper_start_worker_fork (
 		pid_t *handle_pid,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),

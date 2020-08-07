@@ -51,7 +51,7 @@ int __rrr_config_expand(struct rrr_config *target) {
 	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
 	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
 
-	struct rrr_instance_config **configs_new = realloc(target->configs, new_size);
+	struct rrr_instance_config_data **configs_new = realloc(target->configs, new_size);
 
 	if (configs_new == NULL) {
 		RRR_MSG_0("Could not reallocate memory for rrr_instance_config struct\n");
@@ -64,7 +64,7 @@ int __rrr_config_expand(struct rrr_config *target) {
 	return 0;
 }
 
-int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config *instance_config) {
+int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config_data *instance_config) {
 	if (rrr_config_find_instance (target, instance_config->name) != NULL) {
 		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
 		return 1;
@@ -259,7 +259,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		goto out;
 	}
 
-	struct rrr_instance_config *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
+	struct rrr_instance_config_data *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
 	if (instance_config == NULL) {
 		RRR_MSG_0("Instance config creation result was NULL\n");
 		ret = 1;
@@ -362,11 +362,11 @@ int __rrr_config_parse_file (struct rrr_config *config, const void *data, const 
 	return ret;
 }
 
-struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name) {
-	struct rrr_instance_config *ret = NULL;
+struct rrr_instance_config_data *rrr_config_find_instance (struct rrr_config *source, const char *name) {
+	struct rrr_instance_config_data *ret = NULL;
 
 	for (int i = 0; i < source->module_count; i++) {
-		struct rrr_instance_config *test = source->configs[i];
+		struct rrr_instance_config_data *test = source->configs[i];
 		if (strcmp(test->name, name) == 0) {
 			ret = test;
 			break;
@@ -466,7 +466,7 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 int rrr_config_dump (struct rrr_config *config) {
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
-		struct rrr_instance_config *instance_config = config->configs[i];
+		struct rrr_instance_config_data *instance_config = config->configs[i];
 
 		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", instance_config->name);
 

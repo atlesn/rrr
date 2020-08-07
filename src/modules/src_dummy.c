@@ -83,7 +83,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->topic);
 }
 
-int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
+int parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
@@ -141,7 +141,7 @@ static int dummy_write_message_callback (struct rrr_msg_msg_holder *entry, void 
 }
 
 static void *thread_entry_dummy (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
@@ -154,7 +154,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -174,8 +174,8 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	int generated_count = 0;
 	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			if (rrr_message_broker_write_entry (
@@ -220,7 +220,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct dummy_data data;
 	int ret = 0;
 	if ((ret = data_init(&data)) != 0) {
@@ -246,7 +246,7 @@ static const char *module_name = "dummy";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS			443
 
 struct httpserver_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_net_transport_config net_transport_config;
 
 	rrr_setting_uint port_plain;
@@ -67,7 +67,7 @@ static void httpserver_data_cleanup(void *arg) {
 
 static int httpserver_data_init (
 		struct httpserver_data *data,
-		struct rrr_instance_thread_data *thread_data
+		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
 
@@ -78,7 +78,7 @@ static int httpserver_data_init (
 
 static int httpserver_parse_config (
 		struct httpserver_data *data,
-		struct rrr_instance_config *config
+		struct rrr_instance_config_data *config
 ) {
 	int ret = 0;
 
@@ -415,7 +415,7 @@ static int httpserver_receive_callback (
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (httpserver_data_init(data, thread_data) != 0) {
@@ -428,7 +428,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	pthread_cleanup_push(httpserver_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (httpserver_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
@@ -463,8 +463,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			data
 	};
 
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
 		int accept_count = 0;
 
@@ -500,13 +500,13 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 
 	out_message:
-	RRR_DBG_1 ("Thread httpserver %p exiting\n", thread_data->thread);
+	RRR_DBG_1 ("Thread httpserver %p exiting\n", thread);
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
@@ -525,7 +525,7 @@ static const char *module_name = "httpserver";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_SOURCE;

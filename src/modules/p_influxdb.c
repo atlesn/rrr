@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define INFLUXDB_SOFT_ERR	RRR_READ_SOFT_ERROR
 
 struct influxdb_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	char *database;
 	char *table;
 	int message_count;
@@ -69,7 +69,7 @@ struct influxdb_data {
 	struct rrr_net_transport *transport;
 };
 
-static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
+static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
@@ -371,11 +371,11 @@ static int influxdb_common_callback (
 }
 
 static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	return influxdb_common_callback(entry, thread_data->private_data);
 }
 
-static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config *config) {
+static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config_data *config) {
 	// NOTE : Special return handling, all parsing is done upon errors, we don't
 	//        stop if something fail. Make sure ret is not overwritten if it has
 	//        been set to 1
@@ -427,7 +427,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 }
 
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
 	struct rrr_msg_msg_holder_collection error_buf_tmp = {0};
 	struct rrr_net_transport *transport = NULL;
@@ -444,7 +444,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_msg_msg_holder_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (influxdb_parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
@@ -468,15 +468,13 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
-
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, influxdb_poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, influxdb_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -512,19 +510,19 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
-			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
-			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
 
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
@@ -543,7 +541,7 @@ static const char *module_name = "influxdb";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;

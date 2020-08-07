@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
 
 struct mqtt_broker_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_fifo_buffer local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
 	rrr_setting_uint server_port_plain;
@@ -90,7 +90,7 @@ static void mqttbroker_data_cleanup(void *arg) {
 
 static int mqttbroker_data_init (
 		struct mqtt_broker_data *data,
-		struct rrr_instance_thread_data *thread_data
+		struct rrr_instance_runtime_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
 	int ret = 0;
@@ -113,7 +113,7 @@ static int mqttbroker_data_init (
 }
 
 // TODO : Provide more configuration arguments
-static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config *config) {
+static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
@@ -271,7 +271,7 @@ static int mqttbroker_parse_acl (struct mqtt_broker_data *data) {
 }
 
 static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int init_ret = 0;
@@ -286,7 +286,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	pthread_cleanup_push(mqttbroker_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (mqttbroker_parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -385,9 +385,9 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	unsigned long int consecutive_nothing_happened = 0;
 
 	uint64_t prev_stats_time = rrr_time_get_64();
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread);
 
 		int plain_something_happened = 0;
 		int tls_something_happened = 0;
@@ -436,7 +436,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		pthread_cleanup_pop(1);
 
 	out_message:
-		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread_data->thread);
+		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread);
 		pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
@@ -455,7 +455,7 @@ static const char *module_name = "mqtt_broker";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_NETWORK;

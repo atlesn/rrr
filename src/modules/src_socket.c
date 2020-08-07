@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 
 struct socket_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	char *socket_path;
 	char *default_topic;
 	ssize_t default_topic_length;
@@ -67,7 +67,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
 
-int data_init(struct socket_data *data, struct rrr_instance_thread_data *thread_data) {
+int data_init(struct socket_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -75,7 +75,7 @@ int data_init(struct socket_data *data, struct rrr_instance_thread_data *thread_
 	return 0;
 }
 
-int parse_config (struct socket_data *data, struct rrr_instance_config *config) {
+int parse_config (struct socket_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	// Socket path
@@ -338,7 +338,7 @@ static void socket_stop (void *arg) {
 }
 
 static void *thread_entry_socket (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct socket_data *data = thread_data->private_data = thread_data->private_memory;
 
 	pthread_cleanup_push(data_cleanup, data);
@@ -355,7 +355,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	pthread_cleanup_push(socket_stop, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -376,8 +376,8 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
 	unsigned int consecutive_nothing_happened = 0;
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
 			RRR_MSG_ERR("Error while accepting connections in socket instance %s\n",
@@ -419,7 +419,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct socket_data data;
 	int ret = 0;
 	if ((ret = data_init(&data, NULL)) != 0) {
@@ -445,7 +445,7 @@ static const char *module_name = "socket";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

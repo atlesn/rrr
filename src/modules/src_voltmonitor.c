@@ -59,7 +59,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/util/rrr_time.h"
 
 struct voltmonitor_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 #ifdef RRR_WITH_USB
 	usb_dev_handle *usb_handle;
@@ -308,7 +308,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 }
 #endif
 
-int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {
+int data_init(struct voltmonitor_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
 	return 0;
@@ -341,7 +341,7 @@ int convert_integer_10(const char *value, int *result) {
 	return 0;
 }
 
-int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *config) {
+int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	char *vm_calibration = NULL;
@@ -494,7 +494,7 @@ static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
 	return ret;
 }
 
-int inject (struct rrr_instance_thread_data *thread_data, struct rrr_msg_msg_holder *entry) {
+int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_msg_holder *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
 	struct rrr_msg_msg *message = entry->message;
@@ -529,10 +529,8 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_msg_msg_hol
 }
 
 static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
-
-	thread_data->thread = thread;
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -549,7 +547,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -568,8 +566,8 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 		}
 	}
 
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
@@ -599,7 +597,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct voltmonitor_data data;
 	int ret = 0;
 
@@ -631,7 +629,7 @@ __attribute__((constructor)) void load(void) {
 #endif
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

@@ -65,7 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct rrr_msg_msg_holder_collection send_queue_intermediate;
 
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	uint32_t client_number;
 	int disallow_remote_ip_swap;
@@ -96,7 +96,7 @@ void data_cleanup(void *arg) {
 	rrr_msg_msg_holder_collection_clear(&data->send_queue_intermediate);
 }
 
-int data_init(struct ipclient_data *data, struct rrr_instance_thread_data *thread_data) {
+int data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -107,7 +107,7 @@ int data_init(struct ipclient_data *data, struct rrr_instance_thread_data *threa
 int delete_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data);
 int queue_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data);
 
-int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
+int parse_config (struct ipclient_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ipclient_client_number", client_number, 0);
@@ -165,7 +165,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 }
 
 static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ipclient_data *private_data = thread_data->private_data;
 
 	struct rrr_msg_msg *message = entry->message;
@@ -415,7 +415,7 @@ static int ipclient_udpstream_allocator (
 }
 
 static void *thread_entry_ipclient (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data, thread_data) != 0) {
@@ -429,7 +429,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -439,9 +439,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
-
-	int no_polling = rrr_poll_collection_count(thread_data->poll) > 0 ? 0 : 1;
+	int no_polling = rrr_poll_collection_count(&thread_data->poll) > 0 ? 0 : 1;
 
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -463,14 +461,14 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	int queued_total = 0;
 	int send_total = 0;
 	int delivered_total = 0;
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
 		time_now = rrr_time_get_64();
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
-			if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback, 25) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
 				RRR_MSG_ERR("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -486,7 +484,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 //				INSTANCE_D_NAME(thread_data));
 
 		int queue_count = 0;
-		rrr_thread_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread);
 		if (queue_or_delete_messages(&queue_count, data) != 0) {
 			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;
@@ -578,7 +576,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	}
 
 	out_message:
-	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
+	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread);
 
 //	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -587,7 +585,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct ipclient_data data;
 	int ret;
 
@@ -615,7 +613,7 @@ static const char *module_name = "ipclient";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;

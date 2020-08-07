@@ -45,7 +45,7 @@ void rrr_http_client_config_cleanup (
 
 int rrr_http_client_config_parse (
 		struct rrr_http_client_config *data,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,

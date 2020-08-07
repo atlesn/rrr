@@ -56,15 +56,15 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_test_result(struct rrr_instance_metadata_collection *instances) {
-	struct rrr_instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
+int main_get_test_result(struct rrr_instance_collection *instances) {
+	struct rrr_instance *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
-	void *handle = instance->dynamic_data->dl_ptr;
+	void *handle = instance->module_data->dl_ptr;
 
 	dlerror();
 
@@ -222,19 +222,14 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	struct rrr_instance_metadata_collection *instances;
-	TEST_BEGIN("init instances") {
-		if (rrr_instance_metadata_collection_new (&instances) != 0) {
-			ret = 1;
-		}
-	} TEST_RESULT(ret == 0);
+	struct rrr_instance_collection instances = {0};
 
 	if (ret != 0) {
 		goto out_cleanup_config;
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (rrr_instance_process_from_config(instances, config, library_paths) != 0) {
+		if (rrr_instance_create_from_config(&instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -245,9 +240,9 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (rrr_main_start_threads (
+		if (rrr_main_create_and_start_threads (
 				&collection,
-				instances,
+				&instances,
 				config,
 				&cmd,
 				&stats_engine,
@@ -275,24 +270,22 @@ int main (int argc, const char **argv) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
+		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
 
-		ret = main_get_test_result(instances);
+		ret = main_get_test_result(&instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
-		rrr_main_threads_stop(collection, instances);
+		rrr_main_threads_stop_and_destroy(collection);
 	} TEST_RESULT(ret == 0);
 
-	rrr_thread_destroy_collection(collection, 0);
-
 	out_cleanup_instances:
-		rrr_instance_metadata_collection_destroy(instances);
+		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite
 		//rrr_instance_unload_all(instances);

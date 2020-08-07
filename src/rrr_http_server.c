@@ -312,7 +312,7 @@ int main (int argc, const char *argv[]) {
 		// We must do this here, the HTTP server library does not do this
 		// itself as it is also used by RRR modules for which this is performed
 		// by the main process
-		rrr_thread_run_ghost_cleanup(&count);
+		rrr_thread_postponed_cleanup_run(&count);
 
 		int accept_count = 0;
 		if (rrr_http_server_tick(&accept_count, http_server, NULL, NULL) != 0) {
@@ -342,7 +342,7 @@ int main (int argc, const char *argv[]) {
 			http_server = NULL;
 		}
 
-		rrr_thread_run_ghost_cleanup(&count);
+		rrr_thread_postponed_cleanup_run(&count);
 		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
 
 		rrr_signal_handler_remove(signal_handler);

@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MYSQL_H
 #define RRR_MYSQL_H
 
-struct rrr_instance_thread_data;
+struct rrr_instance_runtime_data;
 struct rrr_array;
 
 #define MYSQL_CREATE_TABLE_DEFINITION \

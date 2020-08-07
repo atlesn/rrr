@@ -69,7 +69,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_MSG_CTRL_F_USR_A
 
 struct perl5_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	struct cmd_argv_copy *cmdline;
 
@@ -137,7 +137,7 @@ static int xsub_set_setting(const char *key, const char *value, void *private_da
 }
 
 static int preload_perl5 (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = (struct rrr_instance_thread_data *) thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
 
 	int ret = 0;
 
@@ -156,7 +156,7 @@ static int preload_perl5 (struct rrr_thread *thread) {
 	return ret;
 }
 
-static int perl5_data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_data) {
+static int perl5_data_init(struct perl5_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
@@ -223,7 +223,7 @@ static void data_cleanup(void *arg) {
 	cmd_destroy_argv_copy(data->cmdline);
 }
 
-static int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
+static int parse_config(struct perl5_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->perl5_file, config, "perl5_file");
@@ -252,7 +252,7 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 	child_data.parent_data = private_arg;
 	child_data.worker = worker;
 
-	if (preload_perl5 (child_data.parent_data->thread_data->thread) != 0) {
+	if (preload_perl5 (INSTANCE_D_THREAD(child_data.parent_data->thread_data)) != 0) {
 		RRR_MSG_0("Could not preload perl5 in child fork of instance %s\n",
 				INSTANCE_D_NAME(child_data.parent_data->thread_data));
 		ret = 1;
@@ -384,7 +384,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 }
 
 static void *thread_entry_perl5(struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (perl5_data_init(data, thread_data) != 0) {
@@ -395,7 +395,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -404,8 +404,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	if (rrr_cmodule_helper_parse_config(thread_data, "perl5", "sub") != 0) {
 		goto out_message;
 	}
-
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	pid_t fork_pid = 0;
 
@@ -430,18 +428,19 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			thread_data->poll,
+			&thread_data->poll,
 			fork_pid
 	);
 
 	out_message:
-	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n", INSTANCE_D_NAME(thread_data), thread_data->thread);
+	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n",
+			INSTANCE_D_NAME(thread_data), thread);
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
-static int test_config(struct rrr_instance_config *config) {
+static int test_config(struct rrr_instance_config_data *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
@@ -460,7 +459,7 @@ static const char *module_name = "perl5";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;

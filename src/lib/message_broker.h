@@ -77,6 +77,10 @@ void rrr_message_broker_cleanup (
 int rrr_message_broker_init (
 		struct rrr_message_broker *broker
 );
+rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
+		struct rrr_message_broker *broker,
+		const char *name
+);
 void rrr_message_broker_costumer_unregister (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle
