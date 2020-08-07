@@ -611,15 +611,15 @@ static int __rrr_stats_engine_message_register_nolock (
 	if (list == NULL) {
 		RRR_MSG_0("List with handle %u not found in __rrr_stats_engine_message_register_nolock\n", stats_handle);
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
-	struct rrr_stats_message *new_message;
+	struct rrr_stats_message *new_message = NULL;
 
 	if (rrr_stats_message_duplicate(&new_message, message) != 0) {
 		RRR_MSG_0("Could not duplicate message in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
 	if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(new_message)) {
@@ -630,24 +630,24 @@ static int __rrr_stats_engine_message_register_nolock (
 	if (ret >= RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
 		RRR_MSG_0("Path was too long in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 	ret = 0;
 
 	if (rrr_stats_message_set_path(new_message, prefix_tmp) != 0) {
 		RRR_MSG_0("Could not set path in new message in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 
 	RRR_LL_APPEND(list, new_message);
 	new_message = NULL;
 
-	out:
-	if (new_message != NULL) {
+	goto out_final;
+	out_free:
 		rrr_stats_message_destroy(new_message);
-	}
-	return ret;
+	out_final:
+		return ret;
 }
 
 static int __rrr_stats_engine_handle_exists_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {

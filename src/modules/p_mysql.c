@@ -562,7 +562,6 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 	else {
 		data->strip_array_separators = yesno;
@@ -609,6 +608,9 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		RRR_MSG_0("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
 		exit(EXIT_FAILURE);
 	}
+
+	// Reset any NOT_FOUND
+	ret = 0;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(mysql_colplan);

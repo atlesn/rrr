@@ -152,7 +152,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 
 	if (pid_was_found == 0) {
 		free(msg);
-		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n");
+		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n", worker_handle_pid);
 		ret = 1;
 		goto out;
 	}

@@ -960,7 +960,13 @@ static int __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback
 	}
 
 	ssize_t count = PyList_GET_SIZE(list);
-	PyObject *first_item = PyList_GET_ITEM(list, 0);
+	PyObject *first_item = PyList_GetItem(list, 0); // Borrowed reference
+
+	if (count < 1 || first_item == NULL) {
+		RRR_MSG_0("List of node had no value elements in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+		ret = 1;
+		goto out;
+	}
 
 	uint8_t target_type = 0;
 	uint8_t target_type_flags = 0;

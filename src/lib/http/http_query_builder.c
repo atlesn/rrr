@@ -173,7 +173,7 @@ static int __rrr_http_query_builder_append_type_value (
 		goto out;
 	}
 
-	if ((ret = __rrr_http_query_builder_escape_field(&name_escaped_tmp, node_tag, strlen(node_tag), 0)) != 0) {
+	if (__rrr_http_query_builder_escape_field(&name_escaped_tmp, node_tag, strlen(node_tag), 0)) {
 		RRR_MSG_0("Could not escape field in rrr_http_query_builder_append_values_from_array\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;

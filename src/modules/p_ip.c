@@ -131,7 +131,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// Listening not being done
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_udp_port setting for instance %s\n", config->name);
@@ -150,7 +149,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// Listening not being done
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_tcp_port setting for instance %s\n", config->name);
@@ -169,7 +167,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// No remote port specified
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_remote_port setting for instance %s\n", config->name);
@@ -178,6 +175,9 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 	}
 	data->target_port = tmp_uint;
+
+	// Reset any NOT_FOUND
+	ret = 0;
 
 	out:
 	return ret;
@@ -199,7 +199,6 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 		data->target_protocol = IP_DEFAULT_PROTOCOL;
 	}
 	else {
@@ -322,6 +321,9 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_receive_message_max", message_max_size, IP_DEFAULT_MAX_MESSAGE_SIZE);
+
+	// Clear any NOT_FOUND
+	ret = 0;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
@@ -858,12 +860,12 @@ static int ip_send_message_raw (
 		);
 
 		if (accept_data_to_use == NULL) {
-			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+			if ((ret =rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 					&accept_data_to_free,
 					(struct sockaddr *) &addr,
 					addr_len,
 					graylist
-			) != 0) {
+			)) != 0) {
 				if (ret == RRR_SOCKET_HARD_ERROR) {
 					char ip_str[256];
 					rrr_ip_to_str(ip_str, 256, (const struct sockaddr *) &addr, addr_len);
@@ -872,7 +874,6 @@ static int ip_send_message_raw (
 							INSTANCE_D_NAME(thread_data)
 					);
 				}
-				ret = 0;
 				goto out_put_back;
 			}
 

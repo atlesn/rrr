@@ -489,6 +489,7 @@ static int __rrr_mqtt_session_ram_delivery_local (
 		if (ret != RRR_MQTT_SUBSCRIPTION_MISMATCH) {
 			RRR_MSG_0("Error while checking PUBLISH against subscriptions in __rrr_mqtt_session_ram_delivery_local\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out;
 		}
 		ret = RRR_MQTT_SESSION_OK;
 		goto out; // No match
@@ -1117,7 +1118,6 @@ static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(
 			rrr_fifo_buffer_read_clear_forward(
 					&data->publish_local_queue.buffer,
-					NULL,
 					__rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback,
 					&iterate_callback_data,
 					0
@@ -1229,7 +1229,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	ret = rrr_fifo_buffer_read_clear_forward (
 			&data->publish_forward_queue.buffer,
-			NULL,
 			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
 			data,
 			0
@@ -1719,7 +1718,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		) {
 			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5 (RRR_MQTT_P_GET_REASON_V5(ack_packet));
 			if (reason == NULL) {
-				RRR_MSG_0("Unknown reason %u in PUBACK or PUBREC in __rrr_mqtt_session_ram_process_ack_callback\n");
+				RRR_MSG_0("Unknown reason %u in PUBACK or PUBREC in __rrr_mqtt_session_ram_process_ack_callback\n", RRR_MQTT_P_GET_REASON_V5(ack_packet));
 				ret = RRR_FIFO_CALLBACK_ERR;
 				goto out;
 			}

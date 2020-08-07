@@ -312,7 +312,7 @@ static int __rrr_http_session_multipart_field_send (
 		}
 
 		if ((ret = rrr_asprintf (&name_buf_full, "; name=%s", name_buf)) <= 0) {
-			RRR_MSG_0("Could not create name_buf_full in __rrr_http_session_multipart_field_send\n");
+			RRR_MSG_0("Could not create name_buf_full in __rrr_http_session_multipart_field_send return was %i\n", ret);
 			ret = 1;
 			goto out;
 		}
@@ -320,7 +320,7 @@ static int __rrr_http_session_multipart_field_send (
 
 	if (node->content_type != NULL && *(node->content_type) != '\0') {
 		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", node->content_type)) <= 0) {
-			RRR_MSG_0("Could not create content_type_buf in __rrr_http_session_multipart_field_send\n");
+			RRR_MSG_0("Could not create content_type_buf in __rrr_http_session_multipart_field_send return was %i\n");
 			ret = 1;
 			goto out;
 		}
@@ -337,7 +337,7 @@ static int __rrr_http_session_multipart_field_send (
 			(name_buf_full != NULL ? name_buf_full : ""),
 			(content_type_buf != NULL ? content_type_buf : "")
 	)) < 0) {
-		RRR_MSG_0("Could not create content type string and body  in __rrr_http_session_multipart_field_send\n");
+		RRR_MSG_0("Could not create content type string and body  in __rrr_http_session_multipart_field_send return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -375,7 +375,7 @@ static int __rrr_http_session_multipart_form_data_body_send (
 	// RFC7578
 
 	if ((ret = rrr_asprintf (&boundary_buf, "RRR%u", (unsigned int) rrr_rand())) < 0) {
-		RRR_MSG_0("Could not create boundary_buf string in __rrr_http_session_multipart_form_data_body_send\n");
+		RRR_MSG_0("Could not create boundary_buf string in __rrr_http_session_multipart_form_data_body_send return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -388,7 +388,8 @@ static int __rrr_http_session_multipart_form_data_body_send (
 				"Transfer-Encoding: chunked\r\n\r\n",
 				boundary_buf
 		)) < 0) {
-			RRR_MSG_0("Could not create content type string in __rrr_http_session_multipart_form_data_body_send\n");
+			RRR_MSG_0("Could not create content type string in __rrr_http_session_multipart_form_data_body_send return was %i\n", ret);
+			ret = 1;
 			goto out;
 		}
 
@@ -415,7 +416,7 @@ static int __rrr_http_session_multipart_form_data_body_send (
 				"\r\n--%s--\r\n",  // <-- ONE CRLF AFTER BODY AND ONE AT THE VERY END
 				boundary_buf
 		)) < 0) {
-			RRR_MSG_0("Could not create last boundary in __rrr_http_session_multipart_form_data_body_send\n");
+			RRR_MSG_0("Could not create last boundary in __rrr_http_session_multipart_form_data_body_send return was %i\n", ret);
 			ret = 1;
 			goto out;
 		}
@@ -572,7 +573,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			host_buf,
 			user_agent_buf
 	)) < 0) {
-		RRR_MSG_0("Error while making request string in rrr_http_session_send_request\n");
+		RRR_MSG_0("Error while making request string in rrr_http_session_send_request return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}

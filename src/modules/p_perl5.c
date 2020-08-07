@@ -306,7 +306,7 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 
 	RRR_DBG_2("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
 
-	if ((ret = rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings)) != 0) {
+	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;

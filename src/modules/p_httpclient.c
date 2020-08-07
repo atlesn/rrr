@@ -475,7 +475,6 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
 			RRR_MSG_0("Soft error while sending message in httpclient instance %s, deferring message\n",
 					INSTANCE_D_NAME(thread_data));
-			ret = 0;
 			goto out_defer;
 		}
 		RRR_MSG_0("Hard error while sending message in httpclient instance %s\n",

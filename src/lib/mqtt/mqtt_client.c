@@ -427,12 +427,12 @@ int rrr_mqtt_client_connect (
 			0 // no_creation: 0 means to create on non-existent client ID
 	)) != RRR_MQTT_SESSION_OK || *session == NULL) {
 		ret = RRR_MQTT_INTERNAL_ERROR;
-		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect\n");
+		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect return was %i\n", ret);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_common_clear_session_from_connections (mqtt_data, *session, *transport_handle)) != 0) {
-		RRR_MSG_0("Error while clearing session from old connections in rrr_mqtt_client_connect\n");
+		RRR_MSG_0("Error while clearing session from old connections in rrr_mqtt_client_connect return was %i\n", ret);
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		goto out;
 	}

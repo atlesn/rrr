@@ -36,7 +36,8 @@ struct rrr_global_config rrr_config_global = {
 		0,
 		0,
 		0,
-		"main"
+		"main",
+		0
 };
 
 void rrr_config_set_debuglevel_on_exit(void) {

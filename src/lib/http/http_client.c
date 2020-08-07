@@ -129,6 +129,7 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_MSG_0("Could not find Location-field in HTTP response %i %s\n",
 					response_part->response_code, response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
 		}
 		RRR_DBG_2("HTTP Redirect to %s\n", location->value);
 
@@ -254,11 +255,11 @@ static void __rrr_http_client_send_request_callback (
 				handle->application_private_ptr,
 				callback_data->before_send_callback_arg)
 		) != RRR_HTTP_OK) {
-			if (ret != RRR_HTTP_NO_RESULT) {
+			ret &= ~(RRR_HTTP_NO_RESULT);
+			if (ret != 0) {
 				RRR_MSG_0("Error %i while making query string in __rrr_http_client_send_request_callback\n", ret);
 				goto out;
 			}
-			ret = 0;
 		}
 	}
 
@@ -270,7 +271,7 @@ static void __rrr_http_client_send_request_callback (
 			goto out;
 		}
 		if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint, query_to_free)) <= 0) {
-			RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback\n");
+			RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback return was %i\n", ret);
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -479,8 +480,8 @@ int rrr_http_client_send_request (
 			__rrr_http_client_send_request_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Connection failed to server %s port %u transport %s in http client\n",
-				data->server, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
+		RRR_MSG_0("Connection failed to server %s port %u transport %s in http client return was %i\n",
+				data->server, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}

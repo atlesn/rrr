@@ -101,15 +101,13 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			char *tmp_string;
 
-			ret = rrr_settings_read_string (&tmp_string, source->settings, name);
+			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
 			RRR_MSG_0 (
 					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
 
-			if (tmp_string != NULL) {
-				free(tmp_string);
-			}
+			RRR_FREE_IF_NOT_NULL(tmp_string);
 
 			ret = 1;
 			goto out;

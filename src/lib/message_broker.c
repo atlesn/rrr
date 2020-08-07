@@ -254,7 +254,7 @@ int rrr_message_broker_costumer_register (
 				name_unique);
 	}
 
-	if (__rrr_message_broker_costumer_new (&costumer, name_unique) != 0) {
+	if ((ret = __rrr_message_broker_costumer_new (&costumer, name_unique)) != 0) {
 		goto out;
 	}
 
@@ -793,7 +793,6 @@ static int __rrr_message_broker_split_buffers_fill (struct rrr_message_broker_co
 
 	if ((ret = rrr_fifo_buffer_read_clear_forward (
 			&costumer->main_queue,
-			NULL,
 			__rrr_message_broker_split_buffers_fill_callback,
 			costumer,
 			0
@@ -881,7 +880,6 @@ int rrr_message_broker_poll_delete (
 
 	if ((ret = rrr_fifo_buffer_read_clear_forward (
 			source_buffer,
-			NULL,
 			__rrr_message_broker_poll_delete_intermediate,
 			&callback_data,
 			wait_milliseconds

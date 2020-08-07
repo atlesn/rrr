@@ -212,7 +212,6 @@ int rrr_fifo_buffer_clear_order_lt (
 );
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
