@@ -154,7 +154,7 @@ int rrr_mqtt_payload_buf_put_variable_int (
 	uint8_t chunks[4];
 
 	ssize_t used_bytes = 0;
-	for (int i = 0; i < 4; i--) {
+	for (int i = 0; i < 4; i++) {
 		used_bytes++;
 
 		chunks[i] = value & 0x7f;
