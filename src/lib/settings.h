@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
+#include "read_constants.h"
 #include "socket/rrr_socket_msg.h"
 #include "utf8.h"
 
@@ -42,9 +43,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 typedef unsigned int rrr_setting_type;
 typedef unsigned long long int rrr_setting_uint;
 
-#define RRR_SETTING_ERROR 1
-#define RRR_SETTING_PARSE_ERROR 2
-#define RRR_SETTING_NOT_FOUND 3
+// Use bit flag compatible values
+#define RRR_SETTING_ERROR			RRR_READ_HARD_ERROR
+#define RRR_SETTING_PARSE_ERROR		RRR_READ_SOFT_ERROR
+#define RRR_SETTING_NOT_FOUND		RRR_READ_INCOMPLETE
 
 struct rrr_setting {
 	rrr_u32 type;

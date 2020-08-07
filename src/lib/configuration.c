@@ -218,6 +218,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 	char c = pos->data[pos->pos];
 	while (c != ']' && !rrr_parse_check_eof(pos)) {
 		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			// These are ok
 		}
 		else {
 			RRR_MSG_0("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);

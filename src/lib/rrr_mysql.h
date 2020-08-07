@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_MYSQL_H
+#define RRR_MYSQL_H
+
 struct rrr_instance_thread_data;
 struct rrr_array;
 
@@ -29,3 +32,5 @@ struct rrr_array;
 
 void rrr_mysql_library_init(void);
 void rrr_mysql_library_end(void);
+
+#endif /* RRR_MYSQL_H */

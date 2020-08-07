@@ -308,12 +308,12 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
 	if (!RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
 		ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
-		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
+		// Ignore soft errors when sending DISCONNECT packet here.
+		ret &= ~(RRR_MQTT_SOFT_ERROR);
+		if (ret != 0) {
 			RRR_MSG_0("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
 			goto out;
 		}
-		// Ignore soft errors when sending DISCONNECT packet here.
-		ret = 0;
 	}
 
 	if (connection->close_wait_time_usec > 0) {
@@ -575,7 +575,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 
 	__rrr_mqtt_connection_update_last_read_time (connection);
 
-	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
+	if (__rrr_mqtt_conn_parse (read_session, connection) != RRR_MQTT_OK) {
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -702,7 +702,7 @@ static int __rrr_mqtt_conn_iterator_ctx_write (
 
 	int ret = 0;
 
-	if (rrr_net_transport_ctx_send_nonblock(handle, data, data_size) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_nonblock(handle, data, data_size)) != 0) {
 		if (ret == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
 			ret = RRR_MQTT_INCOMPLETE;
 			goto out;
@@ -856,7 +856,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	if (packet->assembled_data_size > 0) {
 		if ((ret = __rrr_mqtt_conn_iterator_ctx_write (handle, packet->_assembled_data, packet->assembled_data_size)) != 0) {
 			// TODO : Recover from this?
-			RRR_MSG_0("Error: Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet. Fixed data was already sent, cannot recover from this.\n");
+			RRR_MSG_0("Error: Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet. Fixed data was already sent, cannot recover from this. Return was %i.\n", ret);
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}

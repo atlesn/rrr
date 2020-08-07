@@ -110,31 +110,15 @@ int queue_message_callback (struct rrr_ip_buffer_entry *entry, struct ipclient_d
 int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	rrr_setting_uint client_id = 0;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ipclient_client_number", client_number, 0);
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&client_id, config, "ipclient_client_number")) != 0) {
-		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be set to a unique number for this client\n", config->name);
-		ret = 1;
-		goto out;
-	}
-
-	if (client_id == 0 || client_id > 0xffffffff) {
+	if (data->client_number == 0 || data->client_number > 0xffffffff) {
 		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
-	data->client_number = client_id;
-
-	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote, config, "ipclient_default_remote")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing setting ipclient_default_remote of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		data->ip_default_remote = NULL;
-		ret = 0;
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ipclient_default_remote", ip_default_remote);
 
 	if (data->ip_default_remote == NULL || *(data->ip_default_remote) == '\0') {
 		data->queue_method = delete_message_callback;
@@ -154,7 +138,6 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 
 	rrr_setting_uint src_port;
@@ -163,7 +146,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND) {
 		data->src_port = RRR_IPCLIENT_DEFAULT_PORT;
-		ret = 0;
+		// OK
 	}
 	else {
 		RRR_MSG_0("ipclient: Could not understand ipclient_src_port argument, must be numeric\n");
@@ -171,33 +154,11 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		goto out;
 	}
 
-	int yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_disallow_remote_ip_swap"))) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Invalid value for setting ipclient_disallow_remote_ip_swap of instance %s, please specify yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_disallow_remote_ip_swap", disallow_remote_ip_swap, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_listen", listen, 0);
 
-	data->disallow_remote_ip_swap = yesno;
-
-	yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_listen"))) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Invalid value for setting ipclient_listen of instance %s, please specify yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->listen = yesno;
+	// Reset any NOT_FOUND
+	ret = 0;
 
 	out:
 	return ret;

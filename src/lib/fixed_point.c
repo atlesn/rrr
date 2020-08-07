@@ -75,14 +75,12 @@ int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	double running_sum = 0.0;
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		long double test_sum = running_sum + decimal_fractions_base2[i];
-		if (test_sum == fraction) {
+		if (test_sum == fraction || test_sum < fraction) {
 			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
 			running_sum = test_sum;
-			break;
-		}
-		else if (test_sum < fraction) {
-			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
-			running_sum = test_sum;
+			if (test_sum == fraction) {
+				break;
+			}
 		}
 	}
 

@@ -608,8 +608,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		}
 	}
 
-	uint64_t size_tmp = (size >= 0 ? size : 0);
-	if (written_bytes != size_tmp) {
+	uint64_t size_tmp_u = size;
+	if (written_bytes != size_tmp_u) {
 		RRR_MSG_1("Not all bytes were sent %li < %li in rrr_net_transport_ctx_send_nonblock\n", written_bytes, size);
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}

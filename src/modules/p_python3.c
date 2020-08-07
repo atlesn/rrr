@@ -198,11 +198,11 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 
 	struct python3_fork_runtime runtime;
 
-	if ((ret = rrr_py_cmodule_runtime_init (
+	if (rrr_py_cmodule_runtime_init (
 			&runtime,
 			worker,
 			data->module_path
-	)) != 0) {
+	) != 0) {
 		RRR_MSG_0("Could not initialize python3 runtime in __rrr_py_start_persistent_rw_fork_intermediate\n");
 		ret = 1;
 		goto out;

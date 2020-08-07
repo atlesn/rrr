@@ -170,8 +170,8 @@ static void influxdb_send_data_callback (
 
 	char *uri = NULL;
 	if ((ret = rrr_asprintf(&uri, "/write?db=%s", data->database)) <= 0) {
-		RRR_MSG_0("Error while creating URI in send_data of influxdb instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Error while creating URI in send_data of influxdb instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		ret = 1;
 		goto out;
 	}

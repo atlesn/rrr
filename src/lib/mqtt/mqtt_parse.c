@@ -646,6 +646,8 @@ static int __rrr_mqtt_parse_properties (
 	uint32_t property_length = 0;
 	ssize_t bytes_parsed = 0;
 
+	struct rrr_mqtt_property *property_tmp = NULL;
+
 	rrr_mqtt_property_collection_destroy(target);
 
 	const char *properties_length_start = start;
@@ -654,7 +656,8 @@ static int __rrr_mqtt_parse_properties (
 
 	if (ret != RRR_MQTT_OK) {
 		RRR_MSG_0("Error while parsing property length variable int\n");
-		return RRR_MQTT_SOFT_ERROR;
+		ret = RRR_MQTT_SOFT_ERROR;
+		goto out;
 	}
 
 	start = end;
@@ -668,27 +671,32 @@ static int __rrr_mqtt_parse_properties (
 		const struct rrr_mqtt_property_definition *property_def = rrr_mqtt_property_get_definition(type);
 		if (property_def == NULL) {
 			RRR_MSG_0("Unknown mqtt property field found: 0x%02x\n", type);
-			return RRR_MQTT_SOFT_ERROR;
+			ret = RRR_MQTT_SOFT_ERROR;
+			goto out;
 		}
 
-		struct rrr_mqtt_property *property = NULL;
-		if ((ret = rrr_mqtt_property_new(&property, property_def)) != 0) {
-			return RRR_MQTT_INTERNAL_ERROR;
+		if (rrr_mqtt_property_new(&property_tmp, property_def) != 0) {
+			ret = RRR_MQTT_INTERNAL_ERROR;
+			goto out;
 		}
 
 		start = end;
-		ret = property_parsers[property_def->internal_data_type](property, session, start, &bytes_parsed);
+		ret = property_parsers[property_def->internal_data_type](property_tmp, session, start, &bytes_parsed);
 		if (ret != 0) {
-			rrr_mqtt_property_destroy(property);
 			return ret;
 		}
 		end = start + bytes_parsed;
 
-		rrr_mqtt_property_collection_add (target, property);
+		rrr_mqtt_property_collection_add (target, property_tmp);
+		property_tmp = NULL;
 	}
 
 	*bytes_parsed_final = end - properties_length_start;
 
+	out:
+	if (property_tmp != NULL) {
+		rrr_mqtt_property_destroy(property_tmp);
+	}
 	return ret;
 }
 
@@ -994,8 +1002,6 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 		PARSE_PAYLOAD_SAVE_CHECKPOINT();
 	}
 
-	goto parse_done;
-
 	PARSE_END_PAYLOAD();
 }
 
@@ -1293,7 +1299,7 @@ void rrr_mqtt_packet_parse (
 		session->type_properties = properties;
 
 		if (session->target_size <= 0) {
-			RRR_MSG_1("Invalid target size %li while parsing packet\n");
+			RRR_MSG_1("Invalid target size %li while parsing packet\n", session->target_size);
 			RRR_MQTT_PARSE_STATUS_SET_ERR(session);
 			goto out;
 		}

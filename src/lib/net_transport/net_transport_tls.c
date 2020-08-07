@@ -366,7 +366,7 @@ static int __rrr_net_transport_tls_connect (
 			ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_connect\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_connect return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -437,7 +437,7 @@ static int __rrr_net_transport_tls_bind_and_listen (
 			ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_bind_and_listen\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_bind_and_listen return was %i\n", ret);
 		ret = 1;
 		goto out_free_ssl_data;
 	}
@@ -521,14 +521,14 @@ int __rrr_net_transport_tls_accept (
 
 	// Run this before populating SSL data to provide memory fence
 	int new_handle = 0;
-	if ((ret = rrr_net_transport_handle_allocate_and_add(
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			new_ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}

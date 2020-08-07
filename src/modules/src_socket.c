@@ -95,12 +95,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 	// Message default topic
 	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
+		ret &= ~(RRR_SETTING_NOT_FOUND);
+		if (ret != 0) {
 			RRR_MSG_0("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 	else {
 		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
@@ -116,16 +116,18 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
 		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
 				config->name);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 	data->receive_rrr_message = (yesno == 0 || yesno == 1 ? yesno : 0);
 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
-		if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "socket_input_types")) != 0) {
+		if (rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "socket_input_types") != 0) {
 			RRR_MSG_0("Could not parse configuration parameter socket_input_types in socket instance %s\n",
 					config->name);
-			return 1;
+			ret = 1;
+			goto out;
 		}
 	}
 
@@ -138,22 +140,26 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 	data->do_sync_byte_by_byte = yesno;
 
 	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
+
+	// Reset any NOT_FOUND
+	ret = 0;
 
 	out:
 	return ret;

@@ -53,8 +53,8 @@ struct averager_data {
 	// Set this to 1 to delete incoming messages which are not readings and infos
 	int discard_unknown_messages;
 
-	unsigned int timespan;
-	unsigned int interval;
+	rrr_setting_uint timespan;
+	rrr_setting_uint interval;
 
 	char *msg_topic;
 };
@@ -224,16 +224,13 @@ int averager_process_message (
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
 
-	if ((ret = __averager_get_64_from_array(&data_numeric, averager_data, &array_tmp, "measurement")) != 0) {
-		ret = 0;
+	if (__averager_get_64_from_array(&data_numeric, averager_data, &array_tmp, "measurement") != 0) {
 		goto out;
 	}
-	if ((ret = __averager_get_64_from_array(&timestamp_from, averager_data, &array_tmp, "timestamp_from")) != 0) {
-		ret = 0;
+	if (__averager_get_64_from_array(&timestamp_from, averager_data, &array_tmp, "timestamp_from") != 0) {
 		goto out;
 	}
-	if ((ret = __averager_get_64_from_array(&timestamp_to, averager_data, &array_tmp, "timestamp_to")) != 0) {
-		ret = 0;
+	if (__averager_get_64_from_array(&timestamp_to, averager_data, &array_tmp, "timestamp_to") != 0) {
 		goto out;
 	}
 
@@ -426,66 +423,13 @@ int averager_data_init(struct averager_data *data, struct rrr_instance_thread_da
 int averager_parse_config (struct averager_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	rrr_setting_uint timespan = 0;
-	rrr_setting_uint interval = 0;
-	int preserve_points = 0;
-	int discard_unknowns = 0;
-
-	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->msg_topic, config, "avg_message_topic")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in avg_message_topic for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&timespan, config, "avg_timespan")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		timespan = RRR_DEFAULT_AVERAGER_TIMESPAN;
-		ret = 0;
-	}
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		interval = RRR_DEFAULT_AVERAGER_INTERVAL;
-		ret = 0;
-	}
-
-	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		preserve_points = 0;
-		ret = 0;
-	}
-
-	if ((ret = rrr_instance_config_check_yesno(&discard_unknowns, config, "avg_discard_unknowns")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Syntax error in avg_discard_unknowns for instance %s, specify yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		discard_unknowns = 0;
-		ret = 0;
-	}
-
-	data->discard_unknown_messages = discard_unknowns;
-	data->timespan = timespan;
-	data->interval = interval;
-	data->preserve_point_measurements = preserve_points;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("avg_message_topic", msg_topic);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_timespan", timespan, RRR_DEFAULT_AVERAGER_TIMESPAN);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("avg_interval", interval, RRR_DEFAULT_AVERAGER_INTERVAL);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("avg_preserve_points", preserve_point_measurements, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("avg_discard_unknowns", discard_unknown_messages, 0);
 
 	out:
-
 	return ret;
 }
 

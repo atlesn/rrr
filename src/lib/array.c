@@ -155,7 +155,7 @@ static int __rrr_array_parse_identifier_and_size (
 		}
 
 		parsed_bytes += integer_end - start;
-		start = integer_end;
+		// start = integer_end; - Enable if more parsing is to be performed
 
 		if (item_count == 0) {
 			RRR_MSG_0("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
@@ -782,7 +782,7 @@ int rrr_array_parse_from_buffer_with_callback (
 			buf_len,
 			definition
 	)) != 0) {
-		RRR_MSG_0("Could not parse array in rrr_array_parse_from_buffer_with_callback\n");
+		RRR_MSG_0("Could not parse array in rrr_array_parse_from_buffer_with_callback return was %i\n", ret);
 		// Usually errors are caused by senders sending wrong data,
 		// don't let them make the program crash
 		ret = RRR_ARRAY_PARSE_SOFT_ERR;

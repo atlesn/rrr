@@ -378,6 +378,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	if ((SvTRUE(err_tmp))) {
 		RRR_MSG_0("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
 		ret_tmp = POPs;
+		(void)(ret_tmp);
 		ret = 1;
 	}
 	else if (numitems == 1) {
@@ -958,7 +959,7 @@ int rrr_perl5_hv_to_message (
 			RRR_MSG_0("Warning: unknown ip_so_type from perl script, must be 'udp' or 'tcp'\n");
 		}
 	}
-	else if (ip_so_type_len < 3) {
+	else {
 		RRR_MSG_0("Warning: ip_so_type from Perl function was too short\n");
 	}
 
@@ -1008,6 +1009,7 @@ int rrr_perl5_hv_to_message (
 			goto out;
 		}
 		target = new_message;
+		*target_final = target; // Make sure caller does not hold old reference
 	}
 
 	DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
@@ -1310,11 +1312,11 @@ int rrr_perl5_message_send (HV *hv) {
 	int ret = TRUE;
 
 	SvREFCNT_inc(hv);
-	message_new_hv = __rrr_perl5_allocate_message_hv_with_hv (ctx, hv);
-	if (message_new_hv == NULL) {
+
+	if ((message_new_hv = __rrr_perl5_allocate_message_hv_with_hv (ctx, hv)) == NULL) {
 		RRR_MSG_0("Could not allocate message hv in rrr_perl5_message_send\n");
 		ret = FALSE;
-		goto out;
+		goto out_final;
 	}
 
 	struct rrr_message_addr addr_msg;
@@ -1322,23 +1324,24 @@ int rrr_perl5_message_send (HV *hv) {
 	if (rrr_message_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate new message in rrr_perl5_message_send\n");
 		ret = FALSE;
-		goto out;
+		goto out_free_message_hv;
 	}
 	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
 		ret = FALSE;
-		goto out;
+		goto out_free_message_new;
 	}
 
 	// Takes ownership of memory of message (but not address message)
 	ctx->send_message(message_new, &addr_msg, ctx->private_data);
 	message_new = NULL;
 
-	out:
-	RRR_FREE_IF_NOT_NULL(message_new);
-	if (message_new_hv != NULL) {
+	goto out_final;
+	out_free_message_new:
+		RRR_FREE_IF_NOT_NULL(message_new);
+	out_free_message_hv:
 		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
-	}
-	return TRUE;
+	out_final:
+		return ret;
 }
 
 SV *rrr_perl5_settings_get (HV *settings, const char *key) {

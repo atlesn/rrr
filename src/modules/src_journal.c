@@ -134,8 +134,8 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 
 	if (data->hostname == NULL || *(data->hostname) == '\0') {
 		char hostname[RRR_JOURNAL_HOSTNAME_MAX_LEN+1];
-		int ret = 0;
-		if ((ret = gethostname(hostname, sizeof(hostname))) != 0) {
+
+		if (gethostname(hostname, sizeof(hostname)) != 0) {
 			RRR_MSG_0("Could not get system hostname in journal instance %s: %s\n",
 					INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			ret = 1;

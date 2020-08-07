@@ -209,21 +209,19 @@ int __rrr_settings_add_raw (
 
 	memset (setting, '\0', sizeof(*setting));
 
-	if (__rrr_settings_set_setting_name(setting, name) != 0) {
+	if ((ret = __rrr_settings_set_setting_name(setting, name)) != 0) {
 		goto out_unlock;
 	}
 
 	setting->data = new_data;
+	new_data = NULL;
+
 	setting->data_size = size;
 	setting->type = type;
 	setting->was_used = 0;
 
 	out_unlock:
-	if (ret != 0) {
-		if (new_data != NULL) {
-			free(new_data);
-		}
-	}
+	RRR_FREE_IF_NOT_NULL(new_data);
 
 	__rrr_settings_unlock(target);
 
@@ -512,7 +510,7 @@ int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_se
 		if (sizeof(*target) != setting->data_size) {
 			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
 		}
-		target = setting->data;
+		*target = *((rrr_setting_uint*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
 		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);

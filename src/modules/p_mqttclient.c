@@ -262,6 +262,11 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Could not parse configuration parameter 'mqtt_version' of MQTT client instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
 		data->version = RRR_MQTT_DEFAULT_VERSION;
 	}
 	else {
@@ -347,13 +352,20 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", mqttclient_parse_sub_topic, data)) != 0) {
+	if (rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", mqttclient_parse_sub_topic, data) != 0) {
 		RRR_MSG_0("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_values_from_array, config, "mqtt_publish_array_values")) == 0) {
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_values_from_array, config, "mqtt_publish_array_values")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Error while parsing mqtt_publish_values_from_array\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
 		if (strlen(data->publish_values_from_array) == 0) {
 			RRR_MSG_0("Parameter in mqtt_publish_values_from_array was empty for instance %s\n", config->name);
 			ret = 1;
@@ -377,19 +389,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			goto out;
 		}
 	}
-	else {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing mqtt_publish_values_from_array\n");
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->connect_error_action, config, "mqtt_connect_error_action")) == 0) {
 		if (strcasecmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RESTART) == 0) {
+			// OK
 		}
 		else if (strcasecmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
+			// OK
 		}
 		else {
 			RRR_MSG_0("Unknown value for mqtt_connect_error_action (̈́'%s') in mqtt client instance %s, please refer to documentation\n",

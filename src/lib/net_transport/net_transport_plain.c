@@ -259,7 +259,7 @@ int __rrr_net_transport_plain_accept (
 			NULL,
 			accept_data->ip_data.fd
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
 	}

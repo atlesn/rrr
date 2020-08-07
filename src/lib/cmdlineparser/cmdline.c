@@ -283,12 +283,13 @@ const char *cmd_get_value(struct cmd_data *data, const char *key, cmd_arg_count 
 }
 
 static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
+	int ret = 0;
+
 	struct cmd_arg_value *value = NULL;
 	char *buf = NULL;
 
 	if (RRR_LL_COUNT(pair) != 1) {
-		RRR_MSG_0("Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
-		abort();
+		RRR_BUG("Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
 	}
 
 	value = RRR_LL_FIRST(pair);
@@ -300,7 +301,8 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	buf = malloc(end - pos + 1);
 	if (buf == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory A in __cmd_pair_split_comma\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
 	while (pos < end) {
@@ -315,18 +317,19 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 
 		if (__cmd_arg_pair_append_value(pair, buf) != 0) {
 			RRR_MSG_0("Error: Could not allocate memory B in __cmd_pair_split_comma\n");
-			return 1;
+			ret = 1;
+			goto out;
 		}
 
 		pos = comma_pos + 1;
 	}
 
+	out:
 	RRR_FREE_IF_NOT_NULL(buf);
 	if (value != NULL) {
 		__cmd_arg_value_destroy(value);
 	}
-
-	return 0;
+	return ret;
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {

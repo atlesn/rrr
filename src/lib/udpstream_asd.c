@@ -1229,7 +1229,7 @@ int rrr_udpstream_asd_buffer_tick (
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
+		// Ignore soft error
 	}
 
 	if ((ret = __rrr_udpstream_asd_do_send_tasks(session)) != 0) {
