@@ -70,11 +70,12 @@ int rrr_mqtt_subscription_new (
 
 	memset(sub, '\0', sizeof(*sub));
 
+	// Callers must check for this
 	if (topic_filter == NULL || *topic_filter == '\0') {
-		RRR_MSG_0("Zero-length or NULL topic filter while creating subscription, tagging subscription as invalid\n");
-		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
+		RRR_BUG("Topic filter was NULL or zero length in rrr_mqtt_subscription_new\n");
 	}
-	else if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
+
+	if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
 		RRR_MSG_0("Invalid topic filter '%s' while creating subscription, tagging subscription as invalid\n",
 				topic_filter);
 		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
