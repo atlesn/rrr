@@ -70,13 +70,8 @@ int rrr_poll_collection_add (
 	entry->message_broker_handle = handle;
 
 	RRR_LL_APPEND(collection, entry);
-	entry = NULL;
 
 	out:
-	if (entry != NULL) {
-		__poll_collection_entry_destroy(entry);
-	}
-
 	return ret;
 }
 

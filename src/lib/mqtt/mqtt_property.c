@@ -278,6 +278,7 @@ static int __rrr_mqtt_property_clone (
 
 	if ((ret = rrr_mqtt_property_new(&result, source->definition)) != 0) {
 		RRR_MSG_0("Could not create new property in __rrr_mqtt_property_clone\n");
+		goto out;
 	}
 
 	if (source->sibling != NULL) {

@@ -111,6 +111,7 @@ static int __rrr_message_broker_costumer_new (
 
 	if (rrr_fifo_buffer_init_custom_free(&costumer->main_queue, rrr_msg_msg_holder_decref_void) != 0) {
 		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_costumer_new\n");
+		ret = 1;
 		goto out_free_name;
 	}
 

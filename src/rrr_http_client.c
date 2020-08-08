@@ -221,7 +221,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -230,7 +230,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_client_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_http_client_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -255,7 +255,7 @@ int main (int argc, const char *argv[]) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if ((ret = rrr_http_client_send_request (
+	if (rrr_http_client_send_request (
 			&data,
 			RRR_HTTP_METHOD_GET,
 			&net_transport_config,
@@ -263,7 +263,7 @@ int main (int argc, const char *argv[]) {
 			NULL,
 			__rrr_http_client_final_callback,
 			NULL
-	)) != 0) {
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

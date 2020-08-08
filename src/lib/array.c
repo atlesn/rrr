@@ -406,14 +406,20 @@ static int __rrr_array_clone (
 	if (target->node_count != 0) {
 		RRR_BUG("BUG: Target was not empty in rrr_array_clone\n");
 	}
+
+	struct rrr_type_value *template = NULL;
+
 	memset(target, '\0', sizeof(*target));
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);
-		struct rrr_type_value *template = malloc(sizeof(*template));
-		if (template == NULL) {
+		if ((template = malloc(sizeof(*template))) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_array_definition_collection_clone\n");
 			goto out_err;
 		}
+
+		// Append to list immediately so that memory is managed
+		RRR_LL_APPEND(target,template);
+
 		memcpy(template, node, sizeof(*template));
 
 		if (clone_data && template->data != NULL) {
@@ -430,8 +436,7 @@ static int __rrr_array_clone (
 		template->tag = NULL;
 		if (template->tag_length > 0) {
 			// Do not use strdup, no \0 at the end
-			template->tag = malloc(template->tag_length);
-			if (template->tag == NULL) {
+			if ((template->tag = malloc(template->tag_length)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
 				goto out_err;
 			}
@@ -440,8 +445,6 @@ static int __rrr_array_clone (
 		else if (template->tag != NULL) {
 			RRR_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
 		}
-
-		RRR_LL_APPEND(target,template);
 	RRR_LL_ITERATE_END();
 
 	target->version = source->version;
@@ -449,7 +452,7 @@ static int __rrr_array_clone (
 	return 0;
 
 	out_err:
-		RRR_LL_DESTROY(target, struct rrr_type_value, free(node));
+		RRR_LL_DESTROY(target, struct rrr_type_value, rrr_type_value_destroy(node));
 		memset(target, '\0', sizeof(*target));
 		return 1;
 }

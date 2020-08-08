@@ -233,7 +233,7 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -243,12 +243,12 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_server_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_http_server_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if ((ret = rrr_http_server_new(&http_server)) != 0) {
+	if (rrr_http_server_new(&http_server) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -256,10 +256,10 @@ int main (int argc, const char *argv[]) {
 	int transport_count = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_http_server_start_plain (
+		if (rrr_http_server_start_plain (
 				http_server,
 				data.http_port
-		)) != 0) {
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
@@ -283,12 +283,12 @@ int main (int argc, const char *argv[]) {
 			flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
 		}
 
-		if ((ret = rrr_http_server_start_tls (
+		if (rrr_http_server_start_tls (
 				http_server,
 				data.https_port,
 				&net_transport_config_tls,
 				flags
-		)) != 0) {
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}

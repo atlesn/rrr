@@ -384,7 +384,12 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		if (*data->publish_values_from_array == '*') {
 			// OK, publish full raw array
 		}
-		else if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_publish_array_values", mqttclient_parse_publish_value_tag, data)) != 0) {
+		else if (rrr_instance_config_traverse_split_commas_silent_fail(
+				config,
+				"mqtt_publish_array_values",
+				mqttclient_parse_publish_value_tag,
+				data
+		) != 0) {
 			RRR_MSG_0("Error while parsing mqtt_publish_values_from_array setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;

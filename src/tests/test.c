@@ -130,7 +130,8 @@ int rrr_test_library_functions (void) {
 }
 
 int main (int argc, const char **argv) {
-	struct rrr_signal_handler *signal_handler = NULL;
+	struct rrr_signal_handler *signal_handler_fork = NULL;
+	struct rrr_signal_handler *signal_handler_interrupt = NULL;
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
@@ -152,8 +153,8 @@ int main (int argc, const char **argv) {
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	signal_handler = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
-	signal_handler = rrr_signal_handler_push(signal_interrupt, NULL);
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler_interrupt = rrr_signal_handler_push(signal_interrupt, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -307,7 +308,8 @@ int main (int argc, const char **argv) {
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:
-		rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler_interrupt);
+		rrr_signal_handler_remove(signal_handler_fork);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();

@@ -371,7 +371,6 @@ int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length,
 		}
 		else if (test_sum == fraction) {
 			result_fraction |= 1 << (23 - i);
-			running_sum += position_value;
 			break;
 		}
 	}

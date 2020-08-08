@@ -469,7 +469,7 @@ static int __rrr_http_session_post_x_www_form_body_send (
 			"Content-Length: %" PRIrrrl "\r\n\r\n",
 			body_size
 	)) < 0) {
-		RRR_MSG_0("Could not create content type string in __rrr_http_session_send_get_body\n");
+		RRR_MSG_0("Could not create content type string in __rrr_http_session_send_get_body return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}

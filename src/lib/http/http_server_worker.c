@@ -60,8 +60,8 @@ int rrr_http_server_worker_preliminary_data_new (
 	*result = data;
 
 	goto out;
-	out_free:
-		free(data);
+//	out_free:
+//		free(data);
 	out:
 		return ret;
 }
