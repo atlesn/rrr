@@ -320,7 +320,7 @@ static int __rrr_http_session_multipart_field_send (
 
 	if (node->content_type != NULL && *(node->content_type) != '\0') {
 		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", node->content_type)) <= 0) {
-			RRR_MSG_0("Could not create content_type_buf in __rrr_http_session_multipart_field_send return was %i\n");
+			RRR_MSG_0("Could not create content_type_buf in __rrr_http_session_multipart_field_send return was %i\n", ret);
 			ret = 1;
 			goto out;
 		}
