@@ -45,7 +45,7 @@ void rrr_http_client_config_cleanup (
 
 int rrr_http_client_config_parse (
 		struct rrr_http_client_config *data,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
@@ -107,7 +107,7 @@ int rrr_http_client_config_parse (
 		data->method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
 	}
 	else {
-		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", config->name);
+		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", data->method_str, config->name);
 		ret = 1;
 		goto out;
 	}
@@ -131,7 +131,8 @@ int rrr_http_client_config_parse (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_fields");
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
+		ret &= ~(RRR_SETTING_NOT_FOUND);
+		if (ret != 0) {
 			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 			ret = 1;
 			goto out;
@@ -141,17 +142,18 @@ int rrr_http_client_config_parse (
 	if (enable_fixed) {
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_tags");
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
-			if (ret != RRR_SETTING_NOT_FOUND) {
+			ret &= ~(RRR_SETTING_NOT_FOUND);
+			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 				ret = 1;
 				goto out;
 			}
-			ret = 0;
 		}
 
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_fields");
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
-			if (ret != RRR_SETTING_NOT_FOUND) {
+			ret &= ~(RRR_SETTING_NOT_FOUND);
+			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 				ret = 1;
 				goto out;

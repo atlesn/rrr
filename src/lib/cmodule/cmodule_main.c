@@ -76,12 +76,12 @@ static int __rrr_cmodule_worker_new (
 
 	memset(worker, '\0', sizeof(*worker));
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_fork, cmodule->mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_parent, cmodule->mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}
@@ -309,7 +309,7 @@ static int __rrr_cmodule_worker_loop (
 	};
 
 	// Control stuff
-	uint64_t time_now = rrr_time_get_64();
+	uint64_t time_now = 0;
 	uint64_t next_spawn_time = 0;
 
 	if (worker->config_data->sleep_time_us > worker->config_data->spawn_interval_us) {
@@ -521,16 +521,19 @@ static void __rrr_cmodule_worker_fork_log_hook (
 	}
 
 	int ret = 0;
-	if ((ret = rrr_mmap_channel_write(
+	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
-			RRR_MSG_0("mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s\n",
-					worker->name);
-			ret = 1;
+			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				worker->name);
+		}
+		else {
+			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				ret, worker->name);
 		}
 	}
 

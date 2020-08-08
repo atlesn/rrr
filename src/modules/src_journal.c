@@ -64,9 +64,10 @@ struct journal_queue {
 };
 
 struct journal_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	int do_generate_test_messages;
+
 	int log_hook_handle;
 
 	pthread_mutex_t delivery_lock;
@@ -105,7 +106,7 @@ static void journal_queue_entry_destroy (struct journal_queue_entry *node) {
 	free(node);
 }
 
-static int journal_data_init(struct journal_data *data, struct rrr_instance_thread_data *thread_data) {
+static int journal_data_init(struct journal_data *data, struct rrr_instance_runtime_data *thread_data) {
 
 	// memset 0 is done in preload function, DO NOT do that here
 
@@ -126,7 +127,7 @@ static void journal_data_cleanup(void *arg) {
 	pthread_mutex_unlock(&data->delivery_lock);
 }
 
-static int journal_parse_config (struct journal_data *data, struct rrr_instance_config *config) {
+static int journal_parse_config (struct journal_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
@@ -134,8 +135,8 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 
 	if (data->hostname == NULL || *(data->hostname) == '\0') {
 		char hostname[RRR_JOURNAL_HOSTNAME_MAX_LEN+1];
-		int ret = 0;
-		if ((ret = gethostname(hostname, sizeof(hostname))) != 0) {
+
+		if (gethostname(hostname, sizeof(hostname)) != 0) {
 			RRR_MSG_0("Could not get system hostname in journal instance %s: %s\n",
 					INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			ret = 1;
@@ -156,7 +157,7 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 
 // Lock must be initialized before other locks start to provide correct memory fence
 static int journal_preload (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int ret = 0;
@@ -367,7 +368,7 @@ static void journal_delivery_lock_cleanup(void *arg) {
 }
 
 static void *thread_entry_journal (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct journal_data *data = thread_data->private_data = thread_data->private_memory;
 
 	// This cleanup must happen after the hook is unregistered
@@ -384,7 +385,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	pthread_cleanup_push(journal_unregister_handle, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (journal_parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -411,8 +412,8 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	uint64_t prev_delivery_queue_sleep_event_count = 0;
 
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 		if (data->error_in_hook) {
 			RRR_MSG_0("Error encountered inside log hook of journal instance %s, exiting\n",
@@ -508,7 +509,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct journal_data data;
 	int ret = 0;
 	memset(&data, '\0', sizeof(data));
@@ -531,7 +532,7 @@ static const char *module_name = "journal";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

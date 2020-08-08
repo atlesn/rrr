@@ -40,20 +40,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 
 struct buffer_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	rrr_setting_uint message_ttl_seconds;
 	uint64_t message_ttl_us;
 	int do_duplicate;
 	int configuration_failed_in_preload;
 };
 
-static void buffer_data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
+static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
 }
 
 static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct buffer_data *data = thread_data->private_data;
 
 	(void)(data);
@@ -88,7 +88,7 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
-static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config *config) {
+static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("buffer_ttl_seconds", message_ttl_seconds, 0);
@@ -108,13 +108,13 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 }
 
 static void *thread_entry_buffer (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("buffer thread thread_data is %p\n", thread_data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (data->configuration_failed_in_preload) {
@@ -125,17 +125,15 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
-
 	RRR_DBG_1 ("buffer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
 	// NOTE : The duplicating is handled by the message broker. See our preload() function.
 
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, buffer_poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, buffer_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in buffer instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -143,18 +141,18 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	}
 
 	out_message:
-	RRR_DBG_1 ("Thread buffer %p exiting\n", thread_data->thread);
+	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);
 
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
 
 static int buffer_preload (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int ret = 0;
@@ -166,7 +164,7 @@ static int buffer_preload (struct rrr_thread *thread) {
 		data->configuration_failed_in_preload = 1;
 	}
 
-	int slots = rrr_instance_count_receivers_of_self(thread_data);
+	int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
 
 	if (data->do_duplicate) {
 		RRR_DBG_1("Buffer instance %s detected %i readers, setting up duplicated output buffers\n",
@@ -227,7 +225,7 @@ static const char *module_name = "buffer";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;

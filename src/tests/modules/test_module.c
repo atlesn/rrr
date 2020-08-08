@@ -66,7 +66,7 @@ void data_cleanup(void *_data) {
 	RRR_FREE_IF_NOT_NULL(data->test_output_instance);
 }
 
-int parse_config (struct test_module_data *data, struct rrr_instance_config *config) {
+int parse_config (struct test_module_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
@@ -95,7 +95,7 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config *con
 }
 
 static void *thread_entry_test_module (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int ret = 0;
@@ -106,7 +106,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -121,7 +121,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		usleep (20000); // 20 ms
 	}*/
 
-	rrr_thread_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread);
 
 	if (strcmp(data->test_method, "test_dummy") == 0) {
 		rrr_posix_usleep(1000000); // 1s
@@ -201,7 +201,7 @@ static const char *module_name = "test_module";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_SOURCE;

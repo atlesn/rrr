@@ -174,8 +174,7 @@ static int __rrr_py_get_rrr_objects (
 		goto out;
 	}
 
-	//printf ("RRR helper module: %p refcount %li\n", rrr_helper_module, rrr_helper_module->ob_refcnt);
-//	Py_XDECREF(rrr_helper_module);
+	Py_XDECREF(rrr_helper_module);
 
 	// RUN STARTUP CODE
 	const char *rrr_py_import_template =

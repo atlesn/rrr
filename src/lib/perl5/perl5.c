@@ -379,6 +379,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	if ((SvTRUE(err_tmp))) {
 		RRR_MSG_0("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
 		ret_tmp = POPs;
+		(void)(ret_tmp);
 		ret = 1;
 	}
 	else if (numitems == 1) {
@@ -425,6 +426,7 @@ struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_p
     	return NULL;
     }
     memset(message_hv, '\0', sizeof(*message_hv));
+    SvREFCNT_inc(hv);
     message_hv->hv = hv;
     return message_hv;
 }
@@ -706,7 +708,7 @@ int rrr_perl5_hv_to_message (
 			RRR_MSG_0("Warning: unknown ip_so_type from perl script, must be 'udp' or 'tcp'\n");
 		}
 	}
-	else if (ip_so_type_len < 3) {
+	else {
 		RRR_MSG_0("Warning: ip_so_type from Perl function was too short\n");
 	}
 
@@ -756,6 +758,7 @@ int rrr_perl5_hv_to_message (
 			goto out;
 		}
 		target = new_message;
+		*target_final = target; // Make sure caller does not hold old reference
 	}
 
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);

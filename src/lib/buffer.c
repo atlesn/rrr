@@ -989,7 +989,6 @@ int rrr_fifo_buffer_clear_order_lt (
  */
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
@@ -998,9 +997,9 @@ int rrr_fifo_buffer_read_clear_forward (
 
 	int ret = RRR_FIFO_OK;
 
+	struct rrr_fifo_buffer_entry *last_element = NULL;
 	struct rrr_fifo_buffer_entry *current = NULL;
 	struct rrr_fifo_buffer_entry *stop = NULL;
-	struct rrr_fifo_buffer_entry *last_element_max = NULL;
 	int max_counter = RRR_FIFO_MAX_READS;
 
 	rrr_fifo_write_lock(buffer);
@@ -1009,21 +1008,14 @@ int rrr_fifo_buffer_read_clear_forward (
 	__rrr_fifo_merge_write_queue_nolock(buffer);
 
 	// Must be set after write queue merge
-	current = buffer->gptr_first;
-	last_element_max = current;
+	last_element = current = buffer->gptr_first;
 
-	while (last_element_max != NULL && --max_counter) {
-		if (last_element_max == last_element) {
-			break;
-		}
-		last_element_max = last_element_max->next;
-	}
-
-	if (max_counter == 0) {
-		last_element = last_element_max;
+	while (last_element != NULL && --max_counter) {
+		last_element = last_element->next;
 	}
 
 	if (last_element != NULL) {
+		// Perform splice
 		buffer->gptr_first = last_element->next;
 		stop = last_element->next;
 		if (stop == NULL) {
@@ -1031,6 +1023,7 @@ int rrr_fifo_buffer_read_clear_forward (
 		}
 	}
 	else {
+		// Take all entries
 		last_element = buffer->gptr_last;
 		buffer->gptr_first = NULL;
 		buffer->gptr_last = NULL;

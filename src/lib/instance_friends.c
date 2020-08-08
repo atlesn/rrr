@@ -19,21 +19,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "instance_collection.h"
-
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
 
+#include "instance_friends.h"
+
 #include "log.h"
 #include "instances.h"
 
-int rrr_instance_collection_check_empty (struct rrr_instance_collection *collection) {
+int rrr_instance_friend_collection_check_empty (struct rrr_instance_friend_collection *collection) {
 	return RRR_LL_IS_EMPTY(collection);
 }
 
-int rrr_instance_collection_check_exists (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_collection_entry);
+int rrr_instance_friend_collection_check_exists (struct rrr_instance_friend_collection *collection, struct rrr_instance *sender) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_friend);
 		if (node->instance == sender) {
 			return 1;
 		}
@@ -42,16 +42,16 @@ int rrr_instance_collection_check_exists (struct rrr_instance_collection *collec
 	return 0;
 }
 
-int rrr_instance_collection_append (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender) {
+int rrr_instance_friend_collection_append (struct rrr_instance_friend_collection *collection, struct rrr_instance *sender) {
 	int ret = 0;
 
-	if (rrr_instance_collection_check_exists(collection,sender)) {
-		RRR_MSG_0("Sender %s was specified twice\n", sender->dynamic_data->instance_name);
+	if (rrr_instance_friend_collection_check_exists(collection,sender)) {
+		RRR_MSG_0("Sender %s was specified twice\n", sender->module_data->instance_name);
 		ret = 1;
 		goto out;
 	}
 
-	struct rrr_instance_collection_entry *entry = malloc(sizeof(*entry));
+	struct rrr_instance_friend *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in senders_add_sender\n");
 		ret = 1;
@@ -67,22 +67,22 @@ int rrr_instance_collection_append (struct rrr_instance_collection *collection, 
 	return ret;
 }
 
-void rrr_instance_collection_clear (struct rrr_instance_collection *collection) {
-	RRR_LL_DESTROY(collection, struct rrr_instance_collection_entry, free(node));
+void rrr_instance_friend_collection_clear (struct rrr_instance_friend_collection *collection) {
+	RRR_LL_DESTROY(collection, struct rrr_instance_friend, free(node));
 }
 
-int rrr_instance_collection_count (struct rrr_instance_collection *collection) {
+int rrr_instance_friend_collection_count (struct rrr_instance_friend_collection *collection) {
 	return RRR_LL_COUNT(collection);
 }
 
-int rrr_instance_collection_iterate (
-		struct rrr_instance_collection *collection,
-		int (*callback)(struct rrr_instance_metadata *instance, void *arg),
+int rrr_instance_friend_collection_iterate (
+		struct rrr_instance_friend_collection *collection,
+		int (*callback)(struct rrr_instance *instance, void *arg),
 		void *arg
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_friend);
 		ret = callback(node->instance, arg);
 		if (ret != 0) {
 			RRR_LL_ITERATE_BREAK();

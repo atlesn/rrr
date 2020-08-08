@@ -191,6 +191,19 @@ static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by
 	return NULL;
 }
 
+rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
+		struct rrr_message_broker *broker,
+		const char *name
+) {
+	rrr_message_broker_costumer_handle *ret = NULL;
+
+	pthread_mutex_lock(&broker->lock);
+	ret = __rrr_message_broker_costumer_find_by_name_unlocked(broker, name);
+	pthread_mutex_unlock(&broker->lock);
+
+	return ret;
+}
+
 static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by_handle_unlocked (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle
@@ -225,6 +238,8 @@ void rrr_message_broker_costumer_unregister (
 ) {
 	pthread_mutex_lock(&broker->lock);
 
+	RRR_DBG_8("Message broker unregistering handle %p\n", handle);
+
 	int count_before = RRR_LL_COUNT(broker);
 
 	RRR_LL_REMOVE_NODE_IF_EXISTS(broker, struct rrr_message_broker_costumer, handle, __rrr_message_broker_costumer_decref(node));
@@ -254,13 +269,15 @@ int rrr_message_broker_costumer_register (
 				name_unique);
 	}
 
-	if (__rrr_message_broker_costumer_new (&costumer, name_unique) != 0) {
+	if ((ret = __rrr_message_broker_costumer_new (&costumer, name_unique)) != 0) {
 		goto out;
 	}
 
 	RRR_LL_APPEND(broker, costumer);
 
 	*result = costumer;
+
+	RRR_DBG_8("Message broker registered costumer '%s' handle is %p\n", name_unique, costumer);
 
 	out:
 	pthread_mutex_unlock(&broker->lock);
@@ -793,7 +810,6 @@ static int __rrr_message_broker_split_buffers_fill (struct rrr_message_broker_co
 
 	if ((ret = rrr_fifo_buffer_read_clear_forward (
 			&costumer->main_queue,
-			NULL,
 			__rrr_message_broker_split_buffers_fill_callback,
 			costumer,
 			0
@@ -881,7 +897,6 @@ int rrr_message_broker_poll_delete (
 
 	if ((ret = rrr_fifo_buffer_read_clear_forward (
 			source_buffer,
-			NULL,
 			__rrr_message_broker_poll_delete_intermediate,
 			&callback_data,
 			wait_milliseconds

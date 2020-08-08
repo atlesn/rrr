@@ -47,12 +47,10 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 
 	int ret = 0;
 
-	SvREFCNT_inc(hv);
-	message_new_hv = rrr_perl5_allocate_message_hv_with_hv (ctx, hv);
-	if (message_new_hv == NULL) {
+	if ((message_new_hv = rrr_perl5_allocate_message_hv_with_hv (ctx, hv)) == NULL) { // Will incref
 		RRR_MSG_0("Could not allocate message hv in rrr_perl5_message_send\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
 	struct rrr_msg_addr addr_msg;
@@ -60,23 +58,25 @@ unsigned int rrr_perl5_message_send (HV *hv) {
 	if (rrr_msg_msg_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate new message in rrr_perl5_message_send\n");
 		ret = 1;
-		goto out;
+		goto out_free_message_hv;
 	}
 	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
 		ret = 1;
-		goto out;
+		goto out_free_message_new;
 	}
 
 	// Takes ownership of memory of message (but not address message)
 	ctx->send_message(message_new, &addr_msg, ctx->private_data);
 	message_new = NULL;
 
-	out:
-	RRR_FREE_IF_NOT_NULL(message_new);
-	if (message_new_hv != NULL) {
+	// Always destroy message hv
+	goto out_free_message_hv;
+	out_free_message_new:
+		RRR_FREE_IF_NOT_NULL(message_new);
+	out_free_message_hv:
 		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
-	}
-	return (ret == 0 ? TRUE : FALSE);
+	out_final:
+		return ret;
 }
 
 unsigned int rrr_perl5_message_clear_array (HV *hv) {

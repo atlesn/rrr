@@ -103,7 +103,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 			broker->mqtt_data.transport,
 			net_transport_config
 	)) != 0) {
-		RRR_MSG_0("Could not start plain transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls\n");
+		RRR_MSG_0("Could not start plain transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -468,8 +468,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 						&session_present,
 						1 // No creation if non-existent client ID
 				)) != RRR_MQTT_SESSION_OK) {
+					RRR_MSG_0("Internal error getting session in rrr_mqtt_p_handler_connect A return was %i\n", ret);
 					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-					RRR_MSG_0("Internal error getting session in rrr_mqtt_p_handler_connect A\n");
 					goto out;
 				}
 				if (session == NULL) {
@@ -542,8 +542,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				&session_present,
 				0 // Create if non-existent client ID
 		)) != RRR_MQTT_SESSION_OK || session == NULL) {
+			RRR_MSG_0("Internal error getting session in rrr_mqtt_p_handler_connect B return was %i\n", ret);
 			ret = RRR_MQTT_INTERNAL_ERROR;
-			RRR_MSG_0("Internal error getting session in rrr_mqtt_p_handler_connect B\n");
 			goto out;
 		}
 	}

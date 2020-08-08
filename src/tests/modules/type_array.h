@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_msg_msg;
-struct rrr_instance_metadata_collection;
-struct rrr_instance_thread_data;
+struct rrr_instance_collection;
+struct rrr_instance_runtime_data;
 
 struct rrr_test_function_data {
 	int do_array_str_to_h_conversion;
@@ -32,8 +32,8 @@ struct rrr_test_function_data {
 
 #define RRR_TEST_FUNCTION_ARGS									\
 	const struct rrr_test_function_data *test_function_data,	\
-	struct rrr_instance_metadata_collection *instances,			\
-	struct rrr_instance_thread_data *self_thread_data,			\
+	struct rrr_instance_collection *instances,					\
+	struct rrr_instance_runtime_data *self_thread_data,			\
 	const char *output_name
 
 int test_averager (

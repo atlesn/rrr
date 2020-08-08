@@ -34,14 +34,15 @@ struct rrr_thread;
 struct rrr_http_part;
 
 struct rrr_http_server_worker_preliminary_data {
-	// This lock only protects our data members, not what they point to.
-	pthread_mutex_t lock;
+	// Locking is provided by using thread framework lock wrapper.
+	// DO NOT access this struct except from in callback of the wrapper.
+
+	// The worker will copy data members to it's own memory. DO NOT
+	// add pointers to data which may be modified outside of thread lock
+	// wrapper.
 
 	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
-
-	// DO NOT put allocated data in this struct, like char *, such data
-	// would not have proper memory fencing.
 
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
@@ -77,10 +78,7 @@ int rrr_http_server_worker_preliminary_data_new (
 void rrr_http_server_worker_preliminary_data_destroy (
 		struct rrr_http_server_worker_preliminary_data *worker_data
 );
-void rrr_http_server_worker_preliminary_data_destroy_void (
-		void *private_data
-);
-void *rrr_http_server_worker_thread_entry (
+void *rrr_http_server_worker_thread_entry_intermediate (
 		struct rrr_thread *thread
 );
 

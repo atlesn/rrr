@@ -122,14 +122,14 @@ int rrr_mqtt_property_clone (
 	}
 
 	if (source == NULL) {
-		goto out;
+		goto out_final;
 	}
 
 	result = malloc(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone A\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
 	memcpy(result, source, sizeof(*result));
@@ -142,11 +142,10 @@ int rrr_mqtt_property_clone (
 		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
 	}
 
-	result->data = malloc(result->length);
-	if (result->data == NULL) {
+	if ((result->data = malloc(result->length)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone B\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 
 	memcpy(result->data, source->data, result->length);
@@ -154,20 +153,19 @@ int rrr_mqtt_property_clone (
 
 	if (source->sibling != NULL) {
 		if ((ret = rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
-			RRR_MSG_0("Could not clone sibling in rr_mqtt_property_clone\n");
+			RRR_MSG_0("Could not clone sibling in rrr_mqtt_property_clone\n");
 			ret = 1;
-			goto out;
+			goto out_free;
 		}
 	}
 
 	*target = result;
 	result = NULL;
 
-	goto out;
-		if (result != NULL) {
-			rrr_mqtt_property_destroy(result);
-		}
-	out:
+	goto out_final;
+	out_free:
+		rrr_mqtt_property_destroy(result);
+	out_final:
 		return ret;
 }
 
@@ -200,8 +198,7 @@ int rrr_mqtt_property_save_blob (
 }
 
 int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
-	target->data = malloc(sizeof(value));
-	if (target->data == NULL) {
+	if ((target->data = (char *) malloc(sizeof(value))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
@@ -279,14 +276,12 @@ static int __rrr_mqtt_property_clone (
 
 	struct rrr_mqtt_property *result = NULL;
 
-	ret = rrr_mqtt_property_new(&result, source->definition);
-	if (ret != 0) {
+	if ((ret = rrr_mqtt_property_new(&result, source->definition)) != 0) {
 		RRR_MSG_0("Could not create new property in __rrr_mqtt_property_clone\n");
 	}
 
 	if (source->sibling != NULL) {
-		ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling);
-		if (ret != 0) {
+		if ((ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
 			RRR_MSG_0("Could not clone sibling in __rrr_mqtt_property_clone\n");
 			goto out_destroy;
 		}
@@ -297,8 +292,7 @@ static int __rrr_mqtt_property_clone (
 
 	if (source->length > 0) {
 		result->length = source->length;
-		result->data = malloc(result->length);
-		if (result->data == NULL) {
+		if ((result->data = malloc(result->length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
 			ret = 1;
 			goto out_destroy;

@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #define RRR_CONFIG_ARGS \
-	struct rrr_cmodule_ctx *ctx, struct rrr_instance_config *config
+	struct rrr_cmodule_ctx *ctx, struct rrr_instance_config_data *config
 #define RRR_SOURCE_ARGS \
 	struct rrr_cmodule_ctx *ctx, struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr
 #define RRR_PROCESS_ARGS \

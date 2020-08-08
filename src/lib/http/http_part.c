@@ -468,7 +468,7 @@ static int __rrr_http_parse_response_code (
 	const char *start_orig = start;
 
 	rrr_length tmp_len = 0;
-	if ((ret = rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
+	if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1") != 0 || start != start_orig) {
 		RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -478,7 +478,7 @@ static int __rrr_http_parse_response_code (
 	start += rrr_http_util_count_whsp(start, end);
 
 	unsigned long long int response_code = 0;
-	if ((ret = rrr_http_util_strtoull(&response_code, &tmp_len, start, crlf, 10)) != 0 || response_code > 999) {
+	if (rrr_http_util_strtoull(&response_code, &tmp_len, start, crlf, 10) != 0 || response_code > 999) {
 		RRR_MSG_0("Could not understand HTTP response code in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -764,7 +764,7 @@ static int __rrr_http_parse_header_field (
 			goto out;
 		}
 
-		if ((ret = __rrr_http_header_field_new(&field, start, colon - start)) != 0) {
+		if (__rrr_http_header_field_new(&field, start, colon - start) != 0) {
 			ret = RRR_HTTP_PARSE_HARD_ERR;
 			goto out;
 		}
@@ -780,7 +780,7 @@ static int __rrr_http_parse_header_field (
 		// Field is already added to list, make sure it is not freed if we get an error
 		field = NULL;
 
-		if ((ret = __rrr_http_header_field_new(&field, old_name, old_name_length)) != 0) {
+		if (__rrr_http_header_field_new(&field, old_name, old_name_length) != 0) {
 			ret = RRR_HTTP_PARSE_HARD_ERR;
 			goto out;
 		}
@@ -1044,7 +1044,7 @@ static int __rrr_http_part_parse_header_fields (
 		}
 		else if (crlf == pos) {
 			// Header complete
-			pos += 2;
+			// pos += 2; -- Enable if needed
 			parsed_bytes_total += 2;
 			break;
 		}
@@ -1408,7 +1408,6 @@ int rrr_http_part_parse (
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			part->is_chunked = 1;
 			RRR_DBG_3("HTTP chunked transfer encoding specified\n");
 			goto parse_chunked;
@@ -1581,7 +1580,7 @@ static int __rrr_http_part_process_multipart_part (
 		boundary_pos -= 2;
 	}
 
-	if ((ret = rrr_http_part_new(&new_part)) != 0) {
+	if (rrr_http_part_new(&new_part) != 0) {
 		RRR_MSG_0("Could not allocate new part in __rrr_http_part_process_multipart_part\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
@@ -1599,12 +1598,12 @@ static int __rrr_http_part_process_multipart_part (
 			boundary_pos,
 			RRR_HTTP_PARSE_MULTIPART
 	)) != 0) {
-		if (ret != RRR_HTTP_PARSE_INCOMPLETE) {
-			RRR_MSG_0("Failed to parse part from HTTP multipart request\n");
+		// Incomplete return is normal, the parser does not know about boundaries
+		ret &= ~(RRR_HTTP_PARSE_INCOMPLETE);
+		if (ret != 0) {
+			RRR_MSG_0("Failed to parse part from HTTP multipart request return was %i\n", ret);
 			goto out;
 		}
-		// Incomplete return is normal, the parser does not know about boundaries
-		ret = RRR_HTTP_PARSE_OK;
 	}
 
 	if (new_part->headroom_length != 0) {
@@ -2014,10 +2013,10 @@ int rrr_http_part_merge_chunks (
 	part->data_length = wpos;
 
 	*result_data = data_new;
-	data_new = NULL;
 
+	// goto out; out_free:
+	// RRR_FREE_IF_NOT_NULL(data_new); -- Enable if needed
 	out:
-	RRR_FREE_IF_NOT_NULL(data_new);
 	return ret;
 }
 

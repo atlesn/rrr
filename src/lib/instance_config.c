@@ -45,14 +45,14 @@ int rrr_instance_config_string_set (
 	return 0;
 }
 
-void rrr_instance_config_destroy(struct rrr_instance_config *config) {
+void rrr_instance_config_destroy(struct rrr_instance_config_data *config) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
 }
 
-struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, const int name_length, const int max_settings) {
-	struct rrr_instance_config *ret = NULL;
+struct rrr_instance_config_data *rrr_instance_config_new (const char *name_begin, const int name_length, const int max_settings) {
+	struct rrr_instance_config_data *ret = NULL;
 
 	char *name = malloc(name_length + 1);
 	if (name == NULL) {
@@ -89,7 +89,7 @@ struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, con
 	return ret;
 }
 
-int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config *source, const char *name) {
+int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config_data *source, const char *name) {
 	int ret = 0;
 
 	*target = 0;
@@ -101,15 +101,13 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			char *tmp_string;
 
-			ret = rrr_settings_read_string (&tmp_string, source->settings, name);
+			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
 			RRR_MSG_0 (
 					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
 
-			if (tmp_string != NULL) {
-				free(tmp_string);
-			}
+			RRR_FREE_IF_NOT_NULL(tmp_string);
 
 			ret = 1;
 			goto out;
@@ -132,7 +130,7 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	return ret;
 }
 
-int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *config) {
+int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data *config) {
 	int ret = rrr_settings_check_all_used (config->settings);
 
 	if (ret != 0) {
@@ -145,7 +143,7 @@ int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *con
 
 int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key
 ) {
 	int ret = 0;
@@ -195,7 +193,7 @@ static int __parse_associative_list_to_map_callback (
 
 int rrr_instance_config_parse_comma_separated_associative_to_map (
 		struct rrr_map *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key,
 		const char *delimeter
 ) {
@@ -213,7 +211,7 @@ int rrr_instance_config_parse_comma_separated_associative_to_map (
 
 int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_map *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key
 ) {
 	struct parse_associative_list_to_map_callback_data callback_data = {
@@ -230,7 +228,7 @@ int rrr_instance_config_parse_comma_separated_to_map (
 
 int rrr_instance_config_parse_optional_utf8 (
 		char **target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *string,
 		const char *def
 ) {

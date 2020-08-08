@@ -128,7 +128,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 	return EXIT_SUCCESS;
 }
 
-static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_metadata_collection *instances) {
+static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_collection *instances) {
 	int ret = 0;
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
 		RRR_MSG_0("Error while obtaining statistics handle in main\n");
@@ -142,7 +142,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 			msg_text,
 			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
 			"RRR running with %u instances\n",
-			rrr_instance_metadata_collection_count(instances)
+			rrr_instance_collection_count(instances)
 	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
 		RRR_BUG("Statistics message too long in main\n");
 	}
@@ -153,25 +153,26 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	}
 
 	unsigned int i = 0;
-	RRR_INSTANCE_LOOP(instance, instances) {
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
 		char path[128];
 		sprintf(path, "instance_metadata/%u", i);
 
-		if (main_stats_post_sticky_text_message(stats_data, path, instance->dynamic_data->instance_name) != 0) {
+		if (main_stats_post_sticky_text_message(stats_data, path, instance->module_data->instance_name) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
 		sprintf(path, "instance_metadata/%u/module", i);
-		if (main_stats_post_sticky_text_message(stats_data, path, instance->dynamic_data->module_name) != 0) {
+		if (main_stats_post_sticky_text_message(stats_data, path, instance->module_data->module_name) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
 		unsigned int j = 0;
-		RRR_LL_ITERATE_BEGIN(&instance->senders, struct rrr_instance_collection_entry);
+		RRR_LL_ITERATE_BEGIN(&instance->senders, struct rrr_instance_friend);
 			sprintf(path, "instance_metadata/%u/senders/%u", i, j);
-			if (main_stats_post_sticky_text_message(stats_data, path, node->instance->dynamic_data->instance_name) != 0) {
+			if (main_stats_post_sticky_text_message(stats_data, path, node->instance->module_data->instance_name) != 0) {
 				ret = EXIT_FAILURE;
 				goto out;
 			}
@@ -179,7 +180,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 		RRR_LL_ITERATE_END();
 
 		i++;
-	}
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
@@ -198,7 +199,7 @@ static int main_loop (
 	struct rrr_message_broker message_broker = {0};
 
 	struct rrr_config *config = NULL;
-	struct rrr_instance_metadata_collection *instances = NULL;
+	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 
 	rrr_config_set_log_prefix(config_file);
@@ -220,12 +221,7 @@ static int main_loop (
 		}
 	}
 
-	if (rrr_instance_metadata_collection_new (&instances) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_destroy_config;
-	}
-
-	if (rrr_instance_process_from_config(instances, config, module_library_paths) != 0) {
+	if (rrr_instance_create_from_config(&instances, config, module_library_paths) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
 	}
@@ -248,9 +244,9 @@ static int main_loop (
 	rrr_socket_close_all_except(stats_data.engine.socket);
 
 	rrr_config_set_debuglevel_orig();
-	if ((ret = rrr_main_start_threads (
+	if ((ret = rrr_main_create_and_start_threads (
 			&collection,
-			instances,
+			&instances,
 			config,
 			cmd,
 			&stats_data.engine,
@@ -268,7 +264,7 @@ static int main_loop (
 	}
 
 	if (stats_data.engine.initialized != 0) {
-		if (main_stats_post_sticky_messages(&stats_data, instances) != 0) {
+		if (main_stats_post_sticky_messages(&stats_data, &instances) != 0) {
 			goto out_stop_threads;
 		}
 	}
@@ -279,12 +275,11 @@ static int main_loop (
 
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
-		if (rrr_instance_check_threads_stopped(instances) == 1) {
+		if (rrr_instance_check_threads_stopped(&instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
 
 			rrr_config_set_debuglevel_on_exit();
-			rrr_main_threads_stop(collection, instances);
-			rrr_thread_destroy_collection (collection, 0);
+			rrr_main_threads_stop_and_destroy(collection);
 
 			// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
 			// as the handle usercount will be > 1. This handle will not be destroyed untill the
@@ -306,7 +301,7 @@ static int main_loop (
 		}
 
 		int count;
-		rrr_thread_run_ghost_cleanup(&count);
+		rrr_thread_postponed_cleanup_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
@@ -320,10 +315,10 @@ static int main_loop (
 		}
 		rrr_config_set_debuglevel_on_exit();
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-		rrr_main_threads_stop(collection, instances);
-		rrr_thread_destroy_collection (collection, 0);
+		rrr_main_threads_stop_and_destroy(collection);
 		int count;
-		rrr_thread_run_ghost_cleanup(&count);
+
+		rrr_thread_postponed_cleanup_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
@@ -331,13 +326,12 @@ static int main_loop (
 
 	out_unload_modules:
 #		ifndef RRR_NO_MODULE_UNLOAD
-			rrr_instance_unload_all(instances);
+			rrr_instance_unload_all(&instances);
 #		endif
-
 		rrr_stats_engine_cleanup(&stats_data.engine);
 		rrr_message_broker_cleanup(&message_broker);
 	out_destroy_instance_metadata:
-		rrr_instance_metadata_collection_destroy(instances);
+		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
 		rrr_config_destroy(config);
 	out:

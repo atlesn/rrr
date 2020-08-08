@@ -265,7 +265,12 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
-	memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
+	if (data_size > 0) {
+		if (data == NULL) {
+			RRR_BUG("BUG: Data was NULL in __rrr_udpstream_checksum_and_send_packed_frame\n");
+		}
+		memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
+	}
 
 	while (copies--) {
 #ifdef RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT
@@ -722,7 +727,7 @@ static int __rrr_udpstream_handle_received_connect (
 
 		send_response:
 		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u\n",
-				stream_id, stream->connect_handle);
+				stream_id, (stream != NULL ? stream->connect_handle : 0));
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
 			RRR_MSG_0("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;

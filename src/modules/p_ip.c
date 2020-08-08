@@ -65,7 +65,7 @@ enum ip_action {
 };
 
 struct ip_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_msg_holder_collection send_buffer;
 //	struct rrr_msg_msg_holder_collection delivery_buffer;
 	unsigned int source_udp_port;
@@ -109,7 +109,7 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->array_send_tags);
 }
 
-int data_init(struct ip_data *data, struct rrr_instance_thread_data *thread_data) {
+int data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -117,7 +117,7 @@ int data_init(struct ip_data *data, struct rrr_instance_thread_data *thread_data
 	return 0;
 }
 
-int config_parse_port (struct ip_data *data, struct rrr_instance_config *config) {
+int config_parse_port (struct ip_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	rrr_setting_uint tmp_uint;
@@ -131,7 +131,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// Listening not being done
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_udp_port setting for instance %s\n", config->name);
@@ -150,7 +149,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// Listening not being done
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_tcp_port setting for instance %s\n", config->name);
@@ -169,7 +167,6 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// No remote port specified
-			ret = 0;
 		}
 		else {
 			RRR_MSG_0("Error while parsing ip_remote_port setting for instance %s\n", config->name);
@@ -179,11 +176,14 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 	}
 	data->target_port = tmp_uint;
 
+	// Reset any NOT_FOUND
+	ret = 0;
+
 	out:
 	return ret;
 }
 
-int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
+int parse_config (struct ip_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 	char *protocol = NULL;
 
@@ -199,7 +199,6 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 		data->target_protocol = IP_DEFAULT_PROTOCOL;
 	}
 	else {
@@ -322,6 +321,9 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_receive_message_max", message_max_size, IP_DEFAULT_MAX_MESSAGE_SIZE);
+
+	// Clear any NOT_FOUND
+	ret = 0;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
@@ -645,7 +647,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 }
 
 static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ip_data *data = thread_data->private_data;
 
 	struct rrr_msg_msg *message = entry->message;
@@ -671,7 +673,7 @@ static int ip_send_message_tcp (
 		const void *send_data,
 		ssize_t send_size
 ) {
-	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 
 	int ret = 0;
 
@@ -773,7 +775,7 @@ static int ip_send_message_raw (
 		const void *send_data,
 		ssize_t send_size
 ) {
-	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 
 	struct sockaddr_storage addr;
 	socklen_t addr_len = sizeof(addr);
@@ -858,12 +860,12 @@ static int ip_send_message_raw (
 		);
 
 		if (accept_data_to_use == NULL) {
-			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+			if ((ret =rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 					&accept_data_to_free,
 					(struct sockaddr *) &addr,
 					addr_len,
 					graylist
-			) != 0) {
+			)) != 0) {
 				if (ret == RRR_SOCKET_HARD_ERROR) {
 					char ip_str[256];
 					rrr_ip_to_str(ip_str, 256, (const struct sockaddr *) &addr, addr_len);
@@ -872,7 +874,6 @@ static int ip_send_message_raw (
 							INSTANCE_D_NAME(thread_data)
 					);
 				}
-				ret = 0;
 				goto out_put_back;
 			}
 
@@ -962,7 +963,7 @@ static int ip_send_message (
 		struct rrr_ip_graylist *graylist,
 		struct rrr_msg_msg_holder *entry
 ) {
-	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 	int ret = 0;
 
 	// Do not modify send_status here
@@ -1120,7 +1121,7 @@ static int ip_send_message (
 }
 
 static void *thread_entry_ip (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
@@ -1137,7 +1138,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 
 	// Don't set running here, wait until listening has started
 
@@ -1148,9 +1149,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
-
-	int has_senders = (rrr_poll_collection_count(thread_data->poll) > 0 ? 1 : 0);
+	int has_senders = (rrr_poll_collection_count(&thread_data->poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1201,13 +1200,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	unsigned int consecutive_nothing_happened = 0;
 	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 //		printf ("IP ticks: %u\n", tick);
 
 		if (has_senders != 0) {
-			if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback_ip, 0) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 0) != 0) {
 				RRR_MSG_ERR("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -1424,7 +1423,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct ip_data data;
 	int ret = 0;
 	if ((ret = data_init(&data, NULL)) != 0) {
@@ -1450,7 +1449,7 @@ static const char *module_name = "ip";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_FLEXIBLE;
 		data->operations = module_operations;
