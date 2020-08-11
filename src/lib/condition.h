@@ -26,13 +26,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util/linked_list.h"
 
+#define RRR_CONDITION_VALUE_MAX 64
+
 struct rrr_parse_pos;
 
 struct rrr_condition_shunting_yard_carrier {
 	RRR_LL_NODE(struct rrr_condition_shunting_yard_carrier);
 	const struct rrr_condition_op *op;
-	const char *value;
-	size_t value_size;
+	char value[RRR_CONDITION_VALUE_MAX];
 };
 
 struct rrr_condition_shunting_yard_stack {
@@ -57,6 +58,11 @@ void rrr_condition_dump (
 int rrr_condition_parse (
 		struct rrr_condition *target,
 		struct rrr_parse_pos *pos
+);
+int rrr_condition_iterate (
+		const struct rrr_condition *condition,
+		int (*callback)(const struct rrr_condition_op *op, const char *value, const char *tag, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_CONDITION_H */

@@ -758,15 +758,50 @@ static int __rrr_array_tree_validate (
 		const struct rrr_array_tree *tree
 );
 
+static int __rrr_array_tree_branch_condition_validate_callback (
+		const struct rrr_condition_op *op,
+		const char *value,
+		const char *tag,
+		void *arg
+) {
+	const struct rrr_array_reference *reference = arg;
+
+	(void)(value);
+	(void)(op);
+
+	if (tag == NULL) {
+		return RRR_ARRAY_OK;
+	}
+
+	return __rrr_array_validate_definition_reference_check_tag(
+			reference,
+			NULL,
+			tag
+	);
+}
+
+static int __rrr_array_tree_branch_condition_validate (
+		struct rrr_array_reference *reference,
+		const struct rrr_condition *condition
+) {
+	return rrr_condition_iterate (
+			condition,
+			__rrr_array_tree_branch_condition_validate_callback,
+			reference
+	);
+}
+
 static int __rrr_array_tree_branch_validate (
 		struct rrr_array_reference *reference,
 		const struct rrr_array_branch *branch
 ) {
 	int ret = 0;
 
+	ret |= __rrr_array_tree_branch_condition_validate(reference, &branch->condition);
 	ret |= __rrr_array_tree_validate(reference, branch->array_tree);
 
 	RRR_LL_ITERATE_BEGIN(&branch->branches_elsif, const struct rrr_array_branch);
+		ret |= __rrr_array_tree_branch_condition_validate(reference, &node->condition);
 		ret |= __rrr_array_tree_validate(reference, node->array_tree);
 	RRR_LL_ITERATE_END();
 

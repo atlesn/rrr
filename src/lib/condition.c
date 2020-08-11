@@ -71,26 +71,43 @@ static const struct rrr_condition_op operators[] = {
 static const struct rrr_condition_op *operator_par_open = &operators[0];
 static const struct rrr_condition_op *operator_par_close = &operators[1];
 
-struct rrr_condition_shunting_yard_carrier *__rrr_condition_shunting_yard_carrier_new (
+int __rrr_condition_shunting_yard_carrier_new (
+		struct rrr_condition_shunting_yard_carrier **target,
 		const struct rrr_condition_op *op,
 		const char *value,
-		size_t value_size
+		size_t value_length
 ) {
+	int ret = RRR_CONDITION_OK;
+
 	struct rrr_condition_shunting_yard_carrier *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		return NULL;
+		RRR_MSG_0("Could not allocate memory in __rrr_condition_shunting_yard_carrier_new\n");
+		ret = RRR_CONDITION_HARD_ERROR;
+		goto out;
 	}
 
 	memset(result, '\0', sizeof(*result));
 
+	if (value_length > sizeof(result->value) - 1) {
+		RRR_MSG_0("Value in condition was too long, max is %lu bytes\n", sizeof(result->value) - 1);
+		ret = RRR_CONDITION_SOFT_ERROR;
+		goto out_free;
+	}
+
 	result->op = op;
-	result->value = value;
-	result->value_size = value_size;
 
-//	printf ("New carrier %p op %s value size %lu\n",
-//			result, (op != NULL ? op->op : "(null)"), value_size);
+	if (value_length > 0) {
+		memcpy(result->value, value, value_length);
+		result->value[value_length] = '\0';
+	}
 
-	return result;
+	*target = result;
+
+	goto out;
+	out_free:
+		free(result);
+	out:
+		return ret;
 }
 
 void __rrr_condition_shunting_yard_carrier_free_if_not_null (
@@ -101,7 +118,7 @@ void __rrr_condition_shunting_yard_carrier_free_if_not_null (
 	}
 
 //	printf ("Free carrier %p op %s value size %lu\n",
-//			carrier, (carrier->op != NULL ? carrier->op->op : "(null)"), carrier->value_size);
+//			carrier, (carrier->op != NULL ? carrier->op->op : "(null)"), carrier->value_length);
 
 	free(carrier);
 }
@@ -180,10 +197,9 @@ static int __rrr_condition_shunting_yard_shunt_op (
 ) {
 	int ret = RRR_CONDITION_OK;
 
-	struct rrr_condition_shunting_yard_carrier *carrier_new = __rrr_condition_shunting_yard_carrier_new(op, NULL, 0);
-	if (carrier_new == NULL) {
+	struct rrr_condition_shunting_yard_carrier *carrier_new = NULL;
+	if ((ret = __rrr_condition_shunting_yard_carrier_new(&carrier_new, op, NULL, 0)) != 0) {
 		RRR_MSG_0("Could not allocate memory for op carrier in __rrr_condition_shunting_yard_shunt_op\n");
-		ret = RRR_CONDITION_HARD_ERROR;
 		goto out;
 	}
 
@@ -245,10 +261,10 @@ static int __rrr_condition_shunting_yard_shunt_value (
 		size_t size
 ) {
 	int ret = 0;
-	struct rrr_condition_shunting_yard_carrier *carrier_new = __rrr_condition_shunting_yard_carrier_new(NULL, value, size);
-	if (carrier_new == NULL) {
+
+	struct rrr_condition_shunting_yard_carrier *carrier_new = NULL;
+	if ((ret = __rrr_condition_shunting_yard_carrier_new(&carrier_new, NULL, value, size)) != 0) {
 		RRR_MSG_0("Could not allocate memory for carrier in __rrr_condition_shunting_yard_shunt_value\n");
-		ret = RRR_CONDITION_HARD_ERROR;
 		goto out;
 	}
 
@@ -260,10 +276,6 @@ static int __rrr_condition_shunting_yard_shunt_value (
 	return ret;
 }
 
-static size_t __rrr_condition_min(size_t a, size_t b) {
-	return (a < b ? a : b);
-}
-
 static void __rrr_condition_shunting_yard_dump (
 		const struct rrr_condition_shunting_yard *shunting_yard
 ) {
@@ -272,10 +284,7 @@ static void __rrr_condition_shunting_yard_dump (
 			printf("%s ", node->op->op);
 		}
 		else {
-			char tmp[64];
-			memset(tmp, '\0', sizeof(tmp));
-			memcpy(tmp, node->value, __rrr_condition_min(sizeof(tmp)-1, node->value_size));
-			printf("%s ", tmp);
+			printf("%s ", node->value);
 		}
 	RRR_LL_ITERATE_END();
 }
@@ -423,4 +432,34 @@ int rrr_condition_parse (
 					pos->line, pos->pos - pos->line_begin_pos + 1);
 		}
 		return ret;
+}
+
+int rrr_condition_iterate (
+		const struct rrr_condition *condition,
+		int (*callback)(const struct rrr_condition_op *op, const char *value, const char *tag, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	char value_tmp[RRR_CONDITION_VALUE_MAX];
+
+	RRR_LL_ITERATE_BEGIN(&condition->shunting_yard, const struct rrr_condition_shunting_yard_carrier);
+		const char *tag_to_pass = NULL;
+		const char *value_to_pass = NULL;
+
+		if (*(node->value) == '{') {
+			memcpy(value_tmp, node->value, sizeof(value_tmp));
+			value_tmp[strlen(value_tmp) - 1] = '\0';   // Chop of }
+			tag_to_pass = value_tmp + 1;             // Chop of {
+		}
+		else {
+			value_to_pass = node->value;
+		}
+
+		if ((ret = callback(node->op, value_to_pass, tag_to_pass, callback_arg)) != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
 }
