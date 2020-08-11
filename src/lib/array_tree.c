@@ -574,7 +574,7 @@ static void __rrr_array_definition_dump (
 		printf("%s", node->definition->identifier);
 		if (node->definition->max_length > 0) {
 			if (node->import_length_ref != NULL) {
-				printf ("$%s", node->import_length_ref);
+				printf ("{%s}", node->import_length_ref);
 			}
 			else {
 				printf ("%u", node->import_length);
@@ -584,7 +584,7 @@ static void __rrr_array_definition_dump (
 			printf("s");
 		}
 		if (node->element_count_ref != NULL) {
-			printf("@$%s", node->element_count_ref);
+			printf("@{%s}", node->element_count_ref);
 		}
 		else if (node->element_count > 1) {
 			printf("@%u", node->element_count);
@@ -683,7 +683,7 @@ static int __rrr_array_validate_definition_reference_check_tag (
 		}
 	RRR_LL_ITERATE_END();
 
-	RRR_MSG_0("Could not resolve tag $%s, no previous array value found with this name\n", tag);
+	RRR_MSG_0("Could not resolve tag {%s}, no previous array value found with this name\n", tag);
 
 	return 1;
 }

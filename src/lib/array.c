@@ -59,7 +59,7 @@ static int __rrr_array_parse_identifier_and_size_tag (
 
 	char *result = NULL;
 
-	// Step over $
+	// Step over {
 	(*start)++;
 	(*parsed_bytes)++;
 
@@ -71,10 +71,20 @@ static int __rrr_array_parse_identifier_and_size_tag (
 
 	size_t length = (*start) - tag_begin;
 	if (length == 0) {
-		RRR_MSG_0("Missing tag name after $ in defintion\n");
+		RRR_MSG_0("Missing tag name after { in defintion\n");
 		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
+
+	if ((**start) != '}') {
+		RRR_MSG_0("Missing } after tag name in defintion\n");
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+
+	(*parsed_bytes)++;
+	(*start)++;
+
 	if ((result = malloc(length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
 		ret = RRR_ARRAY_HARD_ERROR;
@@ -141,7 +151,7 @@ int rrr_array_parse_identifier_and_size (
 			goto out_err;
 		}
 
-		if (*start == '$') {
+		if (*start == '{') {
 			if ((ret = __rrr_array_parse_identifier_and_size_tag(&length_ref, &start, &parsed_bytes)) != 0) {
 				goto out_err;
 			}
@@ -218,7 +228,7 @@ int rrr_array_parse_identifier_and_size (
 			goto out_err;
 		}
 
-		if (*start == '$') {
+		if (*start == '{') {
 			if ((ret = __rrr_array_parse_identifier_and_size_tag(&item_count_ref, &start, &parsed_bytes)) != 0) {
 				goto out_err;
 			}

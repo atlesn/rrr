@@ -347,16 +347,21 @@ int rrr_condition_parse (
 			// If there is 1 character, start will be equal to end.
 			// If there are no matches, end minus start will be negative
 
-			if (rrr_parse_match_word(pos, "$")) {
+			if (rrr_parse_match_word(pos, "{")) {
 				// Variable name
 				rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS|RRR_PARSE_MATCH_NUMBERS);
 				if (end - start < 0) {
-					RRR_MSG_0("Variable name missing after $\n");
+					RRR_MSG_0("Variable name missing after {\n");
 					break;
 				}
 				else {
 					start -= 1;
 				}
+				if (!rrr_parse_match_word(pos, "}")) {
+					RRR_MSG_0("Missing } after variable name in condition\n");
+					break;
+				}
+				end += 1;
 			}
 			else if (rrr_parse_match_word_case(pos, "0x")) {
 				rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_HEX);

@@ -28,21 +28,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_condition.h"
 
-static const char *condition_a = "(1 & $tag OR 2 == 2 AND (3 == 3 OR 3 & 0x1))";
+static const char *condition_a = "(1 & {tag} OR 2 == 2 AND (3 == 3 OR 3 & 0x1))";
 
 static const char *array_tree =
 		"be4#my_tag,fixp,sep1,\n"
-		"IF ($my_tag==2)\n"
+		"IF ({my_tag}==2)\n"
 		"	fixp,sep1,be4#my_tag_two           ,\n,\n"
-		"	IF ($my_tag_two>10)\n"
-		"		be4@$my_tag_two#my_tag_extra\n"
+		"	IF ({my_tag_two}>10)\n"
+		"		be4@{my_tag_two}#my_tag_extra\n"
 		"		;\n"
-		"	ELSIF ($my_tag_two<6)\n"
-		"		be2@$my_tag_two#my_tag_extra\n"
+		"	ELSIF ({my_tag_two}<6)\n"
+		"		be2@{my_tag_two}#my_tag_extra\n"
 		"		;\n"
 		"	ELSE\n"
-		"		be1@$my_tag_two#my_tag_extra,\n"
-		"		be$my_tag_two#my_tag_extra_dynamic\n"
+		"		be1@{my_tag_two}#my_tag_extra,\n"
+		"		be{my_tag_two}s#my_tag_extra_dynamic\n"
 		"		;\n"
 		"	IF (1==1);\n"
 		"	;\n"
@@ -50,7 +50,7 @@ static const char *array_tree =
 		"	be4#my_tag_not_two;\n"
 		";";
 
-static const char *array_tree_rpn = "be4#my_tag,IF($my_tag 2 ==)be4#my_tag_two;ELSEbe4#my_tag_not_two;;";
+static const char *array_tree_rpn = "be4#my_tag,IF({my_tag} 2 ==)be4#my_tag_two;ELSEbe4#my_tag_not_two;;";
 
 
 int rrr_test_condition (void) {
