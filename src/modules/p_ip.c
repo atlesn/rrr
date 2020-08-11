@@ -456,7 +456,7 @@ int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	}
 
 	if (ret != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Could not create message in ip instance %s read_data_callback, soft error probably caused by invalid input data\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
@@ -498,7 +498,7 @@ static int ip_read_array_intermediate(struct rrr_msg_msg_holder *entry, void *ar
 			ip_read_raw_data_callback,
 			data
 	)) != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			if (callback_data->handle_soft_error) {
 				// Caller handles return value
 				callback_data->return_value_from_array = ret;

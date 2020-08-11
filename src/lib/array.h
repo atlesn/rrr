@@ -25,19 +25,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdio.h>
 
-#include "cmdlineparser/cmdline.h"
-#include "instance_config.h"
-#include "util/linked_list.h"
 #include "type.h"
 #include "fixed_point.h"
+#include "read_constants.h"
+#include "cmdlineparser/cmdline.h"
+#include "util/linked_list.h"
 
 #define RRR_ARRAY_VERSION 7
 
-#define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
-#define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
-#define RRR_ARRAY_PARSE_SOFT_ERR	RRR_TYPE_PARSE_SOFT_ERR
-#define RRR_ARRAY_PARSE_INCOMPLETE	RRR_TYPE_PARSE_INCOMPLETE
+#define RRR_ARRAY_OK 				RRR_READ_OK
+#define RRR_ARRAY_HARD_ERROR		RRR_READ_HARD_ERROR
+#define RRR_ARRAY_SOFT_ERROR		RRR_READ_SOFT_ERROR
+#define RRR_ARRAY_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
 
+struct rrr_map;
 struct rrr_msg_msg;
 
 struct rrr_array_value_packed {
@@ -50,14 +51,21 @@ struct rrr_array_value_packed {
 } __attribute((packed));
 
 struct rrr_array {
-		RRR_LL_HEAD(struct rrr_type_value);
-		uint16_t version;
+	RRR_LL_HEAD(struct rrr_type_value);
+	uint16_t version;
 };
 
-static inline int rrr_array_count(struct rrr_array *array) {
-	return RRR_LL_COUNT(array);
-}
-
+int rrr_array_parse_identifier_and_size (
+		const struct rrr_type_definition **type_return,
+		unsigned int *length_return,
+		char **length_ref_return,
+		unsigned int *item_count_return,
+		char **item_count_ref_return,
+		rrr_type_flags *flags_return,
+		rrr_length *bytes_parsed_return,
+		const char *start,
+		const char *end
+);
 int rrr_array_parse_single_definition (
 		struct rrr_array *target,
 		const char *start,
@@ -209,5 +217,8 @@ int rrr_array_message_append_to_collection (
 int rrr_array_dump (
 		const struct rrr_array *definition
 );
+static inline int rrr_array_count(const struct rrr_array *array) {
+	return RRR_LL_COUNT(array);
+}
 
 #endif /* RRR_ARRAY_H */

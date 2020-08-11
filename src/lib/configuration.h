@@ -19,10 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "settings.h"
-
 #ifndef RRR_CONFIGURATION_H
 #define RRR_CONFIGURATION_H
+
+#include "settings.h"
+#include "array_tree.h"
 
 #define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
 #define RRR_CONFIG_MAX_SIZE 16*1024*1024
@@ -33,6 +34,7 @@ struct rrr_config {
 	int module_count;
 	int module_count_max;
 	struct rrr_instance_config_data **configs;
+	struct rrr_array_tree_list array_trees;
 };
 
 struct rrr_instance_config_data *rrr_config_find_instance (struct rrr_config *source, const char *name);

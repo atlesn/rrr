@@ -1287,6 +1287,8 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
 ) {
+	RRR_FREE_IF_NOT_NULL(template->import_length_ref);
+	RRR_FREE_IF_NOT_NULL(template->element_count_ref);
 	RRR_FREE_IF_NOT_NULL(template->tag);
 	RRR_FREE_IF_NOT_NULL(template->data);
 	free(template);
@@ -1318,7 +1320,9 @@ int rrr_type_value_new (
 		rrr_length tag_length,
 		const char *tag,
 		rrr_length import_length,
+		char *import_length_ref,
 		rrr_length element_count,
+		const char *element_count_ref,
 		rrr_length stored_length
 ) {
 	int ret = 0;
@@ -1339,6 +1343,22 @@ int rrr_type_value_new (
 	value->import_elements = element_count;
 	value->total_stored_length = stored_length;
 	value->definition = type;
+
+	if (import_length_ref != NULL && *import_length_ref != '\0') {
+		if ((value->import_length_ref = strdup(import_length_ref)) == NULL) {
+			RRR_MSG_0("Could not allocate data for import length ref in rrr_type_value_new\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (element_count_ref != NULL && *element_count_ref != '\0') {
+		if ((value->element_count_ref = strdup(element_count_ref)) == NULL) {
+			RRR_MSG_0("Could not allocate data for element count ref in rrr_type_value_new\n");
+			ret = 1;
+			goto out;
+		}
+	}
 
 	if (stored_length > 0) {
 		value->data = malloc(stored_length);
@@ -1448,7 +1468,9 @@ int rrr_type_value_allocate_and_import_raw (
 			tag_length,
 			tag,
 			import_length,
+			NULL,
 			element_count,
+			NULL,
 			0 // <-- Do not pass stored length, causes allocation which should be done by import function
 	)) != 0) {
 		RRR_MSG_0("Could not allocate value in rrr_type_value_allocate_and_import_raw\n");

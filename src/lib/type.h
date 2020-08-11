@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_types.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
+#include "read_constants.h"
 
 static const union type_system_endian {
 	uint16_t two;
@@ -36,10 +37,10 @@ static const union type_system_endian {
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_LE (type_system_endian.one == 1)
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_BE (type_system_endian.one == 0)
 
-#define RRR_TYPE_PARSE_OK			0
-#define RRR_TYPE_PARSE_HARD_ERR		1
-#define RRR_TYPE_PARSE_SOFT_ERR		2
-#define RRR_TYPE_PARSE_INCOMPLETE	3
+#define RRR_TYPE_PARSE_OK			RRR_READ_OK
+#define RRR_TYPE_PARSE_HARD_ERR		RRR_READ_HARD_ERROR
+#define RRR_TYPE_PARSE_SOFT_ERR		RRR_READ_SOFT_ERROR
+#define RRR_TYPE_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
 
 // Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
@@ -194,9 +195,11 @@ struct rrr_type_value {
 	rrr_type_flags flags;
 	rrr_length tag_length;
 	rrr_length import_length;
+	char *import_length_ref;
 	rrr_length import_elements;
 	rrr_length total_stored_length;
 	rrr_length element_count; // 1 = no array, 0 = auto
+	char *element_count_ref;
 	char *tag;
 	char *data;
 };
@@ -244,7 +247,9 @@ int rrr_type_value_new (
 		rrr_length tag_length,
 		const char *tag,
 		rrr_length import_length,
+		char *import_length_ref,
 		rrr_length element_count,
+		const char *element_count_ref,
 		rrr_length stored_length
 );
 rrr_length rrr_type_value_get_export_length (

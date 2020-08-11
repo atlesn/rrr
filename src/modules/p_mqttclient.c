@@ -1021,7 +1021,7 @@ static int mqttclient_try_create_array_message_from_publish (
 			strlen(publish->topic),
 			&data->array_definition
 	)) != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %i\n",
 					INSTANCE_D_NAME(data->thread_data), publish->payload->length);
 			ret = 0;

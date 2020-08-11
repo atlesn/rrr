@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 #include "util/gnu.h"
 #include "util/rrr_endian.h"
+#include "parse.h"
 
 static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -49,32 +50,86 @@ static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned lo
 	return 0;
 }
 
-static int __rrr_array_parse_identifier_and_size (
+static int __rrr_array_parse_identifier_and_size_tag (
+		char **target,
+		const char **start,
+		rrr_length *parsed_bytes
+) {
+	int ret = RRR_ARRAY_OK;
+
+	char *result = NULL;
+
+	// Step over $
+	(*start)++;
+	(*parsed_bytes)++;
+
+	const char *tag_begin = (*start);
+	while (**start != '\0' && RRR_PARSE_MATCH_C_LETTER(**start)) {
+		(*parsed_bytes)++;
+		(*start)++;
+	}
+
+	size_t length = (*start) - tag_begin;
+	if (length == 0) {
+		RRR_MSG_0("Missing tag name after $ in defintion\n");
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+	if ((result = malloc(length + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
+		ret = RRR_ARRAY_HARD_ERROR;
+		goto out;
+	}
+
+	memcpy(result, tag_begin, length);
+
+	result[length] = '\0';
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+	return ret;
+}
+
+int rrr_array_parse_identifier_and_size (
 		const struct rrr_type_definition **type_return,
 		unsigned int *length_return,
+		char **length_ref_return,
 		unsigned int *item_count_return,
+		char **item_count_ref_return,
 		rrr_type_flags *flags_return,
 		rrr_length *bytes_parsed_return,
 		const char *start,
 		const char *end
 ) {
+	int ret = 0;
+
 	rrr_length parsed_bytes = 0;
 	rrr_type_flags flags = 0;
 	const struct rrr_type_definition *type = NULL;
+
+	char *length_ref = NULL;
 	unsigned long long int length = 0;
+
+	char *item_count_ref = NULL;
 	unsigned long long int item_count = 1;
 
 	const char *integer_end = NULL;
 
 	*type_return = NULL;
 	*length_return = 0;
+	*length_ref_return = NULL;
 	*item_count_return = 0;
+	*item_count_ref_return = NULL;
 	*bytes_parsed_return = 0;
 	*flags_return = 0;
 
 	type = rrr_type_parse_from_string(&parsed_bytes, start, end);
 	if (type == NULL) {
 		RRR_MSG_0("Unknown type identifier in type definition here --> '%s'\n", start);
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out_err;
 	}
 	start += parsed_bytes;
@@ -82,28 +137,39 @@ static int __rrr_array_parse_identifier_and_size (
 	if (type->max_length > 0) {
 		if (start >= end || *start == '\0') {
 			RRR_MSG_0("Missing size for type '%s' in type definition\n", type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 
-		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &length, start) != 0) {
-			RRR_MSG_0("Size argument '%s' in type definition '%s' was not a valid number\n",
-					start, type->identifier);
-			goto out_err;
+		if (*start == '$') {
+			if ((ret = __rrr_array_parse_identifier_and_size_tag(&length_ref, &start, &parsed_bytes)) != 0) {
+				goto out_err;
+			}
 		}
+		else {
+			if (__rrr_array_convert_unsigned_integer_10(&integer_end, &length, start) != 0) {
+				RRR_MSG_0("Size argument '%s' in type definition '%s' was not a valid number\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_SOFT_ERROR;
+				goto out_err;
+			}
 
-		if (length > 0xffffffff) {
-			RRR_MSG_0("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
-					start, type->identifier);
-			goto out_err;
-		}
+			if (length > 0xffffffff) {
+				RRR_MSG_0("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_SOFT_ERROR;
+				goto out_err;
+			}
 
-		parsed_bytes += integer_end - start;
-		start = integer_end;
+			parsed_bytes += integer_end - start;
+			start = integer_end;
 
-		if (length <= 0) {
-			RRR_MSG_0("Size argument '%lli' in type definition '%s' must be >0\n",
-					length, type->identifier);
-			goto out_err;
+			if (length <= 0) {
+				RRR_MSG_0("Size argument '%lli' in type definition '%s' must be >0\n",
+						length, type->identifier);
+				ret = RRR_ARRAY_SOFT_ERROR;
+				goto out_err;
+			}
 		}
 
 		if (start >= end || *start == '\0') {
@@ -114,6 +180,7 @@ static int __rrr_array_parse_identifier_and_size (
 			if (!RRR_TYPE_ALLOWS_SIGN(type->type)) {
 				RRR_MSG_0("Sign indicator '%c' found in type definition for type '%s' which does not support being signed\n",
 						*start, type->identifier);
+				ret = RRR_ARRAY_SOFT_ERROR;
 				goto out_err;
 			}
 
@@ -132,6 +199,7 @@ static int __rrr_array_parse_identifier_and_size (
 		if (*start != '\0' && *start != '#' && *start != '@') {
 			RRR_MSG_0("Extra data or size argument after type definition '%s' which has automatic size\n",
 					type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 	}
@@ -146,26 +214,38 @@ static int __rrr_array_parse_identifier_and_size (
 
 		if (start >= end || *start == '\0') {
 			RRR_MSG_0("Item count missing after item count definition @ in type %s\n", type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 
-		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &item_count, start) != 0) {
-			RRR_MSG_0("Item count argument '%s' in type definition '%s' was not a valid number\n",
-					start, type->identifier);
-			goto out_err;
+		if (*start == '$') {
+			if ((ret = __rrr_array_parse_identifier_and_size_tag(&item_count_ref, &start, &parsed_bytes)) != 0) {
+				goto out_err;
+			}
+		}
+		else {
+			if (__rrr_array_convert_unsigned_integer_10(&integer_end, &item_count, start) != 0) {
+				RRR_MSG_0("Item count argument '%s' in type definition '%s' was not a valid number\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_SOFT_ERROR;
+				goto out_err;
+			}
+
+			parsed_bytes += integer_end - start;
 		}
 
-		parsed_bytes += integer_end - start;
 		// start = integer_end; - Enable if more parsing is to be performed
 
 		if (item_count == 0) {
 			RRR_MSG_0("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
 					type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 		if (item_count > 0xffffffff) {
 			RRR_MSG_0("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
 					type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 		/*
@@ -176,20 +256,25 @@ static int __rrr_array_parse_identifier_and_size (
 		if (item_count > 1 && type->max_length == 0) {
 			RRR_MSG_0("Item count definition @ found after type '%s' which cannot have multiple values\n",
 					type->identifier);
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out_err;
 		}
 	}
 
 	out_ok:
 		*type_return = type;
+		*length_ref_return = length_ref;
 		*length_return = length;
 		*item_count_return = item_count;
+		*item_count_ref_return = item_count_ref;
 		*flags_return = flags;
 		*bytes_parsed_return = parsed_bytes;
 		return 0;
 
 	out_err:
-		return 1;
+		RRR_FREE_IF_NOT_NULL(item_count_ref);
+		RRR_FREE_IF_NOT_NULL(length_ref);
+		return ret;
 }
 
 int rrr_array_parse_single_definition (
@@ -202,15 +287,19 @@ int rrr_array_parse_single_definition (
 	rrr_length parsed_bytes = 0;
 	const struct rrr_type_definition *type = NULL;
 	unsigned int length = 0;
+	char *length_ref = NULL;
 	unsigned int item_count = 0;
+	char *item_count_ref = NULL;
 	rrr_type_flags flags = 0;
 	const char *tag_start = NULL;
 	unsigned int tag_length = 0;
 
-	if ((ret = __rrr_array_parse_identifier_and_size (
+	if ((ret = rrr_array_parse_identifier_and_size (
 			&type,
 			&length,
+			&length_ref,
 			&item_count,
+			&item_count_ref,
 			&flags,
 			&parsed_bytes,
 			start,
@@ -260,7 +349,9 @@ int rrr_array_parse_single_definition (
 			tag_length,
 			tag_start,
 			length,
+			length_ref,
 			item_count,
+			item_count_ref,
 			0
 	) != 0) {
 		RRR_MSG_0("Could not create value in rrr_array_parse_definition\n");
@@ -271,6 +362,8 @@ int rrr_array_parse_single_definition (
 	RRR_LL_APPEND(target,template);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(length_ref);
+	RRR_FREE_IF_NOT_NULL(item_count_ref);
 	return ret;
 }
 
@@ -502,7 +595,9 @@ static int __rrr_array_push_value_64_with_tag (
 			strlen(tag),
 			tag,
 			sizeof(uint64_t),
+			NULL,
 			1,
+			NULL,
 			0 // <!-- Don't send store length, import function will allocate
 	)) != 0) {
 		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag return was %i\n", ret);
@@ -570,7 +665,9 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			strlen(tag),
 			tag,
 			value_size,
+			NULL,
 			1,
+			NULL,
 			value_size
 	) != 0) {
 		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
@@ -818,20 +915,20 @@ static int __rrr_array_parse_from_buffer (
 
 	if (rrr_array_definition_clone(target, definition) != 0) {
 		RRR_MSG_0("Could not clone definitions in __rrr_array_parse_from_buffer\n");
-		ret = RRR_ARRAY_PARSE_HARD_ERR;
+		ret = RRR_ARRAY_HARD_ERROR;
 		goto out;
 	}
 
 	if ((ret = rrr_array_parse_data_from_definition(target, parsed_bytes, buf, buf_len)) != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Invalid packet in __rrr_array_parse_from_buffer\n");
-			ret = RRR_ARRAY_PARSE_SOFT_ERR;
+			ret = RRR_ARRAY_SOFT_ERROR;
 		}
 		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
 			// OK
 		}
 		else {
-			ret = RRR_ARRAY_PARSE_HARD_ERR;
+			ret = RRR_ARRAY_HARD_ERROR;
 		}
 		goto out;
 	}
@@ -878,7 +975,7 @@ int rrr_array_parse_from_buffer_with_callback (
 		RRR_MSG_0("Could not parse array in rrr_array_parse_from_buffer_with_callback return was %i\n", ret);
 		// Usually errors are caused by senders sending wrong data,
 		// don't let them make the program crash
-		ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 
@@ -1031,7 +1128,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	rrr_length written_bytes = 0;
 	if (node->definition->pack(data->write_pos, &written_bytes, &new_type, node) != 0) {
 		RRR_MSG_0("Error while packing data of type %u in __rrr_array_collection_pack_callback\n", node->definition->type);
-		ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 	data->write_pos += written_bytes;
@@ -1063,7 +1160,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	rrr_length written_bytes = 0;
 	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
 		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_collection_export_callback\n", node->definition->type);
-		ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 	data->write_pos += written_bytes;
@@ -1186,7 +1283,7 @@ int rrr_array_new_message_from_collection (
 	struct rrr_msg_msg *message = rrr_msg_msg_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
 		RRR_MSG_0("Could not create message for data collection\n");
-		ret = RRR_ARRAY_PARSE_HARD_ERR;
+		ret = RRR_ARRAY_HARD_ERROR;
 		goto out;
 	}
 
@@ -1315,7 +1412,9 @@ int rrr_array_message_append_to_collection (
 				tag_length,
 				pos,
 				total_length,
+				NULL,
 				elements,
+				NULL,
 				total_length
 		) != 0) {
 			RRR_MSG_0("Could not allocate value in rrr_array_message_to_collection\n");

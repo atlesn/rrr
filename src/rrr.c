@@ -297,7 +297,7 @@ static int main_loop (
 		}
 
 		if (stats_data.engine.initialized != 0) {
-				rrr_stats_engine_tick(&stats_data.engine);
+			rrr_stats_engine_tick(&stats_data.engine);
 		}
 
 		int count;

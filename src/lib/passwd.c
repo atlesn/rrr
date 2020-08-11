@@ -513,7 +513,7 @@ int rrr_passwd_iterate_lines (
 			NULL
 	};
 
-	while (!rrr_parse_check_eof(&parse_pos)) {
+	while (!RRR_PARSE_CHECK_EOF(&parse_pos)) {
 		int line_start = 0;
 		int line_end = 0;
 

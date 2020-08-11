@@ -339,7 +339,9 @@ static int __rrr_perl5_type_to_value_64_common (
 			0,
 			NULL,
 			0,
+			NULL,
 			RRR_LL_COUNT(&intermediate_values),
+			NULL,
 			RRR_LL_COUNT(&intermediate_values) * sizeof(uint64_t)
 	) != 0) {
 		RRR_MSG_0("Could not allocate new value in __rrr_perl5_type_to_value_h\n");
@@ -573,7 +575,9 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			0,
 			NULL,
 			0,
+			NULL,
 			RRR_LL_COUNT(&intermediate_values),
+			NULL,
 			total_length
 	) != 0) {
 		RRR_MSG_0("Could not allocate new value in __rrr_perl5_type_to_value_blob\n");
@@ -657,7 +661,9 @@ static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			0,
 			NULL,
 			0,
+			NULL,
 			1,
+			NULL,
 			data_size
 	) != 0) {
 		RRR_MSG_0("Could not create new value in __rrr_perl5_type_to_value_str\n");
@@ -711,7 +717,9 @@ static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			0,
 			NULL,
 			0,
+			NULL,
 			RRR_LL_COUNT(&intermediate_values),
+			NULL,
 			RRR_LL_COUNT(&intermediate_values) * sizeof(uint64_t)
 	) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in __rrr_perl5_type_to_value_ustr_istr\n");

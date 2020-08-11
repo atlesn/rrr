@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_config.h"
 #include "../lib/util/posix.h"
 
+#include "test_condition.h"
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
@@ -107,6 +108,12 @@ int rrr_test_library_functions (void) {
 	int ret_tmp = 0;
 
 	// OR all the return values, don't stop if a test fails
+
+	TEST_BEGIN("rrr_condition") {
+		ret_tmp = rrr_test_condition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
 
 	TEST_BEGIN("rrr_posix_usleep") {
 		ret_tmp = rrr_test_usleep();

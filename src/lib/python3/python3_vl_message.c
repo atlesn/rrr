@@ -492,7 +492,9 @@ static int __allocate_64 (ALLOCATE_DEF) {
 			tag_length,
 			tag,
 			sizeof(rrr_type_h) * elements,
+			NULL,
 			elements,
+			NULL,
 			sizeof(rrr_type_h) * elements
 	) != 0) {
 		RRR_MSG_0("Could not allocate 64 bit value in __allocate_64\n");
@@ -510,7 +512,9 @@ static int __allocate_blob (ALLOCATE_DEF) {
 			tag_length,
 			tag,
 			item_size * elements,
+			NULL,
 			elements,
+			NULL,
 			item_size * elements
 	) != 0) {
 		RRR_MSG_0("Could not allocate blob value in __allocate_64\n");

@@ -116,6 +116,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}													\
 	(head)->node_count++; } while (0)
 
+#define RRR_LL_PUSH(head,node)							\
+	RRR_LL_APPEND(head,node)
+
 #define RRR_LL_FIRST(head)								\
 	((head)->ptr_first)
 
@@ -191,6 +194,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			(head)->ptr_first->ptr_prev = NULL;								\
 		} (head)->node_count--;												\
 	}} while (0)
+
+#define RRR_LL_POP(head)													\
+	RRR_LL_LAST(head);	/* Pop is used with assignment */					\
+	do {if ((head)->ptr_last != NULL) {										\
+		if ((head)->ptr_first == (head)->ptr_last) {						\
+			(head)->ptr_last = NULL;										\
+			(head)->ptr_first = NULL;										\
+		} else {															\
+			(head)->ptr_last = (head)->ptr_last->ptr_prev;					\
+			(head)->ptr_last->ptr_next = NULL;								\
+		} (head)->node_count--;												\
+	}} while (0)
+
 
 #define RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)					\
 	do {if ((source)->ptr_first != NULL) {									\
