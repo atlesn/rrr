@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_msg;
 struct rrr_array;
+struct rrr_array_tree;
 struct rrr_read_session_collection;
 struct rrr_read_session;
 struct rrr_msg_msg_holder;
@@ -75,6 +76,18 @@ int rrr_ip_receive_array (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_msg_msg_holder *entry, void *arg),
+		void *arg
+);
+int rrr_ip_receive_array_tree (
+		struct rrr_msg_msg_holder *target_entry,
+		struct rrr_read_session_collection *read_session_collection,
+		int fd,
+		int read_flags,
+		struct rrr_array *array_final,
+		const struct rrr_array_tree *tree,
+		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
+		int (*callback)(struct rrr_msg_msg_holder *entry, struct rrr_array *array, void *arg),
 		void *arg
 );
 int rrr_ip_send (

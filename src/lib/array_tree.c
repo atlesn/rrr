@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "type.h"
 #include "parse.h"
+#include "util/rrr_time.h"
 
 static void __rrr_array_branch_destroy(
 		struct rrr_array_branch *branch
@@ -81,6 +82,8 @@ int rrr_array_tree_new (
 		ret = 1;
 		goto out;
 	}
+
+	memset(new_tree, '\0', sizeof(*new_tree));
 
 	if ((new_tree->name = strdup(name != NULL ? name : "-")) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_tree_clone\n");
@@ -632,6 +635,8 @@ int rrr_array_tree_parse (
 			goto out_destroy;
 		}
 
+		printf("Node: %p, ptr_first: %p, ptr_last: %p\n", node, tree->ptr_first, tree->ptr_last);
+
 		if (RRR_LL_COUNT(&node->array) == 0) {
 			__rrr_array_node_destroy(node);
 		}
@@ -1172,6 +1177,7 @@ int __rrr_array_tree_import_condition_callback (
 	return ret;
 }
 
+
 int __rrr_array_tree_get_import_length_leaf_callback (
 		void *arg
 ) {
@@ -1181,7 +1187,7 @@ int __rrr_array_tree_get_import_length_leaf_callback (
 
 	return 0;
 }
-
+/*
 static int __rrr_array_tree_get_import_length_value_callback (
 		const struct rrr_type_value *value,
 		void *arg
@@ -1255,7 +1261,7 @@ int rrr_array_tree_get_import_length_from_buffer (
 	rrr_array_clear(&callback_data.array);
 	return ret;
 }
-
+*/
 int rrr_array_tree_clone (
 		struct rrr_array_tree **target,
 		const struct rrr_array_tree *source
@@ -1294,7 +1300,7 @@ int rrr_array_tree_parse_from_buffer (
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array_tree *tree,
-		int (*callback)(const struct rrr_array *array, void *arg),
+		int (*callback)(struct rrr_array *array, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -1324,12 +1330,15 @@ int rrr_array_tree_parse_from_buffer (
 }
 
 struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data {
+	const char *topic;
+	ssize_t topic_length;
 	int (*callback)(struct rrr_msg_msg *message, void *arg);
 	void *callback_arg;
 };
 
 static int __rrr_array_tree_new_message_from_buffer_callback_intermediate (
-		const struct rrr_array *array, void *arg
+		struct rrr_array *array,
+		void *arg
 ) {
 	struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data *callback_data = arg;
 
@@ -1338,13 +1347,13 @@ static int __rrr_array_tree_new_message_from_buffer_callback_intermediate (
 	struct rrr_msg_msg *message = NULL;
 	if ((ret = rrr_array_new_message_from_collection (
 			&message,
-			&array_tmp,
+			array,
 			rrr_time_get_64(),
-			topic,
-			topic_length
+			callback_data->topic,
+			callback_data->topic_length
 	)) != 0) {
-		RRR_MSG_0("Could not create message in rrr_array_new_message_from_buffer return was %i\n", ret);
-		goto out;
+		RRR_MSG_0("Could not create message in __rrr_array_tree_new_message_from_buffer_callback_intermediate return was %i\n", ret);
+		return 1;
 	}
 	RRR_FREE_IF_NOT_NULL(message);
 
@@ -1356,29 +1365,29 @@ int rrr_array_tree_new_message_from_buffer (
 		ssize_t buf_len,
 		const char *topic,
 		ssize_t topic_length,
-		const struct rrr_array *definition,
+		const struct rrr_array_tree *tree,
 		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	ssize_t parsed_bytes = 0;
-	struct rrr_array array_tmp = {0};
+	struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data callback_data = {
+			topic,
+			topic_length,
+			callback,
+			callback_arg
+	};
 
 	if ((ret = rrr_array_tree_parse_from_buffer (
-
-
+			buf,
+			buf_len,
+			tree,
+			__rrr_array_tree_new_message_from_buffer_callback_intermediate,
+			&callback_data
 	)) != 0) {
 		goto out;
 	}
 
-
-
-
-	ret = callback(message, callback_arg);
-	message = NULL;
-
 	out:
-	rrr_array_clear(&array_tmp);
 	return ret;
 }

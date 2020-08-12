@@ -38,6 +38,13 @@ struct receive_callback_data {
 	void *arg;
 };
 
+struct receive_array_tree_callback_data {
+	struct rrr_socket_common_in_flight_counter *in_flight;
+	struct rrr_array *array_final;
+	int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg);
+	void *arg;
+};
+
 static int __rrr_socket_common_receive_callback_basic (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -45,6 +52,15 @@ static int __rrr_socket_common_receive_callback_basic (
 	struct receive_callback_data *data = arg;
 	return data->callback(read_session, data->arg);
 }
+
+static int __rrr_socket_common_receive_array_tree_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct receive_array_tree_callback_data *data = arg;
+	return data->callback(read_session, data->array_final, data->arg);
+}
+
 
 /*
 static int __rrr_socket_common_receive_callback_and_check_ctrl (
@@ -154,6 +170,69 @@ int rrr_socket_common_receive_array (
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
 			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int rrr_socket_common_receive_array_tree (
+		struct rrr_read_session_collection *read_session_collection,
+		int fd,
+		int read_flags,
+		int socket_read_flags,
+		struct rrr_array *array_final,
+		const struct rrr_array_tree *tree,
+		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
+		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
+		void *arg
+) {
+	struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data_array = {
+			tree,
+			array_final,
+			0,
+			do_sync_byte_by_byte,
+			message_max_size
+	};
+
+	struct receive_array_tree_callback_data callback_data = {
+			NULL,
+			array_final,
+			callback,
+			arg
+	};
+
+	uint64_t bytes_read = 0;
+	int ret = rrr_socket_read_message_default (
+			&bytes_read,
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_msg),
+			4096,
+			0, // No max size
+			read_flags,
+			socket_read_flags,
+			rrr_read_common_get_session_target_length_from_array_tree,
+			&callback_data_array,
+			__rrr_socket_common_receive_array_tree_callback,
+			&callback_data
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_READ_EOF) {
+			return ret;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array_tree\n");
+			return RRR_SOCKET_SOFT_ERROR;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
 			return 1;
 		}
 	}

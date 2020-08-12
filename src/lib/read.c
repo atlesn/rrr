@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_addr.h"
 #include "messages/msg_log.h"
 #include "array.h"
+#include "array_tree.h"
 #include "util/posix.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
@@ -601,6 +602,81 @@ int rrr_read_common_get_session_target_length_from_array (
 		);
 
 		if (ret == 0) {
+			break;
+		}
+		else {
+			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+				return RRR_READ_INCOMPLETE;
+			}
+
+			if (data->do_byte_by_byte_sync != 0) {
+				skipped_bytes++;
+				pos++;
+				wpos--;
+			}
+			else {
+				return RRR_READ_SOFT_ERROR;
+			}
+		}
+	}
+
+	if (wpos <= 0) {
+		return RRR_READ_SOFT_ERROR;
+	}
+
+	// Raw size to read for socket framework
+	read_session->target_size = import_length;
+
+	// Read position for array framework
+	read_session->rx_buf_skip = skipped_bytes;
+
+	return RRR_READ_OK;
+}
+
+static int __rrr_read_common_get_session_target_length_from_array_tree_callback (
+		struct rrr_array *array, void *arg
+) {
+	struct rrr_read_common_get_session_target_length_from_array_tree_data *data = arg;
+
+	rrr_array_clear(data->array_final);
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(data->array_final, array);
+
+	data->import_length = rrr_array_get_packed_length(data->array_final);
+
+	return 0;
+}
+
+int rrr_read_common_get_session_target_length_from_array_tree (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_read_common_get_session_target_length_from_array_tree_data *data = arg;
+
+	char *pos = read_session->rx_buf_ptr;
+	rrr_slength wpos = read_session->rx_buf_wpos;
+
+//	printf ("Array wpos: %li\n", wpos);
+
+	if (data->message_max_size != 0 && wpos > data->message_max_size) {
+		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
+				wpos, data->message_max_size);
+		return RRR_READ_SOFT_ERROR;
+	}
+
+	ssize_t import_length = 0;
+	ssize_t skipped_bytes = 0;
+
+	while (wpos > 0) {
+		int ret = rrr_array_tree_parse_from_buffer (
+				pos,
+				wpos,
+				data->tree,
+				__rrr_read_common_get_session_target_length_from_array_tree_callback,
+				data
+		);
+
+		if (ret == 0) {
+			import_length = data->import_length;
 			break;
 		}
 		else {

@@ -69,10 +69,6 @@ struct rrr_array_tree_list {
 	RRR_LL_HEAD(struct rrr_array_tree);
 };
 
-struct rrr_array_read_data {
-	struct rrr_array final_array;
-};
-
 void rrr_array_tree_clear (
 		struct rrr_array_tree *tree
 );
@@ -106,7 +102,7 @@ int rrr_array_tree_validate (
 		const struct rrr_array_tree *tree
 );
 int rrr_array_tree_get_import_length_from_buffer (
-		struct rrr_array_read_data *array_read_data,
+		struct rrr_array *final_array,
 		ssize_t *import_length,
 		const struct rrr_array_tree *tree,
 		const char *buf,
@@ -120,7 +116,16 @@ int rrr_array_tree_parse_from_buffer (
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array_tree *tree,
-		int (*callback)(const struct rrr_array *array, void *arg),
+		int (*callback)(struct rrr_array *array, void *arg),
+		void *callback_arg
+);
+int rrr_array_tree_new_message_from_buffer (
+		const char *buf,
+		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
+		const struct rrr_array_tree *tree,
+		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 );
 

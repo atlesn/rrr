@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_COMMON_H
 
 struct rrr_array;
+struct rrr_array_tree;
 struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_read_session;
@@ -42,6 +43,18 @@ int rrr_socket_common_receive_array (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
+		void *arg
+);
+int rrr_socket_common_receive_array_tree (
+		struct rrr_read_session_collection *read_session_collection,
+		int fd,
+		int read_flags,
+		int socket_read_flags,
+		struct rrr_array *array_final,
+		const struct rrr_array_tree *tree,
+		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
+		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
 );
 int rrr_socket_common_receive_msg (

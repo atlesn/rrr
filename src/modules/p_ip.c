@@ -335,15 +335,18 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	return ret;
 }
 
+/*
 struct ip_read_callback_data {
 	struct ip_data *ip_data;
 	const struct rrr_msg_msg_holder *entry_orig;
 };
+*/
 
-static int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, void *arg) {
-	struct ip_read_callback_data *callback_data = arg;
-	struct ip_data *data = callback_data->ip_data;
-
+static int ip_read_receive_message (
+		struct ip_data *data,
+		const struct rrr_msg_msg_holder *entry_orig,
+		struct rrr_msg_msg *message
+) {
 	int ret = 0;
 
 	struct rrr_msg_msg_holder *new_entry = NULL;
@@ -351,9 +354,9 @@ static int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, v
 	if (rrr_msg_msg_holder_new (
 			&new_entry,
 			MSG_TOTAL_SIZE(message),
-			(struct sockaddr *) &callback_data->entry_orig->addr,
-			callback_data->entry_orig->addr_len,
-			callback_data->entry_orig->protocol,
+			(struct sockaddr *) &entry_orig->addr,
+			entry_orig->addr_len,
+			entry_orig->protocol,
 			message
 	) != 0) {
 		RRR_MSG_0("Could not create new ip buffer entry in read_data_receive_message_callback\n");
@@ -392,10 +395,11 @@ static int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, v
 	return ret;
 }
 
-static int ip_read_data_receive_extract_messages_callback (const struct rrr_array *array, void *arg) {
-	struct ip_read_callback_data *callback_data = arg;
-	struct ip_data *data = callback_data->ip_data;
-
+static int ip_read_data_receive_extract_messages (
+		struct ip_data *data,
+		const struct rrr_msg_msg_holder *entry_orig,
+		const struct rrr_array *array
+) {
 	int ret = 0;
 
 	int found_messages = 0;
@@ -409,7 +413,7 @@ static int ip_read_data_receive_extract_messages_callback (const struct rrr_arra
 				goto out;
 			}
 
-			if ((ret = ip_read_data_receive_message_callback(message_new, arg)) != 0) {
+			if ((ret = ip_read_receive_message(data, entry_orig, message_new)) != 0) {
 				goto out;
 			}
 
@@ -431,33 +435,27 @@ static int ip_read_data_receive_extract_messages_callback (const struct rrr_arra
 	return ret;
 }
 
-static int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, struct rrr_array *array_final, void *arg) {
 	struct ip_data *data = arg;
 	int ret = 0;
-	struct ip_read_callback_data callback_data = {
-			data,
-			entry // Only used for reference by callbacks,
-	};
 
 	if (data->do_extract_rrr_msg_msgs) {
-		ret = rrr_array_tree_parse_from_buffer (
-			entry->message,
-			entry->data_length,
-			data->definitions,
-			ip_read_data_receive_extract_messages_callback,
-			&callback_data
-		);
+		ret = ip_read_data_receive_extract_messages(data, entry, array_final);
 	}
 	else {
-		ret = rrr_array_tree_new_message_from_buffer (
-			entry->message,
-			entry->data_length,
-			data->default_topic,
-			data->default_topic_length,
-			data->definitions,
-			ip_read_data_receive_message_callback,
-			&callback_data
-		);
+		RRR_FREE_IF_NOT_NULL(entry->message);
+
+		if ((ret = rrr_array_new_message_from_collection (
+				(struct rrr_msg_msg **) &entry->message,
+				array_final,
+				rrr_time_get_64(),
+				data->default_topic,
+				data->default_topic_length
+		)) != 0) {
+			goto out;
+		}
+
+		entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
 	}
 
 	if (ret != 0) {
@@ -486,18 +484,21 @@ struct ip_read_array_intermediate_callback_data {
 	int loops;
 };
 
-static int ip_read_array_intermediate(struct rrr_msg_msg_holder *entry, void *arg) {
+static int ip_read_array_intermediate (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct ip_read_array_intermediate_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->data;
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	if ((ret = rrr_ip_receive_array (
+	struct rrr_array array_tmp = {0};
+
+	if ((ret = rrr_ip_receive_array_tree (
 			entry,
 			callback_data->read_sessions,
 			callback_data->fd,
 			RRR_READ_F_NO_SLEEPING,
-			&data->definitions,
+			&array_tmp,
+			data->definitions,
 			data->do_sync_byte_by_byte,
 			data->message_max_size,
 			ip_read_raw_data_callback,
@@ -538,6 +539,7 @@ static int ip_read_array_intermediate(struct rrr_msg_msg_holder *entry, void *ar
 		}
 
 		rrr_msg_msg_holder_unlock(entry);
+		rrr_array_clear(&array_tmp);
 		return ret;
 }
 
@@ -623,31 +625,6 @@ static int ip_udp_read_data(struct ip_data *data) {
 	}
 
 	out:
-	return ret;
-}
-
-static int inject_callback(void *arg1, void *arg2) {
-	struct ip_data *data = arg1;
-	struct rrr_msg_msg_holder *entry = arg2;
-
-	return ip_read_raw_data_callback(entry, data);
-}
-
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
-	struct ip_data *data = thread_data->private_data;
-
-	RRR_DBG_2("ip instance %s writing data from inject function\n", INSTANCE_D_NAME(thread_data));
-
-	int ret = rrr_message_broker_with_ctx_do (
-			INSTANCE_D_BROKER(thread_data),
-			INSTANCE_D_HANDLE(thread_data),
-			inject_callback,
-			data,
-			message
-	);
-
-	rrr_msg_msg_holder_unlock(message);
-
 	return ret;
 }
 
@@ -1156,7 +1133,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	int has_senders = (rrr_poll_collection_count(&thread_data->poll) > 0 ? 1 : 0);
 
-	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
+	if (has_senders == 0 && data->definitions == NULL) {
 		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message_no_network_cleanup;
@@ -1329,7 +1306,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			break;
 		}
 
-		if (RRR_LL_COUNT(&data->definitions) > 0) {
+		if (data->definitions != NULL) {
 			if (ip_udp_read_data(data) != 0) {
 				RRR_MSG_ERR("Error while reading udp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
@@ -1445,7 +1422,7 @@ static struct rrr_module_operations module_operations = {
 	thread_entry_ip,
 	NULL,
 	test_config,
-	inject,
+	NULL,
 	NULL
 };
 
