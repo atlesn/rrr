@@ -27,13 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
-#include "read_constants.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
-
-#define RRR_CONDITION_OK			RRR_READ_OK
-#define RRR_CONDITION_HARD_ERROR	RRR_READ_HARD_ERROR
-#define RRR_CONDITION_SOFT_ERROR	RRR_READ_SOFT_ERROR
+#include "util/posix.h"
 
 #define RRR_CONDITION_OPERATOR_STACK_MAX 128
 
@@ -68,8 +64,36 @@ static const struct rrr_condition_op operators[] = {
 		{"", 0}
 };
 
-static const struct rrr_condition_op *operator_par_open = &operators[0];
-static const struct rrr_condition_op *operator_par_close = &operators[1];
+// Count correctly!
+static const struct rrr_condition_op *operator_par_open =	&operators[0];
+static const struct rrr_condition_op *operator_par_close =	&operators[1];
+static const struct rrr_condition_op *operator_lteq =		&operators[2];
+static const struct rrr_condition_op *operator_gteq =		&operators[3];
+static const struct rrr_condition_op *operator_lt =			&operators[4];
+static const struct rrr_condition_op *operator_gt =			&operators[5];
+static const struct rrr_condition_op *operator_eq =			&operators[6];
+static const struct rrr_condition_op *operator_ne =			&operators[7];
+static const struct rrr_condition_op *operator_bw_and =		&operators[8];
+static const struct rrr_condition_op *operator_and =		&operators[9];
+static const struct rrr_condition_op *operator_or =			&operators[10];
+
+int __rrr_condition_shunting_yard_carrier_allocate (
+		struct rrr_condition_shunting_yard_carrier **target
+) {
+	*target = NULL;
+
+	struct rrr_condition_shunting_yard_carrier *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_condition_shunting_yard_carrier_allocate\n");
+		return RRR_CONDITION_HARD_ERROR;
+	}
+
+	memset(result, '\0', sizeof(*result));
+
+	*target = result;
+
+	return RRR_CONDITION_OK;
+}
 
 int __rrr_condition_shunting_yard_carrier_new (
 		struct rrr_condition_shunting_yard_carrier **target,
@@ -79,14 +103,11 @@ int __rrr_condition_shunting_yard_carrier_new (
 ) {
 	int ret = RRR_CONDITION_OK;
 
-	struct rrr_condition_shunting_yard_carrier *result = malloc(sizeof(*result));
-	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_condition_shunting_yard_carrier_new\n");
-		ret = RRR_CONDITION_HARD_ERROR;
+	struct rrr_condition_shunting_yard_carrier *result = NULL;
+
+	if ((ret =__rrr_condition_shunting_yard_carrier_allocate(&result)) != 0) {
 		goto out;
 	}
-
-	memset(result, '\0', sizeof(*result));
 
 	if (value_length > sizeof(result->value) - 1) {
 		RRR_MSG_0("Value in condition was too long, max is %lu bytes\n", sizeof(result->value) - 1);
@@ -134,6 +155,37 @@ void rrr_condition_clear (
 		struct rrr_condition *target
 ) {
 	__rrr_condition_shunting_yard_clear(&target->shunting_yard);
+}
+
+static int __rrr_condition_shunting_yard_clone (
+		struct rrr_condition_shunting_yard *target,
+		const struct rrr_condition_shunting_yard *source
+) {
+	int ret = 0;
+
+	// Note : Stack is not cloned, usually not needed and is empty after parsing
+
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_condition_shunting_yard_carrier);
+		struct rrr_condition_shunting_yard_carrier *new_carrier = NULL;
+
+		if ((ret =__rrr_condition_shunting_yard_carrier_allocate(&new_carrier)) != 0) {
+			goto out;
+		}
+
+		*new_carrier = *node;
+		RRR_LL_NODE_INIT(new_carrier);
+		RRR_LL_APPEND(target, new_carrier);
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+int rrr_condition_clone (
+		struct rrr_condition *target,
+		const struct rrr_condition *source
+) {
+	return __rrr_condition_shunting_yard_clone (&target->shunting_yard, &source->shunting_yard);
 }
 
 static const struct rrr_condition_op *__rrr_condition_parse_op (struct rrr_parse_pos *pos) {
@@ -434,6 +486,15 @@ int rrr_condition_parse (
 		return ret;
 }
 
+static const char *__rrr_condition_extract_name (
+		char value_tmp[RRR_CONDITION_VALUE_MAX],
+		const char *value_orig
+) {
+	memcpy(value_tmp, value_orig, RRR_CONDITION_VALUE_MAX);
+	value_tmp[strlen(value_tmp) - 1] = '\0'; // Chop of }
+	return value_tmp + 1; // Chop of {
+}
+
 int rrr_condition_iterate (
 		const struct rrr_condition *condition,
 		int (*callback)(const struct rrr_condition_op *op, const char *value, const char *tag, void *arg),
@@ -448,9 +509,7 @@ int rrr_condition_iterate (
 		const char *value_to_pass = NULL;
 
 		if (*(node->value) == '{') {
-			memcpy(value_tmp, node->value, sizeof(value_tmp));
-			value_tmp[strlen(value_tmp) - 1] = '\0';   // Chop of }
-			tag_to_pass = value_tmp + 1;             // Chop of {
+			tag_to_pass = __rrr_condition_extract_name (value_tmp, node->value);
 		}
 		else {
 			value_to_pass = node->value;
@@ -461,5 +520,134 @@ int rrr_condition_iterate (
 		}
 	RRR_LL_ITERATE_END();
 
+	return ret;
+}
+
+struct rrr_condition_running_result {
+	// Set to NULL when evaluated
+	const struct rrr_condition_shunting_yard_carrier *carrier;
+	uint64_t result;
+};
+
+static uint64_t __rrr_condition_evaluate_operator (
+		uint64_t a,
+		uint64_t b,
+		const struct rrr_condition_op *op
+) {
+	if (op == operator_lteq) {
+		return (a <= b);
+	}
+	else if (op == operator_gteq) {
+		return (a >= b);
+	}
+	else if (op == operator_lt) {
+		return (a < b);
+	}
+	else if (op == operator_gt) {
+		return (a > b);
+	}
+	else if (op == operator_eq) {
+		return (a == b);
+	}
+	else if (op == operator_ne) {
+		return (a != b);
+	}
+	else if (op == operator_bw_and) {
+		return (a & b);
+	}
+	else if (op == operator_and) {
+		return (a && b);
+	}
+	else if (op == operator_or) {
+		return (a || b);
+	}
+
+	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
+
+	return 0;
+}
+
+int rrr_condition_evaluate (
+		uint64_t *result,
+		const struct rrr_condition *condition,
+		int (*name_evaluate_callback)(uint64_t *result, const char *name, void *arg),
+		void *name_evaluate_callback_arg
+) {
+	int ret = RRR_CONDITION_OK;
+
+	*result = 0;
+
+	uint64_t result_tmp = 0;
+
+	struct rrr_condition_running_result results[RRR_LL_COUNT(&condition->shunting_yard)];
+
+	char value_tmp[RRR_CONDITION_VALUE_MAX];
+
+	memset(results, '\0', sizeof(results));
+
+	ssize_t element_count = 0;
+	RRR_LL_ITERATE_BEGIN(&condition->shunting_yard, const struct rrr_condition_shunting_yard_carrier);
+		results[element_count++].carrier = node;
+	RRR_LL_ITERATE_END();
+
+	for (ssize_t i = 0; i < element_count; i++) {
+		struct rrr_condition_running_result *position = &results[i];
+		if (position->carrier->op != NULL) {
+			if (i < 2) {
+				RRR_BUG("BUG: Too few values before operator in rrr_condition_evaluate\n");
+			}
+			struct rrr_condition_running_result *position_a = &results[i-1];
+			struct rrr_condition_running_result *position_b = &results[i-2];
+			position->result = __rrr_condition_evaluate_operator (
+					position_a->result,
+					position_b->result,
+					position->carrier->op
+			);
+			position->carrier = NULL;
+			result_tmp = position->result;
+		}
+		else {
+			if (*(position->carrier->value) == '{') {
+				const char *tag_to_pass = __rrr_condition_extract_name (value_tmp, position->carrier->value);
+				if ((ret = name_evaluate_callback (
+						&position->result,
+						tag_to_pass,
+						name_evaluate_callback_arg
+				)) != 0) {
+					RRR_MSG_0("Error %i from callback in rrr_condition_evaluate\n");
+					ret = RRR_CONDITION_SOFT_ERROR;
+					goto out;
+				}
+			}
+			else if (	strlen(position->carrier->value) >= 2 &&
+						rrr_posix_strncasecmp(position->carrier->value, "0x", 2) == 0
+			) {
+				const char *value_start = position->carrier->value + 2;
+				char *endptr = NULL;
+				position->result = strtoull(value_start, &endptr, 16);
+				if (endptr == NULL || *endptr != '\0') {
+					// This might be a bug, parser should validate the numbers
+					RRR_MSG_0("Could not evaluate hex value '%s' in rrr_condition_evaluate\n");
+					ret = RRR_CONDITION_SOFT_ERROR;
+					goto out;
+				}
+			}
+			else {
+				char *endptr = NULL;
+				position->result = strtoull(position->carrier->value, &endptr, 10);
+				if (endptr == NULL || *endptr != '\0') {
+					// This might be a bug, parser should validate the numbers
+					RRR_MSG_0("Could not evaluate decimal value '%s' in rrr_condition_evaluate\n");
+					ret = RRR_CONDITION_SOFT_ERROR;
+					goto out;
+				}
+			}
+			position->carrier = NULL;
+		}
+	}
+
+	*result = result_tmp;
+
+	out:
 	return ret;
 }

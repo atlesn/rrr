@@ -89,11 +89,13 @@ do {RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint);		
 	}} while(0)
 
 struct rrr_array;
+struct rrr_array_tree;
 struct rrr_map;
 
 struct rrr_instance_config_data {
 	char *name;
 	struct rrr_instance_settings *settings;
+	const struct rrr_array_tree_list *global_array_trees;
 };
 
 static inline int rrr_instance_config_setting_exists (
@@ -170,7 +172,8 @@ void rrr_instance_config_destroy (
 struct rrr_instance_config_data *rrr_instance_config_new (
 		const char *name_begin,
 		const int name_length,
-		const int max_settings
+		const int max_settings,
+		const struct rrr_array_tree_list *global_array_trees
 );
 int rrr_instance_config_read_port_number (
 		rrr_setting_uint *target,
@@ -182,6 +185,11 @@ int rrr_instance_config_check_all_settings_used (
 );
 int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+);
+int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
+		struct rrr_array_tree **target_array_tree,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );

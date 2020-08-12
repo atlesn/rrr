@@ -78,8 +78,9 @@ int rrr_test_condition (void) {
 		ret |= 1;
 	}
 	if (tree != NULL) {
-		if (rrr_array_tree_validate(tree) != 0) {
-			TEST_MSG("Array tree was invalid\n");
+		int ret_tmp;
+		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
+			TEST_MSG("Array tree was invalid return was %i\n", ret_tmp);
 			ret |= 1;
 		}
 		rrr_array_tree_dump(tree);
@@ -93,8 +94,9 @@ int rrr_test_condition (void) {
 		ret |= 1;
 	}
 	if (tree != NULL) {
-		if (rrr_array_tree_validate(tree) != 0) {
-			TEST_MSG("Array tree was invalid\n");
+		int ret_tmp;
+		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
+			TEST_MSG("Array tree was invalid, return was %i\n", ret_tmp);
 			ret |= 1;
 		}
 		rrr_array_tree_dump(tree);

@@ -262,7 +262,12 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		goto out;
 	}
 
-	struct rrr_instance_config_data *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
+	struct rrr_instance_config_data *instance_config = rrr_instance_config_new (
+			pos->data + begin,
+			length,
+			RRR_CONFIG_MAX_SETTINGS,
+			config
+	);
 	if (instance_config == NULL) {
 		RRR_MSG_0("Instance config creation result was NULL\n");
 		ret = 1;
@@ -470,7 +475,7 @@ void rrr_config_destroy (struct rrr_config *target) {
 	for (int i = 0; i < target->module_count; i++) {
 		rrr_instance_config_destroy(target->configs[i]);
 	}
-	rrr_array_tree_list_destroy(&target->array_trees);
+	rrr_array_tree_list_clear(&target->array_trees);
 	free(target->configs);
 	free(target);
 }

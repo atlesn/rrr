@@ -23,10 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONDITION_H
 
 #include <sys/types.h>
+#include <inttypes.h>
 
+#include "read_constants.h"
 #include "util/linked_list.h"
 
 #define RRR_CONDITION_VALUE_MAX 64
+
+#define RRR_CONDITION_OK			RRR_READ_OK
+#define RRR_CONDITION_HARD_ERROR	RRR_READ_HARD_ERROR
+#define RRR_CONDITION_SOFT_ERROR	RRR_READ_SOFT_ERROR
 
 struct rrr_parse_pos;
 
@@ -52,6 +58,10 @@ struct rrr_condition {
 void rrr_condition_clear (
 		struct rrr_condition *target
 );
+int rrr_condition_clone (
+		struct rrr_condition *target,
+		const struct rrr_condition *source
+);
 void rrr_condition_dump (
 		const struct rrr_condition *condition
 );
@@ -63,6 +73,12 @@ int rrr_condition_iterate (
 		const struct rrr_condition *condition,
 		int (*callback)(const struct rrr_condition_op *op, const char *value, const char *tag, void *arg),
 		void *callback_arg
+);
+int rrr_condition_evaluate (
+		uint64_t *result,
+		const struct rrr_condition *condition,
+		int (*name_evaluate_callback)(uint64_t *result, const char *name, void *arg),
+		void *name_evaluate_callback_arg
 );
 
 #endif /* RRR_CONDITION_H */

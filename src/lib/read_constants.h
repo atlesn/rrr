@@ -68,6 +68,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // End of file, nothing more to read, etc.
 #define RRR_READ_EOF			8
 
+// Not used in read framework, used by others
+#define RRR_READ_CONTINUE		16
+
 // When adding more, be sure about your powers of 2. Note that if you add more, others
 // might start using them.
 

@@ -84,6 +84,12 @@ int rrr_array_parse_single_definition_callback (
 int rrr_array_validate_definition (
 		const struct rrr_array *target
 );
+int rrr_array_parse_data_into_value (
+		struct rrr_type_value *node,
+		rrr_length *parsed_bytes,
+		const char *pos,
+		const char *end
+);
 int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
@@ -160,6 +166,9 @@ int rrr_array_get_packed_length_from_buffer (
 		const struct rrr_array *definition,
 		const char *buf,
 		ssize_t buf_length
+);
+ssize_t rrr_array_get_packed_length (
+		const struct rrr_array *definition
 );
 int rrr_array_parse_from_buffer (
 		struct rrr_array *target,

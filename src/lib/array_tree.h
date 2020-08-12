@@ -30,6 +30,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "condition.h"
 #include "read_constants.h"
 
+#define RRR_ARRAY_TREE_OK 					RRR_READ_OK
+#define RRR_ARRAY_TREE_HARD_ERROR			RRR_READ_HARD_ERROR
+#define RRR_ARRAY_TREE_SOFT_ERROR			RRR_READ_SOFT_ERROR
+#define RRR_ARRAY_TREE_PARSE_INCOMPLETE		RRR_READ_INCOMPLETE
+#define RRR_ARRAY_TREE_CONDITION_FALSE		RRR_READ_EOF
+#define RRR_ARRAY_TREE_CONDITION_TRUE		RRR_READ_OK
+#define RRR_ARRAY_TREE_CONTINUE				RRR_READ_CONTINUE
+
 struct rrr_array_branch;
 struct rrr_array_node;
 
@@ -61,11 +69,30 @@ struct rrr_array_tree_list {
 	RRR_LL_HEAD(struct rrr_array_tree);
 };
 
+struct rrr_array_read_data {
+	struct rrr_array final_array;
+};
+
+void rrr_array_tree_clear (
+		struct rrr_array_tree *tree
+);
 void rrr_array_tree_destroy (
 		struct rrr_array_tree *tree
 );
-void rrr_array_tree_list_destroy (
+int rrr_array_tree_new (
+		struct rrr_array_tree **target,
+		const char *name
+);
+void rrr_array_tree_list_clear (
 		struct rrr_array_tree_list *list
+);
+const struct rrr_array_tree *rrr_array_tree_list_get_tree_by_name (
+		const struct rrr_array_tree_list *list,
+		const char *name
+);
+int rrr_array_tree_push_array_clear_source (
+		struct rrr_array_tree *target,
+		struct rrr_array *source
 );
 int rrr_array_tree_parse (
 		struct rrr_array_tree **target,
@@ -77,6 +104,24 @@ void rrr_array_tree_dump (
 );
 int rrr_array_tree_validate (
 		const struct rrr_array_tree *tree
+);
+int rrr_array_tree_get_import_length_from_buffer (
+		struct rrr_array_read_data *array_read_data,
+		ssize_t *import_length,
+		const struct rrr_array_tree *tree,
+		const char *buf,
+		ssize_t buf_length
+);
+int rrr_array_tree_clone (
+		struct rrr_array_tree **target,
+		const struct rrr_array_tree *source
+);
+int rrr_array_tree_parse_from_buffer (
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array_tree *tree,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_ARRAY_TREE_H */

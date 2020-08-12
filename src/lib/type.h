@@ -167,6 +167,9 @@ static const union type_system_endian {
 		char **target,						\
 		const struct rrr_type_value *node
 
+#define RRR_TYPE_TO_64_ARGS					\
+		const struct rrr_type_value *node
+
 struct rrr_type_value;
 
 struct rrr_type_definition {
@@ -186,6 +189,7 @@ struct rrr_type_definition {
 	int (*pack)(RRR_TYPE_PACK_ARGS);
 
 	int (*to_str)(RRR_TYPE_TO_STR_ARGS);
+	uint64_t (*to_64)(RRR_TYPE_TO_64_ARGS);
 	const char *identifier;
 };
 
@@ -251,6 +255,11 @@ int rrr_type_value_new (
 		rrr_length element_count,
 		const char *element_count_ref,
 		rrr_length stored_length
+);
+int rrr_type_value_clone (
+		struct rrr_type_value **target,
+		const struct rrr_type_value *source,
+		int do_clone_data
 );
 rrr_length rrr_type_value_get_export_length (
 		const struct rrr_type_value *value

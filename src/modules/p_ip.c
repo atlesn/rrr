@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/settings.h"
 #include "../lib/array.h"
+#include "../lib/array_tree.h"
 #include "../lib/type.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/instances.h"
@@ -73,7 +74,7 @@ struct ip_data {
 	struct rrr_ip_data ip_udp;
 	struct rrr_ip_data ip_tcp_listen;
 	int ip_tcp_default_target_fd;
-	struct rrr_array definitions;
+	struct rrr_array_tree *definitions;
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
 	int do_sync_byte_by_byte;
@@ -97,10 +98,10 @@ struct ip_data {
 	uint64_t read_error_count;
 };
 
-void data_cleanup(void *arg) {
+static void ip_data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
 	rrr_msg_msg_holder_collection_clear(&data->send_buffer);
-	rrr_array_clear(&data->definitions);
+	rrr_array_tree_destroy(data->definitions);
 	rrr_read_session_collection_clear(&data->read_sessions_udp);
 	rrr_read_session_collection_clear(&data->read_sessions_tcp);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
@@ -109,7 +110,7 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->array_send_tags);
 }
 
-int data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -117,7 +118,7 @@ int data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_dat
 	return 0;
 }
 
-int config_parse_port (struct ip_data *data, struct rrr_instance_config_data *config) {
+static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	rrr_setting_uint tmp_uint;
@@ -183,12 +184,12 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config_data *co
 	return ret;
 }
 
-int parse_config (struct ip_data *data, struct rrr_instance_config_data *config) {
+static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 	char *protocol = NULL;
 
 	// Parse listen and target port
-	if ((ret = config_parse_port (data, config)) != 0) {
+	if ((ret = ip_config_parse_port (data, config)) != 0) {
 		goto out;
 	}
 
@@ -231,7 +232,11 @@ int parse_config (struct ip_data *data, struct rrr_instance_config_data *config)
 	}
 
 	// Parse expected input data
-	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "ip_input_types")) != 0) {
+	if ((ret = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(
+			&data->definitions,
+			config,
+			"ip_input_types"
+	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Could not parse command line argument ip_input_types in udp\n");
 			ret = 1;
@@ -239,12 +244,12 @@ int parse_config (struct ip_data *data, struct rrr_instance_config_data *config)
 		}
 	}
 
-	if (data->definitions.node_count > 0 && data->source_udp_port == 0 && data->source_tcp_port == 0) {
+	if (data->definitions != NULL && data->source_udp_port == 0 && data->source_tcp_port == 0) {
 		RRR_MSG_0("ip_input_types was set but ip_port was not, this is an invalid configuraton in ip instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
-	else if (data->definitions.node_count == 0) {
+	else if (data->definitions == NULL) {
 		// Listening disabled
 	}
 
@@ -335,7 +340,7 @@ struct ip_read_callback_data {
 	const struct rrr_msg_msg_holder *entry_orig;
 };
 
-int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, void *arg) {
+static int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, void *arg) {
 	struct ip_read_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->ip_data;
 
@@ -387,7 +392,7 @@ int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, void *ar
 	return ret;
 }
 
-int read_data_receive_extract_messages_callback (const struct rrr_array *array, void *arg) {
+static int ip_read_data_receive_extract_messages_callback (const struct rrr_array *array, void *arg) {
 	struct ip_read_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->ip_data;
 
@@ -426,7 +431,7 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 	return ret;
 }
 
-int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct ip_data *data = arg;
 	int ret = 0;
 	struct ip_read_callback_data callback_data = {
@@ -435,21 +440,21 @@ int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	};
 
 	if (data->do_extract_rrr_msg_msgs) {
-		ret = rrr_array_parse_from_buffer_with_callback (
+		ret = rrr_array_tree_parse_from_buffer (
 			entry->message,
 			entry->data_length,
-			&data->definitions,
-			read_data_receive_extract_messages_callback,
+			data->definitions,
+			ip_read_data_receive_extract_messages_callback,
 			&callback_data
 		);
 	}
 	else {
-		ret = rrr_array_new_message_from_buffer_with_callback (
+		ret = rrr_array_tree_new_message_from_buffer (
 			entry->message,
 			entry->data_length,
 			data->default_topic,
 			data->default_topic_length,
-			&data->definitions,
+			data->definitions,
 			ip_read_data_receive_message_callback,
 			&callback_data
 		);
@@ -536,7 +541,7 @@ static int ip_read_array_intermediate(struct rrr_msg_msg_holder *entry, void *ar
 		return ret;
 }
 
-int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rrr_read_session_collection *read_sessions) {
+static int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rrr_read_session_collection *read_sessions) {
 	int ret = 0;
 
 	struct ip_read_array_intermediate_callback_data callback_data = {
@@ -570,7 +575,7 @@ int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rr
 	return ret;
 }
 
-int tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *accept_data_collection) {
+static int ip_tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *accept_data_collection) {
 	int ret = 0;
 	if (data->source_tcp_port == 0) {
 		goto out;
@@ -608,7 +613,7 @@ int tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *a
 	return ret;
 }
 
-int udp_read_data(struct ip_data *data) {
+static int ip_udp_read_data(struct ip_data *data) {
 	int ret = 0;
 
 	if (data->source_udp_port > 0) {
@@ -1128,21 +1133,21 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
 	struct rrr_ip_graylist tcp_graylist = {0};
 
-	if (data_init(data, thread_data) != 0) {
+	if (ip_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(ip_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 
 	// Don't set running here, wait until listening has started
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (ip_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parsing failed for ip instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message_no_network_cleanup;
 	}
@@ -1325,12 +1330,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		}
 
 		if (RRR_LL_COUNT(&data->definitions) > 0) {
-			if (udp_read_data(data) != 0) {
+			if (ip_udp_read_data(data) != 0) {
 				RRR_MSG_ERR("Error while reading udp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
-			if (tcp_read_data(data, &tcp_accept_data) != 0) {
+			if (ip_tcp_read_data(data, &tcp_accept_data) != 0) {
 				RRR_MSG_ERR("Error while reading tcp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -1426,11 +1431,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 static int test_config (struct rrr_instance_config_data *config) {
 	struct ip_data data;
 	int ret = 0;
-	if ((ret = data_init(&data, NULL)) != 0) {
+	if ((ret = ip_data_init(&data, NULL)) != 0) {
 		goto err;
 	}
-	ret = parse_config(&data, config);
-	data_cleanup(&data);
+	ret = ip_parse_config(&data, config);
+	ip_data_cleanup(&data);
 	err:
 	return ret;
 }

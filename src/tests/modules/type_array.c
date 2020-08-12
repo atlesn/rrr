@@ -36,16 +36,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_mysql.h"
 #endif
 
-#include "../../lib/socket/rrr_socket.h"
 #include "../../lib/instances.h"
+#include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
-#include "../../lib/ip/ip.h"
 #include "../../lib/message_holder/message_holder.h"
 #include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages/msg_msg.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
+#include "../../lib/ip/ip.h"
+#include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
 
 struct rrr_test_result {
