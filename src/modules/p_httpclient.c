@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_session.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -56,11 +57,18 @@ struct httpclient_data {
 	int do_no_data;
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
+	int do_keepalive;
+	int do_receive_raw_data;
+	int do_send_raw_data;
+
 	rrr_setting_uint message_timeout_us;
 
 	rrr_setting_uint redirects_max;
 
 	struct rrr_net_transport_config net_transport_config;
+
+	struct rrr_net_transport *keepalive_transport;
+	int keepalive_handle;
 
 	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
@@ -87,7 +95,7 @@ static int httpclient_send_request_callback (
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", response_code);
 	}
 
-	RRR_DBG_1("HTTP response from server in httpclient instance %s: %i %s\n",
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i %s\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			response_code,
 			(response_argument != NULL ? response_argument : "(no response string)")
@@ -214,6 +222,15 @@ static int httpclient_session_add_fields_callback (
 
 	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(callback_data->array) > 0)) {
 		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_add_fields_callback\n");
+	}
+
+	if ((ret = rrr_http_session_set_keepalive (
+			session,
+			data->do_keepalive
+	)) != 0) {
+		RRR_MSG_0("Failed to set keep-alive in httpclient_session_add_fields_callback\n");
+		ret = 1;
+		goto out;
 	}
 
 	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
@@ -362,6 +379,86 @@ static int httpclient_get_values_from_message (
 	return ret;
 }
 
+struct httpclient_raw_create_message_callback_data {
+	struct httpclient_data *httpclient_data;
+	const char *data;
+	ssize_t data_size;
+	const struct rrr_msg_msg *msg_orig;
+};
+
+static int httpclient_raw_create_message_callback (
+		struct rrr_msg_msg_holder *new_entry,
+		void *arg
+) {
+	struct httpclient_raw_create_message_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	rrr_biglength size = callback_data->data_size;
+
+	if (size > 0xffffffff) { // Eight f's
+		RRR_MSG_0("HTTP length too long in httpclient_raw_create_message_callback, max is 0xffffffff\n");
+		ret = RRR_MESSAGE_BROKER_DROP;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			(struct rrr_msg_msg **) &new_entry->message,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			MSG_TOPIC_PTR(callback_data->msg_orig),
+			MSG_TOPIC_LENGTH(callback_data->msg_orig),
+			callback_data->data,
+			size
+	)) != 0) {
+		RRR_MSG_0("Failed to create message in httpclient_raw_create_message_callback\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	RRR_DBG_3("httpclient instance %s created raw httpclient_data message with size %" PRIrrrbl "\n",
+			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), size);
+
+	out:
+	rrr_msg_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+struct httpclient_raw_callback_data {
+	struct httpclient_data *httpclient_data;
+	const struct rrr_msg_msg *msg_orig;
+};
+
+static int httpclient_raw_callback (
+		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+)  {
+	struct httpclient_raw_callback_data *callback_data = arg;
+	struct httpclient_data *httpclient_data = callback_data->httpclient_data;
+
+	(void)(unique_id);
+
+	int ret = 0;
+
+	struct httpclient_raw_create_message_callback_data callback_data_broker = {
+			httpclient_data,
+			data,
+			data_size,
+			callback_data->msg_orig
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_raw_create_message_callback,
+			&callback_data_broker
+	);
+
+	return ret;
+}
+
 static int httpclient_send_request_locked (
 		struct httpclient_data *data,
 		struct rrr_msg_msg_holder *entry
@@ -376,11 +473,11 @@ static int httpclient_send_request_locked (
 	RRR_DBG_3("httpclient instance %s sending message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(data->thread_data), message->timestamp);
 
-	if ((ret = httpclient_reset_client_data(data)) != RRR_HTTP_OK) {
-		goto out;
+	if (data->do_keepalive == 0 || data->keepalive_handle == 0) {
+		if ((ret = httpclient_reset_client_data(data)) != RRR_HTTP_OK) {
+			goto out;
+		}
 	}
-
-	(void)(message);
 
 	if (data->message_timeout_us != 0) {
 		if (rrr_time_get_64() > entry->send_time + data->message_timeout_us) {
@@ -392,7 +489,7 @@ static int httpclient_send_request_locked (
 
 	// If tag filtering is performed, this is done in add_fields_callback. Here, all
 	// values are prepared in the temporary array.
-	if (data->do_no_data == 0) {
+	if (data->do_no_data == 0 || data->do_send_raw_data != 1) {
 		if ((ret = httpclient_get_values_from_message(&array_tmp, data, message)) != RRR_HTTP_OK) {
 			goto out;
 		}
@@ -400,6 +497,9 @@ static int httpclient_send_request_locked (
 
 	// DO NOT use unsigned here.
 	long long int redirect_retry_max = data->redirects_max;
+	if (data->do_send_raw_data) {
+		redirect_retry_max = 0;
+	}
 
 	retry:
 
@@ -412,10 +512,19 @@ static int httpclient_send_request_locked (
 		&array_tmp
 	};
 
+	struct httpclient_raw_callback_data raw_callback_data = {
+			data,
+			message
+	};
+
 	if ((ret = rrr_http_client_send_request (
 			&data->http_client_data,
 			data->http_client_config.method,
+			(data->do_keepalive ? &data->keepalive_transport : NULL),
+			(data->do_keepalive ? &data->keepalive_handle : 0),
 			&data->net_transport_config,
+			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
+			(data->do_receive_raw_data ? &raw_callback_data : NULL),
 			httpclient_session_add_fields_callback,
 			&add_fields_callback_data,
 			httpclient_send_request_callback,
@@ -424,6 +533,9 @@ static int httpclient_send_request_locked (
 		if (ret == RRR_HTTP_SOFT_ERROR) {
 			RRR_DBG_2("HTTP request failed in httpclient instance %s, return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
+
+			// Make sure new connection is created
+			data->keepalive_handle = 0;
 		}
 		else {
 			RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
@@ -473,7 +585,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	if ((ret = httpclient_send_request_locked(data, entry)) != 0) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
-			RRR_MSG_0("Soft error while sending message in httpclient instance %s, deferring message\n",
+			RRR_DBG_1("Soft error while sending message in httpclient instance %s, deferring message\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_defer;
 		}
@@ -496,6 +608,9 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
+	if (data->keepalive_transport != NULL) {
+		rrr_net_transport_destroy(data->keepalive_transport);
+	}
 	rrr_http_client_data_cleanup(&data->http_client_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
@@ -513,14 +628,14 @@ static int httpclient_data_init (
 	data->thread_data = thread_data;
 
 	if ((ret = rrr_http_client_data_init(&data->http_client_data, RRR_HTTP_CLIENT_USER_AGENT)) != 0) {
-		RRR_MSG_0("Could not initialize httpclient data in httpclient_data_init\n");
+		RRR_MSG_0("Could not initialize httpclient httpclient_data in httpclient_data_init\n");
 		ret = 1;
 		goto out;
 	}
 
 	goto out;
 //	out_cleanup_data:
-//		httpclient_data_cleanup(data);
+//		httpclient_data_cleanup(httpclient_data);
 	out:
 		return ret;
 }
@@ -534,6 +649,9 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_keepalive", do_keepalive, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_receive_raw_data, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.
@@ -570,6 +688,22 @@ static int httpclient_parse_config (
 		if (data->do_rrr_msg_to_array) {
 			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_rrr_msg_to_array was also 'yes'. This is an error.\n",
 					config->name);
+			ret = 1;
+		}
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	if (data->do_send_raw_data) {
+		if (data->do_no_data) {
+			RRR_MSG_0("Both http_send_raw_data and http_no_data was yes in httpclient instance %s. The first implies the latter, it is an error to specify both.\n",
+					config->name);
+			ret = 1;
+		}
+		if (data->do_rrr_msg_to_array) {
+			RRR_MSG_0("http_rrr_msg_to_array as well as http_send_raw_data were yes in httpclient instance %s, this is an invalid combination.\n",
+								config->name);
 			ret = 1;
 		}
 		if (ret != 0) {
@@ -684,7 +818,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = RRR_MODULE_TYPE_DEADEND;
+	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }

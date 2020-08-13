@@ -53,6 +53,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_message_broker_split_buffer_collection split_buffers;
 	char *name;
 	int usercount;
+	uint64_t unique_counter;
 };
 
 struct rrr_message_broker {
@@ -94,6 +95,11 @@ int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		int slots
+);
+int rrr_message_broker_get_next_unique_id (
+		uint64_t *result,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
 );
 int rrr_message_broker_write_entry (
 		struct rrr_message_broker *broker,

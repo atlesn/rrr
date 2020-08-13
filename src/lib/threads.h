@@ -122,6 +122,9 @@ struct rrr_thread {
 	char name[RRR_THREAD_NAME_MAX_LENGTH];
 	void *private_data;
 
+	// Helper function to find rrr_thread struct in difficult callback conditions
+	pthread_t self;
+
 	// Set when we tried to cancel a thread but we couldn't join
 	int is_ghost;
 

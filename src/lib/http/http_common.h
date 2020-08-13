@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_COMMON_H
 #define RRR_HTTP_COMMON_H
 
+#include <inttypes.h>
+
 #include "../read_constants.h"
 
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
@@ -56,7 +58,8 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 	RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM,
 	RRR_HTTP_METHOD_POST_TEXT_PLAIN,
-	RRR_HTTP_METHOD_OPTIONS
+	RRR_HTTP_METHOD_OPTIONS,
+	RRR_HTTP_METHOD_PUT
 };
 
 extern const char *rrr_http_transport_str_any;
@@ -84,5 +87,13 @@ extern const char *rrr_http_method_str_post_application_text_plain;
 	(method == RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM ? rrr_http_method_str_post_application_octet_stream :	\
 	(method == RRR_HTTP_METHOD_POST_TEXT_PLAIN ? rrr_http_method_str_post_application_text_plain : ("unknown")		\
 	))))))
+
+typedef uint64_t rrr_http_unique_id;
+
+#define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS	\
+	const char *data,								\
+	ssize_t data_size,								\
+	rrr_http_unique_id unique_id,					\
+	void *arg
 
 #endif /* RRR_HTTP_COMMON_H */

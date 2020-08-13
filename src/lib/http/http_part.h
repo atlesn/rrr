@@ -107,6 +107,11 @@ struct rrr_http_part {
 	int response_code;
 	char *response_str;
 
+	// Setting this causes everything else in a response
+	// struct to be ignored when sending
+	char *response_raw_data;
+	size_t response_raw_data_size;
+
 	char *request_method_str;
 	enum rrr_http_method request_method;
 	char *request_uri;
@@ -128,7 +133,12 @@ void rrr_http_part_destroy (struct rrr_http_part *part);
 void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
-const struct rrr_http_header_field *rrr_http_part_get_header_field (
+void rrr_http_part_set_allocated_raw_response (
+		struct rrr_http_part *part,
+		char **raw_data_source,
+		size_t raw_data_size
+);
+const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name_lowercase
 );
@@ -149,6 +159,10 @@ int rrr_http_part_header_fields_iterate (
 		struct rrr_http_part *part,
 		int (*callback)(struct rrr_http_header_field *field, void *arg),
 		void *callback_arg
+);
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
 );
 int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,

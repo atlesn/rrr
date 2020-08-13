@@ -52,6 +52,10 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	string_builder->wpos = 0;
 }
 
+ssize_t rrr_string_builder_length (struct rrr_string_builder *string_builder) {
+	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
+}
+
 int rrr_string_builder_new (struct rrr_string_builder **result) {
 	*result = NULL;
 

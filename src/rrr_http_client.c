@@ -258,7 +258,11 @@ int main (int argc, const char *argv[]) {
 	if (rrr_http_client_send_request (
 			&data,
 			RRR_HTTP_METHOD_GET,
+			NULL,
+			NULL,
 			&net_transport_config,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			__rrr_http_client_final_callback,

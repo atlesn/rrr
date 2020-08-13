@@ -166,6 +166,12 @@ void rrr_thread_set_state (struct rrr_thread *thread, int state) {
 	rrr_thread_unlock(thread);
 }
 
+static void __rrr_thread_update_self (struct rrr_thread *thread) {
+	rrr_thread_lock(thread);
+	thread->self = pthread_self();
+	rrr_thread_unlock(thread);
+}
+
 static int __rrr_thread_is_in_collection (struct rrr_thread_collection *collection, struct rrr_thread *thread) {
 	int ret = 0;
 
@@ -633,6 +639,8 @@ static void __rrr_thread_cleanup(void *arg) {
 
 static void *__rrr_thread_start_routine_intermediate(void *arg) {
 	struct rrr_thread *thread = arg;
+
+	__rrr_thread_update_self(thread);
 
 	// STOPPED must be set at the very end, allows
 	// data structures to be freed

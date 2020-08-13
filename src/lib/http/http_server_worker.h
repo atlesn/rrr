@@ -44,6 +44,12 @@ struct rrr_http_server_worker_preliminary_data {
 	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
+	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+
+	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_raw_arg;
+
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
 
@@ -67,11 +73,22 @@ struct rrr_http_server_worker_data {
 	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
-	int receive_complete;
+	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+
+	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_raw_arg;
+
+	int request_complete;
+	int response_complete;
 };
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 );
