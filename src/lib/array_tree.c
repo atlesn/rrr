@@ -1274,16 +1274,13 @@ int rrr_array_tree_clone (
 		goto out;
 	}
 
-	*new_tree = *source;
-	RRR_LL_DANGEROUS_CLEAR_HEAD(new_tree);
-	RRR_LL_NODE_INIT(new_tree);
-
 	struct rrr_array_node *node_tmp = NULL;
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_array_node);
 		if ((ret = __rrr_array_node_clone(&node_tmp, node)) != 0) {
 			goto out;
 		}
+		RRR_LL_PUSH(new_tree, node_tmp);
 	RRR_LL_ITERATE_END();
 
 	*target = new_tree;

@@ -677,8 +677,8 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 		if (ret == 0) {
 			if (import_length <= 0) {
 				// This is actually a bug, should be avoided by array validation checks
-				RRR_MSG_0("Array definition produced an length of zero, possible configuration error\n");
-				ret = RRR_READ_SOFT_ERROR;
+				RRR_MSG_0("Array definition produced a length of zero, possible configuration error\n");
+				return RRR_READ_HARD_ERROR;
 			}
 			break;
 		}
