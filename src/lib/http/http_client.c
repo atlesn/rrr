@@ -225,19 +225,8 @@ static void __rrr_http_client_send_request_callback_final (
 	char *endpoint_to_free = NULL;
 	char *endpoint_and_query_to_free = NULL;
 
-	const char *endpoint = data->endpoint;
-
 	// Allow caller to update references
 	callback_data->transport_handle = handle->handle;
-
-	if (endpoint == NULL || *(endpoint) == '\0') {
-		if ((endpoint_to_free = strdup("/")) == NULL) {
-			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request_callback\n");
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-		endpoint = endpoint_to_free;
-	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			handle,
@@ -248,54 +237,83 @@ static void __rrr_http_client_send_request_callback_final (
 		goto out;
 	}
 
-	if (callback_data->before_send_callback != NULL) {
-		if	((ret = callback_data->before_send_callback (
-				&query_to_free,
-				handle->application_private_ptr,
-				callback_data->before_send_callback_arg)
-		) != RRR_HTTP_OK) {
-			ret &= ~(RRR_HTTP_NO_RESULT);
-			if (ret != 0) {
-				RRR_MSG_0("Error %i while making query string in __rrr_http_client_send_request_callback\n", ret);
-				goto out;
-			}
-		}
-	}
-
-	if (query_to_free != NULL && *(query_to_free) != '\0') {
-		if (strchr(endpoint, '?') != 0) {
-			RRR_MSG_0("HTTP endpoint '%s' already contained a query string, cannot append query '%s' from callback. Request aborted.\n",
-					endpoint, query_to_free);
+	if (callback_data->raw_request_data != NULL) {
+		if (callback_data->raw_request_data_size == 0) {
+			RRR_DBG_1("Raw request data was set in __rrr_http_client_send_request_callback_final but szie was 0, nothing to send.\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
-		if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint, query_to_free)) <= 0) {
-			RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback return was %i\n", ret);
-			ret = RRR_HTTP_HARD_ERROR;
+
+		if ((ret = rrr_http_session_transport_ctx_raw_request_send (
+				handle,
+				callback_data->raw_request_data,
+				callback_data->raw_request_data_size
+		)) != 0) {
+			RRR_MSG_0("Could not send raw request in __rrr_http_client_send_request_callback\n");
 			goto out;
 		}
 	}
 	else {
-		if ((endpoint_and_query_to_free = strdup(endpoint)) == NULL) {
-			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_send_request_callback\n");
-			ret = RRR_HTTP_HARD_ERROR;
+		const char *endpoint = data->endpoint;
+
+		if (endpoint == NULL || *(endpoint) == '\0') {
+			if ((endpoint_to_free = strdup("/")) == NULL) {
+				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request_callback\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+			endpoint = endpoint_to_free;
+		}
+
+		if (callback_data->query_prepare_callback != NULL) {
+			if	((ret = callback_data->query_prepare_callback (
+					&query_to_free,
+					handle->application_private_ptr,
+					callback_data->query_prepare_callback_arg)
+			) != RRR_HTTP_OK) {
+				ret &= ~(RRR_HTTP_NO_RESULT);
+				if (ret != 0) {
+					RRR_MSG_0("Error %i while making query string in __rrr_http_client_send_request_callback\n", ret);
+					goto out;
+				}
+			}
+		}
+
+		if (query_to_free != NULL && *(query_to_free) != '\0') {
+			if (strchr(endpoint, '?') != 0) {
+				RRR_MSG_0("HTTP endpoint '%s' already contained a query string, cannot append query '%s' from callback. Request aborted.\n",
+						endpoint, query_to_free);
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+			if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint, query_to_free)) <= 0) {
+				RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback return was %i\n", ret);
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+		else {
+			if ((endpoint_and_query_to_free = strdup(endpoint)) == NULL) {
+				RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_send_request_callback\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+
+		RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
+
+		if ((ret = rrr_http_session_transport_ctx_set_endpoint (
+				handle,
+				endpoint_and_query_to_free
+		)) != 0) {
+			RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_send_request_callback\n");
 			goto out;
 		}
-	}
 
-	RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
-
-	if ((ret = rrr_http_session_transport_ctx_set_endpoint (
-			handle,
-			endpoint_and_query_to_free
-	)) != 0) {
-		RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_send_request_callback\n");
-		goto out;
-	}
-
-	if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->server)) != 0) {
-		RRR_MSG_0("Could not send request in __rrr_http_client_send_request_callback\n");
-		goto out;
+		if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->server)) != 0) {
+			RRR_MSG_0("Could not send request in __rrr_http_client_send_request_callback\n");
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_receive (
@@ -406,16 +424,19 @@ void __rrr_http_client_send_request_connect_callback (
 }
 
 // Note that data in the struct may change if there are any redirects
-int rrr_http_client_send_request (
+// Note that query prepare callback is not called if raw request data is set
+static int __rrr_http_client_send_request (
 		struct rrr_http_client_data *data,
 		enum rrr_http_method method,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
+		const char *raw_request_data,
+		size_t raw_request_data_size,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
-		int (*before_send_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
-		void *before_send_callback_arg,
+		int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		void *query_prepare_callback_arg,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -435,12 +456,14 @@ int rrr_http_client_send_request (
 
 	callback_data.data = data;
 	callback_data.method = method;
+	callback_data.raw_request_data = raw_request_data;
+	callback_data.raw_request_data_size = raw_request_data_size;
 	callback_data.raw_callback = raw_callback;
 	callback_data.raw_callback_arg = raw_callback_args;
 	callback_data.final_callback = final_callback;
 	callback_data.final_callback_arg = final_callback_arg;
-	callback_data.before_send_callback = before_send_callback;
-	callback_data.before_send_callback_arg = before_send_callback_arg;
+	callback_data.query_prepare_callback = query_prepare_callback;
+	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
 
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
@@ -586,4 +609,88 @@ int rrr_http_client_send_request (
 		rrr_net_transport_destroy(transport);
 	}
 	return ret;
+}
+
+int rrr_http_client_send_request (
+		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_args,
+		int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		void *query_prepare_callback_arg,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	return __rrr_http_client_send_request (
+			data,
+			method,
+			transport_keepalive,
+			transport_keepalive_handle,
+			net_transport_config,
+			NULL,
+			0,
+			raw_callback,
+			raw_callback_args,
+			query_prepare_callback,
+			query_prepare_callback_arg,
+			final_callback,
+			final_callback_arg
+	);
+}
+
+int rrr_http_client_send_raw_request (
+		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *raw_request_data,
+		size_t raw_request_data_size,
+		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_args,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	return __rrr_http_client_send_request (
+			data,
+			method,
+			transport_keepalive,
+			transport_keepalive_handle,
+			net_transport_config,
+			raw_request_data,
+			raw_request_data_size,
+			raw_callback,
+			raw_callback_args,
+			NULL,
+			NULL,
+			final_callback,
+			final_callback_arg
+	);
+}
+
+int rrr_http_client_send_request_simple (
+		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	return __rrr_http_client_send_request (
+			data,
+			method,
+			NULL,
+			NULL,
+			net_transport_config,
+			NULL,
+			0,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			final_callback,
+			final_callback_arg
+	);
 }

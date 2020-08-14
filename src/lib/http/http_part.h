@@ -116,6 +116,9 @@ struct rrr_http_part {
 	enum rrr_http_method request_method;
 	char *request_uri;
 
+	const char *request_raw_data;
+	size_t request_raw_data_size;
+
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
@@ -136,6 +139,11 @@ int rrr_http_part_new (struct rrr_http_part **result);
 void rrr_http_part_set_allocated_raw_response (
 		struct rrr_http_part *part,
 		char **raw_data_source,
+		size_t raw_data_size
+);
+void rrr_http_part_set_raw_request_ptr (
+		struct rrr_http_part *part,
+		const char *raw_data,
 		size_t raw_data_size
 );
 const struct rrr_http_header_field *rrr_http_part_header_field_get (

@@ -95,6 +95,11 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host
 );
+int rrr_http_session_transport_ctx_raw_request_send (
+		struct rrr_net_transport_handle *handle,
+		const char *raw_request_data,
+		size_t raw_request_size
+);
 int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
 		uint64_t timeout_stall_us,

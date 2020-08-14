@@ -424,6 +424,15 @@ void rrr_http_part_set_allocated_raw_response (
 	*raw_data_source = NULL;
 }
 
+void rrr_http_part_set_raw_request_ptr (
+		struct rrr_http_part *part,
+		const char *raw_data,
+		size_t raw_data_size
+) {
+	part->request_raw_data = raw_data;
+	part->request_raw_data_size = raw_data_size;
+}
+
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name_lowercase

@@ -80,8 +80,11 @@ struct rrr_http_client_request_callback_data {
 	struct rr_net_transport *transport;
 	int transport_handle;
 
-	int (*before_send_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS);
-	void *before_send_callback_arg;
+	const char *raw_request_data;
+	size_t raw_request_data_size;
+
+	int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS);
+	void *query_prepare_callback_arg;
 	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
 	void *raw_callback_arg;
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
@@ -100,6 +103,7 @@ int rrr_http_client_data_reset (
 void rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 );
+
 // Note that data in the struct may change if there are any redirects
 int rrr_http_client_send_request (
 		struct rrr_http_client_data *data,
@@ -109,8 +113,30 @@ int rrr_http_client_send_request (
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
-		int (*before_send_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
-		void *before_send_callback_arg,
+		int (*query_perpare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		void *query_prepare_callback_arg,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+);
+
+int rrr_http_client_send_raw_request (
+		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *raw_request_data,
+		size_t raw_request_data_size,
+		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_args,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+);
+
+int rrr_http_client_send_request_simple (
+		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		const struct rrr_net_transport_config *net_transport_config,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 );

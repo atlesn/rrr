@@ -717,6 +717,17 @@ int rrr_http_session_transport_ctx_request_send (
 	return __rrr_http_session_request_send(handle, &callback_data);
 }
 
+int rrr_http_session_transport_ctx_raw_request_send (
+		struct rrr_net_transport_handle *handle,
+		const char *raw_request_data,
+		size_t raw_request_size
+) {
+	if (raw_request_size == 0) {
+		RRR_BUG("BUG: Received 0 size in rrr_http_session_transport_ctx_raw_request_send\n");
+	}
+	return rrr_net_transport_ctx_send_blocking (handle, raw_request_data, raw_request_size);
+}
+
 struct rrr_http_session_receive_data {
 	struct rrr_net_transport_handle *handle;
 	ssize_t parse_complete_pos;

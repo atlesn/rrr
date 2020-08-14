@@ -487,19 +487,30 @@ static int httpclient_send_request_locked (
 		}
 	}
 
-	// If tag filtering is performed, this is done in add_fields_callback. Here, all
-	// values are prepared in the temporary array.
-	if (data->do_no_data == 0 || data->do_send_raw_data != 1) {
-		if ((ret = httpclient_get_values_from_message(&array_tmp, data, message)) != RRR_HTTP_OK) {
+	if (data->do_send_raw_data) {
+		if (MSG_DATA_LENGTH(message) == 0) {
+			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had 0 length data. Dropping it.\n",
+					INSTANCE_D_NAME(data->thread_data));
 			goto out;
+		}
+		if (MSG_CLASS(message) != MSG_CLASS_DATA) {
+			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had wrong class (%u). Note that only raw data messages can be sent, not arrays.\n",
+					INSTANCE_D_NAME(data->thread_data), MSG_CLASS(message));
+			goto out;
+		}
+	}
+	else {
+		if (data->do_no_data == 0) {
+			// If tag filtering is performed, this is done in add_fields_callback. Here, all
+			// values are prepared in the temporary array.
+			if ((ret = httpclient_get_values_from_message(&array_tmp, data, message)) != RRR_HTTP_OK) {
+				goto out;
+			}
 		}
 	}
 
 	// DO NOT use unsigned here.
-	long long int redirect_retry_max = data->redirects_max;
-	if (data->do_send_raw_data) {
-		redirect_retry_max = 0;
-	}
+	long long int redirect_retry_max = (data->do_send_raw_data ? 0 : data->redirects_max);
 
 	retry:
 
@@ -517,19 +528,38 @@ static int httpclient_send_request_locked (
 			message
 	};
 
-	if ((ret = rrr_http_client_send_request (
-			&data->http_client_data,
-			data->http_client_config.method,
-			(data->do_keepalive ? &data->keepalive_transport : NULL),
-			(data->do_keepalive ? &data->keepalive_handle : 0),
-			&data->net_transport_config,
-			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
-			(data->do_receive_raw_data ? &raw_callback_data : NULL),
-			httpclient_session_add_fields_callback,
-			&add_fields_callback_data,
-			httpclient_send_request_callback,
-			data
-	)) != RRR_HTTP_OK) {
+	if (data->do_send_raw_data) {
+		ret = rrr_http_client_send_raw_request (
+				&data->http_client_data,
+				data->http_client_config.method,
+				(data->do_keepalive ? &data->keepalive_transport : NULL),
+				(data->do_keepalive ? &data->keepalive_handle : 0),
+				&data->net_transport_config,
+				MSG_DATA_PTR(message),
+				MSG_DATA_LENGTH(message),
+				(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
+				(data->do_receive_raw_data ? &raw_callback_data : NULL),
+				httpclient_send_request_callback,
+				data
+		);
+	}
+	else {
+		ret = rrr_http_client_send_request (
+				&data->http_client_data,
+				data->http_client_config.method,
+				(data->do_keepalive ? &data->keepalive_transport : NULL),
+				(data->do_keepalive ? &data->keepalive_handle : 0),
+				&data->net_transport_config,
+				(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
+				(data->do_receive_raw_data ? &raw_callback_data : NULL),
+				httpclient_session_add_fields_callback,
+				&add_fields_callback_data,
+				httpclient_send_request_callback,
+				data
+		);
+	}
+
+	if (ret != RRR_HTTP_OK) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
 			RRR_DBG_2("HTTP request failed in httpclient instance %s, return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
