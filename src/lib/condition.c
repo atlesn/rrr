@@ -58,6 +58,8 @@ static const struct rrr_condition_op operators[] = {
 		{">", RRR_CONDITION_PRIORITY_CMP},
 		{"==", RRR_CONDITION_PRIORITY_EQUALITY},
 		{"!=", RRR_CONDITION_PRIORITY_EQUALITY},
+		{"&&", RRR_CONDITION_PRIORITY_AND},
+		{"||", RRR_CONDITION_PRIORITY_OR},
 		{"&", RRR_CONDITION_PRIORITY_BITWISE_AND},
 		{"AND", RRR_CONDITION_PRIORITY_AND},
 		{"OR", RRR_CONDITION_PRIORITY_OR},
@@ -73,9 +75,8 @@ static const struct rrr_condition_op *operator_lt =			&operators[4];
 static const struct rrr_condition_op *operator_gt =			&operators[5];
 static const struct rrr_condition_op *operator_eq =			&operators[6];
 static const struct rrr_condition_op *operator_ne =			&operators[7];
-static const struct rrr_condition_op *operator_bw_and =		&operators[8];
-static const struct rrr_condition_op *operator_and =		&operators[9];
-static const struct rrr_condition_op *operator_or =			&operators[10];
+// Note : OR/|| and AND/&& are identified by priority
+static const struct rrr_condition_op *operator_bw_and =		&operators[10];
 
 int __rrr_condition_shunting_yard_carrier_allocate (
 		struct rrr_condition_shunting_yard_carrier **target
@@ -527,6 +528,7 @@ struct rrr_condition_running_result {
 	// Set to NULL when evaluated
 	const struct rrr_condition_shunting_yard_carrier *carrier;
 	uint64_t result;
+	int evaluated;
 };
 
 static uint64_t __rrr_condition_evaluate_operator (
@@ -555,10 +557,10 @@ static uint64_t __rrr_condition_evaluate_operator (
 	else if (op == operator_bw_and) {
 		return (a & b);
 	}
-	else if (op == operator_and) {
+	else if (op->prio == RRR_CONDITION_PRIORITY_AND) {
 		return (a && b);
 	}
-	else if (op == operator_or) {
+	else if (op->prio == RRR_CONDITION_PRIORITY_OR) {
 		return (a || b);
 	}
 
@@ -590,20 +592,47 @@ int rrr_condition_evaluate (
 		results[element_count++].carrier = node;
 	RRR_LL_ITERATE_END();
 
+
 	for (ssize_t i = 0; i < element_count; i++) {
 		struct rrr_condition_running_result *position = &results[i];
 		if (position->carrier->op != NULL) {
 			if (i < 2) {
 				RRR_BUG("BUG: Too few values before operator in rrr_condition_evaluate\n");
 			}
-			struct rrr_condition_running_result *position_a = &results[i-1];
-			struct rrr_condition_running_result *position_b = &results[i-2];
+
+			struct rrr_condition_running_result *result_a = NULL;
+			struct rrr_condition_running_result *result_b = NULL;
+
+			for (ssize_t j = i - 1; j >= 0; j--) {
+				struct rrr_condition_running_result *result_find = &results[j];
+				if (result_find->evaluated) {
+					if (result_b == NULL) {
+						result_b = result_find;
+					}
+					else {
+						result_a = result_find;
+					}
+				}
+				if (result_a != NULL && result_b != NULL) {
+					break;
+				}
+			}
+
+			if (result_a == NULL || result_b == NULL) {
+				RRR_BUG("BUG: Too few values before operator in rrr_condition_evaluate\n");
+			}
+
 			position->result = __rrr_condition_evaluate_operator (
-					position_a->result,
-					position_b->result,
+					result_a->result,
+					result_b->result,
 					position->carrier->op
 			);
 			position->carrier = NULL;
+
+			position->evaluated = 1;
+			result_a->evaluated = 0;
+			result_b->evaluated = 0;
+
 			result_tmp = position->result;
 		}
 		else {
@@ -643,6 +672,7 @@ int rrr_condition_evaluate (
 				}
 			}
 			position->carrier = NULL;
+			position->evaluated = 1;
 		}
 	}
 

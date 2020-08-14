@@ -1167,7 +1167,7 @@ int __rrr_array_tree_import_condition_callback (
 		goto out;
 	}
 
-	if (result) {
+	if (!result) {
 		ret = RRR_ARRAY_TREE_CONDITION_FALSE;
 	}
 
