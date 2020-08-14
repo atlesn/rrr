@@ -1130,9 +1130,7 @@ int __rrr_array_tree_import_value_callback (
 }
 
 static int __rrr_array_tree_import_condition_name_evaluate_callback (
-		uint64_t *result,
-		const char *name,
-		void *arg
+		RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS
 ) {
 	int ret = 0;
 
@@ -1143,6 +1141,8 @@ static int __rrr_array_tree_import_condition_name_evaluate_callback (
 	RRR_LL_ITERATE_BEGIN_REVERSE(array_tmp, struct rrr_type_value);
 		if (node->tag != NULL && strncmp(node->tag, name, node->tag_length) == 0) {
 			*result = node->definition->to_64(node);
+			*is_signed = RRR_TYPE_FLAG_IS_SIGNED(node->flags);
+			break;
 		}
 	RRR_LL_ITERATE_END();
 

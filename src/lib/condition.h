@@ -34,6 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONDITION_HARD_ERROR	RRR_READ_HARD_ERROR
 #define RRR_CONDITION_SOFT_ERROR	RRR_READ_SOFT_ERROR
 
+#define RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS \
+	uint64_t *result, int *is_signed, const char *name, void *arg
+
 struct rrr_parse_pos;
 
 struct rrr_condition_shunting_yard_carrier {
@@ -77,7 +80,7 @@ int rrr_condition_iterate (
 int rrr_condition_evaluate (
 		uint64_t *result,
 		const struct rrr_condition *condition,
-		int (*name_evaluate_callback)(uint64_t *result, const char *name, void *arg),
+		int (*name_evaluate_callback)(RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS),
 		void *name_evaluate_callback_arg
 );
 
