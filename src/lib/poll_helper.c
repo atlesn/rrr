@@ -187,18 +187,19 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	return ret;
 }
 
-int rrr_poll_do_poll_delete (
+int __rrr_poll_do_poll (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		void *callback_arg,
+		unsigned int wait_milliseconds,
+		int do_poll_delete
 ) {
 	int ret = 0;
 
 	// Small optimization, skip topic filtering callback when filtering is not active
 
 	int (*callback_to_use)(RRR_MODULE_POLL_CALLBACK_SIGNATURE) = callback;
-	void *callback_arg = thread_data;
 
 	struct rrr_poll_delete_topic_filtering_callback_data filter_callback_data;
 
@@ -215,13 +216,24 @@ int rrr_poll_do_poll_delete (
 
 		struct rrr_poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_message_broker_poll_delete (
-				entry->message_broker,
-				entry->message_broker_handle,
-				callback_to_use,
-				callback_arg,
-				wait_milliseconds
-		);
+		if (do_poll_delete) {
+			ret_tmp = rrr_message_broker_poll_delete (
+					entry->message_broker,
+					entry->message_broker_handle,
+					callback_to_use,
+					callback_arg,
+					wait_milliseconds
+			);
+		}
+		else {
+			ret_tmp = rrr_message_broker_poll (
+					entry->message_broker,
+					entry->message_broker_handle,
+					callback_to_use,
+					callback_arg,
+					wait_milliseconds
+			);
+		}
 
 		if (	(ret_tmp & RRR_FIFO_CALLBACK_ERR) ==  RRR_FIFO_CALLBACK_ERR ||
 				(ret_tmp & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR
@@ -236,6 +248,25 @@ int rrr_poll_do_poll_delete (
 	RRR_LL_ITERATE_END();
 
 	return ret;
+}
+
+int rrr_poll_do_poll_delete (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) {
+	return __rrr_poll_do_poll (thread_data, collection, callback, thread_data, wait_milliseconds, 1);
+}
+
+int rrr_poll_do_poll_search (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
+) {
+	return __rrr_poll_do_poll (thread_data, collection, callback, callback_arg, wait_milliseconds, 0);
 }
 
 int rrr_poll_collection_count (

@@ -122,7 +122,7 @@ static int __rrr_http_server_worker_push_response_headers (
 	int ret = RRR_HTTP_OK;
 
 	ret |= rrr_http_part_header_field_push(response_part, "connection", "close");
-	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST");
+	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST, PUT");
 
 	return ret;
 }
@@ -377,7 +377,7 @@ static void __rrr_http_server_worker_thread_entry (
 			break;
 		}
 
-		if (worker_data.request_complete && worker_data.response_complete) {
+		if (worker_data.request_complete) {
 			break;
 		}
 

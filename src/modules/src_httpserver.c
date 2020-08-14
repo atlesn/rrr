@@ -318,8 +318,8 @@ static int httpserver_write_message_callback (
 	return ret;
 }
 
-struct httpserver_receive_callback_data {
-	struct httpserver_data *parent_data;
+struct httpserver_callback_data {
+	struct httpserver_data *httpserver_data;
 };
 
 static int httpserver_receive_callback_options (
@@ -327,7 +327,7 @@ static int httpserver_receive_callback_options (
 		const char *data_ptr,
 		const struct sockaddr *sockaddr,
 		socklen_t socklen,
-		struct httpserver_receive_callback_data *callback_data
+		struct httpserver_callback_data *callback_data
 ) {
 	(void)(part);
 	(void)(data_ptr);
@@ -343,7 +343,7 @@ static int httpserver_receive_callback_get_post (
 		const char *data_ptr,
 		const struct sockaddr *sockaddr,
 		socklen_t socklen,
-		struct httpserver_receive_callback_data *receive_callback_data
+		struct httpserver_callback_data *receive_callback_data
 ) {
 	int ret = RRR_HTTP_OK;
 
@@ -353,7 +353,7 @@ static int httpserver_receive_callback_get_post (
 
 	struct httpserver_worker_process_field_callback field_callback_data = {
 			&array_tmp,
-			receive_callback_data->parent_data
+			receive_callback_data->httpserver_data
 	};
 
 	if ((ret = rrr_http_part_fields_iterate_const (
@@ -364,7 +364,7 @@ static int httpserver_receive_callback_get_post (
 		goto out;
 	}
 
-	if (RRR_LL_COUNT(&array_tmp) == 0 && receive_callback_data->parent_data->do_allow_empty_messages == 0) {
+	if (RRR_LL_COUNT(&array_tmp) == 0 && receive_callback_data->httpserver_data->do_allow_empty_messages == 0) {
 		RRR_DBG_3("No data fields received from HTTP client, not creating RRR message\n");
 		goto out;
 	}
@@ -378,8 +378,8 @@ static int httpserver_receive_callback_get_post (
 //	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
 
 	if ((ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
-			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
+			INSTANCE_D_BROKER(receive_callback_data->httpserver_data->thread_data),
+			INSTANCE_D_HANDLE(receive_callback_data->httpserver_data->thread_data),
 			sockaddr,
 			socklen,
 			RRR_IP_TCP,
@@ -419,7 +419,7 @@ static int httpserver_receive_get_response_callback (
 	struct receive_get_response_callback_data *callback_data = arg;
 	struct rrr_msg_msg *msg = entry->message;
 
-	int ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+	int ret = RRR_FIFO_SEARCH_KEEP;
 
 	char *response = NULL;
 
@@ -440,7 +440,7 @@ static int httpserver_receive_get_response_callback (
 
 	// Even if data is 0 length, allocate a byte to make pointer non-zero so that caller
 	// can see that response has been received
-	if ((response = malloc(MSG_DATA_LENGTH(msg)) + 1) == NULL) {
+	if ((response = malloc(MSG_DATA_LENGTH(msg) + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate response memory in httpserver_receive_get_response_callback\n");
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
@@ -453,6 +453,8 @@ static int httpserver_receive_get_response_callback (
 
 	response = NULL;
 
+	ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+
 	out:
 	RRR_FREE_IF_NOT_NULL(response);
 	rrr_msg_msg_holder_unlock(entry);
@@ -463,8 +465,8 @@ static int httpserver_receive_get_response_callback (
 static int httpserver_receive_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
-	struct httpserver_receive_callback_data *receive_callback_data = arg;
-	struct httpserver_data *data = receive_callback_data->parent_data;
+	struct httpserver_callback_data *receive_callback_data = arg;
+	struct httpserver_data *data = receive_callback_data->httpserver_data;
 
 	(void)(overshoot_bytes);
 
@@ -489,8 +491,9 @@ static int httpserver_receive_callback (
 
 		uint64_t timeout = rrr_time_get_64() + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
 		while (rrr_time_get_64() < timeout) {
-			if ((ret = rrr_message_broker_poll (
-					INSTANCE_D_BROKER_ARGS(data->thread_data),
+			if ((ret = rrr_poll_do_poll_search (
+					data->thread_data,
+					&data->thread_data->poll,
 					httpserver_receive_get_response_callback,
 					&callback_data,
 					10
@@ -510,6 +513,9 @@ static int httpserver_receive_callback (
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
+
+		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s size %lu\n",
+				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
 
 		// Will set our pointer to NULL
 		rrr_http_part_set_allocated_raw_response (
@@ -580,7 +586,11 @@ static int httpserver_receive_raw_broker_callback (
 		goto out;
 	}
 
+	RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
+			INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, topic);
+
 	out:
+	RRR_FREE_IF_NOT_NULL(topic);
 	rrr_msg_msg_holder_unlock(entry_new);
 	return ret;
 }
@@ -589,17 +599,17 @@ static int httpserver_receive_raw_broker_callback (
 static int httpserver_receive_raw_callback (
 		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
 ) {
-	struct httpserver_receive_callback_data *receive_callback_data = arg;
+	struct httpserver_callback_data *receive_callback_data = arg;
 
 	struct receive_raw_broker_callback_data write_callback_data = {
-		receive_callback_data->parent_data,
+		receive_callback_data->httpserver_data,
 		data,
 		data_size,
 		unique_id
 	};
 
 	return rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(receive_callback_data->parent_data->thread_data),
+			INSTANCE_D_BROKER_ARGS(receive_callback_data->httpserver_data->thread_data),
 			NULL,
 			0,
 			0,
@@ -613,12 +623,32 @@ static int httpserver_receive_raw_callback (
 int httpserver_unique_id_generator_callback (
 		RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
-	struct httpserver_receive_callback_data *data = arg;
+	struct httpserver_callback_data *data = arg;
 
 	return rrr_message_broker_get_next_unique_id (
 			result,
-			INSTANCE_D_BROKER_ARGS(data->parent_data->thread_data)
+			INSTANCE_D_BROKER_ARGS(data->httpserver_data->thread_data)
 	);
+}
+
+// If we receive messages from senders which no worker seem to want, we must delete it
+static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct httpserver_callback_data *callback_data = arg;
+
+	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	struct rrr_msg_msg *msg = entry->message;
+
+	uint64_t timeout = msg->timestamp + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
+
+	if (rrr_time_get_64() > timeout) {
+		RRR_DBG_1("httpserver instance %s deleting message from senders of size %li which has timed out\n",
+				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data), MSG_TOTAL_SIZE(msg));
+		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+	}
+
+	rrr_msg_msg_holder_unlock(entry);
+	return ret;
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
@@ -666,7 +696,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	unsigned int accept_count_total = 0;
 	uint64_t prev_stats_time = rrr_time_get_64();
 
-	struct httpserver_receive_callback_data callback_data = {
+	struct httpserver_callback_data callback_data = {
 			data
 	};
 
@@ -705,6 +735,17 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 			prev_stats_time = time_now;
 		}
+
+		if (rrr_poll_do_poll_search (
+				data->thread_data,
+				&data->thread_data->poll,
+				httpserver_housekeep_callback,
+				&callback_data,
+				0
+		) != 0) {
+			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
+			break;
+		}
 	}
 
 	out_cleanup_httpserver:
@@ -739,7 +780,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = RRR_MODULE_TYPE_SOURCE;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }

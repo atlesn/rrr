@@ -648,7 +648,8 @@ int rrr_net_transport_ctx_send_blocking (
 				size - written_bytes_total
 		)) != 0) {
 			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				RRR_MSG_0("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				// Hard error means connection closed, not that serious
+				ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 				break;
 			}
 		}

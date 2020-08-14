@@ -417,7 +417,7 @@ static int httpclient_raw_create_message_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("httpclient instance %s created raw httpclient_data message with size %" PRIrrrbl "\n",
+	RRR_DBG_3("httpclient instance %s created raw httpclient data message with data size %" PRIrrrbl "\n",
 			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), size);
 
 	out:
@@ -651,7 +651,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_keepalive", do_keepalive, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_receive_raw_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.

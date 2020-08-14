@@ -420,7 +420,7 @@ static int __rrr_http_session_multipart_form_data_body_send (
 		}
 
 		if ((ret = rrr_net_transport_ctx_send_blocking(handle, body_buf, strlen(body_buf))) != 0) {
-			RRR_MSG_0("Could not send first part of HTTP request in __rrr_http_session_multipart_form_data_body_send\n");
+			RRR_DBG_1("Could not send first part of HTTP request in __rrr_http_session_multipart_form_data_body_send\n");
 			goto out;
 		}
 	}
@@ -454,7 +454,7 @@ static int __rrr_http_session_multipart_form_data_body_send (
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "0\r\n\r\n", 5)) != 0) {
-		RRR_MSG_0("Could not send terminating chunk of HTTP request in __rrr_http_session_multipart_form_data_body_send\n");
+		RRR_DBG_1("Could not send terminating chunk of HTTP request in __rrr_http_session_multipart_form_data_body_send\n");
 		goto out;
 	}
 
@@ -501,12 +501,12 @@ static int __rrr_http_session_post_x_www_form_body_send (
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, header_buf, strlen(header_buf))) != 0) {
-		RRR_MSG_0("Could not send GET body header in __rrr_http_session_send_get_body\n");
+		RRR_DBG_1("Could not send GET body header in __rrr_http_session_send_get_body\n");
 		goto out;
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, body_buf, body_size)) != 0) {
-		RRR_MSG_0("Could not send GET body in __rrr_http_session_send_get_body\n");
+		RRR_DBG_1("Could not send GET body in __rrr_http_session_send_get_body\n");
 		goto out;
 	}
 
@@ -634,7 +634,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
-		RRR_MSG_0("Could not send first part of HTTP request header in rrr_http_session_send_request\n");
+		RRR_DBG_1("Could not send first part of HTTP request header in rrr_http_session_send_request\n");
 		goto out;
 	}
 
@@ -822,7 +822,7 @@ static int __rrr_http_session_send_header_field_callback (struct rrr_http_header
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, send_data, send_data_length)) != 0) {
-		RRR_MSG_0("Error: Send failed in __rrr_http_session_send_header_field_callback\n");
+		RRR_DBG_1("Error: Send failed in __rrr_http_session_send_header_field_callback\n");
 		goto out;
 	}
 

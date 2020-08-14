@@ -80,7 +80,6 @@ struct rrr_http_server_worker_data {
 	void *final_callback_raw_arg;
 
 	int request_complete;
-	int response_complete;
 };
 
 int rrr_http_server_worker_preliminary_data_new (

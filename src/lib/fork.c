@@ -171,7 +171,7 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 }
 
 static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_rounds) {
-	int active_forks = 0;
+	int active_forks_found = 0;
 
 	if (pthread_mutex_trylock (&handler->lock) == 0) {
 		RRR_BUG("BUG: Handler was not locked in __rrr_fork_wait_loop\n");
@@ -182,7 +182,7 @@ static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_roun
 			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
 			break;
 		}
-		active_forks = 0;
+		active_forks_found = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0) {
 				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
@@ -200,14 +200,14 @@ static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_roun
 							node->pid, getpid(), status, rrr_strerror(errno));
 				}
 
-				active_forks = 1;
+				active_forks_found = 1;
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
 
 		pthread_mutex_unlock (&handler->lock);
 		rrr_posix_usleep(100000); // 100ms
 		pthread_mutex_lock (&handler->lock);
-	} while (active_forks > 0);
+	} while (active_forks_found != 0);
 }
 
 void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {

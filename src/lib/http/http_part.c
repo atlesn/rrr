@@ -871,9 +871,14 @@ static int __rrr_http_parse_header_field (
 
 		bad_client_missing_space_after_comma = 0;
 
+		if (start >= end) {
+			ret = RRR_HTTP_PARSE_INCOMPLETE;
+			goto out;
+		}
+
 		if (*start == ';') {
 			const char *next = start + 1;
-			if (next > end) {
+			if (next >= end) {
 				ret = RRR_HTTP_PARSE_INCOMPLETE;
 				goto out;
 			}

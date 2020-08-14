@@ -185,11 +185,6 @@ static int __rrr_net_transport_plain_send (
 	ssize_t written_bytes_tmp = 0;
 
 	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
-		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			goto out;
-		}
-		RRR_MSG_0("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
-		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
 
