@@ -255,12 +255,10 @@ int main (int argc, const char *argv[]) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if (rrr_http_client_send_request (
+	if (rrr_http_client_send_request_simple (
 			&data,
 			RRR_HTTP_METHOD_GET,
 			&net_transport_config,
-			NULL,
-			NULL,
 			__rrr_http_client_final_callback,
 			NULL
 	) != 0) {

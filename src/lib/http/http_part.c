@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <pthread.h>
 
 #include "../log.h"
@@ -46,7 +47,7 @@ static int __rrr_http_part_check_content_type (
 		struct rrr_http_part *part,
 		const char *content_type_test
 ) {
-	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
+	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	if (content_type == NULL || content_type->value == NULL || *(content_type->value) == '\0') {
 		return 0;
 	}
@@ -201,9 +202,9 @@ static int __rrr_http_header_parse_content_type_value (RRR_HTTP_HEADER_FIELD_PAR
 		int found = 0;
 		const char *unquote_field_names[] = {"charset", "boundary"};
 		__rrr_http_header_parse_unquote_fields(&found, node, field->name, unquote_field_names, 2);
-		if (found == 0) {
+/*		if (found == 0) {
 			RRR_DBG_1("Warning: Unknown field '%s' in content-type header\n", node->name);
-		}
+		}*/
 	RRR_LL_ITERATE_END();
 
 	out:
@@ -348,12 +349,12 @@ static int __rrr_http_header_field_new (
 	return ret;
 }
 
-const struct rrr_http_field *__rrr_http_part_get_header_field_subvalue (
+const struct rrr_http_field *__rrr_http_part_header_field_subvalue_get (
 		const struct rrr_http_part *part,
 		const char *field_name,
 		const char *subvalue_name
 ) {
-	const struct rrr_http_header_field *field = rrr_http_part_get_header_field(part, field_name);
+	const struct rrr_http_header_field *field = rrr_http_part_header_field_get(part, field_name);
 	if (field == NULL) {
 		return NULL;
 	}
@@ -372,6 +373,7 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
 	rrr_http_field_collection_clear(&part->fields);
 	RRR_FREE_IF_NOT_NULL(part->response_str);
+	RRR_FREE_IF_NOT_NULL(part->response_raw_data);
 	RRR_FREE_IF_NOT_NULL(part->request_uri);
 	RRR_FREE_IF_NOT_NULL(part->request_method_str);
 	free (part);
@@ -409,7 +411,29 @@ int rrr_http_part_new (struct rrr_http_part **result) {
 	return ret;
 }
 
-const struct rrr_http_header_field *rrr_http_part_get_header_field (
+void rrr_http_part_set_allocated_raw_response (
+		struct rrr_http_part *part,
+		char **raw_data_source,
+		size_t raw_data_size
+) {
+	if (part->response_raw_data != NULL) {
+		RRR_BUG("BUG: rrr_http_part_set_allocated_raw_response called while raw data was already set\n");
+	}
+	part->response_raw_data = *raw_data_source;
+	part->response_raw_data_size = raw_data_size;
+	*raw_data_source = NULL;
+}
+
+void rrr_http_part_set_raw_request_ptr (
+		struct rrr_http_part *part,
+		const char *raw_data,
+		size_t raw_data_size
+) {
+	part->request_raw_data = raw_data;
+	part->request_raw_data_size = raw_data_size;
+}
+
+const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name_lowercase
 ) {
@@ -856,9 +880,14 @@ static int __rrr_http_parse_header_field (
 
 		bad_client_missing_space_after_comma = 0;
 
+		if (start >= end) {
+			ret = RRR_HTTP_PARSE_INCOMPLETE;
+			goto out;
+		}
+
 		if (*start == ';') {
 			const char *next = start + 1;
-			if (next > end) {
+			if (next >= end) {
 				ret = RRR_HTTP_PARSE_INCOMPLETE;
 				goto out;
 			}
@@ -1191,6 +1220,17 @@ int rrr_http_part_header_fields_iterate (
 	return ret;
 }
 
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (strcasecmp(field, node->name) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->headers, 0; __rrr_http_header_field_destroy(node));
+}
+
 int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
@@ -1321,9 +1361,9 @@ int rrr_http_part_parse (
 
 		part->header_complete = 1;
 
-		const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
-		const struct rrr_http_header_field *content_length = rrr_http_part_get_header_field(part, "content-length");
-		const struct rrr_http_header_field *transfer_encoding = rrr_http_part_get_header_field(part, "transfer-encoding");
+		const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
+		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
+		const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
 
 		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
 			RRR_DBG_3("HTTP request header parse complete\n");
@@ -1361,27 +1401,36 @@ int rrr_http_part_parse (
 					goto out;
 				}
 			}
+			else if (rrr_posix_strcasecmp(part->request_method_str, "PUT") == 0) {
+				part->request_method = RRR_HTTP_METHOD_PUT;
+			}
+			else if (rrr_posix_strcasecmp(part->request_method_str, "HEAD") == 0) {
+				part->request_method = RRR_HTTP_METHOD_HEAD;
+			}
 			else {
 				RRR_MSG_0("Unknown request method '%s' in HTTP request\n", part->request_method_str);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
 
-			if (part->request_method == RRR_HTTP_METHOD_GET || part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+			if (part->request_method == RRR_HTTP_METHOD_GET ||
+				part->request_method == RRR_HTTP_METHOD_OPTIONS ||
+				part->request_method == RRR_HTTP_METHOD_HEAD
+			) {
 				if (content_length != NULL && content_length->value_unsigned != 0) {
-					RRR_MSG_0("Content-Length was non-zero for GET or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Content-Length was non-zero for GET, HEAD or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (transfer_encoding != NULL) {
-					RRR_MSG_0("Transfer-Encoding header was set for GET or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (content_type != NULL) {
-					RRR_MSG_0("Content-Type was set for GET or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Content-Type was set for GET, HEAD or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
@@ -1657,7 +1706,7 @@ int rrr_http_part_process_multipart (
 		goto out;
 	}
 
-	const struct rrr_http_field *boundary = __rrr_http_part_get_header_field_subvalue(part, "content-type", "boundary");
+	const struct rrr_http_field *boundary = __rrr_http_part_header_field_subvalue_get(part, "content-type", "boundary");
 	if (boundary == NULL || boundary->value == NULL || *(boundary->value) == '\0') {
 		RRR_MSG_0("No multipart boundary found in content-type of HTTP header\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -1925,7 +1974,7 @@ int rrr_http_part_extract_post_and_query_fields (
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_http_part);
 			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node, data_ptr);
 
-			const struct rrr_http_field *field_name = __rrr_http_part_get_header_field_subvalue(node, "content-disposition", "name");
+			const struct rrr_http_field *field_name = __rrr_http_part_header_field_subvalue_get(node, "content-disposition", "name");
 			if (field_name == NULL || field_name->value == NULL || field_name->value_size == 0) {
 				RRR_DBG_1("Warning: Unknown field or invalid content-disposition of multipart part\n");
 				RRR_LL_ITERATE_NEXT();
@@ -1941,7 +1990,7 @@ int rrr_http_part_extract_post_and_query_fields (
 				goto out;
 			}
 
-			const struct rrr_http_header_field *field_content_type = rrr_http_part_get_header_field(node, "content-type");
+			const struct rrr_http_header_field *field_content_type = rrr_http_part_header_field_get(node, "content-type");
 
 			if (field_content_type != NULL && field_content_type->value != NULL) {
 				if ((ret = rrr_http_field_set_content_type(

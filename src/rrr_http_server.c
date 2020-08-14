@@ -315,7 +315,7 @@ int main (int argc, const char *argv[]) {
 		rrr_thread_postponed_cleanup_run(&count);
 
 		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, NULL, NULL) != 0) {
+		if (rrr_http_server_tick(&accept_count, http_server, NULL, NULL, NULL, NULL, NULL, NULL) != 0) {
 			ret = EXIT_FAILURE;
 			break;
 		}

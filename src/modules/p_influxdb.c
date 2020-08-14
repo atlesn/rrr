@@ -121,6 +121,7 @@ static int influxdb_receive_http_response (
 	(void)(socklen);
 	(void)(overshoot_bytes);
 	(void)(request_part);
+	(void)(unique_id);
 
 	int ret = 0;
 
@@ -176,7 +177,7 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_client_new (
+	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			RRR_HTTP_CLIENT_USER_AGENT
@@ -269,13 +270,16 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_receive(
+	if (rrr_http_session_transport_ctx_receive (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			0, // No max read size
+			0, // No unique id
 			influxdb_receive_http_response,
-			&response_callback_data
+			&response_callback_data,
+			NULL,
+			NULL
 	) != 0) {
 		RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
 				INSTANCE_D_NAME(data->thread_data));

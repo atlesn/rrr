@@ -852,7 +852,7 @@ for syntax.
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
-.SS httpserver (SAI)
+.SS httpserver (PAI)
 This module accepts connections from HTTP clients, extracts POST or GET data fields and puts it into RRR array messages
 for other modules to use. The query string from the URI is parsed in both GET and POST requests. Duplicate field names are allowed.
 .PP
@@ -889,6 +889,18 @@ Accept any field names from incoming requests. May not be used with
 Defaults to 'no'.
 .It http_server_allow_empty_messages={yes|no}
 Create RRR messages for incoming request even if no field names would be added to the message. Defaults to 'no'.
+.It http_server_receive_raw_data={yes|no}
+When receiving a request from a client, put the full request including header into an RRR message for other instances to pick up.
+Each message will have a unique topic set with the format
+.B httpserver/uuu
+where uuu is an unsigned integer in decimal. The unique ID is increased by 1 for each request.
+.It http_server_get_raw_response_from_senders={yes|no}
+Instead of sending standard responses to clients, like "200 OK", check senders of httpserver for raw data responses.
+This option is only useful in combination with
+.B http_server_receive_raw_data={yes|no}
+, as httpserver only will accept messages with topics matching those created when receiving raw data.
+This way the correct response for each request is found.
+If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
 .It http_server_tls_*
 Refer to the
 .B TLS
@@ -902,7 +914,7 @@ If none of
 and
 .B http_server_fields_accept
 are specified, no received requests will result into RRR messages being produced. 
-.SS httpclient (DAI)
+.SS httpclient (PAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
 may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
 use any data sent from the server, any data received is ignored.
@@ -981,6 +993,17 @@ If there is any error while sending a message, drop it instead of deferring it a
 Timeout for deferred messages, defaults to 0 which means no timeout.
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
+.It http_keepalive={yes|no}
+Keep connection to server open across multiple requests. When the server finally closes the connection, the client re-connects. Defaults to no.
+.It http_receive_raw_data={yes|no}
+Take the full response from the server and put it into an RRR message for other instances to pick up.
+If the original message which caused the query had a topic set, this topic will be present in the message with the raw data.
+May be used in conjunction with raw functionallity in
+.B httpserver.
+.It http_send_raw_data={yes|no}
+Assume that received messages contains raw HTTP data (including headers), and send this to the specified server untouched.
+May be used in conjunction with raw functionallity in
+.B httpserver.
 .It http_tls_*
 Refer to the
 .B TLS

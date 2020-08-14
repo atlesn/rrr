@@ -112,8 +112,12 @@ int rrr_msg_msg_new_with_data (
 		return 1;
 	}
 
-	memcpy (MSG_TOPIC_PTR(*final_result), topic, topic_length);
-	memcpy (MSG_DATA_PTR(*final_result), data, data_length);
+	if (topic_length > 0 && topic != NULL) {
+		memcpy (MSG_TOPIC_PTR(*final_result), topic, topic_length);
+	}
+	if (data_length > 0 && data != 0) {
+		memcpy (MSG_DATA_PTR(*final_result), data, data_length);
+	}
 
 	return 0;
 }
