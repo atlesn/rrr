@@ -533,7 +533,9 @@ static int httpserver_receive_callback (
 				receive_callback_data
 		);
 	}
-	else if (request_part->request_method == RRR_HTTP_METHOD_HEAD) {
+	else if (request_part->request_method == RRR_HTTP_METHOD_HEAD ||
+			request_part->request_method == RRR_HTTP_METHOD_DELETE
+	) {
 		// Do nothing, let server framework send default reply
 	}
 	else {

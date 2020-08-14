@@ -1407,6 +1407,9 @@ int rrr_http_part_parse (
 			else if (rrr_posix_strcasecmp(part->request_method_str, "HEAD") == 0) {
 				part->request_method = RRR_HTTP_METHOD_HEAD;
 			}
+			else if (rrr_posix_strcasecmp(part->request_method_str, "DELETE") == 0) {
+				part->request_method = RRR_HTTP_METHOD_DELETE;
+			}
 			else {
 				RRR_MSG_0("Unknown request method '%s' in HTTP request\n", part->request_method_str);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -1415,22 +1418,23 @@ int rrr_http_part_parse (
 
 			if (part->request_method == RRR_HTTP_METHOD_GET ||
 				part->request_method == RRR_HTTP_METHOD_OPTIONS ||
-				part->request_method == RRR_HTTP_METHOD_HEAD
+				part->request_method == RRR_HTTP_METHOD_HEAD ||
+				part->request_method == RRR_HTTP_METHOD_DELETE
 			) {
 				if (content_length != NULL && content_length->value_unsigned != 0) {
-					RRR_MSG_0("Content-Length was non-zero for GET, HEAD or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Content-Length was non-zero for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (transfer_encoding != NULL) {
-					RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (content_type != NULL) {
-					RRR_MSG_0("Content-Type was set for GET, HEAD or OPTIONS request, this is an error.\n");
+					RRR_MSG_0("Content-Type was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
