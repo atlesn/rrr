@@ -192,7 +192,6 @@ int rrr_socket_common_receive_array_tree (
 	struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data_array = {
 			tree,
 			array_final,
-			0,
 			do_sync_byte_by_byte,
 			message_max_size
 	};
