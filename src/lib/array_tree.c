@@ -1141,7 +1141,7 @@ static int __rrr_array_tree_import_condition_name_evaluate_callback (
 	struct rrr_array *array_tmp = arg;
 
 	RRR_LL_ITERATE_BEGIN_REVERSE(array_tmp, struct rrr_type_value);
-		if (node->tag != NULL && strcmp(node->tag, name) == 0) {
+		if (node->tag != NULL && strncmp(node->tag, name, node->tag_length) == 0) {
 			*result = node->definition->to_64(node);
 		}
 	RRR_LL_ITERATE_END();
