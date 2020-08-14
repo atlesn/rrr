@@ -170,40 +170,22 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 	return ret;
 }
 
-void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
-	// Call this from main() only
-	RRR_FORK_HANDLER_VERIFY_SELF();
-
-	pthread_mutex_lock (&handler->lock);
-
-	// Signal handlers must be disabled before we do this
-
-	RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
-
-	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-		if (node->pid > 0) {
-			RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
-			kill(node->pid, SIGUSR1);
-		}
-/*		else {
- *			// THIS ELSE CLAUSE SHOULD BE COMMENTED OUT
- *			// For testing errors
- *			node->pid = 5555;
- *		}*/
-	RRR_LL_ITERATE_END();
-
-	int max_rounds = 50; // ~5 seconds
-
+static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_rounds) {
 	int active_forks = 0;
+
+	if (pthread_mutex_trylock (&handler->lock) == 0) {
+		RRR_BUG("BUG: Handler was not locked in __rrr_fork_wait_loop\n");
+	}
+
 	do {
-		if (--max_rounds == 0) {
+		if (max_rounds-- == 0) {
 			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
 			break;
 		}
 		active_forks = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0) {
-				RRR_DBG_4("After SIGUSR1, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
+				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
 			}
 			if (node->pid > 0 && node->was_waited_for == 0) {
 				pid_t pid;
@@ -226,6 +208,44 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 		rrr_posix_usleep(100000); // 100ms
 		pthread_mutex_lock (&handler->lock);
 	} while (active_forks > 0);
+}
+
+void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
+	// Call this from main() only
+	RRR_FORK_HANDLER_VERIFY_SELF();
+
+	pthread_mutex_lock (&handler->lock);
+
+	// Signal handlers must be disabled before we do this
+
+	RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
+
+	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+		if (node->pid > 0) {
+			RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
+			kill(node->pid, SIGUSR1);
+		}
+/*		else {
+ *			// THIS ELSE CLAUSE SHOULD BE COMMENTED OUT
+ *			// For testing errors
+ *			node->pid = 5555;
+ *		}*/
+	RRR_LL_ITERATE_END();
+
+	__rrr_fork_wait_loop(handler, 50); // 50 rounds = ~5 seconds
+
+	// Try SIGKILL
+	if (RRR_LL_COUNT(handler) > 0) {
+		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+			if (node->pid > 0) {
+				RRR_DBG_1("SIGKILL to fork %i\n", node->pid);
+				kill(node->pid, SIGKILL);
+			}
+		RRR_LL_ITERATE_END();
+
+		// Try waiting one last time
+		__rrr_fork_wait_loop(handler, 10); // 10 rounds = ~1 second
+	}
 
 	pthread_mutex_unlock (&handler->lock);
 }
