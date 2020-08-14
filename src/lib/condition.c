@@ -35,9 +35,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 enum rrr_condition_priority {
 	RRR_CONDITION_PRIORITY_NONE,
+	RRR_CONDITION_PRIORITY_SINGULAR,
+	RRR_CONDITION_PRIORITY_MUL,
+	RRR_CONDITION_PRIORITY_ADD,
+	RRR_CONDITION_PRIORITY_BW_SHIFT,
 	RRR_CONDITION_PRIORITY_CMP,
 	RRR_CONDITION_PRIORITY_EQUALITY,
-	RRR_CONDITION_PRIORITY_BITWISE_AND,
+	RRR_CONDITION_PRIORITY_BW_AND,
+	RRR_CONDITION_PRIORITY_BW_XOR,
+	RRR_CONDITION_PRIORITY_BW_OR,
 	RRR_CONDITION_PRIORITY_AND,
 	RRR_CONDITION_PRIORITY_OR
 };
@@ -54,15 +60,26 @@ static const struct rrr_condition_op operators[] = {
 		{")", RRR_CONDITION_PRIORITY_NONE},
 		{"<=", RRR_CONDITION_PRIORITY_CMP},
 		{">=", RRR_CONDITION_PRIORITY_CMP},
+		{"<<", RRR_CONDITION_PRIORITY_BW_SHIFT},
+		{">>", RRR_CONDITION_PRIORITY_BW_SHIFT},
 		{"<", RRR_CONDITION_PRIORITY_CMP},
 		{">", RRR_CONDITION_PRIORITY_CMP},
 		{"==", RRR_CONDITION_PRIORITY_EQUALITY},
 		{"!=", RRR_CONDITION_PRIORITY_EQUALITY},
+
 		{"&&", RRR_CONDITION_PRIORITY_AND},
 		{"||", RRR_CONDITION_PRIORITY_OR},
-		{"&", RRR_CONDITION_PRIORITY_BITWISE_AND},
 		{"AND", RRR_CONDITION_PRIORITY_AND},
 		{"OR", RRR_CONDITION_PRIORITY_OR},
+
+		{"&", RRR_CONDITION_PRIORITY_BW_AND},
+		{"^", RRR_CONDITION_PRIORITY_BW_XOR},
+		{"|", RRR_CONDITION_PRIORITY_BW_OR},
+		{"+", RRR_CONDITION_PRIORITY_ADD},
+		{"-", RRR_CONDITION_PRIORITY_ADD},
+		{"*", RRR_CONDITION_PRIORITY_MUL},
+		{"/", RRR_CONDITION_PRIORITY_MUL},
+		{"~", RRR_CONDITION_PRIORITY_SINGULAR},
 		{"", 0}
 };
 
@@ -71,12 +88,23 @@ static const struct rrr_condition_op *operator_par_open =	&operators[0];
 static const struct rrr_condition_op *operator_par_close =	&operators[1];
 static const struct rrr_condition_op *operator_lteq =		&operators[2];
 static const struct rrr_condition_op *operator_gteq =		&operators[3];
-static const struct rrr_condition_op *operator_lt =			&operators[4];
-static const struct rrr_condition_op *operator_gt =			&operators[5];
-static const struct rrr_condition_op *operator_eq =			&operators[6];
-static const struct rrr_condition_op *operator_ne =			&operators[7];
-// Note : OR/|| and AND/&& are identified by priority
-static const struct rrr_condition_op *operator_bw_and =		&operators[10];
+static const struct rrr_condition_op *operator_bw_left =	&operators[4];
+static const struct rrr_condition_op *operator_bw_right =	&operators[5];
+
+
+static const struct rrr_condition_op *operator_lt =			&operators[6];
+static const struct rrr_condition_op *operator_gt =			&operators[7];
+static const struct rrr_condition_op *operator_eq =			&operators[8];
+static const struct rrr_condition_op *operator_ne =			&operators[9];
+// Note : OR, ||, AND and && are identified by priority
+static const struct rrr_condition_op *operator_bw_and =		&operators[14];
+static const struct rrr_condition_op *operator_bw_xor =		&operators[15];
+static const struct rrr_condition_op *operator_bw_or =		&operators[16];
+static const struct rrr_condition_op *operator_add =		&operators[17];
+static const struct rrr_condition_op *operator_sub =		&operators[18];
+static const struct rrr_condition_op *operator_mul =		&operators[19];
+static const struct rrr_condition_op *operator_div =		&operators[20];
+static const struct rrr_condition_op *operator_bw_not =		&operators[21];
 
 int __rrr_condition_shunting_yard_carrier_allocate (
 		struct rrr_condition_shunting_yard_carrier **target
@@ -227,7 +255,9 @@ static int __rrr_condition_shunting_yard_finalize (
 		int value_count = 0;
 		RRR_LL_ITERATE_BEGIN(shunting_yard, struct rrr_condition_shunting_yard_carrier);
 			if (node->op) {
-				op_count++;
+				if (node->op->prio != RRR_CONDITION_PRIORITY_SINGULAR) {
+					op_count++;
+				}
 			}
 			else {
 				value_count++;
@@ -360,9 +390,8 @@ int rrr_condition_parse (
 	int ret = RRR_CONDITION_OK;
 
 	int par_level = 0;
-//	int prev_was_value = 0;
+	int prev_was_op = 0;
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-//		printf("Parse position: %s\n", pos->data + pos->pos);
 		rrr_parse_ignore_spaces_and_increment_line(pos);
 		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
@@ -375,7 +404,14 @@ int rrr_condition_parse (
 			goto out_clear;
 		}
 
+		if (op == operator_sub && (prev_was_op || RRR_LL_COUNT(shunting_yard) == 0)) {
+			// Interpret - as start of negative value as opposed to subtraction operator
+			op = NULL;
+		}
+
 		if (op != NULL) {
+			prev_was_op = 1;
+
 			if ((ret = __rrr_condition_shunting_yard_shunt_op (
 					&par_level,
 					shunting_yard,
@@ -388,20 +424,14 @@ int rrr_condition_parse (
 				// Last ) found
 				break;
 			}
-
-//			prev_was_value = 0;
 		}
 		else {
+			prev_was_op = 0;
+
 			rrr_parse_ignore_spaces_and_increment_line(pos);
 			if (RRR_PARSE_CHECK_EOF(pos)) {
 				break;
 			}
-
-/*			if (prev_was_value) {
-				RRR_MSG_0("Invalid expression in condition at line %i, found two values after each other without operator in between\n", pos->line);
-				ret = RRR_CONDITION_SOFT_ERROR;
-				goto out_clear;
-			}*/
 
 			int start;
 			int end;
@@ -455,8 +485,6 @@ int rrr_condition_parse (
 			if ((ret = __rrr_condition_shunting_yard_shunt_value(shunting_yard, pos->data + start, end - start + 1)) != 0) {
 				goto out_clear;
 			}
-
-//			prev_was_value = 1;
 		}
 	}
 
@@ -560,14 +588,41 @@ struct rrr_condition_running_result {
 	else if (op == operator_ne) {		\
 		return (a != b);				\
 	}									\
-	else if (op == operator_bw_and) {	\
-		return (a & b);					\
-	}									\
 	else if (op->prio == RRR_CONDITION_PRIORITY_AND) {		\
 		return (a && b);									\
 	}														\
 	else if (op->prio == RRR_CONDITION_PRIORITY_OR) {		\
 		return (a || b);									\
+	}														\
+	else if (op == operator_bw_and) {	\
+		return (a & b);					\
+	}									\
+	else if (op == operator_bw_xor) {	\
+		return (a ^ b);					\
+	}									\
+	else if (op == operator_bw_or) {	\
+		return (a | b);					\
+	}									\
+	else if (op == operator_bw_left) {	\
+		return (a << b);				\
+	}									\
+	else if (op == operator_bw_right) {	\
+		return (a >> b);				\
+	}									\
+	else if (op == operator_bw_not) {	\
+		return (~b);					\
+	}									\
+	else if (op == operator_add) {		\
+		return (a + b);					\
+	}									\
+	else if (op == operator_sub) {		\
+		return (a - b);					\
+	}									\
+	else if (op == operator_mul) {		\
+		return (a * b);					\
+	}									\
+	else if (op == operator_div) {		\
+		return (a / b);					\
 	}} while(0)
 
 static uint64_t __rrr_condition_evaluate_operator (
@@ -582,7 +637,7 @@ static uint64_t __rrr_condition_evaluate_operator (
 	return 0;
 }
 
-static uint64_t __rrr_condition_evaluate_operator_signed (
+static int64_t __rrr_condition_evaluate_operator_signed (
 		int64_t a,
 		int64_t b,
 		const struct rrr_condition_op *op
@@ -592,6 +647,171 @@ static uint64_t __rrr_condition_evaluate_operator_signed (
 	RRR_BUG("BUG: Unknown operator %p to __rrr_condition_evaluate_operator\n", op);
 
 	return 0;
+}
+
+static int64_t __rrr_condition_evalute_ensure_signed (
+		struct rrr_condition_running_result *result
+) {
+	int64_t signed_result = 0;
+
+	if (!result->is_signed && result->result > INT64_MAX) {
+		RRR_MSG_0("Warning: Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
+			result->result);
+	}
+
+	if (result->is_signed) {
+		signed_result = *((int64_t*) &result->result);
+	}
+	else {
+		signed_result = result->result;
+	}
+
+	return signed_result;
+}
+
+static void __rrr_condition_evaluate_op (
+		uint64_t *result,
+		const struct rrr_condition_op *op,
+		struct rrr_condition_running_result *position,
+		struct rrr_condition_running_result *results,
+		ssize_t results_pos
+) {
+	struct rrr_condition_running_result *result_a = NULL;
+	struct rrr_condition_running_result *result_b = NULL;
+
+	for (ssize_t j = results_pos - 1; j >= 0; j--) {
+		struct rrr_condition_running_result *result_find = &results[j];
+		if (result_find->is_evaluated) {
+			if (result_b == NULL) {
+				result_b = result_find;
+			}
+			else {
+				result_a = result_find;
+			}
+		}
+		if (result_b != NULL && (result_a != NULL || op->prio == RRR_CONDITION_PRIORITY_SINGULAR)) {
+			break;
+		}
+	}
+
+	if (result_b->is_signed || (result_a != NULL && result_a->is_signed)) {
+		int64_t signed_a = 0;
+		int64_t signed_b = 0;
+
+		if (result_a != NULL) {
+			signed_a = __rrr_condition_evalute_ensure_signed(result_a);
+		}
+
+		signed_b = __rrr_condition_evalute_ensure_signed(result_b);
+
+		int64_t result = __rrr_condition_evaluate_operator_signed (
+				signed_a,
+				signed_b,
+				op
+		);
+
+		position->result = *((uint64_t *) &result);
+		position->is_signed = 1;
+
+		RRR_DBG_3("Array tree condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
+				signed_a, op, signed_b, position->result);
+	}
+	else {
+		uint64_t unsigned_a = (result_a != NULL ? result_a->result : 0);
+		uint64_t unsigned_b = result_b->result;
+
+		position->result = __rrr_condition_evaluate_operator (
+				unsigned_a,
+				unsigned_b,
+				op
+		);
+
+		RRR_DBG_3("Array tree condition unsigned evaluation %" PRIu64 " %s %" PRIu64 " = %" PRIu64 "\n",
+				unsigned_a, op, unsigned_b, position->result);
+
+	}
+
+	position->carrier = NULL;
+	position->is_evaluated = 1;
+
+	*result = position->result;
+
+	if (result_a != NULL) {
+		result_a->is_evaluated = 0;
+	}
+
+	result_b->is_evaluated = 0;
+}
+
+static int __rrr_condition_evalute_value (
+		struct rrr_condition_running_result *position,
+		int (*name_evaluate_callback)(RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS),
+		void *name_evaluate_callback_arg
+) {
+	int ret = 0;
+
+	char value_tmp[RRR_CONDITION_VALUE_MAX];
+
+	if (*(position->carrier->value) == '{') {
+		const char *tag_to_pass = __rrr_condition_extract_name (
+				value_tmp,
+				position->carrier->value
+		);
+
+		if ((ret = name_evaluate_callback (
+				&position->result,
+				&position->is_signed,
+				tag_to_pass,
+				name_evaluate_callback_arg
+		)) != 0) {
+			RRR_MSG_0("Error %i from callback in rrr_condition_evaluate\n");
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
+
+		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%llx%s\n",
+				tag_to_pass, position->result, (position->is_signed ? " (signed)" : ""));
+	}
+	else if (	strlen(position->carrier->value) >= 2 &&
+				rrr_posix_strncasecmp(position->carrier->value, "0x", 2) == 0
+	) {
+		const char *value_start = position->carrier->value + 2;
+		char *endptr = NULL;
+		position->result = strtoull(value_start, &endptr, 16);
+		if (endptr == NULL || *endptr != '\0') {
+			// This might be a bug, parser should validate the numbers
+			RRR_MSG_0("Could not evaluate hex value '%s' in rrr_condition_evaluate\n");
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
+	}
+	else if (*(position->carrier->value) == '-') {
+		char *endptr = NULL;
+		int64_t tmp = strtoll(position->carrier->value, &endptr, 10);
+		if (endptr == NULL || *endptr != '\0') {
+			// This might be a bug, parser should validate the numbers
+			RRR_MSG_0("Could not evaluate negative decimal value '%s' in rrr_condition_evaluate\n");
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
+		position->result = *((uint64_t*) &tmp);
+		position->is_signed = 1;
+	}
+	else {
+		char *endptr = NULL;
+		position->result = strtoull(position->carrier->value, &endptr, 10);
+		if (endptr == NULL || *endptr != '\0') {
+			// This might be a bug, parser should validate the numbers
+			RRR_MSG_0("Could not evaluate decimal value '%s' in rrr_condition_evaluate\n");
+			ret = RRR_CONDITION_SOFT_ERROR;
+			goto out;
+		}
+	}
+	position->carrier = NULL;
+	position->is_evaluated = 1;
+
+	out:
+	return ret;
 }
 
 int rrr_condition_evaluate (
@@ -604,12 +824,7 @@ int rrr_condition_evaluate (
 
 	*result = 0;
 
-	uint64_t result_tmp = 0;
-
 	struct rrr_condition_running_result results[RRR_LL_COUNT(&condition->shunting_yard)];
-
-	char value_tmp[RRR_CONDITION_VALUE_MAX];
-
 	memset(results, '\0', sizeof(results));
 
 	ssize_t element_count = 0;
@@ -617,154 +832,29 @@ int rrr_condition_evaluate (
 		results[element_count++].carrier = node;
 	RRR_LL_ITERATE_END();
 
-
 	for (ssize_t i = 0; i < element_count; i++) {
 		struct rrr_condition_running_result *position = &results[i];
-		if (position->carrier->op != NULL) {
-			if (i < 2) {
-				RRR_BUG("BUG: Too few values before operator in rrr_condition_evaluate\n");
-			}
+		const struct rrr_condition_op *op = position->carrier->op;
 
-			struct rrr_condition_running_result *result_a = NULL;
-			struct rrr_condition_running_result *result_b = NULL;
-
-			for (ssize_t j = i - 1; j >= 0; j--) {
-				struct rrr_condition_running_result *result_find = &results[j];
-				if (result_find->is_evaluated) {
-					if (result_b == NULL) {
-						result_b = result_find;
-					}
-					else {
-						result_a = result_find;
-					}
-				}
-				if (result_a != NULL && result_b != NULL) {
-					break;
-				}
-			}
-
-			if (result_a == NULL || result_b == NULL) {
-				RRR_BUG("BUG: Too few values before operator in rrr_condition_evaluate\n");
-			}
-
-			if (result_a->is_signed || result_b->is_signed) {
-				if (!result_a->is_signed && result_a->result > INT64_MAX) {
-					RRR_MSG_0("Warning: Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
-							result_a->result);
-				}
-				if (!result_b->is_signed && result_b->result > INT64_MAX) {
-					RRR_MSG_0("Warning: Unsigned integer %" PRIu64 " will overflow when converted to signed in array condition evaluation\n",
-							result_b->result);
-				}
-
-				int64_t signed_a = 0;
-				int64_t signed_b = 0;
-
-				if (result_a->is_signed) {
-					signed_a = *((int64_t*) &result_a->result);
-				}
-				else {
-					signed_a = result_a->result;
-				}
-
-				if (result_b->is_signed) {
-					signed_b = *((int64_t*) &result_b->result);
-				}
-				else {
-					signed_b = result_b->result;
-				}
-
-				position->result = __rrr_condition_evaluate_operator_signed (
-						signed_a,
-						signed_b,
-						position->carrier->op
-				);
-
-				RRR_DBG_3("Array tree condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
-						signed_a, position->carrier->op, signed_b, position->result);
-			}
-			else {
-				position->result = __rrr_condition_evaluate_operator (
-						result_a->result,
-						result_b->result,
-						position->carrier->op
-				);
-
-				RRR_DBG_3("Array tree condition unsigned evaluation %" PRIu64 " %s %" PRIu64 " = %" PRIu64 "\n",
-						result_a->result, position->carrier->op, result_b->result, position->result);
-
-			}
-
-			position->carrier = NULL;
-			position->is_evaluated = 1;
-
-			result_tmp = position->result;
-
-			result_a->is_evaluated = 0;
-			result_b->is_evaluated = 0;
+		if (op != NULL) {
+			__rrr_condition_evaluate_op (
+					result, // Last result stands
+					op,
+					position,
+					results,
+					i
+			);
 		}
 		else {
-			if (*(position->carrier->value) == '{') {
-				const char *tag_to_pass = __rrr_condition_extract_name (
-						value_tmp,
-						position->carrier->value
-				);
-
-				if ((ret = name_evaluate_callback (
-						&position->result,
-						&position->is_signed,
-						tag_to_pass,
-						name_evaluate_callback_arg
-				)) != 0) {
-					RRR_MSG_0("Error %i from callback in rrr_condition_evaluate\n");
-					ret = RRR_CONDITION_SOFT_ERROR;
-					goto out;
-				}
-
-				RRR_DBG_3("Array tree condition tag name evaluation %s->0x%llx%s\n",
-						tag_to_pass, position->result, (position->is_signed ? " (signed)" : ""));
+			if ((ret = __rrr_condition_evalute_value (
+					position,
+					name_evaluate_callback,
+					name_evaluate_callback_arg
+			)) != 0) {
+				goto out;
 			}
-			else if (	strlen(position->carrier->value) >= 2 &&
-						rrr_posix_strncasecmp(position->carrier->value, "0x", 2) == 0
-			) {
-				const char *value_start = position->carrier->value + 2;
-				char *endptr = NULL;
-				position->result = strtoull(value_start, &endptr, 16);
-				if (endptr == NULL || *endptr != '\0') {
-					// This might be a bug, parser should validate the numbers
-					RRR_MSG_0("Could not evaluate hex value '%s' in rrr_condition_evaluate\n");
-					ret = RRR_CONDITION_SOFT_ERROR;
-					goto out;
-				}
-			}
-			else if (*(position->carrier->value) == '-') {
-				char *endptr = NULL;
-				int64_t tmp = strtoll(position->carrier->value, &endptr, 10);
-				if (endptr == NULL || *endptr != '\0') {
-					// This might be a bug, parser should validate the numbers
-					RRR_MSG_0("Could not evaluate negative decimal value '%s' in rrr_condition_evaluate\n");
-					ret = RRR_CONDITION_SOFT_ERROR;
-					goto out;
-				}
-				position->result = *((uint64_t*) &tmp);
-				position->is_signed = 1;
-			}
-			else {
-				char *endptr = NULL;
-				position->result = strtoull(position->carrier->value, &endptr, 10);
-				if (endptr == NULL || *endptr != '\0') {
-					// This might be a bug, parser should validate the numbers
-					RRR_MSG_0("Could not evaluate decimal value '%s' in rrr_condition_evaluate\n");
-					ret = RRR_CONDITION_SOFT_ERROR;
-					goto out;
-				}
-			}
-			position->carrier = NULL;
-			position->is_evaluated = 1;
 		}
 	}
-
-	*result = result_tmp;
 
 	out:
 	return ret;

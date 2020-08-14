@@ -65,6 +65,10 @@ static uint64_t __rrr_type_expand_be (
 		const char *src,
 		rrr_type_flags flags
 ) {
+	if (import_length == 0) {
+		RRR_BUG("BUG: Import length was 0 in __rrr_type_expand_be\n");
+	}
+
 	union beunion {
 		rrr_type_be temp_f;
 		char temp_b[sizeof(rrr_type_be)];
@@ -1212,25 +1216,14 @@ int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
-	if (node->total_stored_length >= sizeof(uint64_t)) {
-		return *((uint64_t *) node->data);
+	const char *end = node->data + node->total_stored_length;
+	rrr_length get_length = node->total_stored_length > sizeof(uint64_t) ? sizeof(uint64_t) : node->total_stored_length;
+
+	if (get_length == 0) {
+		return 0;
 	}
 
-	union {
-		uint64_t big;
-		uint8_t small[8];
-	} tmp;
-
-	tmp.big = 0;
-
-	int wpos = 7;
-	for (rrr_slength i = 7; i >= 0; i--) {
-		if (i < (rrr_slength) node->total_stored_length) {
-			tmp.small[wpos--] = *((uint8_t*) node->data);
-		}
-	}
-
-	return tmp.big;
+	return __rrr_type_expand_be(get_length, end - get_length, 0);
 }
 
 uint64_t __rrr_type_64_to_64 (RRR_TYPE_TO_64_ARGS) {
