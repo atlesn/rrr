@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_CMODULE_NATIVE_CTX
 #	include <stdlib.h>
+#	include "log.h"
 #	include "array.h"
 #	include "type.h"
 #	include "messages/msg_msg.h"
