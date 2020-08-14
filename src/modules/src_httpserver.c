@@ -496,7 +496,7 @@ static int httpserver_receive_callback (
 					&data->thread_data->poll,
 					httpserver_receive_get_response_callback,
 					&callback_data,
-					10
+					2
 			)) != 0) {
 				RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
 				goto out;
@@ -532,6 +532,9 @@ static int httpserver_receive_callback (
 				socklen,
 				receive_callback_data
 		);
+	}
+	else if (request_part->request_method == RRR_HTTP_METHOD_HEAD) {
+		// Do nothing, let server framework send default reply
 	}
 	else {
 		ret = httpserver_receive_callback_get_post (
@@ -721,7 +724,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 
 		if (accept_count == 0) {
-			rrr_posix_usleep(25000); // 25 ms
+			rrr_posix_usleep(50000); // 50 ms
 		}
 		else {
 			accept_count_total += accept_count;
