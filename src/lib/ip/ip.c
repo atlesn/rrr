@@ -316,7 +316,7 @@ int rrr_ip_receive_array_tree (
 		int (*callback)(struct rrr_msg_msg_holder *entry, struct rrr_array *array, void *arg),
 		void *arg
 ) {
-	struct rrr_ip_receive_callback_data callback_data = {
+	struct rrr_ip_receive_array_tree_callback_data callback_data = {
 		target_entry,
 		callback,
 		arg

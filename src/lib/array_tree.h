@@ -113,6 +113,7 @@ int rrr_array_tree_clone (
 		const struct rrr_array_tree *source
 );
 int rrr_array_tree_parse_from_buffer (
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array_tree *tree,

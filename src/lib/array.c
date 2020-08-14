@@ -531,8 +531,6 @@ static int __rrr_array_clone (
 		RRR_BUG("BUG: Target was not empty in rrr_array_clone\n");
 	}
 
-	struct rrr_type_value *template = NULL;
-
 	memset(target, '\0', sizeof(*target));
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);

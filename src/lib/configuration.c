@@ -266,7 +266,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 			pos->data + begin,
 			length,
 			RRR_CONFIG_MAX_SETTINGS,
-			config
+			&config->array_trees
 	);
 	if (instance_config == NULL) {
 		RRR_MSG_0("Instance config creation result was NULL\n");

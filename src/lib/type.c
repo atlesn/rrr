@@ -552,7 +552,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	struct rrr_msg *msg = (struct rrr_msg *) start;
 
 	rrr_length count = 0;
-	while (remaining_size > 0) {
+	while (remaining_size > 0 && count < node->element_count) {
 		if ((size_t) remaining_size < (sizeof (struct rrr_msg_msg) - 1)) {
 			ret = RRR_TYPE_PARSE_INCOMPLETE;
 			goto out;

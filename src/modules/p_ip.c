@@ -101,7 +101,9 @@ struct ip_data {
 static void ip_data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
 	rrr_msg_msg_holder_collection_clear(&data->send_buffer);
-	rrr_array_tree_destroy(data->definitions);
+	if (data->definitions != NULL) {
+		rrr_array_tree_destroy(data->definitions);
+	}
 	rrr_read_session_collection_clear(&data->read_sessions_udp);
 	rrr_read_session_collection_clear(&data->read_sessions_tcp);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
@@ -413,6 +415,7 @@ static int ip_read_data_receive_extract_messages (
 				goto out;
 			}
 
+			// Guarantees to free message also upon errors
 			if ((ret = ip_read_receive_message(data, entry_orig, message_new)) != 0) {
 				goto out;
 			}
@@ -440,13 +443,17 @@ static int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, struct r
 	int ret = 0;
 
 	if (data->do_extract_rrr_msg_msgs) {
-		ret = ip_read_data_receive_extract_messages(data, entry, array_final);
+		if ((ret = ip_read_data_receive_extract_messages(data, entry, array_final)) != 0) {
+			goto out;
+		}
 	}
 	else {
 		RRR_FREE_IF_NOT_NULL(entry->message);
 
+		struct rrr_msg_msg *message_new = NULL;
+
 		if ((ret = rrr_array_new_message_from_collection (
-				(struct rrr_msg_msg **) &entry->message,
+				&message_new,
 				array_final,
 				rrr_time_get_64(),
 				data->default_topic,
@@ -455,20 +462,10 @@ static int ip_read_raw_data_callback (struct rrr_msg_msg_holder *entry, struct r
 			goto out;
 		}
 
-		entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
-	}
-
-	if (ret != 0) {
-		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			RRR_MSG_0("Could not create message in ip instance %s read_data_callback, soft error probably caused by invalid input data\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 0;
+		// Guarantees to free message also upon errors
+		if ((ret = ip_read_receive_message(data, entry, message_new)) != 0) {
+			goto out;
 		}
-		else {
-			RRR_MSG_0("Could not create message in ip instance %s read_data_callback\n",
-					INSTANCE_D_NAME(data->thread_data));
-		}
-		goto out;
 	}
 
 	out:

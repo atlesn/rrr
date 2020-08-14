@@ -179,7 +179,6 @@ struct rrr_read_common_get_session_target_length_from_array_data {
 struct rrr_read_common_get_session_target_length_from_array_tree_data {
 	const struct rrr_array_tree *tree;
 	struct rrr_array *array_final;
-	ssize_t import_length;
 	int do_byte_by_byte_sync;
 	unsigned int message_max_size;
 };

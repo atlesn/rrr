@@ -1106,8 +1106,6 @@ struct rrr_array_tree_import_callback_data {
 	struct rrr_array array;
 	const char *pos;
 	const char *end;
-	rrr_length import_length; // Set by leaf function
-	rrr_length import_length_final;
 };
 
 int __rrr_array_tree_import_value_callback (
@@ -1183,7 +1181,9 @@ int __rrr_array_tree_get_import_length_leaf_callback (
 ) {
 	struct rrr_array_tree_import_callback_data *callback_data = arg;
 
-	callback_data->import_length_final = callback_data->import_length;
+	(void)(callback_data);
+
+	// Nothing to do but returning 0 to signal completion
 
 	return 0;
 }
@@ -1297,6 +1297,7 @@ int rrr_array_tree_clone (
 }
 
 int rrr_array_tree_parse_from_buffer (
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array_tree *tree,
@@ -1304,6 +1305,8 @@ int rrr_array_tree_parse_from_buffer (
 		void *callback_arg
 ) {
 	int ret = 0;
+
+	*parsed_bytes = 0;
 
 	struct rrr_array_tree_import_callback_data callback_data = {0};
 
@@ -1322,13 +1325,19 @@ int rrr_array_tree_parse_from_buffer (
 		goto out;
 	}
 
-	ret = callback(&callback_data.array, callback_arg);
+	if ((ret = callback(&callback_data.array, callback_arg)) != 0) {
+		goto out;
+	}
+
+	*parsed_bytes = callback_data.pos - buf;
 
 	out:
 	rrr_array_clear(&callback_data.array);
 	return ret;
 }
 
+
+/* DISABLED - Test and fix before enabling
 struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data {
 	const char *topic;
 	ssize_t topic_length;
@@ -1378,7 +1387,9 @@ int rrr_array_tree_new_message_from_buffer (
 			callback_arg
 	};
 
+	ssize_t parsed_bytes = 0;
 	if ((ret = rrr_array_tree_parse_from_buffer (
+			&parsed_bytes,
 			buf,
 			buf_len,
 			tree,
@@ -1391,3 +1402,4 @@ int rrr_array_tree_new_message_from_buffer (
 	out:
 	return ret;
 }
+*/

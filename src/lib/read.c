@@ -641,8 +641,6 @@ static int __rrr_read_common_get_session_target_length_from_array_tree_callback 
 	rrr_array_clear(data->array_final);
 	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(data->array_final, array);
 
-	data->import_length = rrr_array_get_packed_length(data->array_final);
-
 	return 0;
 }
 
@@ -668,6 +666,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	while (wpos > 0) {
 		int ret = rrr_array_tree_parse_from_buffer (
+				&import_length,
 				pos,
 				wpos,
 				data->tree,
@@ -676,7 +675,11 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 		);
 
 		if (ret == 0) {
-			import_length = data->import_length;
+			if (import_length <= 0) {
+				// This is actually a bug, should be avoided by array validation checks
+				RRR_MSG_0("Array definition produced an length of zero, possible configuration error\n");
+				ret = RRR_READ_SOFT_ERROR;
+			}
 			break;
 		}
 		else {
