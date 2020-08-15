@@ -590,9 +590,9 @@ int rrr_mqtt_p_payload_new (
 );
 int rrr_mqtt_p_payload_new_with_allocated_payload (
 		struct rrr_mqtt_p_payload **target,
-		char *packet_start,
+		char **packet_start,
 		const char *payload_start,
-		ssize_t payload_size
+		ssize_t payload_length
 );
 
 static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (

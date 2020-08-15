@@ -683,6 +683,7 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 	}
 	else if (PyLong_Check(subject)) {
 		test_u = PyLong_AsUnsignedLongLong(subject);
+		(void)(test_u);
 		if (PyErr_Occurred()) {
 			PyErr_Clear();
 			goto do_signed;

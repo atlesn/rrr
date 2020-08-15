@@ -236,7 +236,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	}
 
 	// Readings
-	if (__rrr_post_add_readings(data, cmd) != 0) {
+	if ((ret = __rrr_post_add_readings(data, cmd)) != 0) {
 		goto out;
 	}
 

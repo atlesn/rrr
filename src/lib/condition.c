@@ -694,6 +694,10 @@ static void __rrr_condition_evaluate_op (
 		}
 	}
 
+	if (result_b == NULL) {
+		RRR_BUG("BUG: Value missing prior to operator in __rrr_condition_evaluate_op, validator should catch this.\n");
+	}
+
 	if (result_b->is_signed || (result_a != NULL && result_a->is_signed)) {
 		int64_t signed_a = 0;
 		int64_t signed_b = 0;

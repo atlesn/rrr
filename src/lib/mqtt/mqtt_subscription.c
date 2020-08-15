@@ -61,6 +61,10 @@ int rrr_mqtt_subscription_new (
 		RRR_BUG("Invalid flags in rrr_mqtt_subscription_new\n");
 	}
 
+	if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
+		RRR_BUG("BUG: Invalid topic filter passed to rrr_mqtt_subscription_new. Caller should check for this.\n");
+	}
+
 	struct rrr_mqtt_subscription *sub = malloc(sizeof(*sub));
 	if (sub == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
@@ -75,11 +79,7 @@ int rrr_mqtt_subscription_new (
 		RRR_BUG("Topic filter was NULL or zero length in rrr_mqtt_subscription_new\n");
 	}
 
-	if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
-		RRR_MSG_0("Invalid topic filter '%s' while creating subscription, tagging subscription as invalid\n",
-				topic_filter);
-		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
-	}
+
 	else {
 		sub->topic_filter = malloc(strlen(topic_filter) + 1);
 		if (sub == NULL) {

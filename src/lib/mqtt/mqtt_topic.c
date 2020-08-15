@@ -181,13 +181,13 @@ int rrr_mqtt_topic_match_str_with_end (
 	struct rrr_mqtt_topic_token *sub_filter_tokens = NULL;
 	struct rrr_mqtt_topic_token *pub_topic_tokens = NULL;
 
-	if ((ret = rrr_mqtt_topic_tokenize(&sub_filter_tokens, sub_filter)) != 0) {
+	if (rrr_mqtt_topic_tokenize(&sub_filter_tokens, sub_filter) != 0) {
 		RRR_MSG_0("Failed to tokenize filter in rrr_mqtt_topic_match_str\n");
 		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_topic_tokenize_with_end(&pub_topic_tokens, pub_topic, pub_topic_end)) != 0) {
+	if (rrr_mqtt_topic_tokenize_with_end(&pub_topic_tokens, pub_topic, pub_topic_end) != 0) {
 		RRR_MSG_0("Failed to tokenize topic in rrr_mqtt_topic_match_str\n");
 		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
 		goto out;

@@ -3074,6 +3074,8 @@ static int __rrr_mqtt_session_ram_receive_packet (
 
 		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
 
+		// Parser must validate topic names, or we wil BUG() in subscription framework upon invalid topics
+
 		if (RRR_LL_COUNT(subscribe->subscriptions) == 0) {
 			RRR_BUG("BUG: No subscriptions in SUBSCRIBE in __rrr_mqtt_session_ram_receive_packet, parser has to catch this\n");
 		}

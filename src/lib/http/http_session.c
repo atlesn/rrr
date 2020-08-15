@@ -561,7 +561,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 
 	struct rrr_string_builder *header_builder = NULL;
 
-	if ((ret = rrr_string_builder_new(&header_builder)) != 0) {
+	if (rrr_string_builder_new(&header_builder) != 0) {
 		RRR_MSG_0("Failed to create string builder in __rrr_http_session_request_send\n");
 		ret = 1;
 		goto out;
@@ -640,11 +640,11 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 
 	rrr_string_builder_clear(header_builder);
 
-	if ((ret = rrr_http_part_header_fields_iterate (
+	if (rrr_http_part_header_fields_iterate (
 			session->request_part,
 			__rrr_http_session_request_send_make_headers_callback,
 			header_builder
-	)) != 0) {
+	) != 0) {
 		RRR_MSG_0("Failed to make header fields in rrr_http_session_send_request\n");
 		ret = 1;
 		goto out;

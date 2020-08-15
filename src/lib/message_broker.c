@@ -118,6 +118,7 @@ static int __rrr_message_broker_costumer_new (
 
 	if (pthread_mutex_init(&costumer->split_buffers.lock, NULL) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
+		ret = 1;
 		goto out_destroy_fifo;
 	}
 

@@ -431,6 +431,10 @@ int rrr_mqtt_property_collection_add_cloned (
 ) {
 	struct rrr_mqtt_property *new_property = NULL;
 
+	if (property == NULL) {
+		RRR_BUG("BUG: Propery was NULL in rrr_mqtt_property_collection_add_cloned\n");
+	}
+
 	int ret = 0;
 
 	ret = rrr_mqtt_property_clone(&new_property, property);

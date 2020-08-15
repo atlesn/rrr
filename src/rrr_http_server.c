@@ -297,7 +297,6 @@ int main (int argc, const char *argv[]) {
 
 	if (transport_count == 0) {
 		RRR_MSG_0("Neither HTTP or HTTPS are active, check arguments.\n");
-		ret = 1;
 		ret = EXIT_FAILURE;
 		goto out;
 	}

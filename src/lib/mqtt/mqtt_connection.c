@@ -740,17 +740,18 @@ static int __rrr_mqtt_conn_read_complete_callback (
 
 		ret = rrr_mqtt_p_payload_new_with_allocated_payload (
 				&connection->parse_session.packet->payload,
-				read_session->rx_buf_ptr,
+				&read_session->rx_buf_ptr, // Set to NULL if success
 				read_session->rx_buf_ptr + connection->parse_session.payload_pos,
 				read_session->rx_buf_wpos - connection->parse_session.payload_pos
 		);
+
+		RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+		read_session->rx_buf_wpos = 0;
+
 		if (ret != 0) {
 			RRR_MSG_0("Could not move payload to packet in __rrr_mqtt_conn_read_complete_callback\n");
 			goto out;
 		}
-
-		read_session->rx_buf_ptr = NULL;
-		read_session->rx_buf_wpos = 0;
 	}
 
 	if ((ret = CALL_EVENT_HANDLER_ARG(RRR_MQTT_CONN_EVENT_PACKET_PARSED, connection->parse_session.packet)) != 0) {

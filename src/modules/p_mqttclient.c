@@ -822,13 +822,17 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (payload != NULL) {
-		if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
+		if (rrr_mqtt_p_payload_new_with_allocated_payload (
+				&publish->payload,
+				&payload, // Set to NULL if success
+				payload,
+				payload_size
+		) != 0) {
 			RRR_MSG_0("Could not set payload of PUBLISH in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
 		}
-		payload = NULL;
 	}
 
 	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",
@@ -1734,7 +1738,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	int ret_tmp = 0;
 
-	if ((ret_tmp = mqttclient_connect_loop(data, clean_start)) != RRR_MQTT_OK) {
+	if (mqttclient_connect_loop(data, clean_start) != RRR_MQTT_OK) {
 		goto out_destroy_client;
 	}
 
