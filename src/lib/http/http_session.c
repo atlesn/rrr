@@ -887,6 +887,12 @@ static int __rrr_http_session_transport_ctx_send_response (
 		case RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR:
 			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
 			break;
+		case RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT:
+			response_str = "HTTP/1.1 504 Gateway Timeout\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED:
+			response_str = "HTTP/1.1 504 Version Not Supported\r\n";
+			break;
 		default:
 			RRR_BUG("BUG: Response code %i not implemented in rrr_http_session_send_response\n",
 					response_part->response_code);

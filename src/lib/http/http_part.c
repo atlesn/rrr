@@ -595,6 +595,15 @@ static int __rrr_http_parse_request (
 
 	rrr_length protocol_length = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
+		if (	rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/0.9") ||
+				rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/1.0") ||
+				rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/2.0")
+		) {
+			result->response_code = RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED;
+		}
+		else {
+			result->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		}
 		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -1383,22 +1392,18 @@ int rrr_http_part_parse (
 				part->request_method = RRR_HTTP_METHOD_OPTIONS;
 			}
 			else if (rrr_posix_strcasecmp(part->request_method_str, "POST") == 0) {
-				if (content_type == NULL || rrr_posix_strcasecmp(content_type->name, "application/octet-stream")) {
-					part->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
-				}
-				else if (rrr_posix_strcasecmp(content_type->name, "multipart/form-data")) {
-					part->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
-				}
-				else if (rrr_posix_strcasecmp(content_type->name, "application/x-www-form-urlencoded")) {
-					part->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
-				}
-				else if (rrr_posix_strcasecmp(content_type->name, "text/plain")) {
-					part->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
-				}
-				else {
-					RRR_MSG_0("Unknown content-type '%s' in HTTP request\n", content_type->value);
-					ret = RRR_HTTP_PARSE_SOFT_ERR;
-					goto out;
+				part->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
+
+				if (content_type != NULL) {
+					if (rrr_posix_strcasecmp(content_type->name, "multipart/form-data")) {
+						part->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
+					}
+					else if (rrr_posix_strcasecmp(content_type->name, "application/x-www-form-urlencoded")) {
+						part->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
+					}
+					else if (rrr_posix_strcasecmp(content_type->name, "text/plain")) {
+						part->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
+					}
 				}
 			}
 			else if (rrr_posix_strcasecmp(part->request_method_str, "PUT") == 0) {
@@ -1412,6 +1417,7 @@ int rrr_http_part_parse (
 			}
 			else {
 				RRR_MSG_0("Unknown request method '%s' in HTTP request\n", part->request_method_str);
+				part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
@@ -1423,18 +1429,21 @@ int rrr_http_part_parse (
 			) {
 				if (content_length != NULL && content_length->value_unsigned != 0) {
 					RRR_MSG_0("Content-Length was non-zero for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (transfer_encoding != NULL) {
 					RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
 
 				if (content_type != NULL) {
 					RRR_MSG_0("Content-Type was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
 					goto out;
 				}
@@ -1458,6 +1467,7 @@ int rrr_http_part_parse (
 		else if (transfer_encoding != NULL && rrr_posix_strcasecmp(transfer_encoding->value, "chunked") == 0) {
 			if (parse_type == RRR_HTTP_PARSE_MULTIPART) {
 				RRR_MSG_0("Chunked transfer encoding found in HTTP multipart body, this is not allowed\n");
+				part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
@@ -2036,7 +2046,7 @@ int rrr_http_part_merge_chunks (
 	*result_data = NULL;
 
 	char *data_new = NULL;
-	const size_t top_length = part->headroom_length + part->header_length;
+	const size_t top_length = RRR_HTTP_PART_TOP_LENGTH(part);
 	size_t new_buf_size = 0;
 
 	new_buf_size += top_length;

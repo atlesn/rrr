@@ -45,8 +45,8 @@ enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_MULTIPART
 };
 
-#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
-#define RRR_HTTP_HEADER_FIELD_NO_PAIRS		(1<<1)
+#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE	(1<<0)
+#define RRR_HTTP_HEADER_FIELD_NO_PAIRS			(1<<1)
 
 #define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
 		int chunk_idx,								\
@@ -54,6 +54,18 @@ enum rrr_http_parse_type {
 		const char *data_start,						\
 		rrr_biglength data_size,					\
 		void *arg
+
+#define RRR_HTTP_PART_DATA_LENGTH(part) \
+	((part)->data_length)
+
+#define RRR_HTTP_PART_TOP_LENGTH(part) \
+	((part)->headroom_length + (part)->header_length)
+
+#define RRR_HTTP_PART_BODY_LENGTH(part) \
+	(RRR_HTTP_PART_DATA_LENGTH(part) - RRR_HTTP_PART_TOP_LENGTH(part))
+
+#define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
+	(data_ptr + RRR_HTTP_PART_TOP_LENGTH(part))
 
 struct rrr_http_header_field_definition;
 
@@ -116,6 +128,8 @@ struct rrr_http_part {
 	enum rrr_http_method request_method;
 	char *request_uri;
 
+	// Setting this causes raw data to be sent as opposed to
+	// generating headers and body
 	const char *request_raw_data;
 	size_t request_raw_data_size;
 
