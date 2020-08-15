@@ -62,10 +62,10 @@ enum rrr_http_parse_type {
 	((part)->headroom_length + (part)->header_length)
 
 #define RRR_HTTP_PART_BODY_LENGTH(part) \
-	(RRR_HTTP_PART_DATA_LENGTH(part) - RRR_HTTP_PART_TOP_LENGTH(part))
+	(RRR_HTTP_PART_DATA_LENGTH(part))
 
 #define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
-	(data_ptr + RRR_HTTP_PART_TOP_LENGTH(part))
+	((data_ptr) + RRR_HTTP_PART_TOP_LENGTH(part))
 
 struct rrr_http_header_field_definition;
 

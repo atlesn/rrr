@@ -522,9 +522,11 @@ static int httpserver_receive_callback_full_request (
 		);
 	}
 
-	ret |= rrr_array_push_value_blob_with_tag_with_size (
-			target_array, "http_body", body_ptr, body_len
-	);
+	if (body_len > 0){
+		ret |= rrr_array_push_value_blob_with_tag_with_size (
+				target_array, "http_body", body_ptr, body_len
+		);
+	}
 
 	if (ret != 0) {
 		RRR_MSG_0("Failed to add full request fields in httpserver_receive_callback_full_request\n");
@@ -563,7 +565,10 @@ static int httpserver_receive_callback (
 	};
 
 	if (data->do_receive_full_request) {
-		if ((ret = httpserver_receive_callback_full_request (
+		if ((RRR_HTTP_PART_BODY_LENGTH(request_part) == 0 && !data->do_allow_empty_messages)) {
+			RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
+		}
+		else if ((ret = httpserver_receive_callback_full_request (
 				&array_tmp,
 				request_part,
 				data_ptr
@@ -574,6 +579,7 @@ static int httpserver_receive_callback (
 
 	if (request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
+		RRR_DBG_3("Not processing fields from OPTIONS request\n");
 	}
 	else if ((ret = httpserver_receive_callback_get_fields (
 			&array_tmp,
@@ -583,13 +589,13 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if (RRR_LL_COUNT(&array_tmp) == 0 && receive_callback_data->httpserver_data->do_allow_empty_messages == 0) {
-		RRR_DBG_3("No data fields received from HTTP client, not creating RRR array message\n");
+	if (RRR_LL_COUNT(&array_tmp) == 0 && data->do_allow_empty_messages == 0) {
+		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");
 	}
 	else {
 		if ((ret = rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER(receive_callback_data->httpserver_data->thread_data),
-				INSTANCE_D_HANDLE(receive_callback_data->httpserver_data->thread_data),
+				INSTANCE_D_BROKER(data->thread_data),
+				INSTANCE_D_HANDLE(data->thread_data),
 				sockaddr,
 				socklen,
 				RRR_IP_TCP,
@@ -617,6 +623,7 @@ static int httpserver_receive_callback (
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	RRR_FREE_IF_NOT_NULL(request_topic);
 	return ret;
 }

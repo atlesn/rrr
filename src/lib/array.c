@@ -677,7 +677,6 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 
 	RRR_LL_APPEND(collection, new_value);
 
-	// Don't use the import function, it reads strings with quotes around it
 	memcpy(new_value->data, value, value_size);
 
 	return 0;
@@ -703,6 +702,8 @@ int rrr_array_push_value_str_with_tag_with_size (
 		const char *value,
 		size_t value_size
 ) {
+	// Don't use the import function, it reads strings with quotes around it
+
 	return __rrr_array_push_value_x_with_tag_with_size (
 			collection,
 			tag,

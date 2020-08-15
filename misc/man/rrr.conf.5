@@ -931,7 +931,8 @@ The fields
 .B http_method, http_endpoint, http_body, http_content_transfer_encoding
 and
 .B http_content_type
-(the latter two only if present in request header) will be added. The fields are always added regardless of other options, except from the
+will be added. The latter two values will only be added if present in request header, and the body only if the request body has non-zero length.
+These fields are always added regardless of other options, except from the
 .B http_server_allow_empty_messages
 option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
 Defaults to 'no'.

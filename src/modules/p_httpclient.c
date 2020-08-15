@@ -526,7 +526,7 @@ static int httpclient_send_request_locked (
 	};
 
 	if (data->do_send_raw_data) {
-		RRR_DBG_3("httpclient instance %s sending raw request from message with timestamp %" PRIu64 "\n",
+		RRR_DBG_2("httpclient instance %s sending raw request from message with timestamp %" PRIu64 "\n",
 				INSTANCE_D_NAME(data->thread_data), message->timestamp);
 
 		ret = rrr_http_client_send_raw_request (
@@ -544,7 +544,7 @@ static int httpclient_send_request_locked (
 		);
 	}
 	else {
-		RRR_DBG_3("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
+		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
 				INSTANCE_D_NAME(data->thread_data), message->timestamp, data->http_client_data.endpoint);
 
 		ret = rrr_http_client_send_request (
