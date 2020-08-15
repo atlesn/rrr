@@ -827,6 +827,28 @@ static int __get_import_length_default (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	return 0;
 }
 
+static int __get_import_length_err (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	(void)(buf);
+	(void)(buf_size);
+	(void)(import_length);
+	(void)(node);
+
+	RRR_DBG_1("Error trigger reached while getting import length of array definition, triggering soft error.\n");
+
+	return RRR_TYPE_PARSE_SOFT_ERR;
+}
+
+static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
+	(void)(node);
+	(void)(parsed_bytes);
+	(void)(start);
+	(void)(end);
+
+	RRR_DBG_1("Error trigger reached while importing array definition, triggering soft error.\n");
+
+	return RRR_TYPE_PARSE_SOFT_ERR;
+}
+
 static int __get_import_length_ustr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	(void)(node);
 
@@ -1245,6 +1267,7 @@ RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__get_import_length_fixp
 RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STR);
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_NSEP);
 RRR_TYPE_DEFINE(stx, RRR_TYPE_STX,		RRR_TYPE_MAX_STX,	__get_import_length_default,	__rrr_type_import_stx,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STX);
+RRR_TYPE_DEFINE(err, RRR_TYPE_ERR,		RRR_TYPE_MAX_ERR,	__get_import_length_err,		__rrr_type_import_err,	NULL,								NULL,					NULL,						NULL,					NULL,					NULL,					RRR_TYPE_NAME_ERR);
 RRR_TYPE_DEFINE(null, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array
@@ -1261,6 +1284,7 @@ static const struct rrr_type_definition *type_templates[] = {
 		&rrr_type_definition_str,
 		&rrr_type_definition_nsep,
 		&rrr_type_definition_stx,
+		&rrr_type_definition_err,
 		&rrr_type_definition_null
 };
 

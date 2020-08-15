@@ -45,6 +45,9 @@ application designers from the burden of implementing this.
 
 Before starting up and configuring RRR to use networking, read the **SECURITY** section at the end.
 
+The directory `/examples/` in the source tree or on github.com/atlesn/rrr contains larger application examples.
+The `.md` files contain the examples, and the source scripts and configuration files used in the examples are found alongside these.  
+
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
@@ -288,6 +291,57 @@ It is also possible to for instance put such raw data into MQTT messages.
 
 The Perl5 and Python3 modules have functionality for array manipulation if messages need to be modified
 or processed in some way inside of RRR.
+
+### ARRAY BRANCHING
+
+Array branching (or array trees) allows a single definition to be used for different input data. If you for instance have a protocol with
+different message types, an indicator byte at the beginning of each message can be used to identify which branch to use.
+
+An array with branches is just like a standard array with one or more IF blocks in between the values.
+The IF blocks may be nested.
+
+Let us say we want to receive two different message types. We use an indicator byte to distinguish them, and this byte is
+set to either 1 or 2. We specify this array tree in our configuration file.
+
+	 {MY_ARRAY}
+	 be1#indicator
+	 IF ({indicator} == 1)
+	 	blob16#message_small
+	 	;
+	 ELSIF ({indicator} == 2)
+	 	blob32#message_big_a,
+	 	blob32#message_big_a
+	 	;
+	 ELSE
+	 	err
+	 	;
+	 sep1#separator
+	 ;
+
+If the indicator byte is set to 1, we parse a 16 byte message.
+If it is two, we parse two 32 byte messages.
+In both cases, we expect a separator character at the end (like `ETX`, `CR`, `LF` etc.).
+
+After a branched array has been successfully parsed, all values which were encountered while we parsed and checked conditions reside in a single standard array. The receiver of these arrays must be adapted to receive all possible different arrays the array tree may produce.
+
+When using branching, it's important to consider all possible outcomes.
+If we receive invalid data, we should branch to a block with the **err** value defined.
+This is a dummy value which doesn't parse anything but instead always produces an error to make the parsing stop. 
+
+Most standard operators are available, like `+ * - << & || &&` etc.
+It is possible to use `AND` and `OR` as well, those are aliases for `&&` and `||`.
+
+A condition is considered to be true if it's expression evaluates to non-zero.
+
+Array trees may be specified in configuration files (outside instance definitions) with a header with a name like `{MY_ARRAY}`. The tree
+must end with a `;` (this also goes for each `IF`, `ELSIF` or `ELSE` block).
+All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4` or reference
+an array from elsewhere in the configuration like `{MY_ARRAY}`.
+
+If the array tree is specified directly at the parameter, no newlines may occur within the tree (which may become messy).
+The terminating semicolon is optional when array trees are defined in a configuration parameter. 
+
+Although this example covers most of the branching-stuff, more detail can be found in the **rrr_post(1)** manual page.
 
 ## MODULES
 

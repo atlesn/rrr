@@ -761,7 +761,8 @@ static int __rrr_array_validate_definition_reference (
 	if (node->value->definition->max_length == 0 &&
 		node->value->definition->type != RRR_TYPE_MSG &&
 		node->value->definition->type != RRR_TYPE_STR &&
-		node->value->definition->type != RRR_TYPE_NSEP
+		node->value->definition->type != RRR_TYPE_NSEP &&
+		node->value->definition->type != RRR_TYPE_ERR
 	) {
 		RRR_MSG_0("Type %s has dynamic size and cannot be at the end of a definition\n",
 				node->value->definition->identifier);

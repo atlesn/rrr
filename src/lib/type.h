@@ -45,19 +45,20 @@ static const union type_system_endian {
 // Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
 #define RRR_TYPE_MIN		2
-#define RRR_TYPE_LE			2 // Little endian number
-#define RRR_TYPE_BE			3 // Big endian number
-#define RRR_TYPE_H			4 // Host endian number (can be both)
-#define RRR_TYPE_BLOB		5 // Type which holds arbitary data
-#define RRR_TYPE_USTR		6 // Unsigned int given as a string
-#define RRR_TYPE_ISTR		7 // Signed int given as a string
-#define RRR_TYPE_SEP		8 // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
-#define RRR_TYPE_MSG		9 // Type which holds an RRR message
+#define RRR_TYPE_LE			2  // Little endian number
+#define RRR_TYPE_BE			3  // Big endian number
+#define RRR_TYPE_H			4  // Host endian number (can be both)
+#define RRR_TYPE_BLOB		5  // Type which holds arbitary data
+#define RRR_TYPE_USTR		6  // Unsigned int given as a string
+#define RRR_TYPE_ISTR		7  // Signed int given as a string
+#define RRR_TYPE_SEP		8  // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
+#define RRR_TYPE_MSG		9  // Type which holds an RRR message
 #define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
 #define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
 #define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
-#define RRR_TYPE_MAX		13
+#define RRR_TYPE_ERR		14 // Always produces soft error when being parsed, used to abort branched parsing
+#define RRR_TYPE_MAX		14
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -71,6 +72,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_STR	"str"
 #define RRR_TYPE_NAME_NSEP	"nsep"
 #define RRR_TYPE_NAME_STX	"stx"
+#define RRR_TYPE_NAME_ERR	"err"
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
@@ -84,6 +86,7 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_STR	0
 #define RRR_TYPE_MAX_NSEP	0
 #define RRR_TYPE_MAX_STX	64
+#define RRR_TYPE_MAX_ERR	0
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
