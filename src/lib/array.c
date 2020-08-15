@@ -64,7 +64,7 @@ static int __rrr_array_parse_identifier_and_size_tag (
 	(*parsed_bytes)++;
 
 	const char *tag_begin = (*start);
-	while (**start != '\0' && RRR_PARSE_MATCH_C_LETTER(**start)) {
+	while (**start != '\0' && (RRR_PARSE_MATCH_C_LETTER(**start) || RRR_PARSE_MATCH_C_NUMBER(**start))) {
 		(*parsed_bytes)++;
 		(*start)++;
 	}
