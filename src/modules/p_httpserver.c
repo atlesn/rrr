@@ -584,8 +584,7 @@ static int httpserver_receive_callback (
 	}
 
 	if (RRR_LL_COUNT(&array_tmp) == 0 && receive_callback_data->httpserver_data->do_allow_empty_messages == 0) {
-		RRR_DBG_3("No data fields received from HTTP client, not creating RRR message\n");
-		goto out;
+		RRR_DBG_3("No data fields received from HTTP client, not creating RRR array message\n");
 	}
 	else {
 		if ((ret = rrr_message_broker_write_entry (
