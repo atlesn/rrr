@@ -540,7 +540,7 @@ int rrr_array_tree_parse (
 			goto out_destroy;
 		}
 
-		printf("Node: %p, ptr_first: %p, ptr_last: %p\n", node, tree->ptr_first, tree->ptr_last);
+//		printf("Node: %p, ptr_first: %p, ptr_last: %p\n", node, tree->ptr_first, tree->ptr_last);
 
 		if (RRR_LL_COUNT(&node->array) == 0) {
 			__rrr_array_node_destroy(node);
