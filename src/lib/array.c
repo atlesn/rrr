@@ -103,7 +103,7 @@ static int __rrr_array_parse_identifier_and_size_tag (
 	return ret;
 }
 
-int rrr_array_parse_identifier_and_size (
+static int __rrr_array_parse_identifier_and_size (
 		const struct rrr_type_definition **type_return,
 		unsigned int *length_return,
 		char **length_ref_return,
@@ -304,7 +304,7 @@ int rrr_array_parse_single_definition (
 	const char *tag_start = NULL;
 	unsigned int tag_length = 0;
 
-	if ((ret = rrr_array_parse_identifier_and_size (
+	if ((ret = __rrr_array_parse_identifier_and_size (
 			&type,
 			&length,
 			&length_ref,
@@ -326,27 +326,32 @@ int rrr_array_parse_single_definition (
 		tag_start = start;
 
 		while (*start != '\0') {
+			if (!RRR_PARSE_MATCH_C_LETTER(*start) && !RRR_PARSE_MATCH_C_NUMBER(*start)) {
+				RRR_MSG_0("Invalid character '%c' in tag name (decimal %u)\n", (*start), (unsigned char) (*start));
+				ret = RRR_ARRAY_SOFT_ERROR;
+				goto out;
+			}
 			tag_length++;
 			start++;
 		}
 
 		if (tag_length == 0) {
 			RRR_MSG_0("Missing tag name after #\n");
-			ret = 1;
+			ret = RRR_ARRAY_SOFT_ERROR;
 			goto out;
 		}
 	}
 
 	if (*start != '\0') {
 		RRR_MSG_0("Extra data after type definition here --> '%s'\n", start);
-		ret = 1;
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 
 	if (length > type->max_length) {
 		RRR_MSG_0("Size argument in type definition '%s' is too large, max is '%u'\n",
 				type->identifier, type->max_length);
-		ret = 1;
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 
@@ -365,7 +370,7 @@ int rrr_array_parse_single_definition (
 			0
 	) != 0) {
 		RRR_MSG_0("Could not create value in rrr_array_parse_definition\n");
-		ret = 1;
+		ret = RRR_ARRAY_HARD_ERROR;
 		goto out;
 	}
 
@@ -900,138 +905,6 @@ static ssize_t __rrr_array_get_exported_length (
 		result += rrr_type_value_get_export_length(node);
 	RRR_LL_ITERATE_END();
 	return result;
-}
-
-int rrr_array_parse_from_buffer (
-		struct rrr_array *target,
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const struct rrr_array *definition
-) {
-	int ret = 0;
-
-	if (rrr_array_definition_clone(target, definition) != 0) {
-		RRR_MSG_0("Could not clone definitions in __rrr_array_parse_from_buffer\n");
-		ret = RRR_ARRAY_HARD_ERROR;
-		goto out;
-	}
-
-	if ((ret = rrr_array_parse_data_from_definition(target, parsed_bytes, buf, buf_len)) != 0) {
-		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			RRR_MSG_0("Invalid packet in __rrr_array_parse_from_buffer\n");
-			ret = RRR_ARRAY_SOFT_ERROR;
-		}
-		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
-			// OK
-		}
-		else {
-			ret = RRR_ARRAY_HARD_ERROR;
-		}
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_array_parse_from_buffer_with_callback (
-		const char *buf,
-		ssize_t buf_len,
-		const struct rrr_array *definition,
-		int (*callback)(const struct rrr_array *array, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-	struct rrr_array array = {0};
-
-	ssize_t parsed_bytes = 0;
-	if ((ret = rrr_array_parse_from_buffer (
-			&array,
-			&parsed_bytes,
-			buf,
-			buf_len,
-			definition
-	)) != 0) {
-		RRR_MSG_0("Could not parse array in rrr_array_parse_from_buffer_with_callback return was %i\n", ret);
-		// Usually errors are caused by senders sending wrong data,
-		// don't let them make the program crash
-		ret = RRR_ARRAY_SOFT_ERROR;
-		goto out;
-	}
-
-	ret = callback(&array, callback_arg);
-
-	out:
-	rrr_array_clear(&array);
-
-	return ret;
-}
-
-int rrr_array_new_message_from_buffer (
-		struct rrr_msg_msg **target,
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array *definition
-) {
-	struct rrr_msg_msg *message = NULL;
-	struct rrr_array definitions = {0};
-	int ret = 0;
-
-	if ((ret = rrr_array_parse_from_buffer(&definitions, parsed_bytes, buf, buf_len, definition)) != 0) {
-		goto out_destroy;
-	}
-
-	if ((ret = rrr_array_new_message_from_collection(
-			&message,
-			&definitions,
-			rrr_time_get_64(),
-			topic,
-			topic_length
-	)) != 0) {
-		RRR_MSG_0("Could not create message in rrr_array_new_message_from_buffer return was %i\n", ret);
-		goto out_destroy;
-	}
-
-	*target = message;
-	message = NULL;
-
-	out_destroy:
-	rrr_array_clear(&definitions);
-	RRR_FREE_IF_NOT_NULL(message);
-
-	return ret;
-}
-
-int rrr_array_new_message_from_buffer_with_callback (
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array *definition,
-		int (*callback)(struct rrr_msg_msg *message, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	ssize_t parsed_bytes = 0;
-	struct rrr_msg_msg *message = NULL;
-	if ((ret = rrr_array_new_message_from_buffer(
-			&message,
-			&parsed_bytes,
-			buf,
-			buf_len,
-			topic,
-			topic_length,
-			definition
-	)) != 0) {
-		return ret;
-	}
-
-	return callback(message, callback_arg);
 }
 
 static int __rrr_array_collection_iterate_chosen_tags (

@@ -149,7 +149,7 @@ int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data
 	return ret;
 }
 
-int rrr_instance_config_parse_array_definition_from_config_silent_fail (
+static int __rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
@@ -193,6 +193,8 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 ) {
 	int ret = 0;
 
+	*target_array_tree = NULL;
+
 	struct rrr_array_tree *new_tree = NULL;
 	struct rrr_array array_tmp = {0};
 
@@ -213,7 +215,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	char *curly_end_pos = strchr(target_str_tmp, '}');
 
 	if (curly_start_pos == NULL || curly_end_pos == NULL || !(curly_end_pos > curly_start_pos)) {
-		if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
+		if ((ret = __rrr_instance_config_parse_array_definition_from_config_silent_fail (
 				&array_tmp,
 				config,
 				cmd_key

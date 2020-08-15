@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/map.h"
 #include "../lib/array.h"
+#include "../lib/array_tree.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -97,6 +98,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Clean this up
 
 struct rrr_mqtt_session;
+struct rrr_array_tree;
 
 struct mqtt_client_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -114,7 +116,7 @@ struct mqtt_client_data {
 	char *client_identifier;
 	char *publish_values_from_array;
 	struct rrr_map publish_values_from_array_list;
-	struct rrr_array array_definition;
+	struct rrr_array_tree *tree;
 
 	rrr_setting_uint qos;
 	rrr_setting_uint version;
@@ -156,7 +158,9 @@ static void mqttclient_data_cleanup(void *arg) {
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_clear(&data->connect_properties);
-	rrr_array_clear(&data->array_definition);
+	if (data->tree != NULL) {
+		rrr_array_tree_destroy(data->tree);
+	}
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }
 
@@ -305,18 +309,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("mqtt_publish_rrr_message", publish_rrr_message_was_present = 1);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_message", do_publish_rrr_message, 0);
 
-	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
-			&data->array_definition,
+	if ((ret = rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(
+			&data->tree,
 			config,
 			"mqtt_receive_array"
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (rrr_array_count(&data->array_definition) == 0) {
-			RRR_MSG_0("No items specified in array definition in mqtt_receive_array of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -982,6 +981,16 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	return ret;
 }
 
+static int mqttclient_try_create_array_message_from_publish_callback (
+		struct rrr_msg_msg *message,
+		void *arg
+) {
+	struct rrr_msg_msg **target = (struct rrr_msg_msg **) arg;
+	*target = message;
+	printf("Result: %p\n", message);
+	return 0;
+}
+
 static int mqttclient_try_create_array_message_from_publish (
 		struct rrr_msg_msg **result,
 		ssize_t *parsed_bytes,
@@ -1012,14 +1021,15 @@ static int mqttclient_try_create_array_message_from_publish (
 		goto out;
 	}
 
-	if ((ret = rrr_array_new_message_from_buffer (
-			result,
-			parsed_bytes,
-			publish->payload->payload_start + read_pos,
-			publish->payload->length - read_pos,
-			publish->topic,
-			strlen(publish->topic),
-			&data->array_definition
+	if ((ret = rrr_array_tree_new_message_from_buffer(
+		parsed_bytes,
+		publish->payload->payload_start + read_pos,
+		publish->payload->length - read_pos,
+		publish->topic,
+		strlen(publish->topic),
+		data->tree,
+		mqttclient_try_create_array_message_from_publish_callback,
+		(void *) result
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %i\n",
@@ -1165,7 +1175,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	}
 
 	// Try to create an array message with the data from the publish (if specified in configuration)
-	if (rrr_array_count(&data->array_definition) > 0) {
+	if (data->tree != NULL) {
 		int count = 0;
 		ssize_t read_pos = 0;
 		do {

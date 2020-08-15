@@ -292,101 +292,6 @@ static int __rrr_array_tree_parse_if_node (
 		return ret;
 }
 
-static int __rrr_array_tree_parse_single_definition (
-		struct rrr_array *target,
-		const char *start,
-		const char *end
-) {
-	int ret = 0;
-
-	rrr_length parsed_bytes = 0;
-	const struct rrr_type_definition *type = NULL;
-	unsigned int length = 0;
-	char *length_ref = NULL;
-	unsigned int item_count = 0;
-	char *item_count_ref = NULL;
-	rrr_type_flags flags = 0;
-	const char *tag_start = NULL;
-	unsigned int tag_length = 0;
-
-	if ((ret = rrr_array_parse_identifier_and_size (
-			&type,
-			&length,
-			&length_ref,
-			&item_count,
-			&item_count_ref,
-			&flags,
-			&parsed_bytes,
-			start,
-			end
-	)) != 0) {
-		RRR_MSG_0("Error while parsing type identifier and size\n");
-		goto out;
-	}
-
-	start += parsed_bytes;
-
-	if (*start == '#') {
-		start++;
-		tag_start = start;
-
-		while (*start != '\0') {
-			if (!RRR_PARSE_MATCH_C_LETTER(*start) && !RRR_PARSE_MATCH_C_NUMBER(*start)) {
-				RRR_MSG_0("Invalid character '%c' in tag name (decimal %u)\n", (*start), (unsigned char) (*start));
-				ret = RRR_ARRAY_TREE_SOFT_ERROR;
-				goto out;
-			}
-			tag_length++;
-			start++;
-		}
-
-		if (tag_length == 0) {
-			RRR_MSG_0("Missing tag name after #\n");
-			ret = RRR_ARRAY_TREE_SOFT_ERROR;
-			goto out;
-		}
-	}
-
-	if (*start != '\0') {
-		RRR_MSG_0("Extra data after type definition here --> '%s'\n", start);
-		ret = RRR_ARRAY_TREE_SOFT_ERROR;
-		goto out;
-	}
-
-	if (length > type->max_length) {
-		RRR_MSG_0("Size argument in type definition '%s' is too large, max is '%u'\n",
-				type->identifier, type->max_length);
-		ret = RRR_ARRAY_TREE_SOFT_ERROR;
-		goto out;
-	}
-
-	struct rrr_type_value *template = NULL;
-
-	if (rrr_type_value_new (
-			&template,
-			type,
-			flags,
-			tag_length,
-			tag_start,
-			length,
-			length_ref,
-			item_count,
-			item_count_ref,
-			0
-	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_parse_definition\n");
-		ret = RRR_ARRAY_TREE_HARD_ERROR;
-		goto out;
-	}
-
-	RRR_LL_APPEND(target,template);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(length_ref);
-	RRR_FREE_IF_NOT_NULL(item_count_ref);
-	return ret;
-}
-
 #define CHECK_BRANCH								\
 	do {int pos_orig = pos->pos;					\
 	if (rrr_parse_match_word(pos, "IF") ||			\
@@ -524,7 +429,7 @@ static int __rrr_array_tree_parse_definition_node (
 			goto out_destroy;
 		}
 
-		if ((ret = __rrr_array_tree_parse_single_definition(&node->array, tmp, tmp + length)) != 0) {
+		if ((ret = rrr_array_parse_single_definition(&node->array, tmp, tmp + length)) != 0) {
 			goto out_destroy;
 		}
 
@@ -666,6 +571,17 @@ int rrr_array_tree_parse (
 					pos->line, pos->pos - pos->line_begin_pos + 1);
 		}
 		return ret;
+}
+
+int rrr_array_tree_parse_raw (
+		struct rrr_array_tree **target,
+		const char *data,
+		int data_length,
+		const char *name
+) {
+	struct rrr_parse_pos pos;
+	rrr_parse_pos_init(&pos, data, data_length);
+	return rrr_array_tree_parse(target, &pos, name);
 }
 
 static void __rrr_array_tree_dump (
@@ -1187,81 +1103,7 @@ int __rrr_array_tree_get_import_length_leaf_callback (
 
 	return 0;
 }
-/*
-static int __rrr_array_tree_get_import_length_value_callback (
-		const struct rrr_type_value *value,
-		void *arg
-) {
-	struct rrr_array_tree_import_callback_data *callback_data = arg;
 
-	int ret = RRR_TYPE_PARSE_OK;
-
-	if (callback_data->pos >= callback_data->end) {
-		return RRR_TYPE_PARSE_INCOMPLETE;
-	}
-
-	rrr_length result = 0;
-	if ((ret = value->definition->get_import_length (
-			&result,
-			value,
-			callback_data->pos,
-			callback_data->end - callback_data->pos
-	)) != RRR_TYPE_PARSE_OK) {
-		return ret;
-	}
-
-	callback_data->pos += result;
-	callback_data->import_length += result;
-
-	return ret;
-}
-
-int rrr_array_tree_get_import_length_from_buffer (
-		struct rrr_array_read_data *array_read_data,
-		ssize_t *import_length,
-		const struct rrr_array_tree *tree,
-		const char *buf,
-		ssize_t buf_length
-) {
-	int ret = RRR_TYPE_PARSE_OK;
-
-	*import_length = 0;
-
-	struct rrr_array_tree_import_callback_data callback_data = {0};
-
-	callback_data.pos = buf;
-	callback_data.end = buf + buf_length;
-
-	if ((ret = __rrr_array_tree_iterate (
-			tree,
-			0,
-			__rrr_array_tree_get_import_length_value_callback,
-			__rrr_array_tree_import_condition_callback,
-			__rrr_array_tree_get_import_length_leaf_callback,
-			NULL,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	if (callback_data.import_length_final != 0) {
-		rrr_array_clear(&array_read_data->final_array);
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&array_read_data->final_array, &callback_data.array);
-		*import_length = callback_data.import_length_final;
-		if (*import_length < 0) {
-			*import_length = 0;
-			RRR_MSG_0("Import length too long (%lu bytes) in rrr_array_tree_get_import_length_from_buffer\n",
-					callback_data.import_length_final);
-			ret = RRR_ARRAY_TREE_SOFT_ERROR;
-			goto out;
-		}
-	}
-
-	out:
-	rrr_array_clear(&callback_data.array);
-	return ret;
-}
-*/
 int rrr_array_tree_clone (
 		struct rrr_array_tree **target,
 		const struct rrr_array_tree *source
@@ -1334,7 +1176,6 @@ int rrr_array_tree_parse_from_buffer (
 }
 
 
-/* DISABLED - Test and fix before enabling
 struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data {
 	const char *topic;
 	ssize_t topic_length;
@@ -1361,12 +1202,12 @@ static int __rrr_array_tree_new_message_from_buffer_callback_intermediate (
 		RRR_MSG_0("Could not create message in __rrr_array_tree_new_message_from_buffer_callback_intermediate return was %i\n", ret);
 		return 1;
 	}
-	RRR_FREE_IF_NOT_NULL(message);
 
 	return callback_data->callback(message, callback_data->callback_arg);
 }
 
 int rrr_array_tree_new_message_from_buffer (
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const char *topic,
@@ -1384,9 +1225,8 @@ int rrr_array_tree_new_message_from_buffer (
 			callback_arg
 	};
 
-	ssize_t parsed_bytes = 0;
 	if ((ret = rrr_array_tree_parse_from_buffer (
-			&parsed_bytes,
+			parsed_bytes,
 			buf,
 			buf_len,
 			tree,
@@ -1399,4 +1239,3 @@ int rrr_array_tree_new_message_from_buffer (
 	out:
 	return ret;
 }
-*/

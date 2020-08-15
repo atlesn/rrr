@@ -67,17 +67,6 @@ void rrr_ip_graylist_clear (
 void rrr_ip_graylist_clear_void (
 		void *target
 );
-int rrr_ip_receive_array (
-		struct rrr_msg_msg_holder *target_entry,
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int read_flags,
-		const struct rrr_array *definition,
-		int do_sync_byte_by_byte,
-		unsigned int message_max_size,
-		int (*callback)(struct rrr_msg_msg_holder *entry, void *arg),
-		void *arg
-);
 int rrr_ip_receive_array_tree (
 		struct rrr_msg_msg_holder *target_entry,
 		struct rrr_read_session_collection *read_session_collection,

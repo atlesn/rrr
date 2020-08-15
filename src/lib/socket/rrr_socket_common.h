@@ -34,17 +34,6 @@ struct rrr_socket_common_in_flight_counter {
 	int not_acknowledged_count;
 };
 
-int rrr_socket_common_receive_array (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int read_flags,
-		int socket_read_flags,
-		const struct rrr_array *definition,
-		int do_sync_byte_by_byte,
-		unsigned int message_max_size,
-		int (*callback)(struct rrr_read_session *read_session, void *arg),
-		void *arg
-);
 int rrr_socket_common_receive_array_tree (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
@@ -55,15 +44,6 @@ int rrr_socket_common_receive_array_tree (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
-		void *arg
-);
-int rrr_socket_common_receive_msg (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int read_flags,
-		int socket_read_flags,
-		struct rrr_socket_common_in_flight_counter *in_flight,
-		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );
 int rrr_socket_common_prepare_and_send_msg_blocking (

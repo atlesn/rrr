@@ -95,6 +95,12 @@ int rrr_array_tree_parse (
 		struct rrr_parse_pos *pos,
 		const char *name
 );
+int rrr_array_tree_parse_raw (
+		struct rrr_array_tree **target,
+		const char *data,
+		int data_length,
+		const char *name
+);
 void rrr_array_tree_dump (
 		const struct rrr_array_tree *tree
 );
@@ -121,6 +127,7 @@ int rrr_array_tree_parse_from_buffer (
 		void *callback_arg
 );
 int rrr_array_tree_new_message_from_buffer (
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const char *topic,

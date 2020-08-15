@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/read.h"
 #include "../lib/array.h"
+#include "../lib/array_tree.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/message_broker.h"
@@ -53,7 +54,7 @@ struct socket_data {
 	int receive_rrr_message;
 	int do_sync_byte_by_byte;
 	int do_unlink_if_exists;
-	struct rrr_array definitions;
+	struct rrr_array_tree *tree;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
 	uint64_t message_count;
@@ -61,7 +62,9 @@ struct socket_data {
 
 void data_cleanup(void *arg) {
 	struct socket_data *data = (struct socket_data *) arg;
-	rrr_array_clear(&data->definitions);
+	if (data->tree != NULL) {
+		rrr_array_tree_destroy(data->tree);
+	}
 	rrr_socket_client_collection_clear(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
@@ -123,7 +126,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
-		if (rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "socket_input_types") != 0) {
+		if (rrr_instance_config_parse_array_tree_definition_from_config_silent_fail(&data->tree, config, "socket_input_types") != 0) {
 			RRR_MSG_0("Could not parse configuration parameter socket_input_types in socket instance %s\n",
 					config->name);
 			ret = 1;
@@ -143,13 +146,13 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	}
 	data->do_sync_byte_by_byte = yesno;
 
-	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
+	if (data->receive_rrr_message != 0 && data->tree != NULL) {
 		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		ret = 1;
 		goto out;
 	}
-	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
+	else if (data->receive_rrr_message == 0 && data->tree != NULL) {
 		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		ret = 1;
@@ -168,6 +171,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 struct read_data_receive_message_callback_data {
 	struct socket_data *data;
 	struct rrr_msg_msg_holder *entry;
+	struct rrr_array *array_final;
 };
 
 int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *arg) {
@@ -195,19 +199,18 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 	struct read_data_receive_message_callback_data *callback_data = arg;
 	struct socket_data *data = callback_data->data;
 
+	(void)(read_session);
+
 	int ret = 0;
 
 	struct rrr_msg_msg *message = NULL;
 
-	ssize_t parsed_bytes;
-	if ((ret = rrr_array_new_message_from_buffer (
+	if ((ret = rrr_array_new_message_from_collection (
 			&message,
-			&parsed_bytes,
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
+			callback_data->array_final,
+			rrr_time_get_64(),
 			data->default_topic,
-			data->default_topic_length,
-			&data->definitions
+			data->default_topic_length
 	)) != 0) {
 		RRR_MSG_0("Could not create array message in read_data_receive_message_callback of socket instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -228,9 +231,12 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 
 	int ret = 0;
 
+	struct rrr_array array_tmp = {0};
+
 	struct read_data_receive_message_callback_data socket_callback_data = {
 			data,
-			entry
+			entry,
+			&array_tmp
 	};
 
 	if (data->receive_rrr_message != 0) {
@@ -255,8 +261,17 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 		}
 	}
 	else {
-		struct rrr_read_common_get_session_target_length_from_array_data callback_data = {
-				&data->definitions,
+		/*
+
+		const struct rrr_array_tree *tree;
+		struct rrr_array *array_final;
+		int do_byte_by_byte_sync;
+		unsigned int message_max_size;
+
+		*/
+		struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data = {
+				data->tree,
+				&array_tmp,
 				data->do_sync_byte_by_byte,
 				0 // TODO : Set max size?
 		};
@@ -266,7 +281,7 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 				4096,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
-				rrr_read_common_get_session_target_length_from_array,
+				rrr_read_common_get_session_target_length_from_array_tree,
 				&callback_data,
 				read_raw_data_callback,
 				&socket_callback_data
@@ -289,6 +304,7 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }

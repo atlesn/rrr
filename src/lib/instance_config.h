@@ -186,11 +186,6 @@ int rrr_instance_config_read_port_number (
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config_data *config
 );
-int rrr_instance_config_parse_array_definition_from_config_silent_fail (
-		struct rrr_array *target,
-		struct rrr_instance_config_data *config,
-		const char *cmd_key
-);
 int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		struct rrr_array_tree **target_array_tree,
 		struct rrr_instance_config_data *config,

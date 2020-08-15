@@ -55,28 +55,15 @@ struct rrr_array {
 	uint16_t version;
 };
 
-int rrr_array_parse_identifier_and_size (
-		const struct rrr_type_definition **type_return,
-		unsigned int *length_return,
-		char **length_ref_return,
-		unsigned int *item_count_return,
-		char **item_count_ref_return,
-		rrr_type_flags *flags_return,
-		rrr_length *bytes_parsed_return,
-		const char *start,
-		const char *end
-);
 int rrr_array_parse_single_definition (
 		struct rrr_array *target,
 		const char *start,
 		const char *end
 );
-
 struct rrr_array_parse_single_definition_callback_data {
 	struct rrr_array *target;
 	int parse_ret;
 };
-
 int rrr_array_parse_single_definition_callback (
 		const char *value,
 		void *arg
@@ -170,6 +157,7 @@ int rrr_array_get_packed_length_from_buffer (
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 );
+/*
 int rrr_array_parse_from_buffer (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
@@ -184,6 +172,7 @@ int rrr_array_parse_from_buffer_with_callback (
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
 );
+
 int rrr_array_new_message_from_buffer (
 		struct rrr_msg_msg **target,
 		ssize_t *parsed_bytes,
@@ -202,6 +191,7 @@ int rrr_array_new_message_from_buffer_with_callback (
 		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 );
+*/
 int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
