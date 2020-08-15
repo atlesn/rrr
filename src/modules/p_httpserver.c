@@ -662,6 +662,8 @@ static int httpserver_receive_raw_broker_callback (
 		goto out;
 	}
 
+	entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
+
 	RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
 			INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, topic);
 
