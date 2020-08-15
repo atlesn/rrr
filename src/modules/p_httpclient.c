@@ -696,19 +696,6 @@ static int httpclient_parse_config (
 		goto out;
 	}
 
-	if (rrr_http_client_config_parse (
-			&data->http_client_config,
-			config,
-			"http",
-			RRR_HTTPCLIENT_DEFAULT_SERVER,
-			RRR_HTTPCLIENT_DEFAULT_PORT,
-			0, // <-- Disable fixed tags and fields
-			1  // <-- Enable endpoint
-	) != 0) {
-		ret = 1;
-		goto out;
-	}
-
 	if (data->do_no_data) {
 		if (RRR_MAP_COUNT(&data->http_client_config.tags) > 0) {
 			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_tags was also set. This is an error.\n",
@@ -739,6 +726,20 @@ static int httpclient_parse_config (
 		if (ret != 0) {
 			goto out;
 		}
+	}
+
+	if (rrr_http_client_config_parse (
+			&data->http_client_config,
+			config,
+			"http",
+			RRR_HTTPCLIENT_DEFAULT_SERVER,
+			RRR_HTTPCLIENT_DEFAULT_PORT,
+			0, // <-- Disable fixed tags and fields
+			1, // <-- Enable endpoint
+			data->do_send_raw_data // Check raw consisitency based on this option
+	) != 0) {
+		ret = 1;
+		goto out;
 	}
 
 	if (rrr_net_transport_config_parse (

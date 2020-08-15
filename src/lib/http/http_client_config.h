@@ -54,7 +54,8 @@ int rrr_http_client_config_parse (
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint
+		int enable_endpoint,
+		int do_raw_mode
 );
 
 #endif /* RRR_HTTP_CLIENT_CONFIG_H */

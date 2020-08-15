@@ -405,7 +405,8 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			INFLUXDB_DEFAULT_SERVER,
 			INFLUXDB_DEFAULT_PORT,
 			1, // <-- Enable fixed tags and fields
-			0  // <-- Do not enable endpoint
+			0, // <-- Do not enable endpoint
+			0  // <-- Don't check for raw mode consistency
 	) != 0) {
 		ret = 1;
 	}
