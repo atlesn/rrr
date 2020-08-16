@@ -652,8 +652,16 @@ static void __rrr_array_definition_dump (
 		else if (node->element_count > 1) {
 			rrr_string_builder_append_format(string_builder, "@%u", node->element_count);
 		}
-		if (node->tag != NULL && *(node->tag) != '\0') {
-			rrr_string_builder_append_format(string_builder, "#%s", node->tag);
+		if (node->tag != NULL && *(node->tag) != '\0' && node->tag_length > 0) {
+			if (node->tag_length > 32) {
+				rrr_string_builder_append(string_builder, "#(very long name)");
+			}
+			else {
+				char tag_tmp[node->tag_length + 1];
+				memcpy(tag_tmp, node->tag, node->tag_length);
+				tag_tmp[node->tag_length] = '\0';
+				rrr_string_builder_append_format(string_builder, "#%s", tag_tmp);
+			}
 		}
 	RRR_LL_ITERATE_END();
 }
@@ -690,7 +698,7 @@ void rrr_array_tree_dump (
 
 	RRR_DBG_1 ("## ARRAY TREE DUMP BEGIN #############################\n");
 	RRR_DBG_1 ("%s", string_builder.buf);
-	RRR_DBG_1 ("\n## ARRAY TREE DUMP END ###############################\n");
+	RRR_DBG_1 ("## ARRAY TREE DUMP END ###############################\n");
 
 	rrr_string_builder_clear(&string_builder);
 }
