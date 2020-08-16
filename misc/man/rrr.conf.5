@@ -239,7 +239,7 @@ Causes any other data in the received arrays to be dropped.
 If set to yes and no message field is specified in the array definition, an error will be produced.
 Defaults to no.
 
-.It ip_max_message_size
+.It ip_max_message_size=BYTES
 Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
 A value of 0 means unlimited message size.
 Defaults to 4096.
@@ -260,7 +260,7 @@ contents sent as is.
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
 like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
 
-.It ip_persistent_connections
+.It ip_persistent_connections={yes|no}
 After a packet is sent, don't close the TCP connection causing it to be re-used. Defaults to no.
 
 .It ip_send_timeout=SECONDS
