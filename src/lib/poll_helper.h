@@ -23,9 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_POLL_HELPER_H
 #define RRR_POLL_HELPER_H
 
-#include "instance_collection.h"
+#include "instance_friends.h"
 #include "modules.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
 #define RRR_POLL_NO_SENDERS_OK	(1<<11)
@@ -37,7 +37,8 @@ typedef void rrr_message_broker_costumer_handle;
 
 struct rrr_poll_collection_entry {
 	RRR_LL_NODE(struct rrr_poll_collection_entry);
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_message_broker *message_broker;
+	rrr_message_broker_costumer_handle *message_broker_handle;
 };
 
 struct rrr_poll_collection {
@@ -47,40 +48,37 @@ struct rrr_poll_collection {
 void rrr_poll_collection_clear (
 		struct rrr_poll_collection *collection
 );
-void rrr_poll_collection_clear_void (
-		void *data
-);
-int rrr_poll_collection_new (
-		struct rrr_poll_collection **target
-);
-void rrr_poll_collection_destroy (
-		struct rrr_poll_collection *collection
-);
-void rrr_poll_collection_destroy_void (
-		void *data
-);
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
-		struct rrr_instance_metadata *instance
+		struct rrr_message_broker *message_broker,
+		const char *costumer_name
 );
 int rrr_poll_do_poll_discard (
 		int *discarded_count,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection
 );
 int rrr_poll_do_poll_delete (
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+);
+int rrr_poll_do_poll_search (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
 		unsigned int wait_milliseconds
 );
 int rrr_poll_collection_count (
 		struct rrr_poll_collection *collection
 );
-void rrr_poll_add_from_thread_senders (
+int rrr_poll_add_from_thread_senders (
+		struct rrr_instance **faulty_sender,
 		struct rrr_poll_collection *collection,
-		struct rrr_instance_thread_data *thread_data
+		struct rrr_instance_runtime_data *thread_data
 );
 
 #endif /* RRR_POLL_HELPER_H */

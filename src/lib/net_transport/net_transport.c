@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_config.h"
 
 #include "../log.h"
-#include "../posix.h"
-#include "../rrr_time.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
@@ -413,6 +413,12 @@ void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *
 	RRR_LL_DESTROY(collection, struct rrr_net_transport, rrr_net_transport_destroy(node));
 }
 
+void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport);
+		rrr_net_transport_common_cleanup(node);
+	RRR_LL_ITERATE_END();
+}
+
 void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -491,21 +497,23 @@ static int __rrr_net_transport_connect (
 		RRR_BUG("port was 0 in rrr_net_transport_connect_and_destroy_after_callback\n");
 	}
 
+	int ret = 0;
+
 	int transport_handle = 0;
 	struct sockaddr_storage addr;
 	socklen_t socklen = sizeof(addr);
 
 	// TODO : Distinguish between soft and hard connect errors
 
-	if (transport->methods->connect (
+	if ((ret = transport->methods->connect (
 			&transport_handle,
 			(struct sockaddr *) &addr,
 			&socklen,
 			transport,
 			port,
 			host
-	) != 0) {
-		return 1;
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_connect");
@@ -519,7 +527,8 @@ static int __rrr_net_transport_connect (
 		rrr_net_transport_handle_close (transport, transport_handle);
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 int rrr_net_transport_connect_and_close_after_callback (
@@ -608,8 +617,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		}
 	}
 
-	uint64_t size_tmp = (size >= 0 ? size : 0);
-	if (written_bytes != size_tmp) {
+	uint64_t size_tmp_u = size;
+	if (written_bytes != size_tmp_u) {
 		RRR_MSG_1("Not all bytes were sent %li < %li in rrr_net_transport_ctx_send_nonblock\n", written_bytes, size);
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
@@ -642,7 +651,8 @@ int rrr_net_transport_ctx_send_blocking (
 				size - written_bytes_total
 		)) != 0) {
 			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				RRR_MSG_0("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				// Hard error means connection closed, not that serious
+				ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 				break;
 			}
 		}
@@ -650,6 +660,12 @@ int rrr_net_transport_ctx_send_blocking (
 	} while (ret != 0);
 
 	return ret;
+}
+
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
+) {
+	return (handle->application_private_ptr != NULL);
 }
 
 void rrr_net_transport_ctx_handle_application_data_bind (
@@ -693,6 +709,8 @@ int rrr_net_transport_iterate_with_callback (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
+
+//		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
 
 		if (mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && mode != node->mode) {
 			goto unlock;

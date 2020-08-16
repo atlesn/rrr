@@ -24,10 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_setting_packed;
 struct rrr_mmap_channel;
 struct rrr_cmodule_deferred_message_collection;
@@ -37,8 +37,8 @@ int rrr_cmodule_channel_send_message (
 		int *retries,
 		struct rrr_mmap_channel *channel,
 		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		unsigned int wait_time_us
 );
 int rrr_cmodule_channel_receive_messages (

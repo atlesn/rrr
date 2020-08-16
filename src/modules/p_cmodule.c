@@ -32,17 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/rrr_strerror.h"
-#include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/macro_utils.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
@@ -61,7 +61,7 @@ const char *cmodule_library_paths[] = {
 };
 
 struct cmodule_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	char *cmodule_name;
 	char *cleanup_function;
@@ -74,7 +74,7 @@ static void cmodule_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->cleanup_function);
 }
 
-static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_thread_data *thread_data) {
+static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 	data->thread_data = thread_data;
 	if (ret != 0) {
@@ -83,7 +83,7 @@ static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_thre
 	return ret;
 }
 
-static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_config *config) {
+static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
@@ -288,7 +288,7 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	struct rrr_message *message_copy = rrr_message_duplicate(message);
+	struct rrr_msg_msg *message_copy = rrr_msg_msg_duplicate(message);
 	if (message_copy == NULL) {
 		RRR_MSG_0("Could not allocate message in cmodule_process_callback\n");
 		ret = 1;
@@ -322,7 +322,7 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 }
 
 static void *thread_entry_cmodule (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (cmodule_data_init(data, thread_data) != 0) {
@@ -335,7 +335,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	pthread_cleanup_push(cmodule_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (cmodule_parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -344,8 +344,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	if (rrr_cmodule_helper_parse_config(thread_data, "cmodule", "function") != 0) {
 		goto out_message;
 	}
-
-	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
 
 	pid_t fork_pid;
 
@@ -371,7 +369,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			thread_data->poll,
+			&thread_data->poll,
 			fork_pid
 	);
 
@@ -397,7 +395,7 @@ static const char *module_name = "cmodule";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;

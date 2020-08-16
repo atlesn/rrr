@@ -28,13 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "python3_headers.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 #include "../../../build_directory.h"
 
 struct rrr_setting_packed;
-struct rrr_ip_buffer_entry;
+struct rrr_msg_msg_holder;
 struct rrr_fork_handler;
-struct rrr_message;
+struct rrr_msg_msg;
 struct rrr_address_msg;
 struct rrr_mmap_channel;
 struct rrr_cmodule_worker;
@@ -46,7 +46,7 @@ struct rrr_cmodule_worker;
 #define RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX 12
 #define RRR_PYTHON3_EXTRA_SYS_PATH RRR_BUILD_DIR
 
-#define RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
+#define RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE RRR_MSG_CTRL_F_USR_A
 
 #define RRR_PY_PASTE(a,b,c) a ## b ## v
 

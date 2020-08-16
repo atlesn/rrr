@@ -30,11 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "posix.h"
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_strerror.h"
-#include "rrr_time.h"
+#include "util/rrr_time.h"
+#include "util/posix.h"
 
 /*
  * Description of allocator:

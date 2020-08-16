@@ -29,17 +29,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/message_broker.h"
-#include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
-#include "../lib/macro_utils.h"
+#include "../lib/stats/stats_instance.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/macro_utils.h"
 
 struct dummy_data {
 	int no_generation;
@@ -83,7 +83,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->topic);
 }
 
-int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
+int parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
@@ -102,12 +102,12 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int dummy_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct dummy_data *data = arg;
 
 	int ret = 0;
 
-	struct rrr_message *reading = NULL;
+	struct rrr_msg_msg *reading = NULL;
 
 	uint64_t time = rrr_time_get_64();
 
@@ -116,7 +116,7 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
 	}
 
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			&reading,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -136,12 +136,12 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
 static void *thread_entry_dummy (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
@@ -154,7 +154,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -174,8 +174,8 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	int generated_count = 0;
 	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
-	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			if (rrr_message_broker_write_entry (
@@ -220,7 +220,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct dummy_data data;
 	int ret = 0;
 	if ((ret = data_init(&data)) != 0) {
@@ -246,7 +246,7 @@ static const char *module_name = "dummy";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

@@ -1,0 +1,9 @@
+The file "examples.md" contains references to all
+the examples, sorted by category. All examples
+in subdirectories also have ".md" (markdown) suffix.
+
+The example library can be read in any text editor
+or with a markdown viewer. GitHub will automatically
+format the markdown text if you open these files there.
+
+https://www.github.com/atlesn/rrr/

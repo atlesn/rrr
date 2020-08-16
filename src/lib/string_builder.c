@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "string_builder.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
 
 void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
 	ssize_t length = strlen(str);
@@ -50,6 +50,10 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	RRR_FREE_IF_NOT_NULL(string_builder->buf);
 	string_builder->size = 0;
 	string_builder->wpos = 0;
+}
+
+ssize_t rrr_string_builder_length (struct rrr_string_builder *string_builder) {
+	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
 }
 
 int rrr_string_builder_new (struct rrr_string_builder **result) {

@@ -51,6 +51,7 @@ void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_buil
 void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, size_t buf_size);
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder);
 void rrr_string_builder_clear (struct rrr_string_builder *string_builder);
+ssize_t rrr_string_builder_length (struct rrr_string_builder *string_builder);
 int rrr_string_builder_new (struct rrr_string_builder **result);
 void rrr_string_builder_destroy (struct rrr_string_builder *string_builder);
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes);

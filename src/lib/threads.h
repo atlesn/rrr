@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-#include "posix.h"
-#include "rrr_time.h"
-#include "linked_list.h"
+#include "util/posix.h"
+#include "util/linked_list.h"
+#include "util/rrr_time.h"
 
 // #define RRR_THREADS_MAX 32
 
@@ -105,13 +105,7 @@ struct rrr_thread_double_pointer {
 
 struct rrr_thread_ghost_data {
 	struct rrr_thread_ghost_data *next;
-
 	struct rrr_thread *thread;
-
-	// Main thread may set this value if a thread doesn't respond and
-	// we wish to forget about it. If the thread awakes, it will run
-	// it's cleanup procedure and free this pointer
-	void *ghost_cleanup_pointer;
 	void (*poststop_routine)(const struct rrr_thread *);
 };
 
@@ -128,13 +122,11 @@ struct rrr_thread {
 	char name[RRR_THREAD_NAME_MAX_LENGTH];
 	void *private_data;
 
+	// Helper function to find rrr_thread struct in difficult callback conditions
+	pthread_t self;
+
 	// Set when we tried to cancel a thread but we couldn't join
 	int is_ghost;
-
-	// If the thread is a ghost, we can't free this struct. Ghost does it.
-	int free_by_ghost;
-	int free_private_data_by_ghost;
-	void (*private_data_destroy_function)(void *private_data);
 
 	// If the thread is to be destroy without stopping the program, both
 	// the thread and it's watchdog must be destroyed at the same time, after
@@ -266,7 +258,7 @@ static inline void rrr_thread_set_stopped(void *arg) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_STOPPED);
 }
 
-int rrr_thread_run_ghost_cleanup(int *count);
+void rrr_thread_postponed_cleanup_run(int *count);
 static inline int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection
 ) {
@@ -282,39 +274,40 @@ int rrr_thread_new_collection (
 		struct rrr_thread_collection **target
 );
 void rrr_thread_destroy_collection (
-		struct rrr_thread_collection *collection,
-		int do_destroy_private_data
+		struct rrr_thread_collection *collection
 );
 int rrr_thread_start_all_after_initialized (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-void rrr_thread_stop_and_join_all (
-		struct rrr_thread_collection *collection,
-		void (*upstream_ghost_handler)(struct rrr_thread *thread)
+void rrr_thread_stop_and_join_all_no_unlock (
+		struct rrr_thread_collection *collection
 );
 int rrr_thread_start (
 		struct rrr_thread *thread
 );
-struct rrr_thread *rrr_thread_preload_and_register (
+int rrr_thread_with_lock_do (
+		struct rrr_thread *thread,
+		int (*callback)(struct rrr_thread *thread, void *arg),
+		void *callback_arg
+);
+struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
-		void (*private_data_destroy_function)(void *),
 		int start_priority,
-		void *private_data,
-		const char *name
+		const char *name,
+		void *private_data
 );
 int rrr_thread_check_any_stopped (
 		struct rrr_thread_collection *collection
 );
 void rrr_thread_join_and_destroy_stopped_threads (
 		int *count,
-		struct rrr_thread_collection *collection,
-		int do_destroy_private_data
+		struct rrr_thread_collection *collection
 );
 int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 		struct rrr_thread_collection *collection,

@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "settings.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #ifndef RRR_COMMON_H
 #define RRR_COMMON_H

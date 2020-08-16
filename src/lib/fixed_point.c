@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "fixed_point.h"
 #include "rrr_types.h"
+#include "util/rrr_endian.h"
 
 static const double decimal_fractions_base2[24] = {
 		1.0/2.0,
@@ -75,14 +76,12 @@ int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	double running_sum = 0.0;
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		long double test_sum = running_sum + decimal_fractions_base2[i];
-		if (test_sum == fraction) {
+		if (test_sum == fraction || test_sum < fraction) {
 			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
 			running_sum = test_sum;
-			break;
-		}
-		else if (test_sum < fraction) {
-			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
-			running_sum = test_sum;
+			if (test_sum == fraction) {
+				break;
+			}
 		}
 	}
 
@@ -124,7 +123,38 @@ int rrr_fixp_to_ldouble (long double *target, rrr_fixp source) {
 	return 0;
 }
 
-int rrr_fixp_to_str (char *target, ssize_t target_size, rrr_fixp source) {
+int rrr_fixp_to_str_16 (char *target, ssize_t target_size, rrr_fixp source) {
+	unsigned char buf[8];
+
+	source = rrr_htobe64(source);
+	memcpy(buf, &source, sizeof(buf));
+
+	char tmp_b[32];
+	int wpos = 0;
+	for (int pos = 0; pos < (int) sizeof(buf); pos++) {
+		unsigned char cur = buf[pos];
+		unsigned char h = (cur & 0xf0) >> 4;
+		unsigned char l = cur & 0x0f;
+		tmp_b[wpos++] = h + (h > 9 ? 'a' - 10 : '0');
+		tmp_b[wpos++] = l + (l > 9 ? 'a' - 10 : '0');
+		if (pos == 4) {
+			tmp_b[wpos++] = '.';
+		}
+	}
+
+	tmp_b[wpos] = '\0';
+
+	ssize_t size = strlen("16#") + strlen(tmp_b) + 1;
+	if (size > target_size) {
+		return 1;
+	}
+
+	sprintf(target, "16#%s", tmp_b);
+
+	return 0;
+}
+
+int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) {
 	char buf[512];
 	long double intermediate = 0;
 
@@ -341,7 +371,6 @@ int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length,
 		}
 		else if (test_sum == fraction) {
 			result_fraction |= 1 << (23 - i);
-			running_sum += position_value;
 			break;
 		}
 	}

@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
-#include "rrr_time.h"
+#include "util/rrr_time.h"
 
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
@@ -306,7 +306,6 @@ int rrr_mmap_channel_write_using_callback (
 	out_unlock:
 	if (do_unlock_block) {
 		pthread_mutex_unlock(&block->block_lock);
-		do_unlock_block = 0;
 	}
 
 	return ret;
@@ -631,7 +630,7 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	}
 
 	if ((ret = pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED)) != 0) {
-		RRR_MSG_0("Could not set pshared on condattr in rrr_mmap_channel_new: %i\n");
+		RRR_MSG_0("Could not set pshared on condattr in rrr_mmap_channel_new: %i\n", ret);
 		ret = 1;
 		goto out_destroy_condattr;
 	}

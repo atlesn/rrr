@@ -25,13 +25,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_headers.h"
 
 extern PyTypeObject rrr_python3_socket_type;
-extern PyTypeObject rrr_python3_rrr_message_type;
+extern PyTypeObject rrr_python3_rrr_msg_msg_type;
 extern PyTypeObject rrr_python3_config_type;
 extern PyTypeObject rrr_python3_array_type;
 extern PyTypeObject rrr_python3_array_value_type;
 
 static inline int rrr_python3_socket_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_socket_type); }
-static inline int rrr_python3_rrr_message_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_rrr_message_type); }
+static inline int rrr_python3_rrr_msg_msg_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_rrr_msg_msg_type); }
 static inline int rrr_python3_config_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_config_type); }
 
 int rrr_python3_module_append_inittab(void);

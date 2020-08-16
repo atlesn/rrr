@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_property.h"
 
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 const struct rrr_mqtt_property_definition property_definitions[] = {
 		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x01, "Payload format indicator"},
@@ -122,14 +122,14 @@ int rrr_mqtt_property_clone (
 	}
 
 	if (source == NULL) {
-		goto out;
+		goto out_final;
 	}
 
 	result = malloc(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone A\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
 	memcpy(result, source, sizeof(*result));
@@ -142,11 +142,10 @@ int rrr_mqtt_property_clone (
 		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
 	}
 
-	result->data = malloc(result->length);
-	if (result->data == NULL) {
+	if ((result->data = malloc(result->length)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone B\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 
 	memcpy(result->data, source->data, result->length);
@@ -154,20 +153,19 @@ int rrr_mqtt_property_clone (
 
 	if (source->sibling != NULL) {
 		if ((ret = rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
-			RRR_MSG_0("Could not clone sibling in rr_mqtt_property_clone\n");
+			RRR_MSG_0("Could not clone sibling in rrr_mqtt_property_clone\n");
 			ret = 1;
-			goto out;
+			goto out_free;
 		}
 	}
 
 	*target = result;
 	result = NULL;
 
-	goto out;
-		if (result != NULL) {
-			rrr_mqtt_property_destroy(result);
-		}
-	out:
+	goto out_final;
+	out_free:
+		rrr_mqtt_property_destroy(result);
+	out_final:
 		return ret;
 }
 
@@ -200,8 +198,7 @@ int rrr_mqtt_property_save_blob (
 }
 
 int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
-	target->data = malloc(sizeof(value));
-	if (target->data == NULL) {
+	if ((target->data = (char *) malloc(sizeof(value))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
@@ -279,14 +276,13 @@ static int __rrr_mqtt_property_clone (
 
 	struct rrr_mqtt_property *result = NULL;
 
-	ret = rrr_mqtt_property_new(&result, source->definition);
-	if (ret != 0) {
+	if ((ret = rrr_mqtt_property_new(&result, source->definition)) != 0) {
 		RRR_MSG_0("Could not create new property in __rrr_mqtt_property_clone\n");
+		goto out;
 	}
 
 	if (source->sibling != NULL) {
-		ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling);
-		if (ret != 0) {
+		if ((ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
 			RRR_MSG_0("Could not clone sibling in __rrr_mqtt_property_clone\n");
 			goto out_destroy;
 		}
@@ -297,8 +293,7 @@ static int __rrr_mqtt_property_clone (
 
 	if (source->length > 0) {
 		result->length = source->length;
-		result->data = malloc(result->length);
-		if (result->data == NULL) {
+		if ((result->data = malloc(result->length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
 			ret = 1;
 			goto out_destroy;
@@ -435,6 +430,10 @@ int rrr_mqtt_property_collection_add_cloned (
 		const struct rrr_mqtt_property *property
 ) {
 	struct rrr_mqtt_property *new_property = NULL;
+
+	if (property == NULL) {
+		RRR_BUG("BUG: Propery was NULL in rrr_mqtt_property_collection_add_cloned\n");
+	}
 
 	int ret = 0;
 
@@ -607,31 +606,59 @@ int rrr_mqtt_property_collection_calculate_size (
 	return ret;
 }
 
-void rrr_mqtt_property_collection_destroy (
+void rrr_mqtt_property_collection_clear (
 		struct rrr_mqtt_property_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
+}
+
+int rrr_mqtt_property_collection_add_selected_from_collection (
+		struct rrr_mqtt_property_collection *target,
+		const struct rrr_mqtt_property_collection *source,
+		uint8_t identifiers[],
+		size_t identifiers_length
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
+		int do_clone = 1;
+
+		if (identifiers_length > 0) {
+			do_clone = 0;
+			for (size_t i = 0; i < identifiers_length; i++) {
+				if (node->definition->identifier == identifiers[i]) {
+					do_clone = 1;
+					break;
+				}
+			}
+		}
+
+		if (do_clone) {
+			struct rrr_mqtt_property *new_node = NULL;
+			ret = __rrr_mqtt_property_clone(&new_node, node);
+			if (ret != 0) {
+				RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_clone\n");
+				goto out_destroy;
+			}
+			rrr_mqtt_property_collection_add(target, new_node);
+		}
+	RRR_LL_ITERATE_END();
+
+	goto out;
+	out_destroy:
+		rrr_mqtt_property_collection_clear(target);
+	out:
+		return ret;
 }
 
 int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property_collection *target,
 		const struct rrr_mqtt_property_collection *source
 ) {
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
-		struct rrr_mqtt_property *new_node = NULL;
-		ret = __rrr_mqtt_property_clone(&new_node, node);
-		if (ret != 0) {
-			RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_clone\n");
-			goto out_destroy;
-		}
-		rrr_mqtt_property_collection_add(target, new_node);
-	RRR_LL_ITERATE_END();
-
-	goto out;
-	out_destroy:
-		rrr_mqtt_property_collection_destroy(target);
-	out:
-		return ret;
+	return rrr_mqtt_property_collection_add_selected_from_collection(
+			target,
+			source,
+			NULL,
+			0
+	);
 }

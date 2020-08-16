@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_usleep.h"
 #include "../lib/log.h"
-#include "../lib/posix.h"
-#include "../lib/rrr_time.h"
+#include "../lib/util/posix.h"
+#include "../lib/util/rrr_time.h"
 
 // Six zeros = 1s
 #define SLEEPTIME_US 1000000

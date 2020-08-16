@@ -33,12 +33,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/linked_list.h"
 #include "lib/log.h"
-#include "lib/gnu.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
-#include "lib/macro_utils.h"
+#include "lib/util/gnu.h"
+#include "lib/util/macro_utils.h"
+#include "lib/util/linked_list.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_passwd");
 
