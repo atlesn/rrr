@@ -242,7 +242,7 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 		RRR_BUG("BUG: end was less than start in rrr_type_import_ustr_raw\n");
 	}
 
-	rrr_length max = (rrr_length) (end - start);
+	rrr_length max = (rrr_length) (end - start) + 1;
 	if (max > 30) {
 		max = 30;
 	}
@@ -324,7 +324,7 @@ int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const c
 		RRR_BUG("BUG: end was less than start in rrr_type_import_istr_raw\n");
 	}
 
-	rrr_length max = (rrr_length) (end - start);
+	rrr_length max = (rrr_length) (end - start) + 1;
 	if (max > 30) {
 		max = 30;
 	}
@@ -1319,6 +1319,21 @@ int rrr_type_value_clone (
 	}
 
 	memcpy(new_value, source, sizeof(*new_value));
+
+	new_value->import_length_ref = NULL;
+	new_value->element_count_ref = NULL;
+
+	if (source->import_length_ref != NULL && (new_value->import_length_ref = strdup(source->import_length_ref)) == NULL) {
+		RRR_MSG_0("Could not duplicate string in rrr_type_value_clone\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (source->element_count_ref != NULL && (new_value->element_count_ref = strdup(source->element_count_ref)) == NULL) {
+		RRR_MSG_0("Could not duplicate string in rrr_type_value_clone\n");
+		ret = 1;
+		goto out;
+	}
 
 	if (do_clone_data && new_value->data != NULL) {
 		if ((new_value->data = malloc(new_value->total_stored_length)) == NULL) {

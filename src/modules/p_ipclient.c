@@ -77,7 +77,7 @@ struct ipclient_data {
 	char *ip_default_remote;
 	char *ip_default_remote_port;
 
-	int (*queue_method)(struct rrr_msg_msg_holder *entry, struct ipclient_data *data);
+	int (*queue_method)(struct rrr_msg_holder *entry, struct ipclient_data *data);
 
 	rrr_setting_uint src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
@@ -104,8 +104,8 @@ int data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thre
 	return 0;
 }
 
-int delete_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data);
-int queue_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data);
+int delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
+int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
 
 int parse_config (struct ipclient_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
@@ -173,14 +173,14 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_3 ("ipclient instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	rrr_msg_msg_holder_incref_while_locked(entry);
+	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&private_data->send_queue_intermediate, entry);
 	RRR_LL_VERIFY_HEAD(&private_data->send_queue_intermediate);
-	RRR_LL_ITERATE_BEGIN(&private_data->send_queue_intermediate, struct rrr_msg_msg_holder);
+	RRR_LL_ITERATE_BEGIN(&private_data->send_queue_intermediate, struct rrr_msg_holder);
 		RRR_LL_VERIFY_NODE(&private_data->send_queue_intermediate);
 	RRR_LL_ITERATE_END();
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return 0;
 }
 
@@ -189,7 +189,7 @@ struct receive_messages_callback_data {
 	int count;
 };
 
-static int receive_messages_callback_final(struct rrr_msg_msg_holder *entry, void *arg) {
+static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *arg) {
 	struct receive_messages_callback_data *callback_data = arg;
 	struct ipclient_data *data = callback_data->data;
 
@@ -211,7 +211,7 @@ static int receive_messages_callback_final(struct rrr_msg_msg_holder *entry, voi
 	callback_data->count++;
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -248,7 +248,7 @@ struct send_packet_callback_data {
 #define IPCLIENT_QUEUE_RESULT_NOT_QUEUED	(1<<3)
 */
 
-int delete_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data) {
+int delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
 	RRR_MSG_0("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
 			INSTANCE_D_NAME(ipclient_data->thread_data));
 
@@ -256,7 +256,7 @@ int delete_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_d
 	return 0;
 }
 
-int queue_message_callback (struct rrr_msg_msg_holder *entry, struct ipclient_data *ipclient_data) {
+int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
 	int ret = 0;
 
 	if ((ret = rrr_udpstream_asd_queue_and_incref_message(ipclient_data->udpstream_asd, entry)) != 0) {
@@ -283,21 +283,21 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 
 	*send_count = 0;
 
-	RRR_LL_ITERATE_BEGIN(&data->send_queue_intermediate, struct rrr_msg_msg_holder);
+	RRR_LL_ITERATE_BEGIN(&data->send_queue_intermediate, struct rrr_msg_holder);
 		RRR_LL_VERIFY_HEAD(&data->send_queue_intermediate);
 		RRR_LL_VERIFY_NODE(&data->send_queue_intermediate);
 
-		rrr_msg_msg_holder_lock(node);
+		rrr_msg_holder_lock(node);
 
 		if ((ret = data->queue_method(node, data)) != 0) {
-			rrr_msg_msg_holder_unlock(node);
+			rrr_msg_holder_unlock(node);
 			RRR_LL_ITERATE_BREAK();
 		}
 
 		(*send_count)++;
 
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_queue_intermediate, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_queue_intermediate, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if ((*send_count) > 0) {
 		RRR_DBG_3 ("ipclient instance %s queued %i packets for transmission\n",
@@ -347,7 +347,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 
 	int ret = RRR_FIFO_OK;
 
-	struct rrr_msg_msg_holder *entry = NULL;
+	struct rrr_msg_holder *entry = NULL;
 
 	// Points to data inside entry, not to be freed except from when entry is destroyed
 	void *joined_data = NULL;
@@ -358,7 +358,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		goto out;
 	}
 
-	rrr_msg_msg_holder_lock(entry);
+	rrr_msg_holder_lock(entry);
 
 	joined_data = entry->message;
 
@@ -377,7 +377,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		}
 		ret = RRR_FIFO_GLOBAL_ERR;
 	out:
-		rrr_msg_msg_holder_decref_while_locked_and_unlock(entry);
+		rrr_msg_holder_decref_while_locked_and_unlock(entry);
 		if (joined_data != NULL && ret == 0) {
 			RRR_BUG("Callback returned non-error but still did not set joined_data to NULL in ipclient_udpstream_allocator_intermediate\n");
 		}

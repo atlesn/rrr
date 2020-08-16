@@ -849,7 +849,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -1065,7 +1065,7 @@ struct receive_publish_create_entry_callback_data {
 	const struct rrr_msg_msg *message;
 };
 
-static int mqttclient_receive_publish_create_entry_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int mqttclient_receive_publish_create_entry_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct receive_publish_create_entry_callback_data *data = arg;
 
 	int ret = 0;
@@ -1083,7 +1083,7 @@ static int mqttclient_receive_publish_create_entry_callback (struct rrr_msg_msg_
 	entry->data_length = msg_size;
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

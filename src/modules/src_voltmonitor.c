@@ -406,7 +406,7 @@ struct volmonitor_spawn_message_callback_data {
 	uint64_t time_now;
 };
 
-static int voltmonitor_spawn_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int voltmonitor_spawn_message_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct volmonitor_spawn_message_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -432,7 +432,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_msg_msg_holder *entry,
 	message = NULL;
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -494,7 +494,7 @@ static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
 	return ret;
 }
 
-int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_msg_holder *entry) {
+int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_holder *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
 	struct rrr_msg_msg *message = entry->message;
@@ -524,7 +524,7 @@ int inject (struct rrr_instance_runtime_data *thread_data, struct rrr_msg_msg_ho
 	}
 
 	rrr_array_clear(&array_tmp);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

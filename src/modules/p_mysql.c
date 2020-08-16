@@ -159,7 +159,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_msg_msg_holder *entry);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_msg_holder *entry);
 };
 
 /* Check order with function pointers */
@@ -328,7 +328,7 @@ int colplan_array_bind_execute (
 		struct mysql_data *mysql_data,
 		MYSQL_STMT *stmt,
 		int column_count_from_prepare,
-		const struct rrr_msg_msg_holder *entry
+		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
@@ -727,15 +727,15 @@ int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
 
-	rrr_msg_msg_holder_incref_while_locked(entry);
+	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	return 0;
 }
 
-int mysql_save(const struct rrr_msg_msg_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
+int mysql_save(const struct rrr_msg_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
 	if (mysql_data->mysql_connected != 1) {
 		return 1;
 	}
@@ -773,7 +773,7 @@ struct process_callback_data {
 };
 
 int process_callback (
-		struct rrr_msg_msg_holder *entry,
+		struct rrr_msg_holder *entry,
 		MYSQL_STMT *stmt,
 		int column_count,
 		struct rrr_instance_runtime_data *thread_data
@@ -796,7 +796,7 @@ int process_callback (
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
-			rrr_msg_msg_holder_incref_while_locked(entry);
+			rrr_msg_holder_incref_while_locked(entry);
 			RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 		}
 	}
@@ -820,7 +820,7 @@ int process_callback (
 		}
 	}
 
-	rrr_msg_msg_holder_decref_while_locked_and_unlock(entry);
+	rrr_msg_holder_decref_while_locked_and_unlock(entry);
 
 	return 0;
 }
@@ -868,9 +868,9 @@ int process_entries (struct rrr_msg_msg_holder_collection *source_buffer, struct
 		}
 	}
 
-	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_msg_holder);
+	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_holder);
 		RRR_LL_VERIFY_NODE(source_buffer);
-		rrr_msg_msg_holder_lock(node);
+		rrr_msg_holder_lock(node);
 		process_callback(node, stmt, column_count, thread_data);
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);

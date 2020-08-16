@@ -347,14 +347,14 @@ struct ip_read_callback_data {
 
 static int ip_read_receive_message (
 		struct ip_data *data,
-		const struct rrr_msg_msg_holder *entry_orig,
+		const struct rrr_msg_holder *entry_orig,
 		struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg_holder *new_entry = NULL;
+	struct rrr_msg_holder *new_entry = NULL;
 
-	if (rrr_msg_msg_holder_new (
+	if (rrr_msg_holder_new (
 			&new_entry,
 			MSG_TOTAL_SIZE(message),
 			(struct sockaddr *) &entry_orig->addr,
@@ -367,7 +367,7 @@ static int ip_read_receive_message (
 		goto out;
 	}
 
-	rrr_msg_msg_holder_lock(new_entry);
+	rrr_msg_holder_lock(new_entry);
 
 	RRR_DBG_3("ip instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
@@ -391,7 +391,7 @@ static int ip_read_receive_message (
 	data->messages_count_read++;
 
 	out:
-	rrr_msg_msg_holder_decref_while_locked_and_unlock(new_entry);
+	rrr_msg_holder_decref_while_locked_and_unlock(new_entry);
 	if (message != NULL) {
 		free(message);
 	}
@@ -400,7 +400,7 @@ static int ip_read_receive_message (
 
 static int ip_read_data_receive_extract_messages (
 		struct ip_data *data,
-		const struct rrr_msg_msg_holder *entry_orig,
+		const struct rrr_msg_holder *entry_orig,
 		const struct rrr_array *array
 ) {
 	int ret = 0;
@@ -440,7 +440,7 @@ static int ip_read_data_receive_extract_messages (
 }
 
 struct ip_read_array_callback_data {
-	struct rrr_msg_msg_holder *template_entry;
+	struct rrr_msg_holder *template_entry;
 	struct ip_data *data;
 	int handle_soft_error;
 	int return_value_from_array;
@@ -480,7 +480,7 @@ static int __rrr_ip_receive_array_tree_callback (
 
 	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 
-	rrr_msg_msg_holder_set_unlocked (
+	rrr_msg_holder_set_unlocked (
 			callback_data->template_entry,
 			NULL,
 			0,
@@ -521,7 +521,7 @@ static int __rrr_ip_receive_array_tree_callback (
 	return ret;
 }
 
-static int ip_read_array_intermediate (struct rrr_msg_msg_holder *entry, void *arg) {
+static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) {
 	struct ip_read_array_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->data;
 
@@ -542,7 +542,7 @@ static int ip_read_array_intermediate (struct rrr_msg_msg_holder *entry, void *a
 			data->do_sync_byte_by_byte,
 			data->message_max_size,
 			__rrr_ip_receive_array_tree_callback,
-			&callback_data
+			callback_data
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			if (callback_data->handle_soft_error) {
@@ -580,7 +580,7 @@ static int ip_read_array_intermediate (struct rrr_msg_msg_holder *entry, void *a
 
 		callback_data->template_entry = NULL;
 
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 		rrr_array_clear(&array_tmp);
 		return ret;
 }
@@ -688,12 +688,12 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_3 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	rrr_msg_msg_holder_incref_while_locked(entry);
+	rrr_msg_holder_incref_while_locked(entry);
 
 	entry->send_time = 0;
 	RRR_LL_APPEND(&data->send_buffer, entry);
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	return 0;
 }
@@ -999,7 +999,7 @@ static int ip_send_message (
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
-		struct rrr_msg_msg_holder *entry
+		struct rrr_msg_holder *entry
 ) {
 	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 	int ret = 0;
@@ -1279,7 +1279,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		int did_do_something = 0;
 		int timeout_count = 0;
 		int ret_tmp = 0;
-		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_msg_holder);
+		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
 			// Default action is that message was not successfully sent. Send function
 			// will set to 0 if sending succeeds.
 			int send_status = 1;
@@ -1289,7 +1289,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				RRR_LL_ITERATE_LAST();
 			}
 
-			rrr_msg_msg_holder_lock(node);
+			rrr_msg_holder_lock(node);
 
 			int timeout_reached = 0;
 
@@ -1328,7 +1328,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			// do not destroy
 			if (action == IP_ACTION_RETRY) {
 				// Just retry
-				rrr_msg_msg_holder_unlock(node);
+				rrr_msg_holder_unlock(node);
 			}
 			else {
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -1349,7 +1349,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 					// IP_ACTION_DROP, do nothing and just continue with destroy
 				}
 			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
+		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 		if (timeout_count > 0) {
 			RRR_MSG_0("Send timeout for %i messages in ip instance %s\n",

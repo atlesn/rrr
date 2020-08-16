@@ -456,9 +456,25 @@ int rrr_array_parse_data_into_value (
 	RESOLVE_REF(import_length,import_length_ref);
 	RESOLVE_REF(element_count,element_count_ref);
 
-	if (node->import_length == 0 || node->element_count == 0) {
-		RRR_MSG_0("Import length was %" PRIrrrl " and element count was %" PRIrrrl " while importing array value, both must be non-zero\n",
-				node->import_length, node->element_count);
+	if (node->import_length == 0 && node->definition->max_length != 0) {
+		RRR_MSG_0("Import length was %" PRIrrrl " while importing array value of type %s, must be non-zero\n",
+				node->import_length, node->definition->identifier);
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+
+	if (node->element_count == 0) {
+		RRR_MSG_0("Element count was %" PRIrrrl " while importing array value of type %s, must be non-zero\n",
+				node->element_count, node->definition->identifier);
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+
+	if (node->import_length > node->definition->max_length) {
+		RRR_MSG_0("Import length was %" PRIrrrl " while maximum is %" PRIrrrl " while importing array value of type %s\n",
+				node->import_length, node->definition->max_length, node->definition->identifier);
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
 	}
 
 	if ((ret = node->definition->import(node, parsed_bytes, pos, end)) != 0) {

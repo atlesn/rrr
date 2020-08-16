@@ -1269,7 +1269,7 @@ int __rrr_array_tree_import_value_callback (
 			callback_data->pos,
 			callback_data->end,
 			__rrr_array_tree_import_value_ref_resolve_callback,
-			&callback_data
+			callback_data
 	)) != 0) {
 		goto out;
 	}

@@ -183,7 +183,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

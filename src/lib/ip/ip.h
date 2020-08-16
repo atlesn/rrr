@@ -35,7 +35,7 @@ struct rrr_array;
 struct rrr_array_tree;
 struct rrr_read_session_collection;
 struct rrr_read_session;
-struct rrr_msg_msg_holder;
+struct rrr_msg_holder;
 struct rrr_ip_accept_data;
 
 struct rrr_ip_send_packet_info {
@@ -68,7 +68,7 @@ void rrr_ip_graylist_clear_void (
 		void *target
 );
 int rrr_ip_receive_array_tree (
-		struct rrr_msg_msg_holder *target_entry,
+		struct rrr_msg_holder *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
@@ -76,7 +76,7 @@ int rrr_ip_receive_array_tree (
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
-		int (*callback)(struct rrr_msg_msg_holder *entry, struct rrr_array *array, void *arg),
+		int (*callback)(struct rrr_msg_holder *entry, struct rrr_array *array, void *arg),
 		void *arg
 );
 int rrr_ip_send (

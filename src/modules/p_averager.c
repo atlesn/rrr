@@ -73,11 +73,11 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
-	struct rrr_msg_msg_holder *dup_entry = NULL;
+	struct rrr_msg_holder *dup_entry = NULL;
 	struct rrr_msg_msg *dup_message = NULL;
 
 	if (MSG_IS_MSG(message) && MSG_IS_ARRAY(message)) {
-		rrr_msg_msg_holder_incref_while_locked(entry);
+		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->input_list, entry);
 
 		if (averager_data->preserve_point_measurements == 1) {
@@ -90,7 +90,7 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-			rrr_msg_msg_holder_lock(dup_entry);
+			rrr_msg_holder_lock(dup_entry);
 
 			dup_message = dup_entry->message;
 			dup_entry->message = NULL;
@@ -108,9 +108,9 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			dup_message = NULL;
 
 			// Due to linked list
-			rrr_msg_msg_holder_incref_while_locked(dup_entry);
+			rrr_msg_holder_incref_while_locked(dup_entry);
 
-			rrr_msg_msg_holder_unlock(dup_entry);
+			rrr_msg_holder_unlock(dup_entry);
 
 			RRR_LL_APPEND(&averager_data->output_list, dup_entry);
 		}
@@ -122,16 +122,16 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	else {
 		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", writing to output buffer\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
-		rrr_msg_msg_holder_incref_while_locked(entry);
+		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->output_list, entry);
 	}
 
 	out:
 		if (dup_entry != NULL) {
-			rrr_msg_msg_holder_decref(dup_entry);
+			rrr_msg_holder_decref(dup_entry);
 		}
 		RRR_FREE_IF_NOT_NULL(dup_message);
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 		return ret;
 }
 
@@ -140,16 +140,16 @@ void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t min_time = time_now - timespan_useconds;
 
-	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_msg_holder);
-		rrr_msg_msg_holder_lock(node);
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
 		struct rrr_msg_msg *message = node->message;
 		if (message->timestamp < min_time) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else {
-			rrr_msg_msg_holder_unlock(node);
+			rrr_msg_holder_unlock(node);
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 }
 
 struct averager_calculation {
@@ -194,7 +194,7 @@ static int __averager_get_64_from_array (uint64_t *result, struct averager_data 
 int averager_process_message (
 		struct averager_data *averager_data,
 		struct averager_calculation *calculation,
-		struct rrr_msg_msg_holder *entry_locked
+		struct rrr_msg_holder *entry_locked
 ) {
 	struct rrr_msg_msg *message = entry_locked->message;
 	struct rrr_array array_tmp = {0};
@@ -260,7 +260,7 @@ struct averager_spawn_message_callback_data {
 	struct averager_data *data;
 };
 
-int averager_spawn_message_callback (struct rrr_msg_msg_holder *new_entry, void *arg) {
+int averager_spawn_message_callback (struct rrr_msg_holder *new_entry, void *arg) {
 	struct averager_spawn_message_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -285,7 +285,7 @@ int averager_spawn_message_callback (struct rrr_msg_msg_holder *new_entry, void 
 	message = NULL;
 
 	out:
-	rrr_msg_msg_holder_unlock(new_entry);
+	rrr_msg_holder_unlock(new_entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -359,14 +359,14 @@ int averager_calculate_average(struct averager_data *data) {
 
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_msg_holder);
-		rrr_msg_msg_holder_lock(node);
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
 		if ((ret = averager_process_message(data, &calculation, node)) != 0) {
-			rrr_msg_msg_holder_unlock(node);
+			rrr_msg_holder_unlock(node);
 			RRR_LL_ITERATE_LAST();
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if (ret != 0) {
 		goto out;
