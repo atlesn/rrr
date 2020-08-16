@@ -303,15 +303,14 @@ int rrr_mqtt_client_connect (
 	// Sleep a bit in case server runs in the same RRR program
 	rrr_posix_usleep(500000); // 500ms
 
-	if (rrr_mqtt_transport_connect (
+	if ((ret = rrr_mqtt_transport_connect (
 			transport_handle,
 			data->mqtt_data.transport,
 			port,
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
-	) != 0) {
+	)) != 0) {
 		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
-		ret = 1;
 		goto out_nolock;
 	}
 
