@@ -271,16 +271,16 @@ Default is not timeout (same as 0).
 .It ip_timeout_action={retry|drop|return}
 What do do when a message times out after being undeliverable. In case of
 .B retry,
- keep trying indefinitely (default).
- .B drop
- will cause the message to be dropped, and
- .B return
- will put the message into output queue for readers to pick up. The latter is useful if an application for instance wishes to change
- the destination address if the target host is unreachable, and possibly log errors. If
- .B retry
- is used, then
- .B ip_send_timeout
- must be set to zero or left undefined. 
+keep trying indefinitely (default).
+.B drop
+will cause the message to be dropped, and
+.B return
+will put the message into output queue for readers to pick up. The latter is useful if an application for instance wishes to change
+the destination address if the target host is unreachable, and possibly log errors. If
+.B retry
+is used, then
+.B ip_send_timeout
+must be set to zero or left undefined. 
  
 .It ip_target_host=HOST
 .It ip_target_port=PORT
