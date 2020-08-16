@@ -347,7 +347,7 @@ int __rrr_config_parse_array_tree (struct rrr_config *config, struct rrr_parse_p
 	memcpy(name_tmp, pos->data + start, name_length);
 	name_tmp[name_length] = '\0';
 
-	if (rrr_array_tree_parse (
+	if (rrr_array_tree_definition_parse (
 			&new_tree,
 			pos,
 			name_tmp

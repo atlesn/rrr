@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_msg.h"
 
 int rrr_msg_msg_holder_util_new_with_empty_message (
-		struct rrr_msg_msg_holder **result,
+		struct rrr_msg_holder **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -39,7 +39,7 @@ int rrr_msg_msg_holder_util_new_with_empty_message (
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg_holder *entry = NULL;
+	struct rrr_msg_holder *entry = NULL;
 	struct rrr_msg_msg *message = NULL;
 
 	// XXX : Callers treat this function as message_data_length is an absolute value
@@ -52,7 +52,7 @@ int rrr_msg_msg_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	if (rrr_msg_msg_holder_new (
+	if (rrr_msg_holder_new (
 			&entry,
 			message_size,
 			addr,
@@ -65,9 +65,9 @@ int rrr_msg_msg_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	rrr_msg_msg_holder_lock(entry);
+	rrr_msg_holder_lock(entry);
 	memset(message, '\0', message_size);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	message = NULL;
 
@@ -79,8 +79,8 @@ int rrr_msg_msg_holder_util_new_with_empty_message (
 }
 
 int rrr_msg_msg_holder_util_clone_no_locking (
-		struct rrr_msg_msg_holder **result,
-		const struct rrr_msg_msg_holder *source
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
 ) {
 	// Note : Do calculation correctly, not incorrect
 	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
@@ -98,10 +98,10 @@ int rrr_msg_msg_holder_util_clone_no_locking (
 	);
 
 	if (ret == 0) {
-		rrr_msg_msg_holder_lock(*result);
+		rrr_msg_holder_lock(*result);
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
-		rrr_msg_msg_holder_unlock(*result);
+		rrr_msg_holder_unlock(*result);
 	}
 
 	return ret;
@@ -109,7 +109,7 @@ int rrr_msg_msg_holder_util_clone_no_locking (
 
 int rrr_msg_msg_holder_util_message_topic_match (
 		int *does_match,
-		const struct rrr_msg_msg_holder *entry,
+		const struct rrr_msg_holder *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token
 ) {
 	const struct rrr_msg_msg *message = entry->message;

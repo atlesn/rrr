@@ -47,6 +47,7 @@ struct rrr_array_branch_collection {
 
 struct rrr_array_branch {
 	RRR_LL_NODE(struct rrr_array_branch);
+	int branch_id;
 	struct rrr_condition condition;
 	struct rrr_array_tree *array_tree;
 	struct rrr_array_branch_collection branches_elsif;
@@ -55,6 +56,7 @@ struct rrr_array_branch {
 
 struct rrr_array_node {
 	RRR_LL_NODE(struct rrr_array_node);
+	rrr_length rewind_count;
 	struct rrr_array array;
 	struct rrr_array_branch *branch_if;
 };
@@ -90,12 +92,12 @@ int rrr_array_tree_push_array_clear_source (
 		struct rrr_array_tree *target,
 		struct rrr_array *source
 );
-int rrr_array_tree_parse (
+int rrr_array_tree_definition_parse (
 		struct rrr_array_tree **target,
 		struct rrr_parse_pos *pos,
 		const char *name
 );
-int rrr_array_tree_parse_raw (
+int rrr_array_tree_definition_parse_raw (
 		struct rrr_array_tree **target,
 		const char *data,
 		int data_length,

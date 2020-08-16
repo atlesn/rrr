@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "string_builder.h"
+#include "util/gnu.h"
 #include "util/macro_utils.h"
 
 void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
@@ -105,3 +106,32 @@ int rrr_string_builder_append (struct rrr_string_builder *string_builder, const 
 
 	return 0;
 }
+
+int rrr_string_builder_append_format (struct rrr_string_builder *string_builder, const char *format, ...) {
+	int ret = 0;
+
+	va_list args;
+	va_start (args, format);
+
+	char *tmp = NULL;
+
+	if (rrr_vasprintf(&tmp, format, args) <= 0) {
+		ret = 1;
+		goto out;
+	}
+
+	ssize_t length = strlen(tmp);
+	if (rrr_string_builder_reserve(string_builder, length) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(string_builder->buf + string_builder->wpos, tmp, length + 1);
+	string_builder->wpos += length;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(tmp);
+	va_end(args);
+	return ret;
+}
+

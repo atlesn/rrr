@@ -149,43 +149,6 @@ int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data
 	return ret;
 }
 
-static int __rrr_instance_config_parse_array_definition_from_config_silent_fail (
-		struct rrr_array *target,
-		struct rrr_instance_config_data *config,
-		const char *cmd_key
-) {
-	int ret = 0;
-
-	struct rrr_array_parse_single_definition_callback_data callback_data = {
-			target, 0
-	};
-
-	memset (target, '\0', sizeof(*target));
-
-	if (rrr_instance_config_traverse_split_commas_silent_fail (
-			config,
-			cmd_key,
-			rrr_array_parse_single_definition_callback,
-			&callback_data
-	) != 0) {
-		ret = 1;
-		// Don't goto, we might want to print the error message below
-	}
-
-	if (callback_data.parse_ret != 0 || rrr_array_validate_definition(target) != 0) {
-		RRR_MSG_0("Array definition in setting '%s' of '%s' was invalid\n",
-				cmd_key, config->name);
-		ret = 1;
-		goto out_destroy;
-	}
-
-	goto out;
-	out_destroy:
-		rrr_array_clear(target);
-	out:
-		return ret;
-}
-
 int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		struct rrr_array_tree **target_array_tree,
 		struct rrr_instance_config_data *config,
@@ -196,7 +159,6 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	*target_array_tree = NULL;
 
 	struct rrr_array_tree *new_tree = NULL;
-	struct rrr_array array_tmp = {0};
 
 	char *target_str_tmp = NULL;
 
@@ -215,20 +177,20 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	char *curly_end_pos = strchr(target_str_tmp, '}');
 
 	if (curly_start_pos == NULL || curly_end_pos == NULL || !(curly_end_pos > curly_start_pos)) {
-		if ((ret = __rrr_instance_config_parse_array_definition_from_config_silent_fail (
-				&array_tmp,
-				config,
-				cmd_key
-		)) != 0) {
-			goto out;
-		}
+		size_t definition_length = strlen(target_str_tmp);
 
-		if ((ret = rrr_array_tree_new(&new_tree, NULL)) != 0) {
-			goto out;
-		}
+		// Replace terminating \0 with semicolon. We don't actually use the \0 to
+		// figure out where the end is when parsing the array. This adding of ;
+		// allows simple array definition to be specified without ; at the end.
+		target_str_tmp[definition_length] = ';';
 
-		if (rrr_array_tree_push_array_clear_source(new_tree, &array_tmp) != 0) {
-			RRR_MSG_0("Failed to push parsed single array definition to array tree in rrr_instance_config_parse_array_tree_definition_from_config_silent_fail\n");
+		if (rrr_array_tree_definition_parse_raw (
+				&new_tree,
+				target_str_tmp,
+				definition_length + 1, // DO NOT use strlen here, string no longer has \0
+				"-"
+		)) {
+			RRR_MSG_0("Error while parsing array tree in setting %s in instance %s\n", cmd_key, config->name);
 			ret = 1;
 			goto out;
 		}
@@ -253,6 +215,10 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		}
 	}
 
+	if (RRR_DEBUGLEVEL_1) {
+		rrr_array_tree_dump(new_tree);
+	}
+
 	*target_array_tree = new_tree;
 	new_tree = NULL;
 
@@ -261,7 +227,6 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		if (new_tree != NULL) {
 			rrr_array_tree_destroy(new_tree);
 		}
-		rrr_array_clear(&array_tmp);
 		return ret;
 }
 

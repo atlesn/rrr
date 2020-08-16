@@ -37,10 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_instance_module_data;
 struct rrr_instance_runtime_data;
-struct rrr_thread_start_data;
 struct rrr_instance_config_data;
-struct rrr_msg_msg;
-struct rrr_msg_msg_holder;
+struct rrr_msg_holder;
 struct rrr_thread;
 
 struct rrr_module_load_data {
@@ -50,21 +48,12 @@ struct rrr_module_load_data {
 };
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE		\
-	struct rrr_msg_msg_holder *entry,			\
+	struct rrr_msg_holder *entry,				\
 	void *arg
-/*
-#define RRR_MODULE_POLL_SIGNATURE \
-		struct rrr_instance_thread_data *data, \
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE), \
-		struct rrr_fifo_callback_args *poll_data, \
-		unsigned int wait_milliseconds
-*/
-#define RRR_MODULE_PRINT_SIGNATURE \
-		struct rrr_instance_thread_data *data
 
 #define RRR_MODULE_INJECT_SIGNATURE \
-		struct rrr_instance_runtime_data *thread_data, \
-		struct rrr_msg_msg_holder *message
+	struct rrr_instance_runtime_data *thread_data, \
+	struct rrr_msg_holder *message
 
 // Try not to put functions with equal arguments next to each other
 struct rrr_module_operations {

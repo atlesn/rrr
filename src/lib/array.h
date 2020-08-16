@@ -60,14 +60,6 @@ int rrr_array_parse_single_definition (
 		const char *start,
 		const char *end
 );
-struct rrr_array_parse_single_definition_callback_data {
-	struct rrr_array *target;
-	int parse_ret;
-};
-int rrr_array_parse_single_definition_callback (
-		const char *value,
-		void *arg
-);
 int rrr_array_validate_definition (
 		const struct rrr_array *target
 );
@@ -75,13 +67,9 @@ int rrr_array_parse_data_into_value (
 		struct rrr_type_value *node,
 		rrr_length *parsed_bytes,
 		const char *pos,
-		const char *end
-);
-int rrr_array_parse_data_from_definition (
-		struct rrr_array *target,
-		ssize_t *parsed_bytes,
-		const char *data,
-		const rrr_length length
+		const char *end,
+		int (*ref_resolve_callback)(rrr_length *result, const char *name, void *arg),
+		void *ref_resolve_callback_arg
 );
 int rrr_array_definition_clone (
 		struct rrr_array *target,
@@ -148,12 +136,14 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 		const struct rrr_array *definition,
 		const char *tag
 );
+/*
 int rrr_array_get_packed_length_from_buffer (
 		ssize_t *import_length,
 		const struct rrr_array *definition,
 		const char *buf,
 		ssize_t buf_length
 );
+*/
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 );

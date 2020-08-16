@@ -278,7 +278,7 @@ struct httpserver_write_message_callback_data {
 
 // NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
-		struct rrr_msg_msg_holder *new_entry,
+		struct rrr_msg_holder *new_entry,
 		void *arg
 ) {
 	struct httpserver_write_message_callback_data *callback_data = arg;
@@ -320,7 +320,7 @@ static int httpserver_write_message_callback (
 	new_message = NULL;
 
 	out:
-	rrr_msg_msg_holder_unlock(new_entry);
+	rrr_msg_holder_unlock(new_entry);
 	return ret;
 }
 
@@ -414,7 +414,7 @@ static int httpserver_receive_get_response_callback (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(response);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -636,7 +636,7 @@ struct receive_raw_broker_callback_data {
 };
 
 static int httpserver_receive_raw_broker_callback (
-		struct rrr_msg_msg_holder *entry_new,
+		struct rrr_msg_holder *entry_new,
 		void *arg
 ) {
 	struct receive_raw_broker_callback_data *write_callback_data = arg;
@@ -676,7 +676,7 @@ static int httpserver_receive_raw_broker_callback (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic);
-	rrr_msg_msg_holder_unlock(entry_new);
+	rrr_msg_holder_unlock(entry_new);
 	return ret;
 }
 
@@ -732,7 +732,7 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
 	}
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

@@ -73,7 +73,7 @@ int rrr_test_condition (void) {
 
 	rrr_parse_pos_init(&pos, array_tree, strlen(array_tree) + 1);
 
-	if (rrr_array_tree_parse(&tree, &pos, "my_tree")) {
+	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
 		TEST_MSG("Array tree parsing failed\n");
 		ret |= 1;
 	}
@@ -89,7 +89,7 @@ int rrr_test_condition (void) {
 
 	rrr_parse_pos_init(&pos, array_tree_rpn, strlen(array_tree_rpn) + 1);
 
-	if (rrr_array_tree_parse(&tree, &pos, "my_tree")) {
+	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
 		TEST_MSG("Array tree parsing failed\n");
 		ret |= 1;
 	}

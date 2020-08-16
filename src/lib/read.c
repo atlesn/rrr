@@ -612,25 +612,22 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 		if (ret == 0) {
 			if (import_length <= 0) {
-				// This is actually a bug, should be avoided by array validation checks
-				RRR_MSG_0("Array definition produced a length of zero, possible configuration error\n");
-				return RRR_READ_HARD_ERROR;
+				RRR_MSG_0("Warning: Array definition produced a length of zero, possible configuration error. Check REWIND usage.\n");
+				return RRR_READ_SOFT_ERROR;
 			}
 			break;
 		}
 		else {
-			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
-				return RRR_READ_INCOMPLETE;
+			if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
+				if (data->do_byte_by_byte_sync != 0) {
+					skipped_bytes++;
+					pos++;
+					wpos--;
+					ret = RRR_READ_OK;
+				}
 			}
 
-			if (data->do_byte_by_byte_sync != 0) {
-				skipped_bytes++;
-				pos++;
-				wpos--;
-			}
-			else {
-				return RRR_READ_SOFT_ERROR;
-			}
+			return ret;
 		}
 	}
 

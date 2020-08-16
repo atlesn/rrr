@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // and must be held when accessing the locks
 pthread_mutex_t rrr_msg_msg_holder_master_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int __rrr_msg_msg_holder_lock_init (
-		struct rrr_msg_msg_holder *entry
+static int __rrr_msg_holder_lock_init (
+		struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
@@ -47,16 +47,16 @@ static int __rrr_msg_msg_holder_lock_init (
 	return ret;
 }
 
-static void __rrr_msg_msg_holder_util_lock_destroy (
-		struct rrr_msg_msg_holder *entry
+static void __rrr_msg_holder_util_lock_destroy (
+		struct rrr_msg_holder *entry
 ) {
 	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
 	pthread_mutex_destroy(&entry->lock);
 	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
 }
 
-void rrr_msg_msg_holder_lock (
-		struct rrr_msg_msg_holder *entry
+void rrr_msg_holder_lock (
+		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_msg_msg_holder_lock_\n");
@@ -71,8 +71,8 @@ void rrr_msg_msg_holder_lock (
 	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
 }
 
-void rrr_msg_msg_holder_unlock (
-		struct rrr_msg_msg_holder *entry
+void rrr_msg_holder_unlock (
+		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_msg_msg_holder_unlock_\n");
@@ -82,8 +82,8 @@ void rrr_msg_msg_holder_unlock (
 	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
 }
 
-void rrr_msg_msg_holder_decref_while_locked_and_unlock (
-		struct rrr_msg_msg_holder *entry
+void rrr_msg_holder_decref_while_locked_and_unlock (
+		struct rrr_msg_holder *entry
 ) {
 #ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
 	printf ("ip buffer entry decref %p while locked from %i\n", entry, entry->usercount);
@@ -94,18 +94,18 @@ void rrr_msg_msg_holder_decref_while_locked_and_unlock (
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
 		entry->usercount = 1; // Avoid bug trap
-		rrr_msg_msg_holder_unlock(entry);
-		__rrr_msg_msg_holder_util_lock_destroy(entry);
+		rrr_msg_holder_unlock(entry);
+		__rrr_msg_holder_util_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
 		free(entry);
 	}
 	else {
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 	}
 }
 
-void rrr_msg_msg_holder_incref_while_locked (
-		struct rrr_msg_msg_holder *entry
+void rrr_msg_holder_incref_while_locked (
+		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("BUG: ip buffer entry was destroyed while increfing\n");
@@ -119,27 +119,27 @@ void rrr_msg_msg_holder_incref_while_locked (
 #endif
 }
 
-void rrr_msg_msg_holder_decref (
-		struct rrr_msg_msg_holder *entry
+void rrr_msg_holder_decref (
+		struct rrr_msg_holder *entry
 ) {
-	rrr_msg_msg_holder_lock(entry);
+	rrr_msg_holder_lock(entry);
 #ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
 	printf ("ip buffer entry decref %p from %i\n", entry, entry->usercount);
 #endif
-	rrr_msg_msg_holder_decref_while_locked_and_unlock(entry);
+	rrr_msg_holder_decref_while_locked_and_unlock(entry);
 }
 
-void rrr_msg_msg_holder_decref_void (
+void rrr_msg_holder_decref_void (
 		void *entry
 ) {
 #ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
 	printf ("ip buffer entry decref %p void\n", entry);
 #endif
-	rrr_msg_msg_holder_decref(entry);
+	rrr_msg_holder_decref(entry);
 }
 
-int rrr_msg_msg_holder_new (
-		struct rrr_msg_msg_holder **result,
+int rrr_msg_holder_new (
+		struct rrr_msg_holder **result,
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -150,14 +150,14 @@ int rrr_msg_msg_holder_new (
 
 	*result = NULL;
 
-	struct rrr_msg_msg_holder *entry = malloc(sizeof(*entry));
+	struct rrr_msg_holder *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (__rrr_msg_msg_holder_lock_init(entry) != 0) {
+	if (__rrr_msg_holder_lock_init(entry) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_msg_msg_holder_new\n");
 		ret = 1;
 		goto out_free;
@@ -166,7 +166,7 @@ int rrr_msg_msg_holder_new (
 	// Avoid usercount bug trap, write once again while holding the lock below
 	entry->usercount = 99999;
 
-	rrr_msg_msg_holder_lock(entry);
+	rrr_msg_holder_lock(entry);
 
 	RRR_LL_NODE_INIT(entry);
 
@@ -191,7 +191,7 @@ int rrr_msg_msg_holder_new (
 	entry->protocol = protocol;
 	entry->usercount = 1;
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 #ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
 	printf ("ip buffer entry new %p usercount %i\n", entry, entry->usercount);
@@ -205,8 +205,8 @@ int rrr_msg_msg_holder_new (
 		return ret;
 }
 
-void rrr_msg_msg_holder_set_unlocked (
-		struct rrr_msg_msg_holder *target,
+void rrr_msg_holder_set_unlocked (
+		struct rrr_msg_holder *target,
 		void *message,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,

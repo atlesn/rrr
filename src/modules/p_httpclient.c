@@ -387,7 +387,7 @@ struct httpclient_raw_create_message_callback_data {
 };
 
 static int httpclient_raw_create_message_callback (
-		struct rrr_msg_msg_holder *new_entry,
+		struct rrr_msg_holder *new_entry,
 		void *arg
 ) {
 	struct httpclient_raw_create_message_callback_data *callback_data = arg;
@@ -421,7 +421,7 @@ static int httpclient_raw_create_message_callback (
 			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), size);
 
 	out:
-	rrr_msg_msg_holder_unlock(new_entry);
+	rrr_msg_holder_unlock(new_entry);
 	return ret;
 }
 
@@ -461,7 +461,7 @@ static int httpclient_raw_callback (
 
 static int httpclient_send_request_locked (
 		struct httpclient_data *data,
-		struct rrr_msg_msg_holder *entry
+		struct rrr_msg_holder *entry
 ) {
 	struct rrr_msg_msg *message = entry->message;
 	struct rrr_array array_tmp = {0};
@@ -630,12 +630,12 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	goto out;
 	out_defer:
-		rrr_msg_msg_holder_incref_while_locked(entry);
+		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&data->defer_queue, entry);
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 		return RRR_FIFO_SEARCH_STOP;
 	out:
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 		return ret;
 }
 
@@ -791,8 +791,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
-			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_msg_holder);
-				rrr_msg_msg_holder_lock(node);
+			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
+				rrr_msg_holder_lock(node);
 				if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
@@ -807,8 +807,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
-				rrr_msg_msg_holder_unlock(node);
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_msg_holder_decref(node));
+				rrr_msg_holder_unlock(node);
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_holder_decref(node));
 
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors

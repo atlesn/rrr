@@ -271,7 +271,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 
 	sprintf(array_tree_tmp, "%s;", array_definition);
 
-	if (rrr_array_tree_parse_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+	if (rrr_array_tree_definition_parse_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
 		RRR_MSG_0("Error while parsing array tree definition\n");
 		ret = 1;
 		goto out;
