@@ -93,7 +93,6 @@ unsigned int rrr_perl5_message_clear_array (HV *hv) {
 
 unsigned int rrr_perl5_message_push_tag_blob (HV *hv, const char *tag, const char *value, size_t size) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -110,8 +109,6 @@ unsigned int rrr_perl5_message_push_tag_blob (HV *hv, const char *tag, const cha
 
 unsigned int rrr_perl5_message_push_tag_str (HV *hv, const char *tag, const char *str) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
-
 	int ret = 0;
 
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
@@ -127,7 +124,6 @@ unsigned int rrr_perl5_message_push_tag_str (HV *hv, const char *tag, const char
 
 unsigned int rrr_perl5_message_push_tag_h (HV *hv, const char *tag, SV *sv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -157,11 +153,13 @@ unsigned int rrr_perl5_message_push_tag_fixp (HV *hv, const char *tag, SV *sv) {
 
 	int ret = 0;
 
+	SV *sv_tmp = NULL;
+
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	rrr_fixp fixp;
 
 	// Cannot pass READONLY to fixp convert
-	SV *sv_tmp = newSVsv(sv);
+	sv_tmp = newSVsv(sv);
 
 	if (rrr_perl5_type_auto_sv_to_fixp(&fixp, ctx, sv_tmp) != 0) {
 		RRR_MSG_0("Failed to convert SV to fixed point in Perl5 push_tag_fixp\n");
@@ -266,7 +264,6 @@ unsigned int rrr_perl5_message_push_tag (HV *hv, const char *tag, SV *values) {
 
 unsigned int rrr_perl5_message_set_tag_blob (HV *hv, const char *tag, const char *value, size_t size) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -281,7 +278,6 @@ unsigned int rrr_perl5_message_set_tag_blob (HV *hv, const char *tag, const char
 
 unsigned int rrr_perl5_message_set_tag_str (HV *hv, const char *tag, const char *str) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -296,7 +292,6 @@ unsigned int rrr_perl5_message_set_tag_str (HV *hv, const char *tag, const char 
 
 unsigned int rrr_perl5_message_set_tag_h (HV *hv, const char *tag, SV *values) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -311,7 +306,6 @@ unsigned int rrr_perl5_message_set_tag_h (HV *hv, const char *tag, SV *values) {
 
 unsigned int rrr_perl5_message_set_tag_fixp (HV *hv, const char *tag, SV *values) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -614,7 +608,6 @@ AV *rrr_perl5_message_get_position (HV *hv, UV pos) {
 
 SV *rrr_perl5_message_count_positions (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 	SV *result = newSVuv(0);
@@ -637,7 +630,6 @@ SV *rrr_perl5_message_count_positions (HV *hv) {
 
 AV *rrr_perl5_message_get_tag_names (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 
@@ -665,7 +657,6 @@ AV *rrr_perl5_message_get_tag_names (HV *hv) {
 
 AV *rrr_perl5_message_get_tag_counts (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
-	struct rrr_perl5_ctx *ctx = rrr_perl5_find_ctx (my_perl);
 
 	int ret = 0;
 

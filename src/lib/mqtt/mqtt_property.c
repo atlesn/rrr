@@ -278,6 +278,7 @@ static int __rrr_mqtt_property_clone (
 
 	if ((ret = rrr_mqtt_property_new(&result, source->definition)) != 0) {
 		RRR_MSG_0("Could not create new property in __rrr_mqtt_property_clone\n");
+		goto out;
 	}
 
 	if (source->sibling != NULL) {
@@ -429,6 +430,10 @@ int rrr_mqtt_property_collection_add_cloned (
 		const struct rrr_mqtt_property *property
 ) {
 	struct rrr_mqtt_property *new_property = NULL;
+
+	if (property == NULL) {
+		RRR_BUG("BUG: Propery was NULL in rrr_mqtt_property_collection_add_cloned\n");
+	}
 
 	int ret = 0;
 

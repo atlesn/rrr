@@ -48,6 +48,15 @@ int rrr_mqtt_topic_match_tokens_recursively (
 		const struct rrr_mqtt_topic_token *sub_token,
 		const struct rrr_mqtt_topic_token *pub_token
 );
+int rrr_mqtt_topic_match_str_with_end (
+		const char *sub_filter,
+		const char *pub_topic,
+		const char *pub_topic_end
+);
+int rrr_mqtt_topic_match_str (
+		const char *sub_filter,
+		const char *pub_topic
+);
 int rrr_mqtt_topic_match_tokens_recursively_acl (
 		const struct rrr_mqtt_topic_token *token_master,
 		const struct rrr_mqtt_topic_token *token_slave

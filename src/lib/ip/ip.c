@@ -143,11 +143,18 @@ struct rrr_ip_receive_callback_data {
 	void *callback_arg;
 };
 
-static int __rrr_ip_receive_callback (
+struct rrr_ip_receive_array_tree_callback_data {
+	struct rrr_msg_msg_holder *target_entry;
+	int (*callback)(struct rrr_msg_msg_holder *entry, struct rrr_array *array, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_ip_receive_array_tree_callback (
 		struct rrr_read_session *read_session,
+		struct rrr_array *array_final,
 		void *arg
 ) {
-	struct rrr_ip_receive_callback_data *callback_data = arg;
+	struct rrr_ip_receive_array_tree_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -185,7 +192,7 @@ static int __rrr_ip_receive_callback (
 
 	read_session->rx_buf_ptr = NULL;
 
-	ret = callback_data->callback(callback_data->target_entry, callback_data->callback_arg);
+	ret = callback_data->callback(callback_data->target_entry, array_final, callback_data->callback_arg);
 
 	if (ret == 0) {
 		// OK
@@ -205,32 +212,34 @@ static int __rrr_ip_receive_callback (
 	return ret;
 }
 
-int rrr_ip_receive_array (
+int rrr_ip_receive_array_tree (
 		struct rrr_msg_msg_holder *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
-		const struct rrr_array *definition,
+		struct rrr_array *array_final,
+		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
-		int (*callback)(struct rrr_msg_msg_holder *entry, void *arg),
+		int (*callback)(struct rrr_msg_msg_holder *entry, struct rrr_array *array, void *arg),
 		void *arg
 ) {
-	struct rrr_ip_receive_callback_data callback_data = {
+	struct rrr_ip_receive_array_tree_callback_data callback_data = {
 		target_entry,
 		callback,
 		arg
 	};
 
-	return rrr_socket_common_receive_array (
+	return rrr_socket_common_receive_array_tree (
 			read_session_collection,
 			fd,
 			read_flags,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
-			definition,
+			array_final,
+			tree,
 			do_sync_byte_by_byte,
 			message_max_size,
-			__rrr_ip_receive_callback,
+			__rrr_ip_receive_array_tree_callback,
 			&callback_data
 	);
 }

@@ -253,7 +253,7 @@ static int main_loop (
 			&message_broker,
 			fork_handler
 	)) != 0) {
-		goto out_stop_threads;
+		goto out_unregister_stats_handle;
 	}
 
 	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
@@ -297,7 +297,7 @@ static int main_loop (
 		}
 
 		if (stats_data.engine.initialized != 0) {
-				rrr_stats_engine_tick(&stats_data.engine);
+			rrr_stats_engine_tick(&stats_data.engine);
 		}
 
 		int count;
@@ -310,12 +310,13 @@ static int main_loop (
 	RRR_DBG_1 ("Main loop finished\n");
 
 	out_stop_threads:
+		rrr_main_threads_stop_and_destroy(collection);
+	out_unregister_stats_handle:
 		if (stats_data.handle != 0) {
 			rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 		}
 		rrr_config_set_debuglevel_on_exit();
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-		rrr_main_threads_stop_and_destroy(collection);
 		int count;
 
 		rrr_thread_postponed_cleanup_run(&count);

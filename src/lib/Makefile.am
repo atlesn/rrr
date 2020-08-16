@@ -64,11 +64,11 @@ endif
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
-					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
-					message_broker.c map.c \
+					version.c configuration.c parse.c settings.c instance_config.c common.c \
+					message_broker.c map.c array.c array_tree.c \
 					read.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_friends.c poll_helper.c modules.c \
-					string_builder.c random.c \
+					string_builder.c random.c condition.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \

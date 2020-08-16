@@ -303,15 +303,14 @@ int rrr_mqtt_client_connect (
 	// Sleep a bit in case server runs in the same RRR program
 	rrr_posix_usleep(500000); // 500ms
 
-	if (rrr_mqtt_transport_connect (
+	if ((ret = rrr_mqtt_transport_connect (
 			transport_handle,
 			data->mqtt_data.transport,
 			port,
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
-	) != 0) {
+	)) != 0) {
 		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
-		ret = 1;
 		goto out_nolock;
 	}
 
@@ -419,13 +418,13 @@ int rrr_mqtt_client_connect (
 	}
 
 	int session_present = 0;
-	if ((ret = mqtt_data->sessions->methods->get_session (
+	if (mqtt_data->sessions->methods->get_session (
 			session,
 			mqtt_data->sessions,
 			data->mqtt_data.client_name, // May be NULL
 			&session_present,
 			0 // no_creation: 0 means to create on non-existent client ID
-	)) != RRR_MQTT_SESSION_OK || *session == NULL) {
+	) != RRR_MQTT_SESSION_OK || *session == NULL) {
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect return was %i\n", ret);
 		goto out;

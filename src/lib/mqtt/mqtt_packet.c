@@ -147,7 +147,7 @@ int rrr_mqtt_p_payload_new (
 
 int rrr_mqtt_p_payload_new_with_allocated_payload (
 		struct rrr_mqtt_p_payload **target,
-		char *packet_start,
+		char **packet_start,
 		const char *payload_start,
 		ssize_t payload_length
 ) {
@@ -165,10 +165,12 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 	}
 
 	RRR_MQTT_P_LOCK(result);
-	result->packet_data = packet_start;
+	result->packet_data = *packet_start;
 	result->payload_start = payload_start;
 	result->length = payload_length;
 	RRR_MQTT_P_UNLOCK(result);
+
+	*packet_start = NULL;
 
 	*target = result;
 

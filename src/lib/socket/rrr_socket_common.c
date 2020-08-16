@@ -38,89 +38,43 @@ struct receive_callback_data {
 	void *arg;
 };
 
-static int __rrr_socket_common_receive_callback_basic (
+struct receive_array_tree_callback_data {
+	struct rrr_socket_common_in_flight_counter *in_flight;
+	struct rrr_array *array_final;
+	int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg);
+	void *arg;
+};
+
+static int __rrr_socket_common_receive_array_tree_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct receive_callback_data *data = arg;
-	return data->callback(read_session, data->arg);
+	struct receive_array_tree_callback_data *data = arg;
+	return data->callback(read_session, data->array_final, data->arg);
 }
 
-/*
-static int __rrr_socket_common_receive_callback_and_check_ctrl (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct receive_callback_data *data = arg;
-
-	int ret = 0;
-
-	struct rrr_msg *msg = (struct rrr_msg *) read_session->rx_buf_ptr;
-
-	if (RRR_MSG_IS_CTRL_NETWORK_ENDIAN(msg)) {
-		if (read_session->target_size != sizeof(*msg)) {
-			RRR_MSG_0("Unknown message size of control message %li vs %lu in __rrr_socket_common_receive_callback_and_check_ctrl\n",
-					read_session->target_size, sizeof(*msg));
-			ret = RRR_SOCKET_SOFT_ERROR;
-			goto out;
-		}
-
-		msg->msg_type = be16toh(msg->msg_type);
-		msg->msg_value = be64toh(msg->msg_value);
-
-		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_ACK)) {
-			if (data->in_flight == NULL) {
-				RRR_MSG_0("Received an ACK message in __rrr_socket_common_receive_callback_and_check_ctrl but no in flight counter was set\n");
-				ret = RRR_READ_SOFT_ERROR;
-				goto out;
-			}
-			RRR_MSG_CTRL_F_CLEAR(msg, RRR_MSG_CTRL_F_ACK);
-		}
-		RRR_MSG_CTRL_F_CLEAR(msg, RRR_MSG_CTRL_F_RESERVED);
-
-		if (msg->msg_type != 0) {
-			RRR_MSG_0("Unknown flags %i received in control message in __rrr_socket_common_receive_callback_and_check_ctrl\n",
-					msg->msg_type);
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		data->in_flight->in_flight_to_remote_count -= msg->msg_value;
-
-//		printf ("ACK %" PRIu64 " -> %i\n", msg->msg_value, data->in_flight->in_flight_to_remote_count);
-	}
-	else {
-		ret = data->callback(read_session, data->arg);
-
-		if (data->in_flight != NULL) {
-			data->in_flight->not_acknowledged_count++;
-		}
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
-	return ret;
-}
-*/
-int rrr_socket_common_receive_array (
+int rrr_socket_common_receive_array_tree (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
 		int socket_read_flags,
-		const struct rrr_array *definition,
+		struct rrr_array *array_final,
+		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
-		int (*callback)(struct rrr_read_session *read_session, void *arg),
+		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
 ) {
-	struct rrr_read_common_get_session_target_length_from_array_data callback_data_array = {
-			definition,
+	struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data_array = {
+			tree,
+			array_final,
 			do_sync_byte_by_byte,
 			message_max_size
 	};
 
-	struct receive_callback_data callback_data = {
+	struct receive_array_tree_callback_data callback_data = {
 			NULL,
+			array_final,
 			callback,
 			arg
 	};
@@ -135,9 +89,9 @@ int rrr_socket_common_receive_array (
 			0, // No max size
 			read_flags,
 			socket_read_flags,
-			rrr_read_common_get_session_target_length_from_array,
+			rrr_read_common_get_session_target_length_from_array_tree,
 			&callback_data_array,
-			__rrr_socket_common_receive_callback_basic,
+			__rrr_socket_common_receive_array_tree_callback,
 			&callback_data
 	);
 
@@ -149,98 +103,17 @@ int rrr_socket_common_receive_array (
 			return ret;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array\n");
+			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array_tree\n");
 			return RRR_SOCKET_SOFT_ERROR;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array\n");
+			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
 			return 1;
 		}
 	}
 
 	return 0;
 }
-
-/*
- * Apparently not used
-int rrr_socket_common_receive_msg (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int read_flags,
-		int socket_read_flags,
-		struct rrr_socket_common_in_flight_counter *in_flight,
-		int (*callback)(struct rrr_read_session *read_session, void *arg),
-		void *arg
-) {
-	int ret = 0;
-
-	struct receive_callback_data callback_data = {
-			in_flight,
-			callback,
-			arg
-	};
-
-	ret = rrr_socket_read_message_default (
-			read_session_collection,
-			fd,
-			sizeof(struct rrr_msg),
-			4096,
-			read_flags,
-			socket_read_flags,
-			rrr_read_common_get_session_target_length_from_message_and_checksum,
-			NULL,
-			__rrr_socket_common_receive_callback_and_check_ctrl,
-			&callback_data
-	);
-
-	if (ret == RRR_SOCKET_OK) {
-		if (in_flight != NULL) {
-			if (in_flight->not_acknowledged_count > 10) {
-				if (RRR_LL_COUNT(read_session_collection) > 1) {
-					RRR_BUG("BUG: In flight counter used while receiving data from several remotes in rrr_socket_common_receive_msg\n");
-				}
-
-				struct rrr_msg ack_msg = {0};
-				rrr_msg_populate_head (
-						&ack_msg,
-						RRR_MSG_TYPE_CTRL | RRR_MSG_CTRL_F_ACK,
-						sizeof(ack_msg),
-						in_flight->not_acknowledged_count
-				);
-				rrr_msg_checksum_and_to_network_endian (&ack_msg);
-
-				if ((ret = rrr_socket_sendto_nonblock(fd, &ack_msg, sizeof(ack_msg), NULL, 0)) != 0) {
-					if (ret == RRR_SOCKET_SOFT_ERROR) {
-						goto out;
-					}
-					RRR_MSG_0("Error while sending ACK message in rrr_socket_common_receive_msg\n");
-					goto out;
-				}
-
-				in_flight->not_acknowledged_count = 0;
-			}
-		}
-	}
-	else {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			ret = 0;
-		}
-		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_0("Warning: Soft error while reading data in rrr_socket_common_receive_msg\n");
-		}
-		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_msg\n");
-		}
-		else {
-			RRR_BUG("Unknown return value %i from read in rrr_socket_common_receive_msg\n", ret);
-		}
-	}
-
-	out:
-	return ret;
-}
-*/
-
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,

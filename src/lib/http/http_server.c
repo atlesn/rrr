@@ -107,7 +107,7 @@ static int __rrr_http_server_start (
 	}
 
 	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags)) != 0) {
-		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start \n");
+		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -320,6 +320,10 @@ static int __rrr_http_server_accept_if_free_thread (
 
 static int __rrr_http_server_allocate_threads (
 		struct rrr_thread_collection *threads,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -331,6 +335,10 @@ static int __rrr_http_server_allocate_threads (
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
+				unique_id_generator_callback,
+				unique_id_generator_callback_arg,
+				final_callback_raw,
+				final_callback_raw_arg,
 				final_callback,
 				final_callback_arg
 		)) != 0) {
@@ -372,6 +380,10 @@ static int __rrr_http_server_allocate_threads (
 int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -379,8 +391,12 @@ int rrr_http_server_tick (
 
 	*accept_count_final = 0;
 
-	if ((ret = __rrr_http_server_allocate_threads(
+	if ((ret = __rrr_http_server_allocate_threads (
 			server->threads,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
+			final_callback_raw,
+			final_callback_raw_arg,
 			final_callback,
 			final_callback_arg
 	)) != 0) {

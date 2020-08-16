@@ -143,7 +143,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_passwd_data_init(&data);
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

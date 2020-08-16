@@ -497,21 +497,23 @@ static int __rrr_net_transport_connect (
 		RRR_BUG("port was 0 in rrr_net_transport_connect_and_destroy_after_callback\n");
 	}
 
+	int ret = 0;
+
 	int transport_handle = 0;
 	struct sockaddr_storage addr;
 	socklen_t socklen = sizeof(addr);
 
 	// TODO : Distinguish between soft and hard connect errors
 
-	if (transport->methods->connect (
+	if ((ret = transport->methods->connect (
 			&transport_handle,
 			(struct sockaddr *) &addr,
 			&socklen,
 			transport,
 			port,
 			host
-	) != 0) {
-		return 1;
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_connect");
@@ -525,7 +527,8 @@ static int __rrr_net_transport_connect (
 		rrr_net_transport_handle_close (transport, transport_handle);
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 int rrr_net_transport_connect_and_close_after_callback (
@@ -648,7 +651,8 @@ int rrr_net_transport_ctx_send_blocking (
 				size - written_bytes_total
 		)) != 0) {
 			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				RRR_MSG_0("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				// Hard error means connection closed, not that serious
+				ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 				break;
 			}
 		}
@@ -656,6 +660,12 @@ int rrr_net_transport_ctx_send_blocking (
 	} while (ret != 0);
 
 	return ret;
+}
+
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
+) {
+	return (handle->application_private_ptr != NULL);
 }
 
 void rrr_net_transport_ctx_handle_application_data_bind (

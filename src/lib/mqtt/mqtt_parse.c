@@ -1030,8 +1030,13 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 			}
 		}
 
-		struct rrr_mqtt_subscription *subscription = NULL;
+		if (rrr_mqtt_topic_filter_validate_name(sub_usub->data_tmp) != 0) {
+			RRR_MSG_0("Invalid topic filter '%s' received in %s packet\n",
+					sub_usub->data_tmp, sub_usub->type_properties->name);
+			return RRR_MQTT_SOFT_ERROR;
+		}
 
+		struct rrr_mqtt_subscription *subscription = NULL;
 		parse_state->ret = rrr_mqtt_subscription_new (&subscription, sub_usub->data_tmp, retain, rap, nl, qos);
 		if (parse_state->ret != 0) {
 			RRR_MSG_0("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");

@@ -49,6 +49,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { if (!rrr_instance_config_setting_exists(config, string)) { then;									\
 	}} while (0)
 
+#define RRR_INSTANCE_CONFIG_EXISTS(string) \
+	rrr_instance_config_setting_exists(config, string)
+
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(string, target, default_yesno)								\
 do {int yesno = default_yesno;																				\
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\
@@ -89,11 +92,13 @@ do {RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint);		
 	}} while(0)
 
 struct rrr_array;
+struct rrr_array_tree;
 struct rrr_map;
 
 struct rrr_instance_config_data {
 	char *name;
 	struct rrr_instance_settings *settings;
+	const struct rrr_array_tree_list *global_array_trees;
 };
 
 static inline int rrr_instance_config_setting_exists (
@@ -170,7 +175,8 @@ void rrr_instance_config_destroy (
 struct rrr_instance_config_data *rrr_instance_config_new (
 		const char *name_begin,
 		const int name_length,
-		const int max_settings
+		const int max_settings,
+		const struct rrr_array_tree_list *global_array_trees
 );
 int rrr_instance_config_read_port_number (
 		rrr_setting_uint *target,
@@ -180,8 +186,8 @@ int rrr_instance_config_read_port_number (
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config_data *config
 );
-int rrr_instance_config_parse_array_definition_from_config_silent_fail (
-		struct rrr_array *target,
+int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
+		struct rrr_array_tree **target_array_tree,
 		struct rrr_instance_config_data *config,
 		const char *cmd_key
 );

@@ -146,7 +146,7 @@ static void __rrr_mqtt_acl_parse_spaces_and_comments (
 ) {
 	new_comment:
 	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		return;
 	}
 	if (pos->data[pos->pos] == '#') {
@@ -164,7 +164,7 @@ static int __rrr_mqtt_acl_parse_require_newline_or_eof (
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 	// OK, end of file reached after value
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		return 0;
 	}
 
@@ -271,8 +271,12 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 	char *username_tmp = NULL;
 
 	rrr_parse_ignore_space_and_tab(pos);
-
-	rrr_parse_letters(pos, &username_start, &username_end, 0, 0);
+	rrr_parse_match_letters (
+			pos,
+			&username_start,
+			&username_end,
+			RRR_PARSE_MATCH_LETTERS|RRR_PARSE_MATCH_NUMBERS
+	);
 
 	if (username_end < username_start) {
 		RRR_MSG_0("Syntax error at line %i: Error while parsing username for keyword 'USER'\n", pos->line);
@@ -317,12 +321,12 @@ static int __rrr_mqtt_acl_parse_topic_block_body (
 ) {
 	int ret = 0;
 
-	while (!rrr_parse_check_eof(pos)) {
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
 		int pos_orig = pos->pos;
 
 		__rrr_mqtt_acl_parse_spaces_and_comments(pos);
 
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 
@@ -372,7 +376,7 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 	while (1) {
 		__rrr_mqtt_acl_parse_spaces_and_comments(pos);
 
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 

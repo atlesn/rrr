@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stddef.h>
 #include <pthread.h>
+#include <inttypes.h>
 #include <sys/types.h>
 
 #include "log.h"
@@ -111,11 +112,13 @@ static int __rrr_message_broker_costumer_new (
 
 	if (rrr_fifo_buffer_init_custom_free(&costumer->main_queue, rrr_msg_msg_holder_decref_void) != 0) {
 		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_costumer_new\n");
+		ret = 1;
 		goto out_free_name;
 	}
 
 	if (pthread_mutex_init(&costumer->split_buffers.lock, NULL) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
+		ret = 1;
 		goto out_destroy_fifo;
 	}
 
@@ -503,6 +506,50 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	return ret;
 }
 
+int __rrr_message_broker_get_next_unique_id_callback (
+		void *callback_arg_1,
+		void *callback_arg_2
+) {
+	uint64_t *unique_counter = callback_arg_1;
+
+	(void)(callback_arg_2);
+
+	(*unique_counter)++;
+
+	if (*unique_counter== 0) {
+		*unique_counter = 1;
+	}
+
+	return 0;
+}
+
+int rrr_message_broker_get_next_unique_id (
+		uint64_t *result,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	*result = 0;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry");
+
+	if ((ret = rrr_fifo_buffer_with_write_lock_do (
+			&costumer->main_queue,
+			__rrr_message_broker_get_next_unique_id_callback,
+			&costumer->unique_counter,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	*result = costumer->unique_counter;
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
 // Callback must return the entry in unlocked state to us with refcount being excactly 1
 int rrr_message_broker_write_entry (
 		struct rrr_message_broker *broker,
@@ -716,9 +763,29 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 	int ret = 0;
 
 	rrr_msg_msg_holder_lock(entry);
+
 	if (pthread_mutex_trylock(&entry->lock) == 0) {
 		RRR_BUG("Trylock was 0 in __rrr_message_broker_poll_delete_intermediate\n");
 	}
+	ret = callback_data->callback(entry, callback_data->callback_arg);
+
+	// Callback must unlock
+	rrr_msg_msg_holder_decref(entry);
+
+	return ret;
+}
+
+static int __rrr_message_broker_poll_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) {
+	struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data = arg;
+	struct rrr_msg_msg_holder *entry = (struct rrr_msg_msg_holder *) data;
+
+	(void)(size);
+
+	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	rrr_msg_msg_holder_incref(entry);
+	rrr_msg_msg_holder_lock(entry);
+
 	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock
@@ -929,7 +996,7 @@ int rrr_message_broker_poll (
 
 	if ((ret = rrr_fifo_buffer_search (
 			source_buffer,
-			__rrr_message_broker_poll_delete_intermediate,
+			__rrr_message_broker_poll_intermediate,
 			&callback_data,
 			wait_milliseconds
 	)) != 0) {

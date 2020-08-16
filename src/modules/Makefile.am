@@ -80,6 +80,6 @@ httpclient_la_LDFLAGS = ${module_ldflags}
 httpclient_la_SOURCES = p_httpclient.c
 
 httpserver_la_LDFLAGS = ${module_ldflags}
-httpserver_la_SOURCES = src_httpserver.c
+httpserver_la_SOURCES = p_httpserver.c
 
 libdir=${exec_prefix}/lib/rrr

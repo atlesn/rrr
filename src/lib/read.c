@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_addr.h"
 #include "messages/msg_log.h"
 #include "array.h"
+#include "array_tree.h"
 #include "util/posix.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
@@ -568,15 +569,22 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum (
 	return ret;
 }
 
-int rrr_read_common_get_session_target_length_from_array (
+static int __rrr_read_common_get_session_target_length_from_array_tree_callback (
+		struct rrr_array *array, void *arg
+) {
+	struct rrr_read_common_get_session_target_length_from_array_tree_data *data = arg;
+
+	rrr_array_clear(data->array_final);
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(data->array_final, array);
+
+	return 0;
+}
+
+int rrr_read_common_get_session_target_length_from_array_tree (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_read_common_get_session_target_length_from_array_data *data = arg;
-
-	if (data->definition == NULL || RRR_LL_COUNT(data->definition) == 0) {
-		RRR_BUG("NULL or empty array definition given to rrr_read_common_get_session_target_length_from_array\n");
-	}
+	struct rrr_read_common_get_session_target_length_from_array_tree_data *data = arg;
 
 	char *pos = read_session->rx_buf_ptr;
 	rrr_slength wpos = read_session->rx_buf_wpos;
@@ -593,14 +601,21 @@ int rrr_read_common_get_session_target_length_from_array (
 	ssize_t skipped_bytes = 0;
 
 	while (wpos > 0) {
-		int ret = rrr_array_get_packed_length_from_buffer (
+		int ret = rrr_array_tree_parse_from_buffer (
 				&import_length,
-				data->definition,
 				pos,
-				wpos
+				wpos,
+				data->tree,
+				__rrr_read_common_get_session_target_length_from_array_tree_callback,
+				data
 		);
 
 		if (ret == 0) {
+			if (import_length <= 0) {
+				// This is actually a bug, should be avoided by array validation checks
+				RRR_MSG_0("Array definition produced a length of zero, possible configuration error\n");
+				return RRR_READ_HARD_ERROR;
+			}
 			break;
 		}
 		else {

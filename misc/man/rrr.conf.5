@@ -71,12 +71,40 @@ argument1 = value1
 
 [INSTANCE_2_NAME]
 module=...
+
+# Any number of named array trees may be specified
+# Modules parsing array data may refer to these instead of having them defined inside each instance block
+{ARRAY_TREE_DEFINITION_A}
+be1#type,be1#one
+IF ({type} == 1)
+	;
+ELSIF ({type} == 2)
+	be2#two
+	;
+ELSIF ({type} > 0)
+	blob{type}#x
+	;
+ELSE
+	err
+	;
+sep1#separator
+;
+.fi
 .PP
-If an instance is specified as sender in more than one other instance, these will compete
-about messages from it. Use the
+If an instance is specified as sender in more than one other instance, these will compete about messages from it.
+Use the
 .B buffer
-module and enable duplication if a message is to be processed by multiple modules, for instance when different modules should process messages
-with different topics. Instances may also not use themselves as senders.
+module and enable duplication if a message is to be processed by multiple modules,
+for instance when different modules should process messages with different topics.
+Instances may not use themselves as senders.
+.PP
+Named array tree definitions begin with {NAME} and end with a semicolon.
+In all module parameters for array definitions, it is possible to instead specify {NAME} to reference a definition
+from configuration file. This is useful for more complex trees which are messy to write on a single line.
+Array tree definitions may be defined above or below where they are used.
+See
+.Xr rrr_post(1)
+for array tree syntax, and in the chapters of each module below on where they can be used.
 .SH MESSAGES
 A message consists of at least a timestamp (in microseconds) and either arbitary data or
 and array of values. Messages may in addition contain an MQTT topic which can be used internally by certain modules.
@@ -88,7 +116,7 @@ types to be specified in their configuration. If the total size of the input doe
 of the message will fail. Some modules also generate array messages internally, and they can be created within Perl and
 Python scripts. Fields from an HTTP request can be mapped into an array, and an array can be mapped into database columns.
 .PP
-The general syntax for an array parsing specification is a comma separated list of types with length and item count specifications. 
+The general syntax for an array parsing specification (without branches) is a comma separated list of types with length and item count specifications. 
 .PP
 .Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
 .PP
@@ -121,7 +149,7 @@ Refer to the
 .B ARRAY DEFINITION
 section of
 .Xr rrr_post(1)
-for the complete specification of all the types.
+for the complete specification of all the types, and the specification for array trees (branching with IF-blocks).
 .SS IP MESSAGES
 Some messages contain IP data, for instance messages created by a module which reads from the network. The address
 of the sender will be contained within the message. All modules may use IP-messages, but not all of them use the IP-data. 
@@ -160,6 +188,10 @@ The following modules and module-specific arguments are available:
 .SS dummy (S)
 This module constantly generates empty messages, optionally containing some dummy data.
 .PP
+The following configuration parameters are available in the
+.B dummy
+module:
+.PP
 .Bl -tag -width -indent
 .It dummy_no_generation={yes|no}
 No messages are generated, defaults to yes. 
@@ -180,11 +212,16 @@ If the received data does not match the specified data array, the packet is drop
 If an instance is configured to wait for this module before starting, the we will set up any listening sockets before the
 waiting instance is started.
 .PP
+The following configuration parameters are available in the
+.B ip
+module:
+.PP
 .Bl -tag -width -indent
 .It ip_udp_port=LISTEN PORT
 .It ip_tcp_port=LISTEN PORT
 Port to listen on on udp or tcp. Udp  is also source port for outbound messages. Range is 1-65535, default value is 0 which means we don't listen.
 If left unspecified, no listening takes place.
+
 .It ip_input_types=ARRAY DEFINITION
 Specification of expected data to receive from remote. See
 .Xr rrr_post(1)
@@ -195,33 +232,42 @@ and set
 .B ip_extract_rrr_messages
 to
 .B yes.
+
 .It ip_extract_rrr_messages={yes|no}
 Extract any RRR messages from the received data (if specified in ip_input_types) and save them in the buffer for other modules to pick up.
 Causes any other data in the received arrays to be dropped.
 If set to yes and no message field is specified in the array definition, an error will be produced.
 Defaults to no.
-.It ip_max_message_size
+
+.It ip_max_message_size=BYTES
 Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
 A value of 0 means unlimited message size.
 Defaults to 4096.
+
 .It ip_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
+
 .It ip_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
+
 .It ip_send_rrr_message={yes|no}
 If set to yes, we will send complete RRR messages encoded for network. If set to no or left unset,
 messages with arrays will have their array packed and sent, and messages with other data will simply have their
 contents sent as is.
+
 .It ip_preserve_order={yes|no}
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
 like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
-.It ip_persistent_connections
+
+.It ip_persistent_connections={yes|no}
 After a packet is sent, don't close the TCP connection causing it to be re-used. Defaults to no.
+
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
 Default is not timeout (same as 0).
+
 .It ip_timeout_action={retry|drop|return}
 What do do when a message times out after being undeliverable. In case of
 .B retry,
@@ -235,14 +281,17 @@ What do do when a message times out after being undeliverable. In case of
  is used, then
  .B ip_send_timeout
  must be set to zero or left undefined. 
+ 
 .It ip_target_host=HOST
 .It ip_target_port=PORT
 .It ip_target_protocol=PROTOCOL
 Default target host, port and protocol for messages from other modules which do not contain address information.
 If left unset and we recevie messages which do not contain address information, the messages are dropped
 and warning messages are produced. Protocol may be udp or tcp, defaults to udp.
+
 .It ip_force_target={yes|no}
 Use the specified target host and port even if messages contain other address information. Default is no.
+
 .It ip_array_send_tags=tag1[,tag2[,...]]
 Look for the defined tags in array messages from other modules, and send these concatenated together to remote.
 If this option is specified and a received message is not an array or does not have all of the tags defined,
@@ -258,8 +307,10 @@ and the measurement itself as an unsigned 64-bit integer with the tag
 .Bl -tag -width -indent
 .It vm_calibration=FLOAT
 Factor to calibrate the readings, defaults to 1.124.
+
 .It vm_channel={1|2}
 Which channel to use on two-channel devices.
+
 .It vm_message_topic=TOPIC
 MQTT topic to apply to generated messages.
 .El
@@ -285,24 +336,34 @@ The lowest timestamp of all the measurements received in the timespan.
 The highest timestamp of all the measurements received in the timespan.
 .El
 .PP
+The following configuration parameters are available in the
+.B avarager
+module:
+.PP
 .Bl -tag -width -indent
 .It avg_timespan=SECONDS
 How long timespan to average over. Defaults to 15 seconds.
+
 .It avg_interval=SECONDS
 How often to produce average calculations. Defaults to 10 seconds.
+
 .It avg_preserve_points={yes|no}
 Preserve individual measurements and put them in output buffer. Defaults to no.
+
 .It avg_discard_unknowns={yes|no}
 Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
+
 .It avg_message_topic=TOPIC
 MQTT topic to apply to generated messages and any forwarded point messages.
 .El
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by other instances.
+.PP
 .Bl -tag -width -indent
 .It buffer_ttl_seconds=SECONDS
 Any message received with timestamp older than the specified amount of seconds will be dropped. Useful in situations
 where messages circulate between modules.
+
 .It buffer_do_duplicate={yes|no}
 If set to yes, incoming messages will be duplicated so that one copy is received by every reader. If set to no,
 the readers will compete over the messages. Defaults to no. 
@@ -327,18 +388,27 @@ are re-initiated when it becomes available again, even if it has been re-started
 .PP
 ipclient will not accept incoming connections from other clients unless explicitly told to in the configuration file.
 .PP
+The following configuraton parameters are available in the
+.B ipclient
+module:
+.PP
 .Bl -tag -width -indent
 .It ipclient_client_number=NUMBER
 Each ipclient instance in a set of instances which communicate together must have a unique ID number in the range 1-4294967295.
 If you have two instances running, set one of them to 1 and the other one to 2.
+
 .It ipclient_default_remote=REMOTE NAME OR ADDRESS
 The name or address of the client which we send packets without address information to.
+
 .It ipclient_default_remote_port=PORT NUMBER
 The port number of the default remote, defaults to 5555.
+
 .It ipclient_src_port=PORT NUMBER
 Source port used for sending and receiving packtes, defaults to 5555.
+
 .It ipclient_listen={yes|no}
 Accept incoming connections if set to yes. Default is no.
+
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
@@ -350,21 +420,33 @@ A column plan must be used to describe the table we are saving to. The received 
 the data saving for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
 and try again later. It is not possible for the mysql module to know wether it's settings are at fault or if the database
 is at fault. Messages which fails can regardless of this be set to be dropped instead upon errors.
+.PP
+The following configuration parameters are available in the
+.B mysql
+module:
+.PP
 .Bl -tag -width -indent
 .It mysql_server=SERVER NAME
 The server name of the MySQL or MariaDB server to use
+
 .It mysql_port=PORT NUMBER
 The port number used to connect to the server.
+
 .It mysql_user=USER NAME
 The username for logging into the server
+
 .It mysql_password=PASSWORD
 The password for logging into the server
+
 .It mysql_db=DATABASE NAME
 The name of the database to use
+
 .It mysql_table=TABLE NAME
 The table name to use for storing data
+
 .It mysql_drop_unknown_messages={yes|no}
 If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
+
 .It mysql_columns={column name 1,column name 2,...}
 Specify the columns in the table to write data to. The column count must match the number of values received in array
 messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
@@ -373,18 +455,23 @@ If an array contains items with more than one value, one column should be specif
 to mysql as blobs.
 This option cannot be used with
 .B mysql_column_tags.
+
 .It mysql_column_tags=ARRAY TAG[->MYSQL COLUMN][,...]
 A comma separated list of items to retrieve from the received array messages and to use as
 columns in MySQL. If a tag name is specified on is own, the tag and the corresponding column in MySQL has the same name.
 If the MySQL column name is different from the tag, an arrow followed by the MySQL column name is put after the tag name.
 This option cannot be used with
 .B mysql_colums.
+
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
+
 .It mysql_special_columns={column1=value1,column2=value2,...}
 Used to write fixed values to the database.
+
 .It mysql_add_timestamp_col={yes|no}
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
+
 .It mysql_strip_array_separators={yes|no}
 Disregard any separator items in received array messages. Defaults to yes.
 .El
@@ -398,19 +485,27 @@ If something goes wrong, the functions can return 1 or raise an exception which 
 .PP
 The RRR module should be imported by the custom python program, but is in only available when the python script is called from RRR.
 .PP
-The following options may be specified:
+The following configuration parameters are available in the
+.B python3
+module:
+.PP
 .Bl -tag -width -indent
 .It python3_module=MODULE NAME
 The module name for the python3 program to be executed. Imported by 'from MODULE NAME import *'
+
 .It python3_module_path=MODULE NAME
 An extra path in which to search for the module.
+
 .It python3_source_function=FUNCTION NAME
 The name of the source function in the python program which we read from continously.
+
 .It python3_process_function=FUNCTION NAME
 The name of the processing function in the python program which we send packets from other modules to. We also read any messages sent back.
+
 .It python3_config_function=FUNCTION NAME
 The name of the function in the python program to which we send settings form the configuration file.
 All settings defined inside the python block in the configuration file are sent in here.
+
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the python program might be set as needed.
 .El
@@ -505,24 +600,33 @@ process functions. The functions available are listed in the example scripts wit
 More details about types are found in 
 .Xr rrr_post(1)
 .PP
+The following configuration parameters are available in the
+.B perl5
+module:
+.PP
 .Bl -tag -width -indent
 .It perl5_file=FILENAME
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
+
 .It perl5_source_interval=MILLISECONDS
 How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
+
 .It perl5_source_sub=SUBROUTINE NAME
 Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object and modifies
 it to generate a new message. Called at specified interval.
+
 .It perl5_process_sub=SUBROUTINE NAME
 Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object from the senders
 of the current instance. The message may be modified or left alone.
+
 .It perl5_config_sub=SUBROUTINE NAME
 Optional name of a subroutine which receives an rrr::rrr_helper::rrr_settings object when the program
 is started. Any settings from the instance definition in the configuration file can be read from
 this object, also custom settings. Settings may also be modified and new settings can be added. The
 settings object may also be stored in the script to be read from or modified from the source- and 
 generate-subroutines.
+
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the Perl script might be set as needed.
 .El
@@ -767,6 +871,10 @@ cmodule than to write a native RRR module.
 .PP
 All custom cmodules will be run in separate forks.
 .PP
+The following confgiuration parameters are available in the
+.B cmodule
+module: 
+.PP
 .Bl -tag -width -indent
 .It cmodule_name=NAME
 The name of the cmodule. If the name is
@@ -775,14 +883,19 @@ RRR will look for the module
 .B dummy.so
 and the source file for this module should be called
 .B dummy.c.
+
 .It cmodule_config_function=NAME
 The function to which to pass configuration parameters, called at program startup. Optional.
+
 .It cmodule_source_function=NAME
 The function to which to call to source new messages. Optional, but at least one of source and processor must be set.
+
 .It cmodule_process_function=NAME
 The function to which to call to process messages from senders. Optional, but at least one of source and processor must be set.
+
 .It cmodule_cleanup_function=NAME
 The function to call before the program shuts down. Optional.
+
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the C-module might be set as needed.
 .El
@@ -828,14 +941,21 @@ be set for messages to actually be printed. This to avoid problems with the jour
 .SS socket (SA)
 The socket module listens on a UNIX socket for RRR messages or custom data records.
 .PP
+The following configuration parameters are available in the
+.B socket
+module:
+.PP
 .Bl -tag -width -indent
 .It socket_path=FILENAME
 Path and file name to use for the socket. The file cannot exist when the program starts.
+
 .It socket_unlink_if_exists={yes|no}
 If set to yes and the socket defined in `socket_path` exists when we start, unlink it. If set to no, we produce an error if
 the socket exists. Defaults to no.
+
 .It socket_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
+
 .It socket_receive_rrr_message={yes|no}
 If set to 
 .B yes
@@ -844,15 +964,17 @@ If set to
 may generate such messages. If set to 
 .B no
 , an array definition must be specified, and RRR array messages will be produced from the received data. Defaults to no.
+
 .It socket_input_types=ARRAY DEFINITION
 Format of data received on the socket, see
 .Xr rrr_post(1)
 for syntax.
+
 .It socket_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
-.SS httpserver (SAI)
+.SS httpserver (PAI)
 This module accepts connections from HTTP clients, extracts POST or GET data fields and puts it into RRR array messages
 for other modules to use. The query string from the URI is parsed in both GET and POST requests. Duplicate field names are allowed.
 .PP
@@ -863,32 +985,100 @@ against DoS attacks, flooding etc. There is also
 .B NO AUTHENTICATION.
 Use a server like Apache to run a public server.
 .PP
-This module does not respond with any data. If a request was successfully processed, a
-.B 204 No Data
+This module does not respond with any data (unless raw modes are used). If a request was successfully processed, a
+.B 204 No Content
 response is returned to the client. If there was any errors,
 .B 400 Bad Request
 or
 .B 500 Internal Server Error
 response may be returned.
-.PP  
+.PP
+Depending on the configuration, an incoming HTTP request may result in zero, one or two RRR messages to be generated:
+.PP
+.Bl -tag -width -indent
+.It RRR array message with fields
+Any configured fields from GET, POST or query string in the endpoint are put into an RRR array message.
+If full request receive is active, fields generated here will be put into the same message. Array messages will have the topic
+.B httpserver/request/uuu
+set, where
+.B uuu
+is a unique ID. Configured fields are not retrieved for requests with the
+.B OPTIONS
+method. 
+
+.It RRR message with raw data
+If raw data receive is active, a separate RRR message will be generated for this.
+This message is not an RRR array message.
+Raw data messages will have the topic
+.B httpserver/raw/uuu
+set, where
+.B uuu
+is a unique ID.
+.El
+.PP
+If both message types are generated by a single HTTP request, the unique ID fields in the topics will be identical.
+The IDs are unsigned desimal numbers which increase by 1 for every received request, also if they do not cause any RRR
+messages to be generated. 
+.PP
+The following configuration parameters are available in the
+.B httpserver
+module:
+.PP
 .Bl -tag -width -indent
 .It http_server_transport_type={tls|plain|both}
 Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
+
 .It http_server_port_tls=PORT
 Port to use for TLS listening, defaults to 443.
+
 .It http_server_port_plain=PORT
 Port to use for plaintext listening, defaults to 80.
+
 .It http_server_fields_accept=HTTP FIELD[->ARRAY TAG][,...]
 Specify a comma separated list POST and GET fields to allow from clients. Fields not specified here are ignored unless
 .B http_server_fields_accept_any
 is set to 'yes'.
-An optional array tag may be specified for each field if the field name should be translated when added to the RRR array message. This parameter is optional.
+An optional array tag may be specified for each field if the field name should be translated when added to the RRR array message.
+This parameter is optional.
+
 .It http_server_fields_accept_any={yes|no}
 Accept any field names from incoming requests. May not be used with
 .B http_server_fields_accept_any. 
 Defaults to 'no'.
+
 .It http_server_allow_empty_messages={yes|no}
 Create RRR messages for incoming request even if no field names would be added to the message. Defaults to 'no'.
+
+.It http_server_receive_full_request={yes|no}
+Get HTTP data from the request and add it to an RRR array message along with any fields from POST and GET. 
+The fields
+.B http_method, http_endpoint, http_body, http_content_transfer_encoding
+and
+.B http_content_type
+will be added. The latter two values will only be added if present in request header, and the body only if the request body has non-zero length.
+These fields are always added regardless of other options, except from the
+.B http_server_allow_empty_messages
+option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
+Defaults to 'no'.
+
+.It http_server_receive_raw_data={yes|no}
+When receiving a request from a client, put the full request including header into an RRR message for other instances to pick up.
+
+.It http_server_get_raw_response_from_senders={yes|no}
+Instead of sending standard responses to clients, like "204 No Content", check senders of httpserver for raw data responses.
+This option is useful in combination with
+.B http_server_receive_raw_data
+or
+.B http_server_receive_full_request
+as it is then possible for some other module to process the request and make a response.
+The response message given back must have the topic
+.B httpserver/raw/uuu
+set. If a response is generated by another module based on an array message, the topic 'httpserver/request/uuu' must be changed
+to 'httpserver/raw/uuu' for
+.B httpserver
+to pick it up.   
+If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
+
 .It http_server_tls_*
 Refer to the
 .B TLS
@@ -897,21 +1087,26 @@ part of the
 section for descriptions of TLS parameters. All TLS parameters are optional.
 .El
 .PP
-If none of
-.B http_server_fields_accept_any, http_server_allow_empty_messages
-and
-.B http_server_fields_accept
-are specified, no received requests will result into RRR messages being produced. 
-.SS httpclient (DAI)
+With default configuration, having no parameters specified, no RRR messages will be generated for received requests.
+.PP
+Note that all incoming request have to use
+.B HTTP/1.1
+as protocol version, any other versions will be rejected.
+.SS httpclient (PAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
 may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
 use any data sent from the server, any data received is ignored.
+.PP
+The following configuration parameters are available in the
+.B httpclient
+module:
 .PP
 .Bl -tag -width -indent
 .It http_server=SERVER OR IP
 Server to send data to, defaults to 'localhost'.
 .B httpclient
-will follow any redirects from the server, also to other servers. Redirects may be disabled.  
+will follow any redirects from the server, also to other servers. Redirects may be disabled.
+  
 .It http_endpoint=ENDPOINT
 The endpoint to request from the server, e.g.
 .B /index.php.
@@ -924,14 +1119,17 @@ If GET method is used, any query values from RRR messages will be appended to th
 will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
 Defaults to
 .B /.
+
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
+
 .It http_port=PORT
 Port to use when connecting to the server. Defaults to 80 for HTTP and 443 for HTTPS. Redirects from the server to other
 ports will override this value.
+
 .It http_method={get|post_urlencoded|post_multipart}
 Which method to use when sending data to the server. Defaults to
 .B get.
@@ -946,19 +1144,22 @@ is used, any fields will be made into a query string and sent in the POST body o
 .br
 \(bu If
 .B post_multipart
-is used, any fields will be made into separate mime parts and sent in the POST body of type 'multipart/form-data'. This method is recommended for large data fields. 
+is used, any fields will be made into separate mime parts and sent in the POST body of type 'multipart/form-data'. This method is recommended for large data fields.
+ 
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
 A comma separated list of array tags to find in RRR messages from other modules.
 If left unspecified, all array values found will be sent to the HTTP server.
 If a tag is postfixed with a
 .B HTTP FIELD NAME,
 this name instead of the array tag name when sending data to the HTTP server.
-If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced. 
+If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced.
+ 
 .It http_fields=HTTP FIELD NAME[=VALUE][,...]
 A set of fixed fields to send to the HTTP server, optionally with values. Values from
 .B http_fields
 are always sent regardless of
 .B http_tags.
+
 .It http_rrr_msg_to_array={yes|no}
 Convert fields in RRR messages from other modules to array values. The fields used are
 .B timestamp, topic
@@ -969,18 +1170,37 @@ These values may be used in the same way as any other array values from the mess
 parameter. If
 .B http_tags
 is specified, values from the RRR message will only be sent if they are specified here. Defaults to 'no'.
+
 .It http_no_data={yes|no}
 Ignore all data in RRR messages from other modules. Only query values in
 .B http_endpoint
 and
 .B http_fields
 , if specified, will be sent to the server. Defaults to 'no'.
+
 .It http_drop_on_error={yes|no}
 If there is any error while sending a message, drop it instead of deferring it and trying again later. Errors will be logged regardless of this setting. Defaults to 'no'.
+
 .It http_message_timeout_ms=MILLISECONDS
 Timeout for deferred messages, defaults to 0 which means no timeout.
+
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
+
+.It http_keepalive={yes|no}
+Keep connection to server open across multiple requests. When the server finally closes the connection, the client re-connects. Defaults to no.
+
+.It http_receive_raw_data={yes|no}
+Take the full response from the server and put it into an RRR message for other instances to pick up.
+If the original message which caused the query had a topic set, this topic will be present in the message with the raw data.
+May be used in conjunction with raw functionallity in
+.B httpserver.
+
+.It http_send_raw_data={yes|no}
+Assume that received messages contains raw HTTP data (including headers), and send this to the specified server untouched.
+May be used in conjunction with raw functionallity in
+.B httpserver.
+
 .It http_tls_*
 Refer to the
 .B TLS
@@ -990,23 +1210,34 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 .El
 .SS influxdb (DA)
 This module receives array messages from other modules and sends their data to an Influx database using HTTP.
+.PP
+The following configuration parameters are available in the
+.B influxdb
+module:
+.PP
 .Bl -tag -width -indent
 .It influxdb_server=HOSTNAME
 The IP address or hostname of the host running an Influxdb database.
+
 .It influxdb_database=DATABASE
 The database name to use on the server.
+
 .It influxdb_table=TABLE
 The table in the database in which to store the data.
+
 .It influxdb_port=PORT
 The port to use when connecting to the server, defaults to 8086.
+
 .It influxdb_transport_type={plain|tls}
 The transport type to use when connecting to the server. Defaults to 'plain'.
+
 .It influxdb_tls_*
 Refer to the
 .B TLS
 part of the
 .B COMMON CONFIGURATION PARAMETERS
 section for descriptions of TLS parameters. All TLS parameters are optional.
+
 .It influxdb_tags=ARRAY TAG[->INFLUXDB TAG][,...]
 A comma separated list of items to retrieve from the received array messages and which should be used as
 .B tags
@@ -1015,12 +1246,15 @@ item in an array is not equal to the tag in InfluxDB, the tag may be followed by
 .B ->INFLUXDB TAG
 to translate the tag name. 
 Items in an array message which are not tagged cannot be used.
+
 .It influxdb_fields=ARRAY TAG[->INFLUXDB FIELD][,...]
 A comma separated list of items to retrieve from the array and which are to be used as
 .B fields
 in InfluxDB. Otherwise same rules as for tags.
+
 .It influxdb_fixed_tags=TAG[=VALUE][,...]
 Optional comma separated list of fixed tags (and optionally with values) to save to InfluxDB.
+
 .It influxdb_fixed_fields=FIELD[=VALUE][,...]
 Optional comma separated list of fixed fields (and optionally with values) to save to InfluxDB.
 .El
@@ -1030,15 +1264,22 @@ or
 .B influxdb_fixed_fields
 .
 .SS mqttbroker (N)
-An MQTT broker supporting V3.1(.1) and V5 (lacking some functionality).
+An MQTT broker supporting V3.1(.1) and V5.
+.PP
+The following configuration parameters are available in the
+.B mqttbroker
+module:
 .PP
 .Bl -tag -width -indent
 .It mqtt_broker_port=PORT
 TCP port to listen on (listens on all interfaces). Defaults to 1883.
+
 .It mqtt_broker_port_tls=PORT
 TCP port to listen on for TLS connections (listens on all interfaces). Defaults to 8883.
+
 .It mqtt_broker_transport_type={plain|tls|both}
 The transport type to use when listening. Defaults to 'plain'.
+
 .It mqtt_broker_tls_*
 Refer to the
 .B TLS
@@ -1047,27 +1288,34 @@ part of the
 section for descriptions of TLS parameters. All TLS parameters are optional except from certificate file and private key.
 .It mqtt_broker_max_keep_alive=SECONDS
 Maximum keep-alive value for clients, defaults to 30.
+
 .It mqtt_broker_retry_interval=SECONDS
 Retry interval for QoS1 and QoS2 messages.
+
 .It mqtt_broker_close_wait_time=SECONDS
 After disconnect, wait this many seconds before closing the socket (make client close first to avoid TIME_WAIT). Defaults to 1 second.
+
 .It mqtt_broker_v31_disconnect_on_publish_deny={yes|no}
 If a V3.1 or V3.1.1 client sends a PUBLISH which is rejected by ACL rules, the client will be disconnected
 if this option is set to yes. The default value is no, which means that the broker sends an acknowledgement packet
 regardless of whether the PUBLISH was rejected or not. For V5, an acknowledgement with an error code is always sent,
 disregarding this option.
+
 .It mqtt_broker_password_file=FILENAME
 Filename of an RRR password file created by
 .Xr rrr_passwd(1)
 with which users are authenticated. If left unspecified, all CONNECT packets containing a username will be rejected.
 RRR does not allow CONNECT packets only containing usernames, a password must always be set.
+
 .It mqtt_broker_permission_name=PERMISSION
 The permission name to which a user must have been registered with by using
 .Xr rrr_passwd(1)
 to become authenticated with this broker. Defaults to
 .B mqtt. 
+
 .It mqtt_broker_require_authentication={yes|no}
 Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
+
 .It mqtt_broker_acl_file=FILENAME
 ACL file to allow different users access to topics. If left unspecified, all access is granted. If a file is specified and a rule
 is not found upon a PUBLISH or SUBSCRIBE from a client, access will be denied.
@@ -1128,37 +1376,49 @@ The MQTT server follows the specifications from Oasis, but lacks support for the
 An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and
 other modules can read messages the client receives on subscribed topics.
 .PP
+The following configuration parameters are available in the
+.B mqttclient
+module:
+.PP
 .Bl -tag -width -indent
 .It mqtt_server=HOST
 Host name or IP of the broker to connect to. Defaults to localhost.
+
 .It mqtt_server_port=PORT
 TCP port on the server for TLS connections, defaults to 1883 for plain transport and 8883 for TLS connection.
+
 .It mqtt_transport_type={plain|tls}
 The transport type to use when connecting to the server. Defaults to 'plain'.
+
 .It mqtt_tls_*
 Refer to the
 .B TLS
 part of the
 .B COMMON CONFIGURATION PARAMETERS
 section for descriptions of TLS parameters. All TLS parameters are optional.
+
 .It mqtt_client_identifier=IDENTIFIER
 Client identifier to use. If left unspecified, the broker picks one.
+
 .It mqtt_v5_recycle_assigned_client_identifier={yes|no}
 If we let the broker pick a client identifier and we are using protocol version 5, the broker will inform the client
 about which client identifier it assigned. If this option is set to yes and the client needs to re-connect for some reason,
 it will attempt to use this assigned client identifier. In version 3, the broker does not inform the client about the
 picked client identifier and this option is then ignored. Defaults to 'yes'.
+
 .It mqtt_connect_error_action={restart|retry}
 Default action if connecting to the server failed. If set to
 .B restart,
 all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
 .B retry,
 the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
+
 .It mqtt_connect_attempts=NUMBER OF ATTEMPTS
 How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting
 .B mqtt_connect_error_action.
 One connection attempt lasts approximately 100ms. Must be 1 or more, defaults to 20.
+
 .It mqtt_discard_on_connect_retry={yes|no}
 With this option set to 'yes' while
 .B mqtt_connect_error_action
@@ -1167,48 +1427,59 @@ to avoid non-processed messages filling up memory in situations where the broker
 .B  mqtt_connect_error_action
 is 'restart', all messages will be cleared anyway when all instances restart after mqttclient fails to connect.
 .B mqtt_discard_on_connect_retry
-may not be set to 'yes' in this situation. Defaults to 'no'.  
+may not be set to 'yes' in this situation. Defaults to 'no'.
+  
 .It mqtt_username=USERNAME
 .It mqtt_password=PASSWORD
 Optional username and password to send in CONNECT packets. If a password is set, a username
 .B must
 also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
+
 .It mqtt_qos={0|1|2}
 Default Quality of Service to use, defaults to 1.
+
 .It mqtt_version={3.1.1|5}
 Default MQTT protocol version to use, defaults to 3.1.1.
+
 .It mqtt_publish_topic=TOPIC
 Topic to use when publishing RRR messages without topic set in them.
 If left unspecified, RRR messages without a topic will be dropped.
+
 .It mqtt_publish_topic_force={yes|no}
 Force use of the topic specified in
 .B mqtt_publish_topic
 and disregard any topic in RRR messages. Cannot be used with
 .B mqtt_publish_topic_prepend.
 Defaults to no.
+
 .It mqtt_publish_topic_prepend={yes|no}
 The topic specified in
 .B mqtt_publish_topic
 is prepended to the topic RRR messages. No trailing or leading slashes are added. Cannot be used with
 .B mqtt_publish_topic_force.
 Messages without a topic are dropped if set to yes. Defaults to no.
+
 .It mqtt_publish_rrr_message={yes|no}
 If set to yes, the client will send full RRR messages.
 If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
 type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
+
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
 messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
 Cannot be used with
 .B mqtt_publish_rrr_message=yes.
+
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
-MQTT topic patterns to subscribe to (if any).
+MQTT topic patterns to subscribe to (if any)
+
 .It mqtt_receive_rrr_message={yes|no}
 Expect to receive RRR messages from the broker.
 If set to yes, any messages received which are not RRR messages are dropped.
 If set to no and protocol version is V3.1.1, any data in messages received are put into a new RRR message.
 If set to no and protocol version is V5, type of the received message is auto-detected.
 Defaults to no.
+
 .It mqtt_receive_array=ARRAY DEFINITION
 If set, expect to receive data arrays of specific formats in publish messages.
 This option cannot be used with mqtt_receive_rrr_message=yes, however if protocol version is V5,
@@ -1248,7 +1519,7 @@ The following array tags can be retrieved from messages generated by
 .It log_level_translated
 RFC 5424 loglevel, small integer.
 .It log_prefix
-The log prefix, usually path to the current RRR configuration file. 
+The log prefix, usually path to the current RRR configuration file.
 .It log_message
 The actual log message (including syslog-syntax for loglevel and prefix)
 .It log_hostname
@@ -1263,6 +1534,7 @@ The following configuration parameters are available:
 .Bl -tag -width -indent
 .It journal_generate_test_messages={yes|no}
 Generate dummy messages for testing purposes. Defaults to no.
+
 .It journal_hostname=HOSTNAME
 Hostname to send along with log messages. Defaults to system hostname.
 .El
@@ -1275,17 +1547,21 @@ with the configuration paramenter prefix of the module.
 .Bl -tag -width -indent
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
+
 .It X_sleep_time_ms=MILLISECONDS
 How many milliseconds to sleep if nothing was processed in the worker after multiple processing loops.
 Sleeping is performed to limit CPU usage.
 It is possible to specify 0 which in practice creates a very small wait.
 The worker will sleep once every round until something happens again. Defaults to 50ms.
+
 .It X_nothing_happend_limit=UNSIGNED INTEGER
 How many loops to perform in the worker with nothing being processed before starting to sleep.
-Defaults to 250, must be 1 or greater. 
+Defaults to 250, must be 1 or greater.
+ 
 .It X_log_prefix=PREFIX
 Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
 macros to print messages like the reset of RRR does.
+
 .It X_drop_on_error={yes|no}
 If there is an error during processing of a message, just drop it instead of restarting the program.
 Defaults to no.
@@ -1294,10 +1570,13 @@ Defaults to no.
 .Bl -tag -width -indent
 .It X_tls_certificate_file=FILENAME
 The certificate to use for TLS connections. Optional for clients, required for servers.
+
 .It X_tls_key_file=FILENAME
 The private key to use for TLS connections. Optional for clients, required for servers.
+
 .It X_tls_ca_path=PATH[:OTHER_PATH...]
 An alternative directory in which to search for CA certificates used when validating certificates. Debuglevel 1 will expose the actual search path. Optional.
+
 .It X_tls_ca_file=FILENAME
 A CA certificate file to use when validating certificates. Optional.
 .El
@@ -1306,3 +1585,4 @@ A CA certificate file to use when validating certificates. Optional.
 .Xr rrr_post(1),
 .Xr rrr_stats(1),
 .Xr rrr_python3(5)
+	

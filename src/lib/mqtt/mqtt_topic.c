@@ -171,6 +171,47 @@ int rrr_mqtt_topic_match_tokens_recursively (
 	return rrr_mqtt_topic_match_tokens_recursively(sub_token->next, pub_token->next);
 }
 
+int rrr_mqtt_topic_match_str_with_end (
+		const char *sub_filter,
+		const char *pub_topic,
+		const char *pub_topic_end
+) {
+	int ret = RRR_MQTT_TOKEN_MISMATCH;
+
+	struct rrr_mqtt_topic_token *sub_filter_tokens = NULL;
+	struct rrr_mqtt_topic_token *pub_topic_tokens = NULL;
+
+	if (rrr_mqtt_topic_tokenize(&sub_filter_tokens, sub_filter) != 0) {
+		RRR_MSG_0("Failed to tokenize filter in rrr_mqtt_topic_match_str\n");
+		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_tokenize_with_end(&pub_topic_tokens, pub_topic, pub_topic_end) != 0) {
+		RRR_MSG_0("Failed to tokenize topic in rrr_mqtt_topic_match_str\n");
+		ret = RRR_MQTT_TOKEN_INTERNAL_ERROR;
+		goto out;
+	}
+
+	ret = rrr_mqtt_topic_match_tokens_recursively(sub_filter_tokens, pub_topic_tokens);
+
+	out:
+	rrr_mqtt_topic_token_destroy(sub_filter_tokens);
+	rrr_mqtt_topic_token_destroy(pub_topic_tokens);
+	return ret;
+}
+
+int rrr_mqtt_topic_match_str (
+		const char *sub_filter,
+		const char *pub_topic
+) {
+	return rrr_mqtt_topic_match_str_with_end (
+			sub_filter,
+			pub_topic,
+			pub_topic + strlen(pub_topic)
+	);
+}
+
 // Both token trees may contain # and +
 // The master token is usually an ACL entry and the slave a subscription request
 // The # of a slave topic will only match the master topic if the master topic is also # on the same level

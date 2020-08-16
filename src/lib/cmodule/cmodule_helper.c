@@ -662,7 +662,7 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 		data->thread_collection = NULL;
 	}
 
-	if (rrr_thread_is_ghost(INSTANCE_D_THREAD(data->parent_thread_data))) {
+	if (data->parent_thread_data != NULL && rrr_thread_is_ghost(INSTANCE_D_THREAD(data->parent_thread_data))) {
 		RRR_BUG("Could not stop reader threads in cmodule instance %s. Can't continue.",
 				INSTANCE_D_NAME(data->parent_thread_data));
 	}

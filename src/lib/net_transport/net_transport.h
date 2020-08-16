@@ -252,6 +252,9 @@ int rrr_net_transport_ctx_send_blocking (
 		const void *data,
 		ssize_t size
 );
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
+);
 void rrr_net_transport_ctx_handle_application_data_bind (
 		struct rrr_net_transport_handle *handle,
 		void *application_data,

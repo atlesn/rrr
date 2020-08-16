@@ -1190,7 +1190,7 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 				ram_data,
 				publish
 		)) != 0) {
-			RRR_MSG_0("Error while delivering will PUBLISH after expired delay interval in __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback\n");
+			RRR_MSG_0("Error while delivering will PUBLISH after expired delay interval in __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback return was %i\n", ret);
 			ret = RRR_FIFO_GLOBAL_ERR;
 			goto out_unlock;
 		}
@@ -1224,7 +1224,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out_unlock;
 	}
-	ret = RRR_MQTT_SESSION_OK;
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	ret = rrr_fifo_buffer_read_clear_forward (
@@ -3074,6 +3073,8 @@ static int __rrr_mqtt_session_ram_receive_packet (
 		//        first like we do now.
 
 		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
+
+		// Parser must validate topic names, or we wil BUG() in subscription framework upon invalid topics
 
 		if (RRR_LL_COUNT(subscribe->subscriptions) == 0) {
 			RRR_BUG("BUG: No subscriptions in SUBSCRIBE in __rrr_mqtt_session_ram_receive_packet, parser has to catch this\n");
