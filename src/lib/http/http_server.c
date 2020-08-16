@@ -35,16 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport_config.h"
 //#include "../ip_util.h"
 
-static void __rrr_http_server_ghost_handler (struct rrr_thread *thread) {
-	thread->free_private_data_by_ghost = 1;
-}
-
 void rrr_http_server_destroy (struct rrr_http_server *server) {
-	rrr_thread_stop_and_join_all (
-			server->threads,
-			__rrr_http_server_ghost_handler
+	rrr_thread_stop_and_join_all_no_unlock (
+			server->threads
 	);
-	rrr_thread_destroy_collection(server->threads, 1);
+	rrr_thread_destroy_collection(server->threads);
 
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
@@ -112,7 +107,7 @@ static int __rrr_http_server_start (
 	}
 
 	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags)) != 0) {
-		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start \n");
+		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -189,8 +184,6 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
 		printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
 
-		pthread_mutex_lock(&worker_data->lock);
-
 		// DO NOT STORE HANDLE POINTER
 		
 		worker_data->transport = handle->transport;
@@ -202,8 +195,6 @@ static void __rrr_http_server_accept_create_http_session_callback (
 
 		memcpy(&worker_data->sockaddr, sockaddr, socklen);
 		worker_data->socklen = socklen;
-
-		pthread_mutex_unlock(&worker_data->lock);
 	}
 }
 
@@ -228,11 +219,9 @@ static int __rrr_http_server_accept (
 		goto out;
 	}
 
-	pthread_mutex_lock(&worker_data->lock);
 	if (worker_data->transport_handle != 0) {
 		*did_accept = 1;
 	}
-	pthread_mutex_unlock(&worker_data->lock);
 
 	out:
 	return ret | worker_data->error;
@@ -253,6 +242,8 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 		void *arg
 ) {
 	int ret = RRR_HTTP_SERVER_ACCEPT_OK;
+
+	// Thread is locked by iterator
 
 	struct rrr_http_server_accept_if_free_thread_callback_data *callback_data = arg;
 
@@ -329,6 +320,10 @@ static int __rrr_http_server_accept_if_free_thread (
 
 static int __rrr_http_server_allocate_threads (
 		struct rrr_thread_collection *threads,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -340,6 +335,10 @@ static int __rrr_http_server_allocate_threads (
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
+				unique_id_generator_callback,
+				unique_id_generator_callback_arg,
+				final_callback_raw,
+				final_callback_raw_arg,
 				final_callback,
 				final_callback_arg
 		)) != 0) {
@@ -347,16 +346,15 @@ static int __rrr_http_server_allocate_threads (
 			goto out;
 		}
 
-		struct rrr_thread *thread = rrr_thread_preload_and_register (
+		struct rrr_thread *thread = rrr_thread_allocate_preload_and_register (
 				threads,
-				rrr_http_server_worker_thread_entry,
+				rrr_http_server_worker_thread_entry_intermediate,
 				NULL,
 				NULL,
 				NULL,
-				rrr_http_server_worker_preliminary_data_destroy_void,
 				RRR_THREAD_START_PRIORITY_NORMAL,
-				worker_data,
-				"httpserver_worker"
+				"httpserver_worker",
+				worker_data
 		);
 
 		if (thread == NULL) {
@@ -364,11 +362,11 @@ static int __rrr_http_server_allocate_threads (
 			goto out;
 		}
 
-		worker_data = NULL; // Now managed by thread framework
+		worker_data = NULL; // Now managed by worker thread
 
 		if ((ret = rrr_thread_start(thread)) != 0) {
-			RRR_MSG_0("Could not start thread in __rrr_http_server_allocate_threads\n");
-			goto out;
+			// Unsafe state of worker_data struct
+			RRR_BUG("Could not start thread in __rrr_http_server_allocate_threads, cannot recover from this.\n");
 		}
 	}
 
@@ -382,6 +380,10 @@ static int __rrr_http_server_allocate_threads (
 int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
@@ -389,8 +391,12 @@ int rrr_http_server_tick (
 
 	*accept_count_final = 0;
 
-	if ((ret = __rrr_http_server_allocate_threads(
+	if ((ret = __rrr_http_server_allocate_threads (
 			server->threads,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
+			final_callback_raw,
+			final_callback_raw_arg,
 			final_callback,
 			final_callback_arg
 	)) != 0) {
@@ -427,7 +433,7 @@ int rrr_http_server_tick (
 	}
 
 	int count;
-	rrr_thread_join_and_destroy_stopped_threads(&count, server->threads, 1);
+	rrr_thread_join_and_destroy_stopped_threads(&count, server->threads);
 
 	*accept_count_final = accept_count;
 

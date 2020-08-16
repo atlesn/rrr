@@ -44,20 +44,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/log.h"
 #include "lib/rrr_strerror.h"
-#include "lib/posix.h"
-#include "lib/rrr_time.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/linked_list.h"
 #include "lib/map.h"
-#include "lib/socket/rrr_socket.h"
-#include "lib/socket/rrr_socket_msg.h"
-#include "lib/socket/rrr_socket_read.h"
 #include "lib/read.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_read.h"
+#include "lib/messages/msg.h"
 #include "lib/socket/rrr_socket_constants.h"
-#include "lib/rrr_readdir.h"
 #include "lib/stats/stats_message.h"
 #include "lib/stats/stats_tree.h"
-#include "lib/macro_utils.h"
+#include "lib/util/rrr_time.h"
+#include "lib/util/linked_list.h"
+#include "lib/util/rrr_readdir.h"
+#include "lib/util/macro_utils.h"
+#include "lib/util/posix.h"
 
 #ifdef _GNU_SOURCE
 #	error "Cannot use _GNU_SOURCE, would cause use of incorrect basename() function"
@@ -207,7 +207,7 @@ static int __rrr_stats_read_message (
 			&bytes_read,
 			read_sessions,
 			fd,
-			sizeof(struct rrr_socket_msg),
+			sizeof(struct rrr_msg),
 			1024,
 			0,
 			0,
@@ -510,15 +510,15 @@ static int __rrr_stats_send_message (int fd, const struct rrr_stats_message *mes
 			message
 	);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) &message_packed,
-			RRR_SOCKET_MSG_TYPE_TREE_DATA,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &message_packed,
+			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
 			message->timestamp
 	);
 
-	rrr_socket_msg_checksum_and_to_network_endian (
-			(struct rrr_socket_msg *) &message_packed
+	rrr_msg_checksum_and_to_network_endian (
+			(struct rrr_msg *) &message_packed
 	);
 
 	RRR_DBG_3("TX size %lu sticky %i path %s\n",

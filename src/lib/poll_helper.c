@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instances.h"
 #include "buffer.h"
 #include "message_broker.h"
-#include "ip_buffer_entry_util.h"
-#include "ip_buffer_entry.h"
+#include "message_holder/message_holder_util.h"
+#include "message_holder/message_holder.h"
 
 static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);
@@ -41,49 +41,21 @@ void rrr_poll_collection_clear (
 	RRR_LL_DESTROY(collection,struct rrr_poll_collection_entry, __poll_collection_entry_destroy(node));
 }
 
-void rrr_poll_collection_clear_void (
-		void *data
-) {
-	rrr_poll_collection_clear((struct rrr_poll_collection *) data);
-}
-
-int rrr_poll_collection_new (
-		struct rrr_poll_collection **target
-) {
-	*target = NULL;
-
-	struct rrr_poll_collection *collection = malloc(sizeof(*collection));
-	if (collection == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_poll_collection_new\n");
-		return 1;
-	}
-	memset(collection, '\0', sizeof(*collection));
-
-	*target = collection;
-
-	return 0;
-}
-
-void rrr_poll_collection_destroy (
-		struct rrr_poll_collection *collection
-) {
-	rrr_poll_collection_clear(collection);
-	free(collection);
-}
-
-void rrr_poll_collection_destroy_void (
-		void *data
-) {
-	rrr_poll_collection_destroy(data);
-}
-
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
-		struct rrr_instance_metadata *instance
+		struct rrr_message_broker *message_broker,
+		const char *costumer_name
 ) {
 	int ret = 0;
 	*flags_result = 0;
+
+	rrr_message_broker_costumer_handle *handle = rrr_message_broker_costumer_find_by_name(message_broker, costumer_name);
+	if (handle == NULL) {
+		RRR_MSG_0("Could not find message broker costumer '%s' in rrr_poll_collection_add\n", costumer_name);
+		ret = RRR_POLL_ERR;
+		goto out;
+	}
 
 	struct rrr_poll_collection_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
@@ -94,38 +66,38 @@ int rrr_poll_collection_add (
 
 	memset(entry, '\0', sizeof(*entry));
 
-	entry->thread_data = instance->thread_data;
+	entry->message_broker = message_broker;
+	entry->message_broker_handle = handle;
 
 	RRR_LL_APPEND(collection, entry);
-	entry = NULL;
 
 	out:
-	if (entry != NULL) {
-		__poll_collection_entry_destroy(entry);
-	}
-
 	return ret;
 }
 
-struct poll_callback_data {
+struct poll_add_from_senders_callback_data {
+	struct rrr_message_broker *broker;
 	struct rrr_poll_collection *collection;
-	struct rrr_instance_metadata *faulty_instance;
+	struct rrr_instance *faulty_sender;
 };
 
 static int __poll_collection_add_from_senders_callback (
-		struct rrr_instance_metadata *instance,
+		struct rrr_instance *instance,
 		void *arg
 ) {
 	int ret = 0;
 
-	struct poll_callback_data *data = arg;
+	struct poll_add_from_senders_callback_data *data = arg;
 
 	unsigned int flags_result;
 
-	ret = rrr_poll_collection_add (&flags_result, data->collection, instance);
-
-	if (ret == RRR_POLL_NOT_FOUND) {
-		data->faulty_instance = instance;
+	if ((ret = rrr_poll_collection_add (
+			&flags_result,
+			data->collection,
+			data->broker,
+			INSTANCE_M_NAME(instance)
+	)) == RRR_POLL_NOT_FOUND) {
+		data->faulty_sender = instance;
 		ret = 1;
 	}
 	else if (ret != 0) {
@@ -138,7 +110,7 @@ static int __poll_collection_add_from_senders_callback (
 
 int rrr_poll_do_poll_discard (
 		int *discarded_count,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection
 ) {
 	int ret = 0;
@@ -156,7 +128,8 @@ int rrr_poll_do_poll_discard (
 
 		ret_tmp = rrr_message_broker_poll_discard (
 				&discarded_count_tmp,
-				INSTANCE_D_BROKER_ARGS(entry->thread_data)
+				entry->message_broker,
+				entry->message_broker_handle
 		);
 
 		(*discarded_count) += discarded_count_tmp;
@@ -168,8 +141,8 @@ int rrr_poll_do_poll_discard (
 			RRR_LL_ITERATE_BREAK();
 		}
 		else if (ret_tmp != 0) {
-			RRR_BUG("BUG: Unknown return value %i when polling from module %s\n",
-					ret_tmp, INSTANCE_D_MODULE_NAME(entry->thread_data));
+			RRR_BUG("BUG: Unknown return value %i when polling in rrr_poll_do_poll_discard\n",
+					ret_tmp);
 		}
 	RRR_LL_ITERATE_END();
 
@@ -177,7 +150,7 @@ int rrr_poll_do_poll_discard (
 }
 
 struct rrr_poll_delete_topic_filtering_callback_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
 };
 
@@ -190,7 +163,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int does_match = 0;
 
-	if (rrr_ip_buffer_entry_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
+	if (rrr_msg_msg_holder_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = RRR_MESSAGE_BROKER_ERR;
@@ -210,22 +183,23 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
-int rrr_poll_do_poll_delete (
-		struct rrr_instance_thread_data *thread_data,
+int __rrr_poll_do_poll (
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		void *callback_arg,
+		unsigned int wait_milliseconds,
+		int do_poll_delete
 ) {
 	int ret = 0;
 
 	// Small optimization, skip topic filtering callback when filtering is not active
 
 	int (*callback_to_use)(RRR_MODULE_POLL_CALLBACK_SIGNATURE) = callback;
-	void *callback_arg = thread_data;
 
 	struct rrr_poll_delete_topic_filtering_callback_data filter_callback_data;
 
@@ -242,12 +216,24 @@ int rrr_poll_do_poll_delete (
 
 		struct rrr_poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_message_broker_poll_delete (
-				INSTANCE_D_BROKER_ARGS(entry->thread_data),
-				callback_to_use,
-				callback_arg,
-				wait_milliseconds
-		);
+		if (do_poll_delete) {
+			ret_tmp = rrr_message_broker_poll_delete (
+					entry->message_broker,
+					entry->message_broker_handle,
+					callback_to_use,
+					callback_arg,
+					wait_milliseconds
+			);
+		}
+		else {
+			ret_tmp = rrr_message_broker_poll (
+					entry->message_broker,
+					entry->message_broker_handle,
+					callback_to_use,
+					callback_arg,
+					wait_milliseconds
+			);
+		}
 
 		if (	(ret_tmp & RRR_FIFO_CALLBACK_ERR) ==  RRR_FIFO_CALLBACK_ERR ||
 				(ret_tmp & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR
@@ -256,12 +242,31 @@ int rrr_poll_do_poll_delete (
 			RRR_LL_ITERATE_BREAK();
 		}
 		else if (ret_tmp != 0) {
-			RRR_BUG("BUG: Unknown return value %i when polling from module %s\n",
-					ret_tmp, INSTANCE_D_MODULE_NAME(entry->thread_data));
+			RRR_BUG("BUG: Unknown return value %i when polling in rrr_poll_do_poll_delete\n",
+					ret_tmp);
 		}
 	RRR_LL_ITERATE_END();
 
 	return ret;
+}
+
+int rrr_poll_do_poll_delete (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) {
+	return __rrr_poll_do_poll (thread_data, collection, callback, thread_data, wait_milliseconds, 1);
+}
+
+int rrr_poll_do_poll_search (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
+) {
+	return __rrr_poll_do_poll (thread_data, collection, callback, callback_arg, wait_milliseconds, 0);
 }
 
 int rrr_poll_collection_count (
@@ -270,31 +275,31 @@ int rrr_poll_collection_count (
 	return collection->node_count;
 }
 
-static int __rrr_poll_collection_add_from_senders (
-		struct rrr_poll_collection *poll_collection,
-		struct rrr_instance_metadata **faulty_instance,
-		struct rrr_instance_collection *senders
+int rrr_poll_add_from_thread_senders (
+		struct rrr_instance **faulty_sender,
+		struct rrr_poll_collection *collection,
+		struct rrr_instance_runtime_data *thread_data
 ) {
-	*faulty_instance = NULL;
+	int ret = 0;
 
-	struct poll_callback_data callback_data;
-	callback_data.collection = poll_collection;
-	callback_data.faulty_instance = NULL;
+	*faulty_sender = NULL;
 
-	int ret = rrr_instance_collection_iterate(senders, &__poll_collection_add_from_senders_callback, &callback_data);
+	struct poll_add_from_senders_callback_data callback_data = {
+			INSTANCE_D_BROKER(thread_data),
+			collection,
+			NULL
+	};
+
+	ret = rrr_instance_friend_collection_iterate (
+			thread_data->init_data.senders,
+			__poll_collection_add_from_senders_callback,
+			&callback_data
+	);
 
 	if (ret != 0) {
-		*faulty_instance = callback_data.faulty_instance;
+		*faulty_sender = callback_data.faulty_sender;
 	}
 
 	return ret;
-}
-
-void rrr_poll_add_from_thread_senders (
-		struct rrr_poll_collection *collection,
-		struct rrr_instance_thread_data *thread_data
-) {
-	struct rrr_instance_metadata *faulty_sender;
-	__rrr_poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders);
 }
 

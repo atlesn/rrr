@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 #define RRR_MQTT_SUBSCRIPTION_OK				0
 #define RRR_MQTT_SUBSCRIPTION_MATCH				0
@@ -77,14 +77,14 @@ int rrr_mqtt_subscription_clone (
 		struct rrr_mqtt_subscription **target,
 		const struct rrr_mqtt_subscription *source
 );
-void rrr_mqtt_subscription_replace_and_destroy (
-		struct rrr_mqtt_subscription *target,
-		struct rrr_mqtt_subscription *source
-);
-int rrr_mqtt_subscription_collection_match_publish_callback (
+int rrr_mqtt_subscription_collection_match_publish_with_callback (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
+		int (*match_callback) (
+				const struct rrr_mqtt_p_publish *publish,
+				const struct rrr_mqtt_subscription *subscription,
+				void *callback_arg
+		),
 		void *callback_arg,
 		int *match_count_final
 );
@@ -116,6 +116,11 @@ int rrr_mqtt_subscription_collection_iterate (
 		int (*callback)(struct rrr_mqtt_subscription *sub, void *arg),
 		void *callback_arg
 );
+int rrr_mqtt_subscription_collection_add_unique (
+		struct rrr_mqtt_subscription_collection *target,
+		struct rrr_mqtt_subscription **subscription,
+		int put_at_end
+);
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
 		const struct rrr_mqtt_subscription_collection *target,
 		ssize_t idx
@@ -129,10 +134,6 @@ int rrr_mqtt_subscription_collection_remove_topic (
 		struct rrr_mqtt_subscription_collection *target,
 		const char *topic
 );
-int rrr_mqtt_subscription_collection_push_unique (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription **subscription
-);
 int rrr_mqtt_subscription_collection_push_unique_str (
 		struct rrr_mqtt_subscription_collection *target,
 		const char *topic,
@@ -141,19 +142,12 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 		uint8_t nl,
 		uint8_t qos
 );
-int rrr_mqtt_subscription_collection_append_unique (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription **subscription
-);
-int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
-);
 int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
 		const struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
+		int include_invalid_entries,
+		int (*new_subscrition_callback)(const struct rrr_mqtt_subscription *subscription, void *arg),
+		void *new_subscrition_callback_arg
 );
 int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 		struct rrr_mqtt_subscription_collection *target,

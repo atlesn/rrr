@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
-	RRR_SOCKET_MSG_CTRL_F_USR_A
+	RRR_MSG_CTRL_F_USR_A
 
 #define RRR_CMODULE_CHANNEL_OK		RRR_READ_OK
 #define RRR_CMODULE_CHANNEL_ERROR	RRR_READ_HARD_ERROR
@@ -43,8 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT 250
 
 #define RRR_CMODULE_FINAL_CALLBACK_ARGS					\
-		const struct rrr_message *msg,					\
-		const struct rrr_message_addr *msg_addr,		\
+		const struct rrr_msg_msg *msg,					\
+		const struct rrr_msg_addr *msg_addr,		\
 		void *arg
 
 #define RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS			\
@@ -53,8 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_PROCESS_CALLBACK_ARGS					\
 		struct rrr_cmodule_worker *worker,					\
-		const struct rrr_message *message,					\
-		const struct rrr_message_addr *message_addr,		\
+		const struct rrr_msg_msg *message,					\
+		const struct rrr_msg_addr *message_addr,		\
 		int is_spawn_ctx,									\
 		void *private_arg
 

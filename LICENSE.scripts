@@ -1,3 +1,8 @@
+Note that scripts which are part of the example library have their
+own licence.
+ 
+======================================================================
+
 Copyright 2020 Atle Solbakken <atle@goliathdns.no>
 
 1. NON-COMPILED SCRIPTS RUN BY RRR
@@ -11,4 +16,4 @@ requirements imposed by any licenses RRR uses. The authors of scripts may
 freely apply any license to their code.
 
 Scripts distributed along with RRR are licensed the same way as RRR
-itself.
+itself unless stated otherwise elsewhere.

@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defer_queue.h"
 
 #include "../log.h"
-#include "../message_addr.h"
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../messages/msg_addr.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 int rrr_cmodule_deferred_message_destroy (
 		struct rrr_cmodule_deferred_message *msg
@@ -39,8 +39,8 @@ int rrr_cmodule_deferred_message_destroy (
 }
 
 void rrr_cmodule_deferred_message_extract (
-		struct rrr_message **message,
-		struct rrr_message_addr **message_addr,
+		struct rrr_msg_msg **message,
+		struct rrr_msg_addr **message_addr,
 		struct rrr_cmodule_deferred_message *source
 ) {
 	*message = source->msg;
@@ -51,15 +51,15 @@ void rrr_cmodule_deferred_message_extract (
 
 int rrr_cmodule_deferred_message_new_and_push (
 		struct rrr_cmodule_deferred_message_collection *collection,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
+		struct rrr_msg_msg *msg,
+		const struct rrr_msg_addr *msg_addr
 ) {
 	int ret = 0;
 
 	struct rrr_cmodule_deferred_message *node = NULL;
-	struct rrr_message_addr *msg_addr_tmp = NULL;
+	struct rrr_msg_addr *msg_addr_tmp = NULL;
 
-	if ((ret = rrr_message_addr_clone(&msg_addr_tmp, msg_addr)) != 0) {
+	if ((ret = rrr_msg_addr_clone(&msg_addr_tmp, msg_addr)) != 0) {
 		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_deferred_message_push\n");
 		goto out;
 	}

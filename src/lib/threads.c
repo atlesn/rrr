@@ -31,12 +31,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <signal.h>
 
+#include "util/rrr_time.h"
+#include "util/macro_utils.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
-#include "rrr_time.h"
 #include "rrr_strerror.h"
 #include "log.h"
-#include "macro_utils.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
 //#define VL_THREAD_INCAPACITATE_WATCHDOGS
@@ -47,137 +47,66 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
-struct vl_thread_ghost {
-	struct vl_thread_ghost *next;
+struct rrr_thread_postponed_cleanup_node {
+	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
 	struct rrr_thread *thread;
 };
 
-static struct vl_thread_ghost *ghost_list_first = NULL;
-static struct rrr_thread_ghost_data *ghost_cleanup_list_first = NULL;
-static pthread_mutex_t ghost_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+struct rrr_ghost_postponed_cleanup_collection {
+	RRR_LL_HEAD(struct rrr_thread_postponed_cleanup_node);
+};
 
-// Lock should be held already
-static void __rrr_thread_remove_ghost(const struct rrr_thread *thread) {
-	struct vl_thread_ghost *do_free = NULL;
-
-	struct vl_thread_ghost *prev = NULL;
-	for (struct vl_thread_ghost *cur = ghost_list_first; cur != NULL; cur = cur->next) {
-			if (cur->thread == thread) {
-				if (prev) {
-					prev->next = cur->next;
-				}
-				else {
-					ghost_list_first = cur->next;
-				}
-				break;
-			}
-			prev = cur;
-	}
-
-	if (do_free) {
-		RRR_MSG_0("Removed thread %s from ghost queue\n", do_free->thread->name);
-		free (do_free);
-	}
-}
-
-static void __rrr_thread_push_ghost(struct rrr_thread *thread) {
-	struct vl_thread_ghost *ghost = malloc(sizeof(*ghost));
-
-	pthread_mutex_lock(&ghost_list_mutex);
-	ghost->next = ghost_list_first;
-	ghost->thread = thread;
-	ghost_list_first = ghost;
-	pthread_mutex_unlock(&ghost_list_mutex);
-}
-
-static inline struct rrr_thread_ghost_data *__rrr_thread_new_ghost_data (struct rrr_thread *thread, void *ptr) {
-	struct rrr_thread_ghost_data *ret = malloc(sizeof(*ret));
-	if (ret == NULL) {
-		RRR_MSG_0("Could not allocate memory in thread_new_ghost_data\n");
-		return NULL;
-	}
-
-	memset (ret, '\0', sizeof(*ret));
-
+static int __rrr_thread_destroy (struct rrr_thread *thread) {
 	rrr_thread_lock(thread);
-	ret->ghost_cleanup_pointer = ptr;
-	ret->poststop_routine = thread->poststop_routine;
-	ret->thread = thread;
+
+	if (thread->state == RRR_THREAD_STATE_FREE) {
+		RRR_BUG("Attempted to free thread which was FREE\n");
+	}
+
+	thread->state = RRR_THREAD_STATE_FREE;
 	rrr_thread_unlock(thread);
+	free(thread);
 
-	return ret;
+	return 0;
 }
 
-static void __rrr_thread_add_ghost_data (struct rrr_thread_ghost_data *data) {
-	pthread_mutex_lock(&ghost_list_mutex);
-	if (ghost_cleanup_list_first == NULL) {
-		ghost_cleanup_list_first = data;
-	}
-	else {
-		data->next = ghost_cleanup_list_first;
-		ghost_cleanup_list_first = data;
-	}
-	pthread_mutex_unlock(&ghost_list_mutex);
+// It is safe to have these dynamically allocated, a thread may wake up after
+// such memory has been freed and attempt to use it.
+static struct rrr_ghost_postponed_cleanup_collection postponed_cleanup_collection = {0};
+static pthread_mutex_t postponed_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* If a ghost becomes ghost (tagged by the watchdog as such):
+ * - Main will remove reference to the pointer of the threads rrr_thread struct
+ * - If waking up, and prior to exiting, the thread will check if it has been tagged
+ *   and will push to this list
+ * - At a suitable time, main will call cleanup_run routine and free memory and possibly
+ *   run poststop
+ */
+
+// Called from threads
+static void __rrr_thread_postponed_cleanup_push (struct rrr_thread *thread) {
+	struct rrr_thread_postponed_cleanup_node *node = malloc(sizeof(*node));
+	memset(node, '\0', sizeof(*node));
+
+	node->thread = thread;
+
+	pthread_mutex_lock(&postponed_cleanup_lock);
+	RRR_LL_APPEND(&postponed_cleanup_collection, node);
+	pthread_mutex_unlock(&postponed_cleanup_lock);
 }
 
-int rrr_thread_run_ghost_cleanup(int *count) {
-	int ret = 0;
-
+// Called from main
+void rrr_thread_postponed_cleanup_run(int *count) {
 	*count = 0;
-
-	pthread_mutex_lock(&ghost_list_mutex);
-	struct rrr_thread_ghost_data *data = ghost_cleanup_list_first;
-	while (data != NULL) {
-		struct rrr_thread_ghost_data *next = data->next;
-
+	pthread_mutex_lock(&postponed_cleanup_lock);
+	RRR_LL_ITERATE_BEGIN(&postponed_cleanup_collection, struct rrr_thread_postponed_cleanup_node);
+		if (node->thread->poststop_routine) {
+			node->thread->poststop_routine(node->thread);
+		}
+		RRR_LL_ITERATE_SET_DESTROY();
 		(*count)++;
-
-		int do_thread_free = 0;
-		int do_private_data_free = 0;
-
-		// If free_as_ghost_data is zero, thread collection cleanup has not run yet. We then
-		// only run the poststop routine and the thread struct will be freed later. If
-		// collection cleanup is complete, we must free the thread struct as well.
-		rrr_thread_lock(data->thread);
-
-		RRR_DBG_8("Running ghost cleanup for thread %s\n", data->thread->name);
-
-		if (data->thread->free_by_ghost) {
-			do_thread_free = 1;
-		}
-		if (data->thread->free_private_data_by_ghost) {
-			do_private_data_free = 1;
-		}
-
-		if (data->thread->poststop_routine != NULL) {
-			RRR_DBG_8("Running post stop routine for thread %s\n", data->thread->name);
-			data->thread->poststop_routine(data->thread);
-		}
-		data->poststop_routine = NULL; // Make sure things aren't done twice
-
-		// TODO : Nobody sets this pointer
-		if (data->ghost_cleanup_pointer != NULL) {
-			free(data->ghost_cleanup_pointer);
-		}
-
-		__rrr_thread_remove_ghost(data->thread);
-
-		rrr_thread_unlock(data->thread);
-
-		if (do_private_data_free && data->thread->private_data != NULL) {
-			data->thread->private_data_destroy_function(data->thread->private_data);
-		}
-		if (do_thread_free) {
-			free(data->thread);
-		}
-		free(data);
-
-		data = next;
-	}
-	ghost_cleanup_list_first = NULL;
-	pthread_mutex_unlock(&ghost_list_mutex);
-
-	return ret;
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&postponed_cleanup_collection, __rrr_thread_destroy(node->thread); free(node));
+	pthread_mutex_unlock(&postponed_cleanup_lock);
 }
 
 void rrr_thread_set_signal(struct rrr_thread *thread, int signal) {
@@ -237,6 +166,12 @@ void rrr_thread_set_state (struct rrr_thread *thread, int state) {
 	rrr_thread_unlock(thread);
 }
 
+static void __rrr_thread_update_self (struct rrr_thread *thread) {
+	rrr_thread_lock(thread);
+	thread->self = pthread_self();
+	rrr_thread_unlock(thread);
+}
+
 static int __rrr_thread_is_in_collection (struct rrr_thread_collection *collection, struct rrr_thread *thread) {
 	int ret = 0;
 
@@ -275,22 +210,6 @@ static int __rrr_thread_allocate_thread (struct rrr_thread **target) {
 	return ret;
 }
 
-static int __rrr_thread_destroy (struct rrr_thread *thread, int do_destroy_private_data) {
-	rrr_thread_lock(thread);
-	if (thread->state != RRR_THREAD_STATE_STOPPED && thread->state != RRR_THREAD_STATE_FREE) {
-		RRR_BUG("Attempted to free thread which was not STOPPED or FREE\n");
-	}
-	thread->state = RRR_THREAD_STATE_FREE;
-	if (thread->is_watchdog == 0) {
-		if (do_destroy_private_data) {
-			thread->private_data_destroy_function(thread->private_data);
-		}
-	}
-	rrr_thread_unlock(thread);
-	free(thread);
-	return 0;
-}
-
 int rrr_thread_new_collection (
 		struct rrr_thread_collection **target
 ) {
@@ -315,14 +234,17 @@ int rrr_thread_new_collection (
 }
 
 void rrr_thread_destroy_collection (
-		struct rrr_thread_collection *collection,
-		int do_destroy_private_data
+		struct rrr_thread_collection *collection
 ) {
 	// Stop threads function should already have locked and not unlocked again
-	if (pthread_mutex_trylock(&collection->threads_mutex) != EBUSY) {
-		RRR_MSG_0("Collection was not locked in thread_destroy_collection, must call threads_stop_and_join first\n");
-		exit (EXIT_FAILURE);
-	}
+	//if (pthread_mutex_trylock(&collection->threads_mutex) != EBUSY) {
+	//	RRR_MSG_0("Collection was not locked in thread_destroy_collection, must call threads_stop_and_join first\n");
+	//	exit (EXIT_FAILURE);
+	//}
+
+	// OK if already locked, stop_and_join all leaves the collection locked
+	// in case caller wishes to do something with lock held in between the calls
+	pthread_mutex_trylock(&collection->threads_mutex);
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
@@ -331,17 +253,15 @@ void rrr_thread_destroy_collection (
 			// condition with is_ghost and ghost_cleanup_pointer
 
 			// Move pointer to thread, we expect it to clean up if it dies
-			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n",
+			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. It will add itself to cleanup list if it wakes up.\n",
 					node->name);
-			node->free_by_ghost = 1;
-			__rrr_thread_push_ghost(node);
 			rrr_thread_unlock(node);
 		}
 		else {
 			rrr_thread_unlock(node);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node, do_destroy_private_data));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
 
 	pthread_mutex_unlock(&collection->threads_mutex);
 	pthread_mutex_destroy(&collection->threads_mutex);
@@ -711,24 +631,16 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 static void __rrr_thread_cleanup(void *arg) {
 	struct rrr_thread *thread = arg;
-
-	// Check if we have died slowly and need to clean something up
-	// from our parent which has abandoned us
-
-	// TODO : Maybe we should lock the thread to avoid race condition with
-	// threads_destroy()
 	if (rrr_thread_is_ghost(thread)) {
 		RRR_MSG_0 ("Thread %s waking up after being ghost, telling parent to clean up now.\n", thread->name);
-		struct rrr_thread_ghost_data *ghost_data = __rrr_thread_new_ghost_data(thread, NULL);
-		if (ghost_data == NULL) {
-			return;
-		}
-		__rrr_thread_add_ghost_data(ghost_data);
+		__rrr_thread_postponed_cleanup_push(thread);
 	}
 }
 
 static void *__rrr_thread_start_routine_intermediate(void *arg) {
 	struct rrr_thread *thread = arg;
+
+	__rrr_thread_update_self(thread);
 
 	// STOPPED must be set at the very end, allows
 	// data structures to be freed
@@ -743,11 +655,12 @@ static void *__rrr_thread_start_routine_intermediate(void *arg) {
 	return NULL;
 }
 
-void rrr_thread_stop_and_join_all (
-		struct rrr_thread_collection *collection,
-		void (*upstream_ghost_handler)(struct rrr_thread *thread)
+void rrr_thread_stop_and_join_all_no_unlock (
+		struct rrr_thread_collection *collection
 ) {
 	RRR_DBG_8 ("Stopping all threads\n");
+
+	// No errors allowed in this function
 
 	pthread_mutex_lock(&collection->threads_mutex);
 
@@ -796,16 +709,13 @@ void rrr_thread_stop_and_join_all (
 				if (!node->is_ghost) {
 					RRR_BUG ("Bug: Thread was not STOPPED nor ghost after join attempt\n");
 				}
-				RRR_MSG_0 ("Thread will run post stop itself after cleanup\n");
+				RRR_MSG_0 ("Running post stop later if thread wakes up\n");
 			}
-		}
-		if (node->is_ghost) {
-			upstream_ghost_handler(node);
 		}
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
-	// Don't unlock, destroy does that
+	// Do not unlock
 }
 
 int rrr_thread_start (struct rrr_thread *thread) {
@@ -860,16 +770,34 @@ int rrr_thread_start (struct rrr_thread *thread) {
 	return 1;
 }
 
-struct rrr_thread *rrr_thread_preload_and_register (
+// Use of memory fence on private data pointer is optional, and only
+// needed is main and thread use the pointer after thread has started.
+// If this is done, private pointer must exclusively be accessed through
+// lock wrapper function. If the thread or main frees the private pointer, it must
+// be set to NULL afterwards (inside callback of wrapper function). All callbacks
+// of wrapper function must check if the pointer has been freed/set to NULL.
+
+int rrr_thread_with_lock_do (
+		struct rrr_thread *thread,
+		int (*callback)(struct rrr_thread *thread, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+	pthread_mutex_lock(&thread->mutex);
+	ret = callback(thread, callback_arg);
+	pthread_mutex_unlock(&thread->mutex);
+	return ret;
+}
+
+struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
-		void (*private_data_destroy_function)(void *),
 		int start_priority,
-		void *private_data,
-		const char *name
+		const char *name,
+		void *private_data
 ) {
 	struct rrr_thread *thread = NULL;
 
@@ -886,7 +814,6 @@ struct rrr_thread *rrr_thread_preload_and_register (
 		goto out_error;
 	}
 
-	thread->private_data = private_data;
 	thread->watchdog_time = 0;
 	thread->signal = 0;
 	thread->start_priority = start_priority;
@@ -894,7 +821,7 @@ struct rrr_thread *rrr_thread_preload_and_register (
 	thread->cancel_function = cancel_function;
 	thread->poststop_routine = poststop_routine;
 	thread->start_routine = start_routine;
-	thread->private_data_destroy_function = private_data_destroy_function;
+	thread->private_data = private_data;
 
 	sprintf(thread->name, "%s", name);
 
@@ -923,10 +850,10 @@ struct rrr_thread *rrr_thread_preload_and_register (
 	if (thread != NULL) {
 		if (thread->watchdog != NULL) {
 			rrr_thread_unlock_if_locked(thread->watchdog);
-			__rrr_thread_destroy(thread->watchdog, 0);
+			__rrr_thread_destroy(thread->watchdog);
 		}
 		rrr_thread_unlock_if_locked(thread);
-		__rrr_thread_destroy(thread, 0);
+		__rrr_thread_destroy(thread);
 	}
 
 	return NULL;
@@ -951,8 +878,7 @@ int rrr_thread_check_any_stopped (
 
 void rrr_thread_join_and_destroy_stopped_threads (
 		int *count,
-		struct rrr_thread_collection *collection,
-		int do_destroy_private_data
+		struct rrr_thread_collection *collection
 ) {
 	*count = 0;
 
@@ -962,13 +888,9 @@ void rrr_thread_join_and_destroy_stopped_threads (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
 		if (node->is_ghost == 1) {
-			// Watchdog has tagged thread as ghost. Make sure the watchdog has exited
-			// before we move the ghost to the ghost queue
+			// Watchdog has tagged thread as ghost. Make sure the watchdog has exited.
 			rrr_thread_lock(node->watchdog);
 			if (node->watchdog->state == RRR_THREAD_STATE_STOPPED) {
-				node->free_by_ghost = 1;
-				__rrr_thread_push_ghost(node);
-
 				// The second loop won't be to find the watchdog anymore, tag the
 				// watchdog for destruction in the third loop now
 				node->watchdog->ready_to_destroy = 1;
@@ -1013,7 +935,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		}
 
 		rrr_thread_unlock(node);
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node, do_destroy_private_data));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
 
 	pthread_mutex_unlock(&collection->threads_mutex);
 }

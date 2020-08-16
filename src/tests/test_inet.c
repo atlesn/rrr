@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_inet.h"
 #include "../lib/log.h"
-#include "../lib/ip_util.h"
+#include "../lib/ip/ip_util.h"
 
 int rrr_test_inet (void) {
 	struct sockaddr_in6 in6;

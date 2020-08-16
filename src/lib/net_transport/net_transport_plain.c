@@ -31,9 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../read.h"
-#include "../ip.h"
-#include "../ip_accept_data.h"
-#include "../macro_utils.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
@@ -69,7 +69,7 @@ static int __rrr_net_transport_plain_connect (
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_DBG_1("Could not connect to server '%s' port '%u'\n", host, port);
-		ret = 1;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -158,7 +158,12 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+			if (ret == RRR_SOCKET_HARD_ERROR) {
+				RRR_MSG_0("Hard error while reading from remote in __rrr_net_transport_plain_read_message\n");
+			}
+			else {
+				RRR_DBG_1("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+			}
 			goto out;
 		}
 	}
@@ -180,11 +185,6 @@ static int __rrr_net_transport_plain_send (
 	ssize_t written_bytes_tmp = 0;
 
 	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
-		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			goto out;
-		}
-		RRR_MSG_0("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
-		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
 
@@ -259,7 +259,7 @@ int __rrr_net_transport_plain_accept (
 			NULL,
 			accept_data->ip_data.fd
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
 	}

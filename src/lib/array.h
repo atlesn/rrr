@@ -25,19 +25,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdio.h>
 
-#include "cmdlineparser/cmdline.h"
-#include "instance_config.h"
-#include "linked_list.h"
 #include "type.h"
+#include "fixed_point.h"
+#include "read_constants.h"
+#include "cmdlineparser/cmdline.h"
+#include "util/linked_list.h"
 
 #define RRR_ARRAY_VERSION 7
 
-#define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
-#define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
-#define RRR_ARRAY_PARSE_SOFT_ERR	RRR_TYPE_PARSE_SOFT_ERR
-#define RRR_ARRAY_PARSE_INCOMPLETE	RRR_TYPE_PARSE_INCOMPLETE
+#define RRR_ARRAY_OK 				RRR_READ_OK
+#define RRR_ARRAY_HARD_ERROR		RRR_READ_HARD_ERROR
+#define RRR_ARRAY_SOFT_ERROR		RRR_READ_SOFT_ERROR
+#define RRR_ARRAY_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
 
-struct rrr_message;
+struct rrr_map;
+struct rrr_msg_msg;
 
 struct rrr_array_value_packed {
 	rrr_type type;
@@ -49,25 +51,19 @@ struct rrr_array_value_packed {
 } __attribute((packed));
 
 struct rrr_array {
-		RRR_LL_HEAD(struct rrr_type_value);
-		uint16_t version;
+	RRR_LL_HEAD(struct rrr_type_value);
+	uint16_t version;
 };
-
-static inline int rrr_array_count(struct rrr_array *array) {
-	return RRR_LL_COUNT(array);
-}
 
 int rrr_array_parse_single_definition (
 		struct rrr_array *target,
 		const char *start,
 		const char *end
 );
-
 struct rrr_array_parse_single_definition_callback_data {
 	struct rrr_array *target;
 	int parse_ret;
 };
-
 int rrr_array_parse_single_definition_callback (
 		const char *value,
 		void *arg
@@ -75,13 +71,23 @@ int rrr_array_parse_single_definition_callback (
 int rrr_array_validate_definition (
 		const struct rrr_array *target
 );
+int rrr_array_parse_data_into_value (
+		struct rrr_type_value *node,
+		rrr_length *parsed_bytes,
+		const char *pos,
+		const char *end
+);
 int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *data,
 		const rrr_length length
 );
-int rrr_array_definition_collection_clone (
+int rrr_array_definition_clone (
+		struct rrr_array *target,
+		const struct rrr_array *source
+);
+int rrr_array_append_from (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
@@ -94,6 +100,11 @@ int rrr_array_push_value_i64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
 		int64_t value
+);
+int rrr_array_push_value_fixp_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		rrr_fixp value
 );
 int rrr_array_push_value_str_with_tag_with_size (
 		struct rrr_array *collection,
@@ -121,6 +132,10 @@ int rrr_array_get_value_unsigned_64_by_tag (
 void rrr_array_clear (
 		struct rrr_array *collection
 );
+void rrr_array_clear_by_tag (
+		struct rrr_array *collection,
+		const char *tag
+);
 struct rrr_type_value *rrr_array_value_get_by_index (
 		struct rrr_array *definition,
 		int idx
@@ -139,6 +154,10 @@ int rrr_array_get_packed_length_from_buffer (
 		const char *buf,
 		ssize_t buf_length
 );
+ssize_t rrr_array_get_packed_length (
+		const struct rrr_array *definition
+);
+/*
 int rrr_array_parse_from_buffer (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
@@ -153,8 +172,9 @@ int rrr_array_parse_from_buffer_with_callback (
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
 );
+
 int rrr_array_new_message_from_buffer (
-		struct rrr_message **target,
+		struct rrr_msg_msg **target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -168,9 +188,10 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const char *topic,
 		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct rrr_message *message, void *arg),
+		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 );
+*/
 int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
@@ -182,7 +203,7 @@ ssize_t rrr_array_new_message_estimate_size (
 		const struct rrr_array *definition
 );
 int rrr_array_new_message_from_collection (
-		struct rrr_message **final_message,
+		struct rrr_msg_msg **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
@@ -190,10 +211,13 @@ int rrr_array_new_message_from_collection (
 );
 int rrr_array_message_append_to_collection (
 		struct rrr_array *target,
-		const struct rrr_message *message_orig
+		const struct rrr_msg_msg *message_orig
 );
 int rrr_array_dump (
 		const struct rrr_array *definition
 );
+static inline int rrr_array_count(const struct rrr_array *array) {
+	return RRR_LL_COUNT(array);
+}
 
 #endif /* RRR_ARRAY_H */

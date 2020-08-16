@@ -26,10 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "settings.h"
 #include "instance_config.h"
-#include "linked_list.h"
 #include "map.h"
 #include "array.h"
-#include "gnu.h"
+#include "array_tree.h"
+#include "parse.h"
+#include "util/gnu.h"
+#include "util/linked_list.h"
 
 int rrr_instance_config_string_set (
 		char **target,
@@ -45,14 +47,19 @@ int rrr_instance_config_string_set (
 	return 0;
 }
 
-void rrr_instance_config_destroy(struct rrr_instance_config *config) {
+void rrr_instance_config_destroy(struct rrr_instance_config_data *config) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
 }
 
-struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, const int name_length, const int max_settings) {
-	struct rrr_instance_config *ret = NULL;
+struct rrr_instance_config_data *rrr_instance_config_new (
+		const char *name_begin,
+		const int name_length,
+		const int max_settings,
+		const struct rrr_array_tree_list *global_array_trees
+) {
+	struct rrr_instance_config_data *ret = NULL;
 
 	char *name = malloc(name_length + 1);
 	if (name == NULL) {
@@ -75,6 +82,7 @@ struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, con
 		RRR_MSG_0("Could not create settings structure in __rrr_config_new_instance_config");
 		goto out_free_config;
 	}
+	ret->global_array_trees = global_array_trees;
 
 	goto out;
 
@@ -89,7 +97,7 @@ struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, con
 	return ret;
 }
 
-int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config *source, const char *name) {
+int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config_data *source, const char *name) {
 	int ret = 0;
 
 	*target = 0;
@@ -101,15 +109,13 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			char *tmp_string;
 
-			ret = rrr_settings_read_string (&tmp_string, source->settings, name);
+			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
 			RRR_MSG_0 (
 					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
 
-			if (tmp_string != NULL) {
-				free(tmp_string);
-			}
+			RRR_FREE_IF_NOT_NULL(tmp_string);
 
 			ret = 1;
 			goto out;
@@ -132,7 +138,7 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	return ret;
 }
 
-int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *config) {
+int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data *config) {
 	int ret = rrr_settings_check_all_used (config->settings);
 
 	if (ret != 0) {
@@ -143,9 +149,9 @@ int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *con
 	return ret;
 }
 
-int rrr_instance_config_parse_array_definition_from_config_silent_fail (
+static int __rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key
 ) {
 	int ret = 0;
@@ -180,6 +186,85 @@ int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		return ret;
 }
 
+int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
+		struct rrr_array_tree **target_array_tree,
+		struct rrr_instance_config_data *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+	*target_array_tree = NULL;
+
+	struct rrr_array_tree *new_tree = NULL;
+	struct rrr_array array_tmp = {0};
+
+	char *target_str_tmp = NULL;
+
+	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, config->settings, cmd_key)) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			goto out;
+		}
+		else {
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", cmd_key, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	char *curly_start_pos = strchr(target_str_tmp, '{');
+	char *curly_end_pos = strchr(target_str_tmp, '}');
+
+	if (curly_start_pos == NULL || curly_end_pos == NULL || !(curly_end_pos > curly_start_pos)) {
+		if ((ret = __rrr_instance_config_parse_array_definition_from_config_silent_fail (
+				&array_tmp,
+				config,
+				cmd_key
+		)) != 0) {
+			goto out;
+		}
+
+		if ((ret = rrr_array_tree_new(&new_tree, NULL)) != 0) {
+			goto out;
+		}
+
+		if (rrr_array_tree_push_array_clear_source(new_tree, &array_tmp) != 0) {
+			RRR_MSG_0("Failed to push parsed single array definition to array tree in rrr_instance_config_parse_array_tree_definition_from_config_silent_fail\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		const char *name_pos = curly_start_pos + 1;
+		*curly_end_pos = '\0';
+
+		const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
+				config->global_array_trees,
+				name_pos
+		);
+
+		if (array_tree == NULL) {
+			RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", name_pos);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_array_tree_clone(&new_tree, array_tree)) != 0) {
+			goto out;
+		}
+	}
+
+	*target_array_tree = new_tree;
+	new_tree = NULL;
+
+	out:
+		RRR_FREE_IF_NOT_NULL(target_str_tmp);
+		if (new_tree != NULL) {
+			rrr_array_tree_destroy(new_tree);
+		}
+		rrr_array_clear(&array_tmp);
+		return ret;
+}
+
 struct parse_associative_list_to_map_callback_data {
 	struct rrr_map *target;
 	const char *delimeter;
@@ -195,7 +280,7 @@ static int __parse_associative_list_to_map_callback (
 
 int rrr_instance_config_parse_comma_separated_associative_to_map (
 		struct rrr_map *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key,
 		const char *delimeter
 ) {
@@ -213,7 +298,7 @@ int rrr_instance_config_parse_comma_separated_associative_to_map (
 
 int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_map *target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *cmd_key
 ) {
 	struct parse_associative_list_to_map_callback_data callback_data = {
@@ -230,7 +315,7 @@ int rrr_instance_config_parse_comma_separated_to_map (
 
 int rrr_instance_config_parse_optional_utf8 (
 		char **target,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *string,
 		const char *def
 ) {

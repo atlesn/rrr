@@ -26,15 +26,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct cmd_data;
 struct rrr_thread_collection;
-struct rrr_instance_metadata_collection;
+struct rrr_instance_collection;
 struct rrr_config;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_fork_handler;
 
-int rrr_main_start_threads (
+int rrr_main_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection,
-		struct rrr_instance_metadata_collection *instances,
+		struct rrr_instance_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
@@ -42,7 +42,7 @@ int rrr_main_start_threads (
 		struct rrr_fork_handler *fork_handler
 );
 
-void rrr_main_threads_stop (struct rrr_thread_collection *collection, struct rrr_instance_metadata_collection *instances);
+void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection);
 int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
 int rrr_main_print_help_and_version (
 		struct cmd_data *cmd,
