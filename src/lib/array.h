@@ -60,14 +60,6 @@ int rrr_array_parse_single_definition (
 		const char *start,
 		const char *end
 );
-struct rrr_array_parse_single_definition_callback_data {
-	struct rrr_array *target;
-	int parse_ret;
-};
-int rrr_array_parse_single_definition_callback (
-		const char *value,
-		void *arg
-);
 int rrr_array_validate_definition (
 		const struct rrr_array *target
 );

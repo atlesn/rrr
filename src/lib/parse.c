@@ -208,7 +208,9 @@ void rrr_parse_match_letters (
 				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
 				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
 				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
-				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c))
+				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
+				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
 		) {
 			// OK
 		}
@@ -245,7 +247,8 @@ void rrr_parse_match_until (
 				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
 				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
 				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
-				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c))
+				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
 		) {
 			found = 1;
 			break;
@@ -253,6 +256,9 @@ void rrr_parse_match_until (
 
 		pos->pos++;
 		if (RRR_PARSE_CHECK_EOF(pos)) {
+			if (flags & RRR_PARSE_MATCH_END) {
+				found = 1;
+			}
 			break;
 		}
 		c = pos->data[pos->pos];

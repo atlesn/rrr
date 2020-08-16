@@ -90,12 +90,12 @@ int rrr_array_tree_push_array_clear_source (
 		struct rrr_array_tree *target,
 		struct rrr_array *source
 );
-int rrr_array_tree_parse (
+int rrr_array_tree_definition_parse (
 		struct rrr_array_tree **target,
 		struct rrr_parse_pos *pos,
 		const char *name
 );
-int rrr_array_tree_parse_raw (
+int rrr_array_tree_definition_parse_raw (
 		struct rrr_array_tree **target,
 		const char *data,
 		int data_length,

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
+#include "string_builder.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 #include "util/posix.h"
@@ -360,22 +361,24 @@ static int __rrr_condition_shunting_yard_shunt_value (
 }
 
 static void __rrr_condition_shunting_yard_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_condition_shunting_yard *shunting_yard
 ) {
 	RRR_LL_ITERATE_BEGIN(shunting_yard, const struct rrr_condition_shunting_yard_carrier);
 		if (node->op != NULL) {
-			printf("%s ", node->op->op);
+			rrr_string_builder_append_format(string_builder, "%s ", node->op->op);
 		}
 		else {
-			printf("%s ", node->value);
+			rrr_string_builder_append_format(string_builder, "%s ", node->value);
 		}
 	RRR_LL_ITERATE_END();
 }
 
 void rrr_condition_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_condition *condition
 ) {
-	__rrr_condition_shunting_yard_dump(&condition->shunting_yard);
+	__rrr_condition_shunting_yard_dump(string_builder, &condition->shunting_yard);
 }
 
 static const char *rrr_condition_str_false = "0";

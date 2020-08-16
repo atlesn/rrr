@@ -79,3 +79,6 @@ client installed, like **mosquitto-clients**.
 * The barcode should be printed out by the subscribing MQTT client. Note that `mosquitto_sub` will
   print a newline for every message received, which is not actually present in the message.
   
+  
+### barcode\_different\_scanners.conf
+

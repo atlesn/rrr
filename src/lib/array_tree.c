@@ -25,11 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
-#include "util/linked_list.h"
 #include "array_tree.h"
 #include "array.h"
 #include "type.h"
 #include "parse.h"
+#include "string_builder.h"
+#include "util/linked_list.h"
 #include "util/rrr_time.h"
 
 static void __rrr_array_branch_destroy(
@@ -252,7 +253,7 @@ static int __rrr_array_tree_parse_if (
 		goto out_destroy_branch;
 	}
 
-	if ((ret = rrr_array_tree_parse(&branch->array_tree, pos, NULL)) != 0) {
+	if ((ret = rrr_array_tree_definition_parse(&branch->array_tree, pos, NULL)) != 0) {
 		goto out_destroy_branch;
 	}
 
@@ -388,7 +389,7 @@ static int __rrr_array_tree_parse_definition_node (
 				pos,
 				&start,
 				&end,
-				RRR_PARSE_MATCH_COMMAS|RRR_PARSE_MATCH_SPACE_TAB|RRR_PARSE_MATCH_NEWLINES
+				RRR_PARSE_MATCH_COMMAS|RRR_PARSE_MATCH_SPACE_TAB|RRR_PARSE_MATCH_NEWLINES|RRR_PARSE_MATCH_NULL|RRR_PARSE_MATCH_END
 		);
 
 		if (end < start) {
@@ -461,7 +462,7 @@ static int __rrr_array_tree_parse_definition_node (
 		return ret;
 }
 
-int rrr_array_tree_parse (
+int rrr_array_tree_definition_parse (
 		struct rrr_array_tree **target,
 		struct rrr_parse_pos *pos,
 		const char *name
@@ -527,7 +528,7 @@ int rrr_array_tree_parse (
 //			printf("Check else\n");
 			if (rrr_parse_match_word(pos, "ELSE")) {
 				struct rrr_array_tree *tree_else;
-				if ((ret = rrr_array_tree_parse(&tree_else, pos, NULL)) != 0) {
+				if ((ret = rrr_array_tree_definition_parse(&tree_else, pos, NULL)) != 0) {
 					goto out_destroy;
 				}
 				RRR_LL_LAST(tree)->branch_if->tree_else = tree_else;
@@ -573,7 +574,7 @@ int rrr_array_tree_parse (
 		return ret;
 }
 
-int rrr_array_tree_parse_raw (
+int rrr_array_tree_definition_parse_raw (
 		struct rrr_array_tree **target,
 		const char *data,
 		int data_length,
@@ -581,10 +582,11 @@ int rrr_array_tree_parse_raw (
 ) {
 	struct rrr_parse_pos pos;
 	rrr_parse_pos_init(&pos, data, data_length);
-	return rrr_array_tree_parse(target, &pos, name);
+	return rrr_array_tree_definition_parse(target, &pos, name);
 }
 
 static void __rrr_array_tree_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_array_tree *tree,
 		int level
 );
@@ -597,64 +599,67 @@ static void __rrr_array_tree_dump (
 	tabs[level] = '\0'
 
 static void __rrr_array_tree_branch_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_array_branch *branch,
 		int level
 ) {
 	MAKE_TABS;
 
-	printf("%sIF (", tabs);
-	rrr_condition_dump(&branch->condition);
-	printf(")\n");
-	__rrr_array_tree_dump(branch->array_tree, level + 1);
+	rrr_string_builder_append_format(string_builder, "%sIF (", tabs);
+	rrr_condition_dump(string_builder, &branch->condition);
+	rrr_string_builder_append(string_builder, ")\n");
+	__rrr_array_tree_dump(string_builder, branch->array_tree, level + 1);
 	RRR_LL_ITERATE_BEGIN(&branch->branches_elsif, const struct rrr_array_branch);
-		printf("\n%sELSIF (", tabs);
-		rrr_condition_dump(&node->condition);
-		printf(")\n");
-		__rrr_array_tree_dump(node->array_tree, level + 1);
+		rrr_string_builder_append_format(string_builder, "\n%sELSIF (", tabs);
+		rrr_condition_dump(string_builder, &node->condition);
+		rrr_string_builder_append(string_builder, ")\n");
+		__rrr_array_tree_dump(string_builder, node->array_tree, level + 1);
 	RRR_LL_ITERATE_END();
 	if (branch->tree_else != NULL) {
-		printf("\n%sELSE\n", tabs);
-		__rrr_array_tree_dump(branch->tree_else, level + 1);
+		rrr_string_builder_append_format(string_builder, "\n%sELSE\n", tabs);
+		__rrr_array_tree_dump(string_builder, branch->tree_else, level + 1);
 	}
 }
 
 static void __rrr_array_definition_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_array *array,
 		int level
 ) {
 	MAKE_TABS;
 
-	printf("%s", tabs);
+	rrr_string_builder_append_format(string_builder, "%s", tabs);
 
 	RRR_LL_ITERATE_BEGIN(array, const struct rrr_type_value);
 		if (node != RRR_LL_FIRST(array)) {
-			printf(",");
+			rrr_string_builder_append(string_builder, ",");
 		}
-		printf("%s", node->definition->identifier);
+		rrr_string_builder_append_format(string_builder, "%s", node->definition->identifier);
 		if (node->definition->max_length > 0) {
 			if (node->import_length_ref != NULL) {
-				printf ("{%s}", node->import_length_ref);
+				rrr_string_builder_append_format(string_builder, "{%s}", node->import_length_ref);
 			}
 			else {
-				printf ("%u", node->import_length);
+				rrr_string_builder_append_format(string_builder, "%u", node->import_length);
 			}
 		}
 		if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
-			printf("s");
+			rrr_string_builder_append(string_builder, "s");
 		}
 		if (node->element_count_ref != NULL) {
-			printf("@{%s}", node->element_count_ref);
+			rrr_string_builder_append_format(string_builder, "@{%s}", node->element_count_ref);
 		}
 		else if (node->element_count > 1) {
-			printf("@%u", node->element_count);
+			rrr_string_builder_append_format(string_builder, "@%u", node->element_count);
 		}
 		if (node->tag != NULL && *(node->tag) != '\0') {
-			printf("#%s", node->tag);
+			rrr_string_builder_append_format(string_builder, "#%s", node->tag);
 		}
 	RRR_LL_ITERATE_END();
 }
 
 static void __rrr_array_tree_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_array_tree *tree,
 		int level
 ) {
@@ -662,24 +667,32 @@ static void __rrr_array_tree_dump (
 
 	RRR_LL_ITERATE_BEGIN(tree, const struct rrr_array_node);
 		if (node != RRR_LL_FIRST(tree)) {
-			printf(",\n");
+			rrr_string_builder_append(string_builder, ",\n");
 		}
 		if (node->branch_if != NULL) {
-			__rrr_array_tree_branch_dump(node->branch_if, level);
+			__rrr_array_tree_branch_dump(string_builder, node->branch_if, level);
 		}
 		else {
-			__rrr_array_definition_dump(&node->array, level);
+			__rrr_array_definition_dump(string_builder, &node->array, level);
 		}
 	RRR_LL_ITERATE_END();
-	printf("\n%s;", tabs);
+	rrr_string_builder_append (string_builder, "\n");
+	rrr_string_builder_append (string_builder, tabs);
+	rrr_string_builder_append (string_builder, ";");
 }
 
 void rrr_array_tree_dump (
 		const struct rrr_array_tree *tree
 ) {
-	printf ("## ARRAY TREE DUMP BEGIN #############################\n");
-	__rrr_array_tree_dump(tree, 0);
-	printf ("\n## ARRAY TREE DUMP END ###############################\n");
+	struct rrr_string_builder string_builder = {0};
+
+	__rrr_array_tree_dump(&string_builder, tree, 0);
+
+	RRR_DBG_1 ("## ARRAY TREE DUMP BEGIN #############################\n");
+	RRR_DBG_1 ("%s", string_builder.buf);
+	RRR_DBG_1 ("\n## ARRAY TREE DUMP END ###############################\n");
+
+	rrr_string_builder_clear(&string_builder);
 }
 
 struct rrr_array_reference_node {
