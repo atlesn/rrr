@@ -824,6 +824,11 @@ static int ip_send_message_raw (
 			send_size
 		);
 
+		// UDP send OK
+		if (ret == 0) {
+			*send_status = 0;
+		}
+
 		goto out;
 	}
 
