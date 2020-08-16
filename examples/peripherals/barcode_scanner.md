@@ -20,9 +20,6 @@ all networking and message validation and parsing.
 
 ## Configurations
 
-This configuration parses incoming barcodes which is received on UDP
-port 3000 and publishes them to an MQTT broker. 
-
 ### barcode\_ip\_to\_mqtt.conf
 
 	[instance_ip]
@@ -39,6 +36,9 @@ port 3000 and publishes them to an MQTT broker.
 	
 	# [instance_mqttbroker]
 	# module=mqttbroker
+
+This configuration parses incoming barcodes which is received on UDP
+port 3000 and publishes them to an MQTT broker. 
 
 * The **ip** module is set up to listen on UDP port 3000
 * Since the barcodes we receive are encoded in ASCII, we parse it using the
@@ -78,7 +78,46 @@ client installed, like **mosquitto-clients**.
   command will add a newline for us after the barcode.
 * The barcode should be printed out by the subscribing MQTT client. Note that `mosquitto_sub` will
   print a newline for every message received, which is not actually present in the message.
-  
-  
+
 ### barcode\_different\_scanners.conf
 
+	{TELEGRAM}
+	be1#prefix
+	IF ({prefix} != 0x02 && {prefix} != 0x01)
+		REWIND1
+	;
+	nsep#barcode,sep1
+	;
+	
+	[instance_ip]
+	module=ip
+	ip_udp_port=3000
+	ip_input_types={TELEGRAM}
+	
+	[instance_raw]
+	module=raw
+	senders=instance_ip
+	raw_print_data=yes
+
+
+This configuration parses incoming barcodes from two different types of scanners.
+One type sends data in the format `<STX>barcode<ETX>` and the other type uses `barcode<CR>`.
+
+* Since array tree conditional branching is required, the definition is placed by itself in the configuration file.
+This allows us to use newlines in the definitions to enhance readability.
+Also note that the first semicolon terminates the `IF` block, and the last one the whole array tree.
+* First, a byte is parsed and saved with the tag `prefix`. We use `be1` to match any byte.
+* If this byte is an `STX` (ASCII decimal 2), we continue parsing the barcode followed by a separator
+* If the byte is not an `STX`, we `REWIND` one array position before starting to parse the barcode
+* For convenience, we also allow `SOH` (ASCII decimal 1) in addition to `STX`
+
+Since we're only playing around, we use the raw module to dump all (valid) data received in the IP module.
+
+To test this, use two terminals. In the first one, run the program with debuglevel 2 set `rrr -d 2 barcode_different_scanners.conf`. In the second one, use netcat to send different telegrams:
+
+* `echo -ne "\002WITH PREFIX STX\003" | nc -u localhost 3000`
+* `echo -ne "\001WITH PREFIX SOH\004" | nc -u localhost 3000`
+* `echo -ne "WITHOUT PREFIX\r" | nc -u localhost 3000`
+
+Study the output of RRR which now dumps parsed array values.
+Notice that the `prefix` value is only present when we send `STX` first in our telegram.

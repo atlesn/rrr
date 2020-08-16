@@ -1162,7 +1162,9 @@ int __rrr_array_tree_import_rewind_callback (
 	int ret = 0;
 
 	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->array)) {
-		RRR_BUG("BUG: REWIND past beginning of array in  __rrr_array_tree_import_rewind_callback, validator should have caught this\n");
+		RRR_MSG_0("Attempt to REWIND %" PRIrrrl " positions past beginning of array which currently has %li elements, check configuration\n",
+				count, RRR_LL_COUNT(&callback_data->array));
+		return RRR_ARRAY_SOFT_ERROR;
 	}
 
 	rrr_slength target = (rrr_slength) RRR_LL_COUNT(&callback_data->array) - (rrr_slength) count;

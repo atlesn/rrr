@@ -415,7 +415,7 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 
 		char c = *start_tmp;
 		if (!validate(c)) {
-			RRR_MSG_0("Invalid separator or stx character 0x%01x\n", c);
+			RRR_MSG_0("Invalid separator character 0x%01x\n", c);
 			return RRR_TYPE_PARSE_SOFT_ERR;
 		}
 
