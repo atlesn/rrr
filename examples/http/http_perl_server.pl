@@ -1,5 +1,10 @@
 #!/usr/bin/perl -w
 
+# Copyright 2020 Atle Solbakken <atle@goliathdns.no>
+
+# This script is in the PUBLIC DOMAIN.
+# It may be used in any way without any restrictions.
+
 package main;
 
 use rrr::rrr_helper;
