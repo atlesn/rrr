@@ -1,3 +1,11 @@
+rrr (1.10-0) buster; urgency=medium
+
+  * New Array Tree framework for conditional array parsing (branching)
+  * Implement HTTP raw modes in httpclient and httpserver
+  * Misc smaller fixes and internal cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 16 Aug 2020 13:37:24 +0200
+
 rrr (1.9-2) buster; urgency=medium
 
   * Fixes in configuration file parsing, allow spaces after parameters
