@@ -771,8 +771,6 @@ static int __rrr_condition_evalute_value (
 				tag_to_pass,
 				name_evaluate_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error %i from callback in rrr_condition_evaluate\n");
-			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
 		}
 

@@ -263,7 +263,7 @@ static int __rrr_array_parse_identifier_and_size (
 		 *         in a node must have equal lengths
 		 *         && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG
 		 */
-		if (item_count > 1 && type->max_length == 0) {
+		if ((item_count > 1 || item_count_ref != NULL) && type->max_length == 0) {
 			RRR_MSG_0("Item count definition @ found after type '%s' which cannot have multiple values\n",
 					type->identifier);
 			ret = RRR_ARRAY_SOFT_ERROR;
@@ -423,11 +423,25 @@ int rrr_array_validate_definition (
 	return ret;
 }
 
+#define RESOLVE_REF(target,ref)																			\
+	do {if (node->ref != NULL) {																		\
+		if ((ret = ref_resolve_callback(&node->target, node->ref, ref_resolve_callback_arg)) != 0) {	\
+			goto out;																					\
+		}																								\
+		RRR_FREE_IF_NOT_NULL(node->ref);																\
+		if (node->target == 0) {																		\
+			RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n");		\
+			ret = RRR_TYPE_PARSE_SOFT_ERR; goto out;													\
+		}																								\
+	}} while (0)
+
 int rrr_array_parse_data_into_value (
 		struct rrr_type_value *node,
 		rrr_length *parsed_bytes,
 		const char *pos,
-		const char *end
+		const char *end,
+		int (*ref_resolve_callback)(rrr_length *result, const char *name, void *arg),
+		void *ref_resolve_callback_arg
 ) {
 	int ret = 0;
 
@@ -436,7 +450,15 @@ int rrr_array_parse_data_into_value (
 	}
 
 	if (node->data != NULL) {
-		RRR_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
+		RRR_BUG("node->data was not NULL in rrr_array_parse_data_into_value\n");
+	}
+
+	RESOLVE_REF(import_length,import_length_ref);
+	RESOLVE_REF(element_count,element_count_ref);
+
+	if (node->import_length == 0 || node->element_count == 0) {
+		RRR_MSG_0("Import length was %" PRIrrrl " and element count was %" PRIrrrl " while importing array value, both must be non-zero\n",
+				node->import_length, node->element_count);
 	}
 
 	if ((ret = node->definition->import(node, parsed_bytes, pos, end)) != 0) {
@@ -447,7 +469,7 @@ int rrr_array_parse_data_into_value (
 			RRR_MSG_0("Invalid data in type conversion\n");
 		}
 		else {
-			RRR_MSG_0("Hard error while importing data in rrr_array_parse_data_from_definition, return was %i\n", ret);
+			RRR_MSG_0("Hard error while importing data in rrr_array_parse_data_into_value, return was %i\n", ret);
 			ret = RRR_TYPE_PARSE_HARD_ERR;
 		}
 		goto out;
@@ -456,59 +478,6 @@ int rrr_array_parse_data_into_value (
 	if (parsed_bytes == 0) {
 		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 	}
-
-	out:
-	return ret;
-}
-
-int rrr_array_parse_data_from_definition (
-		struct rrr_array *target,
-		ssize_t *parsed_bytes_final,
-		const char *data,
-		const rrr_length length
-) {
-	int ret = RRR_TYPE_PARSE_OK;
-
-	const char *pos = data;
-	const char *end = data + length;
-
-	if (length == 0) {
-		RRR_BUG("BUG: Length was 0 in rrr_array_parse_data_from_definition\n");
-	}
-
-	if (RRR_DEBUGLEVEL_3) {
-		// TODO : This needs to be put into a buffer then written out
-/*		RRR_DBG("rrr_types_parse_data input: 0x");
-		for (rrr_type_length i = 0; i < length; i++) {
-			char c = data[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
-
-	int i = 0;
-	RRR_LL_ITERATE_BEGIN(target,struct rrr_type_value);
-		rrr_length parsed_bytes = 0;
-
-		RRR_DBG_3("Parsing type index %u of type %s, %d copies\n", i, node->definition->identifier, node->element_count);
-
-		if ((ret = rrr_array_parse_data_into_value (
-				node,
-				&parsed_bytes,
-				pos,
-				end
-		)) != 0) {
-			goto out;
-		}
-
-		pos += parsed_bytes;
-		i++;
-	RRR_LL_ITERATE_END();
-
-	*parsed_bytes_final = pos - data;
 
 	out:
 	return ret;
@@ -835,6 +804,7 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 	return NULL;
 }
 
+/*
 int rrr_array_get_packed_length_from_buffer (
 		ssize_t *import_length,
 		const struct rrr_array *definition,
@@ -872,7 +842,7 @@ int rrr_array_get_packed_length_from_buffer (
 
 	return ret;
 }
-
+*/
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 ) {

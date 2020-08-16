@@ -150,11 +150,14 @@ static int __rrr_type_import_int (
 		RRR_TYPE_IMPORT_ARGS,
 		uint64_t (*expander)(rrr_length import_length, const char *src, rrr_type_flags flags)
 ) {
-	if (node->import_length > (rrr_length) sizeof(uint64_t)) {
-		RRR_BUG("BUG: __rrr_type_import_u received length > %lu", sizeof(uint64_t));
-	}
 	if (node->data != NULL) {
 		RRR_BUG("data was not NULL in __rrr_type_import_int\n");
+	}
+
+	if (node->import_length > (rrr_length) sizeof(uint64_t)) {
+		RRR_MSG_0("Import length of 64 type exceeds maximum of %lu bytes (was %" PRIrrrl ")",
+				sizeof(uint64_t), node->import_length);
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	rrr_length array_size = node->import_elements;
@@ -620,7 +623,6 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-
 static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
 	if (node->total_stored_length % sizeof(rrr_type_be) != 0) {
 		RRR_MSG_0("Size of 64 type was not 8 bytes in __rrr_type_64_unpack\n");
@@ -818,26 +820,6 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 	return 0;
 }
 
-static int __get_import_length_default (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	(void)(buf);
-	(void)(buf_size);
-
-	*import_length = node->import_elements * node->import_length;
-
-	return 0;
-}
-
-static int __get_import_length_err (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	(void)(buf);
-	(void)(buf_size);
-	(void)(import_length);
-	(void)(node);
-
-	RRR_DBG_1("Error trigger reached while getting import length of array definition, triggering soft error.\n");
-
-	return RRR_TYPE_PARSE_SOFT_ERR;
-}
-
 static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
 	(void)(node);
 	(void)(parsed_bytes);
@@ -847,114 +829,6 @@ static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
 	RRR_DBG_1("Error trigger reached while importing array definition, triggering soft error.\n");
 
 	return RRR_TYPE_PARSE_SOFT_ERR;
-}
-
-static int __get_import_length_ustr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	(void)(node);
-
-	int found_end_char = 0;
-	rrr_length length = 0;
-	for (length = 0; length < buf_size; length++) {
-		const char *pos = buf + length;
-		if (*pos >= '0' && *pos <= '9') {
-			continue;
-		}
-		else {
-			found_end_char = 1;
-			break;
-		}
-	}
-
-	if (found_end_char == 1) {
-		*import_length = length;
-		return RRR_TYPE_PARSE_OK;
-	}
-
-	return RRR_TYPE_PARSE_INCOMPLETE;
-}
-
-static int __get_import_length_istr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	const char *start = buf;
-	const char *end = buf + buf_size;
-
-	CHECK_END_AND_RETURN(1);
-
-	rrr_length sign_length = 0;
-	if (*start == '-' || *start == '+') {
-		start++;
-		sign_length = 1;
-	}
-
-	CHECK_END_AND_RETURN(1);
-
-	rrr_length length = 0;
-	if (__get_import_length_ustr(&length, node, start, buf_size - sign_length) == 0) {
-		*import_length = sign_length + length;
-		return RRR_TYPE_PARSE_OK;
-	}
-
-	return RRR_TYPE_PARSE_INCOMPLETE;
-}
-
-static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	(void)(node);
-
-	if (buf_size < sizeof(struct rrr_msg)) {
-		return RRR_TYPE_PARSE_INCOMPLETE;
-	}
-
-	{
-		rrr_length import_length_tmp = 0;
-
-		int ret = rrr_msg_get_target_size_and_check_checksum (
-				&import_length_tmp,
-				(struct rrr_msg *) buf,
-				buf_size
-		);
-
-		if (ret != RRR_SOCKET_OK) {
-			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-				return RRR_TYPE_PARSE_INCOMPLETE;
-			}
-
-			RRR_MSG_0("Error while getting message length in __get_import_length_msg, return was %i\n", ret);
-			return (ret == RRR_SOCKET_SOFT_ERROR ? RRR_TYPE_PARSE_SOFT_ERR : RRR_TYPE_PARSE_HARD_ERR);
-		}
-
-		*import_length = import_length_tmp;
-	}
-
-	return RRR_TYPE_PARSE_OK;
-}
-
-
-static int __get_import_length_fixp (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	(void)(node);
-
-	int ret = RRR_TYPE_PARSE_OK;
-
-	if (buf_size < 1) {
-		return RRR_TYPE_PARSE_INCOMPLETE;
-	}
-
-	rrr_length length = 0;
-
-	if ((ret = rrr_fixp_str_get_length (&length, buf, buf_size)) != 0) {
-		if (ret == RRR_FIXED_POINT_PARSE_INCOMPLETE) {
-			return RRR_TYPE_PARSE_INCOMPLETE;
-		}
-		return RRR_TYPE_PARSE_SOFT_ERR;
-	}
-
-	if (length == buf_size) {
-		ret = RRR_TYPE_PARSE_INCOMPLETE;
-		goto out;
-	}
-
-	*import_length = length;
-
-	out:
-	return ret;
 }
 
 static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
@@ -1252,23 +1126,23 @@ uint64_t __rrr_type_64_to_64 (RRR_TYPE_TO_64_ARGS) {
 	return *((uint64_t *) node->data);
 }
 
-#define RRR_TYPE_DEFINE(name,type,max,import_length,import,export_length,export,unpack,pack,to_str,to_64,name_str) \
-	const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name) = {type, max, import_length, import, export_length, export, unpack, pack, to_str, to_64, name_str}
+#define RRR_TYPE_DEFINE(name,type,max,import,export_length,export,unpack,pack,to_str,to_64,name_str) \
+	const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name) = {type, max, import, export_length, export, unpack, pack, to_str, to_64, name_str}
 
-RRR_TYPE_DEFINE(be, RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	NULL,								NULL,					__rrr_type_be_unpack,		NULL,					NULL,					__rrr_type_64_to_64,	RRR_TYPE_NAME_BE);
-RRR_TYPE_DEFINE(h, RRR_TYPE_H,			RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,								__rrr_type_host_export,	NULL,						__rrr_type_host_pack,	__rrr_type_h_to_str,	__rrr_type_64_to_64,	RRR_TYPE_NAME_H);
-RRR_TYPE_DEFINE(le, RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__get_import_length_default,	__rrr_type_import_le,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_64_to_64,	RRR_TYPE_NAME_LE);
-RRR_TYPE_DEFINE(blob, RRR_TYPE_BLOB,	RRR_TYPE_MAX_BLOB,	__get_import_length_default,	__rrr_type_import_blob,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_BLOB);
-RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_blob_to_64,	RRR_TYPE_NAME_USTR);
-RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR,	RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_blob_to_64,	RRR_TYPE_NAME_ISTR);
-RRR_TYPE_DEFINE(sep, RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_SEP);
-RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	NULL,								__rrr_type_msg_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_MSG);
-RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_FIXP);
-RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STR);
-RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_NSEP);
-RRR_TYPE_DEFINE(stx, RRR_TYPE_STX,		RRR_TYPE_MAX_STX,	__get_import_length_default,	__rrr_type_import_stx,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STX);
-RRR_TYPE_DEFINE(err, RRR_TYPE_ERR,		RRR_TYPE_MAX_ERR,	__get_import_length_err,		__rrr_type_import_err,	NULL,								NULL,					NULL,						NULL,					NULL,					NULL,					RRR_TYPE_NAME_ERR);
-RRR_TYPE_DEFINE(null, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+RRR_TYPE_DEFINE(be, RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__rrr_type_import_be,	NULL,								NULL,					__rrr_type_be_unpack,		NULL,					NULL,					__rrr_type_64_to_64,	RRR_TYPE_NAME_BE);
+RRR_TYPE_DEFINE(h, RRR_TYPE_H,			RRR_TYPE_MAX_H,		__rrr_type_import_host,	NULL,								__rrr_type_host_export,	NULL,						__rrr_type_host_pack,	__rrr_type_h_to_str,	__rrr_type_64_to_64,	RRR_TYPE_NAME_H);
+RRR_TYPE_DEFINE(le, RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__rrr_type_import_le,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_64_to_64,	RRR_TYPE_NAME_LE);
+RRR_TYPE_DEFINE(blob, RRR_TYPE_BLOB,	RRR_TYPE_MAX_BLOB,	__rrr_type_import_blob,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_BLOB);
+RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__rrr_type_import_ustr,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_blob_to_64,	RRR_TYPE_NAME_USTR);
+RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR,	RRR_TYPE_MAX_ISTR,	__rrr_type_import_istr,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_blob_to_64,	RRR_TYPE_NAME_ISTR);
+RRR_TYPE_DEFINE(sep, RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__rrr_type_import_sep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_SEP);
+RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__rrr_type_import_msg,	NULL,								__rrr_type_msg_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_MSG);
+RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_FIXP);
+RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STR);
+RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_NSEP);
+RRR_TYPE_DEFINE(stx, RRR_TYPE_STX,		RRR_TYPE_MAX_STX,	__rrr_type_import_stx,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STX);
+RRR_TYPE_DEFINE(err, RRR_TYPE_ERR,		RRR_TYPE_MAX_ERR,	__rrr_type_import_err,	NULL,								NULL,					NULL,						NULL,					NULL,					NULL,					RRR_TYPE_NAME_ERR);
+RRR_TYPE_DEFINE(null, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array
 static const struct rrr_type_definition *type_templates[] = {

@@ -47,6 +47,7 @@ struct rrr_array_branch_collection {
 
 struct rrr_array_branch {
 	RRR_LL_NODE(struct rrr_array_branch);
+	int branch_id;
 	struct rrr_condition condition;
 	struct rrr_array_tree *array_tree;
 	struct rrr_array_branch_collection branches_elsif;
