@@ -10,17 +10,26 @@ used in any way at your will.
 ## PERIPHERALS
 
 A peripheral is some external device which produces or receives data in some basic
-form, usually without any high-level protocol being involved.
+form, usually without any high-level protocol being involved. RRR can receive these
+messages using the **ip** module and forward them or save them.
 
-For instance a device which measures temperature may send a UDP packet every second with
-a reading. The RRR **ip** module is designed to receive such messages.
+The RRR array framework allows data of different formats to be parsed an validated.
+Usually devices send some message and then an end terminator, or they may send multiple
+fields in the same message. With RRR arrays, these values can be extracted and tagged
+for use by some higher level of the application.
 
-RRR array definitions are used to describe what the input data looks like. A typical
-measurement include some reading with a terminator byte at the end.
+Networking is an area with many pitfalls, and something as simple as having a TCP
+connection open with some other host causes all sorts of problems when the remote host
+stops replying or packets are lost. RRR is designed to handle this complexity while allowing
+developers to focus on the actual application instead of fighting with networking code.
 
-### Peripheral examples
+By default, RRR also buffers messages in between modules. This means that if for instance
+a messages is received on UDP and converted to MQTT PUBLISH messages, messages will be buffered
+if the MQTT broker is unreachable and sent later when the broker becomes alive again.
 
-*  
+### Peripherals Example Configurations
+
+* [Barcode Scanner](peripherals/barcode_scanner.md)  
 
 ## HTTP
 
@@ -41,5 +50,5 @@ GET queries, or raw data from another module.
 
 ### HTTP Example Configurations
 
-* [HTTP forwarder](http/http_forwarder.md)
-* [HTTP Perl5 server](http/http_perl_server.md)
+* [HTTP Forwarder](http/http_forwarder.md)
+* [HTTP Perl5 Server](http/http_perl_server.md)
