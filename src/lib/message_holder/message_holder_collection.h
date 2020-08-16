@@ -24,10 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
-struct rrr_msg_msg_holder;
+struct rrr_msg_holder;
 
 struct rrr_msg_msg_holder_collection {
-	RRR_LL_HEAD(struct rrr_msg_msg_holder);
+	RRR_LL_HEAD(struct rrr_msg_holder);
 };
 
 void rrr_msg_msg_holder_collection_clear (

@@ -114,7 +114,7 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	result->result = 2;
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	return 0;
 }
@@ -296,7 +296,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -658,7 +658,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		rrr_array_clear(&collection);
 		rrr_array_clear(&collection_converted);
 		RRR_FREE_IF_NOT_NULL(str_to_h_tmp);
-		rrr_msg_msg_holder_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 
 		return ret;
 }
@@ -757,7 +757,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 		RRR_MSG_0("Message from MySQL was not a TAG message\n");
 	};
 
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -876,7 +876,7 @@ int test_type_array_mysql (
 
 	struct rrr_test_result test_result = {1};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_msg_msg_holder *entry = NULL;
+	struct rrr_msg_holder *entry = NULL;
 
 	struct rrr_instance *tag_buffer = rrr_instance_find(instances, output_name);
 
@@ -937,7 +937,7 @@ int test_type_array_mysql (
 	out:
 	test_type_array_mysql_data_cleanup(&mysql_data);
 	if (entry != NULL) {
-		rrr_msg_msg_holder_decref_while_locked_and_unlock(entry);
+		rrr_msg_holder_decref_while_locked_and_unlock(entry);
 	}
 
 	return ret;

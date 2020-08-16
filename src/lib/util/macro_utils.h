@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_QUOTE(value) #value
 
-#define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
+#define RRR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){free(arg);(arg)=NULL;}}while(0)
 
 /* Compile time checks */
 #define RRR_ASSERT_DEBUG

@@ -325,7 +325,7 @@ static int influxdb_send_data (
 }
 
 static int influxdb_common_callback (
-		struct rrr_msg_msg_holder *entry,
+		struct rrr_msg_holder *entry,
 		struct influxdb_data *influxdb_data
 ) {
 	struct rrr_msg_msg *reading = entry->message;
@@ -357,7 +357,7 @@ static int influxdb_common_callback (
 			RRR_MSG_0("Storing message with error in buffer for later retry in influxdb instance %s\n",
 					INSTANCE_D_NAME(influxdb_data->thread_data));
 
-			rrr_msg_msg_holder_incref_while_locked(entry);
+			rrr_msg_holder_incref_while_locked(entry);
 			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
 			ret = 0;
 			goto discard;
@@ -370,7 +370,7 @@ static int influxdb_common_callback (
 
 	discard:
 	rrr_array_clear(&array);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -497,16 +497,16 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&error_buf_tmp, &influxdb_data->error_buf);
 
 			// The callback might add entries back into data->error_buf
-			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_msg_msg_holder);
-				rrr_msg_msg_holder_lock(node);
+			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_msg_holder);
+				rrr_msg_holder_lock(node);
 				if (influxdb_common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
-					rrr_msg_msg_holder_unlock(node);
+					rrr_msg_holder_unlock(node);
 					goto out_cleanup_transport;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_msg_msg_holder_decref_while_locked_and_unlock(node));
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 		}
 	}
 

@@ -51,7 +51,7 @@ struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_msg_addr addr_message;
 };
 
-static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -66,7 +66,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_msg_holder *
 
 	//printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message));
 
-	rrr_msg_msg_holder_set_unlocked (
+	rrr_msg_holder_set_unlocked (
 			entry,
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
@@ -81,7 +81,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_msg_holder *
 	out:
 	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&callback_data->addr_message, '\0', sizeof(callback_data->addr_message));
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -165,7 +165,7 @@ static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 		int *count,
 		struct rrr_instance_runtime_data *thread_data,
 		pid_t fork_pid,
-		struct rrr_msg_msg_holder *entry
+		struct rrr_msg_holder *entry
 ) {
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
@@ -244,7 +244,7 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	}
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

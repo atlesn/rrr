@@ -56,5 +56,6 @@ int rrr_string_builder_new (struct rrr_string_builder **result);
 void rrr_string_builder_destroy (struct rrr_string_builder *string_builder);
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes);
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str);
+int rrr_string_builder_append_format (struct rrr_string_builder *string_builder, const char *format, ...);
 
 #endif /* RRR_STRING_BUILDER_H */

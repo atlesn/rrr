@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_msg_msg_holder_collection_clear (
 		struct rrr_msg_msg_holder_collection *collection
 ) {
-	RRR_LL_DESTROY(collection, struct rrr_msg_msg_holder, rrr_msg_msg_holder_decref(node));
+	RRR_LL_DESTROY(collection, struct rrr_msg_holder, rrr_msg_holder_decref(node));
 }
 
 void rrr_msg_msg_holder_collection_clear_void (
@@ -47,8 +47,8 @@ void rrr_msg_msg_holder_collection_sort (
 	// TODO : This is probably a bad sorting algorithm
 
 	while (RRR_LL_COUNT(target) != 0) {
-		struct rrr_msg_msg_holder *smallest = RRR_LL_FIRST(target);
-		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_msg_holder);
+		struct rrr_msg_holder *smallest = RRR_LL_FIRST(target);
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_holder);
 			if (compare(node->message, smallest->message) < 0) {
 				smallest = node;
 			}

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONDITION_NAME_EVALUATE_CALLBACK_ARGS \
 	uint64_t *result, int *is_signed, const char *name, void *arg
 
+struct rrr_string_builder;
 struct rrr_parse_pos;
 
 struct rrr_condition_shunting_yard_carrier {
@@ -66,6 +67,7 @@ int rrr_condition_clone (
 		const struct rrr_condition *source
 );
 void rrr_condition_dump (
+		struct rrr_string_builder *string_builder,
 		const struct rrr_condition *condition
 );
 int rrr_condition_parse (

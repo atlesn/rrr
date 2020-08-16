@@ -181,7 +181,6 @@ struct rrr_type_definition {
 
 	// These are for importing or exporting to and from raw data
 	// and rrr_array struct
-	int (*get_import_length)(RRR_TYPE_GET_IMPORT_LENGTH_ARGS);
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
 	void (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
 	int (*export)(RRR_TYPE_EXPORT_ARGS);

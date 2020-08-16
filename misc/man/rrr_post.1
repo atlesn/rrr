@@ -251,6 +251,28 @@ which means that the input "1 2 3 + *" will end up as "1 2 3 * +" (the multiplic
 It is probably best to write an expression like this as "1 * (2 + 3)" to ensure the addition is performed first, if that's what you want.
 .PP
 Any condition expression which evaluates to non-zero is counted as true, and a zero result is counted as false.
+.PP
+The keyword REWIND followed by an unsigned integer may be used to "unparse" earlier positions in an array.
+For instance "be1,REWIND1,be2" would first parse one byte, then delete it from the resulting array and start parsing from the beginning, but now parsing two bytes.
+This function is useful in branched condition where for instance a byte needed to be parsed for use in a conditional check, and the same
+byte should also be included in a larger result value parsed later.
+.PP
+Note that the number after REWIND indicates how many array positions we are to revery and NOT the number of bytes.
+It is not possible to replace the number of rewind position with a tag, only decimal fixed values are allowed.
+If one attempts to rewind past the beginning of the array, the validation of the array tree will fail before the program starts.
+.PP
+In the following example, if the first parsed byte is an STX, it will not be included in the final value tagged "code".
+However if the first byte is not an STX, we rewind one position and include all bytes up to the end separator in the final result.
+The value with tag "indicator" will thus only be present in the result if the first byte is an STX.
+.PP
+.nf
+be1#indicator
+IF ({indicator} != 0x02)
+	REWIND1
+	;
+nsep#code,sep1
+;
+.fi
 .SH RETURN VALUE
 .B rrr_post
 returns 0 on success and 1 on failure.

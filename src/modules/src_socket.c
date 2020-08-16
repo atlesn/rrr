@@ -170,7 +170,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 struct read_data_receive_message_callback_data {
 	struct socket_data *data;
-	struct rrr_msg_msg_holder *entry;
+	struct rrr_msg_holder *entry;
 	struct rrr_array *array_final;
 };
 
@@ -226,7 +226,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 	return ret;
 }
 
-int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct socket_data *data = arg;
 
 	int ret = 0;
@@ -305,7 +305,7 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 
 	out:
 	rrr_array_clear(&array_tmp);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

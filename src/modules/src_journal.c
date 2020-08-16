@@ -272,7 +272,7 @@ struct journal_write_message_callback_data {
 	int entry_count_limit;
 };
 
-static int journal_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int journal_write_message_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct journal_write_message_callback_data *callback_data = arg;
 	struct journal_data *data = callback_data->data;
 
@@ -350,7 +350,7 @@ static int journal_write_message_callback (struct rrr_msg_msg_holder *entry, voi
 	RRR_FREE_IF_NOT_NULL(topic_tmp_final);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	RRR_FREE_IF_NOT_NULL(reading);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

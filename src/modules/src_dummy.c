@@ -102,7 +102,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 	return ret;
 }
 
-static int dummy_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
+static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct dummy_data *data = arg;
 
 	int ret = 0;
@@ -136,7 +136,7 @@ static int dummy_write_message_callback (struct rrr_msg_msg_holder *entry, void 
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
 	out:
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

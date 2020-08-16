@@ -90,7 +90,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
-	rrr_msg_msg_holder_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 

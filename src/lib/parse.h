@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PARSE_MATCH_HEX			(1<<3)
 #define RRR_PARSE_MATCH_NUMBERS		(1<<4)
 #define RRR_PARSE_MATCH_NEWLINES	(1<<5)
+#define RRR_PARSE_MATCH_NULL		(1<<6)
+#define RRR_PARSE_MATCH_END			(1<<7)
 
 #define RRR_PARSE_CHECK_EOF(_pos)		\
 	((_pos)->pos >= (_pos)->size)
@@ -48,6 +50,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		((c) >= '0' && (c) <= '9'))
 #define RRR_PARSE_MATCH_C_NUMBER(c) 	\
 	((c) >= '0' && (c) <= '9')
+#define RRR_PARSE_MATCH_C_NULL(c) 		\
+	((c) == '\0')
 
 // XXX : Removed - for compatibility with condition expressions
 // || ((c) == '-')
