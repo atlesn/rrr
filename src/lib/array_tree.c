@@ -79,7 +79,7 @@ int rrr_array_tree_new (
 
 	struct rrr_array_tree *new_tree = malloc(sizeof(*new_tree));
 	if (new_tree == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_array_tree_clone\n");
+		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -87,7 +87,7 @@ int rrr_array_tree_new (
 	memset(new_tree, '\0', sizeof(*new_tree));
 
 	if ((new_tree->name = strdup(name != NULL ? name : "-")) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_array_tree_clone\n");
+		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -199,6 +199,8 @@ static int __rrr_array_node_clone (
 		goto out;
 	}
 
+	new_node->rewind_count = source->rewind_count;
+
 	if ((ret = rrr_array_definition_clone(&new_node->array, &source->array)) != 0) {
 		goto out;
 	}
@@ -293,14 +295,15 @@ static int __rrr_array_tree_parse_if_node (
 		return ret;
 }
 
-#define CHECK_BRANCH								\
+#define CHECK_SPECIAL								\
 	do {int pos_orig = pos->pos;					\
 	if (rrr_parse_match_word(pos, "IF") ||			\
 		rrr_parse_match_word(pos, "ELSIF") ||		\
-		rrr_parse_match_word(pos, "ELSE")			\
+		rrr_parse_match_word(pos, "ELSE") ||		\
+		rrr_parse_match_word(pos, "REWIND")			\
 	) {												\
 		pos->pos = pos_orig;						\
-		*branch_found = 1;							\
+		*special_found = 1;							\
 		goto out;									\
 	}} while(0)
 
@@ -309,12 +312,12 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 		int *eof_found,
 		int *semicolon_found,
 		int *comma_found,
-		int *branch_found
+		int *special_found
 ) {
 	*eof_found = 0;
 	*semicolon_found = 0;
 	*comma_found = 0;
-	*branch_found = 0;
+	*special_found = 0;
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
@@ -322,7 +325,7 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 		goto out;
 	}
 
-	CHECK_BRANCH;
+	CHECK_SPECIAL;
 
 	if (*(pos->data + pos->pos) == ',') {
 		*comma_found = 1;
@@ -335,7 +338,7 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 			goto out;
 		}
 
-		CHECK_BRANCH;
+		CHECK_SPECIAL;
 
 		goto out;
 	}
@@ -361,7 +364,7 @@ static int __rrr_array_tree_parse_definition_node (
 
 	int eof_found = 0;
 	int comma_found = 0;
-	int branch_found = 0;
+	int special_found = 0;
 
 	struct rrr_array_node *node;
 	if ((node = __rrr_array_node_allocate()) == NULL) {
@@ -375,10 +378,10 @@ static int __rrr_array_tree_parse_definition_node (
 				&eof_found,
 				semicolon_found,
 				&comma_found,
-				&branch_found
+				&special_found
 		);
 
-		if (eof_found || *semicolon_found || branch_found || comma_found) {
+		if (eof_found || *semicolon_found || special_found || comma_found) {
 			break;
 		}
 
@@ -439,10 +442,10 @@ static int __rrr_array_tree_parse_definition_node (
 				&eof_found,
 				semicolon_found,
 				&comma_found,
-				&branch_found
+				&special_found
 		);
 
-		if (eof_found || *semicolon_found || branch_found) {
+		if (eof_found || *semicolon_found || special_found) {
 			break;
 		}
 
@@ -460,6 +463,64 @@ static int __rrr_array_tree_parse_definition_node (
 		__rrr_array_node_destroy(node);
 	out:
 		return ret;
+}
+
+int __rrr_array_tree_parse_rewind (
+		struct rrr_array_tree *tree,
+		struct rrr_parse_pos *pos
+) {
+	int ret = 0;
+
+	struct rrr_array_node *node = NULL;
+
+	int start;
+	int end;
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos)) {
+		RRR_MSG_0("Missing unsigned number after REWIND keyword in array tree\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NUMBERS);
+
+	if (end < start) {
+		RRR_MSG_0("Missing unsigned number after REWIND keyword in array tree\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_length length = end - start + 1;
+
+	if (length > 12) {
+		RRR_MSG_0("Count after REWIND keyword too long in array tree\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	char tmp[32];
+	memcpy(tmp, pos->data + start, length);
+	tmp[length] = '\0';
+
+	char *endptr;
+	rrr_length count = strtoul(tmp, &endptr, 10);
+
+	if ((node = __rrr_array_node_allocate()) == NULL) {
+		ret = RRR_ARRAY_TREE_HARD_ERROR;
+		goto out;
+	}
+
+	node->rewind_count = count;
+
+	RRR_LL_APPEND(tree, node);
+	node = NULL;
+
+	out:
+	if (node != NULL) {
+		__rrr_array_node_destroy(node);
+	}
+	return ret;
 }
 
 int rrr_array_tree_definition_parse (
@@ -532,6 +593,11 @@ int rrr_array_tree_definition_parse (
 					goto out_destroy;
 				}
 				RRR_LL_LAST(tree)->branch_if->tree_else = tree_else;
+			}
+		}
+		else if (rrr_parse_match_word(pos, "REWIND")) {
+			if ((ret = __rrr_array_tree_parse_rewind(tree, pos)) != 0) {
+				goto out_destroy;
 			}
 		}
 
@@ -677,10 +743,13 @@ static void __rrr_array_tree_dump (
 		if (node != RRR_LL_FIRST(tree)) {
 			rrr_string_builder_append(string_builder, ",\n");
 		}
-		if (node->branch_if != NULL) {
+		if (node->rewind_count > 0) {
+			rrr_string_builder_append_format(string_builder, "REWIND%" PRIrrrl, node->rewind_count);
+		}
+		else if (node->branch_if != NULL) {
 			__rrr_array_tree_branch_dump(string_builder, node->branch_if, level);
 		}
-		else {
+		else if (RRR_LL_COUNT(&node->array) > 0) {
 			__rrr_array_definition_dump(string_builder, &node->array, level);
 		}
 	RRR_LL_ITERATE_END();
@@ -843,11 +912,12 @@ static int __rrr_array_validate_definition_reference (
 		goto out;																			\
 	}																						\
 	if ((ret == RRR_ARRAY_TREE_CONDITION_TRUE) ||											\
-		(ret & (RRR_ARRAY_TREE_CONTINUE)											\
+		(ret & (RRR_ARRAY_TREE_CONTINUE)													\
 	)) { int ret_tmp;																		\
 		if ((ret_tmp = __rrr_array_tree_iterate (											\
 				branch->array_tree,															\
 				value_count,																\
+				rewind_callback,															\
 				value_callback,																\
 				condition_callback,															\
 				leaf_callback,																\
@@ -862,6 +932,7 @@ static int __rrr_array_validate_definition_reference (
 static int __rrr_array_tree_iterate (
 		const struct rrr_array_tree *tree,
 		int value_count,
+		int (*rewind_callback)(rrr_length rewind_count, void *arg),
 		int (*value_callback)(const struct rrr_type_value *value, void *arg),
 		int (*condition_callback)(const struct rrr_condition *condition, void *arg),
 		int (*leaf_callback)(void *arg),
@@ -873,6 +944,12 @@ static int __rrr_array_tree_iterate (
 	int value_count_orig = value_count;
 
 	RRR_LL_ITERATE_BEGIN(tree, const struct rrr_array_node);
+		if (node->rewind_count > 0 && rewind_callback != NULL) {
+			if ((ret = rewind_callback(node->rewind_count, callback_arg)) != 0) {
+				goto out;
+			}
+		}
+
 		const struct rrr_array *array = &node->array;
 		RRR_LL_ITERATE_BEGIN(array, const struct rrr_type_value);
 			value_count++;
@@ -898,6 +975,7 @@ static int __rrr_array_tree_iterate (
 				if ((ret_tmp = __rrr_array_tree_iterate (
 						branch_if->tree_else,
 						value_count,
+						rewind_callback,
 						value_callback,
 						condition_callback,
 						leaf_callback,
@@ -961,6 +1039,30 @@ struct rrr_array_tree_validate_callback_data {
 	int result;
 };
 
+int __rrr_array_tree_validate_rewind_callback (
+		rrr_length count,
+		void *arg
+) {
+	struct rrr_array_tree_validate_callback_data *callback_data = arg;
+	int ret = 0;
+
+	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->reference)) {
+		RRR_MSG_0("REWIND of length %" PRIrrrl " would rewind past beginning of array which now has %li positions\n",
+				count, RRR_LL_COUNT(&callback_data->reference));
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_slength target = (rrr_slength) RRR_LL_COUNT(&callback_data->reference) - (rrr_slength) count;
+
+	while (RRR_LL_COUNT(&callback_data->reference) > target) {
+		__rrr_array_reference_pop(&callback_data->reference);
+	}
+
+	out:
+	return ret;
+}
+
 int __rrr_array_tree_validate_value_callback (
 		const struct rrr_type_value *value,
 		void *arg
@@ -1004,6 +1106,10 @@ int __rrr_array_tree_validate_leaf_callback (
 			&callback_data->reference
 	);
 
+	if (RRR_LL_COUNT(&callback_data->reference) == 0) {
+		RRR_DBG_1("No array nodes left at array tree leaf while validating array\n");
+	}
+
 	return RRR_ARRAY_TREE_CONTINUE;
 }
 
@@ -1028,6 +1134,7 @@ int rrr_array_tree_validate (
 	ret = __rrr_array_tree_iterate (
 			tree,
 			0,
+			__rrr_array_tree_validate_rewind_callback,
 			__rrr_array_tree_validate_value_callback,
 			__rrr_array_tree_validate_condition_callback,
 			__rrr_array_tree_validate_leaf_callback,
@@ -1042,9 +1149,40 @@ int rrr_array_tree_validate (
 
 struct rrr_array_tree_import_callback_data {
 	struct rrr_array array;
+	const char *start; // Only for bug-check when rewinding
 	const char *pos;
 	const char *end;
 };
+
+int __rrr_array_tree_import_rewind_callback (
+		rrr_length count,
+		void *arg
+) {
+	struct rrr_array_tree_import_callback_data *callback_data = arg;
+	int ret = 0;
+
+	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->array)) {
+		RRR_BUG("BUG: REWIND past beginning of array in  __rrr_array_tree_import_rewind_callback, validator should have caught this\n");
+	}
+
+	rrr_slength target = (rrr_slength) RRR_LL_COUNT(&callback_data->array) - (rrr_slength) count;
+
+	rrr_length total_length = 0;
+	while (RRR_LL_COUNT(&callback_data->array) > target) {
+		struct rrr_type_value *value = RRR_LL_POP(&callback_data->array);
+		callback_data->pos -= value->import_length * value->import_elements;
+		total_length += value->import_length * value->import_elements;
+		if (callback_data->pos < callback_data->start) {
+			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
+		}
+		rrr_type_value_destroy(value);
+	}
+
+	RRR_DBG_3("REWIND %" PRIrrrl " array positions and %" PRIrrrl " bytes while parsing array tree\n",
+			count, total_length);
+
+	return ret;
+}
 
 int __rrr_array_tree_import_value_callback (
 		const struct rrr_type_value *value,
@@ -1171,12 +1309,14 @@ int rrr_array_tree_parse_from_buffer (
 
 	struct rrr_array_tree_import_callback_data callback_data = {0};
 
+	callback_data.start = buf;
 	callback_data.pos = buf;
 	callback_data.end = buf + buf_len;
 
 	if ((ret = __rrr_array_tree_iterate (
 			tree,
 			0,
+			__rrr_array_tree_import_rewind_callback,
 			__rrr_array_tree_import_value_callback,
 			__rrr_array_tree_import_condition_callback,
 			__rrr_array_tree_get_import_length_leaf_callback,

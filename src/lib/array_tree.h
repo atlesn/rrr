@@ -55,6 +55,7 @@ struct rrr_array_branch {
 
 struct rrr_array_node {
 	RRR_LL_NODE(struct rrr_array_node);
+	rrr_length rewind_count;
 	struct rrr_array array;
 	struct rrr_array_branch *branch_if;
 };

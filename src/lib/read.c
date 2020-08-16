@@ -619,18 +619,16 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 			break;
 		}
 		else {
-			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
-				return RRR_READ_INCOMPLETE;
+			if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
+				if (data->do_byte_by_byte_sync != 0) {
+					skipped_bytes++;
+					pos++;
+					wpos--;
+					ret = RRR_READ_OK;
+				}
 			}
 
-			if (data->do_byte_by_byte_sync != 0) {
-				skipped_bytes++;
-				pos++;
-				wpos--;
-			}
-			else {
-				return RRR_READ_SOFT_ERROR;
-			}
+			return ret;
 		}
 	}
 
