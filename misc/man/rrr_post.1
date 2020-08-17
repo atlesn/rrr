@@ -88,13 +88,29 @@ A range of data types may be used in the data records given to
 Some types are of fixed length, and others require delimeters. An array definition describes the data to expect 
 in each record.
 .PP
-The specified definition is checked when the program starts
-to make sure its always possible to figure out the lenght of each received record from the data it contains. For instance, a
-record cannot end with a number given as ASCII string as it's not possible to determin when it ends. Such types must be followed
-by a separator type.
+Array definition may or may not contain conditional branches.
+This allows different input values to be parsed based on previously parsed values.
+Coditional branching is explained in the next chapter.
 .PP
-Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
+It is important to make sure that it is always possible to figure out the lenght of each received record from the data it contains.
+For instance, a definition cannot end with a number given as ASCII string as it's not possible to determin when it ends.
+Such data types are called
+.B weak dynamic lenght types,
+and these must be delimeted by a separator character which is guaranteed not to appear inside the data.
+RRR does not smart checking or validation of definition, but parsing of input data will fail if value boundaries cannot be correctly identified.
+.PP
+If parsing fails, this might lead to for instance a TCP connection to be closed or queued up UDP data to be dropped.
+Using
+.B debuglevel 4
+will expose how input data are parsed using the array definitions, this might assist in debugging such problems.
+.PP
+An array definition consists of one or more
+.B positions
+which each specifies a particular type of data to parse.
+Sequential fixed length values of the same type may be grouped together in a single position, and each item may be tagged to
 ease the extraction of data in later processing.
+Non-dynamic types may have both a length or element count set.
+Parsing four elements of one byte and parsing one element of four bytes only differ in how the data is represented after the array has been parsed.    
 .SS SYNTAX
 type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 .PP
@@ -104,7 +120,7 @@ Identifier name of the type
 .It length
 Length in bytes of the type (if required)
 .It count
-Item count of the sepcific type, defaults to 1 if not specified
+Item count of the specific type, defaults to 1 if not specified
 .It tag
 Optional custom identifier tag of the type
 .El
@@ -222,7 +238,7 @@ The operator style is the same as for the C-language, and the same precedence ru
 Parentheses may be used as well as bitwise operators.
 Constant decimal (positive or negative) or hexadecimal numbers (positive only) may be used.
 .PP
-It is not possible to match strings or blobs directly.
+In conditions, it is not possible to match strings or blobs directly.
 Their lowest bytes (big endian is assumed) are put into a 64-bit unsigned integer which is used for comparisons.
 This is useful for instance when comparing a single byte separator, it can be match directly against a decimal or hexadecimal number.
 .PP
