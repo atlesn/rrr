@@ -1,3 +1,9 @@
+rrr (1.10-2ubuntu1) focal; urgency=medium
+
+  * Ubuntu release
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 17 Aug 2020 19:06:59 +0200
+
 rrr (1.10-2) buster; urgency=medium
 
   * Fix MQTT array data parsing from PUBLISH which did not work
