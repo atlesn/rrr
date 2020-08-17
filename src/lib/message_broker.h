@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <sys/socket.h>
 
-#include "linked_list.h"
 #include "buffer.h"
+#include "util/linked_list.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
 #define RRR_MESSAGE_BROKER_POST		RRR_MESSAGE_BROKER_OK
@@ -53,6 +53,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_message_broker_split_buffer_collection split_buffers;
 	char *name;
 	int usercount;
+	uint64_t unique_counter;
 };
 
 struct rrr_message_broker {
@@ -61,8 +62,8 @@ struct rrr_message_broker {
 	pthread_t creator;
 };
 
-struct rrr_ip_buffer_entry;
-struct rrr_ip_buffer_entry_collection;
+struct rrr_msg_holder;
+struct rrr_msg_msg_holder_collection;
 
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
@@ -76,6 +77,10 @@ void rrr_message_broker_cleanup (
 );
 int rrr_message_broker_init (
 		struct rrr_message_broker *broker
+);
+rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
+		struct rrr_message_broker *broker,
+		const char *name
 );
 void rrr_message_broker_costumer_unregister (
 		struct rrr_message_broker *broker,
@@ -91,34 +96,39 @@ int rrr_message_broker_setup_split_output_buffer (
 		rrr_message_broker_costumer_handle *handle,
 		int slots
 );
+int rrr_message_broker_get_next_unique_id (
+		uint64_t *result,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+);
 int rrr_message_broker_write_entry (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
-		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
+		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg
 );
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		const struct rrr_ip_buffer_entry *entry
+		const struct rrr_msg_holder *entry
 );
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_msg_holder *entry
 );
 int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_msg_holder *entry
 );
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry_collection *collection
+		struct rrr_msg_msg_holder_collection *collection
 );
 int rrr_message_broker_poll_discard (
 		int *discarded_count,

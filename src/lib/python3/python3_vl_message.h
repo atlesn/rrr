@@ -24,20 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_headers.h"
 
-struct rrr_socket_msg;
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 
-struct rrr_message *rrr_python3_rrr_message_get_message (
-		struct rrr_message_addr *message_addr,
+struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (
+		struct rrr_msg_addr *message_addr,
 		PyObject *self
 );
-PyObject *rrr_python3_rrr_message_new_from_message_and_address (
-		const struct rrr_message *msg,
-		const struct rrr_message_addr *message_addr
+PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
+		const struct rrr_msg_msg *msg,
+		const struct rrr_msg_addr *message_addr
 );
-PyObject *rrr_python3_rrr_message_new_from_message (
-		const struct rrr_message *msg
+PyObject *rrr_python3_rrr_msg_msg_new_from_message (
+		const struct rrr_msg_msg *msg
 );
 
 #endif /* RRR_PYTHON3_RRR_MESSAGE_H */

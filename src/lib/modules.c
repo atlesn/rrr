@@ -74,7 +74,7 @@ int rrr_module_load(struct rrr_module_load_data *target, const char *name, const
 			continue;
 		}
 
-		void (*init)(struct rrr_instance_dynamic_data *data) = dlsym(handle, "init");
+		void (*init)(struct rrr_instance_module_data *data) = dlsym(handle, "init");
 		void (*unload)(void) = dlsym(handle, "unload");
 
 		if (init == NULL || unload == NULL) {

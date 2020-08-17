@@ -29,9 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
 #include "../buffer.h"
-#include "../ip.h"
-#include "../linked_list.h"
 #include "../read_constants.h"
+#include "../ip/ip.h"
+#include "../util/linked_list.h"
 
 #define RRR_MQTT_CONN_TYPE_IPV4 4
 #define RRR_MQTT_CONN_TYPE_IPV6 6
@@ -43,37 +43,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MQTT_CONN_STEP_LIMIT			(1<<4)
 //#define RRR_MQTT_CONN_ITERATE_STOP			(1<<5)
 
-#define RRR_MQTT_CONN_STATE_NEW							(0)
-#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED		(1<<0)
-#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)
-#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)
-#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)
-// It is not always possible to destroy a connection immediately when we
-// send a disconnect packet (or pretend to). This flags tells housekeeping
-// to destroy the connection, and also blocks further usage.
-#define RRR_MQTT_CONN_STATE_DISCONNECTED				(1<<4)
+#define RRR_MQTT_CONN_STATE_NEW							(0)			//    0
+#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED		(1<<0)		//    1
+#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)		//    2
+#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)		//    4
+#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)		//    8
 // After disconnecting, we wait a bit before close()-ing to let the client close first. The
 // broker sets the timeout for this, the client sets it to 0.
-#define RRR_MQTT_CONN_STATE_DISCONNECT_WAIT				(1<<5)
-#define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)
+#define RRR_MQTT_CONN_STATE_CLOSE_WAIT					(1<<5)		//   32
+// When close wait timer has started, state will transition into CLOSED. When timer is
+// complete, the connection is destroyed.
+#define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)		//   64
 
 #define RRR_MQTT_CONN_EVENT_DISCONNECT		1
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR								\
 		struct rrr_mqtt_conn *connection = handle->application_private_ptr;				\
-		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {	\
+		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {	\
 			return RRR_MQTT_OK;															\
 		}} while (0)
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
 		struct rrr_mqtt_conn *connection = handle->application_private_ptr;															\
-		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
+		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
 			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)
 
 struct rrr_mqtt_session;
 struct rrr_net_transport_handle;
+
+// Most of these will properties are not used by the broker, we only need the struct to
+// parse the properties when we receive them. When creating the will publish
+// message, all properties are copied directly from the will properties field
+// in CONNECT. The broker only use the will_delay_interval value.
+struct rrr_mqtt_conn_will_properties {
+	uint32_t will_delay_interval;
+	uint8_t payload_format_indicator;
+	uint32_t message_expiry_interval;
+	const struct rrr_mqtt_property *content_type;
+	const struct rrr_mqtt_property *response_topic;
+	const struct rrr_mqtt_property *correlation_data;
+	struct rrr_mqtt_property_collection user_properties;
+};
 
 struct rrr_mqtt_conn {
 	int transport_handle;
@@ -105,6 +117,9 @@ struct rrr_mqtt_conn {
 
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
+
+	struct rrr_mqtt_p_publish *will_publish;
+	struct rrr_mqtt_conn_will_properties will_properties;
 
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
@@ -148,14 +163,8 @@ struct rrr_mqtt_conn {
 #define RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
 
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(c) \
-	(((c)->state_flags & RRR_MQTT_CONN_STATE_DISCONNECT_WAIT) != 0)
-
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECTED(c) \
-	(((c)->state_flags & RRR_MQTT_CONN_STATE_DISCONNECTED) != 0)
-
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(c) \
-	(((c)->state_flags & (RRR_MQTT_CONN_STATE_DISCONNECTED|RRR_MQTT_CONN_STATE_DISCONNECT_WAIT)) != 0)
+#define RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(c) \
+	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSED|RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
 
 #define RRR_MQTT_CONN_STATE_IS_CLOSED(c) \
 	(((c)->state_flags & RRR_MQTT_CONN_STATE_CLOSED) != 0)
@@ -175,6 +184,11 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		const struct rrr_mqtt_p_protocol_version *protocol_version,
 		struct rrr_mqtt_session *session,
 		const char *username
+);
+int rrr_mqtt_conn_set_will_data_from_connect (
+		uint8_t *reason_v5,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect
 );
 struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
 		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);

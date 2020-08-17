@@ -28,10 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "stats_message.h"
 
-#include "../rrr_endian.h"
 #include "../read.h"
 #include "../read_constants.h"
-
+#include "../util/rrr_endian.h"
 
 int rrr_stats_message_unpack_callback (
 		struct rrr_read_session *read_session,

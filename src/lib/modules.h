@@ -35,36 +35,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define RRR_MODULE_NO_DL_CLOSE
 
-struct rrr_instance_dynamic_data;
-struct rrr_instance_thread_data;
-struct rrr_thread_start_data;
-struct rrr_instance_config;
-struct rrr_message;
-struct rrr_ip_buffer_entry;
+struct rrr_instance_module_data;
+struct rrr_instance_runtime_data;
+struct rrr_instance_config_data;
+struct rrr_msg_holder;
 struct rrr_thread;
 
 struct rrr_module_load_data {
 	void *dl_ptr;
-	void (*init)(struct rrr_instance_dynamic_data *data);
+	void (*init)(struct rrr_instance_module_data *data);
 	void (*unload)(void);
 };
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE		\
-	struct rrr_ip_buffer_entry *entry,			\
+	struct rrr_msg_holder *entry,				\
 	void *arg
-/*
-#define RRR_MODULE_POLL_SIGNATURE \
-		struct rrr_instance_thread_data *data, \
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE), \
-		struct rrr_fifo_callback_args *poll_data, \
-		unsigned int wait_milliseconds
-*/
-#define RRR_MODULE_PRINT_SIGNATURE \
-		struct rrr_instance_thread_data *data
 
 #define RRR_MODULE_INJECT_SIGNATURE \
-		struct rrr_instance_thread_data *thread_data, \
-		struct rrr_ip_buffer_entry *message
+	struct rrr_instance_runtime_data *thread_data, \
+	struct rrr_msg_holder *message
 
 // Try not to put functions with equal arguments next to each other
 struct rrr_module_operations {
@@ -78,7 +67,7 @@ struct rrr_module_operations {
 	void (*poststop)(const struct rrr_thread *);
 
 	// Test of configuration arguments
-	int (*test_config)(struct rrr_instance_config *config);
+	int (*test_config)(struct rrr_instance_config_data *config);
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);

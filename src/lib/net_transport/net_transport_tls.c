@@ -33,17 +33,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 #include "net_transport_tls.h"
 
-#include "../posix.h"
 #include "../log.h"
 #include "../socket/rrr_socket.h"
 #include "../rrr_openssl.h"
 #include "../rrr_strerror.h"
-#include "../gnu.h"
 #include "../read.h"
 #include "../read_constants.h"
-#include "../ip.h"
-#include "../ip_accept_data.h"
-#include "../macro_utils.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;
@@ -346,7 +346,7 @@ static int __rrr_net_transport_tls_connect (
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_DBG_1("Could not create TLS connection to %s:%u\n", host, port);
-		ret = 1;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -366,7 +366,7 @@ static int __rrr_net_transport_tls_connect (
 			ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_connect\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_connect return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -437,7 +437,7 @@ static int __rrr_net_transport_tls_bind_and_listen (
 			ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_bind_and_listen\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_bind_and_listen return was %i\n", ret);
 		ret = 1;
 		goto out_free_ssl_data;
 	}
@@ -521,14 +521,14 @@ int __rrr_net_transport_tls_accept (
 
 	// Run this before populating SSL data to provide memory fence
 	int new_handle = 0;
-	if ((ret = rrr_net_transport_handle_allocate_and_add(
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			new_ssl_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}

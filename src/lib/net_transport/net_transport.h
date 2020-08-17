@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../read_constants.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -191,11 +191,11 @@ int rrr_net_transport_handle_allocate_and_add (
 		void *submodule_private_ptr,
 		int submodule_private_fd
 );
+#endif
+
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 );
-#endif
-
 int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
@@ -208,6 +208,7 @@ int rrr_net_transport_new (
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
+void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection);
 void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 );
@@ -250,6 +251,9 @@ int rrr_net_transport_ctx_send_blocking (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
 );
 void rrr_net_transport_ctx_handle_application_data_bind (
 		struct rrr_net_transport_handle *handle,

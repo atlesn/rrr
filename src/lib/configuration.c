@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "configuration.h"
 #include "rrr_strerror.h"
+#include "array_tree.h"
 
 #include "instance_config.h"
 
@@ -39,9 +40,7 @@ struct rrr_config *__rrr_config_new (void) {
 		return NULL;
 	}
 
-	ret->module_count = 0;
-	ret->module_count_max = 0;
-	ret->configs = NULL;
+	memset(ret, '\0', sizeof(*ret));
 
 	return ret;
 }
@@ -51,7 +50,7 @@ int __rrr_config_expand(struct rrr_config *target) {
 	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
 	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
 
-	struct rrr_instance_config **configs_new = realloc(target->configs, new_size);
+	struct rrr_instance_config_data **configs_new = realloc(target->configs, new_size);
 
 	if (configs_new == NULL) {
 		RRR_MSG_0("Could not reallocate memory for rrr_instance_config struct\n");
@@ -64,7 +63,7 @@ int __rrr_config_expand(struct rrr_config *target) {
 	return 0;
 }
 
-int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config *instance_config) {
+int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config_data *instance_config) {
 	if (rrr_config_find_instance (target, instance_config->name) != NULL) {
 		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
 		return 1;
@@ -97,13 +96,13 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		goto out;
 	}
 
 	while (pos->data[pos->pos] == '#') {
 		rrr_parse_comment(pos);
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			goto out;
 		}
 	}
@@ -112,8 +111,12 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 		goto out;
 	}
 
-
-	rrr_parse_letters(pos, &name_begin, &name_end, 0, 0);
+	rrr_parse_match_letters (
+			pos,
+			&name_begin,
+			&name_end,
+			RRR_PARSE_MATCH_NUMBERS|RRR_PARSE_MATCH_LETTERS
+	);
 
 	if (name_end < name_begin) {
 		ret = 0;
@@ -121,7 +124,7 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 	}
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		RRR_MSG_0("Unexpected end of file after setting name at line %d\n", pos->line);
 		ret = 1;
 		goto out;
@@ -134,10 +137,18 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 		goto out;
 	}
 
+	int line_orig = pos->line;
+
 	pos->pos++;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		RRR_MSG_0("Unexpected end of file after = at line %d\n", pos->line);
+		ret = 1;
+		goto out;
+	}
+
+	if (pos->line != line_orig) {
+		RRR_MSG_0("Unexpected newline after = at line %d, parameter value missing\n", pos->line);
 		ret = 1;
 		goto out;
 	}
@@ -145,6 +156,11 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 	int value_begin;
 	int value_end;
 	rrr_parse_non_newline(pos, &value_begin, &value_end);
+
+	// Ignore trailing spaces
+	while (value_end > value_begin && (pos->data[value_end] == ' ' || pos->data[value_end] == '\t')) {
+			value_end--;
+	}
 
 	if (value_end < value_begin) {
 		RRR_MSG_0("Expected value after = at line %d\n", pos->line);
@@ -203,8 +219,9 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 	}
 
 	char c = pos->data[pos->pos];
-	while (c != ']' && !rrr_parse_check_eof(pos)) {
+	while (c != ']' && !RRR_PARSE_CHECK_EOF(pos)) {
 		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			// These are ok
 		}
 		else {
 			RRR_MSG_0("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);
@@ -221,7 +238,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		c = pos->data[pos->pos];
 	}
 
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		RRR_MSG_0("Unexpected end of instance definition in line %d\n", pos->line);
 		ret = 1;
 		goto out;
@@ -245,7 +262,12 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		goto out;
 	}
 
-	struct rrr_instance_config *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
+	struct rrr_instance_config_data *instance_config = rrr_instance_config_new (
+			pos->data + begin,
+			length,
+			RRR_CONFIG_MAX_SETTINGS,
+			&config->array_trees
+	);
 	if (instance_config == NULL) {
 		RRR_MSG_0("Instance config creation result was NULL\n");
 		ret = 1;
@@ -291,13 +313,84 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 	return ret;
 }
 
+int __rrr_config_interpret_array_tree (struct rrr_config *config, struct rrr_parse_pos *pos) {
+	int ret = 0;
+
+	struct rrr_array_tree *new_tree = NULL;
+	char *name_tmp = NULL;
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos)) {
+		goto out_missing_name;
+	}
+
+	int start;
+	int end;
+
+	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS);
+
+	if (end < start) {
+		goto out_missing_name;
+	}
+
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != '}') {
+		goto out_missing_end_curly;
+	}
+	pos->pos++;
+
+	size_t name_length = end - start + 1;
+	if ((name_tmp = malloc(name_length + 1)) == NULL) {
+		goto out_failed_alloc;
+	}
+
+	memcpy(name_tmp, pos->data + start, name_length);
+	name_tmp[name_length] = '\0';
+
+	if (rrr_array_tree_interpret (
+			&new_tree,
+			pos,
+			name_tmp
+	) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (pos->pos > pos->size) {
+		RRR_BUG("BUG: rrr_array_tree_parse parsed beyond end in __rrr_config_parse_array_tree\n");
+	}
+
+	RRR_LL_APPEND(&config->array_trees, new_tree);
+	new_tree = NULL;
+
+	goto out;
+	out_failed_alloc:
+		RRR_MSG_0("Could not allocate memory for name in __rrr_config_parse_array_tree\n");
+		ret = 1;
+		goto out;
+	out_missing_name:
+		RRR_MSG_0("Missing name for array tree after {\n");
+		ret = 1;
+		goto out;
+	out_missing_end_curly:
+		RRR_MSG_0("Missing end curly bracket } after array tree name\n");
+		ret = 1;
+		goto out;
+	out:
+		if (new_tree != NULL) {
+			rrr_array_tree_destroy(new_tree);
+		}
+		RRR_FREE_IF_NOT_NULL(name_tmp);
+		return ret;
+}
+
 int __rrr_config_parse_any (struct rrr_config *config, struct rrr_parse_pos *pos) {
 	int ret = 0;
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 
-	if (rrr_parse_check_eof(pos)) {
+	if (RRR_PARSE_CHECK_EOF(pos)) {
 		return 0;
 	}
 
@@ -307,10 +400,14 @@ int __rrr_config_parse_any (struct rrr_config *config, struct rrr_parse_pos *pos
 		if (c == '#') {
 			rrr_parse_comment(pos);
 		}
+		else if (c == '{') {
+			ret = __rrr_config_interpret_array_tree(config, pos);
+		}
 		else if (c == '[') {
 			int did_parse;
 			ret = __rrr_config_parse_instance(config, pos, &did_parse);
 			if (did_parse == 0 && ret == 0) {
+				// XXX : Do we ever end up here?
 				// No more instances, no errors
 			}
 			else if (ret == 1) {
@@ -337,22 +434,26 @@ int __rrr_config_parse_file (struct rrr_config *config, const void *data, const 
 
 	rrr_parse_pos_init(&pos, data, size);
 
-	while (!rrr_parse_check_eof(&pos)) {
+	while (!RRR_PARSE_CHECK_EOF(&pos)) {
 		ret = __rrr_config_parse_any(config, &pos);
 		if (ret != 0) {
-			RRR_MSG_0("Error in configuration file\n");
 			break;
 		}
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Parsing of configuration file failed at line %i position %i\n",
+				pos.line, pos.pos - pos.line_begin_pos + 1);
 	}
 
 	return ret;
 }
 
-struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name) {
-	struct rrr_instance_config *ret = NULL;
+struct rrr_instance_config_data *rrr_config_find_instance (struct rrr_config *source, const char *name) {
+	struct rrr_instance_config_data *ret = NULL;
 
 	for (int i = 0; i < source->module_count; i++) {
-		struct rrr_instance_config *test = source->configs[i];
+		struct rrr_instance_config_data *test = source->configs[i];
 		if (strcmp(test->name, name) == 0) {
 			ret = test;
 			break;
@@ -366,6 +467,7 @@ void rrr_config_destroy (struct rrr_config *target) {
 	for (int i = 0; i < target->module_count; i++) {
 		rrr_instance_config_destroy(target->configs[i]);
 	}
+	rrr_array_tree_list_clear(&target->array_trees);
 	free(target->configs);
 	free(target);
 }
@@ -452,7 +554,7 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 int rrr_config_dump (struct rrr_config *config) {
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
-		struct rrr_instance_config *instance_config = config->configs[i];
+		struct rrr_instance_config_data *instance_config = config->configs[i];
 
 		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", instance_config->name);
 

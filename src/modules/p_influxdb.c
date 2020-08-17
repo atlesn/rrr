@@ -27,25 +27,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
-#include "../lib/http/http_session.h"
-#include "../lib/http/http_query_builder.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/linked_list.h"
-#include "../lib/gnu.h"
 #include "../lib/map.h"
-#include "../lib/http/http_client_config.h"
+#include "../lib/message_broker.h"
+#include "../lib/read_constants.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
-#include "../lib/message_broker.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
-#include "../lib/ip_buffer_entry_collection.h"
-#include "../lib/read_constants.h"
+#include "../lib/http/http_session.h"
+#include "../lib/http/http_query_builder.h"
+#include "../lib/http/http_client_config.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_collection.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/util/gnu.h"
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086
@@ -56,11 +56,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define INFLUXDB_SOFT_ERR	RRR_READ_SOFT_ERROR
 
 struct influxdb_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	char *database;
 	char *table;
 	int message_count;
-	struct rrr_ip_buffer_entry_collection error_buf;
+	struct rrr_msg_msg_holder_collection error_buf;
 
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
@@ -69,7 +69,7 @@ struct influxdb_data {
 	struct rrr_net_transport *transport;
 };
 
-static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
+static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
@@ -85,7 +85,7 @@ static void influxdb_data_destroy (void *arg) {
 	struct influxdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->database);
 	RRR_FREE_IF_NOT_NULL(data->table);
-	rrr_ip_buffer_entry_collection_clear(&data->error_buf);
+	rrr_msg_msg_holder_collection_clear(&data->error_buf);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
@@ -121,6 +121,7 @@ static int influxdb_receive_http_response (
 	(void)(socklen);
 	(void)(overshoot_bytes);
 	(void)(request_part);
+	(void)(unique_id);
 
 	int ret = 0;
 
@@ -170,13 +171,13 @@ static void influxdb_send_data_callback (
 
 	char *uri = NULL;
 	if ((ret = rrr_asprintf(&uri, "/write?db=%s", data->database)) <= 0) {
-		RRR_MSG_0("Error while creating URI in send_data of influxdb instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Error while creating URI in send_data of influxdb instance %s return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_client_new (
+	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			RRR_HTTP_CLIENT_USER_AGENT
@@ -269,13 +270,16 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_receive(
+	if (rrr_http_session_transport_ctx_receive (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			0, // No max read size
+			0, // No unique id
 			influxdb_receive_http_response,
-			&response_callback_data
+			&response_callback_data,
+			NULL,
+			NULL
 	) != 0) {
 		RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -321,10 +325,10 @@ static int influxdb_send_data (
 }
 
 static int influxdb_common_callback (
-		struct rrr_ip_buffer_entry *entry,
+		struct rrr_msg_holder *entry,
 		struct influxdb_data *influxdb_data
 ) {
-	struct rrr_message *reading = entry->message;
+	struct rrr_msg_msg *reading = entry->message;
 
 	int ret = 0;
 
@@ -353,7 +357,7 @@ static int influxdb_common_callback (
 			RRR_MSG_0("Storing message with error in buffer for later retry in influxdb instance %s\n",
 					INSTANCE_D_NAME(influxdb_data->thread_data));
 
-			rrr_ip_buffer_entry_incref_while_locked(entry);
+			rrr_msg_holder_incref_while_locked(entry);
 			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
 			ret = 0;
 			goto discard;
@@ -366,16 +370,16 @@ static int influxdb_common_callback (
 
 	discard:
 	rrr_array_clear(&array);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
 static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	return influxdb_common_callback(entry, thread_data->private_data);
 }
 
-static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config *config) {
+static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config_data *config) {
 	// NOTE : Special return handling, all parsing is done upon errors, we don't
 	//        stop if something fail. Make sure ret is not overwritten if it has
 	//        been set to 1
@@ -401,7 +405,8 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			INFLUXDB_DEFAULT_SERVER,
 			INFLUXDB_DEFAULT_PORT,
 			1, // <-- Enable fixed tags and fields
-			0  // <-- Do not enable endpoint
+			0, // <-- Do not enable endpoint
+			0  // <-- Don't check for raw mode consistency
 	) != 0) {
 		ret = 1;
 	}
@@ -427,9 +432,9 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 }
 
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_ip_buffer_entry_collection error_buf_tmp = {0};
+	struct rrr_msg_msg_holder_collection error_buf_tmp = {0};
 	struct rrr_net_transport *transport = NULL;
 
 	if (influxdb_data_init(influxdb_data, thread_data) != 0) {
@@ -441,10 +446,10 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(influxdb_data_destroy, influxdb_data);
-	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &error_buf_tmp);
+	pthread_cleanup_push(rrr_msg_msg_holder_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (influxdb_parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
@@ -468,15 +473,13 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
-
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, influxdb_poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, influxdb_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -494,16 +497,16 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&error_buf_tmp, &influxdb_data->error_buf);
 
 			// The callback might add entries back into data->error_buf
-			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock(node);
+			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_msg_holder);
+				rrr_msg_holder_lock(node);
 				if (influxdb_common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
-					rrr_ip_buffer_entry_unlock(node);
+					rrr_msg_holder_unlock(node);
 					goto out_cleanup_transport;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 		}
 	}
 
@@ -512,19 +515,19 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
-			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
-			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
 
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
@@ -543,7 +546,7 @@ static const char *module_name = "influxdb";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
