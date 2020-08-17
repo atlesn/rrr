@@ -1049,7 +1049,7 @@ static int mqttclient_try_create_array_message_from_publish (
 	struct try_create_array_message_from_publish_callback_data callback_data = {
 			publish->topic,
 			strlen(publish->topic),
-			NULL
+			result
 	};
 
 	if ((ret = rrr_array_tree_import_from_buffer (
