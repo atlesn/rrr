@@ -235,7 +235,7 @@ static int __rrr_array_tree_interpret_if_or_elsif (
 		goto out;
 	}
 
-	if ((ret = rrr_condition_parse(&branch->condition, pos)) != 0) {
+	if ((ret = rrr_condition_interpret(&branch->condition, pos)) != 0) {
 		goto out_destroy_branch;
 	}
 
@@ -1219,8 +1219,8 @@ int __rrr_array_tree_import_rewind_callback (
 	rrr_length total_length = 0;
 	while (RRR_LL_COUNT(&callback_data->array) > target) {
 		struct rrr_type_value *value = RRR_LL_POP(&callback_data->array);
-		callback_data->pos -= value->import_length * value->import_elements;
-		total_length += value->import_length * value->import_elements;
+		callback_data->pos -= value->import_length * value->element_count;
+		total_length += value->import_length * value->element_count;
 		if (callback_data->pos < callback_data->start) {
 			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
 		}
@@ -1238,7 +1238,6 @@ int __rrr_array_tree_import_value_resolve_ref (
 		const struct rrr_array *source,
 		const char *name
 ) {
-
 	RRR_LL_ITERATE_BEGIN_REVERSE(source, struct rrr_type_value);
 		if (node->tag != NULL && strncmp(name, node->tag, node->tag_length) == 0) {
 			uint64_t result_tmp = node->definition->to_64(node);
@@ -1341,6 +1340,9 @@ int __rrr_array_tree_import_value_callback (
 	if (parsed_bytes == 0) {
 		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 	}
+
+	RRR_DBG_3("Imported a value of type %s size %" PRIrrrl "x%" PRIrrrl "\n",
+			new_value->definition->identifier, new_value->import_length, new_value->element_count);
 
 	callback_data->pos += parsed_bytes;
 

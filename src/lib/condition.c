@@ -384,7 +384,7 @@ void rrr_condition_dump (
 static const char *rrr_condition_str_false = "0";
 //static const char *rrr_condition_str_true = "1";
 
-int rrr_condition_parse (
+int rrr_condition_interpret (
 		struct rrr_condition *target,
 		struct rrr_parse_pos *pos
 ) {
@@ -525,6 +525,16 @@ int rrr_condition_parse (
 					pos->line, pos->pos - pos->line_begin_pos + 1);
 		}
 		return ret;
+}
+
+int rrr_condition_interpret_raw (
+		struct rrr_condition *target,
+		const char *buf,
+		size_t buf_length
+) {
+	struct rrr_parse_pos pos;
+	rrr_parse_pos_init(&pos, buf, buf_length);
+	return rrr_condition_interpret(target, &pos);
 }
 
 static const char *__rrr_condition_extract_name (
