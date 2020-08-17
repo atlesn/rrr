@@ -73,32 +73,22 @@ int rrr_test_condition (void) {
 
 	rrr_parse_pos_init(&pos, array_tree, strlen(array_tree) + 1);
 
-	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
+	if (rrr_array_tree_interpret(&tree, &pos, "my_tree")) {
 		TEST_MSG("Array tree parsing failed\n");
 		ret |= 1;
 	}
 	if (tree != NULL) {
-		int ret_tmp;
-		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
-			TEST_MSG("Array tree was invalid return was %i\n", ret_tmp);
-			ret |= 1;
-		}
 		rrr_array_tree_dump(tree);
 		rrr_array_tree_destroy(tree);
 	}
 
 	rrr_parse_pos_init(&pos, array_tree_rpn, strlen(array_tree_rpn) + 1);
 
-	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
+	if (rrr_array_tree_interpret(&tree, &pos, "my_tree")) {
 		TEST_MSG("Array tree parsing failed\n");
 		ret |= 1;
 	}
 	if (tree != NULL) {
-		int ret_tmp;
-		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
-			TEST_MSG("Array tree was invalid, return was %i\n", ret_tmp);
-			ret |= 1;
-		}
 		rrr_array_tree_dump(tree);
 		rrr_array_tree_destroy(tree);
 	}

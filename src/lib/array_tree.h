@@ -88,25 +88,18 @@ const struct rrr_array_tree *rrr_array_tree_list_get_tree_by_name (
 		const struct rrr_array_tree_list *list,
 		const char *name
 );
-int rrr_array_tree_push_array_clear_source (
-		struct rrr_array_tree *target,
-		struct rrr_array *source
-);
-int rrr_array_tree_definition_parse (
+int rrr_array_tree_interpret (
 		struct rrr_array_tree **target,
 		struct rrr_parse_pos *pos,
 		const char *name
 );
-int rrr_array_tree_definition_parse_raw (
+int rrr_array_tree_interpret_raw (
 		struct rrr_array_tree **target,
 		const char *data,
 		int data_length,
 		const char *name
 );
 void rrr_array_tree_dump (
-		const struct rrr_array_tree *tree
-);
-int rrr_array_tree_validate (
 		const struct rrr_array_tree *tree
 );
 int rrr_array_tree_get_import_length_from_buffer (
@@ -116,26 +109,16 @@ int rrr_array_tree_get_import_length_from_buffer (
 		const char *buf,
 		ssize_t buf_length
 );
-int rrr_array_tree_clone (
+int rrr_array_tree_clone_without_data (
 		struct rrr_array_tree **target,
 		const struct rrr_array_tree *source
 );
-int rrr_array_tree_parse_from_buffer (
+int rrr_array_tree_import_from_buffer (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array_tree *tree,
 		int (*callback)(struct rrr_array *array, void *arg),
-		void *callback_arg
-);
-int rrr_array_tree_new_message_from_buffer (
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array_tree *tree,
-		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 );
 
