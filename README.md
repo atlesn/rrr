@@ -285,16 +285,21 @@ The internal RRR array will always preserve the location of the different elemen
 hash table, the array is always stored as it was first parsed.
 
 If the same message is to be converted back to raw data and sent over the network, let's say from the 
-IP module, the data will be written out excatly as it was received, including the quotes on the string.
+IP module, the data will be written out mostly as it was received, including the quotes on the string.
+Note that integer values always are represented internally with 64 bits (eight bytes). When exported,
+they will also be this big, there is no method of reducing their size. If it is important to preserve
+the sizes of integers, use the **blob** type instead. Note that multi-byte integers parsed using blobs
+will not undergo endian-conversion, they will always be represented in their original endian inside RRR. 
 
-It is also possible to for instance put such raw data into MQTT messages.
+The MQTT client module has the ability to export raw array values into PUBLISH message bodies.
 
 The Perl5 and Python3 modules have functionality for array manipulation if messages need to be modified
 or processed in some way inside of RRR.
 
 ### ARRAY BRANCHING
 
-Array branching (or array trees) allows a single definition to be used for different input data. If you for instance have a protocol with
+Array branching (or array trees) allows a single definition to be used for different input data. If you for instance
+have a protocol with
 different message types, an indicator byte at the beginning of each message can be used to identify which branch to use.
 
 An array with branches is just like a standard array with one or more IF blocks in between the values.
@@ -322,7 +327,8 @@ If the indicator byte is set to 1, we parse a 16 byte message.
 If it is two, we parse two 32 byte messages.
 In both cases, we expect a separator character at the end (like `ETX`, `CR`, `LF` etc.).
 
-After a branched array has been successfully parsed, all values which were encountered while we parsed and checked conditions reside in a single standard array. The receiver of these arrays must be adapted to receive all possible different arrays the array tree may produce.
+After a branched array has been successfully parsed, all values which were encountered while we parsed and checked
+conditions reside in a single standard array. The receiver of these arrays must be adapted to receive all possible different arrays the array tree may produce.
 
 When using branching, it's important to consider all possible outcomes.
 If we receive invalid data, we should branch to a block with the **err** value defined.
@@ -333,10 +339,11 @@ It is possible to use `AND` and `OR` as well, those are aliases for `&&` and `||
 
 A condition is considered to be true if it's expression evaluates to non-zero.
 
-Array trees may be specified in configuration files (outside instance definitions) with a header with a name like `{MY_ARRAY}`. The tree
+Array trees may be specified in configuration files (outside instance definitions) with a header with a name like
+`{MY_ARRAY}`. The tree
 must end with a `;` (this also goes for each `IF`, `ELSIF` or `ELSE` block).
-All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4` or reference
-an array from elsewhere in the configuration like `{MY_ARRAY}`.
+All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4`
+or reference an array from elsewhere in the configuration like `{MY_ARRAY}`.
 
 If the array tree is specified directly at the parameter, no newlines may occur within the tree (which may become messy).
 The terminating semicolon is optional when array trees are defined in a configuration parameter. 
@@ -365,8 +372,8 @@ is a problem or the messages are too big to fit in single datagrams, use TCP ins
 
 #### Usage example with barcode reader and ACK messages
 A simple setup using the IP module can be to process barcodes from a scanner and send ACK back. The IP information
-in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return a message to
-the IP module if we wish to send a reply.
+in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return
+a message to the IP module if we wish to send a reply.
 
 1. Scanner sends a barcode to RRR using UDP (for instance STX 'BLABLA128' ETX)
 2. IP module receives and parses the UDP packet
@@ -374,15 +381,16 @@ the IP module if we wish to send a reply.
 4. The contents of the reply ACK message is added to the message (for instance STX 'A' ETX)
 5. The IP Module sends the packet back to the scanner.
 
-In this configuration example, an instance of the IP module both gives data to the Perl module instance, and also reads data from it. The data
-which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`. If the syntax
-in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to worry about what
-they actually are when processing the message.
+In this configuration example, an instance of the IP module both gives data to the Perl module instance, and also reads
+data from it.
+The data which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`.
+If the syntax in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to
+worry about what they actually are when processing the message.
 
 When the Perl module generates the reply, it creates an additional array value called `reply`. The IP module is then configured
-to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together. While the RRR message
-still contains the original `barcode` field once it returns to the IP module, this field is ignored in this example. Messages from
-the barcode reader(s) are delivered to UDP port 3333.
+to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together.
+While the RRR message still contains the original `barcode` field once it returns to the IP module,
+this field is ignored in this example. Messages from the barcode reader(s) are delivered to UDP port 3333.
 
 The following RRR config script `rrr-devicemaster.conf` will set everything up:
 

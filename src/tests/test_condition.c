@@ -52,18 +52,59 @@ static const char *array_tree =
 
 static const char *array_tree_rpn = "be4#my_tag,IF({my_tag} 2 ==)be4#my_tag_two;ELSEbe4#my_tag_not_two;;";
 
+static const char *array_tree_misc_values = "ustr,sep1,istr,IF(1==1)blob1,REWIND1,str;;";
+static const char *array_tree_misc_values_input = "444\r-444\"blablabla\"";
+
+#define TREE_CLEANUP				\
+do {if (tree != NULL) {				\
+	rrr_array_tree_dump(tree);		\
+	rrr_array_tree_destroy(tree);	\
+}} while(0)
+
+#define TREE_INTERPRET(name)															\
+	do {if (rrr_array_tree_interpret_raw(&tree, name, strlen(name), RRR_QUOTE(name))) {	\
+		TEST_MSG("Array tree parsing failed\n");										\
+		ret |= 1;																		\
+	}}while(0)
+
+static int __rrr_test_condition_array_import_callback (
+		struct rrr_array *array,
+		void *arg
+) {
+	(void)(arg);
+
+	int ret = 0;
+
+	rrr_array_dump(array);
+
+	struct rrr_type_value *u = rrr_array_value_get_by_index(array, 0);
+	struct rrr_type_value *s = rrr_array_value_get_by_index(array, 2);
+
+	uint64_t u_value = u->definition->to_64(u);
+	if (u_value != 444) {
+		TEST_MSG("Mismatch for unsigned test value 444, value was %" PRIu64 "\n", u_value);
+		ret |= 1;
+	}
+
+	int64_t s_value = (int64_t) s->definition->to_64(s);
+	if (s_value != -444) {
+		TEST_MSG("Mismatch for signed test value -444, value was %" PRIi64 "\n", s_value);
+		ret |= 1;
+	}
+
+	rrr_array_clear(array);
+	return ret;
+}
+
 
 int rrr_test_condition (void) {
 	int ret = 0;
 
 	struct rrr_condition condition = {0};
-	struct rrr_parse_pos pos = {0};
-
-	rrr_parse_pos_init(&pos, condition_a, strlen(condition_a));
 
 	// Don't overwrite ret, or in 1's on failure and let all tests run
 
-	if (rrr_condition_parse(&condition, &pos)) {
+	if (rrr_condition_interpret_raw(&condition, condition_a, strlen(condition_a))) {
 		TEST_MSG("Condition parse test failed for expression '%s'\n", condition_a);
 		ret |= 1;
 	}
@@ -71,37 +112,39 @@ int rrr_test_condition (void) {
 
 	struct rrr_array_tree *tree = NULL;
 
-	rrr_parse_pos_init(&pos, array_tree, strlen(array_tree) + 1);
+	TREE_INTERPRET(array_tree);
+	TREE_CLEANUP;
 
-	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
-		TEST_MSG("Array tree parsing failed\n");
-		ret |= 1;
-	}
+	TREE_INTERPRET(array_tree_rpn);
+	TREE_CLEANUP;
+
+	TREE_INTERPRET(array_tree_misc_values);
+
 	if (tree != NULL) {
+		ssize_t parsed_bytes;
 		int ret_tmp;
-		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
-			TEST_MSG("Array tree was invalid return was %i\n", ret_tmp);
+		if ((ret_tmp = rrr_array_tree_import_from_buffer (
+				&parsed_bytes,
+				array_tree_misc_values_input,
+				strlen(array_tree_misc_values_input),
+				tree,
+				__rrr_test_condition_array_import_callback,
+				NULL
+		)) != 0) {
+			TEST_MSG("Array data import failed, return was %i\n", ret_tmp);
 			ret |= 1;
 		}
-		rrr_array_tree_dump(tree);
-		rrr_array_tree_destroy(tree);
-	}
 
-	rrr_parse_pos_init(&pos, array_tree_rpn, strlen(array_tree_rpn) + 1);
-
-	if (rrr_array_tree_definition_parse(&tree, &pos, "my_tree")) {
-		TEST_MSG("Array tree parsing failed\n");
-		ret |= 1;
-	}
-	if (tree != NULL) {
-		int ret_tmp;
-		if ((ret_tmp = rrr_array_tree_validate(tree)) != 0) {
-			TEST_MSG("Array tree was invalid, return was %i\n", ret_tmp);
+		if (parsed_bytes != (rrr_slength) strlen(array_tree_misc_values_input)) {
+			TEST_MSG("Not all bytes from input data was parsed %li vs %lu\n",
+					parsed_bytes,
+					strlen(array_tree_misc_values_input)
+			);
 			ret |= 1;
 		}
-		rrr_array_tree_dump(tree);
-		rrr_array_tree_destroy(tree);
 	}
+
+	TREE_CLEANUP;
 
 	return ret;
 }

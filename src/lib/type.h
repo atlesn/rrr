@@ -202,7 +202,6 @@ struct rrr_type_value {
 	rrr_length tag_length;
 	rrr_length import_length;
 	char *import_length_ref;
-	rrr_length import_elements;
 	rrr_length total_stored_length;
 	rrr_length element_count; // 1 = no array, 0 = auto
 	char *element_count_ref;

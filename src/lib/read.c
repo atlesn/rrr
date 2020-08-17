@@ -601,7 +601,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 	ssize_t skipped_bytes = 0;
 
 	while (wpos > 0) {
-		int ret = rrr_array_tree_parse_from_buffer (
+		int ret = rrr_array_tree_import_from_buffer (
 				&import_length,
 				pos,
 				wpos,

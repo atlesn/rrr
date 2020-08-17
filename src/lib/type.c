@@ -160,12 +160,12 @@ static int __rrr_type_import_int (
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	rrr_length array_size = node->import_elements;
-	rrr_length total_size = node->import_elements * node->import_length;
+	rrr_length array_size = node->element_count;
+	rrr_length total_size = node->element_count * node->import_length;
 
 	CHECK_END_AND_RETURN(total_size);
 
-	node->total_stored_length = node->import_elements * (rrr_length) sizeof(uint64_t);
+	node->total_stored_length = node->element_count * (rrr_length) sizeof(uint64_t);
 	node->data = malloc(node->total_stored_length);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_int\n");
@@ -188,7 +188,7 @@ static int __rrr_type_import_int (
 
 	*parsed_bytes = total_size;
 
-	node->total_stored_length = (rrr_length) sizeof(uint64_t) * node->import_elements;
+	node->total_stored_length = (rrr_length) sizeof(uint64_t) * node->element_count;
 	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
 
 	return RRR_TYPE_PARSE_OK;
@@ -214,7 +214,7 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 		RRR_BUG("data was not NULL in import_blob\n");
 	}
 
-	rrr_length total_size = node->import_length * node->import_elements;
+	rrr_length total_size = node->import_length * node->element_count;
 
 	CHECK_END_AND_RETURN(total_size);
 
@@ -1257,7 +1257,6 @@ int rrr_type_value_new (
 	value->tag_length = tag_length;
 	value->element_count = element_count;
 	value->import_length = import_length;
-	value->import_elements = element_count;
 	value->total_stored_length = stored_length;
 	value->definition = type;
 

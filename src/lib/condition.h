@@ -70,9 +70,14 @@ void rrr_condition_dump (
 		struct rrr_string_builder *string_builder,
 		const struct rrr_condition *condition
 );
-int rrr_condition_parse (
+int rrr_condition_interpret (
 		struct rrr_condition *target,
 		struct rrr_parse_pos *pos
+);
+int rrr_condition_interpret_raw (
+		struct rrr_condition *target,
+		const char *buf,
+		size_t buf_length
 );
 int rrr_condition_iterate (
 		const struct rrr_condition *condition,

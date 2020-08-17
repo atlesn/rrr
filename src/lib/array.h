@@ -55,23 +55,7 @@ struct rrr_array {
 	uint16_t version;
 };
 
-int rrr_array_parse_single_definition (
-		struct rrr_array *target,
-		const char *start,
-		const char *end
-);
-int rrr_array_validate_definition (
-		const struct rrr_array *target
-);
-int rrr_array_parse_data_into_value (
-		struct rrr_type_value *node,
-		rrr_length *parsed_bytes,
-		const char *pos,
-		const char *end,
-		int (*ref_resolve_callback)(rrr_length *result, const char *name, void *arg),
-		void *ref_resolve_callback_arg
-);
-int rrr_array_definition_clone (
+int rrr_array_clone_without_data (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
@@ -136,61 +120,15 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 		const struct rrr_array *definition,
 		const char *tag
 );
-/*
-int rrr_array_get_packed_length_from_buffer (
-		ssize_t *import_length,
-		const struct rrr_array *definition,
-		const char *buf,
-		ssize_t buf_length
-);
-*/
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 );
-/*
-int rrr_array_parse_from_buffer (
-		struct rrr_array *target,
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const struct rrr_array *definition
-);
-int rrr_array_parse_from_buffer_with_callback (
-		const char *buf,
-		ssize_t buf_len,
-		const struct rrr_array *definition,
-		int (*callback)(const struct rrr_array *array, void *arg),
-		void *callback_arg
-);
-
-int rrr_array_new_message_from_buffer (
-		struct rrr_msg_msg **target,
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array *definition
-);
-int rrr_array_new_message_from_buffer_with_callback (
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array *definition,
-		int (*callback)(struct rrr_msg_msg *message, void *arg),
-		void *callback_arg
-);
-*/
 int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
 		int *found_tags,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags
-);
-ssize_t rrr_array_new_message_estimate_size (
-		const struct rrr_array *definition
 );
 int rrr_array_new_message_from_collection (
 		struct rrr_msg_msg **final_message,

@@ -140,7 +140,7 @@ static struct rrr_array_node *__rrr_array_node_allocate (void) {
 	return node;
 }
 
-static int __rrr_array_branch_clone (
+static int __rrr_array_branch_clone_without_data (
 		struct rrr_array_branch **target,
 		const struct rrr_array_branch *source
 ) {
@@ -157,20 +157,20 @@ static int __rrr_array_branch_clone (
 	}
 
 	if (source->array_tree != NULL) {
-		if ((ret = rrr_array_tree_clone(&new_branch->array_tree, source->array_tree)) != 0) {
+		if ((ret = rrr_array_tree_clone_without_data(&new_branch->array_tree, source->array_tree)) != 0) {
 			goto out;
 		}
 	}
 
 	RRR_LL_ITERATE_BEGIN(&source->branches_elsif, const struct rrr_array_branch);
 		struct rrr_array_branch *new_branch_elsif = NULL;
-		if ((ret = __rrr_array_branch_clone(&new_branch_elsif, node)) != 0) {
+		if ((ret = __rrr_array_branch_clone_without_data(&new_branch_elsif, node)) != 0) {
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
 
 	if (source->tree_else != NULL) {
-		if ((ret = rrr_array_tree_clone(&new_branch->tree_else, source->tree_else)) != 0) {
+		if ((ret = rrr_array_tree_clone_without_data(&new_branch->tree_else, source->tree_else)) != 0) {
 			goto out;
 		}
 	}
@@ -185,7 +185,7 @@ static int __rrr_array_branch_clone (
 	return ret;
 }
 
-static int __rrr_array_node_clone (
+static int __rrr_array_node_clone_without_data (
 		struct rrr_array_node **target,
 		const struct rrr_array_node *source
 ) {
@@ -201,12 +201,12 @@ static int __rrr_array_node_clone (
 
 	new_node->rewind_count = source->rewind_count;
 
-	if ((ret = rrr_array_definition_clone(&new_node->array, &source->array)) != 0) {
+	if ((ret = rrr_array_clone_without_data(&new_node->array, &source->array)) != 0) {
 		goto out;
 	}
 
 	if (source->branch_if != NULL) {
-		if ((ret = __rrr_array_branch_clone(&new_node->branch_if, source->branch_if)) != 0) {
+		if ((ret = __rrr_array_branch_clone_without_data(&new_node->branch_if, source->branch_if)) != 0) {
 			goto out;
 		}
 	}
@@ -221,29 +221,7 @@ static int __rrr_array_node_clone (
 	return ret;
 }
 
-int rrr_array_tree_push_array_clear_source (
-		struct rrr_array_tree *target,
-		struct rrr_array *source
-) {
-	struct rrr_array_node *node = __rrr_array_node_allocate();
-	if (node == NULL) {
-		return 1;
-	}
-
-	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&node->array, source);
-
-	RRR_LL_PUSH(target, node);
-
-	return 0;
-}
-
-static int __rrr_array_tree_definition_parse (
-		struct rrr_array_tree **target,
-		struct rrr_parse_pos *pos,
-		const char *name
-);
-
-static int __rrr_array_tree_parse_if (
+static int __rrr_array_tree_interpret_if_or_elsif (
 		struct rrr_array_branch **target,
 		struct rrr_parse_pos *pos
 ) {
@@ -257,11 +235,11 @@ static int __rrr_array_tree_parse_if (
 		goto out;
 	}
 
-	if ((ret = rrr_condition_parse(&branch->condition, pos)) != 0) {
+	if ((ret = rrr_condition_interpret(&branch->condition, pos)) != 0) {
 		goto out_destroy_branch;
 	}
 
-	if ((ret = __rrr_array_tree_definition_parse(&branch->array_tree, pos, NULL)) != 0) {
+	if ((ret = rrr_array_tree_interpret(&branch->array_tree, pos, NULL)) != 0) {
 		goto out_destroy_branch;
 	}
 
@@ -274,7 +252,7 @@ static int __rrr_array_tree_parse_if (
 	return ret;
 }
 
-static int __rrr_array_tree_parse_if_node (
+static int __rrr_array_tree_interpret_conditional_node (
 		struct rrr_array_node **target,
 		struct rrr_parse_pos *pos
 ) {
@@ -288,8 +266,34 @@ static int __rrr_array_tree_parse_if_node (
 		goto out;
 	}
 
-	if ((ret = __rrr_array_tree_parse_if(&node->branch_if, pos)) != 0) {
+	if ((ret = __rrr_array_tree_interpret_if_or_elsif(&node->branch_if, pos)) != 0) {
 		goto out_destroy_node;
+	}
+
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		rrr_parse_ignore_spaces_and_increment_line(pos);
+		if (RRR_PARSE_CHECK_EOF(pos)) {
+			break;
+		}
+
+		if (rrr_parse_match_word(pos, "ELSIF")) {
+			struct rrr_array_branch *branch_elsif;
+			if ((ret = __rrr_array_tree_interpret_if_or_elsif(&branch_elsif, pos)) != 0) {
+				goto out_destroy_node;
+			}
+			RRR_LL_APPEND(&node->branch_if->branches_elsif, branch_elsif);
+		}
+		else {
+			break;
+		}
+	}
+
+	if (rrr_parse_match_word(pos, "ELSE")) {
+		struct rrr_array_tree *tree_else;
+		if ((ret = rrr_array_tree_interpret(&tree_else, pos, NULL)) != 0) {
+			goto out_destroy_node;
+		}
+		node->branch_if->tree_else = tree_else;
 	}
 
 	*target = node;
@@ -301,7 +305,350 @@ static int __rrr_array_tree_parse_if_node (
 		return ret;
 }
 
-#define CHECK_SPECIAL								\
+static int __rrr_array_tree_interpret_identifier_and_size_tag (
+		char **target,
+		const char **start,
+		rrr_length *parsed_bytes
+) {
+	int ret = RRR_ARRAY_TREE_OK;
+
+	char *result = NULL;
+
+	// Step over {
+	(*start)++;
+	(*parsed_bytes)++;
+
+	const char *tag_begin = (*start);
+	while (**start != '\0' && (RRR_PARSE_MATCH_C_LETTER(**start) || RRR_PARSE_MATCH_C_NUMBER(**start))) {
+		(*parsed_bytes)++;
+		(*start)++;
+	}
+
+	size_t length = (*start) - tag_begin;
+	if (length == 0) {
+		RRR_MSG_0("Missing tag name after { in defintion\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((**start) != '}') {
+		RRR_MSG_0("Missing } after tag name in defintion\n");
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	(*parsed_bytes)++;
+	(*start)++;
+
+	if ((result = malloc(length + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
+		ret = RRR_ARRAY_TREE_HARD_ERROR;
+		goto out;
+	}
+
+	memcpy(result, tag_begin, length);
+
+	result[length] = '\0';
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+	return ret;
+}
+
+static int __rrr_array_tree_interpret_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
+	if (*value == '\0') {
+		return 1;
+	}
+	*result = strtoull(value, (char **) end, 10);
+	if (*end == value) {
+		return 1;
+	}
+	return 0;
+}
+
+static int __rrr_array_tree_interpret_identifier_and_size (
+		const struct rrr_type_definition **type_return,
+		unsigned int *length_return,
+		char **length_ref_return,
+		unsigned int *item_count_return,
+		char **item_count_ref_return,
+		rrr_type_flags *flags_return,
+		rrr_length *bytes_parsed_return,
+		const char *start,
+		const char *end
+) {
+	int ret = 0;
+
+	rrr_length parsed_bytes = 0;
+	rrr_type_flags flags = 0;
+	const struct rrr_type_definition *type = NULL;
+
+	char *length_ref = NULL;
+	unsigned long long int length = 0;
+
+	char *item_count_ref = NULL;
+	unsigned long long int item_count = 1;
+
+	const char *integer_end = NULL;
+
+	*type_return = NULL;
+	*length_return = 0;
+	*length_ref_return = NULL;
+	*item_count_return = 0;
+	*item_count_ref_return = NULL;
+	*bytes_parsed_return = 0;
+	*flags_return = 0;
+
+	type = rrr_type_parse_from_string(&parsed_bytes, start, end);
+	if (type == NULL) {
+		RRR_MSG_0("Unknown type identifier in type definition here --> '%s'\n", start);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out_err;
+	}
+	start += parsed_bytes;
+
+	if (type->max_length > 0) {
+		if (start >= end || *start == '\0') {
+			RRR_MSG_0("Missing size for type '%s' in type definition\n", type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+
+		if (*start == '{') {
+			if ((ret = __rrr_array_tree_interpret_identifier_and_size_tag(&length_ref, &start, &parsed_bytes)) != 0) {
+				goto out_err;
+			}
+		}
+		else {
+			if (__rrr_array_tree_interpret_unsigned_integer_10(&integer_end, &length, start) != 0) {
+				RRR_MSG_0("Size argument '%s' in type definition '%s' was not a valid number\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out_err;
+			}
+
+			if (length > 0xffffffff) {
+				RRR_MSG_0("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out_err;
+			}
+
+			parsed_bytes += integer_end - start;
+			start = integer_end;
+
+			if (length <= 0) {
+				RRR_MSG_0("Size argument '%lli' in type definition '%s' must be >0\n",
+						length, type->identifier);
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out_err;
+			}
+		}
+
+		if (start >= end || *start == '\0') {
+			goto out_ok;
+		}
+
+		if (*start == 's' || *start == 'S' || *start == 'u' || *start == 'U') {
+			if (!RRR_TYPE_ALLOWS_SIGN(type->type)) {
+				RRR_MSG_0("Sign indicator '%c' found in type definition for type '%s' which does not support being signed\n",
+						*start, type->identifier);
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out_err;
+			}
+
+			if (*start == 's' || *start == 'S') {
+				RRR_TYPE_FLAG_SET_SIGNED(flags);
+			}
+
+			start++;
+			parsed_bytes++;
+		}
+		else if (RRR_TYPE_ALLOWS_SIGN(type->type)) {
+			RRR_TYPE_FLAG_SET_UNSIGNED(flags);
+		}
+	}
+	else {
+		if (*start != '\0' && *start != '#' && *start != '@') {
+			RRR_MSG_0("Extra data or size argument after type definition '%s' which has automatic size\n",
+					type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+	}
+
+	if (start >= end || *start == '\0') {
+		goto out_ok;
+	}
+
+	if (*start == '@') {
+		start++;
+		parsed_bytes++;
+
+		if (start >= end || *start == '\0') {
+			RRR_MSG_0("Item count missing after item count definition @ in type %s\n", type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+
+		if (*start == '{') {
+			if ((ret = __rrr_array_tree_interpret_identifier_and_size_tag(&item_count_ref, &start, &parsed_bytes)) != 0) {
+				goto out_err;
+			}
+		}
+		else {
+			if (__rrr_array_tree_interpret_unsigned_integer_10(&integer_end, &item_count, start) != 0) {
+				RRR_MSG_0("Item count argument '%s' in type definition '%s' was not a valid number\n",
+						start, type->identifier);
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out_err;
+			}
+
+			parsed_bytes += integer_end - start;
+		}
+
+		// start = integer_end; - Enable if more parsing is to be performed
+
+		if (item_count == 0) {
+			RRR_MSG_0("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
+					type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+		if (item_count > 0xffffffff) {
+			RRR_MSG_0("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
+					type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+		/*
+		 *  XXX  : It is not possible to allow multiple values for these types as multiple values
+		 *         in a node must have equal lengths
+		 *         && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG
+		 */
+		if ((item_count > 1 || item_count_ref != NULL) && type->max_length == 0) {
+			RRR_MSG_0("Item count definition @ found after type '%s' which cannot have multiple values\n",
+					type->identifier);
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+	}
+
+	out_ok:
+		*type_return = type;
+		*length_ref_return = length_ref;
+		*length_return = length;
+		*item_count_return = item_count;
+		*item_count_ref_return = item_count_ref;
+		*flags_return = flags;
+		*bytes_parsed_return = parsed_bytes;
+		return 0;
+
+	out_err:
+		RRR_FREE_IF_NOT_NULL(item_count_ref);
+		RRR_FREE_IF_NOT_NULL(length_ref);
+		return ret;
+}
+
+static int __rrr_array_tree_interpret_single_definition (
+		struct rrr_array *target,
+		const char *start,
+		const char *end
+) {
+	int ret = 0;
+
+	rrr_length parsed_bytes = 0;
+	const struct rrr_type_definition *type = NULL;
+	unsigned int length = 0;
+	char *length_ref = NULL;
+	unsigned int item_count = 0;
+	char *item_count_ref = NULL;
+	rrr_type_flags flags = 0;
+	const char *tag_start = NULL;
+	unsigned int tag_length = 0;
+
+	if ((ret = __rrr_array_tree_interpret_identifier_and_size (
+			&type,
+			&length,
+			&length_ref,
+			&item_count,
+			&item_count_ref,
+			&flags,
+			&parsed_bytes,
+			start,
+			end
+	)) != 0) {
+		RRR_MSG_0("Error while parsing type identifier and size\n");
+		goto out;
+	}
+
+	start += parsed_bytes;
+
+	if (*start == '#') {
+		start++;
+		tag_start = start;
+
+		while (*start != '\0') {
+			if (!RRR_PARSE_MATCH_C_LETTER(*start) && !RRR_PARSE_MATCH_C_NUMBER(*start)) {
+				RRR_MSG_0("Invalid character '%c' in tag name (decimal %u)\n", (*start), (unsigned char) (*start));
+				ret = RRR_ARRAY_TREE_SOFT_ERROR;
+				goto out;
+			}
+			tag_length++;
+			start++;
+		}
+
+		if (tag_length == 0) {
+			RRR_MSG_0("Missing tag name after #\n");
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	if (*start != '\0') {
+		RRR_MSG_0("Extra data after type definition here --> '%s'\n", start);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	if (length > type->max_length) {
+		RRR_MSG_0("Size argument in type definition '%s' is too large, max is '%u'\n",
+				type->identifier, type->max_length);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	struct rrr_type_value *template = NULL;
+
+	if (rrr_type_value_new (
+			&template,
+			type,
+			flags,
+			tag_length,
+			tag_start,
+			length,
+			length_ref,
+			item_count,
+			item_count_ref,
+			0
+	) != 0) {
+		RRR_MSG_0("Could not create value in rrr_array_parse_definition\n");
+		ret = RRR_ARRAY_TREE_HARD_ERROR;
+		goto out;
+	}
+
+	RRR_LL_APPEND(target,template);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(length_ref);
+	RRR_FREE_IF_NOT_NULL(item_count_ref);
+	return ret;
+}
+
+#define CHECK_KEYWORDS								\
 	do {int pos_orig = pos->pos;					\
 	if (rrr_parse_match_word(pos, "IF") ||			\
 		rrr_parse_match_word(pos, "ELSIF") ||		\
@@ -313,7 +660,7 @@ static int __rrr_array_tree_parse_if_node (
 		goto out;									\
 	}} while(0)
 
-static void __rrr_array_tree_parse_definition_node_check_end (
+static void __rrr_array_tree_interpret_node_check_end (
 		struct rrr_parse_pos *pos,
 		int *eof_found,
 		int *semicolon_found,
@@ -331,7 +678,7 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 		goto out;
 	}
 
-	CHECK_SPECIAL;
+	CHECK_KEYWORDS;
 
 	if (*(pos->data + pos->pos) == ',') {
 		*comma_found = 1;
@@ -344,7 +691,7 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 			goto out;
 		}
 
-		CHECK_SPECIAL;
+		CHECK_KEYWORDS;
 
 		goto out;
 	}
@@ -359,7 +706,7 @@ static void __rrr_array_tree_parse_definition_node_check_end (
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 }
 
-static int __rrr_array_tree_parse_definition_node (
+static int __rrr_array_tree_interpret_node (
 		int *semicolon_found,
 		struct rrr_array_node **target,
 		struct rrr_parse_pos *pos
@@ -379,7 +726,7 @@ static int __rrr_array_tree_parse_definition_node (
 	}
 
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		__rrr_array_tree_parse_definition_node_check_end (
+		__rrr_array_tree_interpret_node_check_end (
 				pos,
 				&eof_found,
 				semicolon_found,
@@ -439,11 +786,11 @@ static int __rrr_array_tree_parse_definition_node (
 			goto out_destroy;
 		}
 
-		if ((ret = rrr_array_parse_single_definition(&node->array, tmp, tmp + length)) != 0) {
+		if ((ret = __rrr_array_tree_interpret_single_definition(&node->array, tmp, tmp + length)) != 0) {
 			goto out_destroy;
 		}
 
-		__rrr_array_tree_parse_definition_node_check_end (
+		__rrr_array_tree_interpret_node_check_end (
 				pos,
 				&eof_found,
 				semicolon_found,
@@ -471,7 +818,7 @@ static int __rrr_array_tree_parse_definition_node (
 		return ret;
 }
 
-int __rrr_array_tree_parse_rewind (
+int __rrr_array_tree_interpret_rewind (
 		struct rrr_array_tree *tree,
 		struct rrr_parse_pos *pos
 ) {
@@ -529,7 +876,7 @@ int __rrr_array_tree_parse_rewind (
 	return ret;
 }
 
-static int __rrr_array_tree_definition_parse (
+int rrr_array_tree_interpret (
 		struct rrr_array_tree **target,
 		struct rrr_parse_pos *pos,
 		const char *name
@@ -561,59 +908,24 @@ static int __rrr_array_tree_definition_parse (
 			break;
 		}
 
-//		printf("parse tree at position: >>%s\n", pos->data + pos->pos);
-
 		if (rrr_parse_match_word(pos, "IF")) {
-//			printf("Found IF\n");
 			struct rrr_array_node *node;
-			if ((ret = __rrr_array_tree_parse_if_node(&node, pos)) != 0) {
+			if ((ret = __rrr_array_tree_interpret_conditional_node(&node, pos)) != 0) {
 				goto out_destroy;
 			}
 			RRR_LL_APPEND(tree, node);
-
-//			printf("parse tree at position after IF: >>%s\n", pos->data + pos->pos);
-
-			while (!RRR_PARSE_CHECK_EOF(pos)) {
-				rrr_parse_ignore_spaces_and_increment_line(pos);
-				if (RRR_PARSE_CHECK_EOF(pos)) {
-					break;
-				}
-
-//				printf("Check elsif\n");
-				if (rrr_parse_match_word(pos, "ELSIF")) {
-					struct rrr_array_branch *branch_elsif;
-					if ((ret = __rrr_array_tree_parse_if(&branch_elsif, pos)) != 0) {
-						goto out_destroy;
-					}
-					RRR_LL_APPEND(&(RRR_LL_LAST(tree)->branch_if->branches_elsif), branch_elsif);
-				}
-				else {
-					break;
-				}
-			}
-
-//			printf("Check else\n");
-			if (rrr_parse_match_word(pos, "ELSE")) {
-				struct rrr_array_tree *tree_else;
-				if ((ret = __rrr_array_tree_definition_parse(&tree_else, pos, NULL)) != 0) {
-					goto out_destroy;
-				}
-				RRR_LL_LAST(tree)->branch_if->tree_else = tree_else;
-			}
 		}
 		else if (rrr_parse_match_word(pos, "REWIND")) {
-			if ((ret = __rrr_array_tree_parse_rewind(tree, pos)) != 0) {
+			if ((ret = __rrr_array_tree_interpret_rewind(tree, pos)) != 0) {
 				goto out_destroy;
 			}
 		}
 
 		// Start array definition node
 		struct rrr_array_node *node;
-		if ((ret = __rrr_array_tree_parse_definition_node(&semicolon_found, &node, pos)) != 0) {
+		if ((ret = __rrr_array_tree_interpret_node(&semicolon_found, &node, pos)) != 0) {
 			goto out_destroy;
 		}
-
-//		printf("Node: %p, ptr_first: %p, ptr_last: %p\n", node, tree->ptr_first, tree->ptr_last);
 
 		if (RRR_LL_COUNT(&node->array) == 0) {
 			__rrr_array_node_destroy(node);
@@ -646,26 +958,7 @@ static int __rrr_array_tree_definition_parse (
 		return ret;
 }
 
-int rrr_array_tree_definition_parse (
-		struct rrr_array_tree **target,
-		struct rrr_parse_pos *pos,
-		const char *name
-) {
-	int ret = 0;
-
-	if ((ret = __rrr_array_tree_definition_parse (
-			target,
-			pos,
-			name
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_array_tree_definition_parse_raw (
+int rrr_array_tree_interpret_raw (
 		struct rrr_array_tree **target,
 		const char *data,
 		int data_length,
@@ -673,7 +966,7 @@ int rrr_array_tree_definition_parse_raw (
 ) {
 	struct rrr_parse_pos pos;
 	rrr_parse_pos_init(&pos, data, data_length);
-	return rrr_array_tree_definition_parse(target, &pos, name);
+	return rrr_array_tree_interpret(target, &pos, name);
 }
 
 static void __rrr_array_tree_dump (
@@ -799,142 +1092,6 @@ void rrr_array_tree_dump (
 	rrr_string_builder_clear(&string_builder);
 }
 
-struct rrr_array_reference_node {
-	RRR_LL_NODE(struct rrr_array_reference_node);
-	const struct rrr_type_value *value;
-};
-
-struct rrr_array_reference {
-	RRR_LL_HEAD(struct rrr_array_reference_node);
-};
-
-static int __rrr_array_reference_push (
-		struct rrr_array_reference *reference,
-		const struct rrr_type_value *value
-) {
-	struct rrr_array_reference_node *new_reference_value = malloc(sizeof(*new_reference_value));
-	if (new_reference_value == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_array_reference_push\n");
-		return 1;
-	}
-
-	memset(new_reference_value, '\0', sizeof(*new_reference_value));
-
-	new_reference_value->value = value;
-
-	RRR_LL_PUSH(reference, new_reference_value);
-
-	return 0;
-}
-
-static void __rrr_array_reference_pop (
-		struct rrr_array_reference *reference
-) {
-	struct rrr_array_reference_node *node = RRR_LL_POP(reference);
-	if (node == NULL) {
-		RRR_BUG("BUG: Tried to pop off empty array reference in __rrr_array_reference_pop\n");
-	}
-	free(node);
-}
-
-static void __rrr_array_reference_clear (
-		struct rrr_array_reference *reference
-) {
-	RRR_LL_DESTROY(reference, struct rrr_array_reference_node, free(node));
-}
-
-static int __rrr_array_validate_definition_reference_check_tag (
-		const struct rrr_array_reference *reference,
-		const struct rrr_array_reference_node *self,
-		const char *tag
-) {
-	RRR_LL_ITERATE_BEGIN(reference, const struct rrr_array_reference_node);
-		if (node == self) {
-			RRR_LL_ITERATE_BREAK();
-		}
-		if (node->value->tag != NULL) {
-			if (strcmp(node->value->tag, tag) == 0) {
-				return 0;
-			}
-		}
-	RRR_LL_ITERATE_END();
-
-	RRR_MSG_0("Could not resolve tag {%s}, no previous array value found with this name\n", tag);
-
-	return 1;
-}
-
-static int __rrr_array_validate_definition_reference (
-		const struct rrr_array_reference *reference
-) {
-	int ret = 0;
-
-	//struct rrr_array_reference_node *node = RRR_LL_LAST(reference);
-
-	if (RRR_LL_LAST(reference) == NULL) {
-		goto out;
-	}
-
-	/*
-	if (node->value->definition->max_length == 0 &&
-		node->value->definition->type != RRR_TYPE_MSG &&
-		node->value->definition->type != RRR_TYPE_STR &&
-		node->value->definition->type != RRR_TYPE_NSEP &&
-		node->value->definition->type != RRR_TYPE_ERR
-	) {
-		RRR_MSG_0("Type %s has dynamic size and cannot be at the end of a definition\n",
-				node->value->definition->identifier);
-		ret = 1;
-	}
-*/
-
-	RRR_LL_ITERATE_BEGIN(reference, const struct rrr_array_reference_node);
-		const struct rrr_type_value *value = node->value;
-
-		if (value->element_count_ref != NULL) {
-			ret |= __rrr_array_validate_definition_reference_check_tag(reference, node, value->element_count_ref);
-		}
-		if (value->import_length_ref != NULL) {
-			ret |= __rrr_array_validate_definition_reference_check_tag(reference, node, value->import_length_ref);
-		}
-
-		/*const struct rrr_type_value *prev_value = (prev != NULL ? prev->value : NULL);
-
-
-		if (prev_value != NULL) {
-			if (prev_value->definition->max_length == 0 &&
-				prev_value->definition->type != RRR_TYPE_STR &&
-				prev_value->definition->type != RRR_TYPE_NSEP &&
-				value->definition->max_length == 0 &&
-				value->definition->type != RRR_TYPE_STR
-			) {
-				RRR_MSG_0("Type %s cannot be followed type %s in array definition as we cannot know where the first ends, use a separator in between\n",
-						prev_value->definition->identifier, value->definition->identifier);
-				ret = 1;
-			}
-			else if (prev_value->definition->type == RRR_TYPE_FIXP) {
-				if ((RRR_TYPE_IS_BLOB(value->definition->type) ||
-					RRR_TYPE_IS_MSG(value->definition->type) ||
-					RRR_TYPE_IS_64(value->definition->type)) && (
-							!RRR_TYPE_IS_SEP(value->definition->type) &&
-							!RRR_TYPE_IS_STR(value->definition->type)
-					)
-				) {
-					RRR_MSG_0("Fixed point type cannot be followed type %s (binary data) in array definition as we cannot know where the fixed point ends if the binary data corresponds with ASCII characters, use a separator in between\n",
-							value->definition->identifier);
-					ret = 1;
-				}
-			}
-		}
-
-		prev = node;
-		*/
-	RRR_LL_ITERATE_END();
-
-	out:
-	return ret;
-}
-
 // 1: Check if return value from previous branch condition is FALSE or CONTINUE
 // 2: Proceed into tree if current condition return is TRUE or CONTINUE
 #define ITERATE_BRANCH_TREE_IF_TRUE(branch)													\
@@ -1037,155 +1194,6 @@ static int __rrr_array_tree_iterate (
 	return ret;
 }
 
-struct rrr_array_tree_branch_condition_validate_callback_data {
-	const struct rrr_array_reference *reference;
-	int result;
-};
-
-static int __rrr_array_tree_branch_condition_validate_callback (
-		const struct rrr_condition_op *op,
-		const char *value,
-		const char *tag,
-		void *arg
-) {
-	struct rrr_array_tree_branch_condition_validate_callback_data *callback_data = arg;
-
-	(void)(value);
-	(void)(op);
-
-	if (tag == NULL) {
-		return 0;
-	}
-
-	callback_data->result |= __rrr_array_validate_definition_reference_check_tag (
-			callback_data->reference,
-			NULL,
-			tag
-	);
-
-	return 0;
-}
-
-#define RRR_ARRAY_TREE_VALIDATE_CONDITION_STATE_TRUE_COMPLETE	(1<<0)
-#define RRR_ARRAY_TREE_VALIDATE_CONDITION_STATE_FALSE_COMPLETE	(1<<1)
-
-struct rrr_array_tree_validate_condition_states {
-	uint8_t *states;
-};
-
-struct rrr_array_tree_validate_callback_data {
-	struct rrr_array_reference reference;
-	int result;
-};
-
-int __rrr_array_tree_validate_rewind_callback (
-		rrr_length count,
-		void *arg
-) {
-	struct rrr_array_tree_validate_callback_data *callback_data = arg;
-	int ret = 0;
-
-	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->reference)) {
-		RRR_MSG_0("REWIND of length %" PRIrrrl " would rewind past beginning of array which now has %li positions\n",
-				count, RRR_LL_COUNT(&callback_data->reference));
-		ret = RRR_ARRAY_TREE_SOFT_ERROR;
-		goto out;
-	}
-
-	rrr_slength target = (rrr_slength) RRR_LL_COUNT(&callback_data->reference) - (rrr_slength) count;
-
-	while (RRR_LL_COUNT(&callback_data->reference) > target) {
-		__rrr_array_reference_pop(&callback_data->reference);
-	}
-
-	out:
-	return ret;
-}
-
-int __rrr_array_tree_validate_value_callback (
-		const struct rrr_type_value *value,
-		void *arg
-) {
-	struct rrr_array_tree_validate_callback_data *callback_data = arg;
-	int ret = 0;
-
-	if (__rrr_array_reference_push(&callback_data->reference, value) != 0) {
-		ret = RRR_ARRAY_TREE_HARD_ERROR;
-	}
-
-	return ret;
-}
-
-int __rrr_array_tree_validate_condition_callback (
-		const struct rrr_condition *condition,
-		void *arg
-) {
-	struct rrr_array_tree_validate_callback_data *callback_data = arg;
-	struct rrr_array_tree_branch_condition_validate_callback_data condition_callback_data = {
-			&callback_data->reference,
-			0
-	};
-
-	rrr_condition_iterate (
-			condition,
-			__rrr_array_tree_branch_condition_validate_callback,
-			&condition_callback_data
-	);
-	callback_data->result |= condition_callback_data.result;
-
-	return RRR_ARRAY_TREE_CONTINUE;
-}
-
-int __rrr_array_tree_validate_leaf_callback (
-		void *arg
-) {
-	struct rrr_array_tree_validate_callback_data *callback_data = arg;
-
-	callback_data->result |= __rrr_array_validate_definition_reference (
-			&callback_data->reference
-	);
-
-	if (RRR_LL_COUNT(&callback_data->reference) == 0) {
-		RRR_DBG_1("No array nodes left at array tree leaf while validating array\n");
-	}
-
-	return RRR_ARRAY_TREE_CONTINUE;
-}
-
-void __rrr_array_tree_validate_post_loop_callback (
-		int value_count_orig,
-		void *arg
-) {
-	struct rrr_array_tree_validate_callback_data *callback_data = arg;
-
-	while (RRR_LL_COUNT(&callback_data->reference) > value_count_orig) {
-		__rrr_array_reference_pop(&callback_data->reference);
-	}
-}
-
-int rrr_array_tree_validate (
-		const struct rrr_array_tree *tree
-) {
-	int ret = 0;
-
-	struct rrr_array_tree_validate_callback_data callback_data = {0};
-
-	ret = __rrr_array_tree_iterate (
-			tree,
-			0,
-			__rrr_array_tree_validate_rewind_callback,
-			__rrr_array_tree_validate_value_callback,
-			__rrr_array_tree_validate_condition_callback,
-			__rrr_array_tree_validate_leaf_callback,
-			__rrr_array_tree_validate_post_loop_callback,
-			&callback_data
-	);
-
-	__rrr_array_reference_clear(&callback_data.reference);
-
-	return ret | callback_data.result;
-}
-
 struct rrr_array_tree_import_callback_data {
 	struct rrr_array array;
 	const char *start; // Only for bug-check when rewinding
@@ -1203,7 +1211,7 @@ int __rrr_array_tree_import_rewind_callback (
 	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->array)) {
 		RRR_MSG_0("Attempt to REWIND %" PRIrrrl " positions past beginning of array which currently has %li elements, check configuration\n",
 				count, RRR_LL_COUNT(&callback_data->array));
-		return RRR_ARRAY_SOFT_ERROR;
+		return RRR_ARRAY_TREE_SOFT_ERROR;
 	}
 
 	rrr_slength target = (rrr_slength) RRR_LL_COUNT(&callback_data->array) - (rrr_slength) count;
@@ -1211,8 +1219,8 @@ int __rrr_array_tree_import_rewind_callback (
 	rrr_length total_length = 0;
 	while (RRR_LL_COUNT(&callback_data->array) > target) {
 		struct rrr_type_value *value = RRR_LL_POP(&callback_data->array);
-		callback_data->pos -= value->import_length * value->import_elements;
-		total_length += value->import_length * value->import_elements;
+		callback_data->pos -= value->import_length * value->element_count;
+		total_length += value->import_length * value->element_count;
 		if (callback_data->pos < callback_data->start) {
 			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
 		}
@@ -1225,36 +1233,51 @@ int __rrr_array_tree_import_rewind_callback (
 	return ret;
 }
 
-int __rrr_array_tree_import_value_ref_resolve_callback (
+int __rrr_array_tree_import_value_resolve_ref (
 		rrr_length *result,
-		const char *name,
-		void *arg
+		const struct rrr_array *source,
+		const char *name
 ) {
-	struct rrr_array_tree_import_callback_data *callback_data = arg;
-
-	RRR_LL_ITERATE_BEGIN_REVERSE(&callback_data->array, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN_REVERSE(source, struct rrr_type_value);
 		if (node->tag != NULL && strncmp(name, node->tag, node->tag_length) == 0) {
 			uint64_t result_tmp = node->definition->to_64(node);
 			if (result_tmp > RRR_LENGTH_MAX) {
 				RRR_MSG_0("Evaluation of reference '%s' resulted in a value of %" PRIu64 " while maximum value is %" PRIrrrl "\n",
 						name, result_tmp, RRR_LENGTH_MAX);
-				return RRR_ARRAY_SOFT_ERROR;
+				return RRR_ARRAY_TREE_SOFT_ERROR;
 			}
 			*result = result_tmp;
-			return RRR_ARRAY_OK;
+			return RRR_ARRAY_TREE_OK;
 		}
 	RRR_LL_ITERATE_END();
 
 	RRR_MSG_0("Failed to find tag '%s' while resolving reference\n", name);
 
-	return RRR_ARRAY_SOFT_ERROR;
+	return RRR_ARRAY_TREE_SOFT_ERROR;
 }
+
+#define RESOLVE_REF(target,ref)																			\
+	do {if (new_value->ref != NULL) {																	\
+		if ((ret = __rrr_array_tree_import_value_resolve_ref (											\
+				&new_value->target, target_array, new_value->ref										\
+		)) != 0) {																						\
+			goto out;																					\
+		}																								\
+		RRR_FREE_IF_NOT_NULL(new_value->ref);															\
+		if (new_value->target == 0) {																	\
+			RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n");		\
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;															\
+			goto out;																					\
+		}																								\
+	}} while (0)
 
 int __rrr_array_tree_import_value_callback (
 		const struct rrr_type_value *value,
 		void *arg
 ) {
 	struct rrr_array_tree_import_callback_data *callback_data = arg;
+	struct rrr_array *target_array = &callback_data->array;
+
 	int ret = 0;
 
 	struct rrr_type_value *new_value = NULL;
@@ -1262,17 +1285,64 @@ int __rrr_array_tree_import_value_callback (
 		goto out;
 	}
 
+	if (new_value->definition->import == NULL) {
+		RRR_BUG("BUG: No convert function found for type %d\n", new_value->definition->type);
+	}
+
+	if (new_value->data != NULL) {
+		RRR_BUG("node->data was not NULL in __rrr_array_tree_import_data_into_value\n");
+	}
+
+	RESOLVE_REF(import_length,import_length_ref);
+	RESOLVE_REF(element_count,element_count_ref);
+
+	if (new_value->import_length == 0 && new_value->definition->max_length != 0) {
+		RRR_MSG_0("Import length was %" PRIrrrl " while importing array value of type %s, must be non-zero\n",
+				new_value->import_length, new_value->definition->identifier);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	if (new_value->element_count == 0) {
+		RRR_MSG_0("Element count was %" PRIrrrl " while importing array value of type %s, must be non-zero\n",
+				new_value->element_count, new_value->definition->identifier);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
+	if (new_value->import_length > new_value->definition->max_length) {
+		RRR_MSG_0("Import length was %" PRIrrrl " while maximum is %" PRIrrrl " while importing array value of type %s\n",
+				new_value->import_length, new_value->definition->max_length, new_value->definition->identifier);
+		ret = RRR_ARRAY_TREE_SOFT_ERROR;
+		goto out;
+	}
+
 	rrr_length parsed_bytes = 0;
-	if ((ret = rrr_array_parse_data_into_value (
+	if ((ret = new_value->definition->import (
 			new_value,
 			&parsed_bytes,
 			callback_data->pos,
-			callback_data->end,
-			__rrr_array_tree_import_value_ref_resolve_callback,
-			callback_data
+			callback_data->end
 	)) != 0) {
+		if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+			goto out;
+		}
+		else if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
+			RRR_MSG_0("Invalid data in type conversion\n");
+		}
+		else {
+			RRR_MSG_0("Hard error while importing data in __rrr_array_tree_import_data_into_value, return was %i\n", ret);
+			ret = RRR_ARRAY_TREE_HARD_ERROR;
+		}
 		goto out;
 	}
+
+	if (parsed_bytes == 0) {
+		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
+	}
+
+	RRR_DBG_3("Imported a value of type %s size %" PRIrrrl "x%" PRIrrrl "\n",
+			new_value->definition->identifier, new_value->import_length, new_value->element_count);
 
 	callback_data->pos += parsed_bytes;
 
@@ -1297,13 +1367,13 @@ static int __rrr_array_tree_import_condition_name_evaluate_callback (
 		if (node->tag != NULL && strncmp(node->tag, name, node->tag_length) == 0) {
 			*result = node->definition->to_64(node);
 			*is_signed = RRR_TYPE_FLAG_IS_SIGNED(node->flags);
-			return RRR_ARRAY_OK;
+			return RRR_ARRAY_TREE_OK;
 		}
 	RRR_LL_ITERATE_END();
 
 	RRR_MSG_0("Array tag '%s' could not be resolved while parsing input data. Check configuration and REWIND usage.\n", name);
 
-	return RRR_ARRAY_SOFT_ERROR;
+	return RRR_ARRAY_TREE_SOFT_ERROR;
 }
 
 int __rrr_array_tree_import_condition_callback (
@@ -1345,7 +1415,7 @@ int __rrr_array_tree_import_leaf_callback (
 	return 0;
 }
 
-int rrr_array_tree_clone (
+int rrr_array_tree_clone_without_data (
 		struct rrr_array_tree **target,
 		const struct rrr_array_tree *source
 ) {
@@ -1360,7 +1430,7 @@ int rrr_array_tree_clone (
 	struct rrr_array_node *node_tmp = NULL;
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_array_node);
-		if ((ret = __rrr_array_node_clone(&node_tmp, node)) != 0) {
+		if ((ret = __rrr_array_node_clone_without_data(&node_tmp, node)) != 0) {
 			goto out;
 		}
 		RRR_LL_PUSH(new_tree, node_tmp);
@@ -1376,7 +1446,7 @@ int rrr_array_tree_clone (
 	return ret;
 }
 
-int rrr_array_tree_parse_from_buffer (
+int rrr_array_tree_import_from_buffer (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -1418,67 +1488,3 @@ int rrr_array_tree_parse_from_buffer (
 	return ret;
 }
 
-
-struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data {
-	const char *topic;
-	ssize_t topic_length;
-	int (*callback)(struct rrr_msg_msg *message, void *arg);
-	void *callback_arg;
-};
-
-static int __rrr_array_tree_new_message_from_buffer_callback_intermediate (
-		struct rrr_array *array,
-		void *arg
-) {
-	struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_msg_msg *message = NULL;
-	if ((ret = rrr_array_new_message_from_collection (
-			&message,
-			array,
-			rrr_time_get_64(),
-			callback_data->topic,
-			callback_data->topic_length
-	)) != 0) {
-		RRR_MSG_0("Could not create message in __rrr_array_tree_new_message_from_buffer_callback_intermediate return was %i\n", ret);
-		return 1;
-	}
-
-	return callback_data->callback(message, callback_data->callback_arg);
-}
-
-int rrr_array_tree_new_message_from_buffer (
-		ssize_t *parsed_bytes,
-		const char *buf,
-		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
-		const struct rrr_array_tree *tree,
-		int (*callback)(struct rrr_msg_msg *message, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	struct rrr_array_tree_new_message_from_buffer_callback_intermediate_data callback_data = {
-			topic,
-			topic_length,
-			callback,
-			callback_arg
-	};
-
-	if ((ret = rrr_array_tree_parse_from_buffer (
-			parsed_bytes,
-			buf,
-			buf_len,
-			tree,
-			__rrr_array_tree_new_message_from_buffer_callback_intermediate,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}

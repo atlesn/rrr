@@ -184,7 +184,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		// allows simple array definition to be specified without ; at the end.
 		target_str_tmp[definition_length] = ';';
 
-		if (rrr_array_tree_definition_parse_raw (
+		if (rrr_array_tree_interpret_raw (
 				&new_tree,
 				target_str_tmp,
 				definition_length + 1, // DO NOT use strlen here, string no longer has \0
@@ -210,7 +210,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 			goto out;
 		}
 
-		if ((ret = rrr_array_tree_clone(&new_tree, array_tree)) != 0) {
+		if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
 			goto out;
 		}
 	}

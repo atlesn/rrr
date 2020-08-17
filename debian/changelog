@@ -1,3 +1,9 @@
+rrr (1.10-2) buster; urgency=medium
+
+  * Fix MQTT array data parsing from PUBLISH which did not work
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 17 Aug 2020 18:45:31 +0200
+
 rrr (1.10-1) buster; urgency=medium
 
   * Fixes in array tree framework and IP module
