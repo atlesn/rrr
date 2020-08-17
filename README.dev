@@ -107,11 +107,190 @@ In addition, one must specify the `load()` and `unload()` functions. These are c
 before unloading it. That means they are not called for each instance. If a module is dependent on some external library which needs to
 be initialized, this may be done in these functions.
 
-The functions are called from different contexts and at different points in time.
-- `preload`, `poststop`: Run before/after any threads starts and after all threads have stopped (unless they are ghosts, see below)
-- `thread_entry`: The only function which is actually run by the thread of the instance. It should contain an infinite loop.
-- `test_config`, `inject`: Used by test suite only
-- `cancel_function`: Called by the watchdog thread of the instance if it hangs. If left unspecified, only `pthread_cancel` is called. 
+## Modules, threads and instances
+
+The RRR threads use three different frameworks to operate. The lower level frameworks threads.c and modules.c operate independently. The
+instances.c framework use both of these to load module files (.so) using the modules framework and start them as threads using the threads
+framework. The instances framework is also responsible for controlling configuration parameters.
+
+- threads.c
+  - Lower level thread handling and watchdog functions
+  - Starting, stopping, signalling and monitoring of threads through watchdog threads
+  - Used both by main() to start threads an also by some individual modules which starts new threads themselves
+
+- modules.c
+  - Loads modules from (.so) files and finds symbols
+  - Used by main() and cmodule framework.
+
+- instances.c
+  - One RRR instance is created for every section in the configuration file. The instane is a combination of a module and a thread along
+    with other frameworks.
+  - Uses threads.c and modules.c to start RRR instances of the modules based on configuration data.
+  - An intermediate thread entry function allocates common RRR functionallity used by the different modules
+    - The cmodule framework (config-source-process logic) is loaded for all threads (Perl5, Python3 etc. use this)
+    - Message broker handle is registered, used by the modules to post messages to readers
+    - Poll collection is initialized, used to read data from senders
+    - Statistics handle is registered
+
+Each configuration file loaded by a single RRR program is run by it's own fork. This forking does not have any dedicated
+framework, it is handled mostly in rrr.c and main.c. There is however a global fork handling framework, fork.c, which wraps the
+forking functionallity of the operating system. This framework keeps track of which child processes a parent process has, and
+takes care of forwarding signals and watiing (periodically called functions).
+
+The functions defined in each module are called from different contexts and at different points in time.
+
+- `preload`, `poststop`, `cancel_function`: Run before a thread starts and after all threads have stopped. If a thread is ghost, the poststop call
+  will be postponed. These are handled by the threads framework.
+
+- `cancel_function` - If a cancel function is specified, this will be run instead of calling pthread_cancel() if a watchdog senses that it's thread is hung.
+  The threads framework is responsible for these.
+
+- `thread_entry`: The only function which is actually run by the thread of the instance. It should contain an infinite loop. Part of the 
+  instances framework.
+
+- `test_config`, `inject`: Used by test suite only, part of the instances framework.
+
+## Important frameworks
+
+The different frameworks are used both by RRR main() and instances framwork, and they are in some cases used stand-alone in different modules.
+
+- rrr_config.c
+  - Global configuration from command line parameters, like debuglevels
+
+- log.c, log.h
+  - Almost all source files are tightly coupled to these files (unless all logging is removed)
+  - Handles the widely used log macros
+  - Others may register handlers to receive log messages (like the journal module)
+  - Global process-shared locking
+
+- linked_list.h
+  - Widely used set of macros to implement linked list functionallity
+  - Iteration, manipulation, destruction etc.
+
+- threads.c (see previous chapter)
+  - Stand-alone framework to deal with threads
+
+- modules.c (see previous chapter)
+  - Stand-alone framework to deal loading .so files
+
+- common.c - Signalling, exit handler
+  - Global state (per fork)
+  - Frameworks which need to check for signals may register a handler with the signal framework
+  - Exit handlers are used to clean up after 3rd party libraries to easy memory leak debugging
+
+- fork.c
+  - Handles forking, shutdown and waiting. Used both by main() and some modules.
+  - Memory owned by main(), only one integer is global state which is used to set signal pending flag
+  - Registers with signal framework to catch SIGCHLD
+
+- mmap_channel.c
+  - Used by individual modules to communicate with child worker forks
+  - A round robin buffer wrapped in a read/write like interface
+
+- configuration.c
+  - Parses configuration file, creates instance config data for every section which is used by instances.c
+  - Extracts all parameters (var=val pairs) without checking any names etc.
+  - Parses loose array trees which modules may find and use when they start and configure themselves
+
+- settings.c
+  - Lower level module for handling settings
+  - Has helper functions for finding and interpreting parameters
+
+- buffer.c
+  - Linked list buffer with some high level functions like memory management
+  - Callback-style interface, locks are held when inside callback to provide memory fence
+  - Functions for searching/iterating, delete individual elements
+  - Nicknamed FIFO buffer
+  - Can store any data
+
+- rrr_msg_holder - Internal struct, not network safe
+  - Usually holds an rrr_msg_msg entry. The framework does not couple with any particular message type, but
+    currently only standard RRR messages are used.
+  - May contain IP address information 
+  - Used by message_broker.c to hold messages being passed between instances
+  - Has locking to provice memory fence and shared ownership using user count logic
+
+- message_broker.c
+  - Started by main()
+  - Uses FIFO buffer to create output buffers for each module
+  - Each thread registers itself and a handle (ID-number) is created which is safe to use even if the
+    buffer it points to has been destroyed
+  - Instances find other buffers using these handles and polls from them
+  - Allocates and destroy rrr_msg_holder
+
+- type.c
+  - Type system used by the array framework
+  - Parse input data for the different type, perform endian conversion, export values etc.
+
+- array.c
+  - Widely used structure to store data from RRR array messages in an intermediate structure
+  - May act as a _definition_ before any data has been parsed, only describing the values it
+    should be filled with
+  - Manipulate values, add, remove etc. (is a simple linked list)
+  - Export data back to RRR message packed format
+
+- array_tree.c
+  - Using a tree hirarchy, combine conditional branches with array definitions to performed
+    complex interpretation of input data
+  - Trees cannot be exported. When a tree is used to parse input data, a plain rrr_array
+    is produced.
+
+- messages (multiple files) - Network safe structures
+  - The base message is an rrr_msg which has a header with size, type and CRC32 checksum
+  - Used both internally and sent over networks
+  - rrr_msg_msg is the main RRR message which can hold either an array or data, as well as an MQTT topic
+  - rrr_msg_setting holds settings (from settings.c)
+  - rrr_msg_log holds log entries, usually sent from child worker forks to main
+  - rrr_msg_addr is used to pass IP address information along with and rrr_msg_msg when it
+    is not in an rrr_msg_holder structure
+  - Endian conversion and checksum functions
+  - Messages may have dynamic length, the needed space for data is allocated in addition to
+    the size of the struct being used.
+  - Messages have no pointers, they are freed using just free()
+  - Can be stored in rrr_msg_holder whos destroy function calls free() on it's data pointer
+
+- poll_helper.c
+  - Helper framework to assist an instance looking up other instances and polling messages from them
+    using the message broker.
+  - Does topic filtering if specified in configuration (couples with rrr_msg_msg)
+
+- instances.c (see previous chapter)
+  - Works as a controller, couples with multiple frameworks
+
+- rrr_socket.c
+  - Global per-fork state
+  - Keeps track of all open sockets and shuts down any left open on program exit
+  - The fork framework use this state to shut down sockets from the parent process after forking
+  - Some sister files provide different kind of helper functions to wrap socket-related complexity, these
+    are coupled with frameworks like the message framework.
+
+- ip.c
+  - Provide helper functions for IP communication
+  - Has graylisting for TCP hosts which does not reply
+  - Should be combined with socket framework, nothing done here is actually IP-specific
+
+- read.c
+  - Provides logic to store data read from a client across multiple read calls
+  - Users must provide a pre-parse function called `get_target_size` which returns the number of bytes
+    the read function should read before calling the `final` callback
+  - Any overshoot bytes are stored and re-used in the next call
+  - Separates different UDP connections with the read session collection sister framework
+
+- net_transport.c
+  - Wrapper framework for plaintext TCP and TLS TCP
+
+Some other high level frameworks used by individual modules:
+
+- HTTP client/server
+- MQTT
+- Perl5
+- Python3
+- MariaDB/MySQL
+- UDPstream
+- C-module
+- passwd
+
+In addition, there are multiple smaller utilities.
 
 ## Writing to output buffer
 
@@ -254,16 +433,15 @@ If one or more threads exit, all threads are stopped and restarted automatically
 
 ## Thread data
 
-When a thread/instance starts with the specified entry function, it receives a `rrr_thread_start_data` struct. It contains a pointer to the
-command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 
-thread to `instance_thread_data` struct. 
+When a thread/instance starts with the specified entry function, it receives an `rrr_thread` struct. This has a pointer which is pre-
+initialized with a `rrr_instance_runtime_data` struct. There are shortcut pointers here to command line argument struct from the main
+program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`). The thread must free the `rrr_thread` struct
+before shutting down (done by instance framework in intermediate thread entry function).
 
-There is a slot of 8kB freely available in `instance_thread_data` for a thread to use which does not have to be de-allocated on exit,
-it is called `char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
-address.
-
-If your module uses locks and buffers, these should be placed in this memory. DO NOT destroy locks when exiting the module if they are used
-by one or more poll functions.
+There is a slot of 8kB freely available in `rrr_instance_thread_data` which the different modules use to hold their state, this is called
+`char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory` address.
+This allows us to always find the private data of our module event if we are in some callbacks where only the `rrr_thread` struct or the
+`rrr_instance_thread_data` struct is available.
 
 Use the pthread framework `pthread_cleanup_push()` and `pthread_cleanup_pop()` to clean up a threads data on exit, look in the
 existing modules how they do this. This will make sure data is cleaned up also if the thread is cancelled the hard way. If a thread
