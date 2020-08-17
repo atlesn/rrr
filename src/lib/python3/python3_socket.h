@@ -24,23 +24,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_headers.h"
 
-#include "../socket/rrr_socket_msg.h"
+#include "../messages/msg.h"
 
 // Tell a python3 fork to start calling it's function continuously without
 // sending data to it
-#define RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING \
-	RRR_SOCKET_MSG_CTRL_F_USR_A
+#define RRR_PYTHON3_MSG_CTRL_START_SOURCING \
+	RRR_MSG_CTRL_F_USR_A
 
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_mmap_channel;
 struct rrr_cmodule_worker;
 
 PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker);
 int rrr_python3_socket_send (
 		PyObject *socket,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
 );
 
 #endif /* RRR_PYTHON3_SOCKET_H */

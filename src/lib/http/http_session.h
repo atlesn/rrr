@@ -36,7 +36,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	const struct sockaddr *sockaddr,			\
 	socklen_t socklen,							\
 	ssize_t overshoot_bytes,					\
+	rrr_http_unique_id unique_id,				\
 	void *arg
+
+#define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
+	rrr_http_unique_id *result,								\
+	void *arg
+
+#define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS	\
+	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
 struct rrr_http_session {
 	int is_client;
@@ -57,7 +65,7 @@ int rrr_http_session_transport_ctx_set_endpoint (
 		struct rrr_net_transport_handle *handle,
 		const char *endpoint
 );
-int rrr_http_session_transport_ctx_client_new (
+int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_net_transport_handle *handle,
 		enum rrr_http_method method,
 		const char *user_agent
@@ -79,17 +87,29 @@ int rrr_http_session_query_field_add (
 void rrr_http_session_query_fields_dump (
 		struct rrr_http_session *session
 );
+int rrr_http_session_set_keepalive (
+		struct rrr_http_session *session,
+		int set
+);
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host
+);
+int rrr_http_session_transport_ctx_raw_request_send (
+		struct rrr_net_transport_handle *handle,
+		const char *raw_request_data,
+		size_t raw_request_size
 );
 int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
 		uint64_t timeout_stall_us,
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
+		rrr_http_unique_id unique_id,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg
+		void *callback_arg,
+		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_arg
 );
 
 #endif /* RRR_HTTP_SESSION_H */

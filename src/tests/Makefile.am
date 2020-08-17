@@ -12,15 +12,15 @@ noinst_PROGRAMS = test make_test_data send_ip ${python}
 
 test_LDFLAGS = -ldl -lpthread -lm -L../lib -lrrr -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
 test_SOURCES = test.c ../main.c \
-	test_usleep.c test_fixp.c test_inet.c
+	test_usleep.c test_fixp.c test_inet.c test_condition.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
-	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
+	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
 
-make_test_data_SOURCES = make_test_data.c ../lib/socket/rrr_socket_msg_checksum.c ../lib/crc32.c ../lib/rrr_endian.c
+make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = 
 
 send_ip_SOURCES = send_ip.c

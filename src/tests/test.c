@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../build_timestamp.h"
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
-#include "../lib/posix.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
 #include "../lib/version.h"
@@ -39,7 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/rrr_config.h"
+#include "../lib/util/posix.h"
 
+#include "test_condition.h"
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
@@ -56,15 +57,15 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_test_result(struct rrr_instance_metadata_collection *instances) {
-	struct rrr_instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
+int main_get_test_result(struct rrr_instance_collection *instances) {
+	struct rrr_instance *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
-	void *handle = instance->dynamic_data->dl_ptr;
+	void *handle = instance->module_data->dl_ptr;
 
 	dlerror();
 
@@ -108,6 +109,12 @@ int rrr_test_library_functions (void) {
 
 	// OR all the return values, don't stop if a test fails
 
+	TEST_BEGIN("rrr_condition") {
+		ret_tmp = rrr_test_condition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("rrr_posix_usleep") {
 		ret_tmp = rrr_test_usleep();
 	} TEST_RESULT(ret_tmp == 0);
@@ -130,7 +137,8 @@ int rrr_test_library_functions (void) {
 }
 
 int main (int argc, const char **argv) {
-	struct rrr_signal_handler *signal_handler = NULL;
+	struct rrr_signal_handler *signal_handler_fork = NULL;
+	struct rrr_signal_handler *signal_handler_interrupt = NULL;
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
@@ -152,8 +160,8 @@ int main (int argc, const char **argv) {
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	signal_handler = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
-	signal_handler = rrr_signal_handler_push(signal_interrupt, NULL);
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler_interrupt = rrr_signal_handler_push(signal_interrupt, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -222,19 +230,14 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	struct rrr_instance_metadata_collection *instances;
-	TEST_BEGIN("init instances") {
-		if (rrr_instance_metadata_collection_new (&instances) != 0) {
-			ret = 1;
-		}
-	} TEST_RESULT(ret == 0);
+	struct rrr_instance_collection instances = {0};
 
 	if (ret != 0) {
 		goto out_cleanup_config;
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (rrr_instance_process_from_config(instances, config, library_paths) != 0) {
+		if (rrr_instance_create_from_config(&instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -245,9 +248,9 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (rrr_main_start_threads (
+		if (rrr_main_create_and_start_threads (
 				&collection,
-				instances,
+				&instances,
 				config,
 				&cmd,
 				&stats_engine,
@@ -275,24 +278,22 @@ int main (int argc, const char **argv) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
+		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
 
-		ret = main_get_test_result(instances);
+		ret = main_get_test_result(&instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
-		rrr_main_threads_stop(collection, instances);
+		rrr_main_threads_stop_and_destroy(collection);
 	} TEST_RESULT(ret == 0);
 
-	rrr_thread_destroy_collection(collection, 0);
-
 	out_cleanup_instances:
-		rrr_instance_metadata_collection_destroy(instances);
+		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite
 		//rrr_instance_unload_all(instances);
@@ -314,7 +315,8 @@ int main (int argc, const char **argv) {
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:
-		rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler_interrupt);
+		rrr_signal_handler_remove(signal_handler_fork);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();

@@ -29,12 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_constants.h"
 
 #include "../rrr_strerror.h"
-#include "../posix.h"
 #include "../log.h"
-#include "../linked_list.h"
 #include "../read.h"
-#include "../rrr_time.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client

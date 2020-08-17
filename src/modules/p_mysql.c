@@ -33,22 +33,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/poll_helper.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
-#include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
-#include "../lib/linked_list.h"
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/rrr_mysql.h"
 #include "../lib/string_builder.h"
 #include "../lib/message_broker.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_collection.h"
 
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506
@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Fix URI support
 
 struct mysql_data {
-	struct rrr_ip_buffer_entry_collection input_buffer;
+	struct rrr_msg_msg_holder_collection input_buffer;
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
@@ -133,7 +133,7 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->column_tags);
 	rrr_map_clear(&data->blob_write_columns);
 
-	rrr_ip_buffer_entry_collection_clear(&data->input_buffer);
+	rrr_msg_msg_holder_collection_clear(&data->input_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->mysql_server);
 	RRR_FREE_IF_NOT_NULL(data->mysql_user);
@@ -159,7 +159,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_ip_buffer_entry *entry);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_msg_holder *entry);
 };
 
 /* Check order with function pointers */
@@ -328,7 +328,7 @@ int colplan_array_bind_execute (
 		struct mysql_data *mysql_data,
 		MYSQL_STMT *stmt,
 		int column_count_from_prepare,
-		const struct rrr_ip_buffer_entry *entry
+		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
@@ -532,7 +532,7 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 	return ret;
 }
 
-int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config *config) {
+int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	int yesno = 0;
@@ -562,7 +562,6 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 	else {
 		data->strip_array_separators = yesno;
@@ -610,12 +609,15 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		exit(EXIT_FAILURE);
 	}
 
+	// Reset any NOT_FOUND
+	ret = 0;
+
 	out:
 	RRR_FREE_IF_NOT_NULL(mysql_colplan);
 	return ret;
 }
 
-int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config *config) {
+int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
@@ -636,7 +638,7 @@ int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config *confi
 	return ret;
 }
 
-int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
+int parse_config(struct mysql_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	// These values are parsed by sub functions
@@ -718,27 +720,27 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 }
 
 int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mysql_data *mysql_data = thread_data->private_data;
 
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
 
-	rrr_ip_buffer_entry_incref_while_locked(entry);
+	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	return 0;
 }
 
-int mysql_save(const struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
+int mysql_save(const struct rrr_msg_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
 	if (mysql_data->mysql_connected != 1) {
 		return 1;
 	}
 
-	const struct rrr_message *message = entry->message;
+	const struct rrr_msg_msg *message = entry->message;
 
 	int is_unknown = 0;
 	int colplan_index = COLUMN_PLAN_VOLTAGE;
@@ -760,21 +762,26 @@ int mysql_save(const struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int co
 	if (is_unknown) {
 		return 1;
 	}
-//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_ip_buffer_entry *entry
+//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_msg_msg_holder *entry
 	return column_configurators[colplan_index].bind_and_execute(mysql_data, stmt, column_count, entry);
 }
 
 struct process_callback_data {
 	MYSQL_STMT *stmt;
 	int column_count;
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 };
 
-int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct rrr_instance_thread_data *thread_data) {
+int process_callback (
+		struct rrr_msg_holder *entry,
+		MYSQL_STMT *stmt,
+		int column_count,
+		struct rrr_instance_runtime_data *thread_data
+) {
 	struct mysql_data *mysql_data = thread_data->private_data;
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
-	rrr_thread_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(thread_data));
 
 	RRR_DBG_3 ("mysql instance %s: processing message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
@@ -789,7 +796,7 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
-			rrr_ip_buffer_entry_incref_while_locked(entry);
+			rrr_msg_holder_incref_while_locked(entry);
 			RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 		}
 	}
@@ -813,7 +820,7 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 		}
 	}
 
-	rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+	rrr_msg_holder_decref_while_locked_and_unlock(entry);
 
 	return 0;
 }
@@ -822,7 +829,7 @@ void close_mysql_stmt(void *arg) {
 	mysql_stmt_close(arg);
 }
 
-int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struct rrr_instance_thread_data *thread_data) {
+int process_entries (struct rrr_msg_msg_holder_collection *source_buffer, struct rrr_instance_runtime_data *thread_data) {
 	struct mysql_data *data = thread_data->private_data;
 
 	if (connect_to_mysql(data) != 0) {
@@ -861,9 +868,9 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 		}
 	}
 
-	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_ip_buffer_entry);
+	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_holder);
 		RRR_LL_VERIFY_NODE(source_buffer);
-		rrr_ip_buffer_entry_lock(node);
+		rrr_msg_holder_lock(node);
 		process_callback(node, stmt, column_count, thread_data);
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
@@ -875,9 +882,9 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 }
 
 static void *thread_entry_mysql (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_ip_buffer_entry_collection process_buffer_tmp = {0};
+	struct rrr_msg_msg_holder_collection process_buffer_tmp = {0};
 
 	if (data_init(data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -888,10 +895,10 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &process_buffer_tmp);
+	pthread_cleanup_push(rrr_msg_msg_holder_collection_clear_void, &process_buffer_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (start_mysql(data) != 0) {
@@ -904,14 +911,12 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
-
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback_ip, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in mysql instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
@@ -929,7 +934,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	}
 
 	out_message:
-	RRR_DBG_1 ("Thread mysql %p exiting\n", thread_data->thread);
+	RRR_DBG_1 ("Thread mysql %p exiting\n", thread);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -937,7 +942,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config (struct rrr_instance_config_data *config) {
 	struct mysql_data data;
 	int ret = 0;
 	if ((ret = data_init(&data)) != 0) {
@@ -964,7 +969,7 @@ __attribute__((constructor)) void load(void) {
 	rrr_mysql_library_init();
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;

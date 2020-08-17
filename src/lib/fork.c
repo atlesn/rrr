@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
-#include "posix.h"
 #include "fork.h"
 #include "log.h"
 #include "rrr_strerror.h"
 #include "common.h"
+#include "util/posix.h"
 
 #define RRR_FORK_HANDLER_VERIFY_SELF()																	\
 	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {							\
@@ -170,6 +170,46 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 	return ret;
 }
 
+static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_rounds) {
+	int active_forks_found = 0;
+
+	if (pthread_mutex_trylock (&handler->lock) == 0) {
+		RRR_BUG("BUG: Handler was not locked in __rrr_fork_wait_loop\n");
+	}
+
+	do {
+		if (max_rounds-- == 0) {
+			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
+			break;
+		}
+		active_forks_found = 0;
+		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+			if (node->pid > 0) {
+				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
+			}
+			if (node->pid > 0 && node->was_waited_for == 0) {
+				pid_t pid;
+				int status;
+
+				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
+					RRR_DBG_4("Wait pid %i ok\n", node->pid);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				else if (pid == -1 && errno == ECHILD) {
+					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling: %s. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+							node->pid, getpid(), status, rrr_strerror(errno));
+				}
+
+				active_forks_found = 1;
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
+
+		pthread_mutex_unlock (&handler->lock);
+		rrr_posix_usleep(100000); // 100ms
+		pthread_mutex_lock (&handler->lock);
+	} while (active_forks_found != 0);
+}
+
 void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 	// Call this from main() only
 	RRR_FORK_HANDLER_VERIFY_SELF();
@@ -192,40 +232,20 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
  *		}*/
 	RRR_LL_ITERATE_END();
 
-	int max_rounds = 50; // ~5 seconds
+	__rrr_fork_wait_loop(handler, 50); // 50 rounds = ~5 seconds
 
-	int active_forks = 0;
-	do {
-		if (--max_rounds == 0) {
-			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
-			break;
-		}
-		active_forks = 0;
+	// Try SIGKILL
+	if (RRR_LL_COUNT(handler) > 0) {
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0) {
-				RRR_DBG_4("After SIGUSR1, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
+				RRR_DBG_1("SIGKILL to fork %i\n", node->pid);
+				kill(node->pid, SIGKILL);
 			}
-			if (node->pid > 0 && node->was_waited_for == 0) {
-				pid_t pid;
-				int status;
+		RRR_LL_ITERATE_END();
 
-				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
-					RRR_DBG_4("Wait pid %i ok\n", node->pid);
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-				else if (pid == -1 && errno == ECHILD) {
-					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling: %s. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
-							node->pid, getpid(), status, rrr_strerror(errno));
-				}
-
-				active_forks = 1;
-			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
-
-		pthread_mutex_unlock (&handler->lock);
-		rrr_posix_usleep(100000); // 100ms
-		pthread_mutex_lock (&handler->lock);
-	} while (active_forks > 0);
+		// Try waiting one last time
+		__rrr_fork_wait_loop(handler, 10); // 10 rounds = ~1 second
+	}
 
 	pthread_mutex_unlock (&handler->lock);
 }

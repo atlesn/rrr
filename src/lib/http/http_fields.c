@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 void rrr_http_field_destroy(struct rrr_http_field *field) {
 	RRR_FREE_IF_NOT_NULL(field->name);
@@ -275,7 +275,7 @@ const struct rrr_http_field *rrr_http_field_collection_get_field (
 
 
 static char *__rrr_http_field_collection_to_form_data (
-		rrr_length *output_size,
+		rrr_length *output_size_final,
 		struct rrr_http_field_collection *fields,
 		int no_urlencoding
 ) {
@@ -284,7 +284,7 @@ static char *__rrr_http_field_collection_to_form_data (
 	char *value = NULL;
 	int err = 0;
 
-	*output_size = 0;
+	*output_size_final = 0;
 
 	rrr_biglength result_max_length =
 			rrr_http_field_collection_get_total_length(fields) * 3 +
@@ -316,8 +316,8 @@ static char *__rrr_http_field_collection_to_form_data (
 		RRR_FREE_IF_NOT_NULL(name);
 		if (node->name != NULL) {
 			if (no_urlencoding == 0) {
-				rrr_length output_size = 0;
-				name = rrr_http_util_encode_uri(&output_size, node->name, strlen(node->name));
+				rrr_length output_size_tmp = 0;
+				name = rrr_http_util_encode_uri(&output_size_tmp, node->name, strlen(node->name));
 
 				if (name == NULL) {
 					RRR_MSG_0("Could not encode parameter '%s' in __rrr_http_fields_to_form_data\n",
@@ -326,8 +326,8 @@ static char *__rrr_http_field_collection_to_form_data (
 					goto out;
 				}
 
-				memcpy(wpos, name, output_size);
-				wpos += output_size;
+				memcpy(wpos, name, output_size_tmp);
+				wpos += output_size_tmp;
 			}
 			else {
 				strcpy(wpos, node->name);
@@ -338,8 +338,8 @@ static char *__rrr_http_field_collection_to_form_data (
 		if (node->value != NULL && node->value_size > 0) {
 			if (no_urlencoding == 0) {
 				RRR_FREE_IF_NOT_NULL(value);
-				rrr_length output_size = 0;
-				value = rrr_http_util_encode_uri(&output_size, node->value, node->value_size);
+				rrr_length output_size_tmp = 0;
+				value = rrr_http_util_encode_uri(&output_size_tmp, node->value, node->value_size);
 
 				if (value == NULL) {
 					RRR_MSG_0("Could not encode parameter '%s' with value length %lu in __rrr_http_fields_to_form_data\n",
@@ -353,8 +353,8 @@ static char *__rrr_http_field_collection_to_form_data (
 					wpos++;
 				}
 
-				memcpy(wpos, value, output_size);
-				wpos += output_size;
+				memcpy(wpos, value, output_size_tmp);
+				wpos += output_size_tmp;
 			}
 			else {
 				memcpy (wpos, node->value, node->value_size);
@@ -367,7 +367,7 @@ static char *__rrr_http_field_collection_to_form_data (
 		RRR_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");
 	}
 
-	*output_size = wpos - result;
+	*output_size_final = wpos - result;
 
 	out:
 	if (err) {

@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_payload_buf.h"
 #include "mqtt_subscription.h"
 
-#include "../rrr_endian.h"
+#include "../util/rrr_endian.h"
 
 #define BUF_INIT() 																	\
 		int ret = RRR_MQTT_ASSEMBLE_OK;												\
@@ -317,6 +317,9 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	PUT_RAW_WITH_LENGTH(publish->topic, strlen(publish->topic));
+
+	// Note : The separate dup variable overrides the value in type_flags.
+	RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(publish, publish->dup);
 
 	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0) {
 		PUT_U16(publish->packet_identifier);

@@ -34,10 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "parse.h"
 #include "log.h"
 #include "passwd.h"
-#include "base64.h"
 #include "socket/rrr_socket.h"
 #include "rrr_strerror.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
+#include "util/base64.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512
 #define RRR_PASSWD_HASH_KEY_LENGTH (RRR_PASSWD_HASH_MAX_LENGTH/2)
@@ -513,7 +513,7 @@ int rrr_passwd_iterate_lines (
 			NULL
 	};
 
-	while (!rrr_parse_check_eof(&parse_pos)) {
+	while (!RRR_PARSE_CHECK_EOF(&parse_pos)) {
 		int line_start = 0;
 		int line_end = 0;
 
