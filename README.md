@@ -69,7 +69,7 @@ the `LICENSE.*`-files regarding this.
 ## DEVELOPMENT
 
 It is possible to write custom modules in Perl, Python and C. All three have similar easy to use
-interfaces to RRR. The man page for rrr.conf has more information on this, also check out `README.dev`.
+interfaces to RRR. The man page for rrr.conf has more information on this, also check out [README.dev.md](README.dev.md).
 
 The RRR library provides many protocol implementations and networking tools. While it is possible to link
 other programs to the RRR library, there is currently some initialization of different data structures
