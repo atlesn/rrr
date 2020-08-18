@@ -657,8 +657,7 @@ static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_WRITE_CALLB
 
 // Only to be used when we already are inside a read callback and the
 // entry we passed in is guaranteed to have been allocated and modified
-// exclusively in message broker context. This function always unlocks
-// entry upon exit. Entry must be locked before calling us.
+// exclusively in message broker context. Entry must be locked before calling.
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
