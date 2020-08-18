@@ -425,7 +425,8 @@ The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
 		# Send reply if everything is OK
 		if ($processing_succeeded) {
 			# Push ACK reply value to the message and send it
-			push_blob($message, "reply", "A");
+			
+			$message->push_tag_blob("reply", "A", 1);
 
 			# IP information is already in the message, as well as
 			# start and end separators. This call will cause the IP
@@ -435,16 +436,7 @@ The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
 		
 		return 1;
 	}
-	
-	sub push_blob {
-        	my $message = shift;
-        	my $tag = shift;
-        	my $value = shift;
-
-        	push @{$message->{'array_values'}}, "$value";
-        	push @{$message->{'array_tags'}}, $tag;
-        	push @{$message->{'array_types'}}, "blob";
-	}
+}
 
 There are some more advanced example configuration files in `/misc/test_configs`, including how to read the barcode.
 
