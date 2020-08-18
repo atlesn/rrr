@@ -107,6 +107,144 @@ In addition, one must specify the `load()` and `unload()` functions. These are c
 before unloading it. That means they are not called for each instance. If a module is dependent on some external library which needs to
 be initialized, this may be done in these functions.
 
+### Writing to output buffer
+
+All instances have an output buffer which other modules read from, also those which does not produce output in which this is simply not used.
+The buffer provides locking and memory fences for data messages which are to move between threads. This is handled by the `message broker`.
+Instances using the broker are called `costumers`.
+
+The buffers of all modules are created prior to starting the modules. Whenever a function in the message broker is called, the existence of
+the requested costumer is checked. If it does not exist, the call will fail. If it does exist, a reference count is incremented ensuring
+the costumer is not deleted while it's being used.
+
+All writes to the output buffer AND all writes to memory areas pointed to by data inside the buffer MUST happen inside the provided write methods.
+Reads must also happen inside provided functions.
+
+These methods are always available for an instance to use:
+
+	rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER(data->thread_data), // Retrieves pointer to the message broker	
+				INSTANCE_D_HANDLE(data->thread_data), // Gets the costumer handle of the current instance
+				NULL,
+				0,
+				0,
+				my_write_callback_function,
+				&my_write_callback_data
+	)
+
+- The NULL and 0's are IP information which is not used in this case.
+- The callback function must be provided by the instance, the actual writing happens here
+- The callback data is used only by the callback function and instructs it on what to do
+
+The callback function will receive a pre-allocated so called `ip buffer entry`. This struct holds IP address data (if any) and the message itself.
+It also provides reference counting and locking.
+
+Depending on how a module is written, we don't always know wether we should actually write to the buffer or not when calling a write functions. If
+we do not wish to use the entry in the callback after all, the callback may return `RRR_MESSAGE_BROKER_DROP`. It's on the other hand also
+possible to make the message broker call the callback again immediately if we wish to write another entry (or try again) by `RRR_MESSAGE_BROKER_AGAIN`.
+These two may be ORed together. For severe errors, return `RRR_MESSAGE_BROKER_ERR`. This makes the write function also return and error (non-zero).
+
+The IP buffer entry must be filled with an RRR message as other modules expects this. The message must only be allocated and written to inside the 
+write callback to provide proper memory fencing.
+
+Before the callback returns, the IP buffer entry MUST be unlocked using `rrr_ip_buffer_entry_unlock()`. Reference counting can usually be disregarded in
+the write callback.
+
+Some fast write methods are available to use for entries which already have been allocated inside a write function (and not modified afterwards),
+but which we now wish to write to the output buffer without allocating a new entry. These functions are marked with `unsafe`.
+
+	// Write to the output buffer
+	rrr_message_broker_incref_and_write_entry_unsafe_no_unlock(...); 
+	
+	// Write to the delayed write queue of the output buffer
+	rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock(...);
+	
+	// Removes entries one by one from the given collection and puts it into the output buffer
+	rrr_message_broker_write_entries_from_collection_unsafe(...);
+
+A delayed write can be performed while still being inside the callback of a write function or a poll callback (read further down) of the buffer we are writing to.
+
+If we cannot guarantee that an IP buffer entry has been written to exclusively inside a write function, we must clone it when we add it to
+the output queue:
+
+	// Allocate new memory and copy to it
+	rrr_message_broker_clone_and_write_entry(...);
+
+### Reading/polling from other modules
+
+The action of retrieving messages from the output buffers of other instances is called polling. The structures needed for polling are 
+initialized automatically for every instance in the intermediate thread entry functions. It contains information about all the senders
+specified in the configuration file, or it is empty if there are no senders.
+
+It is possible to manipulate the poll structure in the module or create "custom" poll collections, but currently no modules do this.
+
+Here is an example of the minimum structure needed to perform polls in a module. The dots are where other code goes.
+
+	static int my_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+		struct rrr_msg_msg *message = entry->message;
+		
+		// Other return values possible depending on wether we use delete or search.
+		// In buffer.c see
+		// - rrr_fifo_buffer_read_clear_forward for poll delete
+		// - rrr_fifo_buffer_search for poll search 
+		int ret = RRR_FIFO_OK;
+		
+		... (do stuff with message)
+		
+		// Message holder must ALWAYS be unlocked
+		rrr_msg_holder_unlock(entry);
+		return ret;	
+	}
+
+	static void *thread_entry_my(struct rrr_thread *thread) {
+		// This line is present in all modules at the top of the thread entry function. It casts the
+		// void * private_data pointer, which the intermediate thread entry function has initialized,
+		// to its actual type.
+		struct rrr_instance_runtime_data *thread_data = thread->private_data;	
+		
+		...
+		
+		// Main thread loop
+		while (...) {
+			// Do the polling and call the callback if data was polled. When callback returns, the polled
+			// data is deleted. Calling rrr_poll_do_poll_search lets callback choose wether polled data
+			// is deleted or not. The callback will be called multiple but a finite number of times
+			// if there are mulitple elements in the buffer.
+			if (rrr_poll_do_rrr_poll_delete (thread_data, &thread_data->poll, my_poll_callback, 0) != 0) {
+				break;
+			}
+		}
+		
+		...
+	}
+	
+
+The message holder struct may be used directly in linked lists. If it is added to another list in the callback, the
+user count must be incremented using `rrr_msg_holder_incref_while_locked`. It cannot be part of two linked lists
+at the same becuse the linked list pointers are inside it, thus it will always exists only in one instance at a time.
+
+Clone functions are available if an entry is to be used in multiple places simultaneously.
+
+Inside the poll callback function, the entry can be directly written to the output buffer using `rrr_message_broker_incref_and_write_entry_unsafe_no_unlock`.
+
+### Thread data
+
+When a thread/instance starts with the specified entry function, it receives an `rrr_thread` struct. This has a pointer which is pre-
+initialized with a `rrr_instance_runtime_data` struct. There are shortcut pointers here to command line argument struct from the main
+program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`). The thread must free the `rrr_thread` struct
+before shutting down (done by instance framework in intermediate thread entry function).
+
+There is a slot of 8kB freely available in `rrr_instance_runtime_data` which the different modules use to hold their state, this is called
+`char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory` address.
+This allows us to always find the private data of our module event if we are in some callbacks where only the `rrr_thread` struct or the
+`rrr_instance_runtime_data` struct is available.
+
+Use the pthread framework `pthread_cleanup_push()` and `pthread_cleanup_pop()` to clean up a threads data on exit, look in the
+existing modules how they do this. This will make sure data is cleaned up also if the thread is cancelled the hard way. If a thread
+hangs on I/O and doesn't exit nicely, it will be left dangling in memory untill it recovers upon which it will clean up its memory.
+A new instance will be created insted, and therefore we MUST NOT use statically allocated data in the module which might cause
+corruption. Use the private memory provided instead.
+
 ## Modules, threads and instances
 
 The RRR threads use three different frameworks to operate. The lower level frameworks threads.c and modules.c operate independently. The
@@ -292,114 +430,6 @@ Some other high level frameworks used by individual modules:
 
 In addition, there are multiple smaller utilities.
 
-## Writing to output buffer
-
-All instances have an output buffer which other modules read from, also those which does not produce output in which this is simply not used.
-The buffer provides locking and memory fences for data messages which are to move between threads. This is handled by the `message broker`.
-Instances using the broker are called `costumers`.
-
-The buffers of all modules are created prior to starting the modules. Whenever a function in the message broker is called, the existence of
-the requested costumer is checked. If it does not exist, the call will fail. If it does exist, a reference count is incremented ensuring
-the costumer is not deleted while it's being used.
-
-All writes to the output buffer AND all writes to memory areas pointed to by data inside the buffer MUST happen inside the provided write methods.
-Reads must also happen inside provided functions.
-
-These methods are always available for an instance to use:
-
-	rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER(data->thread_data), // Retrieves pointer to the message broker	
-				INSTANCE_D_HANDLE(data->thread_data), // Gets the costumer handle of the current instance
-				NULL,
-				0,
-				0,
-				my_write_callback_function,
-				&my_write_callback_data
-	)
-
-- The NULL and 0's are IP information which is not used in this case.
-- The callback function must be provided by the instance, the actual writing happens here
-- The callback data is used only by the callback function and instructs it on what to do
-
-The callback function will receive a pre-allocated so called `ip buffer entry`. This struct holds IP address data (if any) and the message itself.
-It also provides reference counting and locking.
-
-Depending on how a module is written, we don't always know wether we should actually write to the buffer or not when calling a write functions. If
-we do not wish to use the entry in the callback after all, the callback may return `RRR_MESSAGE_BROKER_DROP`. It's on the other hand also
-possible to make the message broker call the callback again immediately if we wish to write another entry (or try again) by `RRR_MESSAGE_BROKER_AGAIN`.
-These two may be ORed together. For severe errors, return `RRR_MESSAGE_BROKER_ERR`. This makes the write function also return and error (non-zero).
-
-The IP buffer entry must be filled with an RRR message as other modules expects this. The message must only be allocated and written to inside the 
-write callback to provide proper memory fencing.
-
-Before the callback returns, the IP buffer entry MUST be unlocked using `rrr_ip_buffer_entry_unlock()`. Reference counting can usually be disregarded in
-the write callback.
-
-Some fast write methods are available to use for entries which already have been allocated inside a write function (and not modified afterwards),
-but which we now wish to write to the output buffer without allocating a new entry. These functions are marked with `unsafe`.
-
-	// Write to the output buffer
-	rrr_message_broker_incref_and_write_entry_unsafe_no_unlock(...); 
-	
-	// Write to the delayed write queue of the output buffer
-	rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock(...);
-	
-	// Removes entries one by one from the given collection and puts it into the output buffer
-	rrr_message_broker_write_entries_from_collection_unsafe(...);
-
-A delayed write can be performed while still being inside the callback of a write function or a poll callback (read further down) of the buffer we are writing to.
-
-If we cannot guarantee that an IP buffer entry has been written to exclusively inside a write function, we must clone it when we add it to
-the output queue:
-
-	// Allocate new memory and copy to it
-	rrr_message_broker_clone_and_write_entry(...);
-
-## Reading/polling from other modules
-
-The action of retrieving messages from the output buffers of other instances is called polling. This is done somewhat manually in every module inside
-the main thread function. Here, an example of the minimum structure needed to perform polls in a module. The dots are where other code goes.
-
-A poll structure holds information about who we should poll from. It might be costumized, although this is not recommended as it might confuse users.
-
-	...
-	
-	// At the top of the thread functions
-	struct rrr_poll_collection poll;
-	rrr_poll_collection_init(&poll);
-
-	// Make sure poll data is freed if we are cancelled
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
-	
-	...
-	
-	// Read the `senders` configuration parameter and store all senders into our poll struct
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
-	
-	...
-	
-	// Main thread loop
-	while (...) {
-			// Do the polling and call the callback if data was polled.
-			if (rrr_poll_do_rrr_poll_delete (thread_data, &poll, my_poll_callback, 0) != 0) {
-				break;
-			}
-	}
-	
-	...
-	
-	// At the end of the function, just before exiting
-	pthread_cleanup_pop(1);
-	
-	...
-
-Just as when we write, the IP buffer entry received in the callback must be unlocked prior to returning. The data will be destroyed
-when returning from the callback, unless the reference count of the entry is incremented, which we must do if we wish to store
-the entry inside our instance.
-
-The IP buffer entry struct may be used directly in linked lists. An entry only exists in one instance at a time, this is enforced by
-only 
-
 ## Thread state convention
 
 Read Route Record creates one thread for every instance when it starts. All threads, when started, must first initialize their data
@@ -431,20 +461,3 @@ A thread has to update a timer constantly using `update_watchdog_time()`, or els
 
 If one or more threads exit, all threads are stopped and restarted automatically.
 
-## Thread data
-
-When a thread/instance starts with the specified entry function, it receives an `rrr_thread` struct. This has a pointer which is pre-
-initialized with a `rrr_instance_runtime_data` struct. There are shortcut pointers here to command line argument struct from the main
-program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`). The thread must free the `rrr_thread` struct
-before shutting down (done by instance framework in intermediate thread entry function).
-
-There is a slot of 8kB freely available in `rrr_instance_thread_data` which the different modules use to hold their state, this is called
-`char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory` address.
-This allows us to always find the private data of our module event if we are in some callbacks where only the `rrr_thread` struct or the
-`rrr_instance_thread_data` struct is available.
-
-Use the pthread framework `pthread_cleanup_push()` and `pthread_cleanup_pop()` to clean up a threads data on exit, look in the
-existing modules how they do this. This will make sure data is cleaned up also if the thread is cancelled the hard way. If a thread
-hangs on I/O and doesn't exit nicely, it will be left dangling in memory untill it recovers upon which it will clean up its memory.
-A new instance will be created insted, and therefore we MUST NOT use statically allocated data in the module which might cause
-corruption. Use the private memory provided instead.
