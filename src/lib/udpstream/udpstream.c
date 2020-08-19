@@ -281,7 +281,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 #endif
 		int err;
 		if ((ret = rrr_ip_send(&err, udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
-			RRR_MSG_0("Could not send packed frame header in __rrr_udpstream_send_packed_frame\n");
+			RRR_MSG_0("Could not send packed frame header in __rrr_udpstream_send_packed_frame, return was %i\n", ret);
 			ret = 1;
 			goto out;
 		}

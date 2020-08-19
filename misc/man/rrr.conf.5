@@ -260,8 +260,15 @@ contents sent as is.
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
 like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
 
+.It ip_send_multiple_per_connection={yes|no}
+In one send iteration (a very short timespan), allow multiple messages to be sent on a single connection.
+In low traffic conditions this parameter has no practical effect.
+Defaults to no, which enforces only one message per connection.
+
 .It ip_persistent_connections={yes|no}
-After a packet is sent, don't close the TCP connection causing it to be re-used. Defaults to no.
+After a packet is sent, don't close the TCP connection but re-use it later for more messages. Implies
+.B ip_send_multiple_per_connection
+if set to yes. Defaults to no.
 
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in

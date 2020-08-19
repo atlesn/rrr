@@ -129,6 +129,7 @@ int rrr_socket_unix_create_and_connect (
 		int nonblock
 );
 int rrr_socket_sendto_nonblock (
+		int *err,
 		ssize_t *written_bytes,
 		int fd,
 		const void *data,
@@ -149,7 +150,8 @@ static inline int rrr_socket_send_nonblock (
 		void *data,
 		ssize_t size
 ) {
-	return rrr_socket_sendto_nonblock(written_bytes, fd, data, size, NULL, 0);
+	int err = 0;
+	return rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, NULL, 0);
 }
 static inline int rrr_socket_send_blocking (
 		int fd,

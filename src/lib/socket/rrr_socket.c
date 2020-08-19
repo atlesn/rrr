@@ -864,6 +864,7 @@ int rrr_socket_unix_create_and_connect (
 }
 
 int rrr_socket_sendto_nonblock (
+		int *err,
 		ssize_t *written_bytes,
 		int fd,
 		const void *data,
@@ -875,6 +876,7 @@ int rrr_socket_sendto_nonblock (
 
 	int ret = RRR_SOCKET_OK;
 
+	*err = 0;
 	*written_bytes = 0;
 	ssize_t done_bytes_total = 0;
 
@@ -918,9 +920,20 @@ int rrr_socket_sendto_nonblock (
 
 	if (done_bytes_total != size) {
 		if (done_bytes <= 0) {
+			*err = errno;
 			if (done_bytes == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
 				rrr_posix_usleep(10);
 				goto retry;
+			}
+			else if (errno == EPIPE) {
+				RRR_DBG_1 ("Pipe full or connection closed by remote\n");
+				ret = RRR_SOCKET_SOFT_ERROR;
+				goto out;
+			}
+			else if (errno == ECONNREFUSED || errno == ECONNRESET) {
+				RRR_DBG_1 ("Connection refused\n");
+				ret = RRR_SOCKET_SOFT_ERROR;
+				goto out;
 			}
 			else if (errno == EINTR) {
 				rrr_posix_usleep(10);
@@ -947,6 +960,8 @@ int rrr_socket_sendto_nonblock (
 		ret = RRR_SOCKET_OK;
 	}
 
+	*err = 0;
+
 	out:
 	*written_bytes = done_bytes_total;
 	return ret;
@@ -967,7 +982,9 @@ int rrr_socket_sendto_blocking (
 	while (written_bytes_total < size) {
 		RRR_DBG_4("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
 				fd, size, written_bytes_total);
+		int err;
 		if ((ret = rrr_socket_sendto_nonblock (
+				&err,
 				&written_bytes,
 				fd,
 				data + written_bytes_total,

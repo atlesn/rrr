@@ -84,6 +84,7 @@ struct ip_data {
 	int do_extract_rrr_msg_msgs;
 	int do_ordered_send;
 	int do_persistent_connections;
+	int do_multiple_per_connection;
 	char *timeout_action_str;
 	enum ip_action timeout_action;
 	rrr_setting_uint message_send_timeout_s;
@@ -276,6 +277,17 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_msg_msgs", do_extract_rrr_msg_msgs, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_ordered_send, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
+
+	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
+			data->do_multiple_per_connection == 0 &&
+			data->do_persistent_connections != 0
+	) {
+		RRR_MSG_0("ip_send_multiple_per_connection is explicitly set to 'no' while ip_persistent_connections is set to 'yes' in ip instance %s, this is a configuration error.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
@@ -699,8 +711,6 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 static int ip_send_message_tcp (
-		int *send_status,
-		int *close_connection_now,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data *accept_data,
 		const void *send_data,
@@ -710,95 +720,121 @@ static int ip_send_message_tcp (
 
 	int ret = 0;
 
+	if (accept_data->custom_data != 0) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
 	int err;
-
-	// Always close if message was sent unless preserve connections is set
-	*close_connection_now = (ip_data->do_persistent_connections ? 0 : 1);
-
-	if (accept_data->custom_data == 1) {
-		// Connection tagged for destruction or should not be used due to
-		// earlier error this round
-		goto out_put_back;
-	}
-	else if (accept_data->custom_data == -1) {
-		// Properly handle putback or drop
-		goto out_close_connection_error;
-	}
-
-	if ((ret = rrr_socket_send_check(accept_data->ip_data.fd)) != 0) {
+	if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_DBG_3("Connection not ready while sending in ip instance %s, putting message back into send queue\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_put_back;
-		}
-
-		RRR_MSG_0("Connection problem with TCP connection in ip instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-
-		goto out_close_connection_error;
-	}
-	else if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
-		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			if (err == EAGAIN || err == EWOULDBLOCK) {
+			if (err == EAGAIN || err == EWOULDBLOCK || err == EINPROGRESS) {
 				RRR_DBG_1("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
 						INSTANCE_D_NAME(thread_data));
 
 				if (ip_data->do_ordered_send) {
-					goto out_put_back;
-				}
-				else {
-					goto out_put_back_retry_immediately;
+					// Don't use this connection anymore this round, enforce ordered send.
+					accept_data->custom_data = 1;
 				}
 			}
+			else {
+				RRR_MSG_0("Connection problem with TCP connection while sending in ip instance %s, return was %i\n",
+						INSTANCE_D_NAME(thread_data), ret);
 
-			RRR_MSG_0("Connection problem with TCP connection while sending in ip instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_close_connection_error;
+				// This connection is not to be used anymore this round due
+				// to errors. After this round, it should be removed.
+				accept_data->custom_data = -1;
+			}
 		}
 		else {
 			RRR_MSG_0("Error while sending TCP message in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
-			ret = 1;
-			goto out;
 		}
+		goto out;
 	}
 
-	// TCP send OK
-	*send_status = 0;
-
-	goto out;
-
-	out_close_connection_error:
-		// This connection is not to be used any more this round due
-		// to errors. Afterwards, it should be removed.
+	if (ip_data->do_multiple_per_connection || ip_data->do_persistent_connections) {
+		// Allow more to be sent on this connection
+	}
+	else {
+		// Disallow more use of this connection and tag for closing
 		accept_data->custom_data = -1;
-
-		// To preserve send order, do not remove the connection from the list now. This
-		// would otherwise cause packets later in the queue to re-connect
-		*close_connection_now = 0;
-
-		// Any error is now handled
-		ret = 0;
-
-		goto out;
-
-	out_put_back:
-		// Don't use this connection anymore this round (for instance when waiting for establishment)
-		accept_data->custom_data = 1;
-
-	out_put_back_retry_immediately:
-		// Preserve send order
-		*close_connection_now = 0;
-
-		// Any error is now handled
-		ret = 0;
+	}
 
 	out:
+	return ret;
+}
+
+static int ip_send_message_raw_default_target (
+		struct ip_data *ip_data,
+		struct rrr_ip_accept_data_collection *tcp_connect_data,
+		struct rrr_ip_graylist *graylist,
+		const void *send_data,
+		ssize_t send_size
+) {
+	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
+
+	int ret = 0;
+
+	struct rrr_ip_accept_data *accept_data_to_free = NULL;
+
+	if (ip_data->target_port == 0) {
+		RRR_MSG_0("Warning: A message from a sender in ip instance %s had no address information and we have no default remote host set, dropping it\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	if (ip_data->target_protocol == RRR_IP_TCP) {
+		struct rrr_ip_accept_data *accept_data = rrr_ip_accept_data_collection_find_by_fd (
+				tcp_connect_data,
+				ip_data->ip_tcp_default_target_fd
+		);
+
+		if (accept_data == NULL) {
+			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
+					&accept_data_to_free,
+					ip_data->target_port,
+					ip_data->target_host,
+					graylist
+			) != 0) {
+				RRR_DBG_1("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
+						ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(thread_data));
+				ret = RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+
+			ip_data->ip_tcp_default_target_fd = accept_data_to_free->ip_data.fd;
+
+			accept_data = accept_data_to_free;
+			RRR_LL_APPEND(tcp_connect_data, accept_data_to_free);
+			accept_data_to_free = NULL;
+		}
+
+		ret = ip_send_message_tcp (
+				ip_data,
+				accept_data,
+				send_data,
+				send_size
+		);
+	}
+	else {
+		ret = rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+			&ip_data->ip_udp,
+			ip_data->target_port,
+			ip_data->target_host,
+			(void *) send_data, // Cast away const OK
+			send_size
+		);
+	}
+
+	out:
+		if (accept_data_to_free != NULL) {
+			rrr_ip_accept_data_close_and_destroy_void(accept_data_to_free);
+		}
 		return ret;
 }
 
-static int ip_send_message_raw (
-		int *send_status,
+static int ip_send_raw (
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
@@ -817,88 +853,37 @@ static int ip_send_message_raw (
 	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, addr_orig, addr_len_orig);
 	
 	int ret = 0;
-	int close_connection_now = 0;
 
 	struct rrr_ip_accept_data *accept_data_to_free = NULL;
-
-	// Have this const to avoid mixing it up with the other one in this function
-	const struct rrr_ip_accept_data *accept_data_to_use = NULL;
-
-	// Do not modify send_status here
-
-	//////////////////////////////////////////////////////
-	// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
-	//////////////////////////////////////////////////////
 
 	// Configuration validation should produce an error if do_force_target is set
 	// but no target_port/target_host
 	if (ip_data->do_force_target == 1 || addr_len == 0) {
-		if (ip_data->target_port == 0) {
-			RRR_MSG_0("Warning: A message from a sender in ip instance %s had no address information and we have no default remote host set, dropping it\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out;
-		}
+		//////////////////////////////////////////////////////
+		// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
+		//////////////////////////////////////////////////////
 
-		if (ip_data->target_protocol == RRR_IP_TCP) {
-			accept_data_to_use = rrr_ip_accept_data_collection_find_by_fd (
-					tcp_connect_data,
-					ip_data->ip_tcp_default_target_fd
-			);
-
-			if (accept_data_to_use == NULL) {
-				if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
-						&accept_data_to_free,
-						ip_data->target_port,
-						ip_data->target_host,
-						graylist
-				) != 0) {
-					RRR_DBG_1("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
-							ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(thread_data));
-					goto out_put_back;
-				}
-
-				ip_data->ip_tcp_default_target_fd = accept_data_to_free->ip_data.fd;
-
-				// Blocks more attempts of using this connection until next round
-				accept_data_to_free->custom_data = 1;
-
-				accept_data_to_use = accept_data_to_free;
-				RRR_LL_APPEND(tcp_connect_data, accept_data_to_free);
-				accept_data_to_free = NULL;
-			}
-
-			goto ip_tcp_send;
-		}
-
-		ret = rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
-			&ip_data->ip_udp,
-			ip_data->target_port,
-			ip_data->target_host,
-			(void *) send_data, // Cast away const OK
-			send_size
+		ret = ip_send_message_raw_default_target (
+				ip_data,
+				tcp_connect_data,
+				graylist,
+				send_data,
+				send_size
 		);
-
-		// UDP send OK
-		if (ret == 0) {
-			*send_status = 0;
-		}
-
-		goto out;
 	}
+	else if (protocol == RRR_IP_TCP) {
+		//////////////////////////////////////////////////////
+		// ADDRESS FROM ENTRY, TCP
+		//////////////////////////////////////////////////////
 
-	//////////////////////////////////////////////////////
-	// ADDRESS FROM ENTRY, TCP
-	//////////////////////////////////////////////////////
-
-	if (protocol == RRR_IP_TCP) {
-		accept_data_to_use = rrr_ip_accept_data_collection_find (
+		struct rrr_ip_accept_data *accept_data = rrr_ip_accept_data_collection_find (
 				tcp_connect_data,
 				(const struct sockaddr *) &addr,
 				addr_len
 		);
 
-		if (accept_data_to_use == NULL) {
-			if ((ret =rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+		if (accept_data == NULL) {
+			if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 					&accept_data_to_free,
 					(struct sockaddr *) &addr,
 					addr_len,
@@ -907,87 +892,54 @@ static int ip_send_message_raw (
 				if (ret == RRR_SOCKET_HARD_ERROR) {
 					char ip_str[256];
 					rrr_ip_to_str(ip_str, 256, (const struct sockaddr *) &addr, addr_len);
-					RRR_MSG_0("Could not connect to remote '%s' in ip instance %s\n",
+					RRR_DBG_1("Connection to remote '%s' failed in ip instance %s\n",
 							ip_str,
 							INSTANCE_D_NAME(thread_data)
 					);
+					ret = RRR_SOCKET_SOFT_ERROR;
 				}
-				goto out_put_back;
+				goto out;
 			}
 
-			// Blocks more attempts of using this connection untill next round
-			accept_data_to_free->custom_data = 1;
-
-			accept_data_to_use = accept_data_to_free;
+			accept_data = accept_data_to_free;
 			RRR_LL_APPEND(tcp_connect_data, accept_data_to_free);
 			accept_data_to_free = NULL;
 		}
 
-		goto ip_tcp_send;
-	}
-
-	//////////////////////////////////////////////////////
-	// ADDRESS FROM ENTRY, UDP
-	//////////////////////////////////////////////////////
-
-	int err; // errno, not checked for UDP
-	ret = rrr_ip_send (
-		&err,
-		ip_data->ip_udp.fd,
-		(const struct sockaddr *) &addr,
-		addr_len,
-		(void *) send_data, // Cast away const OK
-		send_size
-	);
-
-	if (ret != 0) {
-		RRR_MSG_0("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
-				INSTANCE_D_NAME(thread_data), ((const struct sockaddr *) &addr)->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
-		// Ignore errors
-		ret	= 0;
-	}
-
-	// UDP send OK
-	*send_status = 0;
-
-	goto out;
-
-	//////////////////////////////////////////////////////
-	// OUT, PUT BACK, TCP SEND
-	//////////////////////////////////////////////////////
-
-	ip_tcp_send:
-		if ((ret = ip_send_message_tcp (
-				send_status,
-				&close_connection_now,
+		ret = ip_send_message_tcp (
 				ip_data,
-				(struct rrr_ip_accept_data *) accept_data_to_use, // Cast away const OK
+				accept_data,
 				send_data,
 				send_size
-		)) != 0) {
+		);
+	}
+	else {
+		//////////////////////////////////////////////////////
+		// ADDRESS FROM ENTRY, UDP
+		//////////////////////////////////////////////////////
+
+		int err; // errno, not checked for UDP
+		ret = rrr_ip_send (
+			&err,
+			ip_data->ip_udp.fd,
+			(const struct sockaddr *) &addr,
+			addr_len,
+			(void *) send_data, // Cast away const OK
+			send_size
+		);
+
+		if (ret != 0) {
+			RRR_MSG_0("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
+					INSTANCE_D_NAME(thread_data), ((const struct sockaddr *) &addr)->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
 			goto out;
 		}
-		if (*send_status != 0) {
-			goto out_put_back;
-		}
-	goto out;
+	}
 
-	out_put_back:
-		// Don't stop and block others, continue reading from the buffer in
-		// case there are other targets
-		ret = 0;
-		*send_status = 1;
+	//////////////////////////////////////////////////////
+	// OUT
+	//////////////////////////////////////////////////////
 
 	out:
-		if (close_connection_now) {
-			RRR_LL_REMOVE_NODE_IF_EXISTS (
-					tcp_connect_data,
-					struct rrr_ip_accept_data,
-					accept_data_to_use,
-					rrr_ip_accept_data_close_and_destroy(node)
-			);
-		}
-
 		if (accept_data_to_free != NULL) {
 			rrr_ip_accept_data_close_and_destroy_void(accept_data_to_free);
 		}
@@ -995,7 +947,6 @@ static int ip_send_message_raw (
 }
 		
 static int ip_send_message (
-		int *send_status,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
@@ -1022,7 +973,6 @@ static int ip_send_message (
 		if (entry->data_length < (long int) sizeof(*message) - 1) {
 			RRR_MSG_0("ip instance %s had send_rrr_msg_msg set but received a message which was too short (%li<%li), dropping it\n",
 					INSTANCE_D_NAME(thread_data), entry->data_length, (long int) sizeof(*message));
-			ret = 0; // Non-critical error
 			goto out;
 		}
 
@@ -1070,7 +1020,7 @@ static int ip_send_message (
 
 		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			ret = 1; // Probably bug in some other module or with array parsing
+			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 
@@ -1086,14 +1036,13 @@ static int ip_send_message (
 				tag_map
 		) != 0) {
 			RRR_MSG_0("Error while converting array to raw in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			ret = 1; // Probably bug in some other module or with array parsing
+			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 
 		if (tag_count != 0 && found_tags != tag_count) {
 			RRR_MSG_0("Array message to send in ip instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
 					INSTANCE_D_NAME(thread_data), tag_count - found_tags);
-			ret = 0; // Non-critical
 			goto out;
 		}
 
@@ -1106,17 +1055,15 @@ static int ip_send_message (
 	else if (RRR_MAP_COUNT(&ip_data->array_send_tags) > 0) {
 		RRR_MSG_0("ip instance %s received a non-array message while setting ip_array_send_tags was defined, dropping it\n",
 				INSTANCE_D_NAME(thread_data));
-		ret = 0; // Non-critical error
 		goto out;
 	}
 	else {
-		send_data = message->data;
+		send_data = MSG_DATA_PTR(message);
 		send_size = MSG_DATA_LENGTH(message);
 
 		if (send_size == 0) {
 			RRR_DBG_3 ("ip instance %s received a message with 0 bytes with timestamp %" PRIu64 ", not sending it\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
-			ret = 0; // Nothing to send
 			goto out;
 		}
 
@@ -1135,8 +1082,7 @@ static int ip_send_message (
 		entry->send_time = rrr_time_get_64();
 	}
 
-	if ((ret = ip_send_message_raw (
-			send_status,
+	ret = ip_send_raw (
 			ip_data,
 			tcp_connect_data,
 			graylist,
@@ -1145,17 +1091,141 @@ static int ip_send_message (
 			entry->addr_len,
 			send_data,
 			send_size
-	)) != 0) {
-		RRR_MSG_0("Could not send data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
-	}
+	);
 
-	goto out;
 	out:
 		RRR_FREE_IF_NOT_NULL(tmp_data);
 		rrr_array_clear(&array_tmp);
 		return ret;
+}
+
+static int ip_send_loop (
+		int *did_do_something,
+		struct ip_data *data,
+		struct rrr_ip_accept_data_collection *tcp_connect_data,
+		struct rrr_ip_graylist *tcp_graylist
+) {
+	int ret_tmp = 0;
+
+	if (data->do_ordered_send) {
+		rrr_msg_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+	}
+
+//		printf ("TCP connect count: %i\n", RRR_LL_COUNT(&tcp_connect_data));
+
+	// We use the custom data field to tag connections with problems. If there are errors detected
+	// on a particular connection detected during the send queue iteration,
+	// we don't attempt any more sends on this connection until next send
+	// queue iteration. A connection attempt counts as an error, no send
+	// attempts will be performed until the next round.
+
+	// We must also, to preserve order, postpone the destruction on any connection until
+	// the iteration has finished. Broken connections are tagged and destroyed
+	// here.
+
+	uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
+	uint64_t send_loop_time_limit = rrr_time_get_64() + (IP_SEND_TIME_LIMIT_MS * 1000);
+	int max_iterations = 500;
+	int timeout_count = 0;
+	RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
+		enum ip_action action = IP_ACTION_RETRY;
+
+		if (--max_iterations == 0 || rrr_time_get_64() > send_loop_time_limit) {
+			RRR_LL_ITERATE_LAST();
+		}
+
+		rrr_msg_holder_lock(node);
+
+		int message_was_sent = 1;
+		int timeout_reached = 0;
+
+		if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
+			timeout_count++;
+			RRR_DBG_1("Message timed out after %u seconds in ip instance %s, performing timeout action %s.\n",
+					data->message_send_timeout_s, INSTANCE_D_NAME(data->thread_data), data->timeout_action_str);
+			timeout_reached = 1;
+		}
+		else if ((ret_tmp = ip_send_message(data, tcp_connect_data, tcp_graylist, node)) != 0) {
+			if (ret_tmp == RRR_SOCKET_SOFT_ERROR) {
+				message_was_sent = 0;
+				ret_tmp = 0;
+			}
+			else {
+				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+				RRR_LL_ITERATE_LAST();
+			}
+		}
+
+		// ip_send functions does not always set send_time parameter
+		if (node->send_time == 0) {
+			node->send_time = rrr_time_get_64();
+		}
+
+		if (message_was_sent) {
+			action = IP_ACTION_DROP;
+		}
+
+		// Timeout overrides retry. Note that the configuration parser should check that
+		// default action is not retry while send_timeout is >0, would otherwise cause us
+		// to spam timed out messages. We do not reset the send_time in the entry.
+		if (timeout_reached) {
+			action = data->timeout_action;
+		}
+
+		//printf("Node send time: %" PRIu64 "\n", node->send_time);
+		//printf("Timeout action: %i, send status: %i\n", action, send_status);
+
+		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
+		// do not destroy
+		if (action == IP_ACTION_RETRY) {
+			// Just retry
+			rrr_msg_holder_unlock(node);
+		}
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+			*did_do_something = 1;
+
+			if (action == IP_ACTION_RETURN) {
+				if ((ret_tmp = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+						INSTANCE_D_BROKER_ARGS(data->thread_data),
+						node
+				)) != 0) {
+					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
+							INSTANCE_D_NAME(data->thread_data));
+					RRR_LL_ITERATE_LAST(); // Destroy function must run and unlock
+				}
+			}
+			else {
+				// IP_ACTION_DROP, do nothing and just continue with destroy
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
+
+	if (timeout_count > 0) {
+		RRR_MSG_0("Send timeout for %i messages in ip instance %s\n",
+				timeout_count, INSTANCE_D_NAME(data->thread_data));
+	}
+
+	if (ret_tmp != 0) {
+		RRR_MSG_ERR("Error while sending messages in ip instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(tcp_connect_data, struct rrr_ip_accept_data);
+		// < 0 == close now
+		// 0 == follow persistent settings
+		// other: temorary block, do not close yet
+		if ((data->do_persistent_connections == 0 && node->custom_data == 0) || node->custom_data < 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			node->custom_data = 0;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(tcp_connect_data, 0; rrr_ip_accept_data_close_and_destroy(node));
+
+	out:
+	return ret_tmp;
 }
 
 static void *thread_entry_ip (struct rrr_thread *thread) {
@@ -1251,114 +1321,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			}
 		}
 
-		if (data->do_ordered_send) {
-			rrr_msg_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
-		}
-
-//		printf ("TCP connect count: %i\n", RRR_LL_COUNT(&tcp_connect_data));
-
-		// We use the counter to count send errors. If there are errors detected
-		// on a particular connection detected during the send queue iteration,
-		// we don't attempt any more sends on this connection until next send
-		// queue iteration. A connection attempt counts as an error, no send
-		// attempts will be performed untill the next round.
-
-		// We must also, to preserve order, postpone the destruction on any connection until
-		// the iteration has finished. Broken connections are tagged and destroyed
-		// here.
-		RRR_LL_ITERATE_BEGIN(&tcp_connect_data, struct rrr_ip_accept_data);
-			if (node->custom_data < 0) {
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-			node->custom_data = 0;
-		RRR_LL_ITERATE_END_CHECK_DESTROY(&tcp_connect_data, 0; rrr_ip_accept_data_close_and_destroy(node));
-
-		uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
-		uint64_t send_loop_time_limit = rrr_time_get_64() + (IP_SEND_TIME_LIMIT_MS * 1000);
-		int max_iterations = 500;
-		int did_do_something = 0;
-		int timeout_count = 0;
-		int ret_tmp = 0;
-		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
-			// Default action is that message was not successfully sent. Send function
-			// will set to 0 if sending succeeds.
-			int send_status = 1;
-			enum ip_action action = IP_ACTION_RETRY;
-
-			if (--max_iterations == 0 || rrr_time_get_64() > send_loop_time_limit) {
-				RRR_LL_ITERATE_LAST();
-			}
-
-			rrr_msg_holder_lock(node);
-
-			int timeout_reached = 0;
-
-			if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
-				timeout_count++;
-				RRR_DBG_1("Message timed out after %u seconds in ip instance %s, performing timeout action %s.\n",
-						data->message_send_timeout_s, INSTANCE_D_NAME(thread_data), data->timeout_action_str);
-				timeout_reached = 1;
-			}
-			else if ((ret_tmp = ip_send_message(&send_status, data, &tcp_connect_data, &tcp_graylist, node)) != 0) {
-				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-				RRR_LL_ITERATE_LAST();
-			}
-
-			// ip_send functions does not always set send_time parameter
-			if (node->send_time == 0) {
-				node->send_time = rrr_time_get_64();
-			}
-
-			if (send_status == 0) {
-				// Message was sent successully
-				action = IP_ACTION_DROP;
-			}
-
-			// Timeout overrides retry. Note that the configuration parser should check that
-			// default action is not retry while send_timeout is >0, would otherwise cause us
-			// to spam Message timed out messages. We do not reset the send_time in the entry.
-			if (timeout_reached) {
-				action = data->timeout_action;
-			}
-
-			//printf("Node send time: %" PRIu64 "\n", node->send_time);
-			//printf("Timeout action: %i, send status: %i\n", action, send_status);
-
-			// Make sure we always unlock, ether in ITERATE_END destroy or here if we
-			// do not destroy
-			if (action == IP_ACTION_RETRY) {
-				// Just retry
-				rrr_msg_holder_unlock(node);
-			}
-			else {
-				RRR_LL_ITERATE_SET_DESTROY();
-				did_do_something = 1;
-
-				if (action == IP_ACTION_RETURN) {
-					if ((ret_tmp = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-							INSTANCE_D_BROKER(thread_data),
-							INSTANCE_D_HANDLE(thread_data),
-							node
-					)) != 0) {
-						RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
-								INSTANCE_D_NAME(thread_data));
-						RRR_LL_ITERATE_LAST(); // Destroy function must run and unlock
-					}
-				}
-				else {
-					// IP_ACTION_DROP, do nothing and just continue with destroy
-				}
-			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
-
-		if (timeout_count > 0) {
-			RRR_MSG_0("Send timeout for %i messages in ip instance %s\n",
-					timeout_count, INSTANCE_D_NAME(thread_data));
-		}
-
-		if (ret_tmp != 0) {
-			RRR_MSG_ERR("Error while sending messages in ip instance %s\n",
-					INSTANCE_D_NAME(thread_data));
+		int did_send_something = 0;
+		if (ip_send_loop (
+				&did_send_something,
+				data,
+				&tcp_connect_data,
+				&tcp_graylist
+		) != 0) {
 			break;
 		}
 
@@ -1379,7 +1348,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		if (prev_read_count == data->messages_count_read &&
 			prev_polled_count == data->messages_count_polled &&
 			prev_read_error_count == data->read_error_count &&
-			did_do_something == 0
+			did_send_something == 0
 		) {
 			if (++consecutive_nothing_happened > 10) {
 //				printf ("Sleep: %u\n", consecutive_nothing_happened);
