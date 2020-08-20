@@ -51,9 +51,37 @@ struct rrr_stats_client {
 	int first_log_journal_messages_sent;
 };
 
-static void __rrr_stats_engine_unlock_void (void *arg) {
-	pthread_mutex_t *lock = arg;
-	pthread_mutex_unlock(lock);
+static int __rrr_stats_engine_journal_lock (struct rrr_stats_engine *engine) {
+	int ret = pthread_mutex_lock(&engine->journal_lock);
+	if (ret == 0) {
+		engine->journal_lock_usercount++;
+	}
+	if (engine->journal_lock_usercount > 2) {
+		RRR_BUG("BUG: Journal lock usercount was > 2\n");
+	}
+	return ret;
+}
+
+static int __rrr_stats_engine_journal_unlock (struct rrr_stats_engine *engine) {
+	int ret = pthread_mutex_unlock(&engine->journal_lock);
+	if (ret == 0) {
+		engine->journal_lock_usercount--;
+	}
+	if (engine->journal_lock_usercount < 0) {
+		RRR_BUG("BUG: Journal lock usercount was < 0\n");
+	}
+	return ret;
+}
+
+#define JOURNAL_LOCK(engine) \
+	__rrr_stats_engine_journal_lock(engine)
+
+#define JOURNAL_UNLOCK(engine) \
+	__rrr_stats_engine_journal_unlock(engine)
+
+static void __rrr_stats_engine_journal_unlock_void (void *arg) {
+	struct rrr_stats_engine *engine = arg;
+	JOURNAL_UNLOCK(engine);
 }
 
 static void __rrr_stats_engine_log_listener (
@@ -72,8 +100,13 @@ static void __rrr_stats_engine_log_listener (
 	(void)(loglevel_translated);
 	(void)(prefix);
 
-	pthread_mutex_lock(&stats->journal_lock);
-	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+	JOURNAL_LOCK(stats);
+	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
+
+	if (stats->journal_lock_usercount > 1) {
+		// Prevent log loops when sending log messages generates new messages when debug is active
+		goto out;
+	}
 
 	size_t msg_size = strlen(message) + 1;
 
@@ -170,6 +203,21 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 
 	memset (stats, '\0', sizeof(*stats));
 
+	pthread_mutexattr_t journal_lock_mutexattr;
+
+	if (pthread_mutexattr_init(&journal_lock_mutexattr) != 0) {
+		RRR_MSG_0("Could not initialize mutexattr in rrr_stats_engine_init\n");
+		ret = 1;
+		goto out_final;
+	}
+
+	// Journal lock must be recursive since debug messages might cause loops, avoid deadlock.
+	if (pthread_mutexattr_settype(&journal_lock_mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
+		RRR_MSG_0("pthread_mutexattr_settype failed in rrr_stats_engine_init\n");
+		ret = 1;
+		goto out;
+	}
+
 	if (pthread_mutex_init(&stats->main_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize main mutex in rrr_stats_engine_init\n");
 		ret = 1;
@@ -197,7 +245,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		goto out_close_socket;
 	}
 
-	if (pthread_mutex_init(&stats->journal_lock, 0) != 0) {
+	if (pthread_mutex_init(&stats->journal_lock, &journal_lock_mutexattr) != 0) {
 		RRR_MSG_0("Could not initialize journal mutex in rrr_stats_engine_init\n");
 		ret = 1;
 		goto out_destroy_client_collection;
@@ -232,6 +280,8 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	out_destroy_mutex:
 		pthread_mutex_destroy(&stats->main_lock);
 	out:
+		pthread_mutexattr_destroy(&journal_lock_mutexattr);
+	out_final:
 		RRR_FREE_IF_NOT_NULL(filename);
 		return ret;
 }
@@ -419,9 +469,8 @@ static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_eng
 
 		if (client->first_log_journal_messages_sent == 0) {
 			// If journal is busy, just don't do anything.
-			pthread_mutex_lock(&stats->journal_lock);
-
-			pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+			JOURNAL_LOCK(stats);
+			pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 			// If there are more than 100 messages in the queue, clean up by removing entries from the beginning
 			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
@@ -458,8 +507,8 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 
 	again:
 
-	pthread_mutex_lock(&stats->journal_lock);
-	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+	JOURNAL_LOCK(stats);
+	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 	int max = 100;
 
@@ -497,8 +546,8 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 }
 
 static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats) {
-	pthread_mutex_lock(&stats->journal_lock);
-	pthread_cleanup_push(__rrr_stats_engine_unlock_void, &stats->journal_lock);
+	JOURNAL_LOCK(stats);
+	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
 		if (RRR_LL_COUNT(&stats->log_journal) > RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES) {
