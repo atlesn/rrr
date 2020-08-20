@@ -365,9 +365,16 @@ static int get_config_files_suffix_ok (const char *check_path) {
 	return 0;
 }
 
-static int get_config_files_callback (struct dirent *entry, const char *resolved_path, unsigned char type, void *private_data) {
+static int get_config_files_callback (
+		struct dirent *entry,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
 	struct rrr_map *target = private_data;
 
+	(void)(orig_path);
 	(void)(entry);
 	(void)(type);
 

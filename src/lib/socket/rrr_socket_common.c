@@ -54,6 +54,7 @@ static int __rrr_socket_common_receive_array_tree_callback (
 }
 
 int rrr_socket_common_receive_array_tree (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
@@ -79,9 +80,8 @@ int rrr_socket_common_receive_array_tree (
 			arg
 	};
 
-	uint64_t bytes_read = 0;
 	int ret = rrr_socket_read_message_default (
-			&bytes_read,
+			bytes_read,
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_msg),

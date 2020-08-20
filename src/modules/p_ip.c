@@ -544,7 +544,9 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 
 	struct rrr_array array_tmp = {0};
 
+	uint64_t bytes_read = 0;
 	if ((ret = rrr_socket_common_receive_array_tree (
+			&bytes_read,
 			callback_data->read_sessions,
 			callback_data->fd,
 			RRR_READ_F_NO_SLEEPING,

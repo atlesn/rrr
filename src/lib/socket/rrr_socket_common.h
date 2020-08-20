@@ -35,6 +35,7 @@ struct rrr_socket_common_in_flight_counter {
 };
 
 int rrr_socket_common_receive_array_tree (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,

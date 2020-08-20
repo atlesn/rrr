@@ -92,6 +92,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 		}
 	}
 	if (no_unlink == 0 && holder->filename != NULL) {
+		RRR_DBG_7("socket pid %i filename %s unlink\n", getpid(), holder->filename);
 		unlink(holder->filename);
 	}
 	RRR_FREE_IF_NOT_NULL(holder->filename);
@@ -254,13 +255,6 @@ static int __rrr_socket_add_unlocked (
 	return ret;
 }
 
-static int __rrr_socket_add_unlocked_basic (
-		int fd,
-		const char *creator
-) {
-	return __rrr_socket_add_unlocked(fd, 0, 0, 0, creator, NULL);
-}
-
 int rrr_socket_accept (
 		int fd_in,
 		struct sockaddr *addr,
@@ -354,15 +348,18 @@ int rrr_socket_open (
 		const char *filename,
 		int flags,
 		int mode,
-		const char *creator
+		const char *creator,
+		int register_for_unlink
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
 	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked_basic(fd, creator);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
 	}
+
+	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s\n", fd, getpid(), filename, creator);
 
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
@@ -381,7 +378,7 @@ int rrr_socket_open_and_read_file (
 	*result_bytes = 0;
 
 	char *contents_tmp = NULL;
-	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file");
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file", 0);
 
 	if (fd <= 0) {
 		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
@@ -453,6 +450,9 @@ int rrr_socket (
 	if (fd != -1) {
 		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename);
 	}
+
+	RRR_DBG_7("rrr_socket fd %i pid %i filename %s\n", fd, getpid(), filename);
+
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
 }
@@ -808,7 +808,7 @@ int rrr_socket_connect_nonblock (
 	return ret;
 }
 
-int rrr_socket_unix_create_and_connect (
+int rrr_socket_unix_connect (
 		int *socket_fd_final,
 		const char *creator,
 		const char *filename,

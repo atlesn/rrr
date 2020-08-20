@@ -247,11 +247,21 @@ int rrr_read_message_using_callbacks (
 			read_session->target_size = read_session->rx_buf_wpos;
 		}
 		else {
-			RRR_DBG_3("Read returned 0 in rrr_read_message_using_callbacks, possible close of connection\n");
-			ret = RRR_READ_SOFT_ERROR;
+			if (read_session->eof_ok_now && read_session->rx_buf_ptr == NULL && read_session->rx_overshoot == NULL) {
+				// Complete callback says that EOF is OK now
+				ret = RRR_READ_EOF;
+				RRR_DBG_4("Read returned 0, possible close of connection or EOF. EOF was expected.\n");
+			}
+			else {
+				// Unexpected EOF
+				ret = RRR_READ_SOFT_ERROR;
+				RRR_DBG_4("Read returned 0, possible close of connection or EOF. EOF was NOT expected.\n");
+			}
 			goto out;
 		}
 	}
+
+	read_session->eof_ok_now = 0;
 
 	process_overshoot:
 	if (read_session->rx_buf_ptr == NULL) {

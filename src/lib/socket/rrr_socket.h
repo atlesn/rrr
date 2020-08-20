@@ -78,7 +78,8 @@ int rrr_socket_open (
 		const char *filename,
 		int flags,
 		int mode,
-		const char *creator
+		const char *creator,
+		int register_for_unlink
 );
 int rrr_socket_open_and_read_file (
 		char **result,
@@ -122,7 +123,7 @@ int rrr_socket_connect_nonblock (
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
-int rrr_socket_unix_create_and_connect (
+int rrr_socket_unix_connect (
 		int *socket_fd_final,
 		const char *creator,
 		const char *filename,

@@ -308,7 +308,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
-	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
+	if (rrr_socket_unix_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
 		RRR_MSG_0("Could not connect to socket\n");
 		ret = 1;
 		goto out;
@@ -328,7 +328,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = STDIN_FILENO;
 	}
 	else {
-		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post");
+		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post", 0);
 		if (data->input_fd < 0) {
 			RRR_MSG_0("Could not open input file %s: %s\n",
 					data->filename, rrr_strerror(errno));
@@ -496,7 +496,9 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 			(data->max_elements == 0 || data->elements_count < data->max_elements) &&
 			rrr_post_abort == 0
 	) {
+		uint64_t bytes_read = 0;
 		ret = rrr_socket_common_receive_array_tree(
+				&bytes_read,
 				&read_sessions,
 				data->input_fd,
 				0,
