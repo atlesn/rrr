@@ -585,25 +585,10 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 }
 
-static int test_config (struct rrr_instance_config_data *config) {
-	struct ipclient_data data;
-	int ret;
-
-	if ((ret = data_init(&data, NULL)) != 0) {
-		goto err;
-	}
-	ret = parse_config(&data, config);
-
-	err:
-	data_cleanup(&data);
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_ipclient,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };

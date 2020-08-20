@@ -512,19 +512,10 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int averager_test_config (struct rrr_instance_config_data *config) {
-	struct averager_data data;
-	averager_data_init(&data, NULL);
-	int ret = averager_parse_config(&data, config);
-	averager_data_cleanup(&data);
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
 		NULL,
-		averager_test_config,
 		NULL,
 		NULL
 };

@@ -942,23 +942,10 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config_data *config) {
-	struct mysql_data data;
-	int ret = 0;
-	if ((ret = data_init(&data)) != 0) {
-		goto err;
-	}
-	ret = parse_config(&data, config);
-	data_cleanup(&data);
-	err:
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mysql,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };
