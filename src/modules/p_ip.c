@@ -78,6 +78,7 @@ struct ip_data {
 	struct rrr_array_tree *definitions;
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
+	int do_smart_timeout;
 	int do_sync_byte_by_byte;
 	int do_send_rrr_msg_msg;
 	int do_force_target;
@@ -263,6 +264,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_rrr_msg_msg", do_send_rrr_msg_msg, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
@@ -1162,6 +1164,24 @@ static int ip_send_loop (
 		}
 
 		if (message_was_sent) {
+			if (data->do_smart_timeout) {
+				const struct rrr_msg_holder *node_orig = node;
+				RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
+					if (node == node_orig) {
+						RRR_LL_ITERATE_NEXT();
+					}
+					rrr_msg_holder_lock(node);
+					if (data->do_force_target == 1 || (
+							node->addr_len == node_orig->addr_len &&
+							(node->addr_len == 0 || memcmp(&node->addr, &node_orig->addr, node->addr_len)) &&
+							node->protocol == node_orig->protocol
+						)
+					) {
+						node->send_time = node_orig->send_time;
+					}
+					rrr_msg_holder_unlock(node);
+				RRR_LL_ITERATE_END();
+			}
 			action = IP_ACTION_DROP;
 		}
 

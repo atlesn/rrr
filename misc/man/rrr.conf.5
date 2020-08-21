@@ -275,6 +275,11 @@ If messages are not successfully sent within this time, perform the action speci
 .B ip_timeout_action.
 Default is not timeout (same as 0).
 
+.It ip_smart_timeout={yes|no}
+If set to yes and a message is successfully sent, reset the timeout counter for all other unsent messages destined for the same host, port and protocol currently in the queue.
+If set to no, unsent messages will time out according to the current send timeout regardless of whether other messages to the same destination have been sent or not in the meantime.
+Defaults to no. 
+
 .It ip_timeout_action={retry|drop|return}
 What do do when a message times out after being undeliverable. In case of
 .B retry,
