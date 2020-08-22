@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_types.h"
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
+#include "util/rrr_time.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
@@ -363,4 +364,12 @@ int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg
 
 int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b) {
 	return rrr_msg_msg_timestamp_compare(message_a, message_b);
+}
+
+int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl) {
+	uint64_t limit = rrr_time_get_64() - ttl;
+	if (msg->timestamp < limit) {
+		return 0;
+	}
+	return 1;
 }

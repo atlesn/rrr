@@ -62,6 +62,10 @@ int rrr_msg_holder_new (
 		int protocol,
 		void *message
 );
+int rrr_msg_holder_clone_no_data (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+);
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
@@ -70,5 +74,8 @@ void rrr_msg_holder_set_unlocked (
 		socklen_t addr_len,
 		int protocol
 );
-
+int rrr_msg_holder_address_matches (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+);
 #endif /* RRR_MESSAGE_HOLDER_H */

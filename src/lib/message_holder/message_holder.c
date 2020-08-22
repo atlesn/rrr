@@ -157,6 +157,8 @@ int rrr_msg_holder_new (
 		goto out;
 	}
 
+	memset(entry, '\0', sizeof(*entry));
+
 	if (__rrr_msg_holder_lock_init(entry) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_msg_msg_holder_new\n");
 		ret = 1;
@@ -205,6 +207,28 @@ int rrr_msg_holder_new (
 		return ret;
 }
 
+int rrr_msg_holder_clone_no_data (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+) {
+	int ret = rrr_msg_holder_new (
+			result,
+			0,
+			(struct sockaddr *) &source->addr,
+			source->addr_len,
+			source->protocol,
+			NULL
+	);
+
+	if (ret == 0) {
+		rrr_msg_holder_lock(*result);
+		(*result)->send_time = source->send_time;
+		rrr_msg_holder_unlock(*result);
+	}
+
+	return ret;
+}
+
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
@@ -220,4 +244,17 @@ void rrr_msg_holder_set_unlocked (
 	memcpy(&target->addr, addr, addr_len);
 	target->addr_len = addr_len;
 	target->protocol = protocol;
+}
+
+int rrr_msg_holder_address_matches (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	if (	 a->addr_len == b->addr_len &&
+			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len)) &&
+			 a->protocol == b->protocol
+	) {
+		return 1;
+	}
+	return 0;
 }
