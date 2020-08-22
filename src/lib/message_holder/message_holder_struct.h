@@ -46,6 +46,7 @@ struct rrr_msg_holder {
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;
 	ssize_t bytes_to_send;
+	int endian_indicator;
 };
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

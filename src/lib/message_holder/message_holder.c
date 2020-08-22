@@ -157,6 +157,8 @@ int rrr_msg_holder_new (
 		goto out;
 	}
 
+	memset(entry, '\0', sizeof(*entry));
+
 	if (__rrr_msg_holder_lock_init(entry) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_msg_msg_holder_new\n");
 		ret = 1;

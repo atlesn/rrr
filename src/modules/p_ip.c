@@ -270,7 +270,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_smart_timeout", do_smart_timeout, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_graylist_timeout_ms", graylist_timeout_ms, IP_DEFAULT_GRAYLIST_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_rrr_msg_msg", do_send_rrr_msg_msg, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_rrr_message", do_send_rrr_msg_msg, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
 
 	if (data->do_force_target == 1 && data->target_port == 0) {
@@ -280,7 +280,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_msg_msgs", do_extract_rrr_msg_msgs, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_msg_msgs, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
@@ -1006,7 +1006,7 @@ static int ip_send_message (
 		ssize_t final_size = 0;
 
 		// Check for second send attempt, message is then already in network order
-		if (entry->bytes_to_send != 0) {
+		if (entry->endian_indicator != 0) {
 			final_size = entry->bytes_to_send;
 
 			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
@@ -1037,6 +1037,8 @@ static int ip_send_message (
 			rrr_msg_checksum_and_to_network_endian (
 					(struct rrr_msg *) message
 			);
+
+			entry->endian_indicator = 1;
 		}
 
 		send_data = message;
@@ -1303,6 +1305,15 @@ static int ip_send_loop (
 			*did_do_something = 1;
 
 			if (action == IP_ACTION_RETURN) {
+				if (node->endian_indicator != 0) {
+					if (rrr_msg_head_to_host_and_verify(node->message, node->data_length) != 0 ||
+						rrr_msg_msg_to_host_and_verify(node->message, node->data_length) != 0
+					) {
+						RRR_BUG("BUG: Message endian reversion failed in ip_send_loop\n");
+					}
+					node->endian_indicator = 0;
+				}
+
 				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 						INSTANCE_D_BROKER_ARGS(data->thread_data),
 						node
