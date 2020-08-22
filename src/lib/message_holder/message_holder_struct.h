@@ -42,6 +42,11 @@ struct rrr_msg_holder {
 	int protocol;
 	uint64_t send_time;
 	void *message;
+
+	// Used by higher levels to control partial sends
+	ssize_t bytes_sent;
+	ssize_t bytes_to_send;
+	int endian_indicator;
 };
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */
