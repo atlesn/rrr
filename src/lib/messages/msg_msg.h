@@ -78,5 +78,6 @@ int rrr_msg_msg_topic_get (
 );
 int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b);
 int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b);
+int rrr_msg_msg_ttl_ok (const struct rrr_msg_msg *msg, uint64_t ttl);
 
 #endif /* RRR_MESSAGES_H */

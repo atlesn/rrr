@@ -1,8 +1,23 @@
-rrr (1.10-2ubuntu1) focal; urgency=medium
+rrr (1.10-3ubuntu1) focal; urgency=medium
 
   * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 17 Aug 2020 19:06:59 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 22 Aug 2020 21:54:36 +0200
+
+rrr (1.10-3) buster; urgency=medium
+
+  * Fixes in IP module
+    * Add TCP graylist timeout configuration parameter
+    * Add configurable TTL check like buffer module
+    * Add configurable smart timeout to update send of all messages to a single destination
+    * Improve preserve order algorithm, send order is now guaranteed
+    * Fix noisy debug messages
+    * Fix that returned RRR messages was not endian converted back to host
+    * Fix behaviour inconsistencies when using default target vs dynamic target
+  * Improve fork shutdown algorithm
+  * Misc fixes and cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 22 Aug 2020 20:39:53 +0200
 
 rrr (1.10-2) buster; urgency=medium
 
