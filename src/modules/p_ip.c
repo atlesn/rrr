@@ -1251,7 +1251,7 @@ static int ip_send_loop (
 			node->send_time = rrr_time_get_64();
 		}
 
-		printf("Sent for %p: %li/%li\n", node, node->bytes_sent, node->bytes_to_send);
+//		printf("Sent for %p: %li/%li\n", node, node->bytes_sent, node->bytes_to_send);
 
 		if (message_was_sent) {
 			if (data->do_smart_timeout) {

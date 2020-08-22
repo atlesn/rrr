@@ -306,6 +306,7 @@ The TTL check is not the same as the send timeout, it does not respect
 .B ip_timeout_action
 nor
 .B ip_smart_timeout.
+TTL expiration also applies to partially sent messages.
 Defaults to 0 which means that TTL check is disabled.   
  
 .It ip_target_host=HOST
