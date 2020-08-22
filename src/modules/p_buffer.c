@@ -62,14 +62,10 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
-	if (data->message_ttl_us > 0) {
-		uint64_t limit = rrr_time_get_64() - data->message_ttl_us;
-		//printf("TTL %" PRIu64 "<>%" PRIu64 "\n", limit, message->timestamp);
-		if (message->timestamp < limit) {
-			RRR_MSG_0("Warning: Received message in buffer instance %s with expired TTL, limit is set to %u seconds. Dropping message.\n",
-					INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
-			goto drop;
-		}
+	if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(message, data->message_ttl_us)) {
+		RRR_MSG_0("Warning: Received message in buffer instance %s with expired TTL, limit is set to %u seconds. Dropping message.\n",
+				INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
+		goto drop;
 	}
 
 	RRR_DBG_3("buffer instance %s received a message with timestamp %llu\n",

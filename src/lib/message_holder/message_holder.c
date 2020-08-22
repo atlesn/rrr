@@ -205,6 +205,28 @@ int rrr_msg_holder_new (
 		return ret;
 }
 
+int rrr_msg_holder_clone_no_data (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+) {
+	int ret = rrr_msg_holder_new (
+			result,
+			0,
+			(struct sockaddr *) &source->addr,
+			source->addr_len,
+			source->protocol,
+			NULL
+	);
+
+	if (ret == 0) {
+		rrr_msg_holder_lock(*result);
+		(*result)->send_time = source->send_time;
+		rrr_msg_holder_unlock(*result);
+	}
+
+	return ret;
+}
+
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,

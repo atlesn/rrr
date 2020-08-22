@@ -252,13 +252,15 @@ If array parsing fails according to definition, keep skipping one byte forward i
 Defaults to no, which means to only sync on boundaries of incoming messages.
 
 .It ip_send_rrr_message={yes|no}
-If set to yes, we will send complete RRR messages encoded for network. If set to no or left unset,
-messages with arrays will have their array packed and sent, and messages with other data will simply have their
-contents sent as is.
+If set to yes, complete RRR messages encoded for network will be sent.
+If set to no or left unset, messages with arrays will have their array packed and sent, and messages with other data will simply have their contents sent as is.
 
 .It ip_preserve_order={yes|no}
-Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
-like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
+Attempt to send messages in order according to their timestamp.
+Messages to a particular destination will be sent in order according to their creation timestamp.
+If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+This will impact performance when destinations are unreachable.
+Defaults no no.
 
 .It ip_send_multiple_per_connection={yes|no}
 In one send iteration (a very short timespan), allow multiple messages to be sent on a single connection.
@@ -293,6 +295,18 @@ the destination address if the target host is unreachable, and possibly log erro
 is used, then
 .B ip_send_timeout
 must be set to zero or left undefined. 
+
+.It ip_graylist_timeout_ms=MILLISECONDS
+If a TCP destination is unreachable, add it to the graylist and retry only after the specified  number of milliseconds has passed.
+Defaults to 2000 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+
+.It ip_ttl_seconds=SECONDS
+Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.
+The TTL check is not the same as the send timeout, it does not respect
+.B ip_timeout_action
+nor
+.B ip_smart_timeout.
+Defaults to 0 which means that TTL check is disabled.   
  
 .It ip_target_host=HOST
 .It ip_target_port=PORT

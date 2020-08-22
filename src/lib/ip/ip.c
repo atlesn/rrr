@@ -59,9 +59,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/crc32.h"
 
-// TODO : This graylist-stuff is not ip-specific
-
-#define RRR_IP_TCP_GRAYLIST_TIME_MS				2000
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
 
 static int __rrr_ip_graylist_exists (
@@ -82,22 +79,27 @@ static int __rrr_ip_graylist_exists (
 }
 
 static int __rrr_ip_graylist_push (
-		struct rrr_ip_graylist *target, const struct sockaddr *addr, socklen_t len, int timeout_ms
+		struct rrr_ip_graylist *target,
+		const struct sockaddr *addr,
+		socklen_t len
 ) {
 	int ret = 0;
 
 	struct rrr_ip_graylist_entry *new_entry = NULL;
 
+	if (target->graylist_period_us == 0) {
+		goto out;
+	}
+
 	if (__rrr_ip_graylist_exists(target, addr, len)) {
 		goto out;
 	}
 
-
 	char ip_str[256];
 	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_MSG_0("Host '%s' graylisting for %u ms following connection error\n",
+	RRR_MSG_0("Host '%s' graylisting for %" PRIu64 " ms following connection error\n",
 			ip_str,
-			RRR_IP_TCP_GRAYLIST_TIME_MS
+			target->graylist_period_us / 1000LLU
 	);
 
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
@@ -115,7 +117,7 @@ static int __rrr_ip_graylist_push (
 
 	memcpy (&new_entry->addr, addr, len);
 	new_entry->addr_len = len;
-	new_entry->expire_time = rrr_time_get_64() + timeout_ms * 1000;
+	new_entry->expire_time = rrr_time_get_64() + target->graylist_period_us;
 
 	RRR_LL_APPEND(target, new_entry);
 	new_entry = NULL;
@@ -135,6 +137,14 @@ void rrr_ip_graylist_clear_void (
 		void *target
 ) {
 	return rrr_ip_graylist_clear(target);
+}
+
+void rrr_ip_graylist_init (
+		struct rrr_ip_graylist *target,
+		uint64_t graylist_period_us
+) {
+	memset(target, '\0', sizeof(*target));
+	target->graylist_period_us = graylist_period_us;
 }
 
 void rrr_ip_network_cleanup (
@@ -312,7 +322,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
     memset(accept_result, '\0', sizeof(*accept_result));
 
 	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
-		RRR_DBG_1("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		RRR_DBG_4("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out_error_free_accept;
 	}
@@ -320,7 +330,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 	uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
 	if ((ret = rrr_socket_connect_nonblock_postcheck_loop(fd, timeout)) != 0) {
 		if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_DBG_1("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
+			RRR_DBG_4("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
 		}
 		goto out_error_free_accept;
 	}
@@ -343,7 +353,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 
 	out_error_free_accept:
 	 	if (graylist != NULL) {
-	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
 	 	}
 		free(accept_result);
 	out_error_close_socket:
@@ -397,13 +407,15 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     		continue;
     	}
 
-    	RRR_DBG_1("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
-    			i, host, port, rp->ai_addr->sa_family);
-
         if (__rrr_ip_network_connect_tcp_check_graylist (graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) != 0) {
+        	RRR_DBG_4("Not attempting to connect with address suggestion #%i to %s:%u address family %u, suggestion is graylisted\n",
+        			i, host, port, rp->ai_addr->sa_family);
         	goto graylist_next;
         }
         else {
+        	RRR_DBG_4("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
+        			i, host, port, rp->ai_addr->sa_family);
+
 			if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
 				uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
 				if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
@@ -415,7 +427,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     	// This means connection refused or some other error, skip to next address suggestion
 
 		if (graylist != NULL) {
-			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
+			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen);
 		}
 
 		graylist_next:
@@ -426,7 +438,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     freeaddrinfo(addrinfo_result);
 
     if (fd < 0 || rp == NULL) {
-		RRR_DBG_1 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
+		RRR_DBG_4 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		goto out_error;
     }
 
