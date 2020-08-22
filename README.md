@@ -14,10 +14,10 @@ allowing developers to focus on more specialized tasks.
 
 Among other things, RRR can be used to:
 
-- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets
+- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
 - Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
-- Save messages using InfluxDB and MySQL
+- Save messages using InfluxDB, MySQL or a customized save method
 
 Application examples may include:
 
@@ -27,6 +27,7 @@ Application examples may include:
 - Message forwarding, media or protocol conversion etc.
 - Host monitoring, logging
 - Print spooling
+- General capture and acquisition of all kinds of data, messages and telegrams
 
 RRR is used by starting one or more modules with different capabilities that read messages from each other. Some modules
 also use networking to communicate with different types of devices or with RRR programs on other hosts. Once a message
