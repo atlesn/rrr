@@ -137,41 +137,6 @@ void rrr_ip_graylist_clear_void (
 	return rrr_ip_graylist_clear(target);
 }
 
-int rrr_ip_send (
-		int *err,
-		int fd,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen,
-		void *data,
-		ssize_t data_size
-) {
-	int ret = 0;
-
-	*err = 0;
-
-	ssize_t written_bytes = 0;
-
-	ret = rrr_socket_sendto_nonblock (
-			err,
-			&written_bytes,
-			fd,
-			data,
-			data_size,
-			(struct sockaddr *) sockaddr, // sendto needs non-const
-			addrlen
-	);
-
-	// TODO : Possibly handle this situation
-	if (written_bytes != data_size) {
-		RRR_MSG_0("All bytes were not sent in sendto in rrr_ip_send\n");
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 void rrr_ip_network_cleanup (
 		void *arg
 ) {
@@ -277,7 +242,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
 		int err;
-		if (rrr_ip_send(&err, ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+		if (rrr_sendto_sendto_nonblock_fail_on_partial_write(&err, ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
 			break;
 		}
 	}

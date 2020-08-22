@@ -869,7 +869,7 @@ int rrr_socket_sendto_nonblock (
 		int fd,
 		const void *data,
 		ssize_t size,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	struct rrr_socket_options options;
@@ -1000,6 +1000,40 @@ int rrr_socket_sendto_blocking (
 		written_bytes_total += written_bytes;
 		RRR_DBG_4("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
 				fd, written_bytes_total, written_bytes);
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_sendto_sendto_nonblock_fail_on_partial_write (
+		int *err,
+		int fd,
+		const struct sockaddr *sockaddr,
+		socklen_t addrlen,
+		void *data,
+		ssize_t data_size
+) {
+	int ret = 0;
+
+	*err = 0;
+
+	ssize_t written_bytes = 0;
+
+	ret = rrr_socket_sendto_nonblock (
+			err,
+			&written_bytes,
+			fd,
+			data,
+			data_size,
+			(struct sockaddr *) sockaddr, // sendto needs non-const
+			addrlen
+	);
+
+	if (written_bytes != data_size) {
+		RRR_MSG_0("All bytes were not sent in rrr_sendto_sendto_nonblock_fail_on_partial_write\n");
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
 	}
 
 	out:

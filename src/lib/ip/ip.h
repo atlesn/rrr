@@ -79,14 +79,6 @@ int rrr_ip_receive_array_tree (
 		int (*callback)(struct rrr_msg_holder *entry, struct rrr_array *array, void *arg),
 		void *arg
 );
-int rrr_ip_send (
-		int *err,
-		int fd,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen,
-		void *data,
-		ssize_t data_size
-);
 void rrr_ip_network_cleanup (
 		void *arg
 );

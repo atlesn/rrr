@@ -728,7 +728,7 @@ static int ip_send_message_tcp (
 	}
 
 	int err;
-	if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
+	if ((ret = rrr_sendto_sendto_nonblock_fail_on_partial_write(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			if (err == EAGAIN || err == EWOULDBLOCK || err == EINPROGRESS) {
 				RRR_DBG_1("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
@@ -921,7 +921,7 @@ static int ip_send_raw (
 		//////////////////////////////////////////////////////
 
 		int err; // errno, not checked for UDP
-		ret = rrr_ip_send (
+		ret = rrr_sendto_sendto_nonblock_fail_on_partial_write (
 			&err,
 			ip_data->ip_udp.fd,
 			(const struct sockaddr *) &addr,
@@ -1171,11 +1171,8 @@ static int ip_send_loop (
 						RRR_LL_ITERATE_NEXT();
 					}
 					rrr_msg_holder_lock(node);
-					if (data->do_force_target == 1 || (
-							node->addr_len == node_orig->addr_len &&
-							(node->addr_len == 0 || memcmp(&node->addr, &node_orig->addr, node->addr_len)) &&
-							node->protocol == node_orig->protocol
-						)
+					if (	data->do_force_target == 1 ||
+							rrr_msg_holder_address_matches(node, node_orig)
 					) {
 						node->send_time = node_orig->send_time;
 					}

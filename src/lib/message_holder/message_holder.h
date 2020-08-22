@@ -70,5 +70,9 @@ void rrr_msg_holder_set_unlocked (
 		socklen_t addr_len,
 		int protocol
 );
+int rrr_msg_holder_address_matches (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+);
 
 #endif /* RRR_MESSAGE_HOLDER_H */

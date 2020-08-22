@@ -134,7 +134,7 @@ int rrr_socket_sendto_nonblock (
 		int fd,
 		const void *data,
 		ssize_t size,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_sendto_blocking (
@@ -144,10 +144,18 @@ int rrr_socket_sendto_blocking (
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
+int rrr_sendto_sendto_nonblock_fail_on_partial_write (
+		int *err,
+		int fd,
+		const struct sockaddr *sockaddr,
+		socklen_t addrlen,
+		void *data,
+		ssize_t data_size
+);
 static inline int rrr_socket_send_nonblock (
 		ssize_t *written_bytes,
 		int fd,
-		void *data,
+		const void *data,
 		ssize_t size
 ) {
 	int err = 0;

@@ -184,8 +184,7 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	int err;
-	if ((ret = rrr_socket_sendto_nonblock(&err, &written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
+	if ((ret = rrr_socket_send_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
 		goto out;
 	}
 

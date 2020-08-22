@@ -221,3 +221,16 @@ void rrr_msg_holder_set_unlocked (
 	target->addr_len = addr_len;
 	target->protocol = protocol;
 }
+
+int rrr_msg_holder_address_matches (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	if (	 a->addr_len == b->addr_len &&
+			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len)) &&
+			 a->protocol == b->protocol
+	) {
+		return 1;
+	}
+	return 0;
+}
