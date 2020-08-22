@@ -647,7 +647,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_http_client_data_cleanup(&data->http_client_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
-	rrr_msg_msg_holder_collection_clear(&data->defer_queue);
+	rrr_msg_holder_collection_clear(&data->defer_queue);
 }
 
 static int httpclient_data_init (

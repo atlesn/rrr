@@ -133,7 +133,7 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->column_tags);
 	rrr_map_clear(&data->blob_write_columns);
 
-	rrr_msg_msg_holder_collection_clear(&data->input_buffer);
+	rrr_msg_holder_collection_clear(&data->input_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->mysql_server);
 	RRR_FREE_IF_NOT_NULL(data->mysql_user);
@@ -895,7 +895,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_msg_msg_holder_collection_clear_void, &process_buffer_tmp);
+	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);

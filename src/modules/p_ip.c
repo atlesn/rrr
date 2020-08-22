@@ -106,7 +106,7 @@ struct ip_data {
 
 static void ip_data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
-	rrr_msg_msg_holder_collection_clear(&data->send_buffer);
+	rrr_msg_holder_collection_clear(&data->send_buffer);
 	if (data->definitions != NULL) {
 		rrr_array_tree_destroy(data->definitions);
 	}
@@ -1183,7 +1183,7 @@ static int ip_send_loop (
 	struct rrr_msg_msg_holder_collection preserve_order_list = {0};
 
 	if (data->do_preserve_order) {
-		rrr_msg_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+		rrr_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
 	}
 
 //		printf ("TCP connect count: %i\n", RRR_LL_COUNT(&tcp_connect_data));

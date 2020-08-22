@@ -598,7 +598,7 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 
 	struct rrr_msg_holder *target = NULL;
 
-	if (rrr_msg_msg_holder_util_clone_no_locking(&target, source) != 0) {
+	if (rrr_msg_holder_util_clone_no_locking(&target, source) != 0) {
 		RRR_MSG_0("Could not clone ip buffer entry in __rrr_message_broker_write_clone_and_write_entry_callback\n");
 		ret = 1;
 		goto out;

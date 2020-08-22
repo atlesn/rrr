@@ -93,7 +93,7 @@ void data_cleanup(void *arg) {
 
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote_port);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote);
-	rrr_msg_msg_holder_collection_clear(&data->send_queue_intermediate);
+	rrr_msg_holder_collection_clear(&data->send_queue_intermediate);
 }
 
 int data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -352,7 +352,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	// Points to data inside entry, not to be freed except from when entry is destroyed
 	void *joined_data = NULL;
 
-	if (rrr_msg_msg_holder_util_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
+	if (rrr_msg_holder_util_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
 		goto out;
