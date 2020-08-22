@@ -59,6 +59,7 @@ struct rrr_ip_graylist_entry {
 
 struct rrr_ip_graylist {
 	RRR_LL_HEAD(struct rrr_ip_graylist_entry);
+	uint64_t graylist_period_us;
 };
 
 void rrr_ip_graylist_clear (
@@ -67,25 +68,9 @@ void rrr_ip_graylist_clear (
 void rrr_ip_graylist_clear_void (
 		void *target
 );
-int rrr_ip_receive_array_tree (
-		struct rrr_msg_holder *target_entry,
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int read_flags,
-		struct rrr_array *array_final,
-		const struct rrr_array_tree *tree,
-		int do_sync_byte_by_byte,
-		unsigned int message_max_size,
-		int (*callback)(struct rrr_msg_holder *entry, struct rrr_array *array, void *arg),
-		void *arg
-);
-int rrr_ip_send (
-		int *err,
-		int fd,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen,
-		void *data,
-		ssize_t data_size
+void rrr_ip_graylist_init (
+		struct rrr_ip_graylist *target,
+		uint64_t graylist_period_us
 );
 void rrr_ip_network_cleanup (
 		void *arg
@@ -97,6 +82,7 @@ int rrr_ip_network_start_udp_ipv4 (
 		struct rrr_ip_data *data
 );
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+		ssize_t *written_bytes,
 		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
