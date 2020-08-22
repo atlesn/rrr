@@ -702,9 +702,10 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_3 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	rrr_msg_holder_incref_while_locked(entry);
-
 	entry->send_time = 0;
+	entry->bytes_sent = 0;
+
+	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->send_buffer, entry);
 
 	rrr_msg_holder_unlock(entry);
@@ -713,6 +714,7 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 static int ip_send_message_tcp (
+		ssize_t *written_bytes,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data *accept_data,
 		const void *send_data,
@@ -728,7 +730,15 @@ static int ip_send_message_tcp (
 	}
 
 	int err;
-	if ((ret = rrr_sendto_sendto_nonblock_fail_on_partial_write(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
+	if ((ret = rrr_socket_sendto_nonblock (
+			&err,
+			written_bytes,
+			accept_data->ip_data.fd,
+			(void*) send_data,
+			send_size,
+			NULL,
+			0
+	)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			if (err == EAGAIN || err == EWOULDBLOCK || err == EINPROGRESS) {
 				RRR_DBG_1("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
@@ -747,15 +757,21 @@ static int ip_send_message_tcp (
 			RRR_MSG_0("Error while sending TCP message in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 		}
-		goto out;
 	}
 
-	if (ip_data->do_multiple_per_connection || ip_data->do_persistent_connections) {
-		// Allow more to be sent on this connection
-	}
-	else {
-		// Disallow more use of this connection and tag for closing
-		accept_data->custom_data = -1;
+	if (accept_data->custom_data == 0) {
+		if (*written_bytes < send_size) {
+			// Partial send. Prevent others messages to be sent and prevent close of connection
+			accept_data->custom_data = 1;
+		}
+		else if (ip_data->do_multiple_per_connection || ip_data->do_persistent_connections) {
+			// Allow more to be sent on this connection in this queue iteration
+			accept_data->custom_data = 0;
+		}
+		else {
+			// Disallow more use of this connection and tag for closing
+			accept_data->custom_data = -1;
+		}
 	}
 
 	out:
@@ -763,6 +779,7 @@ static int ip_send_message_tcp (
 }
 
 static int ip_send_message_raw_default_target (
+		ssize_t *written_bytes,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
@@ -808,6 +825,7 @@ static int ip_send_message_raw_default_target (
 		}
 
 		ret = ip_send_message_tcp (
+				written_bytes,
 				ip_data,
 				accept_data,
 				send_data,
@@ -816,6 +834,7 @@ static int ip_send_message_raw_default_target (
 	}
 	else {
 		ret = rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+			written_bytes,
 			&ip_data->ip_udp,
 			ip_data->target_port,
 			ip_data->target_host,
@@ -832,6 +851,7 @@ static int ip_send_message_raw_default_target (
 }
 
 static int ip_send_raw (
+		ssize_t *written_bytes,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
@@ -853,6 +873,13 @@ static int ip_send_raw (
 
 	struct rrr_ip_accept_data *accept_data_to_free = NULL;
 
+	if (send_size == 0) {
+		goto out;
+	}
+	if (send_size <= 0) {
+		RRR_BUG("BUG: Send size was < 0 in ip_send_raw\n");
+	}
+
 	// Configuration validation should produce an error if do_force_target is set
 	// but no target_port/target_host
 	if (ip_data->do_force_target == 1 || addr_len == 0) {
@@ -861,6 +888,7 @@ static int ip_send_raw (
 		//////////////////////////////////////////////////////
 
 		ret = ip_send_message_raw_default_target (
+				written_bytes,
 				ip_data,
 				tcp_connect_data,
 				graylist,
@@ -904,6 +932,7 @@ static int ip_send_raw (
 		}
 
 		ret = ip_send_message_tcp (
+				written_bytes,
 				ip_data,
 				accept_data,
 				send_data,
@@ -916,13 +945,14 @@ static int ip_send_raw (
 		//////////////////////////////////////////////////////
 
 		int err; // errno, not checked for UDP
-		ret = rrr_sendto_sendto_nonblock_fail_on_partial_write (
+		ret = rrr_socket_sendto_nonblock (
 			&err,
+			written_bytes,
 			ip_data->ip_udp.fd,
-			(const struct sockaddr *) &addr,
-			addr_len,
 			(void *) send_data, // Cast away const OK
-			send_size
+			send_size,
+			(const struct sockaddr *) &addr,
+			addr_len
 		);
 
 		if (ret != 0) {
@@ -976,8 +1006,8 @@ static int ip_send_message (
 		ssize_t final_size = 0;
 
 		// Check for second send attempt, message is then already in network order
-		if (entry->send_time != 0) {
-			final_size = entry->data_length;
+		if (entry->bytes_to_send != 0) {
+			final_size = entry->bytes_to_send;
 
 			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
 					INSTANCE_D_NAME(thread_data), rrr_be64toh(message->timestamp), final_size);
@@ -1079,16 +1109,25 @@ static int ip_send_message (
 		entry->send_time = rrr_time_get_64();
 	}
 
+	ssize_t written_bytes = 0;
+
 	ret = ip_send_raw (
+			&written_bytes,
 			ip_data,
 			tcp_connect_data,
 			graylist,
 			entry->protocol,
 			(struct sockaddr *) &entry->addr,
 			entry->addr_len,
-			send_data,
-			send_size
+			send_data + entry->bytes_sent,
+			send_size - entry->bytes_sent
 	);
+
+	entry->bytes_to_send = send_size;
+	entry->bytes_sent += written_bytes;
+
+	RRR_DBG_2("ip instance %s send status for entry: %li/%li bytes\n",
+			INSTANCE_D_NAME(ip_data->thread_data), entry->bytes_sent, entry->bytes_to_send);
 
 	out:
 		RRR_FREE_IF_NOT_NULL(tmp_data);
@@ -1191,6 +1230,8 @@ static int ip_send_loop (
 			goto perform_action;
 		}
 
+		ssize_t bytes_sent_orig = node->bytes_sent;
+
 		if ((ret = ip_send_message(data, tcp_connect_data, tcp_graylist, node)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
 				message_was_sent = 0;
@@ -1202,13 +1243,17 @@ static int ip_send_loop (
 			}
 		}
 
-		// ip_send functions does not always set send_time parameter
-		if (node->send_time == 0) {
+		if (node->bytes_sent < node->bytes_to_send) {
+			message_was_sent = 0;
+		}
+
+		if (node->send_time == 0 || bytes_sent_orig != node->bytes_sent || message_was_sent) {
 			node->send_time = rrr_time_get_64();
 		}
 
+		printf("Sent for %p: %li/%li\n", node, node->bytes_sent, node->bytes_to_send);
+
 		if (message_was_sent) {
-			node->send_time = rrr_time_get_64();
 			if (data->do_smart_timeout) {
 				const struct rrr_msg_holder *node_orig = node;
 				RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);

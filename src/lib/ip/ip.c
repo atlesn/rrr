@@ -220,6 +220,7 @@ int rrr_ip_network_start_udp_ipv4 (
 }
 
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+		ssize_t *written_bytes,
 		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
@@ -252,7 +253,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
 		int err;
-		if (rrr_sendto_sendto_nonblock_fail_on_partial_write(&err, ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+		if (rrr_socket_sendto_nonblock(&err, written_bytes, ip_data->fd, data, size, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
 			break;
 		}
 	}

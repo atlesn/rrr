@@ -28,6 +28,7 @@ sub source {
 	my $message = shift;
 
 	$message->push_tag_str("id", $id++);
+	$message->push_tag_str("data", "x" x (65536 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2));
 
 	$message->send();
 

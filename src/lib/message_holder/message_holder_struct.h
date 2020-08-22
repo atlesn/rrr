@@ -41,11 +41,11 @@ struct rrr_msg_holder {
 	socklen_t addr_len;
 	int protocol;
 	uint64_t send_time;
+	void *message;
 
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;
-
-	void *message;
+	ssize_t bytes_to_send;
 };
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

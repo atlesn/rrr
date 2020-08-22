@@ -1006,7 +1006,7 @@ int rrr_socket_sendto_blocking (
 	return ret;
 }
 
-int rrr_sendto_sendto_nonblock_fail_on_partial_write (
+int rrr_socket_sendto_nonblock_fail_on_partial_write (
 		int *err,
 		int fd,
 		const struct sockaddr *sockaddr,
