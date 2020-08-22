@@ -359,13 +359,6 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	return ret;
 }
 
-/*
-struct ip_read_callback_data {
-	struct ip_data *ip_data;
-	const struct rrr_msg_msg_holder *entry_orig;
-};
-*/
-
 static int ip_read_receive_message (
 		struct ip_data *data,
 		const struct rrr_msg_holder *entry_orig,
