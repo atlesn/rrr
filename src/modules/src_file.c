@@ -366,8 +366,6 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 		return ret;
 	}
 
-	read_session->eof_ok_now = 1;
-
 	return ret;
 }
 

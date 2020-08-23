@@ -457,7 +457,7 @@ static int ip_read_data_receive_extract_messages (
 struct ip_read_array_callback_data {
 	struct rrr_msg_holder *template_entry;
 	struct ip_data *data;
-	int handle_soft_error;
+	int handle_soft_error_and_eof;
 	int return_value_from_array;
 	int fd;
 	struct rrr_read_session_collection *read_sessions;
@@ -553,7 +553,7 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 			&bytes_read,
 			callback_data->read_sessions,
 			callback_data->fd,
-			RRR_SOCKET_READ_METHOD_RECVFROM,
+			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			&array_tmp,
 			data->definitions,
 			data->do_sync_byte_by_byte,
@@ -561,8 +561,8 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 			__rrr_ip_receive_array_tree_callback,
 			callback_data
 	)) != 0) {
-		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			if (callback_data->handle_soft_error) {
+		if (ret == RRR_ARRAY_SOFT_ERROR || ret == RRR_READ_EOF) {
+			if (callback_data->handle_soft_error_and_eof) {
 				// Caller handles return value
 				callback_data->return_value_from_array = ret;
 				ret = RRR_MESSAGE_BROKER_OK;
@@ -604,7 +604,7 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 
 static int ip_read_loop (
 		struct ip_data *data,
-		int handle_soft_error,
+		int handle_soft_error_and_eof,
 		int fd,
 		struct rrr_read_session_collection *read_sessions,
 		uint64_t end_time
@@ -614,7 +614,7 @@ static int ip_read_loop (
 	struct ip_read_array_callback_data callback_data = {
 			NULL, // Set in first callback
 			data,
-			handle_soft_error,
+			handle_soft_error_and_eof,
 			0,
 			fd,
 			read_sessions,
@@ -636,7 +636,7 @@ static int ip_read_loop (
 		goto out;
 	}
 
-	if (ret == 0 && handle_soft_error) {
+	if (ret == 0 && handle_soft_error_and_eof) {
 		ret = callback_data.return_value_from_array;
 	}
 
@@ -674,10 +674,14 @@ static int ip_tcp_read_data (
 
 	RRR_LL_ITERATE_BEGIN(accept_data_collection, struct rrr_ip_accept_data);
 		if ((ret = ip_read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp, end_time)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR) {
+			if (ret == RRR_SOCKET_SOFT_ERROR || ret == RRR_READ_EOF) {
 				RRR_DBG_1("Closing tcp connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 				RRR_LL_ITERATE_SET_DESTROY();
 				ret = 0;
+			}
+			else {
+				RRR_DBG_1("Error %i while reading TCP data in ip instance %s\n", ret, INSTANCE_D_NAME(data->thread_data));
+				RRR_LL_ITERATE_LAST();
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(accept_data_collection, 0; rrr_ip_accept_data_close_and_destroy(node));

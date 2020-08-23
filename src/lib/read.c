@@ -241,13 +241,13 @@ int rrr_read_message_using_callbacks (
 		else if (ret_from_read & RRR_READ_EOF) {
 			if (read_session->eof_ok_now && read_session->rx_buf_ptr == NULL && read_session->rx_overshoot == NULL) {
 				// Complete callback says that EOF is OK now
-				ret = RRR_READ_EOF;
 				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was expected.\n");
+				ret = RRR_READ_EOF;
 			}
 			else {
 				// Unexpected EOF
-				ret = RRR_READ_SOFT_ERROR;
 				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was NOT expected.\n");
+				ret = RRR_READ_SOFT_ERROR;
 			}
 			goto out;
 		}
@@ -651,6 +651,10 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	// Read position for array framework
 	read_session->rx_buf_skip = skipped_bytes;
+
+	if (read_session->target_size == read_session->rx_buf_wpos) {
+		read_session->eof_ok_now = 1;
+	}
 
 	return RRR_READ_OK;
 }
