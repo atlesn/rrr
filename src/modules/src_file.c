@@ -37,11 +37,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/read.h"
 #include "../lib/array_tree.h"
+#include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/socket/rrr_socket_common.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
-#include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/util/rrr_readdir.h"
@@ -175,6 +175,12 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_topic", topic);
 	if (data->topic != NULL) {
 		data->topic_len = strlen(data->topic);
+		if (rrr_mqtt_topic_validate_name(data->topic) != 0) {
+			RRR_MSG_0("Validation of parameter file_topic with value '%s' failed in file instance %s\n",
+					data->topic, config->name);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_directory", directory);
