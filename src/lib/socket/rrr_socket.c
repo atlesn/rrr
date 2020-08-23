@@ -899,12 +899,12 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_3("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
+		RRR_DBG_7("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
-	RRR_DBG_4("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete) address length %li\n",
+	RRR_DBG_7("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete) address length %li\n",
 			fd, size, done_bytes_total, addr_len);
 
 	if (addr == NULL) {
@@ -926,12 +926,12 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else if (errno == EPIPE) {
-				RRR_DBG_1 ("Pipe full or connection closed by remote\n");
+				RRR_DBG_7 ("Pipe full or connection closed by remote\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
 			else if (errno == ECONNREFUSED || errno == ECONNRESET) {
-				RRR_DBG_1 ("Connection refused\n");
+				RRR_DBG_7 ("Connection refused\n");
 				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
@@ -940,7 +940,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_DBG_1("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_DBG_7("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
@@ -980,7 +980,7 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_4("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
+		RRR_DBG_7("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
 				fd, size, written_bytes_total);
 		int err;
 		if ((ret = rrr_socket_sendto_nonblock (
@@ -998,7 +998,7 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_4("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
+		RRR_DBG_7("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
 				fd, written_bytes_total, written_bytes);
 	}
 
