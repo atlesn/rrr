@@ -463,12 +463,22 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 
 	struct rrr_array array_final = {0};
 
+	int socket_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
+
+	if (file->type == DT_CHR || file->type == DT_SOCK || file->type == DT_FIFO) {
+		// For devices without any end
+		socket_flags |= RRR_SOCKET_READ_CHECK_POLLHUP;
+	}
+	else {
+		// For devices with finite size or files
+		socket_flags |= RRR_SOCKET_READ_CHECK_EOF;
+	}
+
 	if (data->tree != NULL && (ret = rrr_socket_common_receive_array_tree (
 			bytes_read,
 			&file->read_session_collection,
 			file->fd,
-			RRR_READ_F_NO_SLEEPING,
-			RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS,
+			socket_flags,
 			&array_final,
 			data->tree,
 			0,
@@ -499,8 +509,7 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				65536,
 				65536,
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
-				RRR_READ_F_NO_SLEEPING,
-				RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS,
+				socket_flags,
 				file_read_all_to_message_get_target_size_callback,
 				data,
 				file_read_all_to_message_complete_callback,

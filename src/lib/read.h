@@ -109,17 +109,12 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_complete_callback) (
 													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_poll) (
-													int read_flags,
 													void *private_arg
 											 ),
 		int									 (*function_read) (

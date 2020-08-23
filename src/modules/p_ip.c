@@ -58,6 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_DEFAULT_PORT					2222
 #define IP_DEFAULT_PROTOCOL				RRR_IP_UDP
 #define IP_SEND_TIME_LIMIT_MS			1000
+#define IP_RECEIVE_TIME_LIMIT_MS		1000
 #define IP_DEFAULT_MAX_MESSAGE_SIZE		4096
 #define IP_DEFAULT_GRAYLIST_TIMEOUT_MS 	2000
 
@@ -69,7 +70,7 @@ enum ip_action {
 
 struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_msg_msg_holder_collection send_buffer;
+	struct rrr_msg_holder_collection send_buffer;
 //	struct rrr_msg_msg_holder_collection delivery_buffer;
 	unsigned int source_udp_port;
 	unsigned int source_tcp_port;
@@ -253,7 +254,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	}
 
 	if (data->definitions != NULL && data->source_udp_port == 0 && data->source_tcp_port == 0) {
-		RRR_MSG_0("ip_input_types was set but ip_port was not, this is an invalid configuraton in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_input_types was set but ip_tcp_port and/or ip_udp_port was not, this is an invalid configuration in ip instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -461,6 +462,7 @@ struct ip_read_array_callback_data {
 	int fd;
 	struct rrr_read_session_collection *read_sessions;
 	int loops;
+	uint64_t end_time;
 };
 
 static int __rrr_ip_receive_array_tree_callback (
@@ -551,7 +553,6 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 			&bytes_read,
 			callback_data->read_sessions,
 			callback_data->fd,
-			RRR_READ_F_NO_SLEEPING,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			&array_tmp,
 			data->definitions,
@@ -584,7 +585,7 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 	}
 
 	out:
-		if (--(callback_data->loops) > 0 && ret == 0) {
+		if (--(callback_data->loops) > 0 && ret == 0 && rrr_time_get_64() < callback_data->end_time) {
 			ret = RRR_MESSAGE_BROKER_AGAIN;
 		}
 
@@ -605,7 +606,8 @@ static int ip_read_loop (
 		struct ip_data *data,
 		int handle_soft_error,
 		int fd,
-		struct rrr_read_session_collection *read_sessions
+		struct rrr_read_session_collection *read_sessions,
+		uint64_t end_time
 ) {
 	int ret = 0;
 
@@ -616,7 +618,8 @@ static int ip_read_loop (
 			0,
 			fd,
 			read_sessions,
-			4
+			4,
+			end_time
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
@@ -643,7 +646,8 @@ static int ip_read_loop (
 
 static int ip_tcp_read_data (
 		struct ip_data *data,
-		struct rrr_ip_accept_data_collection *accept_data_collection
+		struct rrr_ip_accept_data_collection *accept_data_collection,
+		uint64_t end_time
 ) {
 	int ret = 0;
 	if (data->source_tcp_port == 0) {
@@ -669,7 +673,7 @@ static int ip_tcp_read_data (
 	}
 
 	RRR_LL_ITERATE_BEGIN(accept_data_collection, struct rrr_ip_accept_data);
-		if ((ret = ip_read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp)) != 0) {
+		if ((ret = ip_read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp, end_time)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
 				RRR_DBG_1("Closing tcp connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -682,11 +686,14 @@ static int ip_tcp_read_data (
 	return ret;
 }
 
-static int ip_udp_read_data(struct ip_data *data) {
+static int ip_udp_read_data (
+		struct ip_data *data,
+		uint64_t end_time
+) {
 	int ret = 0;
 
 	if (data->source_udp_port > 0) {
-		if ((ret = ip_read_loop (data, 0, data->ip_udp.fd, &data->read_sessions_udp)) != 0) {
+		if ((ret = ip_read_loop (data, 0, data->ip_udp.fd, &data->read_sessions_udp, end_time)) != 0) {
 			goto out;
 		}
 	}
@@ -1140,7 +1147,7 @@ static int ip_send_message (
 }
 
 static int ip_preserve_order_list_push (
-		struct rrr_msg_msg_holder_collection *collection,
+		struct rrr_msg_holder_collection *collection,
 		const struct rrr_msg_holder *template
 ) {
 	struct rrr_msg_holder *new_entry = NULL;
@@ -1155,7 +1162,7 @@ static int ip_preserve_order_list_push (
 }
 
 static int ip_preserve_order_list_has (
-		struct rrr_msg_msg_holder_collection *collection,
+		struct rrr_msg_holder_collection *collection,
 		const struct rrr_msg_holder *template
 ) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
@@ -1167,7 +1174,7 @@ static int ip_preserve_order_list_has (
 }
 
 static void ip_preserve_order_list_clear (
-		struct rrr_msg_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_msg_holder, rrr_msg_holder_decref(node));
 }
@@ -1180,7 +1187,7 @@ static int ip_send_loop (
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg_holder_collection preserve_order_list = {0};
+	struct rrr_msg_holder_collection preserve_order_list = {0};
 
 	if (data->do_preserve_order) {
 		rrr_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
@@ -1468,13 +1475,16 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			break;
 		}
 
+		uint64_t time_now = rrr_time_get_64();
+
 		if (data->definitions != NULL) {
-			if (ip_udp_read_data(data) != 0) {
+			uint64_t end_time = time_now + (IP_RECEIVE_TIME_LIMIT_MS * 1000);
+			if (ip_udp_read_data(data, end_time) != 0) {
 				RRR_MSG_ERR("Error while reading udp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
-			if (ip_tcp_read_data(data, &tcp_accept_data) != 0) {
+			if (ip_tcp_read_data(data, &tcp_accept_data, end_time) != 0) {
 				RRR_MSG_ERR("Error while reading tcp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -1495,8 +1505,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		else {
 			consecutive_nothing_happened = 0;
 		}
-
-		uint64_t time_now = rrr_time_get_64();
 
 		if (INSTANCE_D_STATS(thread_data) != NULL && time_now > next_stats_time) {
 			int delivery_entry_count = 0;

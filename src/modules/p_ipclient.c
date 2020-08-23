@@ -63,7 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IPCLIENT_CONCURRENT_CONNECTIONS 3
 
 struct ipclient_data {
-	struct rrr_msg_msg_holder_collection send_queue_intermediate;
+	struct rrr_msg_holder_collection send_queue_intermediate;
 
 	struct rrr_instance_runtime_data *thread_data;
 

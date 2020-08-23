@@ -57,7 +57,6 @@ int rrr_socket_common_receive_array_tree (
 		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
-		int read_flags,
 		int socket_read_flags,
 		struct rrr_array *array_final,
 		const struct rrr_array_tree *tree,
@@ -87,7 +86,6 @@ int rrr_socket_common_receive_array_tree (
 			sizeof(struct rrr_msg),
 			4096,
 			0, // No max size
-			read_flags,
 			socket_read_flags,
 			rrr_read_common_get_session_target_length_from_array_tree,
 			&callback_data_array,

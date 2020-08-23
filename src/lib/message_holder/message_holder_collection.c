@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 
 void rrr_msg_holder_collection_clear (
-		struct rrr_msg_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_msg_holder, rrr_msg_holder_decref(node));
 }
@@ -39,10 +39,10 @@ void rrr_msg_holder_collection_clear_void (
 }
 
 void rrr_msg_holder_collection_sort (
-		struct rrr_msg_msg_holder_collection *target,
+		struct rrr_msg_holder_collection *target,
 		int (*compare)(void *message_a, void *message_b)
 ) {
-	struct rrr_msg_msg_holder_collection tmp = {0};
+	struct rrr_msg_holder_collection tmp = {0};
 
 	// TODO : This is probably a bad sorting algorithm
 

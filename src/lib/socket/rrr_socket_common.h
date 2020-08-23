@@ -38,7 +38,6 @@ int rrr_socket_common_receive_array_tree (
 		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
-		int read_flags,
 		int socket_read_flags,
 		struct rrr_array *array_final,
 		const struct rrr_array_tree *tree,

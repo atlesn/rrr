@@ -37,7 +37,6 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max,
-		int read_flags,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,

@@ -26,18 +26,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 
-struct rrr_msg_msg_holder_collection {
+struct rrr_msg_holder_collection {
 	RRR_LL_HEAD(struct rrr_msg_holder);
 };
 
 void rrr_msg_holder_collection_clear (
-		struct rrr_msg_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection
 );
 void rrr_msg_holder_collection_clear_void (
 		void *arg
 );
 void rrr_msg_holder_collection_sort (
-		struct rrr_msg_msg_holder_collection *target,
+		struct rrr_msg_holder_collection *target,
 		int (*compare)(void *message_a, void *message_b)
 );
 

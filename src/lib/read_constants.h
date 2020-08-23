@@ -77,6 +77,5 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Applicable only when using the read framework
 #define RRR_READ_COMPLETE_METHOD_TARGET_LENGTH			0
 #define RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ		11
-#define RRR_READ_F_NO_SLEEPING (1<<0)
 
 #endif /* RRR_READ_CONSTANTS_H */

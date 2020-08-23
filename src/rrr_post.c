@@ -472,22 +472,6 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
 		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
-/*
-
-	struct rrr_read_session_collection *read_session_collection,
-	int fd,
-	int read_flags,
-	int socket_read_flags,
-	struct rrr_array *array_final,
-	const struct rrr_array_tree *tree,
-	int do_sync_byte_by_byte,
-	unsigned int message_max_size,
-	int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
-	void *arg
-
-
-	*/
-
 
 	struct rrr_post_read_callback_data callback_data = {
 			data
@@ -497,11 +481,10 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 			rrr_post_abort == 0
 	) {
 		uint64_t bytes_read = 0;
-		ret = rrr_socket_common_receive_array_tree(
+		ret = rrr_socket_common_receive_array_tree (
 				&bytes_read,
 				&read_sessions,
 				data->input_fd,
-				0,
 				socket_read_flags,
 				&array_tmp,
 				data->tree,

@@ -54,24 +54,29 @@ struct rrr_socket_read_message_default_callback_data {
 	void *complete_callback_arg;
 };
 
-static int __rrr_socket_read_message_default_poll(int read_flags, void *private_arg) {
-	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-
-	(void)(read_flags);
-
+static int __rrr_socket_read_message_poll (
+		int *got_pollhup_pollerr,
+		struct rrr_socket_read_message_default_callback_data *callback_data
+) {
 	int ret = RRR_SOCKET_OK;
+
+	*got_pollhup_pollerr = 0;
 
 	ssize_t items = 0;
 	struct pollfd pollfd = { callback_data->fd, POLLIN, 0 };
 
 	// Don't print errors here as errors will then be printed when a remote closes
-	// connection. Higher level should print error if needed. Debuglevel 1 is however fine here.
+	// connection. Higher level should print error if needed.
 
 	poll_retry:
+
 	items = poll(&pollfd, 1, 0);
-	if (items > 0) {
-		RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
-	}
+	// Noisy message, disabled by default
+/*	if (items > 0) {
+		RRR_DBG_7("Socket %i poll result was %i items\n", callback_data->fd, items);
+	}*/
+
+	// Don't do else if's, check everything
 	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;
@@ -80,22 +85,20 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out;
-	}
-	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out;
-	}
-	else if (items == 0) {
-		ret = RRR_SOCKET_READ_INCOMPLETE;
-		goto out;
-	}
+		RRR_DBG_7("Poll error in rrr_socket_read_message: %s\n", rrr_strerror(errno));
 
+		*got_pollhup_pollerr = 1;
+		ret = RRR_SOCKET_SOFT_ERROR;
+	}
+	if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
+		RRR_DBG_7("Poll error in rrr_socket_read_message: Got POLLERR or POLLNVAL\n");
+
+		*got_pollhup_pollerr = 1;
+		ret = RRR_SOCKET_SOFT_ERROR;
+	}
 	if ((pollfd.revents & POLLHUP) != 0) {
-		RRR_DBG_3("Socket %i POLLHUP in rrr_socket_read_message_default_poll, read EOF imminent\n", callback_data->fd);
+		*got_pollhup_pollerr = 1;
+		RRR_DBG_7("Socket %i POLLHUP in rrr_socket_read_message_default_poll, read EOF imminent\n", callback_data->fd);
 	}
 
 	out:
@@ -138,6 +141,16 @@ static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read
 
 static void __rrr_socket_read_message_default_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
+	if (read_session->rx_buf_ptr != NULL && read_session->rx_buf_wpos > 0) {
+		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed bytes left in read buffer\n",
+				callback_data->fd, read_session->rx_buf_wpos);
+	}
+	if (read_session->rx_overshoot != NULL && read_session->rx_overshoot_size > 0) {
+		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed overshoot bytes left in read buffer\n",
+				callback_data->fd, read_session->rx_overshoot_size);
+	}
+
 	rrr_read_session_collection_remove_session(callback_data->read_sessions, read_session);
 }
 
@@ -201,7 +214,9 @@ static int __rrr_socket_read_message_default_read (
 		RRR_BUG("Unknown read method %i in __rrr_socket_read_message_default_read\n", callback_data->socket_read_flags);
 	}
 
-	RRR_DBG_4("Socket %i recvfrom/recv/read %i bytes\n", callback_data->fd, bytes);
+	if (bytes > 0) {
+		RRR_DBG_7("Socket %i recvfrom/recv/read %i bytes\n", callback_data->fd, bytes);
+	}
 
 	if (bytes == -1) {
 		if (errno == EINTR) {
@@ -218,8 +233,24 @@ static int __rrr_socket_read_message_default_read (
 		goto out;
 	}
 	else if (bytes == 0) {
-		if ((callback_data->socket_read_flags & RRR_SOCKET_READ_CHECK_EOF) != 0) {
+		int got_pollhup_pollerr = 0;
+
+		ret = __rrr_socket_read_message_poll(&got_pollhup_pollerr, callback_data);
+		if (ret & (RRR_READ_INCOMPLETE|RRR_READ_HARD_ERROR)) {
+			goto out;
+		}
+
+// Noisy message, not enabled by default
+//		RRR_DBG_7("Socket %i return from poll was %i\n", callback_data->fd, ret);
+
+		if ( (callback_data->socket_read_flags & RRR_SOCKET_READ_CHECK_EOF) ||
+			((callback_data->socket_read_flags & RRR_SOCKET_READ_CHECK_POLLHUP) && got_pollhup_pollerr)
+		) {
+			RRR_DBG_7("Socket %i recvfrom/recv/read emit EOF as instructed per flag\n", callback_data->fd);
 			ret = RRR_READ_EOF;
+			goto out;
+		}
+		else if (ret != 0) {
 			goto out;
 		}
 	}
@@ -237,7 +268,6 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max,
-		int read_flags,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -260,10 +290,8 @@ int rrr_socket_read_message_default (
 			read_step_initial,
 			read_step_max_size,
 			read_max,
-			read_flags,
 			__rrr_socket_read_message_default_get_target_size,
 			__rrr_socket_read_message_default_complete_callback,
-			__rrr_socket_read_message_default_poll,
 			__rrr_socket_read_message_default_read,
 			__rrr_socket_read_message_default_get_read_session_with_overshoot,
 			__rrr_socket_read_message_default_get_read_session,

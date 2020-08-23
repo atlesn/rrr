@@ -153,7 +153,6 @@ struct rrr_net_transport_collection {
 	ssize_t read_step_initial,													\
 	ssize_t read_step_max_size,													\
 	ssize_t read_max_size,														\
-	int read_flags,																\
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),	\
 	void *get_target_size_arg,													\
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),	\
@@ -236,7 +235,6 @@ int rrr_net_transport_ctx_read_message (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),

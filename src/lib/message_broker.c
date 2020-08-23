@@ -362,8 +362,9 @@ int rrr_message_broker_setup_split_output_buffer (
 	return ret;
 }
 
-#define  RRR_MESSAGE_BROKER_BUFFER_DEBUG
+//#define  RRR_MESSAGE_BROKER_BUFFER_DEBUG
 
+#ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
 int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
 	struct rrr_msg_holder *locked_entry = arg;
@@ -389,7 +390,7 @@ int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBA
 	return RRR_FIFO_OK;
 }
 
-void rrr_message_broker_buffer_consistency_check (
+static void __rrr_message_broker_buffer_consistency_check (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_msg_holder *locked_entry
 ) {
@@ -399,6 +400,7 @@ void rrr_message_broker_buffer_consistency_check (
 		rrr_fifo_buffer_read(buffer, __rrr_message_broker_buffer_consistency_check_callback, locked_entry, 0);
 	}
 }
+#endif
 
 struct rrr_message_broker_write_entry_intermediate_callback_data {
 	struct rrr_message_broker_costumer *costumer;
@@ -585,7 +587,7 @@ int rrr_message_broker_write_entry (
 
 	out:
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
+	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
 #endif
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
@@ -637,7 +639,7 @@ int rrr_message_broker_clone_and_write_entry (
 	// Cast away const OK
 	rrr_msg_holder_unlock((struct rrr_msg_holder *) entry);
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
+	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
 #endif
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
@@ -679,7 +681,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 
 	out:
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, entry);
+	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, entry);
 #endif
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
@@ -707,14 +709,14 @@ int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 
 	out:
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, entry);
+	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, entry);
 #endif
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
-	struct rrr_msg_msg_holder_collection *collection = arg;
+	struct rrr_msg_holder_collection *collection = arg;
 
 	struct rrr_msg_holder *entry = RRR_LL_SHIFT(collection);
 
@@ -732,7 +734,7 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -741,7 +743,7 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	ret = rrr_fifo_buffer_write(&costumer->main_queue, __rrr_message_broker_write_entries_from_collection_callback, collection);
 
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
+	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
 #endif
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();

@@ -601,7 +601,6 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 			&stats->client_collection,
 			sizeof(struct rrr_msg),
 			1024,
-			0,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,

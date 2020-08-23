@@ -43,8 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct averager_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_msg_msg_holder_collection input_list;
-	struct rrr_msg_msg_holder_collection output_list;
+	struct rrr_msg_holder_collection input_list;
+	struct rrr_msg_holder_collection output_list;
 
 	// Set this to 1 when others may read from our buffer
 	int preserve_point_measurements;

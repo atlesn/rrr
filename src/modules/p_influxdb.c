@@ -60,7 +60,7 @@ struct influxdb_data {
 	char *database;
 	char *table;
 	int message_count;
-	struct rrr_msg_msg_holder_collection error_buf;
+	struct rrr_msg_holder_collection error_buf;
 
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
@@ -434,7 +434,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_msg_holder_collection error_buf_tmp = {0};
+	struct rrr_msg_holder_collection error_buf_tmp = {0};
 	struct rrr_net_transport *transport = NULL;
 
 	if (influxdb_data_init(influxdb_data, thread_data) != 0) {

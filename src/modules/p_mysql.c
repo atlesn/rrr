@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Fix URI support
 
 struct mysql_data {
-	struct rrr_msg_msg_holder_collection input_buffer;
+	struct rrr_msg_holder_collection input_buffer;
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
@@ -829,7 +829,7 @@ void close_mysql_stmt(void *arg) {
 	mysql_stmt_close(arg);
 }
 
-int process_entries (struct rrr_msg_msg_holder_collection *source_buffer, struct rrr_instance_runtime_data *thread_data) {
+int process_entries (struct rrr_msg_holder_collection *source_buffer, struct rrr_instance_runtime_data *thread_data) {
 	struct mysql_data *data = thread_data->private_data;
 
 	if (connect_to_mysql(data) != 0) {
@@ -884,7 +884,7 @@ int process_entries (struct rrr_msg_msg_holder_collection *source_buffer, struct
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_msg_holder_collection process_buffer_tmp = {0};
+	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
 	if (data_init(data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));

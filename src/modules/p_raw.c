@@ -149,10 +149,15 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 50) != 0) {
+		int prev_message_count = raw_data->message_count;
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
 			RRR_MSG_ERR("Error while polling in raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
+		}
+
+		if (prev_message_count == raw_data->message_count) {
+			rrr_posix_usleep(50000); // 50 ms
 		}
 
 		uint64_t timer_now = rrr_time_get_64();
