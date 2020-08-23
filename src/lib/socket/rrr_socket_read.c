@@ -85,20 +85,22 @@ static int __rrr_socket_read_message_poll (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_DBG_7("Poll error in rrr_socket_read_message: %s\n", rrr_strerror(errno));
+		RRR_DBG_7("Socket %i poll error: %s\n", callback_data->fd, rrr_strerror(errno));
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_DBG_7("Poll error in rrr_socket_read_message: Got POLLERR or POLLNVAL\n");
+		RRR_DBG_7("Socket %i poll: Got POLLERR or POLLNVAL\n", callback_data->fd);
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & POLLHUP) != 0) {
+		RRR_DBG_7("Socket %i POLLHUP, read EOF imminent\n", callback_data->fd);
+
+		// Don't set error, caller chooses what to do
 		*got_pollhup_pollerr = 1;
-		RRR_DBG_7("Socket %i POLLHUP in rrr_socket_read_message_default_poll, read EOF imminent\n", callback_data->fd);
 	}
 
 	out:

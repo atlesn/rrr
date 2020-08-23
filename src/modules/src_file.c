@@ -169,7 +169,7 @@ static void file_data_cleanup(void *arg) {
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_prefix", prefix);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_topic", topic);
@@ -583,10 +583,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-/*	if (data->no_sleeping == 1) {
-		RRR_DBG_1("file instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
-		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
-	}*/
+	RRR_DBG_1 ("File %p instance %s probe interval is %lu ms in directory '%s' with prefix '%s'\n",
+			thread_data, INSTANCE_D_NAME(thread_data), data->probe_interval, data->directory, (data->prefix != NULL ? data->prefix : ""));
 
 	const uint64_t sleep_interval = (data->probe_interval < 10 ? data->probe_interval * 1000 : 10000);
 	const uint64_t probe_interval = data->probe_interval * 1000;

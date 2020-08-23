@@ -102,6 +102,14 @@ int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
+int rrr_socket_fifo_create (
+		int *fd_result,
+		const char *filename,
+		const char *creator,
+		int do_write_mode,
+		int do_nonblock,
+		int unlink_if_exists
+);
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,
@@ -110,9 +118,6 @@ int rrr_socket_unix_create_bind_and_listen (
 		int nonblock,
 		int do_mkstemp,
 		int do_unlink_if_exists
-);
-int rrr_socket_send_check (
-		int fd
 );
 int rrr_socket_connect_nonblock_postcheck_loop (
 		int fd,

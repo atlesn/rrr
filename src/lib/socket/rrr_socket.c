@@ -344,6 +344,25 @@ int rrr_socket_bind_and_listen (
 	return 0;
 }
 
+static int __rrr_socket_open_nolock (
+		const char *filename,
+		int flags,
+		int mode,
+		const char *creator,
+		int register_for_unlink
+) {
+	int fd = 0;
+	fd = open(filename, flags, mode);
+
+	if (fd != -1) {
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
+	}
+
+	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s\n", fd, getpid(), filename, creator);
+
+	return fd;
+}
+
 int rrr_socket_open (
 		const char *filename,
 		int flags,
@@ -353,14 +372,7 @@ int rrr_socket_open (
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
-	fd = open(filename, flags, mode);
-
-	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
-	}
-
-	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s\n", fd, getpid(), filename, creator);
-
+	fd = __rrr_socket_open_nolock(filename, flags, mode, creator, register_for_unlink);
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
 }
@@ -566,6 +578,82 @@ int rrr_socket_close_all_no_unlink (void) {
 	return __rrr_socket_close_all_except(0, 1);
 }
 
+int rrr_socket_fifo_create (
+		int *fd_result,
+		const char *filename,
+		const char *creator,
+		int do_write_mode,
+		int do_nonblock,
+		int unlink_if_exists
+) {
+	int ret = 0;
+
+	*fd_result = 0;
+
+	int fd = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	if (unlink_if_exists) {
+		if ((ret = unlink(filename)) != 0) {
+			if (errno == ENOENT) {
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Could not unlink file %s before creation of fifo pipe: %s\n",
+						filename, rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+		}
+	}
+
+	if ((ret = mkfifo(filename, 0660)) != 0) {
+		RRR_MSG_0("Could not create fifo pipe %s: %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int retry_limit = 100;
+
+	retry:
+	fd = __rrr_socket_open_nolock (
+			filename,
+			(do_write_mode ? O_WRONLY : O_RDONLY) | (do_nonblock ? O_NONBLOCK : 0),
+			0,
+			creator,
+			1
+	);
+
+	if (fd < 0) {
+		if (errno == ENXIO && --retry_limit >= 0 && do_nonblock) {
+			// Wait for reader to connect
+			rrr_posix_usleep(20000); // 20 ms
+			goto retry;
+		}
+		RRR_MSG_0("Failed to open fifo pipe in rrr_socket_fifo_create: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out_unlink;
+	}
+
+	RRR_DBG_7("rrr_socket create fifo pipe %s fd %i pid %i\n",
+			filename, fd, getpid());
+
+	*fd_result = fd;
+
+	goto out;
+	out_unlink:
+		if ((ret = unlink(filename)) != 0) {
+			RRR_MSG_0("Warning: Failed to unlink '%s' when cleaning up after error in rrr_socket_fifo_create: %s\n",
+					filename, rrr_strerror(errno));
+		}
+		ret = 1; // Make sure error is still set if unlink succeeds
+	out:
+		pthread_mutex_unlock(&socket_lock);
+	return ret;
+}
+
 struct rrr_socket_bind_and_listen_umask_callback_data {
 	int fd;
 	struct sockaddr *addr;
@@ -674,42 +762,8 @@ int rrr_socket_unix_create_bind_and_listen (
 	}
 	return ret;
 }
-/*
-int rrr_socket_checksockopt (
-		int fd
-) {
-	int ret = RRR_SOCKET_OK;
 
-	int error = 0;
-	socklen_t len = sizeof(error);
-	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-		RRR_MSG_0("Error from getsockopt with fd %i: %s\n", fd, rrr_strerror(errno));
-		ret = 1;
-		goto out;
-	}
-	else if (error == 0) {
-		goto out;
-	}
-	else if (error == EINPROGRESS) {
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out;
-	}
-	else if (error == ECONNREFUSED) {
-		RRR_MSG_0("Connection refused\n");
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-	else {
-		RRR_MSG_0("Unknown error from getsockopt(): %i\n", error);
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-*/
-int rrr_socket_send_check (
+static int __rrr_socket_send_check (
 		int fd
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -761,7 +815,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 	uint64_t time_end = rrr_time_get_64() + timeout_ms;
 
 	while (rrr_time_get_64() < time_end) {
-		if ((ret = rrr_socket_send_check(fd)) == 0) {
+		if ((ret = __rrr_socket_send_check(fd)) == 0) {
 			goto out;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
