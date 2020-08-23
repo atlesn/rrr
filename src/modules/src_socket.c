@@ -250,7 +250,7 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 				&data->clients,
 				sizeof(struct rrr_msg),
 				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_read_common_receive_message_callback,
