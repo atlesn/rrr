@@ -1514,7 +1514,18 @@ but one of them must be specified. Defaults to 'no'.
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
-as long as the user running RRR has permission to do that. Defaults to 'no'. 
+as long as the user running RRR has permission to do that. Defaults to 'no'.
+
+.It file_try_keyboard_input={yes|no} (LINUX ONLY)
+If set to yes, and character devices are found in the directory,
+.B file
+will try to read from them as if they were keyboards.
+This works with many barcode scanners and other devices which produce keyboard-like event data.
+Any device which accept the
+.Xr ioctl(3P)
+EVIOCGRAB command will be used as a keyboard, and data will be run through a key to character map.
+Only US keyboard layout is supported.
+Defaults to no.
 
 .El
 .SS mysql (DAI)

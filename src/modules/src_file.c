@@ -48,14 +48,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/input/input.h"
 
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000
 #define RRR_FILE_MAX_SIZE_MB 32
+
+#define RRR_FILE_F_IS_KEYBOARD (1<<0)
 
 struct file {
 	RRR_LL_NODE(struct file);
 	struct rrr_read_session_collection read_session_collection;
 	unsigned char type; // DT_*
+	int flags;
 	char *orig_path;
 	char *real_path;
 	int fd;
@@ -69,6 +73,7 @@ struct file_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	struct rrr_array_tree *tree;
+	int do_try_keyboard_input;
 	int do_read_all_to_message;
 	int do_unlink_on_close;
 
@@ -108,6 +113,7 @@ static int file_collection_has (const struct file_collection *files, const char 
 static int file_collection_push (
 		struct file_collection *files,
 		unsigned char type,
+		int flags,
 		const char *orig_path,
 		const char *real_path,
 		int fd
@@ -138,6 +144,7 @@ static int file_collection_push (
 
 	file->type = type;
 	file->fd = fd;
+	file->flags = flags;
 
 	RRR_LL_PUSH(files, file);
 	file = NULL;
@@ -199,6 +206,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		ret = 0;
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
 
@@ -287,7 +295,17 @@ static int file_probe_callback (
 		}
 	}
 
-	if ((ret = file_collection_push(&data->files, type, orig_path, resolved_path, fd)) != 0) {
+	int flags = 0;
+
+	if (data->do_try_keyboard_input && type == DT_CHR) {
+		if ((ret = rrr_input_device_grab(fd)) == 0) {
+			flags |= RRR_FILE_F_IS_KEYBOARD;
+			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as keyboard event device\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+		}
+	}
+
+	if ((ret = file_collection_push(&data->files, type, flags, orig_path, resolved_path, fd)) != 0) {
 		goto out;
 	}
 
@@ -476,6 +494,10 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 	else {
 		// For devices with finite size or files
 		socket_flags |= RRR_SOCKET_READ_CHECK_EOF;
+	}
+
+	if (file->flags & RRR_FILE_F_IS_KEYBOARD) {
+		socket_flags |= RRR_SOCKET_READ_INPUT_DEVICE;
 	}
 
 	if (data->tree != NULL && (ret = rrr_socket_common_receive_array_tree (

@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
+enum rrr_socket_private_data_class {
+	RRR_SOCKET_PRIVATE_DATA_CLASS_INPUT_DEVICE
+};
+
 struct rrr_socket_options {
 	int fd;
 	int domain;
@@ -52,6 +56,11 @@ int rrr_socket_get_filename_from_fd (
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
 		int fd
+);
+void *rrr_socket_get_private_data_from_fd (
+		int fd,
+		enum rrr_socket_private_data_class class,
+		size_t size
 );
 int rrr_socket_with_lock_do (
 		int (*callback)(void *arg),

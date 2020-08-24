@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/poll.h>
-#include <sys/ioctl.h>
 #include <sys/un.h>
 #include <sys/stat.h>
 
@@ -65,11 +64,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_UNIX_DEFAULT_UMASK \
 	S_IROTH | S_IWOTH | S_IXOTH
 
+struct rrr_socket_private_data {
+	RRR_LL_NODE(struct rrr_socket_private_data);
+	enum rrr_socket_private_data_class class;
+	void *data;
+};
+
+struct rrr_socket_private_data_collection {
+	RRR_LL_HEAD(struct rrr_socket_private_data);
+};
+
 struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
 	char *creator;
 	char *filename;
 	struct rrr_socket_options options;
+	struct rrr_socket_private_data_collection private_data;
 };
 
 struct rrr_socket_holder_collection {
@@ -78,6 +88,55 @@ struct rrr_socket_holder_collection {
 
 struct rrr_socket_holder_collection socket_list = {0};
 static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void __rrr_socket_private_data_destroy (
+		struct rrr_socket_private_data *node
+) {
+	RRR_FREE_IF_NOT_NULL(node->data);
+	free(node);
+}
+
+void __rrr_socket_private_data_collection_clear (
+		struct rrr_socket_private_data_collection *collection
+) {
+	RRR_LL_DESTROY(collection, struct rrr_socket_private_data, __rrr_socket_private_data_destroy(node));
+}
+
+int __rrr_socket_private_data_collection_allocate_and_push (
+		struct rrr_socket_private_data_collection *collection,
+		enum rrr_socket_private_data_class class,
+		size_t size
+) {
+	int ret = 0;
+
+	struct rrr_socket_private_data *new_node = malloc(sizeof(*new_node));
+	if (new_node == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(new_node, '\0', sizeof(*new_node));
+
+	void *new_data = malloc(size);
+	if (new_data == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
+		ret = 1;
+		goto out_free_node;
+	}
+
+	memset(new_data, '\0', sizeof(size));
+
+	new_node->class = class;
+	new_node->data = new_data;
+	RRR_LL_PUSH(collection, new_node);
+
+	goto out;
+	out_free_node:
+		free(new_node);
+	out:
+		return ret;
+}
 
 int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int no_unlink) {
 	int ret = 0;
@@ -95,6 +154,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 		RRR_DBG_7("socket pid %i filename %s unlink\n", getpid(), holder->filename);
 		unlink(holder->filename);
 	}
+	__rrr_socket_private_data_collection_clear(&holder->private_data);
 	RRR_FREE_IF_NOT_NULL(holder->filename);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
 	free(holder);
@@ -205,6 +265,39 @@ int rrr_socket_get_options_from_fd (
 	pthread_mutex_unlock(&socket_lock);
 
 	return ret;
+}
+
+void *rrr_socket_get_private_data_from_fd (
+		int fd,
+		enum rrr_socket_private_data_class class,
+		size_t size
+) {
+	void *result = NULL;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			struct rrr_socket_holder *socket_holder = node;
+			RRR_LL_ITERATE_BEGIN(&socket_holder->private_data, struct rrr_socket_private_data);
+				if (node->class == class) {
+					result = node->data;
+					goto out;
+				}
+			RRR_LL_ITERATE_END();
+
+			if (__rrr_socket_private_data_collection_allocate_and_push(&socket_holder->private_data, class, size) != 0) {
+				goto out;
+			}
+			result = RRR_LL_LAST(&socket_holder->private_data);
+
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	pthread_mutex_unlock(&socket_lock);
+	return result;
 }
 
 int rrr_socket_with_lock_do (
@@ -358,7 +451,8 @@ static int __rrr_socket_open_nolock (
 		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
 	}
 
-	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s\n", fd, getpid(), filename, creator);
+	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s flags %i\n", fd, getpid(), filename, creator, flags);
+
 
 	return fd;
 }
