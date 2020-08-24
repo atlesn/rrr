@@ -438,7 +438,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 
     freeaddrinfo(addrinfo_result);
 
-    if (fd < 0 || rp == NULL) {
+    if (fd <= 0 || rp == NULL) {
 		RRR_DBG_4 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		goto out_error;
     }
