@@ -210,7 +210,7 @@ static int __rrr_stats_read_message (
 			sizeof(struct rrr_msg),
 			1024,
 			0,
-			RRR_SOCKET_READ_METHOD_RECV,
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			rrr_stats_message_unpack_callback,
