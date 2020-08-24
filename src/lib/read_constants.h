@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // These values may be used both with checking directly using == or as
 // bit flags. It is not recommended to use bitwise return values for library
-// frameworks used by many other frameworks and modules, this becomes method.
+// frameworks used by many other frameworks and modules, this becomes messy.
 
 // For special cases, consider giving feedback to the caller by using integer
 // pointers in the function arguments like (int *a_happened, int *b_happened),

@@ -1,1 +1,2 @@
-ACTION=="add", ATTRS{manufacturer}=="Intermec", SUBSYSTEM=="input", PROGRAM="/bin/sh -c 'logger -p user.info New barcode scanner detected'", MODE="0600", OWNER="rrr", GROUP="rrr", SYMLINK+="intermec-scanner%n"
+ACTION=="add", ATTRS{manufacturer}=="Intermec", SUBSYSTEM=="input", PROGRAM="/bin/sh -c 'logger -p user.info New barcode scanner detected, used as keyboard'", MODE="0660", OWNER="rrr", GROUP="rrr", SYMLINK+="intermec-scanner%n"
+ACTION=="add", ATTRS{manufacturer}=="Intermec", SUBSYSTEM=="tty", PROGRAM="/bin/sh -c 'logger -p user.info New barcode scanner detected, used as serial port'", MODE="0660", OWNER="rrr", GROUP="rrr", SYMLINK+="intermec-scanner%n"
