@@ -125,13 +125,13 @@ static const struct map map[] = {
 //	{69, "[NUMLOCK]", "[NUMLOCK]"},
 //	{70, "[SCRL]", "[SCRL]"},
 // Numlock control begin
-//	{71, "[HOME]", "7"},
-//	{72, "[UP]", "8"},
-//	{73, "[PGUP]", "9"},
+	{71, "", "7"},
+	{72, "", "8"},
+	{73, "", "9"},
 	{74, "", "-"},
-//	{75, "[LEFT]", "4"},
+	{75, "", "4"},
 	{76, "", "5"},
-//	{77, "[RIGHT]", "6"},
+	{77, "", "6"},
 	{78, "", "+"},
 	{79, "", "1"},
 	{80, "", "2"},
@@ -203,18 +203,22 @@ static const char *__rrr_input_device_keytoc (
 
 	if (flags_flip) {
 		int cur = (*flags) & flags_flip;
-		int blocked = (*flags) & flags_flip;
+		int blocked = (*flags_blocked) & flags_flip;
 		if (is_down) {
 			if (!cur) {
+				// First down, set flag and block up stroke
 				(*flags) |= flags_flip;
 				(*flags_blocked) |= flags_flip;
 			}
 		}
 		else {
-			if (cur && !blocked) {
+			if (blocked) {
+				(*flags_blocked) &= ~flags_flip;
+			}
+			else {
+				// Up after second down, clear flag
 				(*flags) &= ~flags_flip;
 			}
-			(*flags_blocked) &= ~flags_flip;
 		}
 	}
 	else if (flags_updown) {
