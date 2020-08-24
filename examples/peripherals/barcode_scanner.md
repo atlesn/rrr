@@ -1,4 +1,4 @@
-# RRR BARCODE SCANNER USB/Serial/TCP/UDP RECEIVER
+# RRR BARCODE SCANNER RECEIVER (USB/Serial/TCP/UDP)
 
 ## Introduction
 
@@ -88,7 +88,7 @@ client installed, like **mosquitto-clients**.
 	be1#prefix
 	IF ({prefix} != 0x02 && {prefix} != 0x01)
 		REWIND1
-	;
+		;
 	nsep#barcode,sep1
 	;
 	
@@ -167,7 +167,7 @@ the raw event data (key up, key down etc.) will be received by RRR. While it may
 	be1#prefix
 	IF ({prefix} != 0x02 && {prefix} != 0x01)
 		REWIND1
-	;
+		;
 	nsep#barcode,sep1
 	;
 	
