@@ -61,6 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_RECEIVE_TIME_LIMIT_MS		1000
 #define IP_DEFAULT_MAX_MESSAGE_SIZE		4096
 #define IP_DEFAULT_GRAYLIST_TIMEOUT_MS 	2000
+#define IP_DEFAULT_CLOSE_GRACE_MS		5
 
 enum ip_action {
 	IP_ACTION_RETRY,
@@ -88,6 +89,7 @@ struct ip_data {
 	int do_preserve_order;
 	int do_persistent_connections;
 	int do_multiple_per_connection;
+	rrr_setting_uint close_grace_ms;
 	char *timeout_action_str;
 	enum ip_action timeout_action;
 	rrr_setting_uint graylist_timeout_ms;
@@ -285,6 +287,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
 			data->do_multiple_per_connection == 0 &&
@@ -737,7 +740,7 @@ static int ip_send_message_tcp (
 
 	int ret = 0;
 
-	if (accept_data->custom_data != 0) {
+	if (accept_data->custom_data != 0 || accept_data->custom_time != 0) {
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -1221,6 +1224,8 @@ static int ip_send_loop (
 			RRR_LL_ITERATE_LAST();
 		}
 
+		// Send time must be set prior to preserve order check to allow timer to start
+
 		rrr_msg_holder_lock(node);
 
 		int message_was_sent = 1;
@@ -1241,6 +1246,10 @@ static int ip_send_loop (
 			goto perform_timeout_action;
 		}
 		else if (data->do_preserve_order && ip_preserve_order_list_has(&preserve_order_list, node)) {
+			// If another message to the same destaination blocks our send, make sure send_time is initialized
+			if (node->send_time == 0) {
+				node->send_time = rrr_time_get_64();
+			}
 			action = IP_ACTION_RETRY;
 			goto perform_action;
 		}
@@ -1304,8 +1313,8 @@ static int ip_send_loop (
 			action = data->timeout_action;
 		}
 
-		//printf("Node send time: %" PRIu64 "\n", node->send_time);
-		//printf("Timeout action: %i, send status: %i\n", action, send_status);
+//		printf("Node send time: %" PRIu64 "\n", node->send_time);
+//		printf("Timeout action: %i, send status: %i\n", action, message_was_sent);
 
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
 		// do not destroy
@@ -1357,12 +1366,18 @@ static int ip_send_loop (
 				ttl_reached_count, INSTANCE_D_NAME(data->thread_data));
 	}
 
+	uint64_t time_now = rrr_time_get_64();
 	RRR_LL_ITERATE_BEGIN(tcp_connect_data, struct rrr_ip_accept_data);
 		// < 0 == close now
 		// 0 == follow persistent settings
 		// other: temorary block, do not close yet
-		if ((data->do_persistent_connections == 0 && node->custom_data == 0) || node->custom_data < 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
+		if (node->custom_time != 0) {
+			if (node->custom_time < time_now) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+		else if ((data->do_persistent_connections == 0 && node->custom_data == 0) || node->custom_data < 0) {
+			node->custom_time = rrr_time_get_64() + (data->close_grace_ms * 1000);
 		}
 		else {
 			node->custom_data = 0;
@@ -1484,12 +1499,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		if (data->definitions != NULL) {
 			uint64_t end_time = time_now + (IP_RECEIVE_TIME_LIMIT_MS * 1000);
 			if (ip_udp_read_data(data, end_time) != 0) {
-				RRR_MSG_ERR("Error while reading udp data in ip instance %s\n",
+				RRR_MSG_0("Error while reading udp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 			if (ip_tcp_read_data(data, &tcp_accept_data, end_time) != 0) {
-				RRR_MSG_ERR("Error while reading tcp data in ip instance %s\n",
+				RRR_MSG_0("Error while reading tcp data in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -1603,5 +1618,4 @@ void init(struct rrr_instance_module_data *data) {
 
 void unload(void) {
 }
-
 

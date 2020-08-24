@@ -341,6 +341,12 @@ After a packet is sent, don't close the TCP connection but re-use it later for m
 .B ip_send_multiple_per_connection
 if set to yes. Defaults to no.
 
+.It ip_close_grace_ms=MILLISECONDS
+After a TCP connection has been closed, prevent new connections to the same destination for the specified amount of milliseconds.
+This prevents "ghost connections" in some situations where a host will accept a new connection immediately after another one has been closed,
+even though the application on the host is not actually ready to accept any data.
+May be set to zero, defaults to 5 milliseconds.
+
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
