@@ -302,6 +302,10 @@ static int __rrr_socket_read_message_default_read (
 		void *private_arg
 ) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
+	callback_data->src_addr_len = sizeof(callback_data->src_addr);
+	memset(&callback_data->src_addr, '\0', callback_data->src_addr_len);
+
 	return rrr_socket_read (
 			buf,
 			read_bytes,
