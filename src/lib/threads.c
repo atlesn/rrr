@@ -484,6 +484,8 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		uint64_t nowtime = rrr_time_get_64();
 		uint64_t prevtime = rrr_get_watchdog_time(thread);
 
+		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
+
 		// We or others might try to kill the thread
 		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
 			RRR_DBG_8 ("Thread %s/%p received kill signal or encourage stop\n", thread->name, thread);
