@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../socket/rrr_socket.h"
 
-#ifdef RRR_WITH_LINUX_INPUT
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
 #	include "linux.h"
 #endif
 
@@ -253,7 +253,7 @@ static const char *__rrr_input_device_keytoc (
 }
 
 int rrr_input_device_grab (int fd) {
-#ifdef RRR_WITH_LINUX_INPUT
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
 	return rrr_input_linux_device_grab(fd);
 #else
 	(void)(fd);
@@ -285,7 +285,7 @@ int rrr_input_device_read_key_character (
 	unsigned int key = 0;
 	unsigned int is_down = 0;
 
-#ifdef RRR_WITH_LINUX_INPUT
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
 	if ((ret = rrr_input_linux_device_read_key (
 			&key,
 			&is_down,
@@ -303,7 +303,7 @@ int rrr_input_device_read_key_character (
 	goto out;
 #endif
 
-#ifdef RRR_WITH_LINUX_INPUT /* Add OR for other platforms here */
+#if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT) /* Add OR for other platforms here */
 	const char *result = __rrr_input_device_keytoc(special_key_state, key, is_down);
 	if (result != NULL) {
 		*c = *result;

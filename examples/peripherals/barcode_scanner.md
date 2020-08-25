@@ -153,11 +153,11 @@ If you do not have **udev**, you can specify the full filename of the device you
 any `file_prefix`, this will cause RRR to try to read from everything in there.
 
 USB scanners can often be configured to act either as a keyboard or as a virtual serial port. Currently,
-keyboard scanners are only supported on Linux. When keyboard scanners are opened, they are *hijacked* so that
+keyboard scanners are only supported on Linux and FreeBSD. When keyboard scanners are opened, they are *hijacked* so that
 the input from them is not used by the X-window system or terminals. Make sure you don't allow RRR to open
 your real keyboard as it might then become unusable while RRR is running.
 
-If keyboard devices are opened without `file_try_keyboard_input` being set to `yes` or on non-Linux systems,
+If keyboard devices are opened without `file_try_keyboard_input` being set to `yes` or on non-Linux/FreeBSD systems,
 the raw event data (key up, key down etc.) will be received by RRR. While it may be a bit cumbersome to implement, it is certainly possible to parse this data into and RRR array and have a Perl or Python script convert the keys into characters.
 
 

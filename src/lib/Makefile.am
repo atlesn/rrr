@@ -5,7 +5,11 @@ nobase_include_HEADERS = *.h */*.h
 input = input/input.c
 
 if RRR_WITH_LINUX_INPUT
-input_linux = input/linux.c
+input_system = input/linux.c
+endif
+
+if RRR_WITH_FREEBSD_INPUT
+input_system = input/linux.c
 endif
 
 if RRR_WITH_MYSQL
@@ -79,7 +83,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
 					${messages} \
-					${input} ${input_linux}
+					${input} ${input_system}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

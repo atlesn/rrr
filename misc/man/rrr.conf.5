@@ -1522,7 +1522,7 @@ After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
 as long as the user running RRR has permission to do that. Defaults to 'no'.
 
-.It file_try_keyboard_input={yes|no} (LINUX ONLY)
+.It file_try_keyboard_input={yes|no} (LINUX/FREEBSD ONLY)
 If set to yes, and character devices are found in the directory,
 .B file
 will try to read from them as if they were keyboards.
