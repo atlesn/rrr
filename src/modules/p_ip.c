@@ -387,7 +387,7 @@ static int ip_read_receive_message (
 
 	rrr_msg_holder_lock(new_entry);
 
-	RRR_DBG_3("ip instance %s created a message with timestamp %llu size %lu\n",
+	RRR_DBG_2("ip instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
 
 	// Now managed by ip buffer entry
@@ -443,7 +443,7 @@ static int ip_read_data_receive_extract_messages (
 		}
 	RRR_LL_ITERATE_END();
 
-	RRR_DBG_3("ip instance %s extracted %i RRR messages from an array\n",
+	RRR_DBG_2("ip instance %s extracted %i RRR messages from an array\n",
 			INSTANCE_D_NAME(data->thread_data), found_messages);
 
 	if (found_messages == 0) {
@@ -715,7 +715,7 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_3 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
+	RRR_DBG_2 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
 	entry->send_time = 0;
@@ -827,7 +827,7 @@ static int ip_send_message_raw_default_target (
 					ip_data->target_host,
 					graylist
 			) != 0) {
-				RRR_DBG_3("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
+				RRR_DBG_7("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
 						ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(thread_data));
 				ret = RRR_READ_SOFT_ERROR;
 				goto out;
@@ -1144,8 +1144,13 @@ static int ip_send_message (
 	entry->bytes_to_send = send_size;
 	entry->bytes_sent += written_bytes;
 
-	RRR_DBG_2("ip instance %s send status for entry: %li/%li bytes\n",
+	RRR_DBG_7("ip instance %s send status for entry: %li/%li bytes\n",
 			INSTANCE_D_NAME(ip_data->thread_data), entry->bytes_sent, entry->bytes_to_send);
+
+	if (entry->bytes_sent == entry->bytes_to_send) {
+		RRR_DBG_2("ip instance %s a message of %li bytes was completely sent\n",
+				INSTANCE_D_NAME(ip_data->thread_data), entry->bytes_to_send);
+	}
 
 	out:
 		RRR_FREE_IF_NOT_NULL(tmp_data);
