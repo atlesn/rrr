@@ -1530,8 +1530,18 @@ This works with many barcode scanners and other devices which produce keyboard-l
 Any device which accept the
 .Xr ioctl(3P)
 EVIOCGRAB command will be used as a keyboard, and data will be run through a key to character map.
+The EVIOCGRAB command, if it succeeds, will make
+.B file
+the only receiver of data from the opened devices, and due to this, keyboards which are opened will
+become unusable.
+Care should be taken to ensure that devices are not unintentionally opened by
+.B file.
 Only US keyboard layout is supported.
 Defaults to no.
+
+.It file_no_keyboard_hijack={yes|no}
+After a keyboard device has been successfully hijacked thus identified as a keyboard, immediately
+ungrab the device so that other applications also may receive events from it. 
 
 .El
 .SS mysql (DAI)

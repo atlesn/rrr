@@ -252,11 +252,12 @@ static const char *__rrr_input_device_keytoc (
 	return NULL;
 }
 
-int rrr_input_device_grab (int fd) {
+int rrr_input_device_grab (int fd, int onoff) {
 #if defined(RRR_WITH_LINUX_INPUT) || defined(RRR_WITH_FREEBSD_INPUT)
-	return rrr_input_linux_device_grab(fd);
+	return rrr_input_linux_device_grab(fd, onoff);
 #else
 	(void)(fd);
+	(void)(onoff);
 	return 0;
 #endif
 }

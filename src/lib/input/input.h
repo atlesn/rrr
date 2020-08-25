@@ -27,7 +27,7 @@ struct rrr_input_special_key_state {
 	int flags_blocked;
 };
 
-int rrr_input_device_grab (int fd);
+int rrr_input_device_grab (int fd, int onoff);
 int rrr_input_device_read_key_character (
 		char *c,
 		int fd,

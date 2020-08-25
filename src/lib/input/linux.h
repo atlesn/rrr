@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LINUX_INPUT_H
 #define RRR_LINUX_INPUT_H
 
-int rrr_input_linux_device_grab (int fd);
+int rrr_input_linux_device_grab (int fd, int onoff);
 int rrr_input_linux_device_read_key (
 		unsigned int *key,
 		unsigned int *is_down,
