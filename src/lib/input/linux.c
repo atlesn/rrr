@@ -25,7 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <linux/input.h>
+
+#ifdef RRR_WITH_FREEBSD_INPUT
+#	include <dev/evdev/input.h>
+#else
+#	include <linux/input.h>
+#endif
 
 #include "../log.h"
 #include "linux.h"

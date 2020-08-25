@@ -104,12 +104,23 @@ AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 AC_CHECK_HEADER([linux/input.h], [have_linux_input=yes], [have_linux_input=no])
 AM_CONDITIONAL([RRR_WITH_LINUX_INPUT], [test "x$have_linux_input" != xno])
 
+AC_CHECK_HEADER([dev/evdev/input.h], [have_freebsd_input=yes], [have_freebsd_input=no])
+AM_CONDITIONAL([RRR_WITH_FREEBSD_INPUT], [test "x$have_freebsd_input" != xno])
+
 AC_MSG_CHECKING([for Linux-style input device headers])
 AS_IF([test "x$have_linux_input" = xno], [
        AC_MSG_RESULT([no])
 ], [
        AC_MSG_RESULT([yes])
        AC_DEFINE([RRR_WITH_LINUX_INPUT], [1], [Enable Linux-style input device control])
+])
+
+AC_MSG_CHECKING([for FreeBSD-style input device headers])
+AS_IF([test "x$have_freebsd_input" = xno], [
+       AC_MSG_RESULT([no])
+], [
+       AC_MSG_RESULT([yes])
+       AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
 ])
 
 AC_MSG_CHECKING([for OpenSSL usage])
