@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_ACCEPT_DATA_H
 
 #include <sys/socket.h>
+#include <inttypes.h>
 
 #include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
@@ -33,6 +34,7 @@ struct rrr_ip_accept_data {
 	socklen_t len;
 	struct rrr_ip_data ip_data;
 	int custom_data;
+	uint64_t custom_time;
 };
 
 struct rrr_ip_accept_data_collection {

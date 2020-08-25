@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.10-1)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.10-1", [Full version])
+AC_INIT([Read Route Record], 1.10-3)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.10-3", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 10, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 3, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -104,6 +104,17 @@ AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+
+AC_CHECK_HEADER([linux/input.h], [have_linux_input=yes], [have_linux_input=no])
+AM_CONDITIONAL([RRR_WITH_LINUX_INPUT], [test "x$have_linux_input" != xno])
+
+AC_MSG_CHECKING([for Linux-style input device headers])
+AS_IF([test "x$have_linux_input" = xno], [
+       AC_MSG_RESULT([no])
+], [
+       AC_MSG_RESULT([yes])
+       AC_DEFINE([RRR_WITH_LINUX_INPUT], [1], [Enable Linux-style input device control])
+])
 
 AC_MSG_CHECKING([for OpenSSL usage])
 AS_IF([test "x$enable_encryption" = xno], [

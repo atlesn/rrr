@@ -2,6 +2,12 @@ includedir=${prefix}/include/rrr
 
 nobase_include_HEADERS = *.h */*.h
 
+input = input/input.c
+
+if RRR_WITH_LINUX_INPUT
+input_linux = input/linux.c
+endif
+
 if RRR_WITH_MYSQL
 lib_mysql = librrrmysql.la
 librrrmysql_la_SOURCES = mysql.c
@@ -72,7 +78,8 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
-					${messages}
+					${messages} \
+					${input} ${input_linux}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

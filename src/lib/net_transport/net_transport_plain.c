@@ -143,8 +143,7 @@ static int __rrr_net_transport_plain_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
-				read_flags,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,
@@ -184,7 +183,7 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
+	if ((ret = rrr_socket_send_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
 		goto out;
 	}
 

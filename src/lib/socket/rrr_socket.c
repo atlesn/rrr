@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/poll.h>
-#include <sys/ioctl.h>
 #include <sys/un.h>
 #include <sys/stat.h>
 
@@ -65,11 +64,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_UNIX_DEFAULT_UMASK \
 	S_IROTH | S_IWOTH | S_IXOTH
 
+struct rrr_socket_private_data {
+	RRR_LL_NODE(struct rrr_socket_private_data);
+	enum rrr_socket_private_data_class class;
+	void *data;
+};
+
+struct rrr_socket_private_data_collection {
+	RRR_LL_HEAD(struct rrr_socket_private_data);
+};
+
 struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
 	char *creator;
 	char *filename;
 	struct rrr_socket_options options;
+	struct rrr_socket_private_data_collection private_data;
 };
 
 struct rrr_socket_holder_collection {
@@ -78,6 +88,55 @@ struct rrr_socket_holder_collection {
 
 struct rrr_socket_holder_collection socket_list = {0};
 static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void __rrr_socket_private_data_destroy (
+		struct rrr_socket_private_data *node
+) {
+	RRR_FREE_IF_NOT_NULL(node->data);
+	free(node);
+}
+
+void __rrr_socket_private_data_collection_clear (
+		struct rrr_socket_private_data_collection *collection
+) {
+	RRR_LL_DESTROY(collection, struct rrr_socket_private_data, __rrr_socket_private_data_destroy(node));
+}
+
+int __rrr_socket_private_data_collection_allocate_and_push (
+		struct rrr_socket_private_data_collection *collection,
+		enum rrr_socket_private_data_class class,
+		size_t size
+) {
+	int ret = 0;
+
+	struct rrr_socket_private_data *new_node = malloc(sizeof(*new_node));
+	if (new_node == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(new_node, '\0', sizeof(*new_node));
+
+	void *new_data = malloc(size);
+	if (new_data == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
+		ret = 1;
+		goto out_free_node;
+	}
+
+	memset(new_data, '\0', sizeof(size));
+
+	new_node->class = class;
+	new_node->data = new_data;
+	RRR_LL_PUSH(collection, new_node);
+
+	goto out;
+	out_free_node:
+		free(new_node);
+	out:
+		return ret;
+}
 
 int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int no_unlink) {
 	int ret = 0;
@@ -92,8 +151,10 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 		}
 	}
 	if (no_unlink == 0 && holder->filename != NULL) {
+		RRR_DBG_7("socket pid %i filename %s unlink\n", getpid(), holder->filename);
 		unlink(holder->filename);
 	}
+	__rrr_socket_private_data_collection_clear(&holder->private_data);
 	RRR_FREE_IF_NOT_NULL(holder->filename);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
 	free(holder);
@@ -206,6 +267,39 @@ int rrr_socket_get_options_from_fd (
 	return ret;
 }
 
+void *rrr_socket_get_private_data_from_fd (
+		int fd,
+		enum rrr_socket_private_data_class class,
+		size_t size
+) {
+	void *result = NULL;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			struct rrr_socket_holder *socket_holder = node;
+			RRR_LL_ITERATE_BEGIN(&socket_holder->private_data, struct rrr_socket_private_data);
+				if (node->class == class) {
+					result = node->data;
+					goto out;
+				}
+			RRR_LL_ITERATE_END();
+
+			if (__rrr_socket_private_data_collection_allocate_and_push(&socket_holder->private_data, class, size) != 0) {
+				goto out;
+			}
+			result = RRR_LL_LAST(&socket_holder->private_data);
+
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	pthread_mutex_unlock(&socket_lock);
+	return result;
+}
+
 int rrr_socket_with_lock_do (
 		int (*callback)(void *arg),
 		void *arg
@@ -252,13 +346,6 @@ static int __rrr_socket_add_unlocked (
 	out:
 	RRR_FREE_IF_NOT_NULL(holder);
 	return ret;
-}
-
-static int __rrr_socket_add_unlocked_basic (
-		int fd,
-		const char *creator
-) {
-	return __rrr_socket_add_unlocked(fd, 0, 0, 0, creator, NULL);
 }
 
 int rrr_socket_accept (
@@ -350,20 +437,36 @@ int rrr_socket_bind_and_listen (
 	return 0;
 }
 
+static int __rrr_socket_open_nolock (
+		const char *filename,
+		int flags,
+		int mode,
+		const char *creator,
+		int register_for_unlink
+) {
+	int fd = 0;
+	fd = open(filename, flags, mode);
+
+	if (fd != -1) {
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
+	}
+
+	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s flags %i\n", fd, getpid(), filename, creator, flags);
+
+
+	return fd;
+}
+
 int rrr_socket_open (
 		const char *filename,
 		int flags,
 		int mode,
-		const char *creator
+		const char *creator,
+		int register_for_unlink
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
-	fd = open(filename, flags, mode);
-
-	if (fd != -1) {
-		__rrr_socket_add_unlocked_basic(fd, creator);
-	}
-
+	fd = __rrr_socket_open_nolock(filename, flags, mode, creator, register_for_unlink);
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
 }
@@ -381,7 +484,7 @@ int rrr_socket_open_and_read_file (
 	*result_bytes = 0;
 
 	char *contents_tmp = NULL;
-	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file");
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file", 0);
 
 	if (fd <= 0) {
 		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
@@ -453,6 +556,9 @@ int rrr_socket (
 	if (fd != -1) {
 		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename);
 	}
+
+	RRR_DBG_7("rrr_socket fd %i pid %i filename %s\n", fd, getpid(), filename);
+
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
 }
@@ -566,6 +672,82 @@ int rrr_socket_close_all_no_unlink (void) {
 	return __rrr_socket_close_all_except(0, 1);
 }
 
+int rrr_socket_fifo_create (
+		int *fd_result,
+		const char *filename,
+		const char *creator,
+		int do_write_mode,
+		int do_nonblock,
+		int unlink_if_exists
+) {
+	int ret = 0;
+
+	*fd_result = 0;
+
+	int fd = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	if (unlink_if_exists) {
+		if ((ret = unlink(filename)) != 0) {
+			if (errno == ENOENT) {
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Could not unlink file %s before creation of fifo pipe: %s\n",
+						filename, rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+		}
+	}
+
+	if ((ret = mkfifo(filename, 0660)) != 0) {
+		RRR_MSG_0("Could not create fifo pipe %s: %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int retry_limit = 100;
+
+	retry:
+	fd = __rrr_socket_open_nolock (
+			filename,
+			(do_write_mode ? O_WRONLY : O_RDONLY) | (do_nonblock ? O_NONBLOCK : 0),
+			0,
+			creator,
+			1
+	);
+
+	if (fd < 0) {
+		if (errno == ENXIO && --retry_limit >= 0 && do_nonblock) {
+			// Wait for reader to connect
+			rrr_posix_usleep(20000); // 20 ms
+			goto retry;
+		}
+		RRR_MSG_0("Failed to open fifo pipe in rrr_socket_fifo_create: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out_unlink;
+	}
+
+	RRR_DBG_7("rrr_socket create fifo pipe %s fd %i pid %i\n",
+			filename, fd, getpid());
+
+	*fd_result = fd;
+
+	goto out;
+	out_unlink:
+		if ((ret = unlink(filename)) != 0) {
+			RRR_MSG_0("Warning: Failed to unlink '%s' when cleaning up after error in rrr_socket_fifo_create: %s\n",
+					filename, rrr_strerror(errno));
+		}
+		ret = 1; // Make sure error is still set if unlink succeeds
+	out:
+		pthread_mutex_unlock(&socket_lock);
+	return ret;
+}
+
 struct rrr_socket_bind_and_listen_umask_callback_data {
 	int fd;
 	struct sockaddr *addr;
@@ -674,42 +856,8 @@ int rrr_socket_unix_create_bind_and_listen (
 	}
 	return ret;
 }
-/*
-int rrr_socket_checksockopt (
-		int fd
-) {
-	int ret = RRR_SOCKET_OK;
 
-	int error = 0;
-	socklen_t len = sizeof(error);
-	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-		RRR_MSG_0("Error from getsockopt with fd %i: %s\n", fd, rrr_strerror(errno));
-		ret = 1;
-		goto out;
-	}
-	else if (error == 0) {
-		goto out;
-	}
-	else if (error == EINPROGRESS) {
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out;
-	}
-	else if (error == ECONNREFUSED) {
-		RRR_MSG_0("Connection refused\n");
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-	else {
-		RRR_MSG_0("Unknown error from getsockopt(): %i\n", error);
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-*/
-int rrr_socket_send_check (
+static int __rrr_socket_send_check (
 		int fd
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -761,7 +909,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 	uint64_t time_end = rrr_time_get_64() + timeout_ms;
 
 	while (rrr_time_get_64() < time_end) {
-		if ((ret = rrr_socket_send_check(fd)) == 0) {
+		if ((ret = __rrr_socket_send_check(fd)) == 0) {
 			goto out;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
@@ -808,7 +956,7 @@ int rrr_socket_connect_nonblock (
 	return ret;
 }
 
-int rrr_socket_unix_create_and_connect (
+int rrr_socket_unix_connect (
 		int *socket_fd_final,
 		const char *creator,
 		const char *filename,
@@ -864,17 +1012,19 @@ int rrr_socket_unix_create_and_connect (
 }
 
 int rrr_socket_sendto_nonblock (
+		int *err,
 		ssize_t *written_bytes,
 		int fd,
 		const void *data,
 		ssize_t size,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	struct rrr_socket_options options;
 
 	int ret = RRR_SOCKET_OK;
 
+	*err = 0;
 	*written_bytes = 0;
 	ssize_t done_bytes_total = 0;
 
@@ -897,13 +1047,13 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_3("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
+		RRR_DBG_7("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
-	RRR_DBG_4("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
-			fd, size, done_bytes_total);
+	RRR_DBG_7("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete) address length %li\n",
+			fd, size, done_bytes_total, addr_len);
 
 	if (addr == NULL) {
 		done_bytes = send(fd, data + done_bytes_total, size - done_bytes_total, flags);
@@ -918,16 +1068,27 @@ int rrr_socket_sendto_nonblock (
 
 	if (done_bytes_total != size) {
 		if (done_bytes <= 0) {
+			*err = errno;
 			if (done_bytes == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
 				rrr_posix_usleep(10);
 				goto retry;
+			}
+			else if (errno == EPIPE) {
+				RRR_DBG_7 ("Pipe full or connection closed by remote\n");
+				ret = RRR_SOCKET_SOFT_ERROR;
+				goto out;
+			}
+			else if (errno == ECONNREFUSED || errno == ECONNRESET) {
+				RRR_DBG_7 ("Connection refused\n");
+				ret = RRR_SOCKET_SOFT_ERROR;
+				goto out;
 			}
 			else if (errno == EINTR) {
 				rrr_posix_usleep(10);
 				goto retry;
 			}
 			else {
-				RRR_DBG_1("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_DBG_7("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
@@ -947,6 +1108,8 @@ int rrr_socket_sendto_nonblock (
 		ret = RRR_SOCKET_OK;
 	}
 
+	*err = 0;
+
 	out:
 	*written_bytes = done_bytes_total;
 	return ret;
@@ -965,9 +1128,11 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_4("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
+		RRR_DBG_7("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
 				fd, size, written_bytes_total);
+		int err;
 		if ((ret = rrr_socket_sendto_nonblock (
+				&err,
 				&written_bytes,
 				fd,
 				data + written_bytes_total,
@@ -981,8 +1146,43 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_4("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
+		RRR_DBG_7("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
 				fd, written_bytes_total, written_bytes);
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_socket_sendto_nonblock_fail_on_partial_write (
+		int *err,
+		int fd,
+		void *data,
+		ssize_t data_size,
+		const struct sockaddr *sockaddr,
+		socklen_t addrlen
+) {
+	int ret = 0;
+
+	*err = 0;
+
+	ssize_t written_bytes = 0;
+
+	ret = rrr_socket_sendto_nonblock (
+			err,
+			&written_bytes,
+			fd,
+			data,
+			data_size,
+			sockaddr,
+			addrlen
+	);
+
+	if (written_bytes != data_size) {
+		RRR_MSG_0("All bytes were not sent in rrr_socket_sendto_nonblock_fail_on_partial_write %li<%li\n",
+				written_bytes, data_size);
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
 	}
 
 	out:

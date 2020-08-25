@@ -35,51 +35,51 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // This lock protects the lock member of all ip buffer entries
 // and must be held when accessing the locks
-pthread_mutex_t rrr_msg_msg_holder_master_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t rrr_msg_holder_master_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int __rrr_msg_holder_lock_init (
 		struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
-	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	ret = pthread_mutex_init(&entry->lock, NULL);
-	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 	return ret;
 }
 
 static void __rrr_msg_holder_util_lock_destroy (
 		struct rrr_msg_holder *entry
 ) {
-	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	pthread_mutex_destroy(&entry->lock);
-	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 }
 
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("Bug: Entry was destroyed in rrr_msg_msg_holder_lock_\n");
+		RRR_BUG("Bug: Entry was destroyed in rrr_msg_holder_lock_\n");
 	}
-	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
-		pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
+		pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 		pthread_testcancel();
 		rrr_posix_usleep(10);
-		pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
+		pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	}
-	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 }
 
 void rrr_msg_holder_unlock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("Bug: Entry was destroyed in rrr_msg_msg_holder_unlock_\n");
+		RRR_BUG("Bug: Entry was destroyed in rrr_msg_holder_unlock_\n");
 	}
-	pthread_mutex_lock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	pthread_mutex_unlock(&entry->lock);
-	pthread_mutex_unlock(&rrr_msg_msg_holder_master_lock);
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 }
 
 void rrr_msg_holder_decref_while_locked_and_unlock (
@@ -111,7 +111,7 @@ void rrr_msg_holder_incref_while_locked (
 		RRR_BUG("BUG: ip buffer entry was destroyed while increfing\n");
 	}
 	if (pthread_mutex_trylock(&entry->lock) == 0) {
-		RRR_BUG("Entry was not locked in rrr_msg_msg_holder_incref_while_locked\n");
+		RRR_BUG("Entry was not locked in rrr_msg_holder_incref_while_locked\n");
 	}
 	(entry->usercount)++;
 #ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
@@ -157,8 +157,10 @@ int rrr_msg_holder_new (
 		goto out;
 	}
 
+	memset(entry, '\0', sizeof(*entry));
+
 	if (__rrr_msg_holder_lock_init(entry) != 0) {
-		RRR_MSG_0("Could not initialize lock in rrr_msg_msg_holder_new\n");
+		RRR_MSG_0("Could not initialize lock in rrr_msg_holder_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -174,7 +176,7 @@ int rrr_msg_holder_new (
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
 	else if (addr_len > sizeof(entry->addr)) {
-		RRR_BUG("Address too long (%u > %u) in rrr_msg_msg_holder_new\n", addr_len, sizeof(entry->addr));
+		RRR_BUG("Address too long (%u > %u) in rrr_msg_holder_new\n", addr_len, sizeof(entry->addr));
 	}
 	else {
 		memcpy(&entry->addr, addr, addr_len);
@@ -205,6 +207,28 @@ int rrr_msg_holder_new (
 		return ret;
 }
 
+int rrr_msg_holder_clone_no_data (
+		struct rrr_msg_holder **result,
+		const struct rrr_msg_holder *source
+) {
+	int ret = rrr_msg_holder_new (
+			result,
+			0,
+			(struct sockaddr *) &source->addr,
+			source->addr_len,
+			source->protocol,
+			NULL
+	);
+
+	if (ret == 0) {
+		rrr_msg_holder_lock(*result);
+		(*result)->send_time = source->send_time;
+		rrr_msg_holder_unlock(*result);
+	}
+
+	return ret;
+}
+
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
@@ -220,4 +244,17 @@ void rrr_msg_holder_set_unlocked (
 	memcpy(&target->addr, addr, addr_len);
 	target->addr_len = addr_len;
 	target->protocol = protocol;
+}
+
+int rrr_msg_holder_address_matches (
+		const struct rrr_msg_holder *a,
+		const struct rrr_msg_holder *b
+) {
+	if (	 a->addr_len == b->addr_len &&
+			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len)) &&
+			 a->protocol == b->protocol
+	) {
+		return 1;
+	}
+	return 0;
 }

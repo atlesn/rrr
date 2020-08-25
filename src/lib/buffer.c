@@ -1283,7 +1283,8 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 
 	struct rrr_fifo_buffer_ratelimit *ratelimit = &buffer->ratelimit;
 
-	long long unsigned int spin_time =
+	// Use signed!!
+	long long int spin_time =
 			ratelimit->sleep_spin_time + (buffer->entry_count * buffer->entry_count * buffer->write_queue_entry_count * buffer->write_queue_entry_count);
 	/*
 	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
@@ -1314,6 +1315,8 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 		uint64_t time_start = rrr_time_get_64();
 		long long int spin_time_orig = spin_time;
+
+		// Make sure we don't wrap around
 		while (--spin_time > 0) {
 			rrr_slow_noop();
 		}

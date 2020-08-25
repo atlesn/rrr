@@ -1,4 +1,4 @@
-# README FOR READ ROUTE RECORD (triple R)
+# README FOR READ ROUTE RECORD
 ## ABOUT
 
 RRR is a general purpose acquirement, transmission, processing and storage daemon for all kinds of
@@ -14,10 +14,10 @@ allowing developers to focus on more specialized tasks.
 
 Among other things, RRR can be used to:
 
-- Acquire messages using piping, UNIX sockets, UDP/TCP-packets
+- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
 - Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
-- Save messages using InfluxDB and MySQL
+- Save messages using InfluxDB, MySQL or a customized save method
 
 Application examples may include:
 
@@ -27,6 +27,7 @@ Application examples may include:
 - Message forwarding, media or protocol conversion etc.
 - Host monitoring, logging
 - Print spooling
+- General capture and acquisition of all kinds of data, messages and telegrams
 
 RRR is used by starting one or more modules with different capabilities that read messages from each other. Some modules
 also use networking to communicate with different types of devices or with RRR programs on other hosts. Once a message
@@ -69,7 +70,7 @@ the `LICENSE.*`-files regarding this.
 ## DEVELOPMENT
 
 It is possible to write custom modules in Perl, Python and C. All three have similar easy to use
-interfaces to RRR. The man page for rrr.conf has more information on this, also check out `README.dev`.
+interfaces to RRR. The man page for rrr.conf has more information on this, also check out [README.dev.md](README.dev.md).
 
 The RRR library provides many protocol implementations and networking tools. While it is possible to link
 other programs to the RRR library, there is currently some initialization of different data structures
@@ -258,7 +259,7 @@ receive the messages and separate them from one another.
 - Each message begins with 10 integeres af 1 bytes each, whereof the last nine are to be grouped together
 - After this, there is a quoted string of arbitrary length which we have to parse, but which we mostly ignore later
 - Then, two integeres with one byte each follow
-- At the end there is an 8 byte arbitary value which is to be split into two parts followed by a carriage return which we do not use
+- At the end there is an 8 byte arbitrary value which is to be split into two parts followed by a carriage return which we do not use
 
 Here's a graphical representation of the array with the tags we want to use to address the different elements when processing the message:
 
@@ -285,16 +286,21 @@ The internal RRR array will always preserve the location of the different elemen
 hash table, the array is always stored as it was first parsed.
 
 If the same message is to be converted back to raw data and sent over the network, let's say from the 
-IP module, the data will be written out excatly as it was received, including the quotes on the string.
+IP module, the data will be written out mostly as it was received, including the quotes on the string.
+Note that integer values always are represented internally with 64 bits (eight bytes). When exported,
+they will also be this big, there is no method of reducing their size. If it is important to preserve
+the sizes of integers, use the **blob** type instead. Note that multi-byte integers parsed using blobs
+will not undergo endian-conversion, they will always be represented in their original endian inside RRR. 
 
-It is also possible to for instance put such raw data into MQTT messages.
+The MQTT client module has the ability to export raw array values into PUBLISH message bodies.
 
 The Perl5 and Python3 modules have functionality for array manipulation if messages need to be modified
 or processed in some way inside of RRR.
 
 ### ARRAY BRANCHING
 
-Array branching (or array trees) allows a single definition to be used for different input data. If you for instance have a protocol with
+Array branching (or array trees) allows a single definition to be used for different input data. If you for instance
+have a protocol with
 different message types, an indicator byte at the beginning of each message can be used to identify which branch to use.
 
 An array with branches is just like a standard array with one or more IF blocks in between the values.
@@ -322,7 +328,8 @@ If the indicator byte is set to 1, we parse a 16 byte message.
 If it is two, we parse two 32 byte messages.
 In both cases, we expect a separator character at the end (like `ETX`, `CR`, `LF` etc.).
 
-After a branched array has been successfully parsed, all values which were encountered while we parsed and checked conditions reside in a single standard array. The receiver of these arrays must be adapted to receive all possible different arrays the array tree may produce.
+After a branched array has been successfully parsed, all values which were encountered while we parsed and checked
+conditions reside in a single standard array. The receiver of these arrays must be adapted to receive all possible different arrays the array tree may produce.
 
 When using branching, it's important to consider all possible outcomes.
 If we receive invalid data, we should branch to a block with the **err** value defined.
@@ -333,10 +340,11 @@ It is possible to use `AND` and `OR` as well, those are aliases for `&&` and `||
 
 A condition is considered to be true if it's expression evaluates to non-zero.
 
-Array trees may be specified in configuration files (outside instance definitions) with a header with a name like `{MY_ARRAY}`. The tree
+Array trees may be specified in configuration files (outside instance definitions) with a header with a name like
+`{MY_ARRAY}`. The tree
 must end with a `;` (this also goes for each `IF`, `ELSIF` or `ELSE` block).
-All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4` or reference
-an array from elsewhere in the configuration like `{MY_ARRAY}`.
+All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4`
+or reference an array from elsewhere in the configuration like `{MY_ARRAY}`.
 
 If the array tree is specified directly at the parameter, no newlines may occur within the tree (which may become messy).
 The terminating semicolon is optional when array trees are defined in a configuration parameter. 
@@ -365,8 +373,8 @@ is a problem or the messages are too big to fit in single datagrams, use TCP ins
 
 #### Usage example with barcode reader and ACK messages
 A simple setup using the IP module can be to process barcodes from a scanner and send ACK back. The IP information
-in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return a message to
-the IP module if we wish to send a reply.
+in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return
+a message to the IP module if we wish to send a reply.
 
 1. Scanner sends a barcode to RRR using UDP (for instance STX 'BLABLA128' ETX)
 2. IP module receives and parses the UDP packet
@@ -374,15 +382,16 @@ the IP module if we wish to send a reply.
 4. The contents of the reply ACK message is added to the message (for instance STX 'A' ETX)
 5. The IP Module sends the packet back to the scanner.
 
-In this configuration example, an instance of the IP module both gives data to the Perl module instance, and also reads data from it. The data
-which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`. If the syntax
-in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to worry about what
-they actually are when processing the message.
+In this configuration example, an instance of the IP module both gives data to the Perl module instance, and also reads
+data from it.
+The data which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`.
+If the syntax in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to
+worry about what they actually are when processing the message.
 
 When the Perl module generates the reply, it creates an additional array value called `reply`. The IP module is then configured
-to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together. While the RRR message
-still contains the original `barcode` field once it returns to the IP module, this field is ignored in this example. Messages from
-the barcode reader(s) are delivered to UDP port 3333.
+to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together.
+While the RRR message still contains the original `barcode` field once it returns to the IP module,
+this field is ignored in this example. Messages from the barcode reader(s) are delivered to UDP port 3333.
 
 The following RRR config script `rrr-devicemaster.conf` will set everything up:
 
@@ -417,7 +426,8 @@ The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
 		# Send reply if everything is OK
 		if ($processing_succeeded) {
 			# Push ACK reply value to the message and send it
-			push_blob($message, "reply", "A");
+			
+			$message->push_tag_blob("reply", "A", 1);
 
 			# IP information is already in the message, as well as
 			# start and end separators. This call will cause the IP
@@ -427,16 +437,7 @@ The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
 		
 		return 1;
 	}
-	
-	sub push_blob {
-        	my $message = shift;
-        	my $tag = shift;
-        	my $value = shift;
-
-        	push @{$message->{'array_values'}}, "$value";
-        	push @{$message->{'array_tags'}}, $tag;
-        	push @{$message->{'array_types'}}, "blob";
-	}
+}
 
 There are some more advanced example configuration files in `/misc/test_configs`, including how to read the barcode.
 

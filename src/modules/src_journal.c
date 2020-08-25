@@ -509,20 +509,10 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config_data *config) {
-	struct journal_data data;
-	int ret = 0;
-	memset(&data, '\0', sizeof(data));
-	ret = journal_parse_config(&data, config);
-	journal_data_cleanup(&data);
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 	journal_preload,
 	thread_entry_journal,
 	NULL,
-	test_config,
 	NULL,
 	NULL
 };

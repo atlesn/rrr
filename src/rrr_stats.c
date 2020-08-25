@@ -210,8 +210,7 @@ static int __rrr_stats_read_message (
 			sizeof(struct rrr_msg),
 			1024,
 			0,
-			0,
-			RRR_SOCKET_READ_METHOD_RECV,
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			rrr_stats_message_unpack_callback,
@@ -253,7 +252,7 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 	int ret = 0;
 
 	int fd;
-	if ((ret = rrr_socket_unix_create_and_connect(&fd, "rrr_stats_connector", path, 1)) != RRR_SOCKET_OK) {
+	if ((ret = rrr_socket_unix_connect(&fd, "rrr_stats_connector", path, 1)) != RRR_SOCKET_OK) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_DBG_1("Attempt to connect to %s did not succeed (soft error).\n", path);
 			ret = 0; // This is just an attempt, non-critical error
@@ -321,40 +320,21 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 	return ret;
 }
 
-static int __rrr_stats_attempt_connect_prefix_match (const char *filename, const char *prefix) {
-	size_t filename_length = strlen(filename);
-	size_t prefix_length = strlen(prefix);
-
-	if (prefix_length == 0) {
-		return 1;
-	}
-
-	if (filename_length < prefix_length) {
-		return 0;
-	}
-
-	for (size_t i = 0; i < prefix_length; i++) {
-		if (filename[i] != prefix[i]) {
-			return 0;
-		}
-	}
-
-	return 1;
-}
-
 struct rrr_stats_attempt_connect_prefix_callback_data {
 	struct rrr_stats_data *data;
-	const char *dir_name;
-	const char *base_name;
 };
 
 static int __rrr_stats_attempt_connect_prefix_callback (
 		struct dirent *entry,
+		const char *orig_path,
 		const char *resolved_path,
 		unsigned char type,
 		void *private_data
 ) {
 	struct rrr_stats_attempt_connect_prefix_callback_data *data = private_data;
+
+	(void)(orig_path);
+	(void)(entry);
 
 /*	printf ("in callback: %s - %s - %s type %u resolved path %s\n",
 			data->dir_name,
@@ -364,21 +344,19 @@ static int __rrr_stats_attempt_connect_prefix_callback (
 			resolved_path
 	);*/
 
-	if (__rrr_stats_attempt_connect_prefix_match(entry->d_name, data->base_name)) {
-		if (type == DT_SOCK) {
-			RRR_DBG_1 ("Found socket %s\n", resolved_path);
+	if (type == DT_SOCK) {
+		RRR_DBG_1 ("Found socket %s\n", resolved_path);
 
-			// We could have done this at the top of the function, but it's desirable
-			// to have the debug message printed for all matching files
-			if (data->data->socket_fd != 0) {
-				// Already connected
-				return 0;
-			}
+		// We could have done this at the top of the function, but it's desirable
+		// to have the debug message printed for all matching files
+		if (data->data->socket_fd != 0) {
+			// Already connected
+			return 0;
+		}
 
-			if (__rrr_stats_attempt_connect_exact(data->data, resolved_path) != 0) {
-				RRR_MSG_0("Error while connecting to socket %s\n", resolved_path);
-				return 1;
-			}
+		if (__rrr_stats_attempt_connect_exact(data->data, resolved_path) != 0) {
+			RRR_MSG_0("Error while connecting to socket %s\n", resolved_path);
+			return 1;
 		}
 	}
 
@@ -432,10 +410,14 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 
 	if (lstat(resolved_path, &stat_buf) == 0 && (stat_buf.st_mode & S_IFMT) == S_IFDIR) {
 		struct rrr_stats_attempt_connect_prefix_callback_data callback_data = {
-			data, prefix, ""
+			data
 		};
 
-		if ((ret = rrr_readdir_foreach(prefix, __rrr_stats_attempt_connect_prefix_callback, &callback_data)) != 0) {
+		if ((ret = rrr_readdir_foreach (
+				prefix,
+				__rrr_stats_attempt_connect_prefix_callback,
+				&callback_data
+	)) != 0) {
 			RRR_MSG_0("Error while going through directory %s\n", prefix);
 		}
 	}
@@ -454,15 +436,18 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 		char *base_name = basename(prefix_copy_b);
 
 		struct rrr_stats_attempt_connect_prefix_callback_data callback_data = {
-				data, dir_name, base_name
+				data
 		};
 
-		if ((ret = rrr_readdir_foreach(dir_name, __rrr_stats_attempt_connect_prefix_callback, &callback_data)) != 0) {
+		if ((ret = rrr_readdir_foreach_prefix(
+				dir_name,
+				base_name,
+				__rrr_stats_attempt_connect_prefix_callback,
+				&callback_data
+		)) != 0) {
 			RRR_MSG_0("Error while going through directory %s\n", dir_name);
 		}
 	}
-
-
 
 	out:
 	RRR_FREE_IF_NOT_NULL(prefix_copy_a);

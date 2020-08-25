@@ -29,7 +29,8 @@ if the MQTT broker is unreachable and sent later when the broker becomes alive a
 
 ### Peripherals Example Configurations
 
-* [Barcode Scanner](peripherals/barcode_scanner.md)  
+* [Barcode Scanner (USB/Serial/TCP/UDP)](peripherals/barcode_scanner.md)
+* [Printer and Spooling](peripherals/printer.md)
 
 ## HTTP
 

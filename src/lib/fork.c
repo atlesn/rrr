@@ -170,24 +170,22 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 	return ret;
 }
 
-static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_rounds) {
-	int active_forks_found = 0;
-
+static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handler *handler, int max_rounds) {
 	if (pthread_mutex_trylock (&handler->lock) == 0) {
 		RRR_BUG("BUG: Handler was not locked in __rrr_fork_wait_loop\n");
 	}
 
+	*active_forks_found = 0;
+
 	do {
-		if (max_rounds-- == 0) {
+		if (max_rounds-- <= 0) {
 			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
 			break;
 		}
-		active_forks_found = 0;
+		*active_forks_found = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid > 0) {
-				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
-			}
 			if (node->pid > 0 && node->was_waited_for == 0) {
+				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
 				pid_t pid;
 				int status;
 
@@ -200,14 +198,14 @@ static void __rrr_fork_wait_loop (struct rrr_fork_handler *handler, int max_roun
 							node->pid, getpid(), status, rrr_strerror(errno));
 				}
 
-				active_forks_found = 1;
+				*active_forks_found = 1;
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
 
 		pthread_mutex_unlock (&handler->lock);
 		rrr_posix_usleep(100000); // 100ms
 		pthread_mutex_lock (&handler->lock);
-	} while (active_forks_found != 0);
+	} while (*active_forks_found != 0);
 }
 
 void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
@@ -218,33 +216,39 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 
 	// Signal handlers must be disabled before we do this
 
-	RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
+	int active_forks_found = 1;
+	for (int i = 0; i < 10 && active_forks_found; i++) {
+		RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
 
-	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-		if (node->pid > 0) {
-			RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
-			kill(node->pid, SIGUSR1);
-		}
-/*		else {
- *			// THIS ELSE CLAUSE SHOULD BE COMMENTED OUT
- *			// For testing errors
- *			node->pid = 5555;
- *		}*/
-	RRR_LL_ITERATE_END();
+		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+			if (node->pid > 0) {
+				RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
+				kill(node->pid, SIGUSR1);
+			}
+	/*		else {
+	 *			// THIS ELSE CLAUSE SHOULD BE COMMENTED OUT
+	 *			// Only for testing errors
+	 *			node->pid = 5555;
+	 *		}*/
+		RRR_LL_ITERATE_END();
 
-	__rrr_fork_wait_loop(handler, 50); // 50 rounds = ~5 seconds
+		__rrr_fork_wait_loop(&active_forks_found, handler, 5); // 5 rounds = ~0.5 seconds
+	}
 
 	// Try SIGKILL
 	if (RRR_LL_COUNT(handler) > 0) {
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid > 0) {
+			if (node->pid > 0 && node->was_waited_for == 0) {
 				RRR_DBG_1("SIGKILL to fork %i\n", node->pid);
 				kill(node->pid, SIGKILL);
 			}
 		RRR_LL_ITERATE_END();
 
 		// Try waiting one last time
-		__rrr_fork_wait_loop(handler, 10); // 10 rounds = ~1 second
+		__rrr_fork_wait_loop(&active_forks_found, handler, 10); // 10 rounds = ~1 second
+		if (active_forks_found) {
+			RRR_MSG_0("At least one fork was still alive after waiting, we now have a possible ghost situation.\n");
+		}
 	}
 
 	pthread_mutex_unlock (&handler->lock);

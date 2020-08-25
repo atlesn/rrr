@@ -446,8 +446,7 @@ static struct rrr_module_operations module_operations = {
 		thread_entry_mqttbroker,
 		NULL,
 		NULL,
-		NULL,
-		NULL,
+		NULL
 };
 
 static const char *module_name = "mqtt_broker";

@@ -985,14 +985,35 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	return ret;
 }
 
-static int mqttclient_try_create_array_message_from_publish_callback (
-		struct rrr_msg_msg *message,
+struct try_create_array_message_from_publish_callback_data {
+	const char *topic;
+	ssize_t topic_length;
+	struct rrr_msg_msg **result;
+};
+
+static int __mqttclient_try_create_array_message_from_publish_callback (
+		struct rrr_array *array,
 		void *arg
 ) {
-	struct rrr_msg_msg **target = (struct rrr_msg_msg **) arg;
-	*target = message;
-	printf("Result: %p\n", message);
-	return 0;
+	struct try_create_array_message_from_publish_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_msg_msg *message = NULL;
+	if ((ret = rrr_array_new_message_from_collection (
+			&message,
+			array,
+			rrr_time_get_64(),
+			callback_data->topic,
+			callback_data->topic_length
+	)) != 0) {
+		RRR_MSG_0("Could not create message in __rrr_array_tree_new_message_from_buffer_callback_intermediate return was %i\n", ret);
+		return 1;
+	}
+
+	*callback_data->result = message;
+
+	return ret;
 }
 
 static int mqttclient_try_create_array_message_from_publish (
@@ -1025,15 +1046,19 @@ static int mqttclient_try_create_array_message_from_publish (
 		goto out;
 	}
 
-	if ((ret = rrr_array_tree_new_message_from_buffer(
-		parsed_bytes,
-		publish->payload->payload_start + read_pos,
-		publish->payload->length - read_pos,
-		publish->topic,
-		strlen(publish->topic),
-		data->tree,
-		mqttclient_try_create_array_message_from_publish_callback,
-		(void *) result
+	struct try_create_array_message_from_publish_callback_data callback_data = {
+			publish->topic,
+			strlen(publish->topic),
+			result
+	};
+
+	if ((ret = rrr_array_tree_import_from_buffer (
+			parsed_bytes,
+			publish->payload->payload_start + read_pos,
+			publish->payload->length - read_pos,
+			data->tree,
+			__mqttclient_try_create_array_message_from_publish_callback,
+			&callback_data
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
 			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %i\n",
@@ -1932,7 +1957,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
 		mqttclient_poststop,
-		NULL,
 		NULL,
 		NULL
 };
