@@ -130,21 +130,22 @@ contents of each file is put into RRR messages, and the file is afterwards delet
 
 Create a file called `print` as in the previous example, and also create the drop folder `mkdir /tmp/print_jobs`. Have three terminal windows visible at the same time.
 
-* In the first window, start RRR with some debugging enabled
-	
-	rrr -d 2 print_spooler_drop_folder.conf
-	
-* In the second window, start the netcat printer
-	
-	while sleep 3; do nc -vv -l -p 9100; done
-	
-* In the third window, put prints into the drop folder
-	
-	cp print /tmp/print_jobs/job-`date -Iseconds`
-	
-By default, **file** will probe for new files every 5 seconds. This timer can be changed with `file_probe_interval_ms`. Had `file_unlink_on_close` no been specified, the files in the directory
-had not been deleted and same print jobs would have been sent over and over again.
+In the first window, start RRR with some debugging enabled
 
-If big jobs are to be printed, there's a chance that **file** will try to read the job before its completely
+	rrr -d 2 print_spooler_drop_folder.conf
+
+In the second window, start the netcat printer
+
+	while sleep 3; do nc -vv -l -p 9100; done
+ 
+In the third window, put prints into the drop folder
+
+	cp print /tmp/print_jobs/job-`date -Iseconds`
+
+By default, **file** will probe for new files every 5 seconds. This timer can be changed with `file_probe_interval_ms`.
+Had `file_unlink_on_close` no been specified, the files in the directory would not have been deleted after reading and the same
+print jobs would have been sent over and over again.
+
+If big jobs are to be printed, there's a chance that **file** will try to read them before they are completely
 written out to disk. To prevent this, a file should first be called something which does not match the prefix in
 `file_prefix` and then renamed by using `mv` when writing is complete.
