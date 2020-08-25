@@ -38,11 +38,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../read_constants.h"
 
-int rrr_input_linux_device_grab (int fd) {
+int rrr_input_linux_device_grab (int fd, int onoff) {
 	// Valgrind complains here with false positive
 	//   Syscall param ioctl(generic) points to unaddressable byte(s)
-	if (ioctl (fd, EVIOCGRAB, (void *)1) != 0) {
-		RRR_DBG_3("Note: EVIOCGRAB failed for fd %i: %s\n", fd, rrr_strerror(errno));
+	if (ioctl (fd, EVIOCGRAB, (onoff ? (void *) 1 : (void *) 0)) != 0) {
+		RRR_DBG_3("Note: EVIOCGRAB (%i) failed for fd %i: %s\n",
+				onoff, fd, rrr_strerror(errno));
 		return 1;
 	}
 	return 0;

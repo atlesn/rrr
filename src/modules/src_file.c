@@ -74,6 +74,7 @@ struct file_data {
 
 	struct rrr_array_tree *tree;
 	int do_try_keyboard_input;
+	int do_no_keyboard_hijack;
 	int do_read_all_to_message;
 	int do_unlink_on_close;
 
@@ -207,6 +208,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_keyboard_hijack", do_no_keyboard_hijack, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
 
@@ -298,7 +300,12 @@ static int file_probe_callback (
 	int flags = 0;
 
 	if (data->do_try_keyboard_input && type == DT_CHR) {
-		if ((ret = rrr_input_device_grab(fd)) == 0) {
+		if ((ret = rrr_input_device_grab(fd, 1)) == 0) {
+			if (data->do_no_keyboard_hijack && (ret = rrr_input_device_grab(fd, 0)) != 0) {
+				RRR_MSG_0("Could not ungrab keyboard device '%s'=>'%s' in file instance %s\n",
+						 orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
 			flags |= RRR_FILE_F_IS_KEYBOARD;
 			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as keyboard event device\n",
 					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);

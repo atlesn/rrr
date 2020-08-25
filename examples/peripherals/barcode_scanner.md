@@ -133,6 +133,7 @@ Notice that the `prefix` value is only present when we send `STX` first in our t
 	file_prefix=intermec
 	file_input_types=nsep#barcode,sep1
 	file_try_keyboard_input=yes
+	file_no_keyboard_hijack=yes
 	file_topic=my_barcode_topic
 	
 	[instance_raw]
@@ -155,7 +156,16 @@ any `file_prefix`, this will cause RRR to try to read from everything in there.
 USB scanners can often be configured to act either as a keyboard or as a virtual serial port. Currently,
 keyboard scanners are only supported on Linux and FreeBSD. When keyboard scanners are opened, they are *hijacked* so that
 the input from them is not used by the X-window system or terminals. Make sure you don't allow RRR to open
-your real keyboard as it might then become unusable while RRR is running.
+your real keyboard as it might then become unusable while RRR is running. The option `file_no_keyboard_hijack`
+can be set to allow other applications to receive the data, this is useful for testing purposes.
+
+If you still manage to lock yourself out from using your keyboard:
+
+1. Press return twice to make the array parsing fail (works with the definition used in this example),
+   it will cause **file** to close the device.
+2. Immediately press `Ctrl+C`, run `killall rrr` or similar to prevent **file** from re-opening the device
+   in the next probe.
+3. If you were too slow, repeat step 1 and 2.
 
 If keyboard devices are opened without `file_try_keyboard_input` being set to `yes` or on non-Linux/FreeBSD systems,
 the raw event data (key up, key down etc.) will be received by RRR. While it may be a bit cumbersome to implement, it is certainly possible to parse this data into and RRR array and have a Perl or Python script convert the keys into characters.
