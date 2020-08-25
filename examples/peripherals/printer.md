@@ -131,17 +131,17 @@ contents of each file is put into RRR messages, and the file is afterwards delet
 Create a file called `print` as in the previous example, and also create the drop folder `mkdir /tmp/print_jobs`. Have three terminal windows visible at the same time.
 
 * In the first window, start RRR with some debugging enabled
-
+	
 	rrr -d 2 print_spooler_drop_folder.conf
-
+	
 * In the second window, start the netcat printer
-
+	
 	while sleep 3; do nc -vv -l -p 9100; done
-
+	
 * In the third window, put prints into the drop folder
-
+	
 	cp print /tmp/print_jobs/job-`date -Iseconds`
-
+	
 By default, **file** will probe for new files every 5 seconds. This timer can be changed with `file_probe_interval_ms`. Had `file_unlink_on_close` no been specified, the files in the directory
 had not been deleted and same print jobs would have been sent over and over again.
 
