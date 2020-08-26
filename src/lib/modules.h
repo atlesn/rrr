@@ -66,9 +66,6 @@ struct rrr_module_operations {
 	// Post stop function - Run after thread has finished from main thread context
 	void (*poststop)(const struct rrr_thread *);
 
-	// Test of configuration arguments
-	int (*test_config)(struct rrr_instance_config_data *config);
-
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 

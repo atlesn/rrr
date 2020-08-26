@@ -1136,7 +1136,6 @@ int rrr_http_session_transport_ctx_receive (
 					4096,
 					65535,
 					read_max_size,
-					0, // Flags
 					__rrr_http_session_receive_get_target_size,
 					&callback_data,
 					session->is_client

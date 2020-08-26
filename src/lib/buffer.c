@@ -215,7 +215,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (
 
 	memset (entry, '\0', sizeof(*entry));
 
-	if (pthread_mutex_init(&entry->lock, NULL) != 0) {
+	if (rrr_posix_mutex_init(&entry->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_fifo_buffer_entry_new_unlocked\n");
 		ret = 1;
 		goto out_free;
@@ -310,28 +310,22 @@ int rrr_fifo_buffer_init (
 
 	memset (buffer, '\0', sizeof(*buffer));
 
-	pthread_rwlockattr_t rwlockattr;
-
-	if (pthread_rwlockattr_init(&rwlockattr) != 0) {
+	ret = rrr_posix_mutex_init (&buffer->write_queue_mutex, 0);
+	if (ret != 0) {
 		goto out;
 	}
 
-	ret = pthread_mutex_init (&buffer->write_queue_mutex, NULL);
-	if (ret != 0) {
-		goto out_destroy_rwlockattr;
-	}
-
-	ret = pthread_rwlock_init(&buffer->rwlock, &rwlockattr);
+	ret = rrr_posix_rwlock_init(&buffer->rwlock, 0);
 	if (ret != 0) {
 		goto out_destroy_write_queue_mutex;
 	}
 
-	ret = pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
+	ret = rrr_posix_mutex_init (&buffer->ratelimit_mutex, 0);
 	if (ret != 0) {
 		goto out_destroy_rwlock;
 	}
 
-	ret = pthread_mutex_init (&buffer->stats_mutex, NULL);
+	ret = rrr_posix_mutex_init (&buffer->stats_mutex, 0);
 	if (ret != 0) {
 		goto out_destroy_ratelimit_mutex;
 	}
@@ -358,8 +352,6 @@ int rrr_fifo_buffer_init (
 		pthread_rwlock_destroy(&buffer->rwlock);
 	out_destroy_write_queue_mutex:
 		pthread_mutex_destroy(&buffer->write_queue_mutex);
-	out_destroy_rwlockattr:
-		pthread_rwlockattr_destroy(&rwlockattr);
 	out:
 		return (ret != 0 ? 1 : 0);
 }
@@ -1283,7 +1275,8 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 
 	struct rrr_fifo_buffer_ratelimit *ratelimit = &buffer->ratelimit;
 
-	long long unsigned int spin_time =
+	// Use signed!!
+	long long int spin_time =
 			ratelimit->sleep_spin_time + (buffer->entry_count * buffer->entry_count * buffer->write_queue_entry_count * buffer->write_queue_entry_count);
 	/*
 	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
@@ -1314,6 +1307,8 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 		uint64_t time_start = rrr_time_get_64();
 		long long int spin_time_orig = spin_time;
+
+		// Make sure we don't wrap around
 		while (--spin_time > 0) {
 			rrr_slow_noop();
 		}

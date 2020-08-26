@@ -30,11 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_id_pool.h"
 
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));
 
-	if (pthread_mutex_init(&pool->lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&pool->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_mqtt_id_pool_init\n");
 		return 1;
 	}

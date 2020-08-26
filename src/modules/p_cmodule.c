@@ -386,7 +386,6 @@ static struct rrr_module_operations module_operations = {
 		thread_entry_cmodule,
 		NULL,
 		NULL,
-		NULL,
 		NULL
 };
 

@@ -69,6 +69,11 @@ struct rrr_read_session {
 	// Populated by get target length-function if bytes are to be skipped at beginning of buffer
 	ssize_t rx_buf_skip;
 
+	// Complete callback may set this to indicate that parsing of a block has completed successfully
+	// and that if an EOF or connection close occurs in the next read, this should not produce a soft error.
+	// If EOF does not occur during the next read, the flag is reset to zero.
+	int eof_ok_now;
+
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;
 
@@ -104,17 +109,12 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_complete_callback) (
 													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_poll) (
-													int read_flags,
 													void *private_arg
 											 ),
 		int									 (*function_read) (

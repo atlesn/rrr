@@ -197,7 +197,7 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 
-	if (rrr_socket_unix_create_and_connect (
+	if (rrr_socket_unix_connect (
 			&socket_fd,
 			"test_type_array_write_to_socket",
 			socket_path,

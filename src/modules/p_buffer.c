@@ -142,11 +142,6 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config_data *config) {
-	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
-}
-
 static int buffer_preload (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
@@ -211,7 +206,6 @@ static struct rrr_module_operations module_operations = {
 		buffer_preload,
 		thread_entry_buffer,
 		NULL,
-		test_config,
 		buffer_inject,
 		NULL
 };

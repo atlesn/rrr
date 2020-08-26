@@ -1,4 +1,4 @@
-# README FOR READ ROUTE RECORD (triple R)
+# README FOR READ ROUTE RECORD
 ## ABOUT
 
 RRR is a general purpose acquirement, transmission, processing and storage daemon for all kinds of
@@ -14,10 +14,10 @@ allowing developers to focus on more specialized tasks.
 
 Among other things, RRR can be used to:
 
-- Acquire messages using piping, UNIX sockets, UDP/TCP-packets
+- Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
 - Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
-- Save messages using InfluxDB and MySQL
+- Save messages using InfluxDB, MySQL or a customized save method
 
 Application examples may include:
 
@@ -27,6 +27,7 @@ Application examples may include:
 - Message forwarding, media or protocol conversion etc.
 - Host monitoring, logging
 - Print spooling
+- General capture and acquisition of all kinds of data, messages and telegrams
 
 RRR is used by starting one or more modules with different capabilities that read messages from each other. Some modules
 also use networking to communicate with different types of devices or with RRR programs on other hosts. Once a message
@@ -258,7 +259,7 @@ receive the messages and separate them from one another.
 - Each message begins with 10 integeres af 1 bytes each, whereof the last nine are to be grouped together
 - After this, there is a quoted string of arbitrary length which we have to parse, but which we mostly ignore later
 - Then, two integeres with one byte each follow
-- At the end there is an 8 byte arbitary value which is to be split into two parts followed by a carriage return which we do not use
+- At the end there is an 8 byte arbitrary value which is to be split into two parts followed by a carriage return which we do not use
 
 Here's a graphical representation of the array with the tags we want to use to address the different elements when processing the message:
 

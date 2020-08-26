@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
@@ -1086,7 +1087,7 @@ int rrr_mqtt_broker_new (
 		goto out_free;
 	}
 
-	if ((ret = pthread_mutex_init(&res->client_serial_stats_lock, 0)) != 0) {
+	if ((ret = rrr_posix_mutex_init(&res->client_serial_stats_lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize lock for client serial number in rrr_mqtt_broker_new\n");
 		goto out_destroy_data;
 	}

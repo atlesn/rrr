@@ -38,12 +38,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_vl_message.h"
 
 #include "../log.h"
+#include "../settings.h"
+#include "../read.h"
 #include "../socket/rrr_socket.h"
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
-#include "../settings.h"
-#include "../read.h"
 #include "../cmodule/cmodule_ext.h"
+#include "../util/posix.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
@@ -183,28 +184,28 @@ PyTypeObject rrr_python3_socket_type = {
 PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 	struct rrr_python3_socket_data *new_socket = NULL;
 
-	int ret = 0;
-
 	new_socket = PyObject_New(struct rrr_python3_socket_data, &rrr_python3_socket_type);
 	if (new_socket == NULL) {
-		RRR_MSG_0("Could not create new socket:\n");
+		RRR_MSG_0("Could not create new socket in rrr_python3_socket_new:\n");
 		PyErr_Print();
-		ret = 1;
 		goto out;
 	}
 
 	new_socket->worker = worker;
 
-	pthread_mutex_init(&new_socket->send_lock, 0);
+	if (rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
+		RRR_MSG_0("Could not initialize lock in rrr_python3_socket_new\n");
+		goto out_free;
+	}
 
 	new_socket->time_start = rrr_time_get_64();
 
-	out:
-	if (ret != 0) {
+	goto out;
+	out_free:
 		RRR_Py_XDECREF((PyObject *) new_socket);
 		new_socket = NULL;
-	}
-	return (PyObject *) new_socket;
+	out:
+		return (PyObject *) new_socket;
 }
 
 int rrr_python3_socket_send (

@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 static const struct rrr_mqtt_p_protocol_version protocol_versions[] = {
 		{RRR_MQTT_VERSION_3_1, "MQISDP"},
@@ -55,7 +56,7 @@ static int __rrr_mqtt_p_standarized_usercount_init (
 		struct rrr_mqtt_p_standarized_usercount *head,
 		void (*destroy)(void *arg)
 ) {
-	int ret = pthread_mutex_init(&head->refcount_lock, 0);
+	int ret = rrr_posix_mutex_init(&head->refcount_lock, 0);
 	if (ret != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_mqtt_p_standarized_usercount_init\n");
 		return 1;
@@ -117,7 +118,7 @@ int rrr_mqtt_p_payload_new (
 	}
 	memset(result, '\0', sizeof(*result));
 
-	ret = pthread_mutex_init(&result->data_lock, 0);
+	ret = rrr_posix_mutex_init(&result->data_lock, 0);
 	if (ret != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_mqtt_p_payload_new\n");
 		ret = 1;
@@ -213,7 +214,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 		ret->type_flags = type_properties->flags;
 	}
 
-	if (pthread_mutex_init(&ret->data_lock, 0) != 0) {
+	if ((rrr_posix_mutex_init(&ret->data_lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_mqtt_p_allocate_raw\n");
 		goto out_free;
 	}

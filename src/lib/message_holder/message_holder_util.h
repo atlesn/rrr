@@ -28,30 +28,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msg_holder;
 struct rrr_mqtt_topic_token;
 
-int rrr_msg_msg_holder_util_message_topic_match (
+int rrr_msg_holder_util_message_topic_match (
 		int *does_match,
 		const struct rrr_msg_holder *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token
 );
-int rrr_msg_msg_holder_util_new_with_empty_message (
+int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		int protocol
 );
-int rrr_msg_msg_holder_util_clone_no_locking (
-		struct rrr_msg_holder **result,
-		const struct rrr_msg_holder *source
-);
-int rrr_msg_msg_holder_util_new_with_empty_message (
-		struct rrr_msg_holder **result,
-		ssize_t message_data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int protocol
-);
-int rrr_msg_msg_holder_util_clone_no_locking (
+int rrr_msg_holder_util_clone_no_locking (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 );

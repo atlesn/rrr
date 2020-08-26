@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
+enum rrr_socket_private_data_class {
+	RRR_SOCKET_PRIVATE_DATA_CLASS_INPUT_DEVICE
+};
+
 struct rrr_socket_options {
 	int fd;
 	int domain;
@@ -52,6 +56,11 @@ int rrr_socket_get_filename_from_fd (
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
 		int fd
+);
+void *rrr_socket_get_private_data_from_fd (
+		int fd,
+		enum rrr_socket_private_data_class class,
+		size_t size
 );
 int rrr_socket_with_lock_do (
 		int (*callback)(void *arg),
@@ -78,7 +87,8 @@ int rrr_socket_open (
 		const char *filename,
 		int flags,
 		int mode,
-		const char *creator
+		const char *creator,
+		int register_for_unlink
 );
 int rrr_socket_open_and_read_file (
 		char **result,
@@ -101,6 +111,14 @@ int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
+int rrr_socket_fifo_create (
+		int *fd_result,
+		const char *filename,
+		const char *creator,
+		int do_write_mode,
+		int do_nonblock,
+		int unlink_if_exists
+);
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,
@@ -109,9 +127,6 @@ int rrr_socket_unix_create_bind_and_listen (
 		int nonblock,
 		int do_mkstemp,
 		int do_unlink_if_exists
-);
-int rrr_socket_send_check (
-		int fd
 );
 int rrr_socket_connect_nonblock_postcheck_loop (
 		int fd,
@@ -122,7 +137,7 @@ int rrr_socket_connect_nonblock (
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
-int rrr_socket_unix_create_and_connect (
+int rrr_socket_unix_connect (
 		int *socket_fd_final,
 		const char *creator,
 		const char *filename,
@@ -147,10 +162,10 @@ int rrr_socket_sendto_blocking (
 int rrr_socket_sendto_nonblock_fail_on_partial_write (
 		int *err,
 		int fd,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen,
 		void *data,
-		ssize_t data_size
+		ssize_t data_size,
+		const struct sockaddr *sockaddr,
+		socklen_t addrlen
 );
 static inline int rrr_socket_send_nonblock (
 		ssize_t *written_bytes,

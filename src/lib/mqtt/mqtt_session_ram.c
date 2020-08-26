@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 #define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
 
@@ -561,7 +562,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		goto out_free_client_id;
 	}
 
-	if (pthread_mutex_init(&result->lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&result->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_mqtt_session_collection_ram_create_session_unlocked\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out_destroy_subscriptions;
@@ -3217,8 +3218,6 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		RRR_BUG("arg was not NULL in rrr_mqtt_session_collection_ram_new\n");
 	}
 
-	pthread_mutexattr_t mutexattr;
-
 	struct rrr_mqtt_session_collection_ram_data *ram_data = malloc(sizeof(*ram_data));
 	if (ram_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_session_collection_ram_new\n");
@@ -3237,23 +3236,10 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		goto out_destroy_ram_data;
 	}
 
-	if (pthread_mutexattr_init(&mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_mqtt_session_collection_ram_new\n");
-		ret = 1;
-		goto out_destroy_collection;
-
-	}
-
-	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("Could not set PTHREAD_MUTEX_RECURSIVE rrr_mqtt_session_collection_ram_new\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
-
-	if (pthread_mutex_init(&ram_data->lock, &mutexattr) != 0) {
+	if (rrr_posix_mutex_init(&ram_data->lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out_destroy_collection;
 	}
 
 	if (rrr_fifo_buffer_init_custom_free(&ram_data->retain_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
@@ -3296,8 +3282,6 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		pthread_mutex_destroy(&ram_data->lock);
 	out_destroy_collection:
 		rrr_mqtt_session_collection_destroy((struct rrr_mqtt_session_collection *)ram_data);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&mutexattr);
 	out_destroy_ram_data:
 		free(ram_data);
 
