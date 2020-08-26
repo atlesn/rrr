@@ -805,7 +805,7 @@ static int __rrr_array_tree_interpret_node (
 		if (!comma_found && !(*semicolon_found)) {
 			RRR_MSG_0("Comma or semicolon not found while parsing array definition\n");
 			ret = RRR_ARRAY_TREE_SOFT_ERROR;
-			goto out;
+			goto out_destroy;
 		}
 	}
 
