@@ -77,33 +77,13 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	int ret = 0;
 
 	struct rrr_fork_handler *handler = NULL;
-	pthread_mutexattr_t attr;
 
 	*result = NULL;
-
-	if (pthread_mutexattr_init(&attr) != 0)  {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_fork_handler_init\n");
-		goto out;
-	}
-
-	if ((ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
-		RRR_MSG_0("setpshared() failed in rrr_fork_handler_new, not supported on this platform: %s\n",
-				rrr_strerror(errno));
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
-
-	if ((ret = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL)) != 0) {
-		RRR_MSG_0("settype() failed in rrr_fork_handler_new: %s\n",
-				rrr_strerror(errno));
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
 
 	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
 		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(handler, '\0', sizeof(*handler));
@@ -111,7 +91,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	handler->self_t = pthread_self();
 	handler->self_p = getpid();
 
-	if (pthread_mutex_init(&handler->lock, &attr) != 0) {
+	if (rrr_posix_mutex_init(&handler->lock, RRR_POSIX_MUTEX_IS_PSHARED) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
@@ -122,12 +102,10 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 
 	*result = handler;
 
-	goto out_destroy_mutexattr;
+	goto out;
 
 	out_free:
 		munmap(handler, RRR_FORK_HANDLER_ALLOCATION_SIZE);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
 }

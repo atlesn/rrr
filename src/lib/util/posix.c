@@ -27,10 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Allow functions on BSD
 #define __BSD_VISIBLE 1
 
+#include <pthread.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <string.h>
+#include <errno.h>
+#include <stdlib.h>
 
+#include "log.h"
+#include "../rrr_strerror.h"
 #include "posix.h"
 
 int rrr_posix_usleep(int useconds) {
@@ -64,4 +69,135 @@ int rrr_posix_strcasecmp (const char *a, const char *b) {
 
 int rrr_posix_strncasecmp (const char *a, const char *b, size_t n) {
 	return strncasecmp(a, b, n);
+}
+
+int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
+	int ret = 0;
+
+	int is_recursive = (flags & RRR_POSIX_MUTEX_IS_RECURSIVE);
+	int is_pshared = (flags & RRR_POSIX_MUTEX_IS_PSHARED);
+
+	flags &= ~(RRR_POSIX_MUTEX_IS_RECURSIVE|RRR_POSIX_MUTEX_IS_PSHARED);
+
+	if (flags != 0) {
+		RRR_BUG("BUG: Unsupported flags %i to rrr_posix_mutex_init\n", flags);
+	}
+
+	pthread_mutexattr_t attr;
+
+	if (pthread_mutexattr_init(&attr) != 0)  {
+		RRR_MSG_0("Could not initialize mutexattr in rrr_posix_mutex_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (is_pshared) {
+		if ((ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+			RRR_MSG_0("setpshared() failed in rrr_posix_mutex_init, not supported on this platform: %s\n",
+					rrr_strerror(errno));
+			ret = 1;
+			goto out_destroy_mutexattr;
+		}
+	}
+
+	if ((ret = pthread_mutexattr_settype(&attr, (is_recursive ? PTHREAD_MUTEX_RECURSIVE : PTHREAD_MUTEX_NORMAL))) != 0) {
+		RRR_MSG_0("settype() failed in rrr_posix_mutex_init: %s\n",
+				rrr_strerror(errno));
+		ret = 1;
+		goto out_destroy_mutexattr;
+	}
+
+	if (pthread_mutex_init(mutex, &attr) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_posix_mutex_init: %s\n", rrr_strerror(errno));
+		goto out_destroy_mutexattr;
+	}
+
+	goto out_destroy_mutexattr;
+
+	out_destroy_mutexattr:
+		pthread_mutexattr_destroy(&attr);
+	out:
+		return ret;
+}
+
+int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags) {
+	int ret = 0;
+
+	int is_pshared = (flags & RRR_POSIX_MUTEX_IS_PSHARED);
+
+	flags &= ~(RRR_POSIX_MUTEX_IS_PSHARED);
+
+	if (flags != 0) {
+		RRR_BUG("BUG: Unsupported flags %i to rrr_posix_rwlock_init\n", flags);
+	}
+
+	pthread_rwlockattr_t attr;
+
+	if (pthread_rwlockattr_init(&attr) != 0)  {
+		RRR_MSG_0("Could not initialize mutexattr in rrr_posix_rwlock_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (is_pshared) {
+		if ((ret = pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+			RRR_MSG_0("setpshared() failed in rrr_posix_rwlock_init, not supported on this platform: %s\n",
+					rrr_strerror(errno));
+			ret = 1;
+			goto out_destroy_rwlockattr;
+		}
+	}
+
+	if (pthread_rwlock_init(mutex, &attr) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_posix_rwlock_init: %s\n", rrr_strerror(errno));
+		goto out_destroy_rwlockattr;
+	}
+
+	goto out_destroy_rwlockattr;
+
+	out_destroy_rwlockattr:
+		pthread_rwlockattr_destroy(&attr);
+	out:
+		return ret;
+}
+
+int rrr_posix_cond_init (pthread_cond_t *mutex, int flags) {
+	int ret = 0;
+
+	int is_pshared = (flags & RRR_POSIX_MUTEX_IS_PSHARED);
+
+	flags &= ~(RRR_POSIX_MUTEX_IS_PSHARED);
+
+	if (flags != 0) {
+		RRR_BUG("BUG: Unsupported flags %i to rrr_posix_cond_init\n", flags);
+	}
+
+	pthread_condattr_t attr;
+
+	if (pthread_condattr_init(&attr) != 0)  {
+		RRR_MSG_0("Could not initialize mutexattr in rrr_posix_cond_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (is_pshared) {
+		if ((ret = pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+			RRR_MSG_0("setpshared() failed in rrr_posix_cond_init, not supported on this platform: %s\n",
+					rrr_strerror(errno));
+			ret = 1;
+			goto out_destroy_condattr;
+		}
+	}
+
+	if (pthread_cond_init(mutex, &attr) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_posix_cond_init: %s\n", rrr_strerror(errno));
+		goto out_destroy_condattr;
+	}
+
+	goto out_destroy_condattr;
+
+	out_destroy_condattr:
+		pthread_condattr_destroy(&attr);
+	out:
+		return ret;
 }

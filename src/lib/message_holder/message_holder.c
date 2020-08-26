@@ -42,7 +42,7 @@ static int __rrr_msg_holder_lock_init (
 ) {
 	int ret = 0;
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
-	ret = pthread_mutex_init(&entry->lock, NULL);
+	ret = rrr_posix_mutex_init(&entry->lock, 0);
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 	return ret;
 }

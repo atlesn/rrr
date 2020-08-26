@@ -29,13 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "udpstream.h"
+#include "random.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_read.h"
-#include "random.h"
 #include "util/macro_utils.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 #include "util/crc32.h"
+#include "util/posix.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -200,14 +201,22 @@ int rrr_udpstream_init (
 		int flags
 ) {
 	memset (data, '\0', sizeof(*data));
+
+	if (rrr_posix_mutex_init(&data->lock, 0) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_udpstream_init\n");
+		return 1;
+	}
+
 	data->flags = flags;
+
 	flags &= ~(RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS|RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE);
 	if (flags != 0) {
 		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
 	}
+
 	__rrr_udpstream_stream_collection_init(&data->streams);
 	rrr_read_session_collection_init(&data->read_sessions);
-	pthread_mutex_init(&data->lock, 0);
+
 	return 0;
 }
 

@@ -191,46 +191,63 @@ static int __rrr_thread_is_in_collection (struct rrr_thread_collection *collecti
 
 static int __rrr_thread_allocate_thread (struct rrr_thread **target) {
 	int ret = 0;
+
 	*target = NULL;
 
 	struct rrr_thread *thread = malloc(sizeof(*thread));
 	if (thread == NULL) {
-		RRR_MSG_0("Could not allocate memory for thread thread\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_thread_allocate_thread\n");
 		ret = 1;
 		goto out;
 	}
 
 	RRR_DBG_8 ("Allocate thread %p\n", thread);
 	memset(thread, '\0', sizeof(struct rrr_thread));
-	pthread_mutex_init(&thread->mutex, NULL);
+
+	if (rrr_posix_mutex_init(&thread->mutex, 0) != 0) {
+		RRR_MSG_0("Could not create mutex in __rrr_thread_allocate_thread\n");
+		ret = 1;
+		goto out_free;
+	}
 
 	*target = thread;
 
+	goto out;
+	out_free:
+		free(thread);
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_thread_new_collection (
 		struct rrr_thread_collection **target
 ) {
 	int ret = 0;
+
 	*target = NULL;
 
 	struct rrr_thread_collection *collection = malloc(sizeof(*collection));
 	if (collection == NULL) {
-		RRR_MSG_0("Could not allocate memory for thread collection\n");
+		RRR_MSG_0("Could not allocate memory in rrr_thread_new_collection\n");
 		ret = 1;
 		goto out;
 	}
 
 	memset(collection, '\0', sizeof(*collection));
 
-	pthread_mutex_init(&collection->threads_mutex, NULL);
+	if (rrr_posix_mutex_init(&collection->threads_mutex, 0) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_thread_new_collection\n");
+		ret = 1;
+		goto out_free;
+	}
 
 	*target = collection;
 
+	goto out;
+	out_free:
+		free(collection);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_thread_destroy_collection (

@@ -24,17 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
-#include "ip/ip.h"
-#include "message_holder/message_holder.h"
-#include "message_holder/message_holder_struct.h"
 #include "udpstream_asd.h"
 #include "buffer.h"
 #include "read.h"
+#include "ip/ip.h"
+#include "message_holder/message_holder.h"
+#include "message_holder/message_holder_struct.h"
 #include "socket/rrr_socket_constants.h"
 #include "messages/msg_checksum.h"
 #include "messages/msg_msg.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
+#include "util/posix.h"
 
 static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
 	struct rrr_udpstream_asd_control_msg result;
@@ -387,19 +388,19 @@ int rrr_udpstream_asd_new (
 		goto out_clear_udpstream;
 	}
 
-	if (pthread_mutex_init(&session->message_id_lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&session->message_id_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize id lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_close_udpstream;
 	}
 
-	if (pthread_mutex_init(&session->connect_lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&session->connect_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize connect lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_destroy_id_lock;
 	}
 
-	if (pthread_mutex_init(&session->queue_lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&session->queue_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize queue lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_destroy_connect_lock;
