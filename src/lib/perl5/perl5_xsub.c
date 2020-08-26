@@ -490,7 +490,7 @@ unsigned int rrr_perl5_message_ip_set_protocol (HV *hv, const char *protocol) {
 		sv_setpv(ip_so_type, "udp");
 	}
 	else {
-		RRR_MSG_0("Warning: Unknown protocol '%s' given to Perl5 set_protocol, must be 'udp' or 'tcp'\n");
+		RRR_MSG_0("Warning: Unknown protocol '%s' given to Perl5 set_protocol, must be 'udp' or 'tcp'\n", protocol);
 		ret = 1;
 		goto out;
 	}
