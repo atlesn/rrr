@@ -80,6 +80,10 @@ void rrr_string_builder_destroy (struct rrr_string_builder *string_builder) {
 }
 
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes) {
+	if (bytes == 0) {
+		return 0;
+	}
+
 	if (string_builder->wpos + bytes + 1 > string_builder->size) {
 		ssize_t new_size = bytes + 1 + string_builder->size + 1024;
 		char *new_buf = realloc(string_builder->buf, new_size);
@@ -95,6 +99,10 @@ int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize
 }
 
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str) {
+	if (*str == '\0') {
+		return 0;
+	}
+
 	ssize_t length = strlen(str);
 
 	if (rrr_string_builder_reserve(string_builder, length) != 0) {
