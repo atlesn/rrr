@@ -148,13 +148,15 @@ struct rrr_thread_collection {
 	pthread_mutex_t threads_mutex;
 };
 
+#include "log.h"
+
 static inline void rrr_thread_lock(struct rrr_thread *thread) {
-//	RRR_MSG_4 ("Thread %s lock\n", thread->name);
+//	RRR_DBG_8 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void rrr_thread_unlock(struct rrr_thread *thread) {
-//	RRR_MSG_4 ("Thread %s unlock\n", thread->name);
+//	RRR_DBG_8 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 

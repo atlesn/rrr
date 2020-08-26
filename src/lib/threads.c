@@ -484,7 +484,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		uint64_t nowtime = rrr_time_get_64();
 		uint64_t prevtime = rrr_get_watchdog_time(thread);
 
-		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
+//		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
 
 		// We or others might try to kill the thread
 		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
@@ -517,7 +517,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (50000); // 50 ms
 	}
 
+	RRR_DBG_8 ("Watchdog for thread %s/%p: Executing shutdown routines\n", thread->name, thread);
+
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_STOPPED)) {
+		RRR_DBG_8 ("Watchdog for thread %s/%p: Thread has stopped by itself\n", thread->name, thread);
 		// Thread has stopped by itself
 		goto out_nostop;
 	}
