@@ -1,10 +1,10 @@
-rrr (1.11-0bullseye1) bullseye; urgency=medium
+rrr (1.11-1bullseye1) bullseye; urgency=medium
 
   * Debian testing release
 
  -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:50:02 +0200
 
-rrr (1.11-0) buster; urgency=medium
+rrr (1.11-1) buster; urgency=medium
 
   * New file module to read from devices, files, sockets etc.
   * Improvements in ip and socket framework
