@@ -204,7 +204,6 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 			ret = 1;
 			goto out;
 		}
-		ret = 0;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
@@ -258,7 +257,7 @@ static int file_probe_callback (
 	if (type == DT_SOCK) {
 		RRR_DBG_3("file instance %s connecting to socket '%s'=>'%s'\n", orig_path, resolved_path);
 
-		if ((ret = rrr_socket_unix_connect(&fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1)) != 0) {
+		if (rrr_socket_unix_connect(&fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1) != 0) {
 			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 			goto out;
@@ -300,7 +299,7 @@ static int file_probe_callback (
 	int flags = 0;
 
 	if (data->do_try_keyboard_input && type == DT_CHR) {
-		if ((ret = rrr_input_device_grab(fd, 1)) == 0) {
+		if (rrr_input_device_grab(fd, 1) == 0) {
 			if (data->do_no_keyboard_hijack && (ret = rrr_input_device_grab(fd, 0)) != 0) {
 				RRR_MSG_0("Could not ungrab keyboard device '%s'=>'%s' in file instance %s\n",
 						 orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data));

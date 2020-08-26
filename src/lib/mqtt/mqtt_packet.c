@@ -542,7 +542,7 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		int do_preserve_reason
 ) {
 	if (RRR_MQTT_P_GET_TYPE(source) != RRR_MQTT_P_TYPE_PUBLISH) {
-		RRR_BUG("BUG: Non-publish packet of type %u given to rrr_mqtt_p_clone_publish\n");
+		RRR_BUG("BUG: Non-publish packet of type %u given to rrr_mqtt_p_clone_publish\n", RRR_MQTT_P_GET_TYPE(source));
 	}
 
 	rrr_mqtt_p_bug_if_not_locked((struct rrr_mqtt_p *) source);

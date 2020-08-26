@@ -721,13 +721,13 @@ static void __rrr_condition_evaluate_op (
 
 		signed_b = __rrr_condition_evalute_ensure_signed(result_b);
 
-		int64_t result = __rrr_condition_evaluate_operator_signed (
+		int64_t result_tmp = __rrr_condition_evaluate_operator_signed (
 				signed_a,
 				signed_b,
 				op
 		);
 
-		position->result = *((uint64_t *) &result);
+		position->result = *((uint64_t *) &result_tmp);
 		position->is_signed = 1;
 
 		RRR_DBG_3("Array tree condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
@@ -795,7 +795,7 @@ static int __rrr_condition_evalute_value (
 		position->result = strtoull(value_start, &endptr, 16);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
-			RRR_MSG_0("Could not evaluate hex value '%s' in rrr_condition_evaluate\n");
+			RRR_MSG_0("Could not evaluate hex value '%s' in rrr_condition_evaluate\n", value_start);
 			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
 		}
@@ -805,7 +805,7 @@ static int __rrr_condition_evalute_value (
 		int64_t tmp = strtoll(position->carrier->value, &endptr, 10);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
-			RRR_MSG_0("Could not evaluate negative decimal value '%s' in rrr_condition_evaluate\n");
+			RRR_MSG_0("Could not evaluate negative decimal value '%s' in rrr_condition_evaluate\n", position->carrier->value);
 			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
 		}
@@ -817,7 +817,7 @@ static int __rrr_condition_evalute_value (
 		position->result = strtoull(position->carrier->value, &endptr, 10);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
-			RRR_MSG_0("Could not evaluate decimal value '%s' in rrr_condition_evaluate\n");
+			RRR_MSG_0("Could not evaluate decimal value '%s' in rrr_condition_evaluate\n", position->carrier->value);
 			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
 		}

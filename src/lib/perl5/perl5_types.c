@@ -847,7 +847,7 @@ const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_sv (
 		type = rrr_perl5_type_definition_h;
 	}
 	else if (SvNOK(sv)) {
-
+		// Use default (blob)
 	}
 	else if (SvUTF8(sv) || SvPOK(sv) ) {
 		// Use string
