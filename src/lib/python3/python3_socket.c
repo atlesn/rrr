@@ -184,13 +184,10 @@ PyTypeObject rrr_python3_socket_type = {
 PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 	struct rrr_python3_socket_data *new_socket = NULL;
 
-	int ret = 0;
-
 	new_socket = PyObject_New(struct rrr_python3_socket_data, &rrr_python3_socket_type);
 	if (new_socket == NULL) {
 		RRR_MSG_0("Could not create new socket in rrr_python3_socket_new:\n");
 		PyErr_Print();
-		ret = 1;
 		goto out;
 	}
 
@@ -198,7 +195,6 @@ PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 
 	if (rrr_posix_mutex_init(&new_socket->send_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize lock in rrr_python3_socket_new\n");
-		ret = 1;
 		goto out_free;
 	}
 
