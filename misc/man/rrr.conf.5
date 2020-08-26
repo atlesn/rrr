@@ -1,4 +1,4 @@
-.Dd 2020-08-05
+.Dd 2020-08-23
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -180,11 +180,70 @@ All modules support array and/or IP-messages, also those who do not have
 or
 .B I
 specified. Array- and IP-capable modules may however use or modify data from such messages.
+Messages may have both IP- and Array-data simultaneously. 
 .PP
-A message may have both IP- and Array-data simultaneously. 
+The following modules are available, they are discussed in detail further down.
 .PP
-The following modules and module-specific arguments are available:
-.PP
+.Bl -tag -width -indent
+.It dummy (S)
+Dummy module which generates messages.
+
+.It raw (PAI)
+Dumps messages, used for debugging.
+
+.It ip (PAI)
+Handles IP communication, UDP and TCP.
+
+.It buffer (P)
+Buffers messages, may be used to duplicate messages to multiple readers.
+
+.It ipclient (PI)
+Implements the RRR assured single delivery protocol on UDP for unstable connections.
+
+.It python3 (PAI)
+Processes and generates messages with custom Python3 scripts.
+
+.It perl5 (PAI)
+Processes and generates messages with custom Perl5 scripts.
+
+.It cmodule (P)
+Processes and generates messages with custom C modules.
+
+.It socket (SA)
+Creates a socket to which other programs or
+.Xr rrr_post(1)
+can deliver data.
+
+.It httpserver (PAI)
+Spins up a TLS-capable HTTP server which can parse POST and GET data into RRR message arrays.
+
+.It httpclient (PAI)
+Sends records to any HTTP server using GET or POST, TLS-capable.
+
+.It mqttbroker (N)
+A TLS-capable V5/V3.1(.1) MQTT broker supporting TLS, authentication, ACL.
+
+.It mqttclient (PA)
+Subscribes to MQTT topics and/or publishes messages. TLS-capable V5/V3.1(.1) MQTT client.
+
+.It journal (SA)
+Traps log messages from all modules and saves them into RRR messages.
+
+.It file (SA)
+Reads from files, sockets, character devices and FIFO pipes.
+
+.It mysql (DAI)
+Saves records to a MySQL or MariaDB table.
+
+.It influxdb (DA)
+Saves data to an InfluxDB database.
+
+.It voltmonitor (SA)
+Reads from a USB voltmeter.
+
+.It averager (PA)
+Collects point measurements and calculates average values.
+.El
 .SS dummy (S)
 This module constantly generates empty messages, optionally containing some dummy data.
 .PP
@@ -203,6 +262,16 @@ Stop generating messages after this number is reached. 0 value or not defined me
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
 .It dummy_topic={TOPIC}
 Set an MQTT topic in generated messages.
+.El
+.SS raw (PAI)
+This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
+can read from both IP modules and non-IP.
+.PP
+
+.Bl -tag -width -indent
+.It raw_print_data={yes|no}
+Print the timestamp of each received message and dump any arrays present in the messages. The global debuglevel 2 must
+be set for messages to actually be printed. This to avoid problems with the journal module.
 .El
 .SS ip (PAI)
 This module is capable of listening on an UDP or TCP port and read messages or arrays, as well as sending data to remote hosts.
@@ -272,6 +341,12 @@ After a packet is sent, don't close the TCP connection but re-use it later for m
 .B ip_send_multiple_per_connection
 if set to yes. Defaults to no.
 
+.It ip_close_grace_ms=MILLISECONDS
+After a TCP connection has been closed, prevent new connections to the same destination for the specified amount of milliseconds.
+This prevents "ghost connections" in some situations where a host will accept a new connection immediately after another one has been closed,
+even though the application on the host is not actually ready to accept any data.
+May be set to zero, defaults to 5 milliseconds.
+
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
@@ -326,63 +401,6 @@ the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
 .El
 .PP
-.SS voltmonitor (SA)
-Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
-and the measurement itself as an unsigned 64-bit integer with the tag
-.B measurement.
-.PP
-.Bl -tag -width -indent
-.It vm_calibration=FLOAT
-Factor to calibrate the readings, defaults to 1.124.
-
-.It vm_channel={1|2}
-Which channel to use on two-channel devices.
-
-.It vm_message_topic=TOPIC
-MQTT topic to apply to generated messages.
-.El
-.PP
-.SS averager (PA)
-The averager module reads point measurements from it's senders and produces average measurments over a given timespan and
-at a given rate. Other messages are simply passed through.
-.PP
-The averager module expects to find the tag
-.B measurement
-in array messages from it's senders. It will generate average measurements with the following values as unsigned 64-bit integers:
-
-.Bl -tag -width -indent
-.It average
-The average of the measurements received in the timespan.
-.It max
-The maximum value of all the measurements received in the timespan.
-.It min
-The minimum value of all the measurements received in the timespan.
-.It timestamp_from
-The lowest timestamp of all the measurements received in the timespan.
-.It timestamp_to
-The highest timestamp of all the measurements received in the timespan.
-.El
-.PP
-The following configuration parameters are available in the
-.B avarager
-module:
-.PP
-.Bl -tag -width -indent
-.It avg_timespan=SECONDS
-How long timespan to average over. Defaults to 15 seconds.
-
-.It avg_interval=SECONDS
-How often to produce average calculations. Defaults to 10 seconds.
-
-.It avg_preserve_points={yes|no}
-Preserve individual measurements and put them in output buffer. Defaults to no.
-
-.It avg_discard_unknowns={yes|no}
-Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
-
-.It avg_message_topic=TOPIC
-MQTT topic to apply to generated messages and any forwarded point messages.
-.El
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by other instances.
 .PP
@@ -438,69 +456,6 @@ Accept incoming connections if set to yes. Default is no.
 
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
-.El
-.SS mysql (DAI)
-This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
-database.
-.PP
-A column plan must be used to describe the table we are saving to. The received data must match this column plan. If
-the data saving for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
-and try again later. It is not possible for the mysql module to know wether it's settings are at fault or if the database
-is at fault. Messages which fails can regardless of this be set to be dropped instead upon errors.
-.PP
-The following configuration parameters are available in the
-.B mysql
-module:
-.PP
-.Bl -tag -width -indent
-.It mysql_server=SERVER NAME
-The server name of the MySQL or MariaDB server to use
-
-.It mysql_port=PORT NUMBER
-The port number used to connect to the server.
-
-.It mysql_user=USER NAME
-The username for logging into the server
-
-.It mysql_password=PASSWORD
-The password for logging into the server
-
-.It mysql_db=DATABASE NAME
-The name of the database to use
-
-.It mysql_table=TABLE NAME
-The table name to use for storing data
-
-.It mysql_drop_unknown_messages={yes|no}
-If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
-
-.It mysql_columns={column name 1,column name 2,...}
-Specify the columns in the table to write data to. The column count must match the number of values received in array
-messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
-types received. Integers are sent to the database as integers and blobs are sent as blobs.
-If an array contains items with more than one value, one column should be specified for the whole item. These items are always sent
-to mysql as blobs.
-This option cannot be used with
-.B mysql_column_tags.
-
-.It mysql_column_tags=ARRAY TAG[->MYSQL COLUMN][,...]
-A comma separated list of items to retrieve from the received array messages and to use as
-columns in MySQL. If a tag name is specified on is own, the tag and the corresponding column in MySQL has the same name.
-If the MySQL column name is different from the tag, an arrow followed by the MySQL column name is put after the tag name.
-This option cannot be used with
-.B mysql_colums.
-
-.It mysql_blob_write_columns={column name 1,column name 2,...}
-Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
-
-.It mysql_special_columns={column1=value1,column2=value2,...}
-Used to write fixed values to the database.
-
-.It mysql_add_timestamp_col={yes|no}
-In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
-
-.It mysql_strip_array_separators={yes|no}
-Disregard any separator items in received array messages. Defaults to yes.
 .El
 .SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
@@ -955,16 +910,6 @@ It is not a priority at this time to document these, but they are easy to use an
 be found throughout the RRR source code (which is human- and machine readable).
 .PP
 Functions must return 0 on success and 1 if there are errors.  
-.SS raw (PAI)
-This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
-can read from both IP modules and non-IP.
-.PP
-
-.Bl -tag -width -indent
-.It raw_print_data={yes|no}
-Print the timestamp of each received message and dump any arrays present in the messages. The global debuglevel 2 must
-be set for messages to actually be printed. This to avoid problems with the journal module.
-.El
 .SS socket (SA)
 The socket module listens on a UNIX socket for RRR messages or custom data records.
 .PP
@@ -1235,61 +1180,6 @@ part of the
 .B COMMON CONFIGURATION PARAMETERS
 section for descriptions of TLS parameters. All TLS parameters are optional.
 .El
-.SS influxdb (DA)
-This module receives array messages from other modules and sends their data to an Influx database using HTTP.
-.PP
-The following configuration parameters are available in the
-.B influxdb
-module:
-.PP
-.Bl -tag -width -indent
-.It influxdb_server=HOSTNAME
-The IP address or hostname of the host running an Influxdb database.
-
-.It influxdb_database=DATABASE
-The database name to use on the server.
-
-.It influxdb_table=TABLE
-The table in the database in which to store the data.
-
-.It influxdb_port=PORT
-The port to use when connecting to the server, defaults to 8086.
-
-.It influxdb_transport_type={plain|tls}
-The transport type to use when connecting to the server. Defaults to 'plain'.
-
-.It influxdb_tls_*
-Refer to the
-.B TLS
-part of the
-.B COMMON CONFIGURATION PARAMETERS
-section for descriptions of TLS parameters. All TLS parameters are optional.
-
-.It influxdb_tags=ARRAY TAG[->INFLUXDB TAG][,...]
-A comma separated list of items to retrieve from the received array messages and which should be used as
-.B tags
-in InfluxDB. If the tag of an
-item in an array is not equal to the tag in InfluxDB, the tag may be followed by
-.B ->INFLUXDB TAG
-to translate the tag name. 
-Items in an array message which are not tagged cannot be used.
-
-.It influxdb_fields=ARRAY TAG[->INFLUXDB FIELD][,...]
-A comma separated list of items to retrieve from the array and which are to be used as
-.B fields
-in InfluxDB. Otherwise same rules as for tags.
-
-.It influxdb_fixed_tags=TAG[=VALUE][,...]
-Optional comma separated list of fixed tags (and optionally with values) to save to InfluxDB.
-
-.It influxdb_fixed_fields=FIELD[=VALUE][,...]
-Optional comma separated list of fixed fields (and optionally with values) to save to InfluxDB.
-.El
-It is required to have at least one tag specified in either
-.B influxdb_fields
-or
-.B influxdb_fixed_fields
-.
 .SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5.
 .PP
@@ -1564,6 +1454,269 @@ Generate dummy messages for testing purposes. Defaults to no.
 
 .It journal_hostname=HOSTNAME
 Hostname to send along with log messages. Defaults to system hostname.
+.El
+
+.SS file (SA)
+Reads from files, character devices, block devices, sockets and FIFO pipes.
+Full file contents may be read into RRR messages, or and array definition may be used to create RRR array messages from the data.
+The
+.B file
+module periodically checks for new entries in the specified directory and tries to read from them.
+.PP
+Sockets, character devices and FIFO pipes are kept open until the other end closes them or EOF is encountered.
+If disconnected,
+.B
+file
+with attempt to reconnect with them in the next probe round unless they are deleted in the meantime.
+FIFO pipes can be created with the
+.Xr mkfifo(1)
+command, and they can be written to easily with commands like
+.B echo "blabla" > /tmp/rrr/my_rrr_fifo .
+.PP
+The
+.B file
+module can be used to manage a "drop" directory where other programs put files which are to be read into RRR.
+When doing this, one must avoid that
+.B file
+tries to read files before they are completely written out.
+This can be achieved by specifying a file prefix in the configuration and writing the files first with some temporary name
+before finally, when writing is complete, renaming them to something matching the prefix.
+.B file
+may be configured to delete files after they are read.
+.PP
+There is no limit on how many files, sockets etc. which can be simultaneously open.
+.PP
+The following configuration parameters are available in the
+.B file
+module:
+.PP
+.Bl -tag -width -indent
+.It file_directory=DIRECTORY
+Directory in which to probe for files to read from. Must be set.
+
+.It file_prefix=FILE PREFIX
+Optional prefix for files to read from in the chosen directory. Non-matching files are ignored.
+
+.It file_probe_interval_ms=MILLISECONDS
+Probing for new files is done immediately after startup and then periodically every time the probe interval has passed.
+A value of zero is allowed, this might be CPU intensive. Defaults to 5000 ms.
+
+.It file_topic=MQTT TOPIC
+Set an MQTT topic on generated messages. Optional parameter.
+
+.It file_input_types=ARRAY DEFINITION
+Parse array data from the entries found.
+Reading will stop when there is an error or when EOF is encountered.
+Cannot be used with
+.B file_read_all_to_message=yes,
+but one of them must be specified. No default value.
+
+.It file_read_all_to_message={yes|no}
+Read all data from the entries and put it into an RRR message.
+Note that this is probably not useful for sockets and character devices. Cannot be used with
+.B file_input_types,
+but one of them must be specified. Defaults to 'no'.
+
+.It file_unlink_on_close={yes|no}
+After an open entry for any reason closes, attempt to unlink it. Note that
+.B any type of file or socket will be deleted
+as long as the user running RRR has permission to do that. Defaults to 'no'.
+
+.It file_try_keyboard_input={yes|no} (LINUX/FREEBSD ONLY)
+If set to yes, and character devices are found in the directory,
+.B file
+will try to read from them as if they were keyboards.
+This works with many barcode scanners and other devices which produce keyboard-like event data.
+Any device which accept the
+.Xr ioctl(3P)
+EVIOCGRAB command will be used as a keyboard, and data will be run through a key to character map.
+The EVIOCGRAB command, if it succeeds, will make
+.B file
+the only receiver of data from the opened devices, and due to this, keyboards which are opened will
+become unusable.
+Care should be taken to ensure that devices are not unintentionally opened by
+.B file.
+Only US keyboard layout is supported.
+Defaults to no.
+
+.It file_no_keyboard_hijack={yes|no}
+After a keyboard device has been successfully hijacked thus identified as a keyboard, immediately
+ungrab the device so that other applications also may receive events from it. 
+
+.El
+.SS mysql (DAI)
+This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
+database.
+.PP
+A column plan must be used to describe the table we are saving to. The received data must match this column plan. If
+the data saving for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
+and try again later. It is not possible for the mysql module to know wether it's settings are at fault or if the database
+is at fault. Messages which fails can regardless of this be set to be dropped instead upon errors.
+.PP
+The following configuration parameters are available in the
+.B mysql
+module:
+.PP
+.Bl -tag -width -indent
+.It mysql_server=SERVER NAME
+The server name of the MySQL or MariaDB server to use
+
+.It mysql_port=PORT NUMBER
+The port number used to connect to the server.
+
+.It mysql_user=USER NAME
+The username for logging into the server
+
+.It mysql_password=PASSWORD
+The password for logging into the server
+
+.It mysql_db=DATABASE NAME
+The name of the database to use
+
+.It mysql_table=TABLE NAME
+The table name to use for storing data
+
+.It mysql_drop_unknown_messages={yes|no}
+If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
+
+.It mysql_columns={column name 1,column name 2,...}
+Specify the columns in the table to write data to. The column count must match the number of values received in array
+messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
+types received. Integers are sent to the database as integers and blobs are sent as blobs.
+If an array contains items with more than one value, one column should be specified for the whole item. These items are always sent
+to mysql as blobs.
+This option cannot be used with
+.B mysql_column_tags.
+
+.It mysql_column_tags=ARRAY TAG[->MYSQL COLUMN][,...]
+A comma separated list of items to retrieve from the received array messages and to use as
+columns in MySQL. If a tag name is specified on is own, the tag and the corresponding column in MySQL has the same name.
+If the MySQL column name is different from the tag, an arrow followed by the MySQL column name is put after the tag name.
+This option cannot be used with
+.B mysql_colums.
+
+.It mysql_blob_write_columns={column name 1,column name 2,...}
+Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
+
+.It mysql_special_columns={column1=value1,column2=value2,...}
+Used to write fixed values to the database.
+
+.It mysql_add_timestamp_col={yes|no}
+In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
+
+.It mysql_strip_array_separators={yes|no}
+Disregard any separator items in received array messages. Defaults to yes.
+.El
+.SS influxdb (DA)
+This module receives array messages from other modules and sends their data to an Influx database using HTTP.
+.PP
+The following configuration parameters are available in the
+.B influxdb
+module:
+.PP
+.Bl -tag -width -indent
+.It influxdb_server=HOSTNAME
+The IP address or hostname of the host running an Influxdb database.
+
+.It influxdb_database=DATABASE
+The database name to use on the server.
+
+.It influxdb_table=TABLE
+The table in the database in which to store the data.
+
+.It influxdb_port=PORT
+The port to use when connecting to the server, defaults to 8086.
+
+.It influxdb_transport_type={plain|tls}
+The transport type to use when connecting to the server. Defaults to 'plain'.
+
+.It influxdb_tls_*
+Refer to the
+.B TLS
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of TLS parameters. All TLS parameters are optional.
+
+.It influxdb_tags=ARRAY TAG[->INFLUXDB TAG][,...]
+A comma separated list of items to retrieve from the received array messages and which should be used as
+.B tags
+in InfluxDB. If the tag of an
+item in an array is not equal to the tag in InfluxDB, the tag may be followed by
+.B ->INFLUXDB TAG
+to translate the tag name. 
+Items in an array message which are not tagged cannot be used.
+
+.It influxdb_fields=ARRAY TAG[->INFLUXDB FIELD][,...]
+A comma separated list of items to retrieve from the array and which are to be used as
+.B fields
+in InfluxDB. Otherwise same rules as for tags.
+
+.It influxdb_fixed_tags=TAG[=VALUE][,...]
+Optional comma separated list of fixed tags (and optionally with values) to save to InfluxDB.
+
+.It influxdb_fixed_fields=FIELD[=VALUE][,...]
+Optional comma separated list of fixed fields (and optionally with values) to save to InfluxDB.
+.El
+It is required to have at least one tag specified in either
+.B influxdb_fields
+or
+.B influxdb_fixed_fields .
+.SS voltmonitor (SA)
+Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
+and the measurement itself as an unsigned 64-bit integer with the tag
+.B measurement.
+.PP
+.Bl -tag -width -indent
+.It vm_calibration=FLOAT
+Factor to calibrate the readings, defaults to 1.124.
+
+.It vm_channel={1|2}
+Which channel to use on two-channel devices.
+
+.It vm_message_topic=TOPIC
+MQTT topic to apply to generated messages.
+.El
+.PP
+.SS averager (PA)
+The averager module reads point measurements from it's senders and produces average measurments over a given timespan and
+at a given rate. Other messages are simply passed through.
+.PP
+The averager module expects to find the tag
+.B measurement
+in array messages from it's senders. It will generate average measurements with the following values as unsigned 64-bit integers:
+
+.Bl -tag -width -indent
+.It average
+The average of the measurements received in the timespan.
+.It max
+The maximum value of all the measurements received in the timespan.
+.It min
+The minimum value of all the measurements received in the timespan.
+.It timestamp_from
+The lowest timestamp of all the measurements received in the timespan.
+.It timestamp_to
+The highest timestamp of all the measurements received in the timespan.
+.El
+.PP
+The following configuration parameters are available in the
+.B avarager
+module:
+.PP
+.Bl -tag -width -indent
+.It avg_timespan=SECONDS
+How long timespan to average over. Defaults to 15 seconds.
+
+.It avg_interval=SECONDS
+How often to produce average calculations. Defaults to 10 seconds.
+
+.It avg_preserve_points={yes|no}
+Preserve individual measurements and put them in output buffer. Defaults to no.
+
+.It avg_discard_unknowns={yes|no}
+Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
+
+.It avg_message_topic=TOPIC
+MQTT topic to apply to generated messages and any forwarded point messages.
 .El
 .SH COMMON CONFIGURATION PARAMETERS
 Replace the

@@ -43,8 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct averager_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_msg_msg_holder_collection input_list;
-	struct rrr_msg_msg_holder_collection output_list;
+	struct rrr_msg_holder_collection input_list;
+	struct rrr_msg_holder_collection output_list;
 
 	// Set this to 1 when others may read from our buffer
 	int preserve_point_measurements;
@@ -83,7 +83,7 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		if (averager_data->preserve_point_measurements == 1) {
 			dup_entry = NULL;
 
-			if (rrr_msg_msg_holder_util_clone_no_locking(&dup_entry, entry) != 0) {
+			if (rrr_msg_holder_util_clone_no_locking(&dup_entry, entry) != 0) {
 				RRR_MSG_0("Could not duplicate message in poll_callback of averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
@@ -406,8 +406,8 @@ void averager_data_cleanup(void *arg) {
 	struct averager_data *data = (struct averager_data *) arg;
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
-	rrr_msg_msg_holder_collection_clear (&data->input_list);
-	rrr_msg_msg_holder_collection_clear (&data->output_list);
+	rrr_msg_holder_collection_clear (&data->input_list);
+	rrr_msg_holder_collection_clear (&data->output_list);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
@@ -512,19 +512,10 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int averager_test_config (struct rrr_instance_config_data *config) {
-	struct averager_data data;
-	averager_data_init(&data, NULL);
-	int ret = averager_parse_config(&data, config);
-	averager_data_cleanup(&data);
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
 		NULL,
-		averager_test_config,
 		NULL,
 		NULL
 };

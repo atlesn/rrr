@@ -191,46 +191,63 @@ static int __rrr_thread_is_in_collection (struct rrr_thread_collection *collecti
 
 static int __rrr_thread_allocate_thread (struct rrr_thread **target) {
 	int ret = 0;
+
 	*target = NULL;
 
 	struct rrr_thread *thread = malloc(sizeof(*thread));
 	if (thread == NULL) {
-		RRR_MSG_0("Could not allocate memory for thread thread\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_thread_allocate_thread\n");
 		ret = 1;
 		goto out;
 	}
 
 	RRR_DBG_8 ("Allocate thread %p\n", thread);
 	memset(thread, '\0', sizeof(struct rrr_thread));
-	pthread_mutex_init(&thread->mutex, NULL);
+
+	if (rrr_posix_mutex_init(&thread->mutex, 0) != 0) {
+		RRR_MSG_0("Could not create mutex in __rrr_thread_allocate_thread\n");
+		ret = 1;
+		goto out_free;
+	}
 
 	*target = thread;
 
+	goto out;
+	out_free:
+		free(thread);
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_thread_new_collection (
 		struct rrr_thread_collection **target
 ) {
 	int ret = 0;
+
 	*target = NULL;
 
 	struct rrr_thread_collection *collection = malloc(sizeof(*collection));
 	if (collection == NULL) {
-		RRR_MSG_0("Could not allocate memory for thread collection\n");
+		RRR_MSG_0("Could not allocate memory in rrr_thread_new_collection\n");
 		ret = 1;
 		goto out;
 	}
 
 	memset(collection, '\0', sizeof(*collection));
 
-	pthread_mutex_init(&collection->threads_mutex, NULL);
+	if (rrr_posix_mutex_init(&collection->threads_mutex, 0) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_thread_new_collection\n");
+		ret = 1;
+		goto out_free;
+	}
 
 	*target = collection;
 
+	goto out;
+	out_free:
+		free(collection);
 	out:
-	return ret;
+		return ret;
 }
 
 void rrr_thread_destroy_collection (
@@ -484,6 +501,8 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		uint64_t nowtime = rrr_time_get_64();
 		uint64_t prevtime = rrr_get_watchdog_time(thread);
 
+//		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
+
 		// We or others might try to kill the thread
 		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
 			RRR_DBG_8 ("Thread %s/%p received kill signal or encourage stop\n", thread->name, thread);
@@ -515,7 +534,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (50000); // 50 ms
 	}
 
+	RRR_DBG_8 ("Watchdog for thread %s/%p: Executing shutdown routines\n", thread->name, thread);
+
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_STOPPED)) {
+		RRR_DBG_8 ("Watchdog for thread %s/%p: Thread has stopped by itself\n", thread->name, thread);
 		// Thread has stopped by itself
 		goto out_nostop;
 	}

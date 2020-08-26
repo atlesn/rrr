@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-// Override possibly dangerous library functions
+// Override possibly dangerous library functions, create intentional compile errors
 
 #ifndef RRR_INTERCEPT_H
 #define RRR_INTERCEPT_H
@@ -47,6 +47,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // All logging must be done through wrappers
 #ifndef RRR_INTERCEPT_ALLOW_PRINTF
 //#	define printf(x,...)	RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PRINTF
+#endif
+
+// to prevent bugs, all mutex initialization must use helper functions
+#ifndef RRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+#	define pthread_mutex_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT
+#	define pthread_mutexattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT
+#	define pthread_rwlock_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCK_INIT
+#	define pthread_rwlockattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCKATTR_INIT
+#	define pthread_condattr_init(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_CONDATTR_INIT
+#	define pthread_cond_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_COND_INIT
 #endif
 
 // umask calls must be wrapped in global umask lock

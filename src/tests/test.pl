@@ -104,7 +104,7 @@ sub process {
 		my @position = $message->get_position($i);
 		if ($tag_counts[$i] != $#position + 1) {
 			print "Array value count error\n";
-			return;
+		return 0;
 		}
 	}
 
@@ -140,8 +140,8 @@ sub process {
 
 	if (defined $ip_none || defined $port_none) {
 		print "IP clear failure\n";
+		return 0;
 	}
-
 
 	$message->send();
 

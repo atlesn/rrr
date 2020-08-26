@@ -440,16 +440,10 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config(struct rrr_instance_config_data *config) {
-	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_perl5,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };

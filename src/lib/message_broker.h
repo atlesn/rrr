@@ -63,7 +63,7 @@ struct rrr_message_broker {
 };
 
 struct rrr_msg_holder;
-struct rrr_msg_msg_holder_collection;
+struct rrr_msg_holder_collection;
 
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
@@ -128,7 +128,7 @@ int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection
 );
 int rrr_message_broker_poll_discard (
 		int *discarded_count,

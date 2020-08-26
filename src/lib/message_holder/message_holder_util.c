@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder.h"
 #include "messages/msg_msg.h"
 
-int rrr_msg_msg_holder_util_new_with_empty_message (
+int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
@@ -78,7 +78,7 @@ int rrr_msg_msg_holder_util_new_with_empty_message (
 	return ret;
 }
 
-int rrr_msg_msg_holder_util_clone_no_locking (
+int rrr_msg_holder_util_clone_no_locking (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 ) {
@@ -89,7 +89,7 @@ int rrr_msg_msg_holder_util_clone_no_locking (
 		RRR_BUG("Message too small in rrr_msg_msg_holder_clone_no_locking\n");
 	}
 
-	int ret = rrr_msg_msg_holder_util_new_with_empty_message (
+	int ret = rrr_msg_holder_util_new_with_empty_message (
 			result,
 			message_data_length,
 			(struct sockaddr *) &source->addr,
@@ -107,7 +107,7 @@ int rrr_msg_msg_holder_util_clone_no_locking (
 	return ret;
 }
 
-int rrr_msg_msg_holder_util_message_topic_match (
+int rrr_msg_holder_util_message_topic_match (
 		int *does_match,
 		const struct rrr_msg_holder *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token

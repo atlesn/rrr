@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 static int __rrr_stats_instance_rate_counter_new (
 		struct rrr_stats_instance_rate_counter **target,
@@ -109,7 +110,7 @@ int rrr_stats_instance_new (
 
 	memset(instance, '\0', sizeof(*instance));
 
-	if (pthread_mutex_init(&instance->lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&instance->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize mutex in  rrr_stats_instance_new\n");
 		ret = 1;
 		goto out_free;

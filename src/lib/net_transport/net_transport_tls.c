@@ -598,12 +598,6 @@ int __rrr_net_transport_tls_accept (
 		return ret;
 }
 
-static int __rrr_net_transport_tls_read_poll(int read_flags, void *private_arg) {
-	(void)(private_arg);
-	(void)(read_flags);
-	return RRR_READ_OK;
-}
-
 static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_with_overshoot(void *private_arg) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 
@@ -625,7 +619,6 @@ static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(vo
 
 static void __rrr_net_transport_tls_read_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-
 	rrr_read_session_collection_remove_session(&callback_data->handle->read_sessions, read_session);
 }
 
@@ -658,10 +651,6 @@ static int __rrr_net_transport_tls_read_read (
 			// Possible close of connection
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
-		}
-		else {
-			// Retry later
-			return RRR_READ_INCOMPLETE;
 		}
 	}
 	else if (ERR_peek_error() != 0) {
@@ -717,10 +706,8 @@ static int __rrr_net_transport_tls_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
-				read_flags,
 				__rrr_net_transport_tls_read_get_target_size,
 				__rrr_net_transport_tls_read_complete_callback,
-				__rrr_net_transport_tls_read_poll,
 				__rrr_net_transport_tls_read_read,
 				__rrr_net_transport_tls_read_get_read_session_with_overshoot,
 				__rrr_net_transport_tls_read_get_read_session,

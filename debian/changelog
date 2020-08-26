@@ -1,8 +1,16 @@
-rrr (1.10-3ubuntu1) focal; urgency=medium
+rrr (1.11-0ubuntu1) focal; urgency=medium
 
-  * Ubuntu release
+  * Ubuntu release 
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 22 Aug 2020 21:54:36 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:41:12 +0200
+
+rrr (1.11-0) buster; urgency=medium
+
+  * New file module to read from devices, files, sockets etc.
+  * Improvements in ip and socket framework
+  * Misc. bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:30:45 +0200
 
 rrr (1.10-3) buster; urgency=medium
 

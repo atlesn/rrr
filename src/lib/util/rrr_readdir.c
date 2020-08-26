@@ -42,11 +42,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// #define RRR_READDIR_DEBUG
+//#define RRR_READDIR_DEBUG
 
-int rrr_readdir_foreach (
+static int __rrr_readdir_prefix_match (const char *filename, const char *prefix) {
+	size_t filename_length = strlen(filename);
+	size_t prefix_length = strlen(prefix);
+
+	if (prefix_length == 0) {
+		return 1;
+	}
+
+	if (filename_length < prefix_length) {
+#ifdef RRR_READDIR_DEBUG
+		printf("\tPrefix mismatch, too short %lu<%lu\n", filename_length, prefix_length);
+#endif
+		return 0;
+	}
+
+	for (size_t i = 0; i < prefix_length; i++) {
+		if (filename[i] != prefix[i]) {
+#ifdef RRR_READDIR_DEBUG
+			printf("\tPrefix mismatch at %lu %s<>%s\n", i, filename, prefix);
+#endif
+			return 0;
+		}
+	}
+
+#ifdef RRR_READDIR_DEBUG
+	printf("\tPrefix match %s=%s\n", filename, prefix);
+#endif
+
+	return 1;
+}
+
+int rrr_readdir_foreach_prefix (
 		const char *dir_path,
-		int (*callback)(struct dirent *entry, const char *resolved_path, unsigned char type, void *private_data),
+		const char *prefix,
+		int (*callback)(struct dirent *entry, const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
 		void *private_data
 ) {
 	pthread_mutex_lock(&rrr_readdir_lock);
@@ -72,22 +104,24 @@ int rrr_readdir_foreach (
 		printf ("entry: %s\n", entry->d_name);
 #endif
 
-		char resolved_path[PATH_MAX + 1];
-		if (snprintf(resolved_path, PATH_MAX, "%s/%s", dir_path, entry->d_name) >= PATH_MAX) {
+		char orig_path[PATH_MAX + 1];
+		char real_path[PATH_MAX + 1];
+		if (snprintf(orig_path, PATH_MAX, "%s/%s", dir_path, entry->d_name) >= PATH_MAX) {
 			RRR_MSG_0("Path was too long for file '%s' in rrr_readdir_foreach\n", entry->d_name);
 			continue; // Non-critical
 		}
+
+		memcpy(real_path, orig_path, PATH_MAX + 1);
 
 #if defined(_DEFAULT_SOURCE) || defined(_BSD_SOURCE)
 		d_type = entry->d_type;
 #endif
 
 		int i = 100;
-		char realpath_tmp[PATH_MAX + 1];
 		while (--i > 0 && (d_type == DT_UNKNOWN || d_type == DT_LNK)) {
 			struct stat sb;
-			if (lstat(resolved_path, &sb) != 0) {
-				RRR_MSG_0("Could not stat file '%s': %s\n", resolved_path, rrr_strerror(errno));
+			if (lstat(real_path, &sb) != 0) {
+				RRR_MSG_0("Could not stat file '%s': %s\n", orig_path, rrr_strerror(errno));
 				goto next_entry; // Non-critical
 			}
 
@@ -103,14 +137,13 @@ int rrr_readdir_foreach (
 			}
 
 			if (d_type == DT_LNK) {
-				if (realpath(resolved_path, realpath_tmp) == NULL) {
-					RRR_MSG_0("Could not resolve real path for '%s': %s\n", resolved_path, rrr_strerror(errno));
+				if (realpath(orig_path, real_path) == NULL) {
+					RRR_MSG_0("Could not resolve real path for '%s': %s\n", orig_path, rrr_strerror(errno));
 					goto next_entry; // Non-critical
 				}
 #ifdef RRR_READDIR_DEBUG
-				printf ("entry %s was symlink, translates to %s\n", entry->d_name, realpath_tmp);
+				printf ("entry %s was symlink, translates to %s\n", entry->d_name, real_path);
 #endif
-				strcpy(resolved_path, realpath_tmp);
 				continue;
 			}
 
@@ -118,14 +151,16 @@ int rrr_readdir_foreach (
 		}
 
 		if (i <= 0) {
-			RRR_MSG_0("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", resolved_path);
+			RRR_MSG_0("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", orig_path);
 			goto next_entry; // Non-critical
 		}
 
-        if (callback (entry, resolved_path, d_type, private_data) != 0) {
-        	ret = 1;
-        	goto out;
-        }
+		if (prefix == NULL || __rrr_readdir_prefix_match(entry->d_name, prefix)) {
+			if (callback (entry, orig_path, real_path, d_type, private_data) != 0) {
+				ret = 1;
+				goto out;
+			}
+		}
 
         next_entry:
 		continue;
@@ -137,4 +172,12 @@ int rrr_readdir_foreach (
 	}
 	pthread_mutex_unlock(&rrr_readdir_lock);
 	return ret;
+}
+
+int rrr_readdir_foreach (
+		const char *dir_path,
+		int (*callback)(struct dirent *entry, const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
+		void *private_data
+) {
+	return rrr_readdir_foreach_prefix(dir_path, NULL, callback, private_data);
 }

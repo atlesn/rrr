@@ -109,31 +109,16 @@ static int __rrr_net_transport_handle_create_and_push (
 	int ret = 0;
 
 	struct rrr_net_transport_handle *new_handle = NULL;
-	pthread_mutexattr_t mutexattr;
-
-	if (pthread_mutexattr_init(&mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_create_and_push_return_locked\n");
-		ret = 1;
-		goto out;
-
-	}
-
-	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("pthread_mutexattr_settype failed in in __rrr_net_transport_handle_create_and_push_return_locked\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
-
-	}
 
 	if ((new_handle = malloc(sizeof(*new_handle))) == NULL) {
 		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(new_handle, '\0', sizeof(*new_handle));
 
-	if (pthread_mutex_init(&new_handle->lock_, &mutexattr) != 0) {
+	if (rrr_posix_mutex_init(&new_handle->lock_, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		goto out_free;
 	}
@@ -148,11 +133,9 @@ static int __rrr_net_transport_handle_create_and_push (
 	RRR_LL_APPEND(collection, new_handle);
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 
-	goto out_destroy_mutexattr;
+	goto out;
 	out_free:
 		free(new_handle);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&mutexattr);
 	out:
 		return ret;
 }
@@ -331,19 +314,6 @@ int rrr_net_transport_new (
 	*result = NULL;
 
 	struct rrr_net_transport *new_transport = NULL;
-	pthread_mutexattr_t mutexattr;
-
-	if (pthread_mutexattr_init(&mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize lock in rrr_net_transport_new\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("pthread_mutexattr_settype failed in in rrr_net_transport_new\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
 
 	switch (config->transport_type) {
 		case RRR_NET_TRANSPORT_PLAIN:
@@ -375,10 +345,10 @@ int rrr_net_transport_new (
 	if (new_transport == NULL) {
 		RRR_MSG_0("Could not allocate transport method in rrr_net_transport_new\n");
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
-	if (pthread_mutex_init (&new_transport->handles.lock, &mutexattr) != 0) {
+	if (rrr_posix_mutex_init (&new_transport->handles.lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize handle collection lock in rrr_net_transport_new\n");
 		ret = 1;
 		goto out_destroy;
@@ -392,8 +362,6 @@ int rrr_net_transport_new (
 	out_destroy:
 		new_transport->methods->destroy(new_transport);
 		free(new_transport); // Must also free, destroy does not do that
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&mutexattr);
 	out:
 		return ret;
 }
@@ -559,7 +527,6 @@ int rrr_net_transport_ctx_read_message (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -577,7 +544,6 @@ int rrr_net_transport_ctx_read_message (
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,
-			read_flags,
 			get_target_size,
 			get_target_size_arg,
 			complete_callback,

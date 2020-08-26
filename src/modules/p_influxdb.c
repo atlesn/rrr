@@ -60,7 +60,7 @@ struct influxdb_data {
 	char *database;
 	char *table;
 	int message_count;
-	struct rrr_msg_msg_holder_collection error_buf;
+	struct rrr_msg_holder_collection error_buf;
 
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
@@ -85,7 +85,7 @@ static void influxdb_data_destroy (void *arg) {
 	struct influxdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->database);
 	RRR_FREE_IF_NOT_NULL(data->table);
-	rrr_msg_msg_holder_collection_clear(&data->error_buf);
+	rrr_msg_holder_collection_clear(&data->error_buf);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
@@ -434,7 +434,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_msg_holder_collection error_buf_tmp = {0};
+	struct rrr_msg_holder_collection error_buf_tmp = {0};
 	struct rrr_net_transport *transport = NULL;
 
 	if (influxdb_data_init(influxdb_data, thread_data) != 0) {
@@ -446,7 +446,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(influxdb_data_destroy, influxdb_data);
-	pthread_cleanup_push(rrr_msg_msg_holder_collection_clear_void, &error_buf_tmp);
+	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
@@ -527,16 +527,10 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config_data *config) {
-	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_influxdb,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };

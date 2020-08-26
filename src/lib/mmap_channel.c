@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_mmap.h"
 #include "random.h"
 #include "util/rrr_time.h"
+#include "util/posix.h"
 
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
@@ -608,42 +609,16 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	struct rrr_mmap_channel *result = NULL;
 
 	int mutex_i = 0;
-	pthread_mutexattr_t attr;
-	pthread_condattr_t cattr;
-
-	if ((ret = pthread_mutexattr_init(&attr)) != 0) {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_mmap_channel_new (%i)\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
-		RRR_MSG_0("Could not set pshared on mutexattr in rrr_mmap_channel_new: %i\n", ret);
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
-
-	if ((ret = pthread_condattr_init(&cattr)) != 0) {
-		RRR_MSG_0("Could not initialize condattr in rrr_mmap_channel_new: %i\n", ret);
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
-
-	if ((ret = pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED)) != 0) {
-		RRR_MSG_0("Could not set pshared on condattr in rrr_mmap_channel_new: %i\n", ret);
-		ret = 1;
-		goto out_destroy_condattr;
-	}
 
     if ((result = rrr_mmap_allocate(mmap, sizeof(*result))) == NULL) {
     	RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
     	ret = 1;
-    	goto out_destroy_condattr;
+    	goto out;
     }
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((ret = pthread_mutex_init(&result->index_lock, &attr)) != 0) {
+	if ((ret = rrr_posix_mutex_init(&result->index_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_mmap_channel_new (%i)\n", ret);
 		ret = 1;
 		goto out_free;
@@ -651,20 +626,20 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	// Be careful with the counters, we should only destroy initialized locks if we fail
 	for (mutex_i = 0; mutex_i != RRR_MMAP_CHANNEL_SLOTS; mutex_i++) {
-		if ((ret = pthread_mutex_init(&result->blocks[mutex_i].block_lock, &attr)) != 0) {
+		if ((ret = rrr_posix_mutex_init(&result->blocks[mutex_i].block_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 			RRR_MSG_0("Could not initialize mutex in rrr_mmap_channel_new %i\n", ret);
 			ret = 1;
 			goto out_destroy_mutexes;
 		}
 	}
 
-	if ((ret = pthread_cond_init(&result->empty_cond, &cattr)) != 0) {
+	if ((ret = rrr_posix_cond_init(&result->empty_cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize empty condition mutex in rrr_mmap_channel_new: %i\n", ret);
 		ret = 1;
 		goto out_destroy_mutexes;
 	}
 
-	if ((ret = pthread_cond_init(&result->full_cond, &cattr)) != 0) {
+	if ((ret = rrr_posix_cond_init(&result->full_cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize full condition mutex in rrr_mmap_channel_new: %i\n", ret);
 		ret = 1;
 		goto out_destroy_empty_cond;
@@ -679,7 +654,7 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	result = NULL;
 
 	// Remember to destroy mutex attributes
-	goto out_destroy_condattr;
+	goto out;
 
 	out_destroy_empty_cond:
 		pthread_cond_destroy(&result->empty_cond);
@@ -691,10 +666,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		pthread_mutex_destroy(&result->index_lock);
 	out_free:
 		rrr_mmap_free(mmap, result);
-	out_destroy_condattr:
-		pthread_condattr_destroy(&cattr);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
 }

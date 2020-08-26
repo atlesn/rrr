@@ -29,13 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "udpstream.h"
+#include "random.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_read.h"
-#include "random.h"
 #include "util/macro_utils.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 #include "util/crc32.h"
+#include "util/posix.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -200,14 +201,22 @@ int rrr_udpstream_init (
 		int flags
 ) {
 	memset (data, '\0', sizeof(*data));
+
+	if (rrr_posix_mutex_init(&data->lock, 0) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_udpstream_init\n");
+		return 1;
+	}
+
 	data->flags = flags;
+
 	flags &= ~(RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS|RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE);
 	if (flags != 0) {
 		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
 	}
+
 	__rrr_udpstream_stream_collection_init(&data->streams);
 	rrr_read_session_collection_init(&data->read_sessions);
-	pthread_mutex_init(&data->lock, 0);
+
 	return 0;
 }
 
@@ -280,7 +289,14 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		}
 #endif
 		int err;
-		if ((ret = rrr_socket_sendto_nonblock_fail_on_partial_write(&err, udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
+		if ((ret = rrr_socket_sendto_nonblock_fail_on_partial_write(
+				&err,
+				udpstream_data->ip.fd,
+				udpstream_data->send_buffer,
+				sizeof(*frame) - 1 + data_size,
+				addr,
+				addrlen
+		)) != 0) {
 			RRR_MSG_0("Could not send packed frame header in __rrr_udpstream_send_packed_frame, return was %i\n", ret);
 			ret = 1;
 			goto out;
@@ -726,8 +742,8 @@ static int __rrr_udpstream_handle_received_connect (
 		}
 
 		send_response:
-		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u\n",
-				stream_id, (stream != NULL ? stream->connect_handle : 0));
+		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %li\n",
+				stream_id, (stream != NULL ? stream->connect_handle : 0), addr_len);
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
 			RRR_MSG_0("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;
@@ -1511,7 +1527,6 @@ int rrr_udpstream_do_read_tasks (
 				1024,
 				1024,
 				0, // No maximum size
-				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				__rrr_udpstream_read_get_target_size,
 				data,

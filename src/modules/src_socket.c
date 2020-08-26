@@ -250,8 +250,7 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 				&data->clients,
 				sizeof(struct rrr_msg),
 				4096,
-				RRR_READ_F_NO_SLEEPING,
-				RRR_SOCKET_READ_METHOD_RECVFROM,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_read_common_receive_message_callback,
@@ -279,8 +278,7 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 				&data->clients,
 				sizeof(struct rrr_msg),
 				4096,
-				RRR_READ_F_NO_SLEEPING,
-				RRR_SOCKET_READ_METHOD_RECVFROM,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				rrr_read_common_get_session_target_length_from_array_tree,
 				&callback_data,
 				read_raw_data_callback,
@@ -434,24 +432,10 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
-
-static int test_config (struct rrr_instance_config_data *config) {
-	struct socket_data data;
-	int ret = 0;
-	if ((ret = data_init(&data, NULL)) != 0) {
-		goto err;
-	}
-	ret = parse_config(&data, config);
-	data_cleanup(&data);
-	err:
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
 	NULL,
-	test_config,
 	NULL,
 	NULL
 };

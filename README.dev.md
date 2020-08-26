@@ -93,9 +93,6 @@ about which types the return:
 		// Post stop function - Run after thread has finished from main thread context
 		void (*poststop)(...);
 	
-		// Test of configuration arguments (currently not used)
-		int (*test_config)(...);
-	
 		// Inject any packet into buffer manually (usually for testing)
 		int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 	
@@ -286,7 +283,7 @@ The functions defined in each module are called from different contexts and at d
 - `thread_entry`: The only function which is actually run by the thread of the instance. It should contain an infinite loop. Part of the 
   instances framework.
 
-- `test_config`, `inject`: Used by test suite only, part of the instances framework.
+- `inject`: Used by test suite only, part of the instances framework.
 
 ## Important frameworks
 

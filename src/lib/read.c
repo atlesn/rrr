@@ -152,17 +152,12 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_complete_callback) (
 													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_poll) (
-													int read_flags,
 													void *private_arg
 											 ),
 		int									 (*function_read) (
@@ -200,29 +195,23 @@ int rrr_read_message_using_callbacks (
 		goto process_overshoot;
 	}
 
-	if ((ret = function_poll(read_flags, functions_callback_arg)) != RRR_READ_OK) {
-		if (ret == RRR_READ_INCOMPLETE) {
-			if ((read_flags & RRR_READ_F_NO_SLEEPING) == 0) {
-				rrr_posix_usleep(10 * 1000);
-			}
-		}
-		else {
-			RRR_DBG_1("Error from poll callback in rrr_read_message_using_callbacks\n");
-		}
-		goto out;
-	}
-
 	/* Read */
-	ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
-	if (ret != 0) {
-		if (ret == RRR_READ_INCOMPLETE) {
-			goto out;
-		}
-		RRR_DBG_1("Error from read callback in rrr_read_message_using_callbacks\n");
+	int ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
+
+	// We don't quit on soft error yet, downstream must be able to retrieve the correct read session to
+	// handle errors, which might include to remove the read_session from the collection
+	if (ret & (RRR_READ_HARD_ERROR)) {
+		RRR_MSG_0("Hard error from read callback in rrr_read_message_using_callbacks\n");
 		goto out;
 	}
+	if (ret & RRR_READ_INCOMPLETE) {
+		RRR_BUG("BUG: READ_INCOMPLETE returned from read callback in rrr_read_message_using_callbacks, this is not allowed\n");
+	}
+	if ((ret & RRR_READ_EOF) && bytes != 0) {
+		RRR_BUG("BUG: READ_EOF returned from read callback while bytes was non-zero in rrr_read_message_using_callbacks, this is not allowed\n");
+	}
 
-	/* Check for new read session */
+	/* Check for new read session, this must be done after read */
 	if ((read_session = function_get_read_session(functions_callback_arg)) == NULL) {
 		ret = RRR_READ_HARD_ERROR;
 		goto out;
@@ -237,21 +226,42 @@ int rrr_read_message_using_callbacks (
 	}
 
 	/* Check for EOF / connection close */
-	if (bytes == 0) {
+	if (bytes == 0 || ret_from_read != 0) {
 		// In situations where zero bytes are read, the downstream framework should
 		// return something else than OK. If not, we will always exit here.
 		if (read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ) {
 			if (read_session->target_size > 0) {
 				RRR_BUG("Target size was set in rrr_read_message while complete method was connection closed\n");
 			}
+			RRR_DBG_7("Read returned 0, set target size to bytes read as instructed.\n");
 			read_session->target_size = read_session->rx_buf_wpos;
+			ret = RRR_READ_OK;
+			// Don't goto out, call complete handler after storing buffer
+		}
+		else if (ret_from_read & RRR_READ_EOF) {
+			if (read_session->eof_ok_now && read_session->rx_buf_ptr == NULL && read_session->rx_overshoot == NULL) {
+				// Complete callback says that EOF is OK now
+				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was expected.\n");
+				ret = RRR_READ_EOF;
+			}
+			else {
+				// Unexpected EOF
+				RRR_DBG_7("Read returned 0, possible close of connection or EOF. EOF was NOT expected.\n");
+				ret = RRR_READ_SOFT_ERROR;
+			}
+			goto out;
+		}
+		else if (ret_from_read != 0) {
+			ret = ret_from_read;
+			goto out;
 		}
 		else {
-			RRR_DBG_3("Read returned 0 in rrr_read_message_using_callbacks, possible close of connection\n");
-			ret = RRR_READ_SOFT_ERROR;
+			ret = RRR_READ_INCOMPLETE;
 			goto out;
 		}
 	}
+
+	read_session->eof_ok_now = 0;
 
 	process_overshoot:
 	if (read_session->rx_buf_ptr == NULL) {
@@ -333,7 +343,7 @@ int rrr_read_message_using_callbacks (
 				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_read_message_using_callbacks\n");
 			}
 
-			RRR_DBG_1("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
+			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
 			char *new_buf = malloc(read_session->rx_buf_size);
 			if (new_buf == NULL) {
@@ -586,21 +596,22 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_tree_data *data = arg;
 
+	const char *pos_max = (data->message_max_size != 0 ? read_session->rx_buf_ptr + data->message_max_size : NULL);
 	char *pos = read_session->rx_buf_ptr;
 	rrr_slength wpos = read_session->rx_buf_wpos;
 
 //	printf ("Array wpos: %li\n", wpos);
 
-	if (data->message_max_size != 0 && wpos > data->message_max_size) {
-		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
-				wpos, data->message_max_size);
-		return RRR_READ_SOFT_ERROR;
-	}
-
 	ssize_t import_length = 0;
 	ssize_t skipped_bytes = 0;
 
 	while (wpos > 0) {
+		if (pos_max != NULL && pos > pos_max) {
+			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
+					wpos, data->message_max_size);
+			return RRR_READ_SOFT_ERROR;
+		}
+
 		int ret = rrr_array_tree_import_from_buffer (
 				&import_length,
 				pos,
@@ -640,6 +651,10 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	// Read position for array framework
 	read_session->rx_buf_skip = skipped_bytes;
+
+	if (read_session->target_size == read_session->rx_buf_wpos) {
+		read_session->eof_ok_now = 1;
+	}
 
 	return RRR_READ_OK;
 }
