@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder/message_holder_collection.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
+#include "util/posix.h"
 
 static void __rrr_message_broker_split_buffer_node_destroy(struct rrr_message_broker_split_buffer_node *node) {
 	struct rrr_fifo_buffer_stats stats;
@@ -116,7 +117,7 @@ static int __rrr_message_broker_costumer_new (
 		goto out_free_name;
 	}
 
-	if (pthread_mutex_init(&costumer->split_buffers.lock, NULL) != 0) {
+	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_fifo;
@@ -165,7 +166,7 @@ int rrr_message_broker_init (
 
 	memset(broker, '\0', sizeof (*broker));
 
-	if (pthread_mutex_init(&broker->lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&broker->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_message_broker_init\n");
 		ret = 1;
 		goto out;

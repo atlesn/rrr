@@ -164,25 +164,14 @@ static int journal_preload (struct rrr_thread *thread) {
 
 	memset(data, '\0', sizeof(*data));
 
-	pthread_mutexattr_t attr;
-	if (pthread_mutexattr_init(&attr) != 0) {
-		RRR_MSG_0("Could not initialize mutexattr in journal_preload\n");
+	if (rrr_posix_mutex_init(&data->delivery_lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
+		RRR_MSG_0("Could not initialize lock in journal_preload\n");
 		ret = 1;
 		goto out;
 	}
 
-	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-
-	if (pthread_mutex_init(&data->delivery_lock, &attr) != 0) {
-		RRR_MSG_0("Could not initialize lock in journal_preload\n");
-		ret = 1;
-		goto out_cleanup_attr;
-	}
-
-	out_cleanup_attr:
-		pthread_mutexattr_destroy(&attr);
 	out:
-		return ret;
+	return ret;
 }
 
 // Note : Context here is ANY thread

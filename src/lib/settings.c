@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
+#include "util/posix.h"
 
 struct rrr_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_msg *ret = (struct rrr_msg *) setting;
@@ -49,21 +50,32 @@ void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 }
 
 int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
+	int ret = 0;
+
 	memset(target, '\0', sizeof(*target));
 
 	target->settings = malloc(sizeof(*(target->settings)) * count);
 	if (target->settings == NULL) {
-		RRR_MSG_0("Could not allocate memory for settings structure\n");
-		return 1;
+		RRR_MSG_0("Could not allocate memory in __rrr_settings_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_posix_mutex_init (&target->mutex, 0) != 0) {
+		RRR_MSG_0("Could initialize lock in __rrr_settings_init\n");
+		ret = 1;
+		goto out_free;
 	}
 
 	target->settings_max = count;
 	target->settings_count = 0;
-	pthread_mutex_init(&target->mutex, NULL);
-
 	target->initialized = 1;
 
-	return 0;
+	goto out;
+	out_free:
+		free(target->settings);
+	out:
+		return ret;
 }
 
 struct rrr_instance_settings *rrr_settings_new(const int count) {

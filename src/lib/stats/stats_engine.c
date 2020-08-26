@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
@@ -203,25 +204,10 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 
 	memset (stats, '\0', sizeof(*stats));
 
-	pthread_mutexattr_t journal_lock_mutexattr;
-
-	if (pthread_mutexattr_init(&journal_lock_mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_stats_engine_init\n");
-		ret = 1;
-		goto out_final;
-	}
-
-	// Journal lock must be recursive since debug messages might cause loops, avoid deadlock.
-	if (pthread_mutexattr_settype(&journal_lock_mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("pthread_mutexattr_settype failed in rrr_stats_engine_init\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (pthread_mutex_init(&stats->main_lock, 0) != 0) {
+	if (rrr_posix_mutex_init(&stats->main_lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize main mutex in rrr_stats_engine_init\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
 
 	pid_t pid = getpid();
@@ -245,7 +231,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		goto out_close_socket;
 	}
 
-	if (pthread_mutex_init(&stats->journal_lock, &journal_lock_mutexattr) != 0) {
+	if (rrr_posix_mutex_init(&stats->journal_lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize journal mutex in rrr_stats_engine_init\n");
 		ret = 1;
 		goto out_destroy_client_collection;
@@ -270,7 +256,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 			filename, stats->log_hook_handle);
 	stats->initialized = 1;
 
-	goto out;
+	goto out_final;
 	out_destroy_journal_lock:
 		pthread_mutex_destroy(&stats->journal_lock);
 	out_destroy_client_collection:
@@ -279,8 +265,6 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		rrr_socket_close(stats->socket);
 	out_destroy_mutex:
 		pthread_mutex_destroy(&stats->main_lock);
-	out:
-		pthread_mutexattr_destroy(&journal_lock_mutexattr);
 	out_final:
 		RRR_FREE_IF_NOT_NULL(filename);
 		return ret;

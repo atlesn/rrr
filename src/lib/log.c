@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "log.h"
+#include "util/posix.h"
 
 // Uncomment for debug purposes, logs are only delivered to hooks
 //#define RRR_LOG_DISABLE_PRINT
@@ -46,33 +47,16 @@ int rrr_log_init(void) {
 	}
 
 	int ret = 0;
-
-	pthread_mutexattr_t attr;
-	if ((pthread_mutexattr_init(&attr)) != 0) {
-		fprintf(stderr, "%s", "Could not initialize mutexattr in rrr_log_init()\n");
+	if ((rrr_posix_mutex_init(&rrr_log_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((pthread_mutexattr_setpshared(&attr, 1)) != 0) {
-		fprintf(stderr, "%s", "Could not set pshared on mutexattr in rrr_log_init()\n");
-		ret = 1;
-		goto out_cleanup_mutexattr;
-	}
-
-	if ((pthread_mutex_init(&rrr_log_lock, &attr)) != 0) {
-		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
-		ret = 1;
-		goto out_cleanup_mutexattr;
-	}
-
 	rrr_log_is_initialized = 1;
 
-	goto out_cleanup_mutexattr;
-	out_cleanup_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
-		return ret;
+	return ret;
 }
 
 void rrr_log_cleanup(void) {
