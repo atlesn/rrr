@@ -24,11 +24,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <inttypes.h>
+#include <sys/socket.h>
 
 #include "../util/linked_list.h"
 
 struct rrr_read_session;
 struct rrr_read_session_collection;
+
+int rrr_socket_read (
+		char *buf,
+		ssize_t *read_bytes,
+		int fd,
+		ssize_t read_step_max_size,
+		struct sockaddr *src_addr,
+		socklen_t *src_addr_len,
+		int flags
+);
 
 int rrr_socket_read_message_default (
 		uint64_t *bytes_read,
@@ -37,7 +48,6 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max,
-		int read_flags,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,

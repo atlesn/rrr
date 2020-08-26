@@ -49,9 +49,16 @@ enum
   };
 #endif
 
+int rrr_readdir_foreach_prefix (
+		const char *dir_path,
+		const char *prefix,
+		int (*callback)(struct dirent *entry, const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
+		void *private_data
+);
+
 int rrr_readdir_foreach (
 		const char *dir_path,
-		int (*callback)(struct dirent *entry, const char *resolved_path, unsigned char type, void *private_data),
+		int (*callback)(struct dirent *entry, const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
 		void *private_data
 );
 

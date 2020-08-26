@@ -1,4 +1,4 @@
-# RRR BARCODE SCANNER RECEIVER
+# RRR BARCODE SCANNER RECEIVER (USB/Serial/TCP/UDP)
 
 ## Introduction
 
@@ -10,7 +10,8 @@ and reject and what sent messages look like. Some may also send multiple codes i
 the same message.
 
 If the scanner only has serial interface, a serial to Ethernet converter is used
-to make UDP or TCP packets.
+to make UDP or TCP packets. RRR can also read directly from USB and serial scanners
+connected to a computer.
 
 ## Application
 
@@ -25,6 +26,8 @@ all networking and message validation and parsing.
 	[instance_ip]
 	module=ip
 	ip_udp_port=3000
+	# Uncomment to listen also on TCP port
+	# ip_tcp_port=3000
 	ip_input_types=nsep#barcode,sep1
 	
 	[instance_mqttclient]
@@ -85,7 +88,7 @@ client installed, like **mosquitto-clients**.
 	be1#prefix
 	IF ({prefix} != 0x02 && {prefix} != 0x01)
 		REWIND1
-	;
+		;
 	nsep#barcode,sep1
 	;
 	
@@ -121,3 +124,88 @@ To test this, use two terminals. In the first one, run the program with debuglev
 
 Study the output of RRR which now dumps parsed array values.
 Notice that the `prefix` value is only present when we send `STX` first in our telegram.
+
+### barcode\_usb\_serial.conf
+
+	[instance_file]
+	module=file
+	file_directory=/dev
+	file_prefix=intermec
+	file_input_types=nsep#barcode,sep1
+	file_try_keyboard_input=yes
+	file_no_keyboard_hijack=yes
+	file_topic=my_barcode_topic
+	
+	[instance_raw]
+	module=raw
+	senders=instance_file
+	raw_print_data=yes
+
+The RRR **file** module can read from files, sockets, FIFO pipes and character devices. While running, **file** will probe the specified directory periodically to find new entries opens them. A prefix may be specified
+to filter out which files to use.
+
+If you are using Linux, you may use **udev** to give different devices aliases when they are connected. In this example, a **udev** rule has been added to the file `/etc/udev/rules.d/99-intermec.rules` which creates
+symbolics links like `/dev/intermec-scanner0`. **file** then finds these and ignore other files not starting with `intermec`. The program `udevadm` can be used to figure out how to match a device in a udev rule.
+
+	ACTION=="add", ATTRS{manufacturer}=="Intermec", SUBSYSTEM=="input", PROGRAM="/bin/sh -c 'logger -p user.info New barcode scanner detected, used as keyboard'", MODE="0660", OWNER="rrr", GROUP="rrr", SYMLINK+="intermec-scanner%n"
+	ACTION=="add", ATTRS{manufacturer}=="Intermec", SUBSYSTEM=="tty", PROGRAM="/bin/sh -c 'logger -p user.info New barcode scanner detected, used as serial port'", MODE="0660", OWNER="rrr", GROUP="rrr", SYMLINK+="intermec-scanner%n"
+
+If you do not have **udev**, you can specify the full filename of the device you wish to read from in `file_prefix` like `ttyS0`, or `ttyS` to read from all serial ports. Don't specify `/dev` without
+any `file_prefix`, this will cause RRR to try to read from everything in there.
+
+USB scanners can often be configured to act either as a keyboard or as a virtual serial port. Currently,
+keyboard scanners are only supported on Linux and FreeBSD. When keyboard scanners are opened, they are *hijacked* so that
+the input from them is not used by the X-window system or terminals. Make sure you don't allow RRR to open
+your real keyboard as it might then become unusable while RRR is running. The option `file_no_keyboard_hijack`
+can be set to allow other applications to receive the data, this is useful for testing purposes.
+
+If you still manage to lock yourself out from using your keyboard:
+
+1. Press return twice to make the array parsing fail (works with the definition used in this example),
+   it will cause **file** to close the device.
+2. Immediately press `Ctrl+C`, run `killall rrr` or similar to prevent **file** from re-opening the device
+   in the next probe.
+3. If you were too slow, repeat step 1 and 2.
+
+If keyboard devices are opened without `file_try_keyboard_input` being set to `yes` or on non-Linux/FreeBSD systems,
+the raw event data (key up, key down etc.) will be received by RRR. While it may be a bit cumbersome to implement, it is certainly possible to parse this data into and RRR array and have a Perl or Python script convert the keys into characters.
+
+
+### barcode\_all.conf
+
+	{TELEGRAM}
+	be1#prefix
+	IF ({prefix} != 0x02 && {prefix} != 0x01)
+		REWIND1
+		;
+	nsep#barcode,sep1
+	;
+	
+	{LOCAL}
+	nsep#barcode,sep1
+	;
+	
+	[instance_ip]
+	module=ip
+	ip_udp_port=3000
+	# Uncomment to listen also on TCP port
+	# ip_tcp_port=3000
+	ip_input_types={TELEGRAM}
+	
+	[instance_file]
+	module=file
+	file_directory=/dev
+	file_prefix=intermec
+	file_input_types={LOCAL}
+	file_try_keyboard_input=yes
+	file_topic=my_barcode_topic
+	
+	[instance_mqttclient]
+	module=mqttclient
+	senders=instance_ip,instance_file
+	mqtt_server=localhost
+	mqtt_publish_topic=barcode
+	mqtt_publish_array_values=barcode
+
+This configuration enables reading from TCP, UDP and local scanners at the same time, publishing
+the barcodes to an MQTT broker.

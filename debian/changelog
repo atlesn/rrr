@@ -1,8 +1,16 @@
-rrr (1.10-3buster1) bullseye; urgency=medium
+rrr (1.11-0bullseye1) bullseye; urgency=medium
 
-  * Debian testing releast
+  * Debian testing release
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 22 Aug 2020 21:50:04 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:50:02 +0200
+
+rrr (1.11-0) buster; urgency=medium
+
+  * New file module to read from devices, files, sockets etc.
+  * Improvements in ip and socket framework
+  * Misc. bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:30:45 +0200
 
 rrr (1.10-3) buster; urgency=medium
 

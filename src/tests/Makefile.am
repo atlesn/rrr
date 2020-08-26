@@ -8,7 +8,7 @@ SUBDIRS = modules
 #python = isolated_python
 #endif
 
-noinst_PROGRAMS = test make_test_data send_ip ${python}
+noinst_PROGRAMS = test make_test_data send_ip send_fifo ${python}
 
 test_LDFLAGS = -ldl -lpthread -lm -L../lib -lrrr -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
 test_SOURCES = test.c ../main.c \
@@ -25,5 +25,9 @@ make_test_data_CFLAGS =
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = 
+
+send_fifo_SOURCES = send_fifo.c
+send_fifo_CFLAGS = ${AM_CFLAGS}
+send_fifo_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS}
 
 TESTS = test.sh test_passwd.sh 

@@ -92,7 +92,7 @@ static int __rrr_cmodule_worker_new (
 		goto out_destroy_channel_to_parent;
 	}
 
-	if ((pthread_mutex_init(&worker->pid_lock, NULL)) != 0) {
+	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
 		ret = 1;
 		goto out_free_name;

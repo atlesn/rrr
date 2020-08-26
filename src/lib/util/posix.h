@@ -24,9 +24,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
+#define RRR_POSIX_MUTEX_IS_RECURSIVE	(1<<0)
+#define RRR_POSIX_MUTEX_IS_PSHARED		(1<<1)
+
 int rrr_posix_usleep(int useconds);
 void *rrr_posix_mmap (size_t size);
 int rrr_posix_strcasecmp (const char *a, const char *b);
 int rrr_posix_strncasecmp (const char *a, const char *b, size_t n);
+int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags);
+int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags);
+int rrr_posix_cond_init (pthread_cond_t *mutex, int flags);
 
 #endif /* RRR_POSIX_H */

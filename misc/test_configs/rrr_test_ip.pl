@@ -27,9 +27,17 @@ my $id = 0;
 sub source {
 	my $message = shift;
 
+	if ($id > 200) {
+		return 1;
+	}
+
 	$message->push_tag_str("id", $id++);
 	#$message->push_tag_str("data", "x" x (65536 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2));
-	$message->push_tag_str("data", "x" x (65536));
+	$message->push_tag_str("data", "x" x (3));
+
+	$message->{'ip_addr'} = sockaddr_in (9100, inet_aton("127.0.0.1"));
+	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
+	$message->{'ip_so_type'} = "tcp";
 
 	$message->send();
 

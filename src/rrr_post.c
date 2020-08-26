@@ -308,7 +308,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
-	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
+	if (rrr_socket_unix_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
 		RRR_MSG_0("Could not connect to socket\n");
 		ret = 1;
 		goto out;
@@ -328,7 +328,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = STDIN_FILENO;
 	}
 	else {
-		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post");
+		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post", 0);
 		if (data->input_fd < 0) {
 			RRR_MSG_0("Could not open input file %s: %s\n",
 					data->filename, rrr_strerror(errno));
@@ -472,22 +472,6 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
 		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
-/*
-
-	struct rrr_read_session_collection *read_session_collection,
-	int fd,
-	int read_flags,
-	int socket_read_flags,
-	struct rrr_array *array_final,
-	const struct rrr_array_tree *tree,
-	int do_sync_byte_by_byte,
-	unsigned int message_max_size,
-	int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
-	void *arg
-
-
-	*/
-
 
 	struct rrr_post_read_callback_data callback_data = {
 			data
@@ -496,10 +480,11 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 			(data->max_elements == 0 || data->elements_count < data->max_elements) &&
 			rrr_post_abort == 0
 	) {
-		ret = rrr_socket_common_receive_array_tree(
+		uint64_t bytes_read = 0;
+		ret = rrr_socket_common_receive_array_tree (
+				&bytes_read,
 				&read_sessions,
 				data->input_fd,
-				0,
 				socket_read_flags,
 				&array_tmp,
 				data->tree,

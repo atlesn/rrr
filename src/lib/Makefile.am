@@ -2,6 +2,16 @@ includedir=${prefix}/include/rrr
 
 nobase_include_HEADERS = *.h */*.h
 
+input = input/input.c
+
+if RRR_WITH_LINUX_INPUT
+input_system = input/linux.c
+endif
+
+if RRR_WITH_FREEBSD_INPUT
+input_system = input/linux.c
+endif
+
 if RRR_WITH_MYSQL
 lib_mysql = librrrmysql.la
 librrrmysql_la_SOURCES = mysql.c
@@ -46,7 +56,8 @@ cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
-util = util/gnu.c util/base64.c util/crc32.c util/posix.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
+# posix.c is in libadd further down
+util = util/gnu.c util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -72,9 +83,15 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
-					${messages}
+					${messages} \
+					${input} ${input_system}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
+
+libadd_rrr_posix = librrr_posix.la
+librrr_posix_la_SOURCES = util/posix.c
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
 librrr_conversion_warning_la_SOURCES = type.c
@@ -112,7 +129,8 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_fork}				\
 				${libadd_rrr_log}				\
 				${libadd_rrr_umask}				\
-				${libadd_rrr_conversion_warning}
+				${libadd_rrr_conversion_warning}\
+				${libadd_rrr_posix}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD =  ${libadd_all}

@@ -437,6 +437,7 @@ static int __rrr_instace_runtime_data_destroy_callback (struct rrr_thread *threa
 
 static void __rrr_instace_runtime_data_destroy_intermediate (void *arg) {
 	struct rrr_instance_runtime_data *data = arg;
+	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", data->thread);
 	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
 }
 
@@ -477,7 +478,7 @@ static void __rrr_instance_thread_intermediate_cleanup (
 
 	pthread_mutex_lock(&thread->mutex);
 
-	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n", thread_data->cmodule);
+	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n", thread, thread_data->cmodule);
 
 	if (thread_data->cmodule == NULL) {
 		goto out;
@@ -495,7 +496,7 @@ static void __rrr_instance_thread_poll_collection_clear_void (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	RRR_DBG_8("Thread %p poll collection cleanup\n", thread_data->cmodule);
+	RRR_DBG_8("Thread %p intermediate poll collection clear\n", thread);
 
 	pthread_mutex_lock(&thread->mutex);
 	rrr_poll_collection_clear(&thread_data->poll);
@@ -510,7 +511,7 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 
 	pthread_mutex_lock(&thread->mutex);
 
-	RRR_DBG_8("Thread %p poll stats cleanup stats is %p\n", thread_data->stats);
+	RRR_DBG_8("Thread %p intermediate cleanup stats is %p\n", thread, thread_data->stats);
 
 	if (thread_data->stats == NULL) {
 		goto out;
@@ -521,6 +522,8 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 	out:
 	pthread_mutex_unlock(&thread->mutex);
 }
+
+#include "fork.h"
 
 void *rrr_instance_thread_entry_intermediate (
 		struct rrr_thread *thread
@@ -542,6 +545,8 @@ void *rrr_instance_thread_entry_intermediate (
 		goto out;
 	}
 
+	RRR_DBG_8("Thread %p intermediate cmodule is %p\n", thread, thread_data->cmodule);
+
 	if (rrr_stats_instance_new (
 		&thread_data->stats,
 		INSTANCE_D_STATS_ENGINE(thread_data),
@@ -552,6 +557,8 @@ void *rrr_instance_thread_entry_intermediate (
 		);
 		goto out;
 	}
+
+	RRR_DBG_8("Thread %p intermediate stats is %p\n", thread, thread_data->stats);
 
 	if (rrr_stats_instance_post_default_stickies(thread_data->stats) != 0) {
 		RRR_MSG_0("Error while posting default sticky statistics instance %s in __rrr_instance_thread_entry_intermediate\n",

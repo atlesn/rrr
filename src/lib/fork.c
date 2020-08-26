@@ -34,33 +34,56 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "common.h"
 #include "util/posix.h"
 
-#define RRR_FORK_HANDLER_VERIFY_SELF()																	\
-	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {							\
+// Many forks may to lock the handle lock during shutdown. The shutdown
+// functions should, when looping and checking stuff, periodically, when
+// not iterating lists or accessing data, unlock and then sleep for this
+// interval before re-acquiring the lock.
+#define RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS 100
+
+// To accomdate problems in slow machines or VMs where threads might not
+// wake up within  RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS when waiting on
+// the lock, they should use the trylock with sleep function which
+// has a trylock/sleep loop to ensure it wakes up to take the lock while
+// the other user is sleeping between lock/unlock.
+#define RRR_FORK_TRYLOCK_LOOP_SLEEP_MS (RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS/10)
+
+#define RRR_FORK_HANDLER_VERIFY_SELF()										\
+	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {				\
 		RRR_BUG("BUG: A fork function which must be called from main() was called from elsewhere\n");	\
 	}} while (0)
 
 #define RRR_FORK_HANDLER_ALLOCATION_SIZE \
 	(sizeof(struct rrr_fork_handler) + sysconf(_SC_PAGESIZE))
 
+
+static void __rrr_fork_handler_lock (
+	struct rrr_fork_handler *handler
+) {
+//	printf("%i %p trylock\n", getpid(), handler);
+	// Make sure that we actually wake up and take the lock while 
+	// other users sleep between unlock/lock
+	while (pthread_mutex_trylock (&handler->lock) != 0) {
+		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
+	}
+//	printf("%i %p locked\n", getpid(), handler);
+}
+
+static void __rrr_fork_handler_unlock (struct rrr_fork_handler *handler) {
+//	printf("%i %p unlock\n", getpid(), handler);
+	pthread_mutex_unlock (&handler->lock);
+}
+
 int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	int ret = 0;
 
 	struct rrr_fork_handler *handler = NULL;
-	pthread_mutexattr_t attr;
 
 	*result = NULL;
-
-	if (pthread_mutexattr_init(&attr) != 0)  {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_fork_handler_init\n");
-		goto out;
-	}
-
-	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
 	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
 		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(handler, '\0', sizeof(*handler));
@@ -68,7 +91,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	handler->self_t = pthread_self();
 	handler->self_p = getpid();
 
-	if (pthread_mutex_init(&handler->lock, NULL) != 0) {
+	if (rrr_posix_mutex_init(&handler->lock, RRR_POSIX_MUTEX_IS_PSHARED) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
@@ -79,12 +102,10 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 
 	*result = handler;
 
-	goto out_destroy_mutexattr;
+	goto out;
 
 	out_free:
 		munmap(handler, RRR_FORK_HANDLER_ALLOCATION_SIZE);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
 }
@@ -104,7 +125,7 @@ static int __rrr_fork_clear (struct rrr_fork *fork) {
 
 void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
-	pthread_mutex_lock(&handler->lock);
+	__rrr_fork_handler_lock(handler);
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (node->pid > 0) {
 			RRR_MSG_0("Warning: Child fork pid %i had not yet exited or exit notifications was not set while destroying fork handler.\n", node->pid);
@@ -114,7 +135,7 @@ void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
-	pthread_mutex_unlock(&handler->lock);
+	__rrr_fork_handler_unlock(handler);
 	pthread_mutex_destroy(&handler->lock);
 	__rrr_fork_handler_free(handler);
 }
@@ -171,10 +192,6 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 }
 
 static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handler *handler, int max_rounds) {
-	if (pthread_mutex_trylock (&handler->lock) == 0) {
-		RRR_BUG("BUG: Handler was not locked in __rrr_fork_wait_loop\n");
-	}
-
 	*active_forks_found = 0;
 
 	do {
@@ -202,17 +219,17 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
 
-		pthread_mutex_unlock (&handler->lock);
-		rrr_posix_usleep(100000); // 100ms
-		pthread_mutex_lock (&handler->lock);
+		__rrr_fork_handler_unlock (handler);
+		rrr_posix_usleep(RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS * 1000);
+		__rrr_fork_handler_lock (handler);
 	} while (*active_forks_found != 0);
 }
 
+// Call from main() only
 void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
-	// Call this from main() only
 	RRR_FORK_HANDLER_VERIFY_SELF();
 
-	pthread_mutex_lock (&handler->lock);
+	__rrr_fork_handler_lock(handler);
 
 	// Signal handlers must be disabled before we do this
 
@@ -251,7 +268,7 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 		}
 	}
 
-	pthread_mutex_unlock (&handler->lock);
+	__rrr_fork_handler_unlock (handler);
 }
 
 void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *handler, int force_wait_all) {
@@ -259,7 +276,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 
 	// We cannot lock this because it's written to within signal context
 	if (rrr_fork_handler_signal_pending != 0 || force_wait_all) {
-		pthread_mutex_lock (&handler->lock);
+		__rrr_fork_handler_lock(handler);
 		rrr_fork_handler_signal_pending = 0;
 
 		if (force_wait_all) {
@@ -316,7 +333,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_notify_and_clear(node));
 
-		pthread_mutex_unlock (&handler->lock);
+		__rrr_fork_handler_unlock (handler);
 	}
 }
 
@@ -347,9 +364,7 @@ pid_t rrr_fork (
 	 *       when we attach a debugger. This seems however not to be a problem
 	 *       if when spin on trylock like this (also for some reason).
 	 */
-	while (pthread_mutex_trylock(&handler->lock) != 0) {
-		rrr_posix_usleep(5000);
-	}
+	__rrr_fork_handler_lock(handler);
 
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	if (result == NULL) {
@@ -381,7 +396,7 @@ pid_t rrr_fork (
 	result->exit_notify_arg = exit_notify_arg;
 
 	out_unlock:
-		pthread_mutex_unlock(&handler->lock);
+		__rrr_fork_handler_unlock (handler);
 	out:
 		return ret;
 }
@@ -394,14 +409,14 @@ void rrr_fork_unregister_exit_handler (
 		return;
 	}
 
-	pthread_mutex_lock(&handler->lock);
+	__rrr_fork_handler_lock (handler);
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (pid == node->pid) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
-	pthread_mutex_unlock(&handler->lock);
+	__rrr_fork_handler_unlock (handler);
 }
 
 void rrr_fork_unregister_exit_handler_void (void *arg) {
