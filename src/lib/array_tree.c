@@ -805,7 +805,7 @@ static int __rrr_array_tree_interpret_node (
 		if (!comma_found && !(*semicolon_found)) {
 			RRR_MSG_0("Comma or semicolon not found while parsing array definition\n");
 			ret = RRR_ARRAY_TREE_SOFT_ERROR;
-			goto out;
+			goto out_destroy;
 		}
 	}
 
@@ -1265,7 +1265,8 @@ int __rrr_array_tree_import_value_resolve_ref (
 		}																								\
 		RRR_FREE_IF_NOT_NULL(new_value->ref);															\
 		if (new_value->target == 0) {																	\
-			RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n");		\
+			RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n",		\
+				new_value->ref);																		\
 			ret = RRR_ARRAY_TREE_SOFT_ERROR;															\
 			goto out;																					\
 		}																								\

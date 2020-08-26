@@ -63,6 +63,8 @@ int rrr_cmodule_channel_send_message (
 ) {
 	int ret = 0;
 
+	// Note : There are gotos in this function, sorry.
+
 	*sent_total = 0;
 	*retries = 0;
 
