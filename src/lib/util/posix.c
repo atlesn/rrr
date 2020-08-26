@@ -92,7 +92,7 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 	}
 
 	if (is_pshared) {
-		if ((ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+		if (pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
 			RRR_MSG_0("setpshared() failed in rrr_posix_mutex_init, not supported on this platform: %s\n",
 					rrr_strerror(errno));
 			ret = 1;
@@ -100,7 +100,7 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 		}
 	}
 
-	if ((ret = pthread_mutexattr_settype(&attr, (is_recursive ? PTHREAD_MUTEX_RECURSIVE : PTHREAD_MUTEX_NORMAL))) != 0) {
+	if (pthread_mutexattr_settype(&attr, (is_recursive ? PTHREAD_MUTEX_RECURSIVE : PTHREAD_MUTEX_NORMAL)) != 0) {
 		RRR_MSG_0("settype() failed in rrr_posix_mutex_init: %s\n",
 				rrr_strerror(errno));
 		ret = 1;
@@ -109,6 +109,7 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 
 	if (pthread_mutex_init(mutex, &attr) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_posix_mutex_init: %s\n", rrr_strerror(errno));
+		ret = 1;
 		goto out_destroy_mutexattr;
 	}
 
@@ -140,7 +141,7 @@ int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags) {
 	}
 
 	if (is_pshared) {
-		if ((ret = pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+		if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
 			RRR_MSG_0("setpshared() failed in rrr_posix_rwlock_init, not supported on this platform: %s\n",
 					rrr_strerror(errno));
 			ret = 1;
@@ -150,6 +151,7 @@ int rrr_posix_rwlock_init (pthread_rwlock_t *mutex, int flags) {
 
 	if (pthread_rwlock_init(mutex, &attr) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_posix_rwlock_init: %s\n", rrr_strerror(errno));
+		ret = 1;
 		goto out_destroy_rwlockattr;
 	}
 
@@ -181,7 +183,7 @@ int rrr_posix_cond_init (pthread_cond_t *mutex, int flags) {
 	}
 
 	if (is_pshared) {
-		if ((ret = pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+		if (pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_SHARED) != 0) {
 			RRR_MSG_0("setpshared() failed in rrr_posix_cond_init, not supported on this platform: %s\n",
 					rrr_strerror(errno));
 			ret = 1;
@@ -191,6 +193,7 @@ int rrr_posix_cond_init (pthread_cond_t *mutex, int flags) {
 
 	if (pthread_cond_init(mutex, &attr) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_posix_cond_init: %s\n", rrr_strerror(errno));
+		ret = 1;
 		goto out_destroy_condattr;
 	}
 

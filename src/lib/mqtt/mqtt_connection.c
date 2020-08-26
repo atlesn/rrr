@@ -449,11 +449,11 @@ int rrr_mqtt_conn_set_will_data_from_connect (
 			&connection->will_properties
 	};
 
-	if (rrr_mqtt_property_collection_iterate (
+	if ((ret = rrr_mqtt_property_collection_iterate (
 			&connect->will_properties,
 			rrr_mqtt_common_parse_will_properties_callback,
 			&callback_data
-	) != 0) {
+	)) != 0) {
 		*reason_v5 = callback_data.reason_v5;
 		if (ret != RRR_MQTT_SOFT_ERROR) {
 			RRR_MSG_0("Hard error while iterating will properties in rrr_mqtt_conn_set_will_data_from_connect\n");

@@ -689,11 +689,8 @@ int rrr_socket_fifo_create (
 	pthread_mutex_lock(&socket_lock);
 
 	if (unlink_if_exists) {
-		if ((ret = unlink(filename)) != 0) {
-			if (errno == ENOENT) {
-				ret = 0;
-			}
-			else {
+		if (unlink(filename) != 0) {
+			if (errno != ENOENT) {
 				RRR_MSG_0("Could not unlink file %s before creation of fifo pipe: %s\n",
 						filename, rrr_strerror(errno));
 				ret = 1;
@@ -738,11 +735,10 @@ int rrr_socket_fifo_create (
 
 	goto out;
 	out_unlink:
-		if ((ret = unlink(filename)) != 0) {
+		if (unlink(filename) != 0) { // Don't set/overwrite ret here
 			RRR_MSG_0("Warning: Failed to unlink '%s' when cleaning up after error in rrr_socket_fifo_create: %s\n",
 					filename, rrr_strerror(errno));
 		}
-		ret = 1; // Make sure error is still set if unlink succeeds
 	out:
 		pthread_mutex_unlock(&socket_lock);
 	return ret;
