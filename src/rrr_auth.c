@@ -154,7 +154,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_auth_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_auth_parse_config(&data, &cmd) != 0) {
 		cmd_print_usage(&cmd);
 		ret = EXIT_FAILURE;
 		goto out;

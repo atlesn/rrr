@@ -765,7 +765,7 @@ static int __rrr_http_session_response_receive_callback (
 				0,
 				receive_data->raw_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error %i from raw callback in __rrr_http_session_response_receive_callback\n");
+			RRR_MSG_0("Error %i from raw callback in __rrr_http_session_response_receive_callback\n", ret);
 			goto out;
 		}
 	}
@@ -952,7 +952,7 @@ static int __rrr_http_session_request_receive_callback (
 				receive_data->unique_id,
 				receive_data->raw_callback_arg
 		)) != 0) {
-			RRR_MSG_0("Error %i from raw callback in __rrr_http_session_request_receive_callback\n");
+			RRR_MSG_0("Error %i from raw callback in __rrr_http_session_request_receive_callback\n", ret);
 			goto out;
 		}
 	}
