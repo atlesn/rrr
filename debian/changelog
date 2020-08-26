@@ -1,4 +1,4 @@
-rrr (1.11-0) buster; urgency=medium
+rrr (1.11-1) buster; urgency=medium
 
   * New file module to read from devices, files, sockets etc.
   * Improvements in ip and socket framework
