@@ -1,9 +1,9 @@
 # README FOR READ ROUTE RECORD
 ## ABOUT
 
-RRR is a general purpose acquirement, transmission, processing and storage daemon for all kinds of
-measurements or messages. RRR has a variety of different modules which can be chained together to
-retrieve, transmit, modify and save messages.
+RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
+MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
+together to retrieve, transmit, modify and save messages.
 
 RRR can read data of different types from external programs or sensors using UDP, TCP, UNIX sockets,
 piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
