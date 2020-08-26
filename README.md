@@ -1,4 +1,4 @@
-![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr.svg)
+![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr-not-tall.svg)
 
 RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
