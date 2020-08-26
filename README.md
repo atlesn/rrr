@@ -1,5 +1,4 @@
-# README FOR READ ROUTE RECORD
-## ABOUT
+![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr.svg)
 
 RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
