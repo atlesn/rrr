@@ -284,6 +284,11 @@ int rrr_http_session_set_keepalive (
 	return ret;
 }
 
+static void __rrr_http_session_free_dbl_ptr (void *ptr) {
+	void *to_free = *((void **) ptr);
+	RRR_FREE_IF_NOT_NULL(to_free);
+}
+
 static int __rrr_http_session_multipart_form_data_body_send_wrap_chunk (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
@@ -398,6 +403,9 @@ static int __rrr_http_session_multipart_form_data_body_send (
 	char *body_buf = NULL;
 	char *boundary_buf = NULL;
 
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &body_buf);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &boundary_buf);
+
 	// RFC7578
 
 	if ((ret = rrr_asprintf (&boundary_buf, "RRR%u", (unsigned int) rrr_rand())) < 0) {
@@ -459,8 +467,8 @@ static int __rrr_http_session_multipart_form_data_body_send (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(body_buf);
-	RRR_FREE_IF_NOT_NULL(boundary_buf);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 
 	return ret;
 }
@@ -474,6 +482,9 @@ static int __rrr_http_session_post_x_www_form_body_send (
 	int ret = 0;
 	char *body_buf = NULL;
 	char *header_buf = NULL;
+
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &body_buf);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &header_buf);
 
 	rrr_length body_size = 0;
 	if (no_urlencoding == 0) {
@@ -511,8 +522,8 @@ static int __rrr_http_session_post_x_www_form_body_send (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(header_buf);
-	RRR_FREE_IF_NOT_NULL(body_buf);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 
@@ -550,12 +561,17 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	char *request_buf = NULL;
 	char *host_buf = NULL;
 	char *user_agent_buf = NULL;
+	char *uri_tmp = NULL;
+	char *extra_uri_tmp = NULL;
+
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &request_buf);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &host_buf);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &user_agent_buf);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &uri_tmp);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &extra_uri_tmp);
 
 	rrr_length extra_uri_size = 0;
-	char *extra_uri_tmp = NULL;
 	const char *extra_uri_separator = "";
-
-	char *uri_tmp = NULL;
 
 	const char *uri_to_use = session->uri_str;
 
@@ -564,8 +580,10 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	if (rrr_string_builder_new(&header_builder) != 0) {
 		RRR_MSG_0("Failed to create string builder in __rrr_http_session_request_send\n");
 		ret = 1;
-		goto out;
+		goto out_final;
 	}
+
+	pthread_cleanup_push(rrr_string_builder_destroy_void, header_builder);
 
 	host_buf = rrr_http_util_quote_header_value(callback_data->host, '"', '"');
 	if (host_buf == NULL) {
@@ -695,15 +713,14 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	}
 
 	out:
-	if (header_builder != NULL) {
-		rrr_string_builder_destroy(header_builder);
-	}
-	RRR_FREE_IF_NOT_NULL(user_agent_buf);
-	RRR_FREE_IF_NOT_NULL(host_buf);
-	RRR_FREE_IF_NOT_NULL(request_buf);
-	RRR_FREE_IF_NOT_NULL(extra_uri_tmp);
-	RRR_FREE_IF_NOT_NULL(uri_tmp);
-	return ret;
+		pthread_cleanup_pop(1);
+	out_final:
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		return ret;
 }
 
 int rrr_http_session_transport_ctx_request_send (
@@ -811,6 +828,8 @@ static int __rrr_http_session_send_header_field_callback (struct rrr_http_header
 		RRR_BUG("BUG: Subvalues were present in __rrr_http_session_send_header_field_callback, this is not supported\n");
 	}
 
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &send_data);
+
 	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", field->name, field->value)) <= 0) {
 		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_session_send_header_field_callback\n");
 		ret = 1;
@@ -839,7 +858,7 @@ static int __rrr_http_session_send_header_field_callback (struct rrr_http_header
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(send_data);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 

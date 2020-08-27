@@ -869,7 +869,7 @@ int rrr_cmodule_helper_parse_config (
 	}
 
 	// Input in ms, multiply by 1000
-	RRR_INSTANCE_CONFIG_STRING_SET("_spawn_interval_ms");
+	RRR_INSTANCE_CONFIG_STRING_SET("_source_interval_ms");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
 	data->spawn_interval_us *= 1000;
 

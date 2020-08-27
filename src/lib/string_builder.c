@@ -79,6 +79,11 @@ void rrr_string_builder_destroy (struct rrr_string_builder *string_builder) {
 	free(string_builder);
 }
 
+void rrr_string_builder_destroy_void (void *ptr) {
+	rrr_string_builder_clear (ptr);
+	free(ptr);
+}
+
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes) {
 	if (bytes == 0) {
 		return 0;

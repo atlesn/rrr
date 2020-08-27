@@ -38,6 +38,7 @@ struct rrr_net_transport_config;
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 	pthread_mutex_t lock_;
+	int lock_count;
 	struct rrr_net_transport *transport;
 	int handle;
 	enum rrr_net_transport_socket_mode mode;

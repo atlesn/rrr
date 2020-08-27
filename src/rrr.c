@@ -78,7 +78,7 @@ const char *module_library_paths[] = {
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
-// #define RRR_NO_MODULE_UNLOAD
+//#define RRR_NO_MODULE_UNLOAD
 
 static int some_fork_has_stopped = 0;
 static int main_running = 1;
