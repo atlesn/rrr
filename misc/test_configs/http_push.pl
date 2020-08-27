@@ -10,7 +10,7 @@ use rrr::rrr_helper::rrr_debug;
 my $debug = { };
 bless $debug, rrr::rrr_helper::rrr_debug;
 
-my $timeout_s = 7;
+my $timeout_s = 10;
 
 my %replies = (
 	"0" => "No data",
@@ -20,9 +20,11 @@ my %replies = (
 
 my %active_handles;
 
+my $req_id = 0;
+
 sub send_response {
 	my $message = shift;
-	my $topic = shift;
+	my $req = shift;
 	my $code = shift;
 	my $body = shift;
 
@@ -37,16 +39,21 @@ sub send_response {
 	}
 
 	if (defined $body && length $body > 0) {
-		$response .= "Content-Type: text/html\r\n\r\n";
-		$response .= "Content-Length: " . (length $body) . "\r\n\r\n$body";
+		$body =~ s/"/\\"/;
+		my $json = "{
+			\"content\": \"$body\",
+			\"id\": " . $req->{"id"} . "
+}";
+		$response .= "Content-Type: application/json\r\n\r\n";
+		$response .= "Content-Length: " . (length $json) . "\r\n\r\n$json";
 	}
 	else {
-		$response .= "\r\n";
+		$response .= "\r => ++$req_id\n";
 	}
 
-	$topic =~ s/request/raw/;
+	$req->{'topic'} =~ s/request/raw/;
 
-	$message->{'topic'} = $topic;
+	$message->{'topic'} = $req->{'topic'};
 	$message->{'data'} = $response;
 	$message->{'data_len'} = length $response;
 
@@ -69,14 +76,15 @@ sub source {
 			next;
 		}
 
-		if (rand(10) > 2) {
+		if (rand(10) > 8) {
 			$debug->dbg(2, "Reply to " . $req->{'topic'} . " handle is " . $req->{'handle'} . "\n");
 			my $content = $replies{$req->{"handle"}};
 			if (!defined $content) {
 				$content = "No content for this handle\n";
 			}
-			send_response($message, $req->{'topic'}, 200, $content);
-			$message->send();
+			send_response($message, $req, 200, $content);
+			delete ($active_handles{$key});
+			next;
 		}
 	}
 
@@ -89,17 +97,18 @@ sub process {
 
 	my $handle = ($message->get_tag_all("handle"))[0];
 
-	if (!defined $handle) {
-		$debug->msg_err("Handle was not defined in request\n");
-		send_response($message, $message->{'topic'}, 500);
-		return 1;
-	}
-
 	my %req = (
 		"handle" => $handle,
 		"topic" => $message->{'topic'},
-		"time" => time
+		"time" => time,
+		"id" => ++$req_id
 	);
+
+	if (!defined $handle) {
+		$debug->msg_err("Handle was not defined in request\n");
+		send_response($message, \%req, 500);
+		return 1;
+	}
 
 	$active_handles{$handle} = \%req;
 

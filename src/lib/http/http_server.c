@@ -332,7 +332,8 @@ static int __rrr_http_server_allocate_threads (
 
 	struct rrr_http_server_worker_preliminary_data *worker_data = NULL;
 
-	int to_allocate = count - rrr_thread_collection_count(threads);
+	// Times two because we need to count the watchdogs
+	int to_allocate = (count * 2) - rrr_thread_collection_count(threads);
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
