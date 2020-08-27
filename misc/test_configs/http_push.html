@@ -17,6 +17,7 @@ function sendRequest() {
 	if (request_done) {
 		request_done = 0;
 		var ajax = new XMLHttpRequest();
+		ajax.timeout = 5000;
 		ajax.open("GET", "http://127.0.0.1:8000/?handle=1", 1);
 		ajax.onreadystatechange = function() {
 			try {
