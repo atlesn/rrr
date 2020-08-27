@@ -771,6 +771,7 @@ static int __rrr_http_session_response_receive_callback (
 	}
 
 	if ((ret = receive_data->callback (
+			receive_data->handle,
 			session->request_part,
 			session->response_part,
 			read_session->rx_buf_ptr,
@@ -981,6 +982,7 @@ static int __rrr_http_session_request_receive_callback (
 	}
 
 	if ((ret = receive_data->callback (
+			receive_data->handle,
 			session->request_part,
 			session->response_part,
 			data_to_use,

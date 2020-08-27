@@ -757,6 +757,19 @@ static int __rrr_net_transport_tls_send (
 	return 0;
 }
 
+static int __rrr_net_transport_tls_poll (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
+
+	int fd = BIO_get_fd(ssl_data->web, NULL);
+	if (fd < 0) {
+		return RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+	}
+
+	return rrr_socket_check_alive (fd);
+}
+
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_tls_destroy,
 	__rrr_net_transport_tls_connect,
@@ -764,7 +777,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_tls_accept,
 	__rrr_net_transport_tls_ssl_data_close,
 	__rrr_net_transport_tls_read_message,
-	__rrr_net_transport_tls_send
+	__rrr_net_transport_tls_send,
+	__rrr_net_transport_tls_poll
 };
 
 #define CHECK_FLAG(flag)				\

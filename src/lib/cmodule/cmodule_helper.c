@@ -44,6 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 //#include "../ip_util.h"
 
+#define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
+
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_msg_msg *message;
@@ -622,6 +624,7 @@ static int __rrr_cmodule_helper_threads_start (
 			NULL,
 			RRR_THREAD_START_PRIORITY_NORMAL,
 			name,
+			RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 			data
 	)) == NULL) {
 		RRR_MSG_0("Could not preload thread '%s' in  instance %s\n",

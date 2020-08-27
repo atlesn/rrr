@@ -1184,3 +1184,22 @@ int rrr_socket_sendto_nonblock_fail_on_partial_write (
 	out:
 	return ret;
 }
+
+int rrr_socket_check_alive (int fd) {
+	int ret = RRR_SOCKET_OK;
+
+	struct pollfd pollfd = {0};
+
+	pollfd.fd = fd;
+
+	if ((ret = poll(&pollfd, 1, 10)) > 0) {
+		if (pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
+			ret = RRR_SOCKET_SOFT_ERROR;
+		}
+	}
+	else if (ret < 0) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+	}
+
+	return ret;
+}

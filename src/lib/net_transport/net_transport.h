@@ -180,6 +180,9 @@ struct rrr_net_transport_methods {
 			const void *data,
 			ssize_t size
 	);
+	int (*poll)(
+			struct rrr_net_transport_handle *handle
+	);
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -228,6 +231,9 @@ int rrr_net_transport_connect (
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
+);
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,

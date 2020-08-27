@@ -324,7 +324,7 @@ static int __rrr_http_server_allocate_threads (
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
@@ -354,6 +354,7 @@ static int __rrr_http_server_allocate_threads (
 				NULL,
 				RRR_THREAD_START_PRIORITY_NORMAL,
 				"httpserver_worker",
+				RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS * 1000,
 				worker_data
 		);
 
@@ -384,7 +385,7 @@ int rrr_http_server_tick (
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;

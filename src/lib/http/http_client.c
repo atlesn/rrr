@@ -113,6 +113,7 @@ static int __rrr_http_client_receive_http_part_callback (
 ) {
 	struct rrr_http_client_request_callback_data *callback_data = arg;
 
+	(void)(handle);
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(overshoot_bytes);

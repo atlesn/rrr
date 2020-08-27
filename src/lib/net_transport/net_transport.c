@@ -521,6 +521,12 @@ int rrr_net_transport_connect (
 	return __rrr_net_transport_connect (transport, port, host, callback, callback_arg, 0);
 }
 
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->poll(handle);
+}
+
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
 		int read_attempts,

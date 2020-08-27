@@ -1,4 +1,4 @@
-.Dd 2020-08-23
+.Dd 2020-08-27
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1050,6 +1050,9 @@ to 'httpserver/raw/uuu' for
 .B httpserver
 to pick it up.   
 If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
+
+.It http_server_raw_response_timeout_ms=MILLISECONDS
+Timeout when waiting for raw response from senders. May be zero to indicate no timeout. Defaults to 1500ms.
 
 .It http_server_tls_*
 Refer to the

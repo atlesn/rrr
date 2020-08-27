@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 
 #define RRR_MAIN_DEFAULT_MESSAGE_TTL_S 30
+#define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_main_check_wait_for_data {
 	struct rrr_instance_collection *instances;
@@ -147,6 +148,7 @@ int rrr_main_create_and_start_threads (
 				instance->module_data->operations.cancel_function,
 				instance->module_data->start_priority,
 				instance->module_data->instance_name,
+				RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data[threads_total]
 		);
 

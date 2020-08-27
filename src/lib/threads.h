@@ -83,7 +83,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_START_PRIORITY_MAX RRR_THREAD_START_PRIORITY_NETWORK
 
 // Milliseconds
-#define RRR_THREAD_WATCHDOG_FREEZE_LIMIT 5000
 #define RRR_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
 
 #define RRR_THREAD_NAME_MAX_LENGTH 64
@@ -113,6 +112,7 @@ struct rrr_thread {
 	RRR_LL_NODE(struct rrr_thread);
 	pthread_t thread;
 	uint64_t watchdog_time;
+	uint64_t watchdog_timeout_us;
 	pthread_mutex_t mutex;
 	int signal;
 	int state;
@@ -302,6 +302,7 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		int (*cancel_function) (struct rrr_thread *),
 		int start_priority,
 		const char *name,
+		uint64_t watchdog_timeout_us,
 		void *private_data
 );
 int rrr_thread_check_any_stopped (

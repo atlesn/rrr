@@ -183,6 +183,7 @@ static inline int rrr_socket_send_blocking (
 ) {
 	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
 }
+int rrr_socket_check_alive (int fd);
 
 
 #endif /* RRR_SOCKET_H */
