@@ -112,7 +112,6 @@ static void __rrr_http_server_worker_preliminary_data_destroy_void_intermediate 
 static void __rrr_http_server_worker_close_transport (
 		void *arg
 ) {
-	printf("Worker exiting\n");
 	struct rrr_http_server_worker_data *worker_data = arg;
 	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
 }

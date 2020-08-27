@@ -18,6 +18,8 @@ my %replies = (
 	"2" => "Response for handle two"
 );
 
+my %push_now;
+
 my %active_handles;
 
 my $req_id = 0;
@@ -38,13 +40,15 @@ sub send_response {
 		$response = "HTTP/1.1 500 Bad Request\r\n";
 	}
 
+	$response .= "Access-Control-Allow-Origin: *\r\n";
+
 	if (defined $body && length $body > 0) {
 		$body =~ s/"/\\"/;
 		my $json = "{
 			\"content\": \"$body\",
 			\"id\": " . $req->{"id"} . "
 }";
-		$response .= "Content-Type: application/json\r\n\r\n";
+		$response .= "Content-Type: application/json\r\n";
 		$response .= "Content-Length: " . (length $json) . "\r\n\r\n$json";
 	}
 	else {
@@ -76,7 +80,7 @@ sub source {
 			next;
 		}
 
-		if (rand(10) > 8) {
+		if (defined $push_now{$key}) {
 			$debug->dbg(2, "Reply to " . $req->{'topic'} . " handle is " . $req->{'handle'} . "\n");
 			my $content = $replies{$req->{"handle"}};
 			if (!defined $content) {
@@ -84,6 +88,7 @@ sub source {
 			}
 			send_response($message, $req, 200, $content);
 			delete ($active_handles{$key});
+			delete ($push_now{$key});
 			next;
 		}
 	}
@@ -94,6 +99,15 @@ sub source {
 sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
+
+	print "Received topic " . $message->{'topic'} . "\n";
+
+	if ($message->{'topic'} eq "push") {
+		$debug->dbg(2, "Updating response\n");
+		$replies{"1"} = $message->{'data'};
+		$push_now{"1"} = 1;
+		return 1;
+	}
 
 	my $handle = ($message->get_tag_all("handle"))[0];
 
