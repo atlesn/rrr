@@ -474,7 +474,7 @@ static int httpserver_receive_get_raw_response (
 			}
 
 			if (*(callback_data.response) != NULL) {
-				goto loop_out;
+				goto loop_out_response_found;
 			}
 		}
 
@@ -491,14 +491,14 @@ static int httpserver_receive_get_raw_response (
 		}
 	}
 
-	loop_out:
-
 	if (*(callback_data.response) == NULL) {
 		RRR_DBG_1("Timeout while waiting for response from senders in httpserver instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
+
+	loop_out_response_found:
 
 	RRR_DBG_3("httpserver instance %s got a response from senders with filter %s size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
