@@ -1054,6 +1054,9 @@ If httpserver receives messages which do not match any active requests, they are
 .It http_server_raw_response_timeout_ms=MILLISECONDS
 Timeout when waiting for raw response from senders. May be zero to indicate no timeout. Defaults to 1500ms.
 
+.It http_server_worker_threads=UNSIGNED INTEGER
+How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 
+
 .It http_server_tls_*
 Refer to the
 .B TLS

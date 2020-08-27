@@ -49,10 +49,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
 #define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
+#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX					"httpserver/request/"
 #define RRR_HTTPSERVER_RAW_TOPIC_PREFIX						"httpserver/raw/"
 #define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS				2000
+#define RRR_HTTPSERVER_WORKER_THREADS_MAX					1024
+
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_net_transport_config net_transport_config;
@@ -69,6 +72,7 @@ struct httpserver_data {
 	int do_receive_full_request;
 
 	rrr_setting_uint raw_response_timeout_ms;
+	rrr_setting_uint worker_threads;
 
 	pthread_mutex_t oustanding_responses_lock;
 };
@@ -153,6 +157,14 @@ static int httpserver_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_raw_response_timeout_ms", raw_response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
+
+	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
+		RRR_MSG_0("Invalid value %llu for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
+				data->worker_threads, config->name);
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -826,6 +838,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		if (rrr_http_server_tick (
 				&accept_count,
 				http_server,
+				data->worker_threads,
 				httpserver_unique_id_generator_callback,
 				&callback_data,
 				(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),

@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS	2000
 
 #define RRR_HTTP_SERVER_USER_AGENT						"RRR/" PACKAGE_VERSION
-#define RRR_HTTP_SERVER_WORKER_THREADS					5
 #define RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS	5000
 
 #define RRR_HTTP_OK				RRR_READ_OK
