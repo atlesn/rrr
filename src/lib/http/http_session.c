@@ -1084,7 +1084,7 @@ static int __rrr_http_session_receive_get_target_size (
 	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
 
 	if (target_size > SSIZE_MAX) {
-		RRR_MSG_0("Target size %llu exceeds maximum value of %lld while parsing HTTP part\n",
+		RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
 				target_size, SSIZE_MAX);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;

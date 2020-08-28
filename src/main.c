@@ -220,7 +220,7 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		// Make sure things does not get outahand during multiplication. Input from user
 		// is in seconds, convert to microseconds
 		if (message_ttl_us > UINT32_MAX) {
-			RRR_MSG_0("Value of time-to-live was too big, maximum is %lu\n", UINT32_MAX);
+			RRR_MSG_0("Value of time-to-live was too big, maximum is %u\n", UINT32_MAX);
 			return EXIT_FAILURE;
 		}
 

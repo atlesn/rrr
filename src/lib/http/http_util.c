@@ -198,7 +198,7 @@ void rrr_http_util_print_where_message (
 	}
 
 	if (bytes_to_copy > max) {
-		RRR_BUG("BUG: Overflow in rrr_http_util_print_where_message, bytes to copy was %li\n", bytes_to_copy);
+		RRR_BUG("BUG: Overflow in rrr_http_util_print_where_message, bytes to copy was %u\n", bytes_to_copy);
 	}
 
 	strncpy(buf, start, bytes_to_copy);

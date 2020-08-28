@@ -731,7 +731,7 @@ static void __rrr_condition_evaluate_op (
 		position->is_signed = 1;
 
 		RRR_DBG_3("Array tree condition signed evaluation %" PRIi64 " %s %" PRIi64 " = %" PRIu64 "\n",
-				signed_a, op, signed_b, position->result);
+				signed_a, op->op, signed_b, position->result);
 	}
 	else {
 		uint64_t unsigned_a = (result_a != NULL ? result_a->result : 0);
@@ -744,7 +744,7 @@ static void __rrr_condition_evaluate_op (
 		);
 
 		RRR_DBG_3("Array tree condition unsigned evaluation %" PRIu64 " %s %" PRIu64 " = %" PRIu64 "\n",
-				unsigned_a, op, unsigned_b, position->result);
+				unsigned_a, op->op, unsigned_b, position->result);
 
 	}
 
@@ -784,7 +784,7 @@ static int __rrr_condition_evalute_value (
 			goto out;
 		}
 
-		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%llx%s\n",
+		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%lx%s\n",
 				tag_to_pass, position->result, (position->is_signed ? " (signed)" : ""));
 	}
 	else if (	strlen(position->carrier->value) >= 2 &&

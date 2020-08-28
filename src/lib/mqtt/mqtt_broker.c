@@ -869,7 +869,7 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 	}
 
 	RRR_DBG_1("DISCONNECT from client '%s' in MQTT broker reason %u\n",
-			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason);
+			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason_v5);
 
 //	printf("state before: %u\n", connection->state_flags);
 

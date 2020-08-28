@@ -160,7 +160,7 @@ static int httpserver_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
 
 	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
-		RRR_MSG_0("Invalid value %llu for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
+		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
 				data->worker_threads, config->name);
 		ret = 1;
 		goto out;
@@ -177,7 +177,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
 		if ((ret = rrr_http_server_start_plain(http_server, data->port_plain)) != 0) {
-			RRR_MSG_0("Could not start listening in plain mode on port %u in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -193,7 +193,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 				&data->net_transport_config,
 				0
 		)) != 0) {
-			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in TLS mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_tls, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -776,7 +776,7 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	uint64_t timeout = entry->send_time + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
 	if (rrr_time_get_64() > timeout) {
 		struct rrr_msg_msg *msg = entry->message;
-		RRR_DBG_1("httpserver instance %s deleting message from senders of size %li which has timed out\n",
+		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
 				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data), MSG_TOTAL_SIZE(msg));
 		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
 	}

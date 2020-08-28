@@ -388,7 +388,7 @@ static int get_config_files_callback (
 	}
 
 	if (get_config_files_test_open(resolved_path) != 0) {
-		RRR_MSG_0("Configuration file %s could not be opened: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Configuration file '%s' could not be opened: %s\n", orig_path, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -422,7 +422,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 		if (chdir(config_string) == 0) {
 			if (chdir(cwd) != 0) {
-				RRR_MSG_0("Could not chdir() to original directory %s: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("Could not chdir() to original directory %s: %s\n", cwd, rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}

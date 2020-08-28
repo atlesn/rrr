@@ -40,7 +40,6 @@ int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source);
 int rrr_fixp_to_ldouble (long double *target, rrr_fixp source);
 int rrr_fixp_to_str_16 (char *target, ssize_t target_size, rrr_fixp source);
 int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source);
-int rrr_fixp_str_get_length (rrr_length *result, const char *str, rrr_biglength str_length);
 int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr);
 
 #endif /* RRR_FIXED_POINT_H */

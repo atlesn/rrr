@@ -86,7 +86,7 @@ do {rrr_setting_uint tmp_uint = (default_uint);																\
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT(string, target, default_uint)								\
 do {RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint);								\
 	if (data->target < 1 || data->target > 65535) {															\
-		RRR_MSG_0("Invalid port number %u for setting %s of instance %s, must be in the range 1-65535",		\
+		RRR_MSG_0("Invalid port number %" PRIrrrbl " for setting %s of instance %s, must be in the range 1-65535",	\
 			data->target, string, config->name);															\
 		ret = 1; goto out;																					\
 	}} while(0)

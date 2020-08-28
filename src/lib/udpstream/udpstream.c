@@ -742,7 +742,7 @@ static int __rrr_udpstream_handle_received_connect (
 		}
 
 		send_response:
-		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %li\n",
+		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %u\n",
 				stream_id, (stream != NULL ? stream->connect_handle : 0), addr_len);
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
 			RRR_MSG_0("Could not send connect response in __rrr_udpstream_handle_received_connect\n");

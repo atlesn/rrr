@@ -1048,7 +1048,7 @@ int rrr_socket_sendto_nonblock (
 		goto out;
 	}
 
-	RRR_DBG_7("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete) address length %li\n",
+	RRR_DBG_7("Non-blocking send on fd %i starting, writing %li bytes (where of %li is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
 	if (addr == NULL) {
@@ -1124,7 +1124,7 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
+		RRR_DBG_7("Blocking send on fd %i starting, writing %li bytes (where of %li is complete)\n",
 				fd, size, written_bytes_total);
 		int err;
 		if ((ret = rrr_socket_sendto_nonblock (
@@ -1142,7 +1142,7 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_7("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
+		RRR_DBG_7("Blocking send on fd %i, written bytes total is %li (this round was %li)\n",
 				fd, written_bytes_total, written_bytes);
 	}
 
