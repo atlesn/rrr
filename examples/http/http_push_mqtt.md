@@ -4,7 +4,7 @@
 
 A HTTP server processes request from clients and generates responses.
 In this example, a web browser keeps a connection to the RRR HTTP server open on which it receives push requests.
-The client a normal connection and sends a request, but it does not get a response until some data becomes ready.
+The client opens a normal connection and sends a request, but it does not get a response until some data becomes ready.
 
 Before trying out this example, you might want to look at a [simpler RRR HTTP-server configuration](http_server.md).
 
