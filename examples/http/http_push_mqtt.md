@@ -61,13 +61,13 @@ This example requires having two terminal windows and a browser open.
 * In the browser, open the HTML file from locally on the filesystem (using an URL like `file:///home/...../http_push_mqtt.html`)
 * In the first terminal, run RRR from inside the `examples/http`-directory. We use debuglevel 2 to see what's going on.
 
-	$ rrr -d 2 http_push_mqtt.conf
+	``$ rrr -d 2 http_push_mqtt.conf``
 
 * If a broker is not running on your machine, uncomment the MQTT broker lines in the configuration file
 * When RRR is running and the browser has connected, the connection counter in the browser will increment once every five seconds as the Perl5 program generates empty responses
 * Use `mosquitto_pub` to publish messages to the MQTT broker.
 
-	$ mosquitto_pub -d -t "push/1" -m "`date`"
+	``$ mosquitto_pub -d -t "push/1" -m "`date`"``
 
 * In the topic, the `1` can be replaced with something else to use another handle.
 * If the handle used in the topic matches the handle used by the client, it will receive the messages immediately
