@@ -14,8 +14,8 @@ Before trying out this example, you might want to look at a [simpler RRR HTTP-se
 
 ## Configuration
 
-The configuration uses the **httpserver**, **mqttclient** and **perl5** modules. The Perl5 program receives
-requests from the HTTP server, but does not generate any responses until it receives some data from the
+The configuration uses the **httpserver**, **mqttclient** and **perl5** modules. A Perl5 program receives
+requests from the HTTP server, but does not generate any responses until it receives some data from an
 MQTT client. A handle is used to distinguish the clients (push receivers) from each other and the clients
 receives only messages addressed to their handle.
 
@@ -34,6 +34,7 @@ The setup consists of four parts:
   * Stores unsent messages coming from **mqttclient**
   * Runs its `source` subroutine on a regular basis to check if anything is to be sent/_pushed_ to the clients cuurently connected
 
+How it works:
 
 * The client (run by the browser) uses a Javascript to connect to the RRR HTTP server. Whenever a connection is complete, it reconnects.
 * **httpserver** receives HTTP requests and finds the `handle` parameter in the GET data
