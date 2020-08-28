@@ -33,6 +33,7 @@ The setup consists of four parts:
   * Keeps track of open connections and their handle IDSs
   * Stores unsent messages coming from **mqttclient**
   * Runs its `source` subroutine on a regular basis to check if anything is to be sent/_pushed_ to the clients cuurently connected
+* A **web broser** runs a Javascript which ensures that a connection to the server is always open
 
 How it works:
 
