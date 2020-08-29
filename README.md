@@ -1,7 +1,7 @@
 ![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr-not-tall.svg)
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/atlesn/rrr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/atlesn/rrr/context:cpp)
-![build master](https://www.goliathdns.no/rrr/build-master.svg)
-![build development](https://www.goliathdns.no/rrr/build-development.svg)
+![Build master](http://www.goliathdns.no/rrr/build-master.svg "Build status master")
+![Build development](http://www.goliathdns.no/rrr/build-development.svg "Build status master")
 
 RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
