@@ -85,7 +85,7 @@ static int main_running = 1;
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
-FSDFSDFDS
+
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
