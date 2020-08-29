@@ -3,7 +3,7 @@
 ![Build master](http://www.goliathdns.no/rrr/build-master.svg?a "Build status master")
 ![Build development](http://www.goliathdns.no/rrr/build-development.svg?a "Build status master")
 
-RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
+RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
 together to retrieve, transmit, modify and save messages.
 
