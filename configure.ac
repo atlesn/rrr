@@ -135,6 +135,9 @@ AS_IF([test "x$enable_auto_ssl" != xno], [
 	AC_MSG_RESULT([no])
 ])
 
+# Force-disable until code is complete
+enable_libressl=no
+
 AC_MSG_CHECKING([for LibreSSL usage])
 AS_IF([test "x$enable_libressl" = xyes], [
 	AC_MSG_RESULT([yes])

@@ -111,3 +111,17 @@ int rrr_net_transport_tls_common_new (
 	out:
 		return ret;
 }
+
+int rrr_net_transport_tls_common_destroy (
+		struct rrr_net_transport_tls *tls
+) {
+	// This will call back into our close() function for each handle
+	rrr_net_transport_common_cleanup((struct rrr_net_transport *) tls);
+
+	RRR_FREE_IF_NOT_NULL(tls->ca_path);
+	RRR_FREE_IF_NOT_NULL(tls->ca_file);
+	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
+	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
+
+	return 0;
+}
