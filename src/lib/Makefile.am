@@ -21,6 +21,9 @@ endif
 if RRR_WITH_OPENSSL
 encryption = rrr_openssl.c
 endif
+if RRR_WITH_OPENSSL_CRYPT
+encryption = rrr_openssl.c
+endif
 
 if RRR_WITH_PYTHON3
 lib_python3 = librrrpython3.la
@@ -69,11 +72,11 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
 
 if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_tls.c
+net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
 
 if RRR_WITH_LIBRESSL
-net_transport_libressl = net_transport/net_transport_libressl.c
+net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}

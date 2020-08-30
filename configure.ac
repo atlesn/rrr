@@ -3,7 +3,7 @@ AC_DEFINE([RRR_CONFIG_VERSION], "1.11-3", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 11, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 3, [Revision number])
-AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
+AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
 AC_DEFINE([RRR_MESSAGE_MIME_TYPE], "application/rrr-message", [MIME type of RRR message])
@@ -47,7 +47,10 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
-AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable SSL/TLS support in network modules])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
+AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
+AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
+AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
+AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
@@ -177,11 +180,22 @@ AS_IF([test "x$enable_openssl" = xyes && test "x$enable_libressl" = xyes ], [
 	AC_MSG_RESULT([yes])
 ])
 
+AC_MSG_CHECKING([for LibreSSL/OpenSSL common cryptography functions])
+AS_IF([test "x$enable_encryption" != "xno" ], [
+	AC_MSG_RESULT([yes])
+	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
+	AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
+], [
+	AC_MSG_RESULT([not enabled])
+])
+
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
+SHELL_VARS_EXPORT([RRR_WITH_OPENSSL_CRYPT], $enable_openssl_crypt)
 SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $enable_libressl)
 SHELL_VARS_EXPORT([RRR_WITH_AUTO_SSL], $enable_auto_ssl)
 
 AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_openssl" != xno])
+AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 

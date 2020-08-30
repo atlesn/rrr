@@ -28,9 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "net_transport.h"
-#include "net_transport_tls.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
+
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+#	include "net_transport_tls.h"
+#endif
 
 #include "../log.h"
 #include "../util/posix.h"
@@ -333,7 +336,7 @@ int rrr_net_transport_new (
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
-#ifdef RRR_WITH_OPENSSL
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
