@@ -21,7 +21,7 @@ dnl OpenBSD check for egcc
 AC_CHECK_PROG([EGCC], egcc, egcc)
 AC_MSG_CHECKING([for OpenBSD EGCC])
 AS_IF([test "x${EGCC}" != "x"], [
-       	AS_IF([test "x${CC}" != "x" ], [
+		AS_IF([test "x${CC}" != "x" ], [
 		AC_MSG_RESULT([found, but CC was already set to something (else)])
 	], [
 		CC=${EGCC}
@@ -47,7 +47,7 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
-AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable OpenSSL/TLS support in network modules])], [enable_encryption=no], [enable_encryption=yes])
+AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable SSL/TLS support in network modules])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
@@ -86,7 +86,6 @@ SHELL_VARS_INIT([variables.sh])
 
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
-SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_encryption)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
@@ -97,7 +96,6 @@ AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
-AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
@@ -109,37 +107,83 @@ AM_CONDITIONAL([RRR_WITH_FREEBSD_INPUT], [test "x$have_freebsd_input" != xno])
 
 AC_MSG_CHECKING([for Linux-style input device headers])
 AS_IF([test "x$have_linux_input" = xno], [
-       AC_MSG_RESULT([no])
+	AC_MSG_RESULT([no])
 ], [
-       AC_MSG_RESULT([yes])
-       AC_DEFINE([RRR_WITH_LINUX_INPUT], [1], [Enable Linux-style input device control])
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_LINUX_INPUT], [1], [Enable Linux-style input device control])
 ])
 
 AC_MSG_CHECKING([for FreeBSD-style input device headers])
 AS_IF([test "x$have_freebsd_input" = xno], [
-       AC_MSG_RESULT([no])
+	AC_MSG_RESULT([no])
 ], [
-       AC_MSG_RESULT([yes])
-       AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
+])
+
+CHECK_LIBRESSL_LIBTLS
+
+AC_MSG_CHECKING([for automatic LibreSSL/OpenSSL selection])
+AS_IF([test "x$enable_auto_ssl" != xno], [
+	AC_MSG_RESULT([yes])
+	AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" != "x"],[ enable_libressl=yes ])
+	AC_CHECK_HEADERS([openssl/err.h], [ enable_openssl=yes ], [])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for LibreSSL usage])
+AS_IF([test "x$enable_libressl" = xyes], [
+	AC_MSG_RESULT([yes])
+	AS_IF([test "x$HAVE_LIBRESSL_LIBTLS" = "x"],[
+		AC_MSG_ERROR([LibreSSL usage requested but libtls was not found])
+	])
+	AC_DEFINE([RRR_WITH_LIBRESSL], [1], [Enable encryption in network modules with LibreSSL])
+], [
+	AC_MSG_RESULT([Not compiling with LibreSSL])
+])
+
+AC_MSG_CHECKING([for LibreSSL overrides OpenSSL])
+AS_IF([test "x$enable_auto_ssl" != "xno" && test "x$enable_openssl" = "xyes" && test "x$enable_libressl" = "xyes" ], [
+	AC_MSG_RESULT([yes])
+	enable_openssl=no
+], [
+	AC_MSG_RESULT([no])
 ])
 
 AC_MSG_CHECKING([for OpenSSL usage])
-AS_IF([test "x$enable_encryption" = xno], [
-       AC_MSG_RESULT([Not compiling with OpenSSL])
-], [
-       AC_MSG_RESULT([yes])
-       AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules])
-       AX_CHECK_OPENSSL([], [
-               AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
-       ])
-       AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+AS_IF([test "x$enable_openssl" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules with OpenSSL])
+	AX_CHECK_OPENSSL([], [
+		AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
+	])
+	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
 # Only version >=1.1 supported
-#       AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
-       AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
-       OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
-       AC_SUBST([OPENSSL_CFLAGS_COMPAT])
-       AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+#	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
+	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
+	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
+	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+], [
+	AC_MSG_RESULT([Not compiling with OpenSSL])
 ])
+
+AC_MSG_CHECKING([only one SSL/TLS library was chosen])
+AS_IF([test "x$enable_openssl" = xyes && test "x$enable_libressl" = xyes ], [
+	AC_MSG_RESULT([no])
+	AC_MSG_ERROR([cannot use both OpenSSL and LibreSSL at the same time, make sure auto-selection is not disabled])
+], [
+	AC_MSG_RESULT([yes])
+])
+
+SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
+SHELL_VARS_EXPORT([RRR_WITH_LIBRESSL], $enable_libressl)
+SHELL_VARS_EXPORT([RRR_WITH_AUTO_SSL], $enable_auto_ssl)
+
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_openssl" != xno])
+AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
+AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
@@ -162,7 +206,7 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_CHECKING([Perl5 >= 5.026])
 	if test x"${PERL5_REVISION}" != "x5"; then
 		AC_MSG_RESULT([no])
-		AC_MSG_ERROR("Perl5 is required but not found");
+		AC_MSG_ERROR("Perl5 is required but not found")
 	fi
 	if test ${PERL5_VERSION} -lt 26; then
 		AC_MSG_RESULT([no])

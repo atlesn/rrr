@@ -1,0 +1,14 @@
+AC_DEFUN([CHECK_LIBRESSL_LIBTLS], [
+	for path in /usr/lib /usr/lib/libressl /usr/local/lib /usr/local/lib/libressl; do
+		ldflags_orig=$LDFLAGS
+		LDFLAGS=-L$path
+		AC_CHECK_LIB(tls, tls_init, [ libressl_path=$path ], [])
+		unset ac_cv_lib_tls_tls_init
+		LDFLAGS=$ldflags_orig
+	done
+	if test "x$libressl_path" != "x"; then
+		LIBRESSL_LIBTLS_LDFLAGS=-L$libressl_path
+		HAVE_LIBRESSL_LIBTLS=yes
+		AC_DEFINE(HAVE_LIBRESSL_LIBTLS, [1], [LibreSSL libtls found])
+	fi
+])
