@@ -106,7 +106,7 @@ Note that the array values must be cleared from the message before we add the ra
 We also need to modify the topic since **httpserver** expects **/httpserver/raw/xxx** topics back,
 we simply replace the _request_ word with _raw_.  
 
-To test things out, run `rrr http_perl_server.conf` and use a web browser to access `http://localhost:8000/`.
+To test things out, run `rrr http_server.conf` and use a web browser to access `http://localhost:8000/`.
 You can also try to add some fields in the query string like `http://localhost:8000/?but_did_you_die`.
 Watch the output from RRR as you access the URL.
 
