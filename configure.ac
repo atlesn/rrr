@@ -526,7 +526,7 @@ AS_IF([test "x$enable_runit" = xyes], [
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700 -fPIC -DPIC"
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700 -no-pie"
 AC_SUBST(AM_CFLAGS)
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
