@@ -79,7 +79,7 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
-librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES} ${LIBRESSL_LIBTLS_CFLAGS}
+librrr_la_CFLAGS = ${OPENSSL_INCLUDES} ${LIBRESSL_LIBTLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${LIBRESSL_LIBTLS_LDFLAGS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					version.c configuration.c parse.c settings.c instance_config.c common.c \
