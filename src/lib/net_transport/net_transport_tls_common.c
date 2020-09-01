@@ -115,13 +115,57 @@ int rrr_net_transport_tls_common_new (
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *tls
 ) {
-	// This will call back into our close() function for each handle
-	rrr_net_transport_common_cleanup((struct rrr_net_transport *) tls);
-
 	RRR_FREE_IF_NOT_NULL(tls->ca_path);
 	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
 
+	free(tls);
+
 	return 0;
+}
+
+struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session(void *private_arg) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
+
+	return rrr_read_session_collection_maintain_and_find_or_create (
+			&callback_data->handle->read_sessions,
+			(struct sockaddr *) &ssl_data->sockaddr,
+			ssl_data->socklen
+	);
+}
+
+struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session_with_overshoot (
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+
+	return rrr_read_session_collection_get_session_with_overshoot (
+			&callback_data->handle->read_sessions
+	);
+}
+
+void rrr_net_transport_tls_common_read_remove_read_session (
+		struct rrr_read_session *read_session,
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	rrr_read_session_collection_remove_session(&callback_data->handle->read_sessions, read_session);
+}
+
+int rrr_net_transport_tls_common_read_get_target_size (
+		struct rrr_read_session *read_session,
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
+}
+
+int rrr_net_transport_tls_common_read_complete_callback (
+		struct rrr_read_session *read_session,
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
 }

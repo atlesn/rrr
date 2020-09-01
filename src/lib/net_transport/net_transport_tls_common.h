@@ -23,10 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_TLS_COMMON_H
 
 #include "net_transport.h"
+#include "../ip/ip.h"
 
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/ssl.h>
 #endif
+
+struct rrr_read_session;
 
 struct rrr_net_transport_tls {
 	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_tls);
@@ -37,7 +40,7 @@ struct rrr_net_transport_tls {
 #endif
 
 #ifdef RRR_WITH_LIBRESSL
-	struct tls_config *tls_config;
+	struct tls_config *config;
 #endif
 
 	int flags;
@@ -45,6 +48,22 @@ struct rrr_net_transport_tls {
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
+};
+
+struct rrr_net_transport_tls_data {
+	struct rrr_ip_data ip_data;
+	struct sockaddr_storage sockaddr;
+	socklen_t socklen;
+
+#ifdef RRR_WITH_OPENSSL
+	SSL_CTX *ctx;
+	BIO *web;
+#endif
+
+#ifdef RRR_WITH_LIBRESSL
+	struct tls *ctx;
+#endif
+
 };
 
 int rrr_net_transport_tls_common_new (
@@ -55,9 +74,26 @@ int rrr_net_transport_tls_common_new (
 		const char *ca_file,
 		const char *ca_path
 );
-
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *target
+);
+struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session (
+		void *private_arg
+);
+struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session_with_overshoot (
+		void *private_arg
+);
+void rrr_net_transport_tls_common_read_remove_read_session (
+		struct rrr_read_session *read_session,
+		void *private_arg
+);
+int rrr_net_transport_tls_common_read_get_target_size (
+		struct rrr_read_session *read_session,
+		void *private_arg
+);
+int rrr_net_transport_tls_common_read_complete_callback (
+		struct rrr_read_session *read_session,
+		void *private_arg
 );
 
 #endif /* RRR_NET_TRANSPORT_TLS_COMMON_H */

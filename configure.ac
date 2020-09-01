@@ -135,9 +135,6 @@ AS_IF([test "x$enable_auto_ssl" != xno], [
 	AC_MSG_RESULT([no])
 ])
 
-# Force-disable until code is complete
-enable_libressl=no
-
 AC_MSG_CHECKING([for LibreSSL usage])
 AS_IF([test "x$enable_libressl" = xyes], [
 	AC_MSG_RESULT([yes])
@@ -145,6 +142,15 @@ AS_IF([test "x$enable_libressl" = xyes], [
 		AC_MSG_ERROR([LibreSSL usage requested but libtls was not found])
 	])
 	AC_DEFINE([RRR_WITH_LIBRESSL], [1], [Enable encryption in network modules with LibreSSL])
+
+	AC_MSG_CHECKING([LibreSSL LDFLAGS])
+	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LDFLAGS])
+
+	AC_MSG_CHECKING([LibreSSL LIBADD])
+	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
+
+	AC_SUBST([LIBRESSL_LIBTLS_LDFLAGS])
+	AC_SUBST([LIBRESSL_LIBTLS_LIBADD])
 ], [
 	AC_MSG_RESULT([Not compiling with LibreSSL])
 ])

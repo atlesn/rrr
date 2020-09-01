@@ -80,7 +80,7 @@ net_transport_libressl = net_transport/net_transport_libressl.c net_transport/ne
 endif
 
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
-librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
+librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${LIBRESSL_LIBTLS_LDFLAGS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c array.c array_tree.c \
@@ -140,4 +140,4 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_posix}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD =  ${libadd_all}
+librrr_la_LIBADD =  ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS}

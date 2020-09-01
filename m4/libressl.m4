@@ -7,8 +7,9 @@ AC_DEFUN([CHECK_LIBRESSL_LIBTLS], [
 		LDFLAGS=$ldflags_orig
 	done
 	if test "x$libressl_path" != "x"; then
-		LIBRESSL_LIBTLS_LDFLAGS=-L$libressl_path
 		HAVE_LIBRESSL_LIBTLS=yes
 		AC_DEFINE(HAVE_LIBRESSL_LIBTLS, [1], [LibreSSL libtls found])
+		LIBRESSL_LIBTLS_LDFLAGS="-L$libressl_path -Wl,-rpath,$libressl_path"
+		LIBRESSL_LIBTLS_LIBADD="-ltls"
 	fi
 ])

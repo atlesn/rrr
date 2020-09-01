@@ -46,16 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
 
-struct rrr_net_transport_openssl_ssl_data {
-	SSL_CTX *ctx;
-	BIO *web;
-	struct rrr_ip_data ip_data;
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
-	int handshake_complete;
-};
 struct in6_addr;
-static void __rrr_net_transport_openssl_ssl_data_destroy (struct rrr_net_transport_openssl_ssl_data *ssl_data) {
+
+static void __rrr_net_transport_openssl_ssl_data_destroy (struct rrr_net_transport_tls_data *ssl_data) {
 	if (ssl_data != NULL) {
 /*		if (ssl_data->out != NULL) {
 			BIO_free(ssl_data->out);
@@ -114,8 +107,8 @@ static int __rrr_net_transport_openssl_verify_always_ok (X509_STORE_CTX *x509, v
 	return 1;
 }
 
-struct rrr_net_transport_openssl_ssl_data *__rrr_net_transport_openssl_ssl_data_new (void) {
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = NULL;
+struct rrr_net_transport_tls_data *__rrr_net_transport_openssl_ssl_data_new (void) {
+	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
 	if ((ssl_data = malloc(sizeof(*ssl_data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_ssl_data_new \n");
@@ -216,7 +209,7 @@ static int __rrr_net_transport_openssl_new_ctx (
 }
 
 struct rrr_net_transport_openssl_connect_locked_callback_data {
-	struct rrr_net_transport_openssl_ssl_data *ssl_data;
+	struct rrr_net_transport_tls_data *ssl_data;
 	unsigned int port;
 	const char *host;
 };
@@ -230,7 +223,7 @@ static int __rrr_net_transport_openssl_connect_locked_callback (
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) handle->transport;
 
 	struct rrr_net_transport_openssl_connect_locked_callback_data *callback_data = arg;
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = callback_data->ssl_data;
+	struct rrr_net_transport_tls_data *ssl_data = callback_data->ssl_data;
 
 	if (__rrr_net_transport_openssl_new_ctx (
 			&ssl_data->ctx,
@@ -288,8 +281,6 @@ static int __rrr_net_transport_openssl_connect_locked_callback (
 		ret = 1;
 		goto out;
 	}
-	
-	ssl_data->handshake_complete = 1;
 
 	X509 *cert = SSL_get_peer_certificate(ssl);
 	if (cert != NULL) {
@@ -334,7 +325,7 @@ static int __rrr_net_transport_openssl_connect (
 
 	int ret = 0;
 
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = NULL;
+	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_DBG_1("Could not create TLS connection to %s:%u\n", host, port);
@@ -405,7 +396,7 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS
 ) {
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = NULL;
+	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
 	int ret = 0;
 
@@ -434,7 +425,6 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 		goto out_free_ssl_data;
 	}
 
-	// Do all initialization inside memory fence
 	memset(ssl_data, '\0', sizeof(*ssl_data));
 
 	ssl_data->ip_data.port = port;
@@ -488,12 +478,12 @@ int __rrr_net_transport_openssl_accept (
 		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
 	struct rrr_ip_accept_data *accept_data = NULL;
-	struct rrr_net_transport_openssl_ssl_data *new_ssl_data = NULL;
+	struct rrr_net_transport_tls_data *new_ssl_data = NULL;
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) listen_handle->transport;
 
 	int ret = 0;
 
-	struct rrr_net_transport_openssl_ssl_data *listen_ssl_data = listen_handle->submodule_private_ptr;
+	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
 
 	if ((ret = rrr_ip_accept(&accept_data, &listen_ssl_data->ip_data, "net_transport_tls", 0)) != 0) {
 		RRR_MSG_0("Error while accepting connection in TLS server\n");
@@ -590,40 +580,6 @@ int __rrr_net_transport_openssl_accept (
 		return ret;
 }
 
-static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_with_overshoot(void *private_arg) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-
-	return rrr_read_session_collection_get_session_with_overshoot (
-			&callback_data->handle->read_sessions
-	);
-}
-
-static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(void *private_arg) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = callback_data->handle->submodule_private_ptr;
-
-	return rrr_read_session_collection_maintain_and_find_or_create (
-			&callback_data->handle->read_sessions,
-			(struct sockaddr *) &ssl_data->sockaddr,
-			ssl_data->socklen
-	);
-}
-
-static void __rrr_net_transport_tls_read_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	rrr_read_session_collection_remove_session(&callback_data->handle->read_sessions, read_session);
-}
-
-static int __rrr_net_transport_tls_read_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
-}
-
-static int __rrr_net_transport_tls_read_complete_callback(struct rrr_read_session *read_session, void *private_arg) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
-}
-
 static int __rrr_net_transport_tls_read_read (
 		char *buf,
 		ssize_t *read_bytes,
@@ -631,7 +587,7 @@ static int __rrr_net_transport_tls_read_read (
 		void *private_arg
 ) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = callback_data->handle->submodule_private_ptr;
+	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
 
 	int ret = RRR_READ_OK;
 
@@ -663,26 +619,6 @@ static int __rrr_net_transport_openssl_read_message (
 
 	*bytes_read = 0;
 
-//	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
-
-	// Try only once to avoid blocking on bad clients
-/*	while (ssl_data->handshake_complete == 0) {
-		if (BIO_do_handshake(ssl_data->web) != 1) {
-			if (ERR_peek_last_error() != 0 || BIO_should_retry(ssl_data->web) != 1) {
-				RRR_SSL_ERR("Could not do handshake with remote in TLS connection\n");
-				ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
-				goto out;
-			}
-			else if (--read_attempts == 0) {
-				ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
-				goto out;
-			}
-		}
-		else {
-			ssl_data->handshake_complete = 1;
-		}
-	}*/
-
 	struct rrr_net_transport_read_callback_data read_callback_data = {
 		handle,
 		get_target_size,
@@ -698,12 +634,12 @@ static int __rrr_net_transport_openssl_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
-				__rrr_net_transport_tls_read_get_target_size,
-				__rrr_net_transport_tls_read_complete_callback,
+				rrr_net_transport_tls_common_read_get_target_size,
+				rrr_net_transport_tls_common_read_complete_callback,
 				__rrr_net_transport_tls_read_read,
-				__rrr_net_transport_tls_read_get_read_session_with_overshoot,
-				__rrr_net_transport_tls_read_get_read_session,
-				__rrr_net_transport_tls_read_remove_read_session,
+				rrr_net_transport_tls_common_read_get_read_session_with_overshoot,
+				rrr_net_transport_tls_common_read_get_read_session,
+				rrr_net_transport_tls_common_read_remove_read_session,
 				NULL,
 				&read_callback_data
 		);
@@ -731,7 +667,7 @@ static int __rrr_net_transport_openssl_send (
 	const void *data,
 	ssize_t size
 ) {
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
 
 	*sent_bytes = 0;
 
@@ -752,7 +688,7 @@ static int __rrr_net_transport_openssl_send (
 static int __rrr_net_transport_openssl_poll (
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_net_transport_openssl_ssl_data *ssl_data = handle->submodule_private_ptr;
+	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
 
 	int fd = BIO_get_fd(ssl_data->web, NULL);
 	if (fd < 0) {
