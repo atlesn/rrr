@@ -51,7 +51,7 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 }
 
 static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
 	int fd = *((int*) arg);
 

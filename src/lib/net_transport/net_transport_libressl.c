@@ -96,7 +96,7 @@ struct rrr_net_transport_libressl_connect_callback_data {
 };
 
 int __rrr_net_transport_libressl_connect_callback (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_libressl_connect_callback_data *callback_data = arg;
 
@@ -213,7 +213,7 @@ struct rrr_net_transport_libressl_bind_and_listen_callback_data {
 };
 
 static int __rrr_net_transport_libressl_bind_and_listen_callback (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_libressl_bind_and_listen_callback_data *callback_data = arg;
 
@@ -315,7 +315,7 @@ struct rrr_net_transport_libressl_accept_callback_data {
 };
 
 int __rrr_net_transport_libressl_accept_callback (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_libressl_accept_callback_data *callback_data = arg;
 

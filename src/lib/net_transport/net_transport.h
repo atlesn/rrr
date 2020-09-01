@@ -125,7 +125,7 @@ struct rrr_net_transport_collection {
 	void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
 	void *callback_final_arg
 
-#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS							\
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS							\
 	void **submodule_private_ptr, int *submodule_private_fd, void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS							\
@@ -194,7 +194,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );
 #endif

@@ -164,7 +164,7 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS_CALLBACK_ARGS),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
