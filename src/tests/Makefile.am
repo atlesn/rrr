@@ -24,7 +24,7 @@ make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/
 make_test_data_CFLAGS = 
 
 send_ip_SOURCES = send_ip.c
-send_ip_CFLAGS = 
+send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR
 
 send_fifo_SOURCES = send_fifo.c
 send_fifo_CFLAGS = ${AM_CFLAGS}
