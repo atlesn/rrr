@@ -1,5 +1,5 @@
 AC_DEFUN([CHECK_LIBRESSL_LIBTLS], [
-	for path in /usr/lib /usr/lib/libressl /usr/local/lib /usr/local/lib/libressl; do
+	for path in /usr/lib /usr/lib64 /usr/lib/libressl /usr/lib64/libressl /usr/local/lib /usr/local/lib64 /usr/local/lib/libressl /usr/local/lib64/libressl; do
 		ldflags_orig=$LDFLAGS
 		LDFLAGS=-L$path
 		AC_CHECK_LIB(tls, tls_init, [ libressl_path=$path ], [])
