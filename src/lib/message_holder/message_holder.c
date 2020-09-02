@@ -251,7 +251,7 @@ int rrr_msg_holder_address_matches (
 		const struct rrr_msg_holder *b
 ) {
 	if (	 a->addr_len == b->addr_len &&
-			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len)) &&
+			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len) == 0) &&
 			 a->protocol == b->protocol
 	) {
 		return 1;
