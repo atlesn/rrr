@@ -28,16 +28,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "net_transport.h"
-#include "net_transport_tls.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
 
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+#	include "net_transport_tls.h"
+#endif
+
 #include "../log.h"
-#include "../posix.h"
-#include "../rrr_time.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
+
+#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_TRYLOCK() 	\
+	pthread_mutex_trylock(&collection->lock)
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK() 	\
 	pthread_mutex_unlock(&collection->lock)
@@ -45,11 +51,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_HANDLE_TRYLOCK(handle,ctx)	\
 	pthread_mutex_trylock(&((handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_LOCK(handle,ctx)		\
-	pthread_mutex_lock(&((handle)->lock_))
+#define RRR_NET_TRANSPORT_HANDLE_LOCK(_handle,ctx)		\
+	pthread_mutex_lock(&((_handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle,ctx)		\
-	pthread_mutex_unlock(&((handle)->lock_))
+#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(_handle,ctx)	\
+	pthread_mutex_unlock(&((_handle)->lock_))
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_and_lock (
 		struct rrr_net_transport *transport,
@@ -101,58 +107,52 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		int handle,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
+		int (*submodule_callback)(void **submodule_private_ptr, int *submodule_private_fd, void *arg),
+		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	int ret = 0;
 
 	struct rrr_net_transport_handle *new_handle = NULL;
-	pthread_mutexattr_t mutexattr;
-
-	if (pthread_mutexattr_init(&mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_create_and_push_return_locked\n");
-		ret = 1;
-		goto out;
-
-	}
-
-	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("pthread_mutexattr_settype failed in in __rrr_net_transport_handle_create_and_push_return_locked\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
-
-	}
 
 	if ((new_handle = malloc(sizeof(*new_handle))) == NULL) {
 		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(new_handle, '\0', sizeof(*new_handle));
 
-	if (pthread_mutex_init(&new_handle->lock_, &mutexattr) != 0) {
+	if (rrr_posix_mutex_init(&new_handle->lock_, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		goto out_free;
 	}
 
 	RRR_NET_TRANSPORT_HANDLE_LOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 	new_handle->transport = transport;
-	new_handle->handle = handle;
 	new_handle->mode = mode;
-	new_handle->submodule_private_ptr = submodule_private_ptr;
-	new_handle->submodule_private_fd = submodule_private_fd;
+
+	// NOTE : This shallow member may be accessed with only collection lock held
+	new_handle->handle = handle;
+
+	if ((ret = submodule_callback (
+			&new_handle->submodule_private_ptr,
+			&new_handle->submodule_private_fd,
+			submodule_callback_arg
+	)) != 0) {
+		RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
+		goto out_destroy_mutex;
+	}
 
 	RRR_LL_APPEND(collection, new_handle);
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 
-	goto out_destroy_mutexattr;
+	goto out;
+	out_destroy_mutex:
+		pthread_mutex_destroy(&new_handle->lock_);
 	out_free:
 		free(new_handle);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&mutexattr);
 	out:
 		return ret;
 }
@@ -164,8 +164,8 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
@@ -223,8 +223,8 @@ int rrr_net_transport_handle_allocate_and_add (
 			transport,
 			new_handle_id,
 			mode,
-			submodule_private_ptr,
-			submodule_private_fd
+			submodule_callback,
+			submodule_callback_arg
 	)) != 0) {
 		ret = 1;
 		goto out;
@@ -279,22 +279,27 @@ int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
 ) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
 	struct rrr_net_transport_handle_close_tag_node *node = malloc(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_handle_close_tag_list_push\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 	memset(node, '\0', sizeof(*node));
 
 	node->transport_handle = handle;
 
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	RRR_LL_APPEND(&transport->handles.close_tags, node);
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
-	return 0;
+	out:
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+	return ret;
 }
 
 static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
@@ -331,19 +336,6 @@ int rrr_net_transport_new (
 	*result = NULL;
 
 	struct rrr_net_transport *new_transport = NULL;
-	pthread_mutexattr_t mutexattr;
-
-	if (pthread_mutexattr_init(&mutexattr) != 0) {
-		RRR_MSG_0("Could not initialize lock in rrr_net_transport_new\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
-		RRR_MSG_0("pthread_mutexattr_settype failed in in rrr_net_transport_new\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
-	}
 
 	switch (config->transport_type) {
 		case RRR_NET_TRANSPORT_PLAIN:
@@ -355,7 +347,7 @@ int rrr_net_transport_new (
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
-#ifdef RRR_WITH_OPENSSL
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
@@ -372,13 +364,12 @@ int rrr_net_transport_new (
 			break;
 	};
 
-	if (new_transport == NULL) {
-		RRR_MSG_0("Could not allocate transport method in rrr_net_transport_new\n");
-		ret = 1;
-		goto out_destroy_mutexattr;
+	if (ret != 0) {
+		RRR_MSG_0("Could not create transport method in rrr_net_transport_new\n");
+		goto out;
 	}
 
-	if (pthread_mutex_init (&new_transport->handles.lock, &mutexattr) != 0) {
+	if (rrr_posix_mutex_init (&new_transport->handles.lock, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize handle collection lock in rrr_net_transport_new\n");
 		ret = 1;
 		goto out_destroy;
@@ -391,18 +382,22 @@ int rrr_net_transport_new (
 	goto out;
 	out_destroy:
 		new_transport->methods->destroy(new_transport);
-		free(new_transport); // Must also free, destroy does not do that
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&mutexattr);
 	out:
 		return ret;
 }
 
 void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	rrr_net_transport_maintenance(transport);
-	transport->methods->destroy(transport);
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	rrr_net_transport_common_cleanup(transport);
+
 	pthread_mutex_destroy(&transport->handles.lock);
-	free(transport);
+
+	// The matching destroy function of the new function which allocated
+	// memory for the transport will free()
+	transport->methods->destroy(transport);
 }
 
 void rrr_net_transport_destroy_void (void *arg) {
@@ -411,6 +406,12 @@ void rrr_net_transport_destroy_void (void *arg) {
 
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection) {
 	RRR_LL_DESTROY(collection, struct rrr_net_transport, rrr_net_transport_destroy(node));
+}
+
+void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport);
+		rrr_net_transport_common_cleanup(node);
+	RRR_LL_ITERATE_END();
 }
 
 void rrr_net_transport_ctx_handle_close_while_locked (
@@ -453,15 +454,15 @@ int rrr_net_transport_handle_close (
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_handle_close");
+		// We are allowed to read the handle integer without handle lock
+		// held. When the handle integer is written, the collection lock
+		// is held. We should also be the same thread as the one who wrote it.
 		if (node->handle == transport_handle) {
+			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_handle_close");
 			ret = __rrr_net_transport_handle_destroy(node, 1);
 			did_destroy = 1;
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
-		}
-		else {
-			RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_handle_close");
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
@@ -491,21 +492,23 @@ static int __rrr_net_transport_connect (
 		RRR_BUG("port was 0 in rrr_net_transport_connect_and_destroy_after_callback\n");
 	}
 
+	int ret = 0;
+
 	int transport_handle = 0;
 	struct sockaddr_storage addr;
 	socklen_t socklen = sizeof(addr);
 
 	// TODO : Distinguish between soft and hard connect errors
 
-	if (transport->methods->connect (
+	if ((ret = transport->methods->connect (
 			&transport_handle,
 			(struct sockaddr *) &addr,
 			&socklen,
 			transport,
 			port,
 			host
-	) != 0) {
-		return 1;
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_connect");
@@ -519,7 +522,8 @@ static int __rrr_net_transport_connect (
 		rrr_net_transport_handle_close (transport, transport_handle);
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 int rrr_net_transport_connect_and_close_after_callback (
@@ -544,13 +548,18 @@ int rrr_net_transport_connect (
 	return __rrr_net_transport_connect (transport, port, host, callback, callback_arg, 0);
 }
 
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->poll(handle);
+}
+
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
 		int read_attempts,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -568,7 +577,6 @@ int rrr_net_transport_ctx_read_message (
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,
-			read_flags,
 			get_target_size,
 			get_target_size_arg,
 			complete_callback,
@@ -608,8 +616,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		}
 	}
 
-	uint64_t size_tmp = (size >= 0 ? size : 0);
-	if (written_bytes != size_tmp) {
+	uint64_t size_tmp_u = size;
+	if (written_bytes != size_tmp_u) {
 		RRR_MSG_1("Not all bytes were sent %li < %li in rrr_net_transport_ctx_send_nonblock\n", written_bytes, size);
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
@@ -642,7 +650,8 @@ int rrr_net_transport_ctx_send_blocking (
 				size - written_bytes_total
 		)) != 0) {
 			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				RRR_MSG_0("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				// Hard error means connection closed, not that serious
+				ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 				break;
 			}
 		}
@@ -650,6 +659,12 @@ int rrr_net_transport_ctx_send_blocking (
 	} while (ret != 0);
 
 	return ret;
+}
+
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
+) {
+	return (handle->application_private_ptr != NULL);
 }
 
 void rrr_net_transport_ctx_handle_application_data_bind (
@@ -693,6 +708,8 @@ int rrr_net_transport_iterate_with_callback (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
+
+//		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
 
 		if (mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && mode != node->mode) {
 			goto unlock;

@@ -23,12 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <strings.h>
 
+#include "../log.h"
+
 #include "http_client_config.h"
 
 #include "../instance_config.h"
 #include "../map.h"
-#include "../log.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 void rrr_http_client_config_cleanup (
 		struct rrr_http_client_config *data
@@ -44,12 +45,13 @@ void rrr_http_client_config_cleanup (
 
 int rrr_http_client_config_parse (
 		struct rrr_http_client_config *data,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint
+		int enable_endpoint,
+		int do_raw_mode
 ) {
 	int ret = 0;
 
@@ -106,7 +108,7 @@ int rrr_http_client_config_parse (
 		data->method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
 	}
 	else {
-		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", config->name);
+		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", data->method_str, config->name);
 		ret = 1;
 		goto out;
 	}
@@ -130,7 +132,8 @@ int rrr_http_client_config_parse (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_fields");
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
+		ret &= ~(RRR_SETTING_NOT_FOUND);
+		if (ret != 0) {
 			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 			ret = 1;
 			goto out;
@@ -140,21 +143,38 @@ int rrr_http_client_config_parse (
 	if (enable_fixed) {
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_tags");
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
-			if (ret != RRR_SETTING_NOT_FOUND) {
+			ret &= ~(RRR_SETTING_NOT_FOUND);
+			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 				ret = 1;
 				goto out;
 			}
-			ret = 0;
 		}
 
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_fields");
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
-			if (ret != RRR_SETTING_NOT_FOUND) {
+			ret &= ~(RRR_SETTING_NOT_FOUND);
+			if (ret != 0) {
 				RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 				ret = 1;
 				goto out;
 			}
+		}
+	}
+
+	if (do_raw_mode) {
+		const char *check[] = { "_tags", "_fields", "_fixed_tags", "_fixed_fields", "_endpoint", "_method" };
+
+		for (size_t i = 0; i < sizeof(check) / sizeof(check[0]); i++) {
+			RRR_INSTANCE_CONFIG_STRING_SET(check[i]);
+			if (RRR_INSTANCE_CONFIG_EXISTS(config_string)) {
+				RRR_MSG_0("%s cannot be specified while raw send mode is active in instance %s\n", config_string, config->name);
+				ret = 1;
+			}
+		}
+
+		if (ret != 0) {
+			goto out;
 		}
 	}
 

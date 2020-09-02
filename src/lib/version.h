@@ -19,4 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_VERSION_H
+#define RRR_VERSION_H
+
 int rrr_verify_library_build_timestamp(long long int timestamp);
+
+#endif /* RRR_VERSION_H */

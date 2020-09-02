@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONFIG_H
 
 #include <pthread.h>
+#include <inttypes.h>
 
 #define RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX(str) \
 	const char *rrr_default_log_prefix = str
@@ -43,6 +44,7 @@ struct rrr_global_config {
 	unsigned int no_thread_restart;
 	unsigned int rfc5424_loglevel_output;
 	const char *log_prefix;
+	uint64_t message_ttl_us;
 };
 
 void rrr_config_set_debuglevel_orig(void);
@@ -52,7 +54,8 @@ void rrr_config_init (
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
-		unsigned int rfc5424_loglevel_output
+		unsigned int rfc5424_loglevel_output,
+		uint64_t message_ttl_s
 );
 void rrr_config_set_log_prefix (
 		const char *log_prefix

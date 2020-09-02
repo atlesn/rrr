@@ -17,8 +17,8 @@ input_data
 
 # debian
 /debian/rrr/
-/debian/rrr.debhelper.log
-/debian/rrr.substvars
+/debian/*.debhelper.log
+/debian/*.substvars
 /debian/autoconf.after
 /debian/autoconf.before
 /debian/autoreconf.after
@@ -30,6 +30,13 @@ input_data
 /debian/.debhelper/
 /debian/*.debhelper
 /debian/tmp/
+/debian/librrr-dev/
+/debian/librrr1/
+/debian/rrr-mod-mysql/
+/debian/rrr-mod-mariadb/
+/debian/rrr-mod-perl5/
+/debian/rrr-mod-python3/
+
 # http://www.gnu.org/software/automake
 
 /conftest
@@ -62,6 +69,10 @@ variables.sh
 *.gcno
 /lcov
 /main_coverage.info
+
+# valgrind
+vgcore.*
+massif.*
 
 # perl
 blib

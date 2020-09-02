@@ -26,17 +26,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
+#include "../lib/log.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/buffer.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
-#include "../lib/log.h"
 
 struct raw_data {
 	int message_count;
@@ -44,30 +45,29 @@ struct raw_data {
 };
 
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_thread_data *thread_data = arg;
+	struct rrr_instance_runtime_data *thread_data = arg;
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_array array_tmp = {0};
+	char *topic_tmp = NULL;
 
 	int ret = 0;
 
-	struct rrr_message *reading = entry->message;
+	struct rrr_msg_msg *reading = entry->message;
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
 	if (raw_data->print_data != 0) {
-		ssize_t print_length = MSG_DATA_LENGTH(reading);
-		if (print_length > 100) {
-			print_length = 100;
-		}
-		char buf[print_length + 1];
-		memcpy(buf, MSG_DATA_PTR(reading), print_length);
-		buf[print_length] = '\0';
-
 		// Use high debuglevel to force suppression of messages in journal module
 
-		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
-				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
+		if (rrr_msg_msg_topic_get(&topic_tmp, reading) != 0 ) {
+			RRR_MSG_0("Error while getting topic from message in raw_poll_callback\n");
+			ret = 1;
+			goto out;
+		}
+
+		RRR_DBG_2("Raw %s: Received data of size %lu with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data), MSG_DATA_LENGTH(reading), reading->timestamp, topic_tmp);
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
@@ -88,8 +88,9 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	raw_data->message_count++;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -97,7 +98,7 @@ void data_init(struct raw_data *data) {
 	memset (data, '\0', sizeof(*data));
 }
 
-int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
+int parse_config (struct raw_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 	int yesno = 0;
 
@@ -122,7 +123,7 @@ int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
 }
 
 static void *thread_entry_raw (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 
 	data_init(raw_data);
@@ -130,7 +131,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Raw thread data is %p\n", thread_data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
@@ -140,20 +141,23 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
-
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
 	uint64_t total_counter = 0;
 	uint64_t timer_start = rrr_time_get_64();
 	int ticks = 0;
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_thread_update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread) != 1) {
+		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, raw_poll_callback, 50) != 0) {
+		int prev_message_count = raw_data->message_count;
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
 			RRR_MSG_ERR("Error while polling in raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
+		}
+
+		if (prev_message_count == raw_data->message_count) {
+			rrr_posix_usleep(50000); // 50 ms
 		}
 
 		uint64_t timer_now = rrr_time_get_64();
@@ -175,23 +179,16 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 		ticks++;
 	}
 
-	RRR_DBG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
-
-	RRR_DBG_1 ("Thread raw %p instance %s exiting 2 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+	RRR_DBG_1 ("Thread raw %p instance %s exiting state is %i\n",
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
 
 	pthread_exit(0);
-}
-
-static int test_config (struct rrr_instance_config *config) {
-	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_raw,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };
@@ -201,7 +198,7 @@ static const char *module_name = "raw";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;

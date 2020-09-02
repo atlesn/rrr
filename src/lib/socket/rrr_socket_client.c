@@ -29,12 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_constants.h"
 
 #include "../rrr_strerror.h"
-#include "../posix.h"
 #include "../log.h"
-#include "../linked_list.h"
 #include "../read.h"
-#include "../rrr_time.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client
@@ -212,7 +212,6 @@ int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		int read_flags,
 		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -236,7 +235,6 @@ int rrr_socket_client_collection_read (
 				read_step_initial,
 				read_step_max_size,
 				0, // No max size
-				read_flags,
 				read_flags_socket,
 				get_target_size,
 				get_target_size_arg,

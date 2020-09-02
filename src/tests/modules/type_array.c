@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 #include <sys/socket.h>
@@ -27,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mysql/mysql.h>
 #endif
 
+#include "../../lib/log.h"
+
 #include "type_array.h"
 #include "../test.h"
 #include "../../lib/array.h"
@@ -34,21 +37,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_mysql.h"
 #endif
 
-#include "../../lib/socket/rrr_socket.h"
 #include "../../lib/instances.h"
+#include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
-#include "../../lib/ip.h"
-#include "../../lib/ip_buffer_entry.h"
-#include "../../lib/messages.h"
-#include "../../lib/rrr_endian.h"
+#include "../../lib/message_holder/message_holder.h"
+#include "../../lib/message_holder/message_holder_struct.h"
+#include "../../lib/messages/msg_msg.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
-#include "../../lib/log.h"
+#include "../../lib/ip/ip.h"
+#include "../../lib/socket/rrr_socket.h"
+#include "../../lib/util/rrr_endian.h"
 
 struct rrr_test_result {
 	int result;
-	struct rrr_message *message;
 };
 
 struct rrr_test_callback_data {
@@ -77,7 +80,7 @@ struct test_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct rrr_message msg;
+	struct rrr_msg_msg msg;
 } __attribute__((packed));
 
 struct test_final_data {
@@ -98,7 +101,7 @@ struct test_final_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct rrr_message msg;
+	struct rrr_msg_msg msg;
 };
 
 int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -106,45 +109,57 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// does not send thread_data struct but test_data struct.
 	struct rrr_test_callback_data *callback_data = arg;
 	struct rrr_test_result *result = callback_data->test_result;
-
-	result->message = NULL;
-	result->result = 1;
-
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
 	result->result = 2;
 
-	result->message = message;
-	entry->message = NULL;
-
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 
 	return 0;
 }
 
 int test_do_poll_loop (
-		struct rrr_instance_thread_data *self_thread_data,
-		struct rrr_instance_thread_data *output_thread_data,
+		struct rrr_instance *self,
+		struct rrr_instance *output,
+		struct rrr_message_broker *broker,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		struct rrr_test_callback_data *callback_data
 ) {
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
+	rrr_message_broker_costumer_handle *handle = NULL;
+
+	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
+
+	while (rrr_time_get_64() < limit) {
+		if ((handle = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output))) != NULL) {
+			break;
+		}
+		rrr_posix_usleep(50000);
+	}
+
+	if (handle == NULL) {
+		TEST_MSG("Could not find message broker handle for output '%s' after 2 seconds in test_do_poll_loop\n",
+				INSTANCE_M_NAME(output));
+		ret = 1;
+		goto out;
+	}
 
 	// Poll from output
-	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
-		if (rrr_thread_check_encourage_stop(self_thread_data->thread) == 1) {
+	for (int i = 1; i <= 200 && test_result->result != 2; i++) {
+		if (rrr_thread_check_encourage_stop(self->thread) == 1) {
 			break;
 		}
 
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
-				INSTANCE_D_NAME(output_thread_data), i);
+				INSTANCE_M_NAME(output), i);
 
 		ret = rrr_message_broker_poll_delete (
-				INSTANCE_D_BROKER_ARGS(output_thread_data),
+				broker,
+				handle,
 				callback,
 				callback_data,
 				150
@@ -159,12 +174,11 @@ int test_do_poll_loop (
 		if (test_result->result == 3) {
 			// Ignore this message
 			ret = 0;
-			RRR_FREE_IF_NOT_NULL(test_result->message);
 			test_result->result = 1;
 		}
 		else {
 			TEST_MSG("Result of polling from %s: %i\n",
-					INSTANCE_D_NAME(output_thread_data), test_result->result);
+					INSTANCE_M_NAME(output), test_result->result);
 		}
 	}
 
@@ -172,7 +186,7 @@ int test_do_poll_loop (
 	return ret;
 }
 
-int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance_metadata *socket_metadata) {
+int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance *socket_metadata) {
 	char *socket_path = NULL;
 	int ret = 0;
 	int socket_fd = 0;
@@ -183,7 +197,7 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 
-	if (rrr_socket_unix_create_and_connect (
+	if (rrr_socket_unix_connect (
 			&socket_fd,
 			"test_type_array_write_to_socket",
 			socket_path,
@@ -200,8 +214,8 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 	else if (ret >= 0 && ret != sizeof(*data) - 1) {
-		TEST_MSG("Only %i of %lu bytes written in test_type_array_write_to_socket\n",
-				ret, sizeof(*data) - 1);
+		TEST_MSG("Only %i of %llu bytes written in test_type_array_write_to_socket\n",
+				ret, (long long unsigned) sizeof(*data) - 1);
 		ret = 1;
 		goto out;
 	}
@@ -223,7 +237,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_callback_data *callback_data = arg;
 	struct rrr_test_result *result = callback_data->test_result;
 
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	int ret = 0;
 
@@ -273,9 +287,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-			result->message = message;
 			result->result = 2;
-			entry->message = NULL;
 		}
 	}
 	else {
@@ -285,7 +297,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -301,9 +313,9 @@ int test_averager (
 
 	int ret = 0;
 
-	struct rrr_test_result test_result = {0, NULL};
+	struct rrr_test_result test_result = {0};
 
-	struct rrr_instance_metadata *output = rrr_instance_find(instances, output_name);
+	struct rrr_instance *output = rrr_instance_find(instances, output_name);
 	if (output == NULL) {
 		TEST_MSG("Could not find output instances %s in test_averager\n",
 				output_name);
@@ -314,17 +326,17 @@ int test_averager (
 	struct rrr_test_callback_data callback_data = { &test_result, NULL };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
+	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output));
 	ret |= test_do_poll_loop(
-			self_thread_data,
-			output->thread_data,
+			INSTANCE_D_INSTANCE(self_thread_data),
+			output,
+			INSTANCE_D_BROKER(self_thread_data),
 			test_averager_callback,
 			&callback_data
 	);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(test_result.message);
 	return ret;
 }
 
@@ -348,10 +360,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_type_array_callback_data *array_callback_data = callback_data->private_data;
 	const struct rrr_test_function_data *config = array_callback_data->config;
 
-	result->message = NULL;
 	result->result = 1;
 
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	char *str_to_h_tmp = NULL;
 
@@ -395,7 +406,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	rrr_type_length final_length = 0;
+	rrr_length final_length = 0;
 	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		final_length += node->total_stored_length;
 	RRR_LL_ITERATE_END();
@@ -470,7 +481,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		const struct rrr_type_value *value_blob = types[10];
 		if (RRR_TYPE_IS_BLOB(value_blob->definition->type)) {
 			if (value_blob->element_count == 1) {
-				rrr_type_length length_new = value_blob->total_stored_length / 2;
+				rrr_length length_new = value_blob->total_stored_length / 2;
 
 				if (length_new * 2 != value_blob->total_stored_length) {
 					TEST_MSG("Could not split blob field, stored length was not divisible by 2\n");
@@ -555,8 +566,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIi64 ", %" PRIu64 "\n",
 			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
 
-	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
-	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_length blob_a_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_length blob_b_length = types[10]->total_stored_length / types[10]->element_count;
 
 	if (types[10]->element_count != 2) {
 		RRR_MSG_0("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
@@ -648,14 +659,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		rrr_array_clear(&collection);
 		rrr_array_clear(&collection_converted);
 		RRR_FREE_IF_NOT_NULL(str_to_h_tmp);
-		if (ret != 0) {
-		}
-		else {
-			result->message = message;
-			entry->message = NULL;
-		}
-
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_msg_holder_unlock(entry);
 
 		return ret;
 }
@@ -665,9 +669,9 @@ int test_array (
 ) {
 	int ret = 0;
 
-	struct rrr_test_result test_result_1 = {1, NULL};
+	struct rrr_test_result test_result_1 = {1};
 
-	struct rrr_instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	struct rrr_instance *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array\n",
 				output_name);
@@ -678,10 +682,11 @@ int test_array (
 	struct rrr_test_callback_data callback_data = { &test_result_1, &array_callback_data };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
+	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output_1));
 	ret |= test_do_poll_loop(
-			self_thread_data,
-			output_1->thread_data,
+			INSTANCE_D_INSTANCE(self_thread_data),
+			output_1,
+			INSTANCE_D_BROKER(self_thread_data),
 			test_type_array_callback,
 			&callback_data
 	);
@@ -695,7 +700,6 @@ int test_array (
 	ret |= (test_result_1.result != 2);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(test_result_1.message);
 	return ret;
 }
 
@@ -706,9 +710,9 @@ int test_anything (
 
 	int ret = 0;
 
-	struct rrr_test_result test_result_1 = {1, NULL};
+	struct rrr_test_result test_result_1 = {1};
 
-	struct rrr_instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	struct rrr_instance *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array\n",
 				output_name);
@@ -718,10 +722,11 @@ int test_anything (
 	struct rrr_test_callback_data callback_data = { &test_result_1, NULL };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
+	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output_1));
 	ret |= test_do_poll_loop(
-			self_thread_data,
-			output_1->thread_data,
+			INSTANCE_D_INSTANCE(self_thread_data),
+			output_1,
+			INSTANCE_D_BROKER(self_thread_data),
 			test_anything_callback,
 			&callback_data
 	);
@@ -734,7 +739,6 @@ int test_anything (
 	ret |= (test_result_1.result != 2);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(test_result_1.message);
 	return ret;
 }
 
@@ -747,14 +751,14 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 
 	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
-	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	test_result->result = 2;
 
-	test_result->message = message;
-	test_result->result = 0;
-	entry->message = NULL;
+	struct rrr_msg_msg *result_message = entry->message;
+	if (!MSG_IS_TAG(result_message)) {
+		RRR_MSG_0("Message from MySQL was not a TAG message\n");
+	};
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -781,7 +785,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
-		"`rrr_message` blob NOT NULL,"
+		"`rrr_msg_msg` blob NOT NULL,"
 		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";
@@ -834,7 +838,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	return ret;
 }
 
-int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, struct rrr_instance_metadata *mysql) {
+int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, struct rrr_instance *mysql) {
 	int ret = 0;
 
 	memset(data, '\0', sizeof(*data));
@@ -871,11 +875,11 @@ int test_type_array_mysql (
 
 	int ret = 0;
 
-	struct rrr_test_result test_result = {1, NULL};
+	struct rrr_test_result test_result = {1};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_ip_buffer_entry *entry = NULL;
+	struct rrr_msg_holder *entry = NULL;
 
-	struct rrr_instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
+	struct rrr_instance *tag_buffer = rrr_instance_find(instances, output_name);
 
 	if (tag_buffer == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array_mysql_and_network\n",
@@ -884,12 +888,13 @@ int test_type_array_mysql (
 		goto out;
 	}
 
-	struct rrr_instance_metadata *mysql = NULL;
-	RRR_INSTANCE_LOOP(instance, instances) {
+	struct rrr_instance *mysql = NULL;
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
 		if (strcmp(INSTANCE_M_MODULE_NAME(instance), "mysql") == 0) {
 			mysql = instance;
 		}
-	}
+	RRR_LL_ITERATE_END();
 
 	if (mysql == NULL) {
 		TEST_MSG("Could not find any MySQL instance from which to get configuration to setup database in test_type_array_mysql_and_network\n");
@@ -916,33 +921,25 @@ int test_type_array_mysql (
 
 	TEST_MSG("Polling MySQL\n");
 	ret |= test_do_poll_loop(
-			self_thread_data,
-			tag_buffer->thread_data,
+			INSTANCE_D_INSTANCE(self_thread_data),
+			tag_buffer,
+			INSTANCE_D_BROKER(self_thread_data),
 			test_type_array_mysql_and_network_callback,
 			&callback_data
 	);
 	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
 
-	ret = test_result.result;
-	if (ret != 0) {
+	if (test_result.result != 2) {
 		RRR_MSG_0("Result was not OK from test_type_array_mysql_and_network_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	struct rrr_message *result_message = test_result.message;
-	if (!MSG_IS_TAG(result_message)) {
-		RRR_MSG_0("Message from MySQL was not a TAG message\n");
-		ret = 1;
-		goto out;
-	};
-
 	out:
 	test_type_array_mysql_data_cleanup(&mysql_data);
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+		rrr_msg_holder_decref_while_locked_and_unlock(entry);
 	}
-	RRR_FREE_IF_NOT_NULL(test_result.message);
 
 	return ret;
 }

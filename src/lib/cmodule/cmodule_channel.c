@@ -22,21 +22,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
 #include "cmodule_main.h"
 #include "cmodule_defer_queue.h"
 
-#include "../log.h"
-#include "../messages.h"
-#include "../message_addr.h"
-#include "../linked_list.h"
+#include "../messages/msg_msg.h"
+#include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 struct rrr_cmodule_mmap_channel_callback_data {
-	const struct rrr_message_addr *addr_msg;
-	const struct rrr_message *msg;
+	const struct rrr_msg_addr *addr_msg;
+	const struct rrr_msg_msg *msg;
 };
 
 static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
@@ -56,11 +57,13 @@ int rrr_cmodule_channel_send_message (
 		int *retries,
 		struct rrr_mmap_channel *channel,
 		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		unsigned int wait_time_us
 ) {
 	int ret = 0;
+
+	// Note : There are gotos in this function, sorry.
 
 	*sent_total = 0;
 	*retries = 0;
@@ -73,7 +76,7 @@ int rrr_cmodule_channel_send_message (
 	int retry_sleep_start_max_ = 40;
 
 	// Extracted from deferred queue, freed every time before it is used and at out
-	struct rrr_message_addr *message_addr_to_free = NULL;
+	struct rrr_msg_addr *message_addr_to_free = NULL;
 
 	{
 		int count_before_cleanup = RRR_LL_COUNT(deferred_queue);
@@ -111,7 +114,7 @@ int rrr_cmodule_channel_send_message (
 		message_addr = NULL;
 
 		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in __rrr_cmodule_send_message\n");
+			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message pid %i\n", getpid());
 			ret = 0;
 			goto out;
 		}

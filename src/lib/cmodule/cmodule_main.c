@@ -25,23 +25,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <errno.h>
 
+#include "../log.h"
+
 #include "cmodule_defer_queue.h"
 #include "cmodule_main.h"
 
 #include "../rrr_strerror.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
-#include "../message_addr.h"
-#include "../message_log.h"
-#include "../messages.h"
-#include "../log.h"
-#include "../rrr_time.h"
-#include "../posix.h"
+#include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
+#include "../messages/msg_msg.h"
 #include "../fork.h"
 #include "../common.h"
-#include "../ip_buffer_entry.h"
-#include "../gnu.h"
-#include "../macro_utils.h"
+#include "../message_holder/message_holder.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../util/posix.h"
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)															\
 	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
@@ -75,12 +76,12 @@ static int __rrr_cmodule_worker_new (
 
 	memset(worker, '\0', sizeof(*worker));
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_fork, cmodule->mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_parent, cmodule->mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}
@@ -91,7 +92,7 @@ static int __rrr_cmodule_worker_new (
 		goto out_destroy_channel_to_parent;
 	}
 
-	if ((pthread_mutex_init(&worker->pid_lock, NULL)) != 0) {
+	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
 		ret = 1;
 		goto out_free_name;
@@ -218,8 +219,8 @@ struct rrr_cmodule_process_callback_data {
 static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_process_callback_data *callback_data = arg;
 
-	const struct rrr_message *msg = data;
-	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+	const struct rrr_msg_msg *msg = data;
+	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
 		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
@@ -254,9 +255,9 @@ static int __rrr_cmodule_worker_spawn_message (
 ) {
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			&message,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -270,8 +271,8 @@ static int __rrr_cmodule_worker_spawn_message (
 		goto out;
 	}
 
-	struct rrr_message_addr message_addr;
-	rrr_message_addr_init(&message_addr);
+	struct rrr_msg_addr message_addr;
+	rrr_msg_addr_init(&message_addr);
 
 	if ((ret = process_callback(
 			worker,
@@ -308,7 +309,7 @@ static int __rrr_cmodule_worker_loop (
 	};
 
 	// Control stuff
-	uint64_t time_now = rrr_time_get_64();
+	uint64_t time_now = 0;
 	uint64_t next_spawn_time = 0;
 
 	if (worker->config_data->sleep_time_us > worker->config_data->spawn_interval_us) {
@@ -437,8 +438,8 @@ int rrr_cmodule_worker_loop_start (
 		goto out;
 	}
 
-	struct rrr_socket_msg control_msg = {0};
-	rrr_socket_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
+	struct rrr_msg control_msg = {0};
+	rrr_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
@@ -513,23 +514,26 @@ static void __rrr_cmodule_worker_fork_log_hook (
 ) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
-	struct rrr_message_log *message_log = NULL;
+	struct rrr_msg_log *message_log = NULL;
 
-	if (rrr_message_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
+	if (rrr_msg_msg_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
 		goto out;
 	}
 
 	int ret = 0;
-	if ((ret = rrr_mmap_channel_write(
+	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
-			RRR_MSG_0("mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s\n",
-					worker->name);
-			ret = 1;
+			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				worker->name);
+		}
+		else {
+			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				ret, worker->name);
 		}
 	}
 

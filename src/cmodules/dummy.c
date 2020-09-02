@@ -21,9 +21,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "cmodule.h"
 #include "log.h"
-#include "posix.h"
+#include "cmodule.h"
+#include "util/posix.h"
 
 struct dummy_data {
 	char *custom_setting;

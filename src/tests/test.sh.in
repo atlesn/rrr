@@ -24,6 +24,9 @@ RRR_POST_ARGS="$TEST_SOCKET -d 8 -f - -c 1 -a be4#int1,be3#int2,be2s#int3,be1#in
 SEND_IP=./send_ip
 SEND_IP_PORT=2222
 
+SEND_FIFO=./send_fifo
+SEND_FIFO_FILENAME=/tmp/rrr_test_fifo.sock
+
 fail () {
 	echo "Test $1 failed" 1>&2
 	exit 1
@@ -42,6 +45,12 @@ do_send_ip() {
 	sleep 0.3
 	$SEND_IP $SEND_IP_PORT < $TEST_DATA_FILE
 }
+
+do_send_fifo() {
+	echo \$ $SEND_FIFO $SEND_FIFO_FILENAME \< $TEST_DATA_FILE
+	$SEND_FIFO $SEND_FIFO_FILENAME < $TEST_DATA_FILE
+}
+
 
 print_test_header () {
 	echo "============================================="
@@ -79,7 +88,17 @@ do_test_ip() {
 	if test $? -ne 0; then
 		fail $conf 
 	fi
-	
+}
+
+do_test_fifo() {
+	conf=$1
+	print_test_header FIFO $conf
+ 	do_send_fifo &
+	echo \$ $TEST $conf
+	$TEST $conf
+	if test $? -ne 0; then
+		fail $conf 
+	fi
 }
 
 $TEST_DATA_GENERATOR $TEST_DATA_FILE
@@ -94,6 +113,8 @@ do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
 do_test_ip test_ip.conf
+
+do_test_fifo test_fifo.conf
 
 do_test_socket test_socket.conf
 do_test_socket test_http.conf

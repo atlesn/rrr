@@ -52,7 +52,7 @@ int main (int argc, char **argv) {
 	}
 
 	char buf[1024];
-	int bytes = read(STDIN_FILENO, &buf, 1024);
+	int bytes = read(STDIN_FILENO, buf, 1024);
 	if (bytes == 0) {
 		fprintf(stderr, "No data on stdin to send_ip\n");
 		ret = 1;
