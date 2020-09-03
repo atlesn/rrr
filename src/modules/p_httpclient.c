@@ -512,7 +512,7 @@ static int httpclient_send_request_locked (
 	retry:
 
 	if (redirect_retry_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX || redirect_retry_max < 0) {
-		RRR_BUG("Redirect counter error in httpclient_send_request_locked, value is now %i\n", redirect_retry_max);
+		RRR_BUG("Redirect counter error in httpclient_send_request_locked, value is now %lli\n", redirect_retry_max);
 	}
 
 	struct httpclient_add_fields_callback_data add_fields_callback_data = {

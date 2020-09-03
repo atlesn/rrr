@@ -215,7 +215,7 @@ int rrr_socket_read (
 	}
 
 	if (bytes > 0) {
-		RRR_DBG_7("Socket %i recvfrom/recv/read %i bytes\n", fd, bytes);
+		RRR_DBG_7("Socket %i recvfrom/recv/read %li bytes\n", fd, bytes);
 	}
 
 	if (bytes == -1) {

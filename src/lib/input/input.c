@@ -39,13 +39,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RALT 98
 #define RCTRL 99
 
-#define SPECIAL_LCTRL (1<<0)
-#define SPECIAL_LSHIFT (1<<1)
-#define SPECIAL_RSHIFT (1<<2)
-#define SPECIAL_LALT (1<<3)
-#define SPECIAL_CAPS (1<<4)
-#define SPECIAL_NUMLOCK (1<<5)
-#define SPECIAL_RCTRL (1<<6)
+#define SPECIAL_LCTRL		(1<<0)
+#define SPECIAL_LSHIFT		(1<<1)
+#define SPECIAL_RSHIFT		(1<<2)
+#define SPECIAL_LALT		(1<<3)
+#define SPECIAL_CAPS		(1<<4)
+#define SPECIAL_NUMLOCK		(1<<5)
+#define SPECIAL_RCTRL		(1<<6)
 
 struct map {
 	int key;

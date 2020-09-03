@@ -176,7 +176,7 @@ int rrr_msg_holder_new (
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
 	else if (addr_len > sizeof(entry->addr)) {
-		RRR_BUG("Address too long (%u > %u) in rrr_msg_holder_new\n", addr_len, sizeof(entry->addr));
+		RRR_BUG("Address too long (%u > %lu) in rrr_msg_holder_new\n", addr_len, sizeof(entry->addr));
 	}
 	else {
 		memcpy(&entry->addr, addr, addr_len);
@@ -251,7 +251,7 @@ int rrr_msg_holder_address_matches (
 		const struct rrr_msg_holder *b
 ) {
 	if (	 a->addr_len == b->addr_len &&
-			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len)) &&
+			(a->addr_len == 0 || memcmp(&a->addr, &b->addr, a->addr_len) == 0) &&
 			 a->protocol == b->protocol
 	) {
 		return 1;

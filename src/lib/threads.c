@@ -473,8 +473,14 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	struct watchdog_data data = *((struct watchdog_data *)arg);
 	free(arg);
 
+	uint64_t freeze_limit = 0;
+
 	struct rrr_thread *thread = data.watched_thread;
 	struct rrr_thread *self_thread = data.watchdog_thread;
+
+	rrr_thread_lock(thread);
+	freeze_limit = thread->watchdog_timeout_us;
+	rrr_thread_unlock(thread);
 
 	RRR_DBG_8 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 
@@ -518,7 +524,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			break;
 		}
 		else if (!rrr_config_global.no_watchdog_timers &&
-				(prevtime + (long long unsigned int) RRR_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
+				(prevtime + freeze_limit * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
 			if (rrr_time_get_64() - prev_loop_time > 100000) { // 100 ms
 				RRR_MSG_0 ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
@@ -819,6 +825,7 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		int (*cancel_function) (struct rrr_thread *),
 		int start_priority,
 		const char *name,
+		uint64_t watchdog_timeout_us,
 		void *private_data
 ) {
 	struct rrr_thread *thread = NULL;
@@ -837,6 +844,7 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 	}
 
 	thread->watchdog_time = 0;
+	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->signal = 0;
 	thread->start_priority = start_priority;
 

@@ -124,7 +124,7 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	else {
 		if (tmp_uint < 1 || tmp_uint > 65535) {
 			RRR_MSG_0 (
-					"port setting %s out of range, must be 1-65535 but was %llu.\n",
+					"port setting %s out of range, must be 1-65535 but was %" PRIrrrbl ".\n",
 					name, tmp_uint
 			);
 			ret = 1;

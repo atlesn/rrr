@@ -176,7 +176,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	set_test_module_result(ret);
 
 	if (data->exit_delay_ms > 0) {
-		TEST_MSG("Exit delay configured, %llu ms\n", data->exit_delay_ms);
+		TEST_MSG("Exit delay configured, %" PRIrrrbl " ms\n", data->exit_delay_ms);
 		rrr_posix_usleep(data->exit_delay_ms * 1000);
 	}
 

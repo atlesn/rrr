@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_session.h"
 
+struct rrr_thread;
 struct rrr_net_transport;
 struct rrr_thread_collection;
 struct rrr_net_transport_config;
@@ -63,11 +64,12 @@ int rrr_http_server_start_tls (
 int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,
+		int max_threads,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 );
 

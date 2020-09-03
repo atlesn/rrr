@@ -38,6 +38,7 @@ struct rrr_net_transport_config;
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 	pthread_mutex_t lock_;
+	int lock_count;
 	struct rrr_net_transport *transport;
 	int handle;
 	enum rrr_net_transport_socket_mode mode;
@@ -124,6 +125,9 @@ struct rrr_net_transport_collection {
 	void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
 	void *callback_final_arg
 
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS							\
+	void **submodule_private_ptr, int *submodule_private_fd, void *arg
+
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS							\
 	struct rrr_net_transport_handle *handle,									\
 	const struct sockaddr *sockaddr,											\
@@ -180,6 +184,9 @@ struct rrr_net_transport_methods {
 			const void *data,
 			ssize_t size
 	);
+	int (*poll)(
+			struct rrr_net_transport_handle *handle
+	);
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -187,8 +194,8 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		void *submodule_callback_arg
 );
 #endif
 
@@ -228,6 +235,9 @@ int rrr_net_transport_connect (
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
+);
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,

@@ -21,6 +21,9 @@ endif
 if RRR_WITH_OPENSSL
 encryption = rrr_openssl.c
 endif
+if RRR_WITH_OPENSSL_CRYPT
+encryption = rrr_openssl.c
+endif
 
 if RRR_WITH_PYTHON3
 lib_python3 = librrrpython3.la
@@ -69,11 +72,15 @@ message_holder = message_holder/message_holder.c message_holder/message_holder_u
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
 
 if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_tls.c
+net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
 
-librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
-librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
+if RRR_WITH_LIBRESSL
+net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
+endif
+
+librrr_la_CFLAGS = ${OPENSSL_INCLUDES} ${LIBRESSL_LIBTLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${LIBRESSL_LIBTLS_LDFLAGS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c array.c array_tree.c \
@@ -82,8 +89,8 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					string_builder.c random.c condition.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
-					${messages} \
+					${net_transport} ${net_transport_tls} ${net_transport_libressl} \
+					${util} ${ip} ${message_holder} ${messages} \
 					${input} ${input_system}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
@@ -133,4 +140,4 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_posix}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD =  ${libadd_all}
+librrr_la_LIBADD =  ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS}

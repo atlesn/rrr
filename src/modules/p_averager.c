@@ -461,7 +461,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
+	RRR_DBG_1 ("Averager: Interval: %" PRIrrrbl ", Timespan: %" PRIrrrbl ", Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
 	RRR_DBG_1 ("Averager started thread %p\n", thread_data);

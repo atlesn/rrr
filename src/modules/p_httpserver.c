@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/net_transport/net_transport.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/messages/msg_msg.h"
@@ -45,11 +46,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_struct.h"
 //#include "../ip_util.h"
 
-#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN			80
-#define RRR_HTTPSERVER_DEFAULT_PORT_TLS				443
-#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX			"httpserver/request/"
-#define RRR_HTTPSERVER_RAW_TOPIC_PREFIX				"httpserver/raw/"
-#define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS		1500
+#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
+#define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
+#define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
+#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
+
+#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX					"httpserver/request/"
+#define RRR_HTTPSERVER_RAW_TOPIC_PREFIX						"httpserver/raw/"
+#define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS				2000
+#define RRR_HTTPSERVER_WORKER_THREADS_MAX					1024
 
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -65,6 +70,9 @@ struct httpserver_data {
 	int do_get_raw_response_from_senders;
 	int do_receive_raw_data;
 	int do_receive_full_request;
+
+	rrr_setting_uint raw_response_timeout_ms;
+	rrr_setting_uint worker_threads;
 
 	pthread_mutex_t oustanding_responses_lock;
 };
@@ -148,6 +156,16 @@ static int httpserver_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_raw_response_timeout_ms", raw_response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
+
+	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
+		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
+				data->worker_threads, config->name);
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -159,7 +177,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
 		if ((ret = rrr_http_server_start_plain(http_server, data->port_plain)) != 0) {
-			RRR_MSG_0("Could not start listening in plain mode on port %u in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -175,7 +193,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 				&data->net_transport_config,
 				0
 		)) != 0) {
-			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in TLS mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_tls, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -326,6 +344,7 @@ static int httpserver_write_message_callback (
 
 struct httpserver_callback_data {
 	struct httpserver_data *httpserver_data;
+	struct rrr_thread_collection *threads;
 };
 
 static int httpserver_generate_unique_topic (
@@ -365,9 +384,9 @@ static int httpserver_receive_callback_get_fields (
 }
 
 struct receive_get_response_callback_data {
-	char **response;
+	char *response;
 	size_t response_size;
-	const char *topic_filter;
+	char *topic_filter;
 };
 
 static int httpserver_receive_get_response_callback (
@@ -405,12 +424,16 @@ static int httpserver_receive_get_response_callback (
 
 	memcpy(response, MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg));
 
-	*(callback_data->response) = response;
+	if (callback_data->response != NULL) {
+		RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
+	}
+
+	callback_data->response = response;
 	callback_data->response_size = MSG_DATA_LENGTH(msg);
 
 	response = NULL;
 
-	ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
+	ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE|RRR_FIFO_SEARCH_STOP;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(response);
@@ -418,18 +441,28 @@ static int httpserver_receive_get_response_callback (
 	return ret;
 }
 
+static void httpserver_receive_get_raw_response_cleanup (void *ptr) {
+	struct receive_get_response_callback_data *callback_data = ptr;
+
+	RRR_FREE_IF_NOT_NULL(callback_data->response);
+	RRR_FREE_IF_NOT_NULL(callback_data->topic_filter);
+}
+
 static int httpserver_receive_get_raw_response (
+		struct rrr_net_transport_handle *handle,
+		struct rrr_thread *thread,
 		struct httpserver_data *data,
 		struct rrr_http_part *response_part,
 		uint64_t unique_id
 ) {
 	int ret = 0;
 
-	char *topic = NULL;
-	char *response = NULL;
+	struct receive_get_response_callback_data callback_data = {0};
+
+	pthread_cleanup_push(httpserver_receive_get_raw_response_cleanup, &callback_data);
 
 	if ((ret = httpserver_generate_unique_topic (
-			&topic,
+			&callback_data.topic_filter,
 			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
 			unique_id
 	)) != 0) {
@@ -439,38 +472,51 @@ static int httpserver_receive_get_raw_response (
 	// Message has already been generated by receive raw callback. We await
 	// a response here.
 
-	struct receive_get_response_callback_data callback_data = {
-			&response,
-			0,
-			topic
-	};
-
 	// We may spend some time in this loop. This is not a problem as each request
 	// is processed by a dedicated thread.
-	uint64_t timeout = rrr_time_get_64() + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
-	while (rrr_time_get_64() < timeout) {
-		if ((ret = rrr_poll_do_poll_search (
-				data->thread_data,
-				&data->thread_data->poll,
-				httpserver_receive_get_response_callback,
-				&callback_data,
-				2
-		)) != 0) {
-			RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
-			goto out;
+	uint64_t time_begin = rrr_time_get_64();
+	while (!rrr_thread_check_encourage_stop(thread)) {
+		rrr_thread_update_watchdog_time(thread);
+
+		uint64_t max_time = (rrr_time_get_64() + 10 * 1000);
+		while (rrr_time_get_64() < max_time) {
+			if ((ret = rrr_poll_do_poll_search (
+					data->thread_data,
+					&data->thread_data->poll,
+					httpserver_receive_get_response_callback,
+					&callback_data,
+					2
+			)) != 0) {
+				RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
+				goto out;
+			}
+
+			if (callback_data.response != NULL) {
+				goto loop_out_response_found;
+			}
 		}
 
-		if (*(callback_data.response) != NULL) {
+		if (data->raw_response_timeout_ms == 0) {
+			// No timeout, check connection and loop again
+			if ((ret = rrr_net_transport_ctx_check_alive(handle)) != 0) {
+				RRR_DBG_1("Connection closed while waiting for response from senders in httpserver instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+		}
+		else if (rrr_time_get_64() > time_begin + data->raw_response_timeout_ms * 1000) {
 			break;
 		}
 	}
 
-	if (*(callback_data.response) == NULL) {
+	if (callback_data.response != NULL) {
 		RRR_DBG_1("Timeout while waiting for response from senders in httpserver instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
+
+	loop_out_response_found:
 
 	RRR_DBG_3("httpserver instance %s got a response from senders with filter %s size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
@@ -478,13 +524,12 @@ static int httpserver_receive_get_raw_response (
 	// Will set our pointer to NULL
 	rrr_http_part_set_allocated_raw_response (
 			response_part,
-			callback_data.response,
+			&callback_data.response,
 			callback_data.response_size
 	);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(topic);
-	RRR_FREE_IF_NOT_NULL(response);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 
@@ -539,7 +584,7 @@ static int httpserver_receive_callback_full_request (
 
 // NOTE : Worker thread CTX in httpserver_receive_callback
 static int httpserver_receive_callback (
-		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
 	struct httpserver_data *data = receive_callback_data->httpserver_data;
@@ -610,6 +655,8 @@ static int httpserver_receive_callback (
 
 	if (data->do_get_raw_response_from_senders) {
 		if ((ret = httpserver_receive_get_raw_response (
+				handle,
+				thread,
 				data,
 				response_part,
 				unique_id
@@ -722,12 +769,14 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
 
-	struct rrr_msg_msg *msg = entry->message;
+	if (entry->send_time == 0) {
+		entry->send_time = rrr_time_get_64();
+	}
 
-	uint64_t timeout = msg->timestamp + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
-
+	uint64_t timeout = entry->send_time + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
 	if (rrr_time_get_64() > timeout) {
-		RRR_DBG_1("httpserver instance %s deleting message from senders of size %li which has timed out\n",
+		struct rrr_msg_msg *msg = entry->message;
+		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
 				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data), MSG_TOTAL_SIZE(msg));
 		ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE;
 	}
@@ -782,7 +831,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 
 	struct httpserver_callback_data callback_data = {
-			data
+			data,
+			http_server->threads
 	};
 
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
@@ -793,6 +843,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		if (rrr_http_server_tick (
 				&accept_count,
 				http_server,
+				data->worker_threads,
 				httpserver_unique_id_generator_callback,
 				&callback_data,
 				(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),

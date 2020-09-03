@@ -150,7 +150,7 @@ void rrr_http_field_collection_dump (
 
 	RRR_MSG_3 ("== DUMP FIELD COLLECTION ====================================\n");
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
-		RRR_MSG_3 ("%s", node->name, node->value);
+		RRR_MSG_3 ("%s=>%s", node->name, node->value);
 
 		if (node->value != NULL && node->value_size > 0) {
 			RRR_FREE_IF_NOT_NULL(urlencoded_tmp);
@@ -158,7 +158,7 @@ void rrr_http_field_collection_dump (
 				RRR_MSG_0("Warning: Error while encoding value in rrr_http_field_collection_dump\n");
 				RRR_LL_ITERATE_NEXT();
 			}
-			RRR_MSG_PLAIN("=(%lu bytes of type '%s') ", node->value_size, node->content_type != NULL ? node->content_type : "undefined");
+			RRR_MSG_PLAIN("=(%" PRIrrrl " bytes of type '%s') ", node->value_size, node->content_type != NULL ? node->content_type : "undefined");
 			RRR_MSG_PLAIN_N(urlencoded_tmp, urlencoded_size);
 		}
 
@@ -342,7 +342,7 @@ static char *__rrr_http_field_collection_to_form_data (
 				value = rrr_http_util_encode_uri(&output_size_tmp, node->value, node->value_size);
 
 				if (value == NULL) {
-					RRR_MSG_0("Could not encode parameter '%s' with value length %lu in __rrr_http_fields_to_form_data\n",
+					RRR_MSG_0("Could not encode parameter '%s' with value length %" PRIrrrl " in __rrr_http_fields_to_form_data\n",
 							node->name, node->value_size);
 					err = 1;
 					goto out;

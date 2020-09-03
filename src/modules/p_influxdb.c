@@ -116,6 +116,7 @@ static int influxdb_receive_http_response (
 ) {
 	struct response_callback_data *data = arg;
 
+	(void)(handle);
 	(void)(data_ptr);
 	(void)(sockaddr);
 	(void)(socklen);

@@ -38,7 +38,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
+module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
