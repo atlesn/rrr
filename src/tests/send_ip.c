@@ -19,13 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+// Allow INADDR_LOOPBACK
+#undef __BSD_VISIBLE
+#define __BSD_VISIBLE 1
+
+#include <netinet/in.h>
 
 int main (int argc, char **argv) {
 	int ret = 0;
