@@ -1,3 +1,9 @@
+rrr (1.11-4) buster; urgency=medium
+  
+  * Fix bug with smart timeout in IP module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:25:43 +0200
+
 rrr (1.11-3) buster; urgency=medium
 
   * New configuration parameters in HTTP-server to allow push connections
