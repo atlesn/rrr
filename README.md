@@ -54,11 +54,10 @@ The `.md` files contain the examples, and the source scripts and configuration f
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
-may be compiled and run on FreeBSD or other Linuxes including Raspbian and SUSE. Other systems might work but
+may be compiled and run on FreeBSD or other Linuxes including Raspbian, Void and SUSE. Other systems might work but
 are not supported.
 
-Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
-Linux should work however if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD do not work
+Among distributions known *not* to work out of the box, are  OpenBSD and NetBSD. These do not work
 due to lack of support for process shared locks.
 
 Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
