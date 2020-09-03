@@ -200,7 +200,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now - time_start > 1000000) {
-			RRR_DBG_1("dummy instance %s messages per second %i total %llu of %llu\n",
+			RRR_DBG_1("dummy instance %s messages per second %i total %" PRIrrrbl " of %" PRIrrrbl "\n",
 					INSTANCE_D_NAME(thread_data), generated_count, generated_count_total, data->max_generated);
 			generated_count = 0;
 			time_start = time_now;

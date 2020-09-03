@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg.h"
 #include "util/utf8.h"
 #include "read_constants.h"
+#include "rrr_types.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
@@ -40,8 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SETTINGS_MAX_NAME_SIZE 244
 #define RRR_SETTINGS_MAX_DATA_SIZE 1024
 
-typedef unsigned int rrr_setting_type;
-typedef unsigned long long int rrr_setting_uint;
+typedef rrr_biglength rrr_setting_uint;
 
 // Use bit flag compatible values
 #define RRR_SETTING_ERROR			RRR_READ_HARD_ERROR

@@ -195,7 +195,7 @@ int __rrr_settings_add_raw (
 		const char *name,
 		const void *old_data,
 		const int size,
-		rrr_setting_type type,
+		rrr_u32 type,
 		int replace_existing
 ) {
 	int ret = 0;

@@ -320,18 +320,20 @@ static int __rrr_http_server_accept_if_free_thread (
 
 static int __rrr_http_server_allocate_threads (
 		struct rrr_thread_collection *threads,
+		int count,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
 
 	struct rrr_http_server_worker_preliminary_data *worker_data = NULL;
 
-	int to_allocate = RRR_HTTP_SERVER_WORKER_THREADS - rrr_thread_collection_count(threads);
+	// Times two because we need to count the watchdogs
+	int to_allocate = (count * 2) - rrr_thread_collection_count(threads);
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
@@ -354,6 +356,7 @@ static int __rrr_http_server_allocate_threads (
 				NULL,
 				RRR_THREAD_START_PRIORITY_NORMAL,
 				"httpserver_worker",
+				RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS * 1000,
 				worker_data
 		);
 
@@ -380,11 +383,12 @@ static int __rrr_http_server_allocate_threads (
 int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,
+		int max_threads,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
@@ -393,6 +397,7 @@ int rrr_http_server_tick (
 
 	if ((ret = __rrr_http_server_allocate_threads (
 			server->threads,
+			max_threads,
 			unique_id_generator_callback,
 			unique_id_generator_callback_arg,
 			final_callback_raw,

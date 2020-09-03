@@ -69,7 +69,7 @@ static int __rrr_msg_head_validate (
 	int ret = 0;
 
 	if (message->msg_size != expected_size) {
-		RRR_MSG_0("Message network size mismatch in __rrr_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
+		RRR_MSG_0("Message network size mismatch in __rrr_msg_head_validate actual size is %u stated size is %" PRIu32 "\n",
 				expected_size, message->msg_size);
 		ret = 1;
 		goto out;

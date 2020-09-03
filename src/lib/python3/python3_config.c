@@ -69,7 +69,7 @@ static PyObject *__rrr_python3_config_set (PyObject *self, PyObject * const *arg
 	}
 
 	if (argc != 2) {
-		RRR_MSG_0("Wrong number of arguments (%i) to config add or replace function, exactly 2 is required\n", argc);
+		RRR_MSG_0("Wrong number of arguments (%li) to config add or replace function, exactly 2 is required\n", argc);
 		Py_RETURN_FALSE;
 	}
 
@@ -129,10 +129,10 @@ PyObject *rrr_python3_config_f_get (PyObject *self, PyObject *name) {
 	int ret_tmp = 0;
 	if ((ret_tmp = rrr_settings_get_string_noconvert_silent(&string_value_tmp, data->settings, string_name)) != 0) {
 		if (ret_tmp == RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Setting '%s' could not be found in get function of config class, check spelling.\n");
+			RRR_MSG_0("Setting '%s' could not be found in get function of config class, check spelling.\n", string_name);
 		}
 		else {
-			RRR_MSG_0("Error while getting setting '%s' in get function of config class.\n");
+			RRR_MSG_0("Error while getting setting '%s' in get function of config class.\n", string_name);
 		}
 		goto out_return_none;
 	}
