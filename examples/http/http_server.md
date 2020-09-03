@@ -39,7 +39,7 @@ The configuration uses the **httpserver** and **perl5** modules, which both read
 
 * **httpserver** receives HTTP requests, parses them, and puts any field from GET or POST into an RRR array message.
   In addition, the requested endpoint, HTTP method etc. is put into the array message due to the full request parameter.
-* The server is configured to allow empty messages (zero length body, no GET/POST fields and not fields in URI)
+* The server is configured to allow empty messages (zero length body, no GET/POST fields and no fields in URI)
 * The perl5 module receives the request and prints out all received fields
 * A raw response is generated and handed back to the httpserver
 * The Perl5 is set to look for the required RRR Perl5 objects in build directories,
@@ -106,7 +106,7 @@ Note that the array values must be cleared from the message before we add the ra
 We also need to modify the topic since **httpserver** expects **/httpserver/raw/xxx** topics back,
 we simply replace the _request_ word with _raw_.  
 
-To test things out, run `rrr http_perl_server.conf` and use a web browser to access `http://localhost:8000/`.
+To test things out, run `rrr http_server.conf` and use a web browser to access `http://localhost:8000/`.
 You can also try to add some fields in the query string like `http://localhost:8000/?but_did_you_die`.
 Watch the output from RRR as you access the URL.
 

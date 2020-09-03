@@ -46,12 +46,19 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 }
 
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
-//	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+	free(plain);
+}
 
-	// This will call back into our close() function for each handle
-	rrr_net_transport_common_cleanup(transport);
+static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
+) {
+	int fd = *((int*) arg);
 
-	// Do not free here, upstream does that after destroying lock
+	*submodule_private_ptr = 0;
+	*submodule_private_fd = fd;
+
+	return 0;
 }
 
 static int __rrr_net_transport_plain_connect (
@@ -80,8 +87,8 @@ static int __rrr_net_transport_plain_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			NULL,
-			accept_data->ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback,
+			&accept_data->ip_data.fd
 	)) != 0) {
 		RRR_MSG_0("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
@@ -215,8 +222,8 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
-			NULL,
-			ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
+			&ip_data.fd
 	)) != 0) {
 		RRR_MSG_0("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
 		goto out_destroy_ip;
@@ -257,8 +264,8 @@ int __rrr_net_transport_plain_accept (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			NULL,
-			accept_data->ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback,
+			&accept_data->ip_data.fd
 	)) != 0) {
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept return was %i\n", ret);
 		ret = 1;

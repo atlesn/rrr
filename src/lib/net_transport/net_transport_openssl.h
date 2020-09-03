@@ -19,28 +19,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_NET_TRANSPORT_TLS_H
-#define RRR_NET_TRANSPORT_TLS_H
+#ifndef RRR_NET_TRANSPORT_OPENSSL_H
+#define RRR_NET_TRANSPORT_OPENSSL_H
 
-#ifdef RRR_WITH_OPENSSL
-#	include "net_transport_openssl.h"
-#else
-#	include "net_transport_libressl.h"
-#endif
+#include "net_transport_tls_common.h"
 
-static inline int rrr_net_transport_tls_new (
+struct rrr_net_transport_tls;
+
+int rrr_net_transport_openssl_new (
 		struct rrr_net_transport_tls **target,
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
 		const char *ca_path
-) {
-#ifdef RRR_WITH_OPENSSL
-	return rrr_net_transport_openssl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path);
-#else
-	return rrr_net_transport_libressl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path);
-#endif
-}
+);
 
-#endif /* RRR_NET_TRANSPORT_TLS_H */
+#endif /* RRR_NET_TRANSPORT_OPENSSL_H */

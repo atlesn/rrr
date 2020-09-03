@@ -70,6 +70,10 @@ variables.sh
 /lcov
 /main_coverage.info
 
+# valgrind
+vgcore.*
+massif.*
+
 # perl
 blib
 Makefile.PL
