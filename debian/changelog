@@ -1,8 +1,20 @@
-rrr (1.11-3ubuntu1) focal; urgency=medium
+rrr (1.12-0ubuntu1) focal; urgency=medium
 
   * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Fri, 28 Aug 2020 23:16:27 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:59:49 +0200
+
+rrr (1.12-0) buster; urgency=medium
+
+  * Implement LibreSSL as an alternative to OpenSSL
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:45:18 +0200
+
+rrr (1.11-4) buster; urgency=medium
+  
+  * Fix bug with smart timeout in IP module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:25:43 +0200
 
 rrr (1.11-3) buster; urgency=medium
 
