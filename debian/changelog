@@ -1,3 +1,9 @@
+rrr (1.12-0bullseye1) bullseye; urgency=medium
+
+  * Debian testing release
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:51:55 +0200
+
 rrr (1.12-0) buster; urgency=medium
 
   * Implement LibreSSL as an alternative to OpenSSL
