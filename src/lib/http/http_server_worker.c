@@ -42,7 +42,7 @@ int rrr_http_server_worker_preliminary_data_new (
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
@@ -207,6 +207,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	if (worker_data->final_callback != NULL) {
 		ret = worker_data->final_callback (
+				worker_data->thread,
+				handle,
 				request_part,
 				response_part,
 				data_ptr,
@@ -343,6 +345,8 @@ static void __rrr_http_server_worker_thread_entry (
 	if (worker_data.transport_handle == 0) {
 		goto out;
 	}
+
+	worker_data.thread = thread;
 
 	// All usage of private data pointer (http_session) of the transport handle
 	// must be done with net transport handle lock held.

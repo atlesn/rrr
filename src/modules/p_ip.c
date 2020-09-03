@@ -1238,14 +1238,14 @@ static int ip_send_loop (
 
 		if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(node->message, data->message_ttl_us)) {
 			ttl_reached_count++;
-			RRR_DBG_1("TTL expired for a message after %u seconds in ip instance %s, dropping it.\n",
+			RRR_DBG_1("TTL expired for a message after %" PRIrrrbl " seconds in ip instance %s, dropping it.\n",
 					data->message_ttl_us / 1000 / 1000, INSTANCE_D_NAME(data->thread_data));
 			action = IP_ACTION_DROP;
 			goto perform_action;
 		}
 		else if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
 			timeout_count++;
-			RRR_DBG_1("Message timed out after %u seconds in ip instance %s, performing timeout action %s.\n",
+			RRR_DBG_1("Message timed out after %" PRIrrrbl " seconds in ip instance %s, performing timeout action %s.\n",
 					data->message_send_timeout_s, INSTANCE_D_NAME(data->thread_data), data->timeout_action_str);
 			timeout_reached = 1;
 			goto perform_timeout_action;

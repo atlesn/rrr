@@ -1,4 +1,4 @@
-# RRR HTTP PERL SERVER
+# RRR HTTP SERVER
 
 ## Introduction
 
@@ -19,7 +19,7 @@ The Perl5 script will due to this create the HTTP header itself.
 
 The configuration uses the **httpserver** and **perl5** modules, which both read from each other.
 
-### http\_perl\_server.conf
+### http\_server.conf
 
 	[instance_httpserver]
 	module=httpserver
@@ -33,7 +33,7 @@ The configuration uses the **httpserver** and **perl5** modules, which both read
 	[instance_perl5]
 	module=perl5
 	senders=instance_httpserver
-	perl5_file=http_perl_server.pl
+	perl5_file=http_server.pl
 	perl5_process_sub=process
 	perl5_do_include_build_directories=yes
 
@@ -47,7 +47,7 @@ The configuration uses the **httpserver** and **perl5** modules, which both read
 	
 Had the **http_server_get_raw_response**-parameter not been set, the **httpserver** would instead have generated **204 No Content** for all requests. Doing this removes the need of creating the response in the Perl5 script.
 
-### http\_perl\_server.pl
+### http\_server.pl
 
 	#!/usr/bin/perl -w
 	

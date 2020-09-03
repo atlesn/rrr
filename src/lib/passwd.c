@@ -322,7 +322,7 @@ static int __rrr_passwd_check_callback (
 			return __rrr_passwd_check_openssl(salt, hash, password);
 			break;
 		default:
-			RRR_MSG_0("Enctype '%s' unknown for password\n", *enctype);
+			RRR_MSG_0("Enctype '%c' unknown for password\n", *enctype);
 			break;
 	};
 
@@ -466,7 +466,7 @@ static int __rrr_passwd_iterate_lines_split_columns_callback (
 	struct rrr_passwd_iterate_lines_split_callback_data *callback_data = arg;
 
 	if (elements_count != 3) {
-		RRR_MSG_0("%u elements found in password file, 3 expected.\n", elements_count);
+		RRR_MSG_0("%lu elements found in password file, 3 expected.\n", elements_count);
 		return RRR_PASSWD_ITERATE_ERR;
 	}
 
@@ -641,8 +641,7 @@ int rrr_passwd_authenticate (
 	}
 
 	if (username == NULL || *username == '\0' || password == NULL || *password == '\0') {
-		RRR_DBG_1("Username and/or password was not given in rrr_passwd_authenticate\n",
-				username);
+		RRR_DBG_1("Username and/or password was not given in rrr_passwd_authenticate\n");
 		ret = 1;
 		goto out;
 	}

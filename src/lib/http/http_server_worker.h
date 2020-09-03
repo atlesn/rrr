@@ -41,7 +41,7 @@ struct rrr_http_server_worker_preliminary_data {
 	// add pointers to data which may be modified outside of thread lock
 	// wrapper.
 
-	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
+	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
@@ -70,7 +70,10 @@ struct rrr_http_server_worker_data {
 
 	ssize_t read_max_size;
 
-	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
+	// Helper pointers
+	struct rrr_thread *thread;
+
+	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
@@ -88,7 +91,7 @@ int rrr_http_server_worker_preliminary_data_new (
 		void *unique_id_generator_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 );
 void rrr_http_server_worker_preliminary_data_destroy (

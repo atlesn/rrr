@@ -52,4 +52,5 @@ GET queries, or raw data from another module.
 ### HTTP Example Configurations
 
 * [HTTP Forwarder](http/http_forwarder.md)
-* [HTTP Perl5 Server](http/http_perl_server.md)
+* [HTTP Server](http/http_server.md)
+* [HTTP Push Server with MQTT](http/http_push_mqtt.md)

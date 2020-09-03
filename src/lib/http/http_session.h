@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS	\
+	struct rrr_net_transport_handle *handle,	\
 	const struct rrr_http_part *request_part,	\
 	struct rrr_http_part *response_part,		\
 	const char *data_ptr,						\
@@ -43,8 +44,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	rrr_http_unique_id *result,								\
 	void *arg
 
-#define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS	\
+#define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS			\
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
+
+#define RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS		\
+	struct rrr_thread *thread,								\
+	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
 struct rrr_http_session {
 	int is_client;

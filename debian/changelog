@@ -1,14 +1,20 @@
-rrr (1.11-1ubuntu2) focal; urgency=medium
+rrr (1.11-3ubuntu1) focal; urgency=medium
 
-  * New release due to wrong verison of source package on APT
+  * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 14:24:28 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 28 Aug 2020 23:16:27 +0200
 
-rrr (1.11-1ubuntu1) focal; urgency=medium
+rrr (1.11-3) buster; urgency=medium
 
-  * Ubuntu release 
+  * New configuration parameters in HTTP-server to allow push connections
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:41:12 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 28 Aug 2020 15:08:45 +0200
+
+rrr (1.11-2) buster; urgency=medium
+
+  * Fix bug causing crash on arm64 when debuglevel 1 was active
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 23:56:57 +0200
 
 rrr (1.11-1) buster; urgency=medium
 

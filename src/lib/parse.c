@@ -359,7 +359,7 @@ int rrr_parse_str_split (
 //		printf ("Split pos %s\n", pos);
 
 		if (elements_count == elements_max) {
-			RRR_MSG_0("Too many elements while splitting string (more than %u)\n", elements_max);
+			RRR_MSG_0("Too many elements while splitting string (more than %lu)\n", elements_max);
 			ret = 1;
 			goto out;
 		}

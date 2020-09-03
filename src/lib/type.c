@@ -1481,7 +1481,7 @@ int rrr_type_value_allocate_and_import_raw (
 	}
 
 	if (parsed_bytes != stored_length) {
-		RRR_MSG_0("Parsed bytes mismatch, parsed %li bytes while %li was expected\n", parsed_bytes, stored_length);
+		RRR_MSG_0("Parsed bytes mismatch, parsed %" PRIrrrl " bytes while %" PRIrrrl " was expected\n", parsed_bytes, stored_length);
 		ret = 1;
 		goto out;
 	}

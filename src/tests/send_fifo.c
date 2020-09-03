@@ -67,7 +67,7 @@ int main (int argc, char **argv) {
 	}
 
 	if ((ret = write(fd, buf, bytes)) != bytes) {
-		RRR_MSG_0("Write to fifo failed: %s, %li of %li bytes written in send_fifo\n",
+		RRR_MSG_0("Write to fifo failed: %s, %i of %i bytes written in send_fifo\n",
 				rrr_strerror(errno), ret, bytes);
 		ret = 1;
 		goto out_cleanup_log;

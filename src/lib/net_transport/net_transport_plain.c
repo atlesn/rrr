@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <poll.h>
+
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -281,6 +283,12 @@ int __rrr_net_transport_plain_accept (
 		return ret;
 }
 
+static int __rrr_net_transport_plain_poll (
+		struct rrr_net_transport_handle *handle
+) {
+	return rrr_socket_check_alive (handle->submodule_private_fd);
+}
+
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
@@ -288,7 +296,8 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
-	__rrr_net_transport_plain_send
+	__rrr_net_transport_plain_send,
+	__rrr_net_transport_plain_poll
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {
