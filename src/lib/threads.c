@@ -47,6 +47,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
+// On some systems pthread_t is an int and on others it's a pointer
+static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
+	return t;
+}
+
+#define RRR_PTHREAD_T_TO_LLU(t) \
+	__rrr_pthread_t_to_llu(t)
+
 struct rrr_thread_postponed_cleanup_node {
 	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
 	struct rrr_thread *thread;
@@ -956,7 +964,8 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		if (node->ready_to_destroy) {
 			(*count)++;
 			void *thread_ret;
-			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %llu\n",
+					node, node->is_watchdog, RRR_PTHREAD_T_TO_LLU(node->thread));
 			if (node->is_watchdog) {
 				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);
