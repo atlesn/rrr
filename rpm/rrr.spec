@@ -26,7 +26,7 @@ rm -rf $RPM_BUILD_ROOT
 %make_install
 %post
 groupadd -r rrr || true
-adduser --system --group rrr || true
+useradd -r rrr -g rrr || true
 %files
 %license LICENSE LICENSE.*
 %{_mandir}/*
