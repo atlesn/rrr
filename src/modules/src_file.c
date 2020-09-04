@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/linked_list.h"
 #include "../lib/input/input.h"
 
-#define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000
+#define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
@@ -255,10 +255,10 @@ static int file_probe_callback (
 	}
 
 	if (type == DT_SOCK) {
-		RRR_DBG_3("file instance %s connecting to socket '%s'=>'%s'\n", orig_path, resolved_path);
+		RRR_DBG_3("file instance %s connecting to socket '%s'=>'%s'\n", INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
 
 		if (rrr_socket_unix_connect(&fd, INSTANCE_D_NAME(data->thread_data), orig_path, 1) != 0) {
-			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_0("Warning: Could not connect to socket '%s' in file instance %s\n", orig_path, INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 			goto out;
 		}
@@ -617,8 +617,13 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	RRR_DBG_1 ("File %p instance %s probe interval is %lu ms in directory '%s' with prefix '%s'\n",
-			thread_data, INSTANCE_D_NAME(thread_data), data->probe_interval, data->directory, (data->prefix != NULL ? data->prefix : ""));
+	RRR_DBG_1 ("File %p instance %s probe interval is %" PRIrrrbl " ms in directory '%s' with prefix '%s'\n",
+			thread_data,
+			INSTANCE_D_NAME(thread_data),
+			data->probe_interval,
+			(data->directory != NULL ? data->directory : ""),
+			(data->prefix != NULL ? data->prefix : "")
+	);
 
 	const uint64_t sleep_interval = (data->probe_interval < 10 ? data->probe_interval * 1000 : 10000);
 	const uint64_t probe_interval = data->probe_interval * 1000;

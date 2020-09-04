@@ -47,6 +47,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
+// On some systems pthread_t is an int and on others it's a pointer
+static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
+	return (unsigned long long int) t;
+}
+
+#define RRR_PTHREAD_T_TO_LLU(t) \
+	__rrr_pthread_t_to_llu(t)
+
 struct rrr_thread_postponed_cleanup_node {
 	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
 	struct rrr_thread *thread;
@@ -473,8 +481,14 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	struct watchdog_data data = *((struct watchdog_data *)arg);
 	free(arg);
 
+	uint64_t freeze_limit = 0;
+
 	struct rrr_thread *thread = data.watched_thread;
 	struct rrr_thread *self_thread = data.watchdog_thread;
+
+	rrr_thread_lock(thread);
+	freeze_limit = thread->watchdog_timeout_us;
+	rrr_thread_unlock(thread);
 
 	RRR_DBG_8 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 
@@ -518,7 +532,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			break;
 		}
 		else if (!rrr_config_global.no_watchdog_timers &&
-				(prevtime + (long long unsigned int) RRR_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
+				(prevtime + freeze_limit * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
 			if (rrr_time_get_64() - prev_loop_time > 100000) { // 100 ms
 				RRR_MSG_0 ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
@@ -819,6 +833,7 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		int (*cancel_function) (struct rrr_thread *),
 		int start_priority,
 		const char *name,
+		uint64_t watchdog_timeout_us,
 		void *private_data
 ) {
 	struct rrr_thread *thread = NULL;
@@ -837,6 +852,7 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 	}
 
 	thread->watchdog_time = 0;
+	thread->watchdog_timeout_us = watchdog_timeout_us;
 	thread->signal = 0;
 	thread->start_priority = start_priority;
 
@@ -948,7 +964,8 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		if (node->ready_to_destroy) {
 			(*count)++;
 			void *thread_ret;
-			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %llu\n",
+					node, node->is_watchdog, RRR_PTHREAD_T_TO_LLU(node->thread));
 			if (node->is_watchdog) {
 				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);

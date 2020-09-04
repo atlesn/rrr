@@ -28,9 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "net_transport.h"
-#include "net_transport_tls.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
+
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+#	include "net_transport_tls.h"
+#endif
 
 #include "../log.h"
 #include "../util/posix.h"
@@ -39,17 +42,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
 
+#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_TRYLOCK() 	\
+	pthread_mutex_trylock(&collection->lock)
+
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK() 	\
 	pthread_mutex_unlock(&collection->lock)
 
 #define RRR_NET_TRANSPORT_HANDLE_TRYLOCK(handle,ctx)	\
 	pthread_mutex_trylock(&((handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_LOCK(handle,ctx)		\
-	pthread_mutex_lock(&((handle)->lock_))
+#define RRR_NET_TRANSPORT_HANDLE_LOCK(_handle,ctx)		\
+	pthread_mutex_lock(&((_handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle,ctx)		\
-	pthread_mutex_unlock(&((handle)->lock_))
+#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(_handle,ctx)	\
+	pthread_mutex_unlock(&((_handle)->lock_))
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_and_lock (
 		struct rrr_net_transport *transport,
@@ -101,8 +107,8 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		int handle,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
+		int (*submodule_callback)(void **submodule_private_ptr, int *submodule_private_fd, void *arg),
+		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
@@ -125,15 +131,26 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	RRR_NET_TRANSPORT_HANDLE_LOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 	new_handle->transport = transport;
-	new_handle->handle = handle;
 	new_handle->mode = mode;
-	new_handle->submodule_private_ptr = submodule_private_ptr;
-	new_handle->submodule_private_fd = submodule_private_fd;
+
+	// NOTE : This shallow member may be accessed with only collection lock held
+	new_handle->handle = handle;
+
+	if ((ret = submodule_callback (
+			&new_handle->submodule_private_ptr,
+			&new_handle->submodule_private_fd,
+			submodule_callback_arg
+	)) != 0) {
+		RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
+		goto out_destroy_mutex;
+	}
 
 	RRR_LL_APPEND(collection, new_handle);
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 
 	goto out;
+	out_destroy_mutex:
+		pthread_mutex_destroy(&new_handle->lock_);
 	out_free:
 		free(new_handle);
 	out:
@@ -147,8 +164,8 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
@@ -206,8 +223,8 @@ int rrr_net_transport_handle_allocate_and_add (
 			transport,
 			new_handle_id,
 			mode,
-			submodule_private_ptr,
-			submodule_private_fd
+			submodule_callback,
+			submodule_callback_arg
 	)) != 0) {
 		ret = 1;
 		goto out;
@@ -262,22 +279,27 @@ int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
 ) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
 	struct rrr_net_transport_handle_close_tag_node *node = malloc(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_handle_close_tag_list_push\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 	memset(node, '\0', sizeof(*node));
 
 	node->transport_handle = handle;
 
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	RRR_LL_APPEND(&transport->handles.close_tags, node);
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
-	return 0;
+	out:
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+	return ret;
 }
 
 static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
@@ -325,7 +347,7 @@ int rrr_net_transport_new (
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
-#ifdef RRR_WITH_OPENSSL
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 		case RRR_NET_TRANSPORT_TLS:
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
@@ -342,9 +364,8 @@ int rrr_net_transport_new (
 			break;
 	};
 
-	if (new_transport == NULL) {
-		RRR_MSG_0("Could not allocate transport method in rrr_net_transport_new\n");
-		ret = 1;
+	if (ret != 0) {
+		RRR_MSG_0("Could not create transport method in rrr_net_transport_new\n");
 		goto out;
 	}
 
@@ -361,16 +382,20 @@ int rrr_net_transport_new (
 	goto out;
 	out_destroy:
 		new_transport->methods->destroy(new_transport);
-		free(new_transport); // Must also free, destroy does not do that
 	out:
 		return ret;
 }
 
 void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	rrr_net_transport_maintenance(transport);
-	transport->methods->destroy(transport);
+
+	rrr_net_transport_common_cleanup(transport);
+
 	pthread_mutex_destroy(&transport->handles.lock);
-	free(transport);
+
+	// The matching destroy function of the new function which allocated
+	// memory for the transport will free()
+	transport->methods->destroy(transport);
 }
 
 void rrr_net_transport_destroy_void (void *arg) {
@@ -427,15 +452,15 @@ int rrr_net_transport_handle_close (
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_handle_close");
+		// We are allowed to read the handle integer without handle lock
+		// held. When the handle integer is written, the collection lock
+		// is held. We should also be the same thread as the one who wrote it.
 		if (node->handle == transport_handle) {
+			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_handle_close");
 			ret = __rrr_net_transport_handle_destroy(node, 1);
 			did_destroy = 1;
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
-		}
-		else {
-			RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_handle_close");
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
@@ -519,6 +544,12 @@ int rrr_net_transport_connect (
 	rrr_net_transport_maintenance(transport);
 
 	return __rrr_net_transport_connect (transport, port, host, callback, callback_arg, 0);
+}
+
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->poll(handle);
 }
 
 int rrr_net_transport_ctx_read_message (

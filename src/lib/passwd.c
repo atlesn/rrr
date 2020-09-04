@@ -24,8 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <errno.h>
 
-#ifdef RRR_WITH_OPENSSL
+#ifdef RRR_WITH_OPENSSL_CRYPT
 #	include <openssl/evp.h>
 #	include <openssl/err.h>
 #	include <openssl/rand.h>
@@ -175,7 +176,7 @@ static int __rrr_passwd_check_base64 (
 	return ret;
 }
 
-#ifdef RRR_WITH_OPENSSL
+#ifdef RRR_WITH_OPENSSL_CRYPT
 static int __rrr_passwd_openssl_encrypt (
 		unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1],
 		const char *password_plain,
@@ -233,7 +234,7 @@ static int __rrr_passwd_check_openssl (
 	// Default is 1, not authenticated
 	int ret = 1;
 
-#ifdef RRR_WITH_OPENSSL
+#ifdef RRR_WITH_OPENSSL_CRYPT
 
 	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
 	unsigned char *hash_raw = NULL;
@@ -258,14 +259,14 @@ static int __rrr_passwd_check_openssl (
 	out:
 	RRR_FREE_IF_NOT_NULL(hash_raw);
 
-#else /* RRR_WITH_OPENSSL */
+#else /* RRR_WITH_OPENSSL_CRYPT */
 
 	(void)(salt);
 	(void)(hash);
 	(void)(password);
 
 	RRR_MSG_0("OpenSSL enctype not supported for passwords, reset password for the user or re-compile RRR with OpenSSL enabled\n");
-#endif /* RRR_WITH_OPENSSL */
+#endif /* RRR_WITH_OPENSSL_CRYPT */
 
 	return ret;
 }
@@ -322,7 +323,7 @@ static int __rrr_passwd_check_callback (
 			return __rrr_passwd_check_openssl(salt, hash, password);
 			break;
 		default:
-			RRR_MSG_0("Enctype '%s' unknown for password\n", *enctype);
+			RRR_MSG_0("Enctype '%c' unknown for password\n", *enctype);
 			break;
 	};
 
@@ -366,7 +367,7 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 
 	memset(final, '\0', RRR_PASSWD_HASH_MAX_LENGTH + 1);
 
-#ifdef RRR_WITH_OPENSSL
+#ifdef RRR_WITH_OPENSSL_CRYPT
 	unsigned char salt[RRR_PASSWD_SALT_BYTES];
 	if (RAND_bytes(salt, RRR_PASSWD_SALT_BYTES) != 1) {
 		ERR_error_string_n(ERR_get_error(), (char *) tmp, RRR_PASSWD_HASH_MAX_LENGTH + 1);
@@ -397,7 +398,7 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 	char *hash_pos = final + strlen(final);
 	sprintf(hash_pos, "%s", base64_tmp);
 
-#else /* RRR_WITH_OPENSSL */
+#else /* RRR_WITH_OPENSSL_CRYPT */
 	if (strlen(password) > RRR_PASSWD_HASH_KEY_LENGTH) {
 		RRR_MSG_0("Password too long for plaintext store in rrr_passwd_encrypt, max length is %i\n", RRR_PASSWD_HASH_MAX_LENGTH / 2);
 		ret = 1;
@@ -410,7 +411,7 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 		goto out;
 	}
 	sprintf(final, "$%c$$%s", RRR_PASSWD_ENCTYPE_BASE64, base64_tmp);
-#endif /* RRR_WITH_OPENSSL */
+#endif /* RRR_WITH_OPENSSL_CRYPT */
 
 //	printf("Encrpyted password: %s\n", final);
 
@@ -466,7 +467,7 @@ static int __rrr_passwd_iterate_lines_split_columns_callback (
 	struct rrr_passwd_iterate_lines_split_callback_data *callback_data = arg;
 
 	if (elements_count != 3) {
-		RRR_MSG_0("%u elements found in password file, 3 expected.\n", elements_count);
+		RRR_MSG_0("%lu elements found in password file, 3 expected.\n", elements_count);
 		return RRR_PASSWD_ITERATE_ERR;
 	}
 
@@ -641,8 +642,7 @@ int rrr_passwd_authenticate (
 	}
 
 	if (username == NULL || *username == '\0' || password == NULL || *password == '\0') {
-		RRR_DBG_1("Username and/or password was not given in rrr_passwd_authenticate\n",
-				username);
+		RRR_DBG_1("Username and/or password was not given in rrr_passwd_authenticate\n");
 		ret = 1;
 		goto out;
 	}

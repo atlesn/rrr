@@ -69,74 +69,108 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DEBUGLEVEL_NUM_TO_FLAG(x) \
 	(x == 0 ? 0 : 1 << (x-1))
 
-#define RRR_MSG_PLAIN(...) \
+// Disables all calls to the logging subsystem. This make the compiler check all
+// arguments properly, use when coding.
+#define RRR_WITH_PRINTF_LOGGING
+
+#ifdef RRR_WITH_PRINTF_LOGGING
+#	define RRR_MSG_PLAIN(...) printf(__VA_ARGS__)
+#	define RRR_MSG_PLAIN_N(a,b) do{ (void)(a); (void)(b); }while(0)
+#	define RRR_MSG_0(...) printf(__VA_ARGS__)
+#	define RRR_MSG_1(...) printf(__VA_ARGS__)
+#	define RRR_MSG_2(...) printf(__VA_ARGS__)
+#	define RRR_MSG_3(...) printf(__VA_ARGS__)
+#	define RRR_MSG_4(...) printf(__VA_ARGS__)
+#	define RRR_MSG_ERR(...) printf(__VA_ARGS__)
+#	define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
+#	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
+#	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
+#	define RRR_DBG_1(...) printf(__VA_ARGS__)
+#	define RRR_DBG_2(...) printf(__VA_ARGS__)
+#	define RRR_DBG_3(...) printf(__VA_ARGS__)
+#	define RRR_DBG_4(...) printf(__VA_ARGS__)
+#	define RRR_DBG_5(...) printf(__VA_ARGS__)
+#	define RRR_DBG_6(...) printf(__VA_ARGS__)
+#	define RRR_DBG_7(...) printf(__VA_ARGS__)
+#	define RRR_DBG_8(...) printf(__VA_ARGS__)
+#	define RRR_DBG(...) printf(__VA_ARGS__)
+#	define RRR_BUG(...) do {printf(__VA_ARGS__); abort();}while(0)
+#else
+
+#	define RRR_MSG_PLAIN(...) \
 	do {rrr_log_printf_plain (__VA_ARGS__);}while(0)
 
-#define RRR_MSG_PLAIN_N(value,size) \
+#	define RRR_MSG_PLAIN_N(value,size) \
 	do {rrr_log_printn_plain ((const char *) value, size);}while(0)
 
-// Non-critical errors always to be logged
-#define RRR_MSG_0(...) \
+	// MSG 0 is for non-critical errors always to be logged
+#	define RRR_MSG_0(...) \
 	do {rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
-#define RRR_MSG_1(...) \
+#	define RRR_MSG_1(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
-#define RRR_MSG_2(...) \
+#	define RRR_MSG_2(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
-#define RRR_MSG_3(...) \
+#	define RRR_MSG_3(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
-#define RRR_MSG_4(...) \
+#	define RRR_MSG_4(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
-// Critical errors, use only if program, fork or thread exits due to an error
-// This should not be used by the library, only by modules and executables
-#define RRR_MSG_ERR(...) \
+	// Critical errors, use only if program, fork or thread exits due to an error
+	// This should not be used by the library, only by modules and executables
+#	define RRR_MSG_ERR(...) \
 	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
-// Debug without holding the lock
-#define RRR_DBG_SIGNAL(...) \
+	// Debug without holding the lock
+#	define RRR_DBG_SIGNAL(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 // Zero may be passed to X functions
-#define RRR_MSG_X(debuglevel_num, ...)													\
+#	define RRR_MSG_X(debuglevel_num, ...)													\
 	do {																				\
 		rrr_log_printf (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);		\
 	} while (0)
 
-#define RRR_DBG_X(debuglevel_num, ...)																										\
+#	define RRR_DBG_X(debuglevel_num, ...)																										\
 	do { if ((rrr_config_global.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
 		rrr_log_printf (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);															\
 	}} while(0)
 
-#define RRR_DBG_1(...) \
+#	define RRR_DBG_1(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_2(...) \
+#	define RRR_DBG_2(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_2) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_3(...) \
+#	define RRR_DBG_3(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_3) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_4(...) \
+#	define RRR_DBG_4(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_4) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_5(...) \
+#	define RRR_DBG_5(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_5) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_5, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_6(...) \
+#	define RRR_DBG_6(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_6) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_6, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_7(...) \
+#	define RRR_DBG_7(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_7) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_7, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG_8(...) \
+#	define RRR_DBG_8(...) \
 	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_8, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
-#define RRR_DBG(...) \
+#	define RRR_DBG(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
+
+	// While writing code, use this macro to detect for instance invalid arguments to a function
+	// which caller should have checked as opposed to letting the program crash ungracefully
+#	define RRR_BUG(...) \
+	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+#endif
 
 #define RRR_DEBUGLEVEL_1 \
 	((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0)
@@ -173,11 +207,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_NOTICE		5
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
-
-// While writing code, use this macro to detect for instance invalid arguments to a function
-// which caller should have checked as opposed to letting the program crash ungracefully
-#define RRR_BUG(...) \
-	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
 
 #define RRR_LOG_HEADER_FORMAT "<%u> <%s> "
 

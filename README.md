@@ -1,6 +1,9 @@
 ![RRR logo](https://raw.githubusercontent.com/atlesn/rrr/master/misc/rrr-not-tall.svg)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/atlesn/rrr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/atlesn/rrr/context:cpp)
+![Build master](http://www.goliathdns.no/rrr/build-master.svg?a "Build status master")
+![Build development](http://www.goliathdns.no/rrr/build-development.svg?a "Build status master")
 
-RRR is a general purpose acquirement, transmission and processing daemon supporting HTTP,
+RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
 together to retrieve, transmit, modify and save messages.
 
@@ -51,11 +54,10 @@ The `.md` files contain the examples, and the source scripts and configuration f
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
-may be compiled and run on FreeBSD or other Linuxes including Raspbian and SUSE. Other systems might work but
+may be compiled and run on FreeBSD or other Linuxes including Raspbian, Void and SUSE. Other systems might work but
 are not supported.
 
-Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
-Linux should work however if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD do not work
+Among distributions known *not* to work out of the box, are  OpenBSD and NetBSD. These do not work
 due to lack of support for process shared locks.
 
 Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a

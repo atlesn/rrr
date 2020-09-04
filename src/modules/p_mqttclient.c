@@ -250,7 +250,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_connect_attempts", connect_attempts, RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS);
 	if (data->connect_attempts < 1) {
-		RRR_MSG_0("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %llu was given.",
+		RRR_MSG_0("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %" PRIrrrbl " was given.",
 				config->name, data->connect_attempts);
 		ret = 1;
 		goto out;
@@ -921,7 +921,7 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_msg_msg_from_publish\n");
 		}
 		if (message_actual_length_signed > RRR_LENGTH_MAX) {
-			RRR_MSG_0("Received RRR message in publish was too long in mqttclient instance %s: %" PRIrrrsl " > %lu\n",
+			RRR_MSG_0("Received RRR message in publish was too long in mqttclient instance %s: %" PRIrrrsl " > %u\n",
 					INSTANCE_D_NAME(data->thread_data), message_actual_length_signed, RRR_LENGTH_MAX);
 		}
 		message_actual_length = (rrr_length) message_actual_length_signed;
@@ -943,13 +943,13 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 			(struct rrr_msg *) message,
 			message_actual_length)
 	) {
-		RRR_DBG_1("RRR Message of size %li with corrupted header in mqtt client instance %s\n",
+		RRR_DBG_1("RRR Message of size %" PRIrrrl " with corrupted header in mqtt client instance %s\n",
 				message_actual_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (message_actual_length != message_stated_length) {
-		RRR_DBG_1("RRR message_final size mismatch, have %li bytes but packet states %li in mqtt client instance %s\n",
+		RRR_DBG_1("RRR message_final size mismatch, have %" PRIrrrl " bytes but packet states %" PRIrrrl " in mqtt client instance %s\n",
 				message_actual_length, message_stated_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -1061,7 +1061,7 @@ static int mqttclient_try_create_array_message_from_publish (
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %i\n",
+			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %li\n",
 					INSTANCE_D_NAME(data->thread_data), publish->payload->length);
 			ret = 0;
 		}
@@ -1536,7 +1536,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 		data->total_discarded_count += discarded_count;
 
 		if (discarded_count > 0) {
-			RRR_DBG_1("mqttclient instance %s discarded %" PRIu64 " messages from senders upon connect retry\n",
+			RRR_DBG_1("mqttclient instance %s discarded %i messages from senders upon connect retry\n",
 					INSTANCE_D_NAME(data->thread_data), discarded_count);
 		}
 	}
@@ -1547,7 +1547,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(data->thread_data)) != 1; i--) {
 		rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(data->thread_data));
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' username '%s' client-ID '%s' attempt %i/%i\n",
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%" PRIrrrbl "' username '%s' client-ID '%s' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data),
 				data->server,
 				data->server_port,
@@ -1587,7 +1587,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 					goto reconnect;
 				}
 
-				RRR_MSG_0("Could not connect to mqtt server '%s' port %llu in instance %s, restarting. Return was %i.\n",
+				RRR_MSG_0("Could not connect to mqtt server '%s' port %" PRIrrrbl " in instance %s, restarting. Return was %i.\n",
 						data->server,
 						data->server_port,
 						INSTANCE_D_NAME(data->thread_data),

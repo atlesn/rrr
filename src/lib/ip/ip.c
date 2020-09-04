@@ -97,7 +97,7 @@ static int __rrr_ip_graylist_push (
 
 	char ip_str[256];
 	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_MSG_0("Host '%s' graylisting for %" PRIu64 " ms following connection error\n",
+	RRR_DBG_2("Host '%s' graylisting for %llu ms following connection error\n",
 			ip_str,
 			target->graylist_period_us / 1000LLU
 	);
@@ -111,7 +111,7 @@ static int __rrr_ip_graylist_push (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push %lu > %lu\n",
+		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push %u > %lu\n",
 			len, sizeof(new_entry->addr));
 	}
 

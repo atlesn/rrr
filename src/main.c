@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 
 #define RRR_MAIN_DEFAULT_MESSAGE_TTL_S 30
+#define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_main_check_wait_for_data {
 	struct rrr_instance_collection *instances;
@@ -147,6 +148,7 @@ int rrr_main_create_and_start_threads (
 				instance->module_data->operations.cancel_function,
 				instance->module_data->start_priority,
 				instance->module_data->instance_name,
+				RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data[threads_total]
 		);
 
@@ -218,7 +220,7 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		// Make sure things does not get outahand during multiplication. Input from user
 		// is in seconds, convert to microseconds
 		if (message_ttl_us > UINT32_MAX) {
-			RRR_MSG_0("Value of time-to-live was too big, maximum is %lu\n", UINT32_MAX);
+			RRR_MSG_0("Value of time-to-live was too big, maximum is %u\n", UINT32_MAX);
 			return EXIT_FAILURE;
 		}
 

@@ -1,3 +1,27 @@
+rrr (1.12-0) buster; urgency=medium
+
+  * Implement LibreSSL as an alternative to OpenSSL
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:45:18 +0200
+
+rrr (1.11-4) buster; urgency=medium
+  
+  * Fix bug with smart timeout in IP module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:25:43 +0200
+
+rrr (1.11-3) buster; urgency=medium
+
+  * New configuration parameters in HTTP-server to allow push connections
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 28 Aug 2020 15:08:45 +0200
+
+rrr (1.11-2) buster; urgency=medium
+
+  * Fix bug causing crash on arm64 when debuglevel 1 was active
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 23:56:57 +0200
+
 rrr (1.11-1) buster; urgency=medium
 
   * New file module to read from devices, files, sockets etc.

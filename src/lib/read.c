@@ -49,7 +49,7 @@ struct rrr_read_session *rrr_read_session_new (
 	memset(read_session, '\0', sizeof(*read_session));
 
 	if (src_addr_len > sizeof(read_session->src_addr)) {
-		RRR_BUG("BUG: Address too long (%lu>%lu) in rrr_read_session_new\n", src_addr_len, sizeof(read_session->src_addr));
+		RRR_BUG("BUG: Address too long (%u>%lu) in rrr_read_session_new\n", src_addr_len, sizeof(read_session->src_addr));
 	}
 
 	read_session->last_read_time = rrr_time_get_64();
@@ -607,7 +607,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	while (wpos > 0) {
 		if (pos_max != NULL && pos > pos_max) {
-			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
+			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%u)\n",
 					wpos, data->message_max_size);
 			return RRR_READ_SOFT_ERROR;
 		}

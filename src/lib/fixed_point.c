@@ -292,30 +292,6 @@ static int __rrr_fixp_str_preliminary_parse (
 	return 0;
 }
 
-int rrr_fixp_str_get_length (rrr_length *result, const char *str, rrr_biglength str_length) {
-	*result = 0;
-
-	const char *endptr = NULL;
-	const char *dummy_c = NULL;
-	int dummy_i = 0;
-
-	int ret = 0;
-
-	if ((ret = __rrr_fixp_str_preliminary_parse(str, str_length, &dummy_c, &dummy_c, &endptr, &dummy_i, &dummy_i)) != 0) {
-		return ret;
-	}
-
-	rrr_biglength result_tmp = (size_t) endptr - (size_t) str;
-
-	if (result_tmp > RRR_LENGTH_MAX) {
-		RRR_MSG_0("");
-	}
-
-	*result = result_tmp;
-
-	return ret;
-}
-
 int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr) {
 	*target = 0;
 

@@ -172,13 +172,13 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 	int value_length = value_end - value_begin + 1;
 
 	if (rrr_parse_extract_string(&name, pos, name_begin, name_length) != 0) {
-		RRR_MSG_0("Could not extract setting name\n");
+		RRR_MSG_0("Could not extract name of setting\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_parse_extract_string(&value, pos, value_begin, value_length) != 0) {
-		RRR_MSG_0("Could not extract setting name\n");
+		RRR_MSG_0("Could not extract value of setting\n");
 		ret = 1;
 		goto out;
 	}

@@ -689,6 +689,11 @@ static int __rrr_type_fixp_pack (RRR_TYPE_PACK_ARGS) {
 
 static int __rrr_type_fixp_export (RRR_TYPE_EXPORT_ARGS) {
 	RRR_BUG("__rrr_type_fixp_export not implemented");
+
+	(void)(target);
+	(void)(written_bytes);
+	(void)(node);
+
 	return 0;
 }
 
@@ -1481,7 +1486,7 @@ int rrr_type_value_allocate_and_import_raw (
 	}
 
 	if (parsed_bytes != stored_length) {
-		RRR_MSG_0("Parsed bytes mismatch, parsed %li bytes while %li was expected\n", parsed_bytes, stored_length);
+		RRR_MSG_0("Parsed bytes mismatch, parsed %" PRIrrrl " bytes while %" PRIrrrl " was expected\n", parsed_bytes, stored_length);
 		ret = 1;
 		goto out;
 	}

@@ -63,7 +63,7 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
 	if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(message, data->message_ttl_us)) {
-		RRR_MSG_0("Warning: Received message in buffer instance %s with expired TTL, limit is set to %u seconds. Dropping message.\n",
+		RRR_MSG_0("Warning: Received message in buffer instance %s with expired TTL, limit is set to %" PRIrrrbl " seconds. Dropping message.\n",
 				INSTANCE_D_NAME(thread_data), data->message_ttl_seconds);
 		goto drop;
 	}
@@ -90,7 +90,7 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("buffer_ttl_seconds", message_ttl_seconds, 0);
 
 	if (data->message_ttl_seconds > UINT32_MAX) {
-		RRR_MSG_0("buffer_ttl_seconds too large in instance %s, maximum is %llu\n", config->name, UINT32_MAX);
+		RRR_MSG_0("buffer_ttl_seconds too large in instance %s, maximum is %u\n", config->name, UINT32_MAX);
 		ret = 1;
 		goto out;
 	}
