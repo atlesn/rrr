@@ -55,8 +55,16 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 #define RRR_CONFIG_FILE_SUFFIX	".conf"
 #define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
 
+#ifndef RRR_MODULE_PATH
+#	define	RRR_MODULE_PATH "."
+#endif
+#ifndef RRR_CMODULE_PATH
+#	define	RRR_CMODULE_PATH "."
+#endif
+
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
+		RRR_CMODULE_PATH,
 		"/usr/lib/rrr",
 		"/lib/rrr",
 		"/usr/local/lib/rrr",

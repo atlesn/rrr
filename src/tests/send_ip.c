@@ -44,7 +44,7 @@ int main (int argc, char **argv) {
 
 	char *end;
 	unsigned long long port = strtoull(argv[1], &end, 10);
-	if (end - argv[1] != strlen(argv[1]) || port == 0 || port > 65535) {
+	if (end - argv[1] != (ssize_t) strlen(argv[1]) || port == 0 || port > 65535) {
 		fprintf (stderr, "Invalid port argument '%s' to send_ip\n", argv[1]);
 		ret = 1;
 		goto out;
