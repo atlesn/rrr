@@ -53,7 +53,7 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## SUPPORTED SYSTEMS
 
-RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
+RRR supports being run by SystemD and runit and has native Debian/Ubuntu, Fedora and ArchLinux packages. In addition, RRR
 may be compiled and run on FreeBSD or other Linuxes including Raspbian, Void and SUSE. Other systems might work but
 are not supported.
 
@@ -115,6 +115,14 @@ See the *COMPILE* section below for further information.
 	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
 	$ sudo apt update
 	$ sudo apt install rrr
+
+#### Pre-compiled Fedora package using yum
+
+	$ sudo su -
+	# curl https://yum.goliathdns.no/goliathdns.repo > /etc/yum.repos.d/goliathdns.repo
+	# yum install rrr
+
+When asked to install the GPG key for the GoliathDNS repository, answer 'yes'.
 
 #### Compile on ArchLinux using PKGBUILD file
 
