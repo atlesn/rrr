@@ -13,7 +13,7 @@ rm -f $TMPDIR/$SPEC || exit 1
 
 cp $SPEC $TMPDIR || exit 1
 
-cd ../../ || exit 1
+cd ../ || exit 1
 TRANSFORM=s,^,rrr-$VERSION/,
 tar --transform $TRANSFORM -chzf $TMPDIR/$TGZ *
 
