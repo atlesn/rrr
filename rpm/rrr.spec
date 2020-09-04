@@ -25,7 +25,8 @@ make check
 rm -rf $RPM_BUILD_ROOT
 %make_install
 %post
-adduser --system --group rrr
+groupadd -r rrr || true
+adduser --system --group rrr || true
 %files
 %license LICENSE LICENSE.*
 %{_mandir}/*
