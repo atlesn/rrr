@@ -964,7 +964,8 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		if (node->ready_to_destroy) {
 			(*count)++;
 			void *thread_ret;
-			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %llu\n",
+					node, node->is_watchdog, RRR_PTHREAD_T_TO_LLU(node->thread));
 			if (node->is_watchdog) {
 				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);
