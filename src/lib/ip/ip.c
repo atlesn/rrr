@@ -97,7 +97,7 @@ static int __rrr_ip_graylist_push (
 
 	char ip_str[256];
 	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_MSG_0("Host '%s' graylisting for %llu ms following connection error\n",
+	RRR_DBG_2("Host '%s' graylisting for %llu ms following connection error\n",
 			ip_str,
 			target->graylist_period_us / 1000LLU
 	);
