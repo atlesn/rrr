@@ -1,7 +1,7 @@
 Name:           rrr
 Version:        1.12
 Release:        1%{?dist}
-Summary:        Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+Summary:	RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 Group:		rrr
 
 License:        GPLv3+
@@ -12,7 +12,7 @@ BuildRequires:  automake, autoconf, (mariadb-devel or community-mysql-devel), op
 Requires:       libusb, systemd, openssl-libs, (mariadb-common or mysql-common), python3 >= 3.6, perl >= 5.26, librrr1
 
 %description
-Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 %prep
 %autosetup
 autoreconf -i
