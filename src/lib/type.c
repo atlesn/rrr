@@ -689,6 +689,11 @@ static int __rrr_type_fixp_pack (RRR_TYPE_PACK_ARGS) {
 
 static int __rrr_type_fixp_export (RRR_TYPE_EXPORT_ARGS) {
 	RRR_BUG("__rrr_type_fixp_export not implemented");
+
+	(void)(target);
+	(void)(written_bytes);
+	(void)(node);
+
 	return 0;
 }
 

@@ -537,9 +537,7 @@ static int __rrr_net_transport_libressl_send (
 				goto out;
 			}
 			else {
-				data += bytes;
 				size_remaining -= bytes;
-
 				*sent_bytes = bytes;
 
 				if (size_remaining == 0) {

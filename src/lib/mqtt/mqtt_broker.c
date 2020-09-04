@@ -882,8 +882,14 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 
 static int __rrr_mqtt_broker_handle_auth (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-	int ret = 0;
-	return ret;
+
+	(void)(connection);
+	(void)(mqtt_data);
+	(void)(packet);
+
+	// AUTH not supported
+
+	return RRR_MQTT_SOFT_ERROR;
 }
 
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
