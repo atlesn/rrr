@@ -1276,8 +1276,11 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 }
 
 int rrr_mqtt_parse_auth (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+	(void)(session);
+
+	// Not implemented
+
+	return RRR_MQTT_SOFT_ERROR;
 }
 
 

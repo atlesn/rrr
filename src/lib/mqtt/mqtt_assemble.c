@@ -546,6 +546,11 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	RRR_MSG_0("Assemble function not implemented\n");
+	RRR_BUG("Assemble function for AUTH not implemented\n");
+
+	(void)(target);
+	(void)(size);
+	(void)(packet);
+
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
