@@ -389,8 +389,6 @@ int rrr_net_transport_new (
 void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	rrr_net_transport_maintenance(transport);
 
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
 	rrr_net_transport_common_cleanup(transport);
 
 	pthread_mutex_destroy(&transport->handles.lock);

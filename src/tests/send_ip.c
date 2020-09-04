@@ -19,13 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+// Allow INADDR_LOOPBACK
+#undef __BSD_VISIBLE
+#define __BSD_VISIBLE 1
+
+#include <netinet/in.h>
 
 int main (int argc, char **argv) {
 	int ret = 0;
@@ -39,7 +44,7 @@ int main (int argc, char **argv) {
 
 	char *end;
 	unsigned long long port = strtoull(argv[1], &end, 10);
-	if (end - argv[1] != strlen(argv[1]) || port == 0 || port > 65535) {
+	if (end - argv[1] != (ssize_t) strlen(argv[1]) || port == 0 || port > 65535) {
 		fprintf (stderr, "Invalid port argument '%s' to send_ip\n", argv[1]);
 		ret = 1;
 		goto out;
