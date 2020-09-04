@@ -47,6 +47,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
+// On some systems pthread_t is an int and on others it's a pointer
+static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
+	return (unsigned long long int) t;
+}
+
+#define RRR_PTHREAD_T_TO_LLU(t) \
+	__rrr_pthread_t_to_llu(t)
+
 struct rrr_thread_postponed_cleanup_node {
 	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
 	struct rrr_thread *thread;
