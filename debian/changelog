@@ -1,3 +1,9 @@
+rrr (1.12-1) buster; urgency=medium
+
+  * Fix misc. build warnings
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 04 Sep 2020 10:52:36 +0200
+
 rrr (1.12-0ubuntu1) focal; urgency=medium
 
   * Ubuntu release
