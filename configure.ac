@@ -270,7 +270,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 		]])
 	])
 
-	$CC -o conftest conftest.c ${PERL5_CFLAGS} ${PERL5_LDFLAGS}
+	# Need -O to avoid warning about FORTIFY_SOURCE
+	$CC -o conftest conftest.c ${PERL5_CFLAGS} -O3 ${PERL5_LDFLAGS}
 	perl5_result=$?
 	if test x"${perl5_result}" = x"0"; then
 		./conftest
