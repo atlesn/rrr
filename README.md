@@ -92,11 +92,10 @@ forking the GitHub repository.
 
 Some systems have customized branches, choose one of the following if appropriate:
 
-	$ git checkout archlinux
 	$ git checkout freebsd
 	$ git checkout ubuntu
 
-The master branch of RRR contains a native Debian package.
+The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
 
 See the *COMPILE* section below for further information.
 
