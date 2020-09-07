@@ -128,7 +128,7 @@ When asked to install the GPG key for the GoliathDNS repository, answer 'yes'.
 
 	$ yay -S rrr
 
-The latest RRR release will be downloaded and built. When promted after compilation, enter your password to complete installation.
+The latest RRR release will be downloaded and built. When prompted after compilation, enter your password to complete the installation.
 	
 #### Packages available on the APT mirrors
 
