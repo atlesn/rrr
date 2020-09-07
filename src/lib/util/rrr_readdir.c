@@ -107,7 +107,7 @@ int rrr_readdir_foreach_prefix (
 		char orig_path[PATH_MAX + 1];
 		char real_path[PATH_MAX + 1];
 		if (snprintf(orig_path, PATH_MAX, "%s/%s", dir_path, entry->d_name) >= PATH_MAX) {
-			RRR_MSG_0("Path was too long for file '%s' in rrr_readdir_foreach\n", entry->d_name);
+			RRR_DBG_3("Path was too long for file '%s' in rrr_readdir_foreach\n", entry->d_name);
 			continue; // Non-critical
 		}
 
@@ -121,7 +121,7 @@ int rrr_readdir_foreach_prefix (
 		while (--i > 0 && (d_type == DT_UNKNOWN || d_type == DT_LNK)) {
 			struct stat sb;
 			if (lstat(real_path, &sb) != 0) {
-				RRR_MSG_0("Could not stat file '%s': %s\n", orig_path, rrr_strerror(errno));
+				RRR_DBG_3("Could not stat file '%s': %s\n", orig_path, rrr_strerror(errno));
 				goto next_entry; // Non-critical
 			}
 
@@ -138,7 +138,7 @@ int rrr_readdir_foreach_prefix (
 
 			if (d_type == DT_LNK) {
 				if (realpath(orig_path, real_path) == NULL) {
-					RRR_MSG_0("Could not resolve real path for '%s': %s\n", orig_path, rrr_strerror(errno));
+					RRR_DBG_3("Could not resolve real path for '%s': %s\n", orig_path, rrr_strerror(errno));
 					goto next_entry; // Non-critical
 				}
 #ifdef RRR_READDIR_DEBUG
@@ -151,7 +151,7 @@ int rrr_readdir_foreach_prefix (
 		}
 
 		if (i <= 0) {
-			RRR_MSG_0("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", orig_path);
+			RRR_DBG_3("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", orig_path);
 			goto next_entry; // Non-critical
 		}
 
