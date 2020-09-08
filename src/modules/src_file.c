@@ -50,6 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/linked_list.h"
 #include "../lib/input/input.h"
 
+#define RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE 4096
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
 #define RRR_FILE_MAX_SIZE_MB 32
 
@@ -63,6 +64,7 @@ struct file {
 	char *orig_path;
 	char *real_path;
 	int fd;
+	uint64_t total_messages;
 };
 
 struct file_collection {
@@ -81,6 +83,8 @@ struct file_data {
 	char *directory;
 	char *prefix;
 	rrr_setting_uint probe_interval;
+	rrr_setting_uint max_messages_per_file;
+	rrr_setting_uint max_read_step_size;
 
 	char *topic;
 	size_t topic_len;
@@ -211,13 +215,17 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
+
+	/* Don't goto out in errors, check all possible errors first. */
+
 	if (	!RRR_INSTANCE_CONFIG_EXISTS("file_input_types") &&
 			data->do_read_all_to_message == 0 &&
 			data->do_unlink_on_close == 0
 	) {
-		RRR_MSG_0("No actions defined in configuration for file instance %s, one ore more must be specified\n", config->name);
+		RRR_MSG_0("No actions defined in configuration for file instance %s, one or more must be specified\n", config->name);
 		ret = 1;
-		goto out;
 	}
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("file_input_types") &&
@@ -225,9 +233,24 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	) {
 		RRR_MSG_0("Both file_input_types and do_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
 		ret = 1;
-		goto out;
 	}
 
+	if (data->do_read_all_to_message && data->max_messages_per_file != 0) {
+		RRR_MSG_0("Both file_do_read_all_to_message and file_max_messages_per_file was set in file instance %s, this is a configuration error.\n", config->name);
+		ret = 1;
+	}
+
+	if (data->max_read_step_size == 0) {
+		RRR_MSG_0("file_max_read_step_size was zero in file instance %s, this is a configuration error.\n", config->name);
+		ret = 1;
+	}
+
+	if (	RRR_INSTANCE_CONFIG_EXISTS("file_max_read_step_size") &&
+			data->do_read_all_to_message != 0
+	) {
+		RRR_MSG_0("Both file_max_read_step_size and do_read_all_to_message was set in file instance %s, this is a configuration error.\n", config->name);
+		ret = 1;
+	}
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -371,29 +394,46 @@ static int file_read_array_write_callback (struct rrr_msg_holder *entry, void *a
 	return ret;
 }
 
+struct file_read_array_callback_data {
+	struct file_data *file_data;
+	struct file *file;
+};
+
 static int file_read_array_callback (struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg) {
-	struct file_data *data = arg;
+	struct file_read_array_callback_data *callback_data = arg;
 
 	int ret = 0;
 
 	(void)(read_session);
 
-	struct file_read_array_write_callback_data callback_data = {
-			data,
+	struct file_read_array_write_callback_data write_callback_data = {
+			callback_data->file_data,
 			array_final
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(callback_data->file_data->thread_data),
 			NULL,
 			0,
 			0,
 			file_read_array_write_callback,
-			&callback_data
+			&write_callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not create new array message in file instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
+				INSTANCE_D_NAME(callback_data->file_data->thread_data), ret);
 		return ret;
+	}
+
+	callback_data->file->total_messages++;
+	if (callback_data->file_data->max_messages_per_file != 0 && callback_data->file->total_messages >= callback_data->file_data->max_messages_per_file) {
+		RRR_DBG_3("file instance %s closing file '%s'=>'%s' after max messages received (%" PRIu64 "/%" PRIrrrbl ")\n",
+				INSTANCE_D_NAME(callback_data->file_data->thread_data),
+				callback_data->file->orig_path,
+				callback_data->file->real_path,
+				callback_data->file->total_messages,
+				callback_data->file_data->max_messages_per_file
+		);
+		ret = RRR_READ_EOF;
 	}
 
 	return ret;
@@ -506,6 +546,11 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 		socket_flags |= RRR_SOCKET_READ_INPUT_DEVICE;
 	}
 
+	struct file_read_array_callback_data receive_array_callback_data = {
+		data,
+		file
+	};
+
 	if (data->tree != NULL && (ret = rrr_socket_common_receive_array_tree (
 			bytes_read,
 			&file->read_session_collection,
@@ -514,9 +559,10 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 			&array_final,
 			data->tree,
 			0,
+			data->max_read_step_size,
 			RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 			file_read_array_callback,
-			data
+			&receive_array_callback_data
 	)) != 0) {
 		if (ret == RRR_READ_INCOMPLETE) {
 			ret = 0;

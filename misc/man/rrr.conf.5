@@ -1521,7 +1521,7 @@ but one of them must be specified. No default value.
 Read all data from the entries and put it into an RRR message.
 Note that this is probably not useful for sockets and character devices. Cannot be used with
 .B file_input_types,
-but one of them must be specified. Defaults to 'no'.
+but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
@@ -1548,6 +1548,16 @@ Defaults to no.
 .It file_no_keyboard_hijack={yes|no}
 After a keyboard device has been successfully hijacked thus identified as a keyboard, immediately
 ungrab the device so that other applications also may receive events from it. 
+
+.It file_max_messages_per_file=COUNT
+After the specified amount of messages has been read rom a file, close it.
+Cannot be used with file_read_all_to_message=yes.
+Defaults to 0 which means that that any number of messages will be read and the file is only closed on EOF or error conditions.
+
+.It file_max_read_step_size=BYTES
+Read as most the specified number of bytes each round.
+This parameter is not respected when file_read_all_to_message is 'yes', and having both these parameter specified is an error.
+Must be greater than zero, defaults to 4096.
 
 .El
 .SS mysql (DAI)
