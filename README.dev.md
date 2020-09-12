@@ -133,22 +133,22 @@ These methods are always available for an instance to use:
 - The callback function must be provided by the instance, the actual writing happens here
 - The callback data is used only by the callback function and instructs it on what to do
 
-The callback function will receive a pre-allocated so called `ip buffer entry`. This struct holds IP address data (if any) and the message itself.
+The callback function will receive a pre-allocated so called `rrr_msg_holder` or message holder. This struct holds IP address data (if any) and the message itself.
 It also provides reference counting and locking.
 
 Depending on how a module is written, we don't always know wether we should actually write to the buffer or not when calling a write functions. If
-we do not wish to use the entry in the callback after all, the callback may return `RRR_MESSAGE_BROKER_DROP`. It's on the other hand also
-possible to make the message broker call the callback again immediately if we wish to write another entry (or try again) by `RRR_MESSAGE_BROKER_AGAIN`.
+we do not wish to use the new message holder in the callback after all, the callback may return `RRR_MESSAGE_BROKER_DROP`. It's on the other hand also
+possible to make the message broker call the callback again immediately if we wish to write another message holder (or try again) by `RRR_MESSAGE_BROKER_AGAIN`.
 These two may be ORed together. For severe errors, return `RRR_MESSAGE_BROKER_ERR`. This makes the write function also return and error (non-zero).
 
-The IP buffer entry must be filled with an RRR message as other modules expects this. The message must only be allocated and written to inside the 
+The message holder must be filled with an RRR message as other modules expects this. The message must only be allocated and written to inside the 
 write callback to provide proper memory fencing.
 
-Before the callback returns, the IP buffer entry MUST be unlocked using `rrr_ip_buffer_entry_unlock()`. Reference counting can usually be disregarded in
+Before the callback returns, the message holder MUST be unlocked using `rrr_msg_holder_unlock()`. Reference counting can usually be disregarded in
 the write callback.
 
 Some fast write methods are available to use for entries which already have been allocated inside a write function (and not modified afterwards),
-but which we now wish to write to the output buffer without allocating a new entry. These functions are marked with `unsafe`.
+but which we now wish to write to the output buffer without allocating a new message holder. These functions are marked with `unsafe`.
 
 	// Write to the output buffer
 	rrr_message_broker_incref_and_write_entry_unsafe_no_unlock(...); 
@@ -161,7 +161,7 @@ but which we now wish to write to the output buffer without allocating a new ent
 
 A delayed write can be performed while still being inside the callback of a write function or a poll callback (read further down) of the buffer we are writing to.
 
-If we cannot guarantee that an IP buffer entry has been written to exclusively inside a write function, we must clone it when we add it to
+If we cannot guarantee that a message holder has been written to exclusively inside a write function, we must clone it when we add it to
 the output queue:
 
 	// Allocate new memory and copy to it

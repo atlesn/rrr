@@ -11,41 +11,38 @@ of
 .B instances
 of different
 .B modules.
-The different instances either get messages from other
-modules or read them externally. Some also save messages externally or
-send them over the network.
+The different instances either get RRR messages from other
+instances, creates new messages based on some external data or send messages out. A
+complete list of all available modules can be found in the MODULES section.
 .PP
-Instances are linked to each other using the 
-.B senders=instance1,...
-configuration parameter, which tells the instance which other modules to get messages from. A
+RRR messages may contain RRR array data, timestamp, topic and raw data.
+.PP
+All the different modules can read messages from each other, except from
 .B source
-module is a module which cannot read from other modules, and this argument should
-not be specified.
+modules which only receives data form external sources.
 .PP
-At program startup, the order of module start can be controlled using the
-.B wait_for=instance_1,...
-configuration parameter. The instance with this argument will not be started until the
-other specified instances have started.
+Custom functionallity may be achieved by using using the Perl or Python module to
+run scripts inside of an RRR environment. It is also possible to write custom C or
+C++ modules.
 .PP
+Once started,
 .B rrr
-may be extended with custom modules. Custom functionality may also be achieved by
-using a module which can send data to and from a python program.
-.PP
-.B rrr
-automatically restarts all running instances in case one instance for any
-reason stops or hangs, like due to network problems. A failing instance
-usually does not make
-.B rrr
-quit, all instances are simply restarted.
+keeps running until it is signalled to stop.
 .PP
 .SH SYNTAX
 Any number of instances may be specified. An instance specification begins with a [] containing
-the user chosen name of the instance. A module to use must then be specified, along with
-module-specific settings. The
-.B senders=
-setting is mandatory for modules which read from other modules, but invalid for modules
-which are sources (see MODULES section). An instance section ends when a new begins
-or when we reach the end of the file.
+the user chosen name of the instance, like
+.B [INSTANCE NAME].
+A module to use must then be specified with
+.B module=MODULE NAME
+. The
+.B senders=SENDERS
+settings is set if the instance is to read from other instances. After this, any module-specific parameters follows.
+The order of parameters inside an instance specification and the order of the instances inside the configuration file
+do not matter. An instance section ends when a new begins or when we reach the end of the file.
+.PP
+Multiple instances of a module may co-exist as long as their settings don't collide, like if they try to use the same
+network ports.
 .PP
 .nf
 # Comment are like this, they must be on separate lines. The instance name
@@ -55,9 +52,9 @@ or when we reach the end of the file.
 # User chosen name of the instance
 [INSTANCE_1_NAME]
 # Which module to use for the instance
-module={MODULE NAME}
+module=MODULE NAME
 
-# Which other instances to read from (not for source only modules)
+# Which other instances to read from (not for source modules)
 senders=INSTANCE NAME,...
 
 # On program startup, wait for these instances to start before starting (optional)
@@ -105,9 +102,9 @@ Array tree definitions may be defined above or below where they are used.
 See
 .Xr rrr_post(1)
 for array tree syntax, and in the chapters of each module below on where they can be used.
-.SH MESSAGES
-A message consists of at least a timestamp (in microseconds) and either arbitary data or
-and array of values. Messages may in addition contain an MQTT topic which can be used internally by certain modules.
+.SH RRR MESSAGES AND ARRAYS
+An RRR message consists of at least a timestamp (in microseconds) and either arbitary data or
+and array of values. Messages may in addition contain an MQTT topic.
 .PP
 Messages can either contain arbitary data or a data array.
 .PP
@@ -118,7 +115,7 @@ Python scripts. Fields from an HTTP request can be mapped into an array, and an 
 .PP
 The general syntax for an array parsing specification (without branches) is a comma separated list of types with length and item count specifications. 
 .PP
-.Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
+.Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
 .PP
 The arrays are special as it is possible to have multiple values at each position. Each position has one or more values
 of the exact same type and length, and may or may not have a tag (string name) identifying the particular position. Tag
@@ -1521,7 +1518,7 @@ but one of them must be specified. No default value.
 Read all data from the entries and put it into an RRR message.
 Note that this is probably not useful for sockets and character devices. Cannot be used with
 .B file_input_types,
-but one of them must be specified. Defaults to 'no'.
+but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
@@ -1548,6 +1545,16 @@ Defaults to no.
 .It file_no_keyboard_hijack={yes|no}
 After a keyboard device has been successfully hijacked thus identified as a keyboard, immediately
 ungrab the device so that other applications also may receive events from it. 
+
+.It file_max_messages_per_file=COUNT
+After the specified amount of messages has been read rom a file, close it.
+Cannot be used with file_read_all_to_message=yes.
+Defaults to 0 which means that that any number of messages will be read and the file is only closed on EOF or error conditions.
+
+.It file_max_read_step_size=BYTES
+Read as most the specified number of bytes each round.
+This parameter is not respected when file_read_all_to_message is 'yes', and having both these parameter specified is an error.
+Must be greater than zero, defaults to 4096.
 
 .El
 .SS mysql (DAI)

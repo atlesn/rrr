@@ -72,6 +72,14 @@ static int signal_handlers_active = 0;
 static struct rrr_signal_handler_collection signal_handlers = {0};
 pthread_mutex_t signal_lock = PTHREAD_MUTEX_INITIALIZER;
 
+int rrr_signal_handler_get_active (void) {
+	int active = 0;
+	pthread_mutex_lock(&signal_lock);
+	active = signal_handlers_active;
+	pthread_mutex_unlock(&signal_lock);
+	return active;
+}
+
 void rrr_signal_handler_set_active (int active) {
 	pthread_mutex_lock(&signal_lock);
 	signal_handlers_active = active;
@@ -84,6 +92,9 @@ struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, vo
 	h->private_arg = private_arg;
 
 	pthread_mutex_lock(&signal_lock);
+	if (signal_handlers_active == 1) {
+		RRR_BUG("Signals were not disabled while being in rrr_signal_handler_push\n");
+	}
 	RRR_LL_APPEND(&signal_handlers, h);
 	pthread_mutex_unlock(&signal_lock);
 	return h;
@@ -91,14 +102,10 @@ struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, vo
 
 void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 	pthread_mutex_lock(&signal_lock);
+	if (signal_handlers_active == 1) {
+		RRR_BUG("Signals were not disabled while being in rrr_signal_handler_remove\n");
+	}
 	RRR_LL_REMOVE_NODE_IF_EXISTS(&signal_handlers, struct rrr_signal_handler, handler, free(node));
-	pthread_mutex_unlock(&signal_lock);
-}
-
-// Done in child forks
-void rrr_signal_handler_remove_all(void) {
-	pthread_mutex_lock(&signal_lock);
-	RRR_LL_DESTROY(&signal_handlers, struct rrr_signal_handler, free(node));
 	pthread_mutex_unlock(&signal_lock);
 }
 
@@ -106,6 +113,9 @@ void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
 	*was_found = 0;
 
 	pthread_mutex_lock(&signal_lock);
+	if (signal_handlers_active == 1) {
+		RRR_BUG("Signals were not disabled while being in rrr_signal_handler_remove_all_exceptl\n");
+	}
 	RRR_LL_ITERATE_BEGIN(&signal_handlers, struct rrr_signal_handler);
 		if (node->handler == function_ptr) {
 			*was_found = 1;
@@ -118,17 +128,21 @@ void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
 }
 
 void rrr_signal (int s) {
-	RRR_DBG_SIGNAL("Received signal %i int pid %i\n", s, getpid());
+	RRR_DBG_SIGNAL("Received signal %i int pid %i signal handlers active: %i\n", s, getpid(), signal_handlers_active);
 
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;
+		int i = 0;
 		RRR_LL_ITERATE_BEGIN(&signal_handlers, struct rrr_signal_handler);
+			RRR_DBG_SIGNAL("Calling handler %i of %i with signal %i in pid %i\n",
+					i, RRR_LL_COUNT(&signal_handlers), s, getpid());
 			int ret = node->handler(s, node->private_arg);
 			if (ret == RRR_SIGNAL_HANDLED) {
 				// Handlers may also return non-zero for signal to continue
 				handler_res = 0;
 				RRR_LL_ITERATE_LAST();
 			}
+			i++;
 		RRR_LL_ITERATE_END();
 
 		if (handler_res == RRR_SIGNAL_HANDLED) {

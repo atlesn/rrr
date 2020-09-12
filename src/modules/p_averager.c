@@ -475,7 +475,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		averager_maintain_buffer(data);
 
 		if (rrr_poll_do_poll_delete(thread_data, &thread_data->poll, averager_poll_callback, 50) != 0) {
-			RRR_MSG_ERR("Error while polling in averager instance %s\n",
+			RRR_MSG_0("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
@@ -483,7 +483,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		uint64_t current_time = rrr_time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
 			if (averager_calculate_average(data) != 0) {
-				RRR_MSG_ERR("Error while calculating in averager instance %s\n",
+				RRR_MSG_0("Error while calculating in averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -496,7 +496,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 					INSTANCE_D_HANDLE(thread_data),
 					&data->output_list
 			) != 0) {
-				RRR_MSG_ERR("Could not write to output buffer in averager instance %s\n",
+				RRR_MSG_0("Could not write to output buffer in averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}

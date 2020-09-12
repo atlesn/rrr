@@ -394,7 +394,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
-			RRR_MSG_ERR("Error while accepting connections in socket instance %s\n",
+			RRR_MSG_0("Error while accepting connections in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
 		}
@@ -405,11 +405,11 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			if (err == RRR_SOCKET_SOFT_ERROR) {
 				// Upon receival of invalid data, we must close the socket as sizes of
 				// the messages and boundaries might be out of sync
-				RRR_MSG_ERR("Invalid data received in socket instance %s, socket must be closed\n",
+				RRR_MSG_0("Invalid data received in socket instance %s, socket must be closed\n",
 						INSTANCE_D_NAME(thread_data));
 			}
 			else {
-				RRR_MSG_ERR("Error while reading data in socket instance %s, return was %i\n",
+				RRR_MSG_0("Error while reading data in socket instance %s, return was %i\n",
 						INSTANCE_D_NAME(thread_data), err);
 			}
 			break;
