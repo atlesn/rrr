@@ -1,3 +1,14 @@
+
+  * Added RPM packages
+  * Improvements in log messages / silence some messages
+  * New parameters in file module file_max_messages_per_file and
+    file_max_read_step_size
+  * Fix in signal framework causing cmodule forks only to be killed
+    by SIGKILL resulting in ungraceful shutdown
+  * Fix for forks not getting initialized when there are lots (lots) of
+    debug messages being printed
+  * Minor fixes
+
 rrr (1.12-1) buster; urgency=medium
 
   * Fix misc. build warnings
