@@ -970,7 +970,7 @@ static int __rrr_http_part_parse_chunk_header (
 		size_t start_pos,
 		const char *end
 ) {
-	int ret = RRR_HTTP_PARSE_INCOMPLETE;
+	int ret = RRR_HTTP_PARSE_OK;
 
 	*parsed_bytes = 0;
 	*result_chunk = NULL;
@@ -990,13 +990,15 @@ static int __rrr_http_part_parse_chunk_header (
 	const char *pos = start;
 
 	if (pos >= end) {
-		return RRR_HTTP_PARSE_INCOMPLETE;
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
 	}
 
 	const char *crlf = rrr_http_util_find_crlf(pos, end);
 
 	if (pos >= end) {
-		return RRR_HTTP_PARSE_INCOMPLETE;
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
 	}
 
 	// Allow extra \r\n at beginning
@@ -1006,48 +1008,51 @@ static int __rrr_http_part_parse_chunk_header (
 //		printf ("Parsed extra CRLF before chunk header\n");
 	}
 
-	if (crlf != NULL) {
-		unsigned long long chunk_length = 0;
+	if (crlf == NULL) {
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
 
-		rrr_length parsed_bytes_tmp = 0;
-		if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
-			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
+	unsigned long long chunk_length = 0;
 
-		if (pos + parsed_bytes_tmp == end) {
-			// Chunk header incomplete
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			goto out;
-		}
-		else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
-			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
+	rrr_length parsed_bytes_tmp = 0;
+	if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
+		RRR_MSG_0("Error while parsing chunk length, invalid value\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
 
-		pos += parsed_bytes_tmp;
-		pos += 2; // Plus CRLF after chunk header
+	if (pos + parsed_bytes_tmp == end) {
+		// Chunk header incomplete
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
+	else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
+		RRR_MSG_0("Error while parsing chunk length, invalid value\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
 
-		if (pos + 1 >= end) {
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			goto out;
-		}
+	pos += parsed_bytes_tmp;
+	pos += 2; // Plus CRLF after chunk header
 
-		struct rrr_http_chunk *new_chunk = NULL;
-		rrr_length chunk_start = pos - buf;
+	if (pos + 1 >= end) {
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
+
+	struct rrr_http_chunk *new_chunk = NULL;
+	rrr_length chunk_start = pos - buf;
 
 //		printf ("First character in chunk: %i\n", *(buf + chunk_start));
 
-		if ((new_chunk = __rrr_http_part_chunk_new(chunk_start, chunk_length)) == NULL) {
-			ret = RRR_HTTP_PARSE_HARD_ERR;
-			goto out;
-		}
-
-		*parsed_bytes = pos - start;
-		*result_chunk = new_chunk;
+	if ((new_chunk = __rrr_http_part_chunk_new(chunk_start, chunk_length)) == NULL) {
+		ret = RRR_HTTP_PARSE_HARD_ERR;
+		goto out;
 	}
+
+	*parsed_bytes = pos - start;
+	*result_chunk = new_chunk;
 
 	out:
 	return ret;
@@ -1133,15 +1138,14 @@ static int __rrr_http_part_parse_chunk (
 	}
 
 	struct rrr_http_chunk *new_chunk = NULL;
-	ret = __rrr_http_part_parse_chunk_header (
+
+	if ((ret = __rrr_http_part_parse_chunk_header (
 			&new_chunk,
 			&parsed_bytes_total,
 			buf,
 			start_pos + parsed_bytes_previous_chunk,
 			end
-	);
-
-	if (ret == 0) {
+	)) == 0 && new_chunk != NULL) { // != NULL check due to false positive warning about use of NULL from scan-build
 		RRR_DBG_3("Found new HTTP chunk start %li length %li\n", new_chunk->start, new_chunk->length);
 		RRR_LL_APPEND(chunks, new_chunk);
 
