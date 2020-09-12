@@ -103,7 +103,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_PLAIN_N(value,size) \
 	do {rrr_log_printn_plain ((const char *) value, size);}while(0)
 
-	// MSG 0 is for non-critical errors always to be logged
+	// MSG 0 is for errors
 #	define RRR_MSG_0(...) \
 	do {rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
@@ -119,8 +119,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_4(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
-	// Critical errors, use only if program, fork or thread exits due to an error
-	// This should not be used by the library, only by modules and executables
+	// This should only be used in main()
 #	define RRR_MSG_ERR(...) \
 	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 

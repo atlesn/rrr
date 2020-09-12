@@ -271,7 +271,7 @@ static int __rrr_cmodule_helper_poll_delete (
 	thread_data->cmodule->callback_data_tmp = &callback_data;
 
 	if (rrr_poll_do_poll_delete (thread_data, poll, __rrr_cmodule_helper_poll_callback, wait_ms) != 0) {
-		RRR_MSG_ERR("Error while polling in instance %s\n",
+		RRR_MSG_0("Error while polling in instance %s\n",
 			INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out;
@@ -758,7 +758,7 @@ void rrr_cmodule_helper_loop (
 					&output_buffer_ratelimit_active,
 					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Error while setting ratelimit in instance %s\n",
+				RRR_MSG_0("Error while setting ratelimit in instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -812,7 +812,7 @@ void rrr_cmodule_helper_loop (
 
 			struct rrr_fifo_buffer_stats fifo_stats;
 			if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
-				RRR_MSG_ERR("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+				RRR_MSG_0("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
 				break;
 			}
 

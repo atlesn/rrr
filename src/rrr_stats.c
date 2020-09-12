@@ -556,7 +556,7 @@ static int __rrr_stats_print_journal_message (const struct rrr_stats_message *me
 
 	struct rrr_stats_tree tree_tmp;
 	if (rrr_stats_tree_init(&tree_tmp) != 0) {
-		RRR_MSG_ERR("Could not initialize tree in __rrr_stats_print_journal_message\n");
+		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
 		ret = 1;
 		goto out;
 	}

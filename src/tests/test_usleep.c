@@ -45,12 +45,12 @@ int rrr_test_usleep (void) {
 	uint64_t sleeptime_us = (time_end - time_start);
 
 	// We only care about problems with conversion between 1000's
-	// On FreeBSD, the timer is very inacurate. Allow the double in
+	// On FreeBSD, the timer is very inaccurate. Allow the double in
 	// positive direction.
 	if (	sleeptime_us < SLEEPTIME_US - SLEEPTIME_TOLERANCE_US ||
 		sleeptime_us > (SLEEPTIME_US * 2) + SLEEPTIME_TOLERANCE_US
 	) {
-		RRR_MSG_ERR ("Sleep time out of range, slept for %" PRIu64 " usecs expected %i +/- %i usecs\n",
+		RRR_MSG_0("Sleep time out of range, slept for %" PRIu64 " usecs expected %i +/- %i usecs\n",
 			sleeptime_us, SLEEPTIME_US, SLEEPTIME_TOLERANCE_US);	
 		ret = 1;
 	}
