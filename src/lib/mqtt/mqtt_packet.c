@@ -152,9 +152,11 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 		const char *payload_start,
 		ssize_t payload_length
 ) {
-	int ret = 0;
+	if (*target != NULL) {
+		RRR_BUG("BUG: Target was not NULL in rrr_mqtt_p_payload_new_with_allocated_payload\n");
+	}
 
-	*target = NULL;
+	int ret = 0;
 
 	struct rrr_mqtt_p_payload *result = NULL;
 

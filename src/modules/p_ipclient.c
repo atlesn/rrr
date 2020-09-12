@@ -469,7 +469,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
 			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
-				RRR_MSG_ERR("Error while polling in ipclient instance %s\n",
+				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -530,7 +530,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		int delivered_count = 0;
 		if (receive_messages(&delivered_count, data) != 0) {
-			RRR_MSG_ERR("Error while receiving messages in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Error while receiving messages in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
 		}
 		delivered_total += delivered_count;
@@ -545,7 +545,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 					&ratelimit_active,
 					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Error while setting ratelimit in ipclient instance %s\n",
+				RRR_MSG_0("Error while setting ratelimit in ipclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 				break;
 			}

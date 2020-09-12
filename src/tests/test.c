@@ -270,13 +270,11 @@ int main (int argc, const char **argv) {
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
 
-	// During preload stage, signals are temporarily deactivated.
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-
 	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
 			rrr_posix_usleep(100000);
@@ -293,6 +291,7 @@ int main (int argc, const char **argv) {
 	} TEST_RESULT(ret == 0);
 
 	out_cleanup_instances:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite

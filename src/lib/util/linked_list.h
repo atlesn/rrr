@@ -102,18 +102,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}													\
 	(head)->node_count++; } while (0)
 
-#define RRR_LL_APPEND(head,node) do {					\
-	(node)->ptr_next = NULL;							\
-	(node)->ptr_prev = NULL;							\
-	if ((head)->ptr_first == NULL) {					\
-		(head)->ptr_first = (node);						\
-		(head)->ptr_last = (node);						\
-	}													\
-	else {												\
-		(head)->ptr_last->ptr_next = (node);			\
-		(node)->ptr_prev = (head)->ptr_last;			\
-		(head)->ptr_last = (node);						\
-	}													\
+// Avoid warning in static code analysis by checking both first and last
+// pointer for NULL. The tool does not always understand that they are both
+// always either NULL or not NULL
+#define RRR_LL_APPEND(head,node) do {								\
+	(node)->ptr_next = NULL;										\
+	(node)->ptr_prev = NULL;										\
+	if ((head)->ptr_first == NULL || (head)->ptr_last == NULL) {	\
+		(head)->ptr_first = (node);									\
+		(head)->ptr_last = (node);									\
+	}																\
+	else {															\
+		(head)->ptr_last->ptr_next = (node);						\
+		(node)->ptr_prev = (head)->ptr_last;						\
+		(head)->ptr_last = (node);									\
+	}																\
 	(head)->node_count++; } while (0)
 
 #define RRR_LL_PUSH(head,node)							\

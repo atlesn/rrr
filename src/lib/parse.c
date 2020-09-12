@@ -347,7 +347,7 @@ int rrr_parse_str_split (
 	}
 
 	if ((tmp = strdup(str)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_parse_str_split\n");
+		RRR_MSG_0("Could not allocate memory in rrr_parse_str_split\n");
 		ret = 1;
 		goto out;
 	}
