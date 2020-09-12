@@ -92,11 +92,10 @@ forking the GitHub repository.
 
 Some systems have customized branches, choose one of the following if appropriate:
 
-	$ git checkout archlinux
 	$ git checkout freebsd
 	$ git checkout ubuntu
 
-The master branch of RRR contains a native Debian package.
+The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
 
 See the *COMPILE* section below for further information.
 
@@ -124,14 +123,11 @@ See the *COMPILE* section below for further information.
 
 When asked to install the GPG key for the GoliathDNS repository, answer 'yes'.
 
-#### Compile on ArchLinux using PKGBUILD file
+#### Install from ArchLinux AUR repository
 
-	$ mkdir rrr
-	$ cd rrr
-	$ curl -s -o PKGBUILD https://raw.githubusercontent.com/atlesn/rrr/archlinux/misc/archlinux/PKGBUILD
-	$ makepkg -cf
-	$ sudo pacman -S perl
-	$ sudo pacman -U rrr-*.zst
+	$ yay -S rrr
+
+The latest RRR release will be downloaded and built. When prompted after compilation, enter your password to complete the installation.
 	
 #### Packages available on the APT mirrors
 
@@ -215,7 +211,7 @@ Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and
 
 ### RUN WITH RUNIT/SYSTEMD
 
-If you installed one of the provided packages, RRR will have configured `systemd` or `runit` and is probably already running using a dummy configuration.
+If you installed one of the provided packages, RRR will have configured `systemd` or `runit` and might already be running using a dummy configuration.
 
 Configuration files are placed in `/etc/rrr.conf.d/`. RRR will start one process fork for every configuration file in this folder (which ends with `.conf`).
 Place files in this folder and restart RRR with `sudo systemctl restart rrr` or `sv restart rrr`. Logs are delivered to syslog like other daemons.
@@ -223,6 +219,10 @@ Place files in this folder and restart RRR with `sudo systemctl restart rrr` or 
 For testing purposes, RRR can be started to start all configuration files in a directory by using `rrr /etc/rrr.conf.d/`.
 
 When compiling from source, there are configuration flags available to enable and disable `systemd` and `runit`.
+
+### OPENSSL/LIBRESSL
+
+When compiling RRR, the configuration script will search for both OpenSSL and LibreSSL installations. By default, the latter takes precedence if both are present.
 
 ### VIEW LIVE LOGS FROM DAEMONIZED PROCESS
 
@@ -325,7 +325,7 @@ set to either 1 or 2. We specify this array tree in our configuration file.
 	 	;
 	 ELSIF ({indicator} == 2)
 	 	blob32#message_big_a,
-	 	blob32#message_big_a
+	 	blob32#message_big_b
 	 	;
 	 ELSE
 	 	err
@@ -347,13 +347,13 @@ This is a dummy value which doesn't parse anything but instead always produces a
 Most standard operators are available, like `+ * - << & || &&` etc.
 It is possible to use `AND` and `OR` as well, those are aliases for `&&` and `||`.
 
-A condition is considered to be true if it's expression evaluates to non-zero.
+A condition is considered to be true if it evaluates to non-zero.
 
 Array trees may be specified in configuration files (outside instance definitions) with a header with a name like
 `{MY_ARRAY}`. The tree
 must end with a `;` (this also goes for each `IF`, `ELSIF` or `ELSE` block).
 All modules which have array definitions parameters may either specify an array tree like `ip_input_types=be4,be4`
-or reference an array from elsewhere in the configuration like `{MY_ARRAY}`.
+or reference an array from elsewhere in the configuration like `ip_input_types={MY_ARRAY}`.
 
 If the array tree is specified directly at the parameter, no newlines may occur within the tree (which may become messy).
 The terminating semicolon is optional when array trees are defined in a configuration parameter. 
