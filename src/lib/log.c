@@ -102,6 +102,12 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 		pthread_mutex_lock (&rrr_log_hook_lock);					\
 		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
 
+// Register and unregister functions should spin to keep the thread alive
+// thus obtaining the lock faster when there's a lot of messages being generated.
+#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN								\
+		while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { } \
+		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+
 #define LOCK_HOOK_UNCHECKED_END										\
 		pthread_cleanup_pop(1)
 
@@ -137,7 +143,7 @@ void rrr_log_hook_register (
 		RRR_BUG("BUG: Too many log hooks in rrr_log_hook_register\n");
 	}
 
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 
 	struct rrr_log_hook hook = {
 		 log,
@@ -156,7 +162,7 @@ void rrr_log_hook_register (
 }
 
 void rrr_log_hook_unregister_all_after_fork (void) {
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 	rrr_log_hook_count = 0;
 	LOCK_HOOK_UNCHECKED_END;
 }
@@ -166,7 +172,7 @@ void rrr_log_hook_unregister (
 ) {
 	int shifting_started = 0;
 
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
