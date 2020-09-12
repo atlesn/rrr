@@ -1,3 +1,4 @@
+rrr (1.12-2) buster; urgency=medium
 
   * Added RPM packages
   * Improvements in log messages / silence some messages
@@ -8,6 +9,8 @@
   * Fix for forks not getting initialized when there are lots (lots) of
     debug messages being printed
   * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 12 Sep 2020 16:42:46 +0200
 
 rrr (1.12-1) buster; urgency=medium
 
