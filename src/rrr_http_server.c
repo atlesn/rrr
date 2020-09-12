@@ -301,12 +301,12 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	rrr_signal_default_signal_actions_register();
 
 	uint64_t prev_stats_time = rrr_time_get_64();
 	int accept_count_total = 0;
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		// We must do this here, the HTTP server library does not do this
 		// itself as it is also used by RRR modules for which this is performed
@@ -334,6 +334,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_config_set_debuglevel_on_exit();
 
 		if (http_server != NULL) {

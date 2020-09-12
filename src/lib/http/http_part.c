@@ -766,184 +766,182 @@ static int __rrr_http_parse_header_field (
 		const char *end
 ) {
 	int ret = 0;
-	struct rrr_http_header_field *field = NULL;
 	const char *start = start_orig;
+	struct rrr_http_header_field_collection fields_tmp = {0};
+	struct rrr_http_header_field *field = NULL;
 
 	*parsed_bytes = 0;
 
-	// NOTE : Be very careful with choosing to parse up to CRLF or END.
-	//        We sometimes search for content up to CRLF and sometimes END (allowing CRLF in between).
+	while (1) {
+		int bad_client_missing_space_after_comma = 0;
 
-	const char *crlf = NULL;
-	int bad_client_missing_space_after_comma = 0;
+		// NOTE : Be very careful with choosing to parse up to CRLF or END.
+		//        We sometimes search for content up to CRLF and sometimes END (allowing CRLF in between).
 
-	// >>>> Duplicate field goto target
-	do_duplicate_field:
+		const char *crlf = NULL;
 
-	bad_client_missing_space_after_comma = 0;
-
-	crlf = rrr_http_util_find_crlf(start, end);
-	if (crlf == NULL) {
-		ret = RRR_HTTP_PARSE_INCOMPLETE;
-		goto out;
-	}
-
-	if (field == NULL) {
-		const char *colon = rrr_http_util_strchr(start, crlf, ':');
-		if (colon == NULL) {
-			RRR_MSG_0("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
-			rrr_http_util_print_where_message(start, end);
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
-
-		if (__rrr_http_header_field_new(&field, start, colon - start) != 0) {
-			ret = RRR_HTTP_PARSE_HARD_ERR;
-			goto out;
-		}
-
-		start = colon + 1;
-
-		RRR_DBG_3("parsing field with name: %s\n", field->name);
-	}
-	else {
-		const char *old_name = field->name;
-		size_t old_name_length = strlen(field->name);
-
-		// Field is already added to list, make sure it is not freed if we get an error
-		field = NULL;
-
-		if (__rrr_http_header_field_new(&field, old_name, old_name_length) != 0) {
-			ret = RRR_HTTP_PARSE_HARD_ERR;
-			goto out;
-		}
-
-		if (*start == ',') {
-			start++;
-		}
-
-		if (start >= end) {
+		crlf = rrr_http_util_find_crlf(start, end);
+		if (crlf == NULL) {
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			goto out;
 		}
 
-		if (rrr_http_util_count_whsp(start, end) == 0) {
-			bad_client_missing_space_after_comma = 1;
-		}
-
-		RRR_DBG_3("parsing duplicate field with name: %s\n", field->name);
-	}
-
-	if (start >= crlf) {
-		RRR_MSG_0("No value for header field in __rrr_http_parse_header_field\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
-	}
-
-	ssize_t whitespace_count = rrr_http_util_count_whsp(start, crlf);
-
-	if (start + whitespace_count == crlf) {
-		// Continue on next line
-		start = crlf + 2;
-		crlf = NULL;
-	}
-	else if (whitespace_count == 0) {
-		if (bad_client_missing_space_after_comma) {
-			if (RRR_DEBUGLEVEL_1) {
-				RRR_MSG_0("Warning: No whitespace after comma while parsing HTTP header field subvalues\n");
+		if (RRR_LL_COUNT(&fields_tmp) == 0) {
+			const char *colon = rrr_http_util_strchr(start, crlf, ':');
+			if (colon == NULL) {
+				RRR_MSG_0("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
 				rrr_http_util_print_where_message(start, end);
+				ret = RRR_HTTP_PARSE_SOFT_ERR;
+				goto out;
 			}
+
+			if (__rrr_http_header_field_new(&field, start, colon - start) != 0) {
+				ret = RRR_HTTP_PARSE_HARD_ERR;
+				goto out;
+			}
+
+			start = colon + 1;
+
+			RRR_DBG_3("parsing field with name: %s\n", field->name);
 		}
 		else {
-			RRR_MSG_0("Error: No whitespace after separator while parsing HTTP header field subvalues\n");
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
-	}
+			// Duplicate field (after comma)
+			const char *last_field_name = RRR_LL_LAST(&fields_tmp)->name;
 
-	crlf = rrr_http_util_find_crlf(start, end);
-	if (crlf == NULL) {
-		ret = RRR_HTTP_PARSE_INCOMPLETE;
-		goto out;
-	}
+			if (__rrr_http_header_field_new(&field, last_field_name, strlen(last_field_name)) != 0) {
+				ret = RRR_HTTP_PARSE_HARD_ERR;
+				goto out;
+			}
 
-	int prev_subvalue_count = 0;
-	int comma_found_do_duplicate_field = 0;
+			if (*start == ',') {
+				start++;
+			}
 
-	do {
-		prev_subvalue_count = RRR_LL_COUNT(&field->fields);
-
-		ssize_t parsed_bytes_tmp = 0;
-		RRR_DBG_3("subvalue start: %c\n", *start);
-		if ((ret = __rrr_http_parse_header_field_subvalue (
-				&field->fields,
-				&parsed_bytes_tmp,
-				start,
-				end,
-				(field->definition != NULL ? field->definition->flags : 0),
-				bad_client_missing_space_after_comma
-		)) != 0) {
-			goto out;
-		}
-		start += parsed_bytes_tmp;
-
-		bad_client_missing_space_after_comma = 0;
-
-		if (start >= end) {
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			goto out;
-		}
-
-		if (*start == ';') {
-			const char *next = start + 1;
-			if (next >= end) {
+			if (start >= end) {
 				ret = RRR_HTTP_PARSE_INCOMPLETE;
 				goto out;
 			}
-			if (*next != ' ' && *next != '\t' && *next != '\r') {
+
+			if (rrr_http_util_count_whsp(start, end) == 0) {
 				bad_client_missing_space_after_comma = 1;
 			}
-			if (*next == ',') {
+
+			RRR_DBG_3("parsing duplicate field with name: %s\n", field->name);
+		}
+
+		if (start >= crlf) {
+			RRR_MSG_0("No value for header field in __rrr_http_parse_header_field\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+
+		ssize_t whitespace_count = rrr_http_util_count_whsp(start, crlf);
+
+		if (start + whitespace_count == crlf) {
+			// Continue on next line
+			start = crlf + 2;
+			crlf = NULL;
+		}
+		else if (whitespace_count == 0) {
+			if (bad_client_missing_space_after_comma) {
 				if (RRR_DEBUGLEVEL_1) {
-					RRR_MSG_0("Warning: Comma found after semicolon in HTTP header, bad implementation\n");
+					RRR_MSG_0("Warning: No whitespace after comma while parsing HTTP header field subvalues\n");
 					rrr_http_util_print_where_message(start, end);
 				}
-				start++;
+			}
+			else {
+				RRR_MSG_0("Error: No whitespace after separator while parsing HTTP header field subvalues\n");
+				ret = RRR_HTTP_PARSE_SOFT_ERR;
+				goto out;
 			}
 		}
 
-		if (*start == ',') {
-			comma_found_do_duplicate_field = 1;
+		crlf = rrr_http_util_find_crlf(start, end);
+		if (crlf == NULL) {
+			ret = RRR_HTTP_PARSE_INCOMPLETE;
+			goto out;
+		}
+
+		int prev_subvalue_count = 0;
+		int comma_found_do_duplicate_field = 0;
+
+		do {
+			prev_subvalue_count = RRR_LL_COUNT(&field->fields);
+
+			ssize_t parsed_bytes_tmp = 0;
+			RRR_DBG_3("subvalue start: %c\n", *start);
+			if ((ret = __rrr_http_parse_header_field_subvalue (
+					&field->fields,
+					&parsed_bytes_tmp,
+					start,
+					end,
+					(field->definition != NULL ? field->definition->flags : 0),
+					bad_client_missing_space_after_comma
+			)) != 0) {
+				goto out;
+			}
+			start += parsed_bytes_tmp;
+
+			bad_client_missing_space_after_comma = 0;
+
+			if (start >= end) {
+				ret = RRR_HTTP_PARSE_INCOMPLETE;
+				goto out;
+			}
+
+			if (*start == ';') {
+				const char *next = start + 1;
+				if (next >= end) {
+					ret = RRR_HTTP_PARSE_INCOMPLETE;
+					goto out;
+				}
+				if (*next != ' ' && *next != '\t' && *next != '\r') {
+					bad_client_missing_space_after_comma = 1;
+				}
+				if (*next == ',') {
+					if (RRR_DEBUGLEVEL_1) {
+						RRR_MSG_0("Warning: Comma found after semicolon in HTTP header, bad implementation\n");
+						rrr_http_util_print_where_message(start, end);
+					}
+					start++;
+				}
+			}
+
+			if (*start == ',') {
+				comma_found_do_duplicate_field = 1;
+				break;
+			}
+		} while (prev_subvalue_count != RRR_LL_COUNT(&field->fields));
+
+		// Allow comma and no subvalues?
+	/*		if (RRR_LL_COUNT(&field->fields) == 0) {
+			RRR_MSG_0("No values found after semicolon while parsing HTTP header field subvalues\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}*/
+
+		if (field->definition != NULL && field->definition->parse != NULL && field->definition->parse(field) != 0) {
+			RRR_MSG_0("Could not parse field '%s' in __rrr_http_parse_header_field\n", field->name);
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+
+		RRR_LL_APPEND(&fields_tmp, field);
+		field = NULL;
+
+		if (!comma_found_do_duplicate_field) {
 			break;
 		}
-	} while (prev_subvalue_count != RRR_LL_COUNT(&field->fields));
-
-	// Allow comma and no subvalues?
-/*		if (RRR_LL_COUNT(&field->fields) == 0) {
-		RRR_MSG_0("No values found after semicolon while parsing HTTP header field subvalues\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
-	}*/
-
-	if (field->definition != NULL && field->definition->parse != NULL && field->definition->parse(field) != 0) {
-		RRR_MSG_0("Could not parse field '%s' in __rrr_http_parse_header_field\n", field->name);
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
 	}
 
-	RRR_LL_APPEND(target_list, field);
-
-	if (comma_found_do_duplicate_field) {
-		goto do_duplicate_field;
-	}
-
-	field = NULL;
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target_list, &fields_tmp);
 	*parsed_bytes = (start - start_orig);
 
 	out:
 	if (field != NULL) {
 		__rrr_http_header_field_destroy(field);
 	}
+	RRR_LL_DESTROY(&fields_tmp, struct rrr_http_header_field, __rrr_http_header_field_destroy(node));
 	return ret;
 }
 
@@ -972,7 +970,7 @@ static int __rrr_http_part_parse_chunk_header (
 		size_t start_pos,
 		const char *end
 ) {
-	int ret = RRR_HTTP_PARSE_INCOMPLETE;
+	int ret = RRR_HTTP_PARSE_OK;
 
 	*parsed_bytes = 0;
 	*result_chunk = NULL;
@@ -992,13 +990,15 @@ static int __rrr_http_part_parse_chunk_header (
 	const char *pos = start;
 
 	if (pos >= end) {
-		return RRR_HTTP_PARSE_INCOMPLETE;
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
 	}
 
 	const char *crlf = rrr_http_util_find_crlf(pos, end);
 
 	if (pos >= end) {
-		return RRR_HTTP_PARSE_INCOMPLETE;
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
 	}
 
 	// Allow extra \r\n at beginning
@@ -1008,48 +1008,51 @@ static int __rrr_http_part_parse_chunk_header (
 //		printf ("Parsed extra CRLF before chunk header\n");
 	}
 
-	if (crlf != NULL) {
-		unsigned long long chunk_length = 0;
+	if (crlf == NULL) {
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
 
-		rrr_length parsed_bytes_tmp = 0;
-		if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
-			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
+	unsigned long long chunk_length = 0;
 
-		if (pos + parsed_bytes_tmp == end) {
-			// Chunk header incomplete
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			goto out;
-		}
-		else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
-			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
-			ret = RRR_HTTP_PARSE_SOFT_ERR;
-			goto out;
-		}
+	rrr_length parsed_bytes_tmp = 0;
+	if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
+		RRR_MSG_0("Error while parsing chunk length, invalid value\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
 
-		pos += parsed_bytes_tmp;
-		pos += 2; // Plus CRLF after chunk header
+	if (pos + parsed_bytes_tmp == end) {
+		// Chunk header incomplete
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
+	else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
+		RRR_MSG_0("Error while parsing chunk length, invalid value\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
 
-		if (pos + 1 >= end) {
-			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			goto out;
-		}
+	pos += parsed_bytes_tmp;
+	pos += 2; // Plus CRLF after chunk header
 
-		struct rrr_http_chunk *new_chunk = NULL;
-		rrr_length chunk_start = pos - buf;
+	if (pos + 1 >= end) {
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
+
+	struct rrr_http_chunk *new_chunk = NULL;
+	rrr_length chunk_start = pos - buf;
 
 //		printf ("First character in chunk: %i\n", *(buf + chunk_start));
 
-		if ((new_chunk = __rrr_http_part_chunk_new(chunk_start, chunk_length)) == NULL) {
-			ret = RRR_HTTP_PARSE_HARD_ERR;
-			goto out;
-		}
-
-		*parsed_bytes = pos - start;
-		*result_chunk = new_chunk;
+	if ((new_chunk = __rrr_http_part_chunk_new(chunk_start, chunk_length)) == NULL) {
+		ret = RRR_HTTP_PARSE_HARD_ERR;
+		goto out;
 	}
+
+	*parsed_bytes = pos - start;
+	*result_chunk = new_chunk;
 
 	out:
 	return ret;
@@ -1135,15 +1138,14 @@ static int __rrr_http_part_parse_chunk (
 	}
 
 	struct rrr_http_chunk *new_chunk = NULL;
-	ret = __rrr_http_part_parse_chunk_header (
+
+	if ((ret = __rrr_http_part_parse_chunk_header (
 			&new_chunk,
 			&parsed_bytes_total,
 			buf,
 			start_pos + parsed_bytes_previous_chunk,
 			end
-	);
-
-	if (ret == 0) {
+	)) == 0 && new_chunk != NULL) { // != NULL check due to false positive warning about use of NULL from scan-build
 		RRR_DBG_3("Found new HTTP chunk start %li length %li\n", new_chunk->start, new_chunk->length);
 		RRR_LL_APPEND(chunks, new_chunk);
 

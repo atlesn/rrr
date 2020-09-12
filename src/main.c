@@ -91,11 +91,6 @@ int rrr_main_create_and_start_threads (
 
 	struct rrr_instance_runtime_data **runtime_data = NULL;
 
-	// Preload threads. Signals must be disabled as the modules might write to
-	// the signal handler linked list
-
-	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-
 	if (RRR_LL_COUNT(instances) == 0) {
 		RRR_MSG_0("No instances started, exiting\n");
 		ret = 1;
@@ -185,7 +180,6 @@ int rrr_main_create_and_start_threads (
 	}
 
 	out:
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	RRR_FREE_IF_NOT_NULL(runtime_data);
 	return ret;
 }

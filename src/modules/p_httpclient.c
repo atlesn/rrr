@@ -816,7 +816,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		}
 		else {
 			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, httpclient_poll_callback, 30) != 0) {
-				RRR_MSG_ERR("Error while polling in httpclient instance %s\n",
+				RRR_MSG_0("Error while polling in httpclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}

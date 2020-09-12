@@ -560,6 +560,7 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 			&array_tmp,
 			data->definitions,
 			data->do_sync_byte_by_byte,
+			4096,
 			data->message_max_size,
 			__rrr_ip_receive_array_tree_callback,
 			callback_data
@@ -1357,7 +1358,7 @@ static int ip_send_loop (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error while sending messages in ip instance %s\n",
+		RRR_MSG_0("Error while sending messages in ip instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -1483,7 +1484,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		if (has_senders != 0) {
 			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 0) != 0) {
-				RRR_MSG_ERR("Error while polling in ip instance %s\n",
+				RRR_MSG_0("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -1539,7 +1540,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 					&delivery_ratelimit_active,
 					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Error while setting ratelimit in ip instance %s\n",
+				RRR_MSG_0("Error while setting ratelimit in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
