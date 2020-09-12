@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "cmodule/cmodule_main.h"
-#include "common.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
@@ -100,8 +99,6 @@ static void __rrr_instance_destroy (
 	rrr_instance_friend_collection_clear(&target->senders);
 	rrr_instance_friend_collection_clear(&target->wait_for);
 
-	rrr_signal_handler_remove(target->signal_handler);
-
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
 
@@ -110,8 +107,7 @@ static void __rrr_instance_destroy (
 }
 
 static int __rrr_instance_new (
-		struct rrr_instance **target,
-		struct rrr_instance_module_data *data
+		struct rrr_instance **target
 ) {
 	int ret = 0;
 
@@ -124,10 +120,6 @@ static int __rrr_instance_new (
 	}
 
 	memset (instance, '\0', sizeof(*instance));
-
-//	instance->dynamic_data = data;
-
-	rrr_signal_handler_push(data->signal_handler, instance);
 
 	*target = instance;
 
@@ -143,7 +135,7 @@ static struct rrr_instance *__rrr_instance_new_and_save (
 	RRR_DBG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct rrr_instance *target;
-	if (__rrr_instance_new (&target, module) != 0) {
+	if (__rrr_instance_new (&target) != 0) {
 		RRR_MSG_0("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
