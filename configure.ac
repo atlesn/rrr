@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.12-0)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.12-0", [Full version])
+AC_INIT([Read Route Record], 1.12-2)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.12-2", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 12, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -81,6 +81,12 @@ AS_IF([test "x$enable_codecov" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 AC_SUBST([CFLAGS_CODECOV])
+
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
+AM_LDFLAGS=""
+
+AC_SUBST(AM_CFLAGS)
+AC_SUBST(AM_LDFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
 
@@ -238,12 +244,14 @@ AS_IF([test "x$enable_perl5" = xno], [
 	fi
 	AC_MSG_RESULT([yes])
 
+	# Remove -specs=/... causing -pie to get inserted on RH-systems
+
 	AC_MSG_CHECKING([Perl5 CFLAGS])
-	PERL5_CFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts`
+	PERL5_CFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ccopts | sed 's/\s*-specs\S*//g'`
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts | sed 's/\s*-specs\S*//g'`
 	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
@@ -262,7 +270,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 		]])
 	])
 
-	$CC -o conftest conftest.c ${PERL5_CFLAGS} ${PERL5_LDFLAGS}
+	# Need -O to avoid warning about FORTIFY_SOURCE
+	$CC -o conftest conftest.c ${PERL5_CFLAGS} -O3 ${PERL5_LDFLAGS}
 	perl5_result=$?
 	if test x"${perl5_result}" = x"0"; then
 		./conftest
@@ -354,7 +363,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 
 	PYTHON3_CFLAGS=`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'`
-	PYTHON3_CFLAGS="${python3_cflags_from_pkg} ${AM_CFLAGS} ${PYTHON3_CFLAGS}"
+	PYTHON3_CFLAGS="${python3_cflags_from_pkg} ${PYTHON3_CFLAGS}"
 
 	PYTHON3_LDFLAGS=`$python3_config_bin --ldflags`
 	PYTHON3_LDFLAGS="${PYTHON3_LDFLAGS} $python3_libs_from_pkg"
@@ -525,9 +534,6 @@ AS_IF([test "x$enable_runit" = xyes], [
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
-
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700 -no-pie"
-AC_SUBST(AM_CFLAGS)
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 

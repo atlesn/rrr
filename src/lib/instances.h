@@ -75,7 +75,6 @@ struct rrr_instance_module_data {
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(void);
-	int (*signal_handler)(int s, void *priv);
 	struct rrr_instance_collection *all_instances;
 };
 

@@ -481,7 +481,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, influxdb_poll_callback, 50) != 0) {
-			RRR_MSG_ERR("Error while polling in influxdb instance %s\n",
+			RRR_MSG_0("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
@@ -501,7 +501,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_msg_holder);
 				rrr_msg_holder_lock(node);
 				if (influxdb_common_callback(node, influxdb_data) != 0) {
-					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
+					RRR_MSG_0("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
 					rrr_msg_holder_unlock(node);
 					goto out_cleanup_transport;

@@ -833,6 +833,12 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			ret = 1;
 			goto out_free;
 		}
+
+		// Note: False positive here from static code analysis about memory leak of payload
+
+		if (payload != NULL) {
+			RRR_BUG("BUG: payload was not NULL after payload allocation in mqttclient_poll_callback\n");
+		}
 	}
 
 	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",

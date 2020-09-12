@@ -578,7 +578,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 		if (!data->do_inject_only) {
 			if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
-				RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
+				RRR_MSG_0("Error when spawning message in averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}

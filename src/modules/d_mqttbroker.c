@@ -394,13 +394,13 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 		if (listen_handle_plain) {
 			if (rrr_mqtt_broker_synchronized_tick(&plain_something_happened, data->mqtt_broker_data, listen_handle_plain) != 0) {
-				RRR_MSG_ERR("Error from MQTT broker while running plain transport tasks\n");
+				RRR_MSG_0("Error from MQTT broker while running plain transport tasks\n");
 				break;
 			}
 		}
 		if (listen_handle_tls) {
 			if (rrr_mqtt_broker_synchronized_tick(&tls_something_happened, data->mqtt_broker_data, listen_handle_tls) != 0) {
-				RRR_MSG_ERR("Error from MQTT broker while running TLS transport tasks\n");
+				RRR_MSG_0("Error from MQTT broker while running TLS transport tasks\n");
 				break;
 			}
 		}

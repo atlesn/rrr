@@ -326,8 +326,6 @@ static int __rrr_cmodule_worker_loop (
 	uint64_t prev_stats_time = 0;
 
 	while (worker->received_stop_signal == 0) {
-		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
-
 		time_now = rrr_time_get_64();
 
 		if (next_spawn_time == 0) {
@@ -498,7 +496,7 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
 	if (signal == SIGUSR1 || signal == SIGINT || signal == SIGTERM) {
-		RRR_DBG_SIGNAL("script worker %s pid %i received SIGUSR1, SIGTERM or SIGINT, stopping\n",
+		RRR_DBG_SIGNAL("cmodule worker %s pid %i received SIGUSR1, SIGTERM or SIGINT, stopping\n",
 				worker->name, getpid());
 		worker->received_stop_signal = 1;
 	}
@@ -624,13 +622,21 @@ int rrr_cmodule_worker_fork_start (
 
 	int was_found = 0;
 
-	// Preserve fork signal andler in case child makes any forks
-	rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
-	if (was_found == 0) {
-		RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_fork_start, should have been added in main()\n");
-	}
+	{
+		// There is no guarantee for whether signals are active or not at this point. Disable
+		// signals while working with the handler list, then always set ACTIVE afterwards.
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
-	rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
+		// Preserve fork signal andler in case child makes any forks
+		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
+		if (was_found == 0) {
+			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_fork_start, should have been added in main()\n");
+		}
+
+		rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
+
+		rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+	}
 
 	// It's safe to use the char * from cmodule_data. It will never
 	// get freed by the fork, instances framework does that when the thread is exiting.

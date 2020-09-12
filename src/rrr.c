@@ -55,8 +55,16 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 #define RRR_CONFIG_FILE_SUFFIX	".conf"
 #define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
 
+#ifndef RRR_MODULE_PATH
+#	define	RRR_MODULE_PATH "."
+#endif
+#ifndef RRR_CMODULE_PATH
+#	define	RRR_CMODULE_PATH "."
+#endif
+
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
+		RRR_CMODULE_PATH,
 		"/usr/lib/rrr",
 		"/lib/rrr",
 		"/usr/local/lib/rrr",
@@ -221,6 +229,7 @@ static int main_loop (
 		}
 	}
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 	if (rrr_instance_create_from_config(&instances, config, module_library_paths) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
@@ -270,6 +279,7 @@ static int main_loop (
 	}
 
 	// Main loop
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		rrr_posix_usleep (250000); // 250ms
 
@@ -332,6 +342,7 @@ static int main_loop (
 		rrr_stats_engine_cleanup(&stats_data.engine);
 		rrr_message_broker_cleanup(&message_broker);
 	out_destroy_instance_metadata:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
 		rrr_config_destroy(config);
@@ -504,8 +515,6 @@ int main (int argc, const char *argv[]) {
 
 	rrr_signal_default_signal_actions_register();
 
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
 	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
@@ -553,7 +562,6 @@ int main (int argc, const char *argv[]) {
 
 		// CHILD CODE
 		is_child = 1;
-		rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 		ret = main_loop (
 				&cmd,
@@ -569,6 +577,7 @@ int main (int argc, const char *argv[]) {
 		config_i++;
 	RRR_MAP_ITERATE_END();
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
@@ -581,10 +590,10 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out_cleanup_signal:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+
 		rrr_signal_handler_remove(signal_handler);
 		rrr_signal_handler_remove(signal_handler_fork);
-
-		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
 			// Child forks must skip *ALL* the fork-cleanup stuff. It's possible that a

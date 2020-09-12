@@ -29,8 +29,8 @@ if RRR_WITH_PYTHON3
 lib_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
 							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
-librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
-librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
+librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\" ${AM_CFLAGS}
+librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS} ${AM_LDFLAGS}
 endif
 
 if RRR_WITH_PERL5
