@@ -888,36 +888,35 @@ static int __get_import_length_str (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	int ret = RRR_TYPE_PARSE_INCOMPLETE;
 
-	rrr_length length = 0;
-
 	CHECK_END_AND_RETURN(1);
 
 	if (*start != '"') {
-		RRR_MSG_0("String did not begin with \" in __get_import_length_str\n");
+		RRR_MSG_0("str type did not begin with \" but %c (0x%02x)\n", *start, *start);
 		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
-
-	length++;
 	start++;
 
-	int ignore_next_quote = 0;
-	for (const char *pos = start; pos < end; pos++) {
-		length++;
-
-		if (*pos == '"' && ignore_next_quote != 1) {
+	int prev_was_backslash = 0;
+	for (; start < end; start++) {
+		char c = *start;
+		if (!prev_was_backslash && c == '"') {
 			ret = RRR_TYPE_PARSE_OK;
 			break;
 		}
-		else if (*pos == '\\') {
-			ignore_next_quote = 1;
+		else if (!prev_was_backslash && c == '\\') {
+			prev_was_backslash = 1;
 		}
 		else {
-			ignore_next_quote = 0;
+			prev_was_backslash = 0;
 		}
 	}
 
-	*import_length = length;
+	if (ret == RRR_TYPE_PARSE_OK) {
+		rrr_slength length = start - buf;
+		length += 1; // Increment for last "
+		*import_length = (rrr_length) length;
+	}
 
 	out:
 	return ret;
@@ -1014,7 +1013,7 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 		goto out;
 	}
 
-	// Fake lengths to strip out the quotes
+	// Fake lengths to strip out the quotes. Send start + 1 to import after first quote.
 	node->import_length = import_length - 2;
 	rrr_length parsed_bytes_tmp = 0;
 	if ((ret = __rrr_type_import_blob(node, &parsed_bytes_tmp, start + 1, end)) != 0) {
@@ -1027,6 +1026,24 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 
 	node->import_length = import_length;
 	*parsed_bytes = parsed_bytes_tmp + 2;
+
+	// Strip out escape sequences inside of the string
+	int prev_was_backslash = 0;
+	rrr_length wpos = 0;
+	for (rrr_length i = 0; i < node->total_stored_length; i++) {
+		char c = node->data[i];
+		if (!prev_was_backslash && c == '\\') {
+			prev_was_backslash = 1;
+		}
+		else {
+			node->data[wpos++] = c;
+			prev_was_backslash = 0;
+		}
+	}
+	if (prev_was_backslash) {
+		node->data[wpos++] = '\\';
+	}
+	node->total_stored_length = wpos;
 
 	out:
 	return ret;
