@@ -507,6 +507,11 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	], [
 		AC_MSG_RESULT([no])
 	])
+
+	AC_CHECK_HEADER([systemd/sd-journal.h], [], AC_MSG_ERROR([missing SystemD development headers]))
+	AC_CHECK_LIB(systemd, sd_journal_print, [], AC_MSG_ERROR([sd_journal_print from libsystemd]))
+
+	AC_DEFINE([HAVE_JOURNALD], [1], [Have native SystemD/journald logging])
 ],[
 	AC_MSG_RESULT([no])
 ])
