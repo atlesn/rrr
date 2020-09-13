@@ -693,7 +693,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			(data->prefix != NULL ? data->prefix : "")
 	);
 
-	const uint64_t sleep_interval = (data->probe_interval < 10 ? data->probe_interval * 1000 : 10000);
+	const uint64_t sleep_interval = (data->probe_interval > 50 ? data->probe_interval * 1000 : 50000); // Min 50ms
 	const uint64_t probe_interval = data->probe_interval * 1000;
 
 	uint64_t time_prev_stats = rrr_time_get_64();
@@ -715,6 +715,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now >= time_next_probe) {
+//			printf("probe interval %" PRIu64 "\n", probe_interval);
 			int ret_tmp;
 			if ((ret_tmp = file_probe(data)) != 0) {
 				if (ret_tmp != RRR_FILE_STOP) {
@@ -745,7 +746,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		}
 		else if (consecutive_nothing_happened > 100) {
 //			printf("Short sleep %i bytes read %" PRIu64 "\n", consecutive_nothing_happened, bytes_read_tmp);
-			rrr_posix_usleep (10000 > sleep_interval ? sleep_interval : 10000); // 10ms
+			rrr_posix_usleep (2000); // 2ms
 		}
 
 		if (time_now - time_prev_stats > 1000000) {
