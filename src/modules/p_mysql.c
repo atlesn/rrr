@@ -917,7 +917,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
-			RRR_MSG_ERR("Error while polling in mysql instance %s\n",
+			RRR_MSG_0("Error while polling in mysql instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
 		}

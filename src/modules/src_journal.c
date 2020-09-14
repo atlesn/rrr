@@ -450,7 +450,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 					&delivery_ratelimit_active,
 					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Error while setting ratelimit in journal instance %s\n",
+				RRR_MSG_0("Error while setting ratelimit in journal instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}

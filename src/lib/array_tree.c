@@ -167,6 +167,7 @@ static int __rrr_array_branch_clone_without_data (
 		if ((ret = __rrr_array_branch_clone_without_data(&new_branch_elsif, node)) != 0) {
 			goto out;
 		}
+		RRR_LL_PUSH(&new_branch->branches_elsif, new_branch_elsif);
 	RRR_LL_ITERATE_END();
 
 	if (source->tree_else != NULL) {

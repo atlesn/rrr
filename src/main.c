@@ -91,11 +91,6 @@ int rrr_main_create_and_start_threads (
 
 	struct rrr_instance_runtime_data **runtime_data = NULL;
 
-	// Preload threads. Signals must be disabled as the modules might write to
-	// the signal handler linked list
-
-	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-
 	if (RRR_LL_COUNT(instances) == 0) {
 		RRR_MSG_0("No instances started, exiting\n");
 		ret = 1;
@@ -185,7 +180,6 @@ int rrr_main_create_and_start_threads (
 	}
 
 	out:
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	RRR_FREE_IF_NOT_NULL(runtime_data);
 	return ret;
 }
@@ -195,7 +189,17 @@ void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection
 	rrr_thread_destroy_collection (collection);
 }
 
-int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
+// Append = to var to avoid partial match being tolerated
+int rrr_main_has_env (const char **env, const char *var) {
+	for (const char **pos = env; *pos != NULL; pos++) {
+		if (strncmp(*pos, var, strlen(var)) == 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env, cmd_conf config) {
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
 		return EXIT_FAILURE;
@@ -207,6 +211,11 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
+#ifdef HAVE_JOURNALD
+	unsigned int do_journald_output = rrr_main_has_env(env, "JOURNAL_STREAM=") && rrr_main_has_env(env, "INVOCATION_ID=");
+#else
+	(void)(env);
+#endif
 
 	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
 	if (message_ttl_s_string != NULL) {
@@ -291,6 +300,11 @@ int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
+#ifdef HAVE_JOURNALD
+			do_journald_output,
+#else
+			0,
+#endif
 			message_ttl_us
 	);
 

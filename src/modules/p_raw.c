@@ -151,7 +151,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 		int prev_message_count = raw_data->message_count;
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
-			RRR_MSG_ERR("Error while polling in raw instance %s\n",
+			RRR_MSG_0("Error while polling in raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
 		}

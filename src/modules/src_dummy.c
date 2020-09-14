@@ -187,7 +187,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 					dummy_write_message_callback,
 					data
 			)) {
-				RRR_MSG_ERR("Could not create new message in dummy instance %s\n",
+				RRR_MSG_0("Could not create new message in dummy instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}

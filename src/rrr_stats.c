@@ -556,7 +556,7 @@ static int __rrr_stats_print_journal_message (const struct rrr_stats_message *me
 
 	struct rrr_stats_tree tree_tmp;
 	if (rrr_stats_tree_init(&tree_tmp) != 0) {
-		RRR_MSG_ERR("Could not initialize tree in __rrr_stats_print_journal_message\n");
+		RRR_MSG_0("Could not initialize tree in __rrr_stats_print_journal_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -671,7 +671,7 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 	return 0;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -695,7 +695,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_data;
 	}
