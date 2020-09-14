@@ -51,7 +51,7 @@ struct rrr_stats_client {
 	int first_log_journal_messages_sent;
 };
 
-static void __rrr_stats_engine_journal_lock_ (struct rrr_stats_engine *engine) {
+static void __rrr_stats_engine_journal_lock (struct rrr_stats_engine *engine) {
 	pthread_mutex_lock(&engine->journal_lock);
 	engine->journal_lock_usercount++;
 	if (engine->journal_lock_usercount > 2) {
@@ -59,7 +59,7 @@ static void __rrr_stats_engine_journal_lock_ (struct rrr_stats_engine *engine) {
 	}
 }
 
-static void rrr_stats_engine_journal_unlock_ (struct rrr_stats_engine *engine) {
+static void __rrr_stats_engine_journal_unlock (struct rrr_stats_engine *engine) {
 	engine->journal_lock_usercount--;
 	int usercount_now = engine->journal_lock_usercount;
 
@@ -70,14 +70,14 @@ static void rrr_stats_engine_journal_unlock_ (struct rrr_stats_engine *engine) {
 	}
 }
 
-static void rrr_stats_engine_journal_unlock_void (void *arg) {
+static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	struct rrr_stats_engine *engine = arg;
-	rrr_stats_engine_journal_unlock_(engine);
+	__rrr_stats_engine_journal_unlock(engine);
 }
 
 #define JOURNAL_LOCK(engine) 												\
-	__rrr_stats_engine_journal_lock_(engine);								\
-	pthread_cleanup_push(rrr_stats_engine_journal_unlock_void, engine)		\
+	__rrr_stats_engine_journal_lock(engine);								\
+	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)		\
 
 #define JOURNAL_UNLOCK()													\
 	pthread_cleanup_pop(1)
@@ -338,7 +338,7 @@ int __rrr_stats_engine_multicast_send_intermediate (
 	);
 }
 
-int __rrr_stats_engine_unicast_send_intermediate (
+static int __rrr_stats_engine_unicast_send_intermediate (
 		struct rrr_msg *data,
 		size_t size,
 		void *callback_arg
