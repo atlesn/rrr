@@ -107,6 +107,7 @@ AS_IF([test "x$enable_encryption" = xno], [
 ], [
        AC_MSG_RESULT([yes])
        AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules])
+       TLS_CHECKS()
        AX_CHECK_OPENSSL([], [
                AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
        ])

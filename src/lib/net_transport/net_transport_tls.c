@@ -98,7 +98,7 @@ static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport
 static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
 	STACK_OF(SSL_CIPHER) *sk = SSL_get1_supported_ciphers(ssl);
 
-	RRR_MSG_0("Enabled ciphers: ");
+	RRR_MSG_1("== DUMP ENABLED TLS/SSL CIPHERS ===================\n");
 
 	for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
 		const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
@@ -108,10 +108,10 @@ static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
 			break;
 		}
 
-		RRR_MSG_0("%s%s", (i == 0 ? "" : ":"), name);
+		RRR_MSG_1("%s%s", (i == 0 ? "" : ":"), name);
 	}
 
-	RRR_MSG_0("\n");
+	RRR_MSG_1("== END DUMP ENABLED TLS/SSL CIPHERS ===============\n");
 
 	sk_SSL_CIPHER_free(sk);
 }
@@ -229,6 +229,43 @@ struct rrr_net_transport_tls_connect_locked_callback_data {
 	const char *host;
 };
 
+const char *__rrr_net_transport_tls_ssl_version_to_str (
+	int version
+) {
+	const char *result = "";
+	switch (version) {
+#ifdef HAVE_TLS1_3_VERSION
+		case TLS1_3_VERSION:
+			result = "TLSv1.3";
+			break;
+#endif
+#ifdef HAVE_TLS1_2_VERSION
+		case TLS1_2_VERSION:
+			result = "TLSv1.2";
+			break;
+#endif
+		case TLS1_1_VERSION:
+			result = "TLSv1.1";
+			break;
+		case TLS1_VERSION:
+			result = "TLSv1";
+			break;
+		case SSL3_VERSION:
+			result = "SSLv3";
+			break;
+		case SSL2_VERSION:
+			result = "SSLv2";
+			break;
+		case 0:
+			result = "auto";
+			break;
+		default:
+			result = "unknown";
+			break;
+	};
+	return result;
+}
+
 static int __rrr_net_transport_tls_connect_locked_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -269,18 +306,46 @@ static int __rrr_net_transport_tls_connect_locked_callback (
 		goto out;
 	}
 
-	// Not used for TLSv1.3
-	//const char* const PREFERRED_CIPHERS = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4";
-	//res = SSL_set_cipher_list(ssl, PREFERRED_CIPHERS);
-
 	if (SSL_set_tlsext_host_name(ssl, callback_data->host) != 1) {
 		RRR_SSL_ERR("Could not set TLS hostname");
 		ret = 1;
 		goto out;
 	}
 
+#if defined HAVE_TLS1_3_VERSION
+	ret = SSL_set_max_proto_version(ssl, TLS1_3_VERSION);
+#elif defined HAVE_TLS1_2_VERSION
+	ret = SSL_set_max_proto_version(ssl, TLS1_2_VERSION);
+#else
+#	warn "Platform does not support TLSv1.3 or TLSv1.2"
+	ret = SSL_set_max_proto_version(ssl, TLS1_1_VERSION);
+#endif
+	if (ret != 1) {
+		RRR_SSL_ERR("Could set SSL protocol version");
+		ret = 1;
+		goto out;
+	}
+
+	ret = 0;
+
+	// Not used for TLSv1.3
+	//const char* const PREFERRED_CIPHERS = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4";
+	if (SSL_set_cipher_list(ssl, "DEFAULT") != 1) {
+		RRR_SSL_ERR("Could not set TLS cipher list");
+		ret = 1;
+		goto out;
+	}
+
 	if (RRR_DEBUGLEVEL_1) {
 		__rrr_net_transport_tls_dump_enabled_ciphers(ssl);
+
+		int max_version = SSL_get_max_proto_version(ssl);
+		int min_version = SSL_get_min_proto_version(ssl);
+
+		RRR_MSG_1("SSL max/min protocol verison: %s(%i) >= x <= %s(%i)\n",
+			__rrr_net_transport_tls_ssl_version_to_str(max_version), max_version,
+			__rrr_net_transport_tls_ssl_version_to_str(min_version), min_version
+		);
 	}
 
 	// Set non-blocking I/O
