@@ -25,14 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 
-#include "rrr_endian.h"
 #include "socket/rrr_socket.h"
 #include "settings.h"
-#include "macro_utils.h"
+#include "util/rrr_endian.h"
+#include "util/macro_utils.h"
+#include "util/posix.h"
 
-struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
-	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
+struct rrr_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
+	struct rrr_msg *ret = (struct rrr_msg *) setting;
+	ret->msg_type = RRR_MSG_TYPE_SETTING;
 	ret->msg_size = sizeof(*setting);
 	ret->msg_value = 0;
 	return ret;
@@ -49,21 +50,32 @@ void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 }
 
 int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
+	int ret = 0;
+
 	memset(target, '\0', sizeof(*target));
 
 	target->settings = malloc(sizeof(*(target->settings)) * count);
 	if (target->settings == NULL) {
-		RRR_MSG_0("Could not allocate memory for settings structure\n");
-		return 1;
+		RRR_MSG_0("Could not allocate memory in __rrr_settings_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_posix_mutex_init (&target->mutex, 0) != 0) {
+		RRR_MSG_0("Could initialize lock in __rrr_settings_init\n");
+		ret = 1;
+		goto out_free;
 	}
 
 	target->settings_max = count;
 	target->settings_count = 0;
-	pthread_mutex_init(&target->mutex, NULL);
-
 	target->initialized = 1;
 
-	return 0;
+	goto out;
+	out_free:
+		free(target->settings);
+	out:
+		return ret;
 }
 
 struct rrr_instance_settings *rrr_settings_new(const int count) {
@@ -183,7 +195,7 @@ int __rrr_settings_add_raw (
 		const char *name,
 		const void *old_data,
 		const int size,
-		rrr_setting_type type,
+		rrr_u32 type,
 		int replace_existing
 ) {
 	int ret = 0;
@@ -209,21 +221,19 @@ int __rrr_settings_add_raw (
 
 	memset (setting, '\0', sizeof(*setting));
 
-	if (__rrr_settings_set_setting_name(setting, name) != 0) {
+	if ((ret = __rrr_settings_set_setting_name(setting, name)) != 0) {
 		goto out_unlock;
 	}
 
 	setting->data = new_data;
+	new_data = NULL;
+
 	setting->data_size = size;
 	setting->type = type;
 	setting->was_used = 0;
 
 	out_unlock:
-	if (ret != 0) {
-		if (new_data != NULL) {
-			free(new_data);
-		}
-	}
+	RRR_FREE_IF_NOT_NULL(new_data);
 
 	__rrr_settings_unlock(target);
 
@@ -512,14 +522,23 @@ int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_se
 		if (sizeof(*target) != setting->data_size) {
 			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
 		}
-		target = setting->data;
+		*target = *((rrr_setting_uint*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
 		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
-
 		if (ret != 0) {
 			RRR_MSG_0("Could not get string of '%s' while converting to unsigned integer\n", setting->name);
 			goto out;
+		}
+
+		// strtoull will accept negative numbers, we need to check here first
+		for (unsigned const char *pos = (unsigned const char *) tmp_string; *pos != '\0'; pos++) {
+			if (*pos < '0' || *pos > '9') {
+				RRR_MSG_0("Unknown character '%c' in supposed unsigned integer '%s'\n",
+						*pos, tmp_string);
+				ret = 1;
+				goto out;
+			}
 		}
 
 		char *end;
@@ -761,9 +780,9 @@ int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *s
 	memcpy(result->name, source->name, sizeof(result->name));
 	memcpy(result->data, source->data, source->data_size);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_SETTING,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) result,
+			RRR_MSG_TYPE_SETTING,
 			sizeof(*result),
 			0
 	);

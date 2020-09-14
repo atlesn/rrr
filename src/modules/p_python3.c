@@ -29,26 +29,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/log.h"
+#include "../lib/poll_helper.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
+#include "../lib/threads.h"
+#include "../lib/message_broker.h"
+#include "../lib/array.h"
 #include "../lib/python3/python3_common.h"
 #include "../lib/python3/python3_config.h"
 #include "../lib/python3/python3_vl_message.h"
 #include "../lib/python3/python3_cmodule.h"
-#include "../lib/poll_helper.h"
-#include "../lib/instance_config.h"
-#include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/threads.h"
-#include "../lib/message_broker.h"
-#include "../lib/message_addr.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/log.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/array.h"
+#include "../lib/message_holder/message_holder.h"
 
 struct python3_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	char *python3_module;
 	char *module_path;
@@ -56,7 +56,7 @@ struct python3_data {
 
 int data_init (
 		struct python3_data *data,
-		struct rrr_instance_thread_data *thread_data
+		struct rrr_instance_runtime_data *thread_data
 ) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
@@ -73,7 +73,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->module_path);
 }
 
-int parse_config(struct python3_data *data, struct rrr_instance_config *config) {
+int parse_config(struct python3_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_module, config, "python3_module");
@@ -142,7 +142,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	PyObject *arg_message = NULL;
 
-	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
+	arg_message = rrr_python3_rrr_msg_msg_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
 	if (arg_message == NULL) {
 		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
 		ret = 1;
@@ -198,11 +198,11 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 
 	struct python3_fork_runtime runtime;
 
-	if ((ret = rrr_py_cmodule_runtime_init (
+	if (rrr_py_cmodule_runtime_init (
 			&runtime,
 			worker,
 			data->module_path
-	)) != 0) {
+	) != 0) {
 		RRR_MSG_0("Could not initialize python3 runtime in __rrr_py_start_persistent_rw_fork_intermediate\n");
 		ret = 1;
 		goto out;
@@ -295,7 +295,7 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 }
 
 static void *thread_entry_python3 (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
 	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
@@ -310,7 +310,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1("python3 instance %s\n", INSTANCE_D_NAME(thread_data));
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -319,8 +319,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	if (rrr_cmodule_helper_parse_config(thread_data, "python3", "function") != 0) {
 		goto out_message;
 	}
-
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	pid_t fork_pid = 0;
 
@@ -345,7 +343,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			thread_data->poll,
+			&thread_data->poll,
 			fork_pid
 	);
 
@@ -356,23 +354,10 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
-	struct python3_data data;
-	int ret = 0;
-	if ((ret = data_init(&data, NULL)) != 0) {
-		goto err;
-	}
-	ret = parse_config(&data, config);
-	data_cleanup(&data);
-	err:
-	return ret;
-}
-
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_python3,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };
@@ -382,7 +367,7 @@ static const char *module_name = "python3";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;

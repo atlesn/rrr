@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/http/http_client.h"
 #include "lib/net_transport/net_transport_config.h"
-#include "lib/rrr_time.h"
 #include "lib/rrr_strerror.h"
+#include "lib/util/rrr_time.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
@@ -198,7 +198,7 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -221,7 +221,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -230,7 +230,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_client_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_http_client_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -255,15 +255,13 @@ int main (int argc, const char *argv[]) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if ((ret = rrr_http_client_send_request (
+	if (rrr_http_client_send_request_simple (
 			&data,
 			RRR_HTTP_METHOD_GET,
 			&net_transport_config,
-			NULL,
-			NULL,
 			__rrr_http_client_final_callback,
 			NULL
-	)) != 0) {
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

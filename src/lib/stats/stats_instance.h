@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 #define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
 

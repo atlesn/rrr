@@ -121,6 +121,15 @@ struct rrr_mqtt_session_collection_methods {
 			void *callback_arg
 	);
 
+	// Insert a packet into the forward queue. Done currenty only by broker when publishing
+	// will messages. Publish message must be locked when calling. If will delivery
+	// interval is set in publish, it is put into will postpone queue. If not, it is
+	// published immediately.
+	int (*delivery_forward) (
+			struct rrr_mqtt_session_collection *sessions,
+			struct rrr_mqtt_p_publish *publish
+	);
+
 	// Destroy old sessions, read from send queue
 	int (*maintain) (
 			struct rrr_mqtt_session_collection *
@@ -226,6 +235,20 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet,
 			unsigned int *ack_match_count
+	);
+
+	// Preserve memory of will publish message to allow use of pointer-matching
+	// if a disconnected client reconnects and a postoned will publish must be
+	// removed from queue.
+	int (*register_will_publish) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p_publish *publish
+	);
+
+	int (*unregister_will_publish) (
+			struct rrr_mqtt_session_collection *sessions,
+			struct rrr_mqtt_session **session
 	);
 };
 

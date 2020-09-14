@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Will always free the message also upon errors
 int rrr_cmodule_ext_send_message_to_parent (
 		struct rrr_cmodule_worker *worker,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
 ) {
 	int sent_total = 0;
 	int retries = 0;

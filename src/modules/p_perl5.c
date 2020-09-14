@@ -29,33 +29,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include "../lib/log.h"
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/linked_list.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/message_addr.h"
-#include "../lib/message_log.h"
 #include "../lib/modules.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
 #include "../lib/perl5/perl5.h"
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/rrr_strerror.h"
-#include "../lib/socket/rrr_socket_msg.h"
 #include "../lib/common.h"
+#include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
-#include "../lib/message_broker.h"
-#include "../lib/gnu.h"
+#include "../lib/messages/msg.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
+#include "../lib/messages/msg_log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
-#include "../lib/macro_utils.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/macro_utils.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/array.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -64,10 +66,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
 #define PERL5_MMAP_SIZE (1024*1024*2)
-#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
+#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_MSG_CTRL_F_USR_A
 
 struct perl5_data {
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 
 	struct cmd_argv_copy *cmdline;
 
@@ -84,8 +86,8 @@ struct perl5_child_data {
 };
 
 static int xsub_send_message (
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		void *private_data
 ) {
 	struct perl5_child_data *child_data = private_data;
@@ -135,7 +137,7 @@ static int xsub_set_setting(const char *key, const char *value, void *private_da
 }
 
 static int preload_perl5 (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = (struct rrr_instance_thread_data *) thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = (struct rrr_instance_runtime_data *) thread->private_data;
 
 	int ret = 0;
 
@@ -154,7 +156,7 @@ static int preload_perl5 (struct rrr_thread *thread) {
 	return ret;
 }
 
-static int perl5_data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_data) {
+static int perl5_data_init(struct perl5_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
@@ -221,7 +223,7 @@ static void data_cleanup(void *arg) {
 	cmd_destroy_argv_copy(data->cmdline);
 }
 
-static int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
+static int parse_config(struct perl5_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->perl5_file, config, "perl5_file");
@@ -250,7 +252,7 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 	child_data.parent_data = private_arg;
 	child_data.worker = worker;
 
-	if (preload_perl5 (child_data.parent_data->thread_data->thread) != 0) {
+	if (preload_perl5 (INSTANCE_D_THREAD(child_data.parent_data->thread_data)) != 0) {
 		RRR_MSG_0("Could not preload perl5 in child fork of instance %s\n",
 				INSTANCE_D_NAME(child_data.parent_data->thread_data));
 		ret = 1;
@@ -304,7 +306,7 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 
 	RRR_DBG_2("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
 
-	if ((ret = rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings)) != 0) {
+	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -342,21 +344,29 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
 
 	struct rrr_perl5_message_hv *hv_message = NULL;
-	struct rrr_message_addr addr_msg_tmp = *message_addr;
+	struct rrr_msg_addr addr_msg_tmp = *message_addr;
+
+	struct rrr_array array_tmp = {0};
 
 	// We prefer to send NULL for empty address messages when spawning.
-	if ((ret = rrr_perl5_message_to_new_hv(&hv_message, ctx, message, (is_spawn_ctx ? NULL : &addr_msg_tmp))) != 0) {
+	if ((ret = rrr_perl5_message_to_new_hv (
+			&hv_message,
+			ctx,
+			message,
+			(is_spawn_ctx ? NULL : &addr_msg_tmp),
+			&array_tmp
+	)) != 0) {
 		RRR_MSG_0("Could not create rrr_perl5_message_hv struct in worker_process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (is_spawn_ctx) {
-		RRR_DBG_2("Perl5 spawning, sub is %s\n", cmodule_config_data->source_function);
+		RRR_DBG_3("Perl5 spawning, sub is %s\n", cmodule_config_data->source_function);
 		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->source_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 	else {
-		RRR_DBG_2("Perl5 processing, sub is %s\n", cmodule_config_data->process_function);
+		RRR_DBG_3("Perl5 processing, sub is %s\n", cmodule_config_data->process_function);
 		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->process_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 
@@ -368,12 +378,13 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
 }
 
 static void *thread_entry_perl5(struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (perl5_data_init(data, thread_data) != 0) {
@@ -384,7 +395,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -393,8 +404,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	if (rrr_cmodule_helper_parse_config(thread_data, "perl5", "sub") != 0) {
 		goto out_message;
 	}
-
-	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	pid_t fork_pid = 0;
 
@@ -419,27 +428,22 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			thread_data->poll,
+			&thread_data->poll,
 			fork_pid
 	);
 
 	out_message:
-	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n", INSTANCE_D_NAME(thread_data), thread_data->thread);
+	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n",
+			INSTANCE_D_NAME(thread_data), thread);
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
-}
-
-static int test_config(struct rrr_instance_config *config) {
-	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_perl5,
 		NULL,
-		test_config,
 		NULL,
 		NULL
 };
@@ -449,7 +453,7 @@ static const char *module_name = "perl5";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;

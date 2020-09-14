@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_acl.h"
 
 #include "../net_transport/net_transport.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
@@ -90,7 +90,7 @@ struct clear_sesion_from_connections_callback_data {
 	int disregard_transport_handle;
 };
 
-static int __rrr_mqtt_broker_clear_session_from_connections_callback (
+static int __rrr_mqtt_common_clear_session_from_connections_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -119,19 +119,19 @@ static int __rrr_mqtt_broker_clear_session_from_connections_callback (
 int rrr_mqtt_common_clear_session_from_connections (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_session *session_to_remove,
-		int disregard_transport_handle
+		int transport_handle_disregard
 ) {
 	int ret = 0;
 
 	struct clear_sesion_from_connections_callback_data callback_data = {
 			session_to_remove,
-			disregard_transport_handle
+			transport_handle_disregard
 	};
 
 	ret = rrr_mqtt_transport_iterate (
 			data->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			__rrr_mqtt_broker_clear_session_from_connections_callback ,
+			__rrr_mqtt_common_clear_session_from_connections_callback ,
 			&callback_data
 	);
 
@@ -300,7 +300,21 @@ int rrr_mqtt_common_data_init (
 		case 0:																\
 			RRR_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n");	\
 			break
-
+/*
+#include "../util/utf8.h"
+#define HANDLE_PROPERTY_UTF8(target,id,error_msg)							\
+		case id:															\
+			RRR_FREE_IF_NOT_NULL(target);									\
+			if (rrr_mqtt_property_get_blob_as_str(&(target),property)!=0) {	\
+				goto out_internal_error;									\
+			}																\
+			if (target == NULL || *target == '\0' ||						\
+				rrr_utf8_validate(target, strlen(target)) != 0) {			\
+				RRR_MSG_0(error_msg "\n");									\
+				goto out_reason_protocol_error;								\
+			}																\
+			break
+*/
 #define HANDLE_PROPERTY_U32_UNCHECKED(target,id) 							\
 		case id:															\
 			(target) = rrr_mqtt_property_get_uint32(property);				\
@@ -409,7 +423,7 @@ int rrr_mqtt_common_data_init (
 	out:																					\
 		return ret
 
-int rrr_mqtt_common_handler_connect_handle_properties_callback (
+int rrr_mqtt_common_parse_connect_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -465,7 +479,7 @@ int rrr_mqtt_common_handler_connect_handle_properties_callback (
 #define HANDLE_PROPERTY_UPDATE_DEFINED(target,property)				\
 		case property: (target) = 1; break;
 
-int rrr_mqtt_common_handler_connack_handle_properties_callback (
+int rrr_mqtt_common_parse_connack_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -589,7 +603,7 @@ int rrr_mqtt_common_handler_connack_handle_properties_callback (
 	HANDLE_PROPERTY_SWITCH_RETURN();
 }
 
-int rrr_mqtt_common_handler_publish_handle_properties_callback (
+int rrr_mqtt_common_parse_publish_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 ) {
@@ -636,11 +650,53 @@ int rrr_mqtt_common_handler_publish_handle_properties_callback (
 	HANDLE_PROPERTY_SWITCH_RETURN();
 }
 
-int rrr_mqtt_common_handle_properties (
+int rrr_mqtt_common_parse_will_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+) {
+	struct rrr_mqtt_common_parse_will_properties_callback_data *callback_data = arg;
+	struct rrr_mqtt_conn_will_properties *will_properties = callback_data->will_properties;
+
+	HANDLE_PROPERTY_SWITCH_INIT();
+	HANDLE_PROPERTY_SWITCH_BEGIN();
+		HANDLE_PROPERTY_U32_UNCHECKED (
+				will_properties->will_delay_interval,
+				RRR_MQTT_PROPERTY_WILL_DELAY_INTERVAL
+		);
+		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				will_properties->payload_format_indicator,
+				RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
+				"Payload format indicator field in CONNECT will properties was not 0 or 1"
+		);
+		HANDLE_PROPERTY_U32_UNCHECKED (
+				will_properties->message_expiry_interval,
+				RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL
+		);
+		HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				will_properties->content_type,
+				RRR_MQTT_PROPERTY_CONTENT_TYPE
+		);
+		HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				will_properties->response_topic,
+				RRR_MQTT_PROPERTY_RESPONSE_TOPIC
+		);
+		HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				will_properties->correlation_data,
+				RRR_MQTT_PROPERTY_CORRELATION_DATA
+		);
+		HANDLE_PROPERTY_TO_COLLECTION (
+				&will_properties->user_properties,
+				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+	HANDLE_PROPERTY_SWITCH_END();
+	HANDLE_PROPERTY_SWITCH_RETURN();
+}
+
+int rrr_mqtt_common_parse_properties (
+		uint8_t *reason_v5,
 		const struct rrr_mqtt_property_collection *source,
 		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
-		struct rrr_mqtt_common_parse_properties_data *callback_data,
-		uint8_t *reason_v5
+		struct rrr_mqtt_common_handle_properties_data *callback_data
 ) {
 	int ret = RRR_MQTT_OK;
 
@@ -652,17 +708,16 @@ int rrr_mqtt_common_handle_properties (
 		callback_data
 	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
-			RRR_MSG_0("Soft error while iterating properties\n");
 			ret = ret & ~(RRR_MQTT_SOFT_ERROR);
 		}
 		if (ret != 0) {
 			ret = RRR_MQTT_INTERNAL_ERROR;
-			RRR_MSG_0("Internal error while iterating properties, return was %i\n", ret);
+			RRR_MSG_0("Internal error while iterating properties in rrr_mqtt_common_parse_properties, return was %i\n", ret);
 			goto out;
 		}
 
 		if (callback_data->reason_v5 == RRR_MQTT_P_5_REASON_OK) {
-			RRR_BUG("Callback return error in __rrr_mqtt_p_handle_propertie returned but no reason was set\n");
+			RRR_BUG("Callback return error in rrr_mqtt_common_parse_properties returned but no reason was set\n");
 		}
 
 		ret = RRR_MQTT_SOFT_ERROR;
@@ -686,10 +741,18 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	// must be set to 1
 	int allow_missing_originating_packet = 0;
 
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish) != 0 && RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
+		RRR_MSG_0("Recevied PUBLISH with DUP 1 and QoS 0, this is a protocol error\n");
+		ret = RRR_MQTT_SOFT_ERROR;
+		goto out;
+	}
+
+	// Parser may set reason on the publish (in case of invalid data) which we check here
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		allow_missing_originating_packet = 1;
 
-		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)) {
+		// If QoS is 0, we cannot send error reply and must close connection
+		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
@@ -735,7 +798,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&publish->properties,
 			publish,
-			rrr_mqtt_common_handler_publish_handle_properties_callback,
+			rrr_mqtt_common_parse_publish_properties_callback,
 			goto out_generate_ack
 	);
 
@@ -989,26 +1052,6 @@ int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 }
 
-int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
-	int ret = 0;
-
-	(void)(mqtt_data);
-
-	if ((ret = rrr_mqtt_conn_update_state (
-			connection,
-			packet,
-			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
-	)) != RRR_MQTT_OK) {
-		RRR_MSG_0("Could not update connection state in rrr_mqtt_p_handler_disconnect\n");
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_mqtt_common_handle_packet_callback (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet,
@@ -1062,6 +1105,25 @@ static int __rrr_mqtt_common_handle_packet_callback (
 	out:
 		RRR_MQTT_P_UNLOCK(packet);
 		return ret;
+}
+
+int rrr_mqtt_common_update_conn_state_upon_disconnect (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_disconnect *disconnect
+) {
+	int ret = 0;
+
+	if ((ret = rrr_mqtt_conn_update_state (
+			connection,
+			(struct rrr_mqtt_p *) disconnect,
+			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
+	)) != RRR_MQTT_OK) {
+		RRR_MSG_0("Could not update connection state in rrr_mqtt_common_update_conn_state_upon_disconnect\n");
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_mqtt_common_read_parse_handle (

@@ -32,10 +32,10 @@ input_data
 /debian/tmp/
 /debian/librrr-dev/
 /debian/librrr1/
+/debian/rrr-mod-mysql/
 /debian/rrr-mod-mariadb/
 /debian/rrr-mod-perl5/
 /debian/rrr-mod-python3/
-/debian/rrr.install
 
 # http://www.gnu.org/software/automake
 
@@ -69,6 +69,10 @@ variables.sh
 *.gcno
 /lcov
 /main_coverage.info
+
+# valgrind
+vgcore.*
+massif.*
 
 # perl
 blib

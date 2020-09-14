@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_MAP_ITERATE_BEGIN(map)									\
 	do { RRR_LL_ITERATE_BEGIN(map,struct rrr_map_item);				\

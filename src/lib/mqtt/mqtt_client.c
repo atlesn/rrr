@@ -33,9 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_acl.h"
 
-#include "../rrr_time.h"
-#include "../posix.h"
-#include "../macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../util/posix.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
@@ -168,7 +168,13 @@ int rrr_mqtt_client_subscribe (
 
 	RRR_MQTT_P_LOCK(subscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(subscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			subscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
 		goto out_unlock;
 	}
@@ -229,7 +235,13 @@ int rrr_mqtt_client_unsubscribe (
 
 	RRR_MQTT_P_LOCK(unsubscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(unsubscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			unsubscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
 		goto out_unlock;
 	}
@@ -254,6 +266,12 @@ int rrr_mqtt_client_unsubscribe (
 		RRR_MQTT_P_DECREF(unsubscribe);
 	out:
 		return (ret != 0);
+}
+
+void rrr_mqtt_client_close_all_connections (
+		struct rrr_mqtt_client_data *data
+) {
+	rrr_net_transport_collection_cleanup(&data->mqtt_data.transport->transports);
 }
 
 struct rrr_mqtt_client_property_override {
@@ -285,15 +303,14 @@ int rrr_mqtt_client_connect (
 	// Sleep a bit in case server runs in the same RRR program
 	rrr_posix_usleep(500000); // 500ms
 
-	if (rrr_mqtt_transport_connect (
+	if ((ret = rrr_mqtt_transport_connect (
 			transport_handle,
 			data->mqtt_data.transport,
 			port,
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
-	) != 0) {
+	)) != 0) {
 		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
-		ret = 1;
 		goto out_nolock;
 	}
 
@@ -318,9 +335,13 @@ int rrr_mqtt_client_connect (
 			goto out;
 		}
 	}
+	else {
+		// Always set clean start if there is no client ID
+		connect->connect_flags |= 1<<1;
+	}
 
-	connect->keep_alive = keep_alive;
 	connect->connect_flags |= (clean_start != 0)<<1;
+	connect->keep_alive = keep_alive;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
 
@@ -391,26 +412,26 @@ int rrr_mqtt_client_connect (
 		RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 				&connect->properties,
 				connect,
-				rrr_mqtt_common_handler_connect_handle_properties_callback,
+				rrr_mqtt_common_parse_connect_properties_callback,
 				goto out
 		);
 	}
 
 	int session_present = 0;
-	if ((ret = mqtt_data->sessions->methods->get_session (
+	if (mqtt_data->sessions->methods->get_session (
 			session,
 			mqtt_data->sessions,
 			data->mqtt_data.client_name, // May be NULL
 			&session_present,
 			0 // no_creation: 0 means to create on non-existent client ID
-	)) != RRR_MQTT_SESSION_OK || *session == NULL) {
+	) != RRR_MQTT_SESSION_OK || *session == NULL) {
 		ret = RRR_MQTT_INTERNAL_ERROR;
-		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect\n");
+		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect return was %i\n", ret);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_common_clear_session_from_connections (mqtt_data, *session, *transport_handle)) != 0) {
-		RRR_MSG_0("Error while clearing session from old connections in rrr_mqtt_client_connect\n");
+		RRR_MSG_0("Error while clearing session from old connections in rrr_mqtt_client_connect return was %i\n", ret);
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		goto out;
 	}
@@ -539,7 +560,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connack->properties,
 			connack,
-			rrr_mqtt_common_handler_connack_handle_properties_callback,
+			rrr_mqtt_common_parse_connack_properties_callback,
 			goto out
 	);
 
@@ -644,6 +665,16 @@ int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+static int __rrr_mqtt_client_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	(void)(mqtt_data);
+
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
+
+	return rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
+}
+
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{NULL},
@@ -659,7 +690,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_client_handle_suback_unsuback},
 	{NULL},
 	{__rrr_mqtt_client_handle_pingresp},
-	{rrr_mqtt_common_handle_disconnect},
+	{__rrr_mqtt_client_handle_disconnect},
 	{NULL}
 };
 

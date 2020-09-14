@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../read_constants.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -38,6 +38,7 @@ struct rrr_net_transport_config;
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 	pthread_mutex_t lock_;
+	int lock_count;
 	struct rrr_net_transport *transport;
 	int handle;
 	enum rrr_net_transport_socket_mode mode;
@@ -124,6 +125,9 @@ struct rrr_net_transport_collection {
 	void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
 	void *callback_final_arg
 
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS							\
+	void **submodule_private_ptr, int *submodule_private_fd, void *arg
+
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS							\
 	struct rrr_net_transport_handle *handle,									\
 	const struct sockaddr *sockaddr,											\
@@ -153,7 +157,6 @@ struct rrr_net_transport_collection {
 	ssize_t read_step_initial,													\
 	ssize_t read_step_max_size,													\
 	ssize_t read_max_size,														\
-	int read_flags,																\
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),	\
 	void *get_target_size_arg,													\
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),	\
@@ -181,6 +184,9 @@ struct rrr_net_transport_methods {
 			const void *data,
 			ssize_t size
 	);
+	int (*poll)(
+			struct rrr_net_transport_handle *handle
+	);
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -188,14 +194,14 @@ int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		void *submodule_private_ptr,
-		int submodule_private_fd
-);
-void rrr_net_transport_common_cleanup (
-		struct rrr_net_transport *transport
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		void *submodule_callback_arg
 );
 #endif
 
+void rrr_net_transport_common_cleanup (
+		struct rrr_net_transport *transport
+);
 int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
@@ -208,6 +214,7 @@ int rrr_net_transport_new (
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
+void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection);
 void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 );
@@ -229,13 +236,15 @@ int rrr_net_transport_connect (
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
 );
+int rrr_net_transport_ctx_check_alive (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_read_message (
 		struct rrr_net_transport_handle *handle,
 		int read_attempts,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -250,6 +259,9 @@ int rrr_net_transport_ctx_send_blocking (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_ctx_handle_has_application_data (
+		struct rrr_net_transport_handle *handle
 );
 void rrr_net_transport_ctx_handle_application_data_bind (
 		struct rrr_net_transport_handle *handle,
