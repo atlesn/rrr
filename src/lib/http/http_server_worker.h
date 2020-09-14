@@ -34,14 +34,21 @@ struct rrr_thread;
 struct rrr_http_part;
 
 struct rrr_http_server_worker_preliminary_data {
-	// This lock only protects our data members, not what they point to.
-	pthread_mutex_t lock;
+	// Locking is provided by using thread framework lock wrapper.
+	// DO NOT access this struct except from in callback of the wrapper.
 
-	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
+	// The worker will copy data members to it's own memory. DO NOT
+	// add pointers to data which may be modified outside of thread lock
+	// wrapper.
+
+	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
-	// DO NOT put allocated data in this struct, like char *, such data
-	// would not have proper memory fencing.
+	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+
+	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_raw_arg;
 
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
@@ -63,24 +70,34 @@ struct rrr_http_server_worker_data {
 
 	ssize_t read_max_size;
 
-	int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
+	// Helper pointers
+	struct rrr_thread *thread;
+
+	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
 
-	int receive_complete;
+	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+
+	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_raw_arg;
+
+	int request_complete;
 };
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 );
 void rrr_http_server_worker_preliminary_data_destroy (
 		struct rrr_http_server_worker_preliminary_data *worker_data
 );
-void rrr_http_server_worker_preliminary_data_destroy_void (
-		void *private_data
-);
-void *rrr_http_server_worker_thread_entry (
+void *rrr_http_server_worker_thread_entry_intermediate (
 		struct rrr_thread *thread
 );
 

@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/socket.h>
 
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 //struct rrr_socket_client;
 
@@ -69,6 +69,11 @@ struct rrr_read_session {
 	// Populated by get target length-function if bytes are to be skipped at beginning of buffer
 	ssize_t rx_buf_skip;
 
+	// Complete callback may set this to indicate that parsing of a block has completed successfully
+	// and that if an EOF or connection close occurs in the next read, this should not produce a soft error.
+	// If EOF does not occur during the next read, the flag is reset to zero.
+	int eof_ok_now;
+
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;
 
@@ -104,17 +109,12 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_complete_callback) (
 													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_poll) (
-													int read_flags,
 													void *private_arg
 											 ),
 		int									 (*function_read) (
@@ -140,15 +140,16 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 );
 
-struct rrr_message_log;
-struct rrr_message_addr;
-struct rrr_message;
+struct rrr_msg_log;
+struct rrr_msg_addr;
+struct rrr_msg_msg;
 struct rrr_array;
+struct rrr_array_tree;
 
 struct rrr_read_common_receive_message_callback_data {
-	int (*callback_msg)(struct rrr_message **message, void *arg);
-	int (*callback_addr_msg)(const struct rrr_message_addr *message, void *arg);
-	int (*callback_log_msg)(const struct rrr_message_log *message, void *arg);
+	int (*callback_msg)(struct rrr_msg_msg **message, void *arg);
+	int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *arg);
+	int (*callback_log_msg)(const struct rrr_msg_log *message, void *arg);
 	void *callback_arg;
 };
 int rrr_read_common_receive_message_raw_callback (
@@ -170,12 +171,13 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_read_session *read_session,
 		void *arg
 );
-struct rrr_read_common_get_session_target_length_from_array_data {
-	const struct rrr_array *definition;
+struct rrr_read_common_get_session_target_length_from_array_tree_data {
+	const struct rrr_array_tree *tree;
+	struct rrr_array *array_final;
 	int do_byte_by_byte_sync;
 	unsigned int message_max_size;
 };
-int rrr_read_common_get_session_target_length_from_array (
+int rrr_read_common_get_session_target_length_from_array_tree (
 		struct rrr_read_session *read_session,
 		void *arg
 );

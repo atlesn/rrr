@@ -25,9 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "http_common.h"
+#include "../settings.h"
 #include "../map.h"
 
-struct rrr_instance_config;
+struct rrr_instance_config_data;
 
 struct rrr_http_client_config {
 	char *server;
@@ -36,7 +37,7 @@ struct rrr_http_client_config {
 	char *method_str;
 	enum rrr_http_method method;
 
-	uint16_t server_port;
+	rrr_setting_uint server_port;
 
 	struct rrr_map tags;
 	struct rrr_map fixed_tags;
@@ -49,12 +50,13 @@ void rrr_http_client_config_cleanup (
 );
 int rrr_http_client_config_parse (
 		struct rrr_http_client_config *data,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint
+		int enable_endpoint,
+		int do_raw_mode
 );
 
 #endif /* RRR_HTTP_CLIENT_CONFIG_H */

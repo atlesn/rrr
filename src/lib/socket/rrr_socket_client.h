@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 
-#include "../linked_list.h"
 #include "../read.h"
+#include "../util/linked_list.h"
 
 struct rrr_socket_client {
 	RRR_LL_NODE(struct rrr_socket_client);
@@ -49,7 +49,7 @@ struct rrr_socket_client_collection {
 	char *creator;
 };
 
-struct rrr_socket_msg;
+struct rrr_msg;
 
 void rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection
@@ -80,7 +80,6 @@ int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		int read_flags,
 		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,

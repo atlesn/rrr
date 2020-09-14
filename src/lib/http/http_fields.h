@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "../linked_list.h"
 #include "../rrr_types.h"
+#include "../util/linked_list.h"
 
 struct rrr_http_field {
 	RRR_LL_NODE(struct rrr_http_field);

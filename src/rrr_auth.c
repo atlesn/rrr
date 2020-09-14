@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/linked_list.h"
 #include "lib/log.h"
-#include "lib/gnu.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
-#include "lib/macro_utils.h"
+#include "lib/util/linked_list.h"
+#include "lib/util/gnu.h"
+#include "lib/util/macro_utils.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_auth");
 
@@ -121,7 +121,7 @@ static int __rrr_auth_parse_config (struct rrr_auth_data *data, struct cmd_data 
 	return ret;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -143,7 +143,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_passwd_data_init(&data);
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -154,7 +154,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_auth_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_auth_parse_config(&data, &cmd) != 0) {
 		cmd_print_usage(&cmd);
 		ret = EXIT_FAILURE;
 		goto out;

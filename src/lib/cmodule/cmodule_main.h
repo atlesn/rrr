@@ -32,10 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
 
-#include "../linked_list.h"
 #include "../settings.h"
+#include "../util/linked_list.h"
 
-struct rrr_instance_config;
+struct rrr_instance_config_data;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
 struct rrr_mmap_channel;

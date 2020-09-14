@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_config.h"
 
 #include "../log.h"
-#include "../gnu.h"
 #include "../instance_config.h"
-#include "../macro_utils.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 void rrr_net_transport_config_cleanup (
 		struct rrr_net_transport_config *data
@@ -41,7 +41,7 @@ void rrr_net_transport_config_cleanup (
 
 int rrr_net_transport_config_parse (
 		struct rrr_net_transport_config *data,
-		struct rrr_instance_config *config,
+		struct rrr_instance_config_data *config,
 		const char *prefix,
 		int allow_both_transport_type,
 		enum rrr_net_transport_type default_transport

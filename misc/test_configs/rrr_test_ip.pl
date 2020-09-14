@@ -22,47 +22,26 @@ sub config {
 	return 1;
 }
 
-sub get_from_tag {
-	my $message = shift;
-	my $tag = shift;
+my $id = 0;
 
-	for (my $i = 0; $i < @{$message->{'array_tags'}}; $i++) {
-		if (@{$message->{'array_tags'}}[$i] eq $tag) {
-			return @{$message->{'array_values'}}[$i];
-		}
+sub source {
+	my $message = shift;
+
+	if ($id > 200) {
+		return 1;
 	}
 
-	return undef;
-}
+	$message->push_tag_str("id", $id++);
+	#$message->push_tag_str("data", "x" x (65536 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2));
+	$message->push_tag_str("data", "x" x (3));
 
-sub push_str {
-	my $message = shift;
-	my $tag = shift;
-	my $value = shift;
+	$message->{'ip_addr'} = sockaddr_in (9100, inet_aton("127.0.0.1"));
+	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
+	$message->{'ip_so_type'} = "tcp";
 
-	push @{$message->{'array_values'}}, "$value";
-	push @{$message->{'array_tags'}}, $tag;
-	push @{$message->{'array_types'}}, "str";
-}
+	$message->send();
 
-sub push_blob {
-	my $message = shift;
-	my $tag = shift;
-	my $value = shift;
-
-	push @{$message->{'array_values'}}, "$value";
-	push @{$message->{'array_tags'}}, $tag;
-	push @{$message->{'array_types'}}, "blob";
-}
-
-sub push_host {
-	my $message = shift;
-	my $tag = shift;
-	my $value = shift;
-
-	push @{$message->{'array_values'}}, "$value";
-	push @{$message->{'array_tags'}}, $tag;
-	push @{$message->{'array_types'}}, "h";
+	return 1;
 }
 
 sub process {
@@ -79,7 +58,7 @@ sub process {
 	my $ip_str = inet_ntop AF_INET6, $ip_address; 
 	print "Source: $ip_str:$port type " . $message->{'ip_so_type'} . "\n";
 
-	push_blob($message, "reply", "A\r");
+	$message->push_tag_blob($message, "reply", "A\r");
 
 	$message->send();
 

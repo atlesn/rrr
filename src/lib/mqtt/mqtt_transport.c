@@ -199,7 +199,6 @@ int rrr_mqtt_transport_connect (
 			new_connection_callback,
 			&callback_data
 	)) != 0) {
-//		RRR_MSG_0("Could not connect in rrr_mqtt_transport_connect\n");
 		goto out;
 
 	}
