@@ -22,15 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CMODULE_DEFER_QUEUE_H
 #define RRR_CMODULE_DEFER_QUEUE_H
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 
 struct rrr_cmodule_deferred_message {
 	RRR_LL_NODE(struct rrr_cmodule_deferred_message);
-	struct rrr_message *msg;
-	struct rrr_message_addr *msg_addr;
+	struct rrr_msg_msg *msg;
+	struct rrr_msg_addr *msg_addr;
 };
 
 struct rrr_cmodule_deferred_message_collection {
@@ -41,14 +41,14 @@ int rrr_cmodule_deferred_message_destroy (
 		struct rrr_cmodule_deferred_message *msg
 );
 void rrr_cmodule_deferred_message_extract (
-		struct rrr_message **message,
-		struct rrr_message_addr **message_addr,
+		struct rrr_msg_msg **message,
+		struct rrr_msg_addr **message_addr,
 		struct rrr_cmodule_deferred_message *source
 );
 int rrr_cmodule_deferred_message_new_and_push (
 		struct rrr_cmodule_deferred_message_collection *collection,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
+		struct rrr_msg_msg *msg,
+		const struct rrr_msg_addr *msg_addr
 );
 
 #endif /* RRR_CMODULE_DEFER_QUEUE */

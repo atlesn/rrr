@@ -31,14 +31,14 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la buffer.la \
-	ipclient.la ip.la averager.la junction.la \
-	duplicator.la mqttbroker.la mqttclient.la socket.la \
+lib_LTLIBRARIES = dummy.la raw.la \
+	ipclient.la ip.la averager.la file.la junction.la \
+	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
+module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
@@ -60,9 +60,6 @@ ipclient_la_SOURCES = p_ipclient.c
 
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c
-
-duplicator_la_LDFLAGS = ${module_ldflags}
-duplicator_la_SOURCES = p_duplicator.c
 
 junction_la_LDFLAGS = ${module_ldflags}
 junction_la_SOURCES = p_junction.c
@@ -86,6 +83,9 @@ httpclient_la_LDFLAGS = ${module_ldflags}
 httpclient_la_SOURCES = p_httpclient.c
 
 httpserver_la_LDFLAGS = ${module_ldflags}
-httpserver_la_SOURCES = src_httpserver.c
+httpserver_la_SOURCES = p_httpserver.c
+
+file_la_LDFLAGS = ${module_ldflags}
+file_la_SOURCES = src_file.c
 
 libdir=${exec_prefix}/lib/rrr

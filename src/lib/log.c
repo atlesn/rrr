@@ -26,7 +26,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 
+#ifdef HAVE_JOURNALD
+#	define SD_JOURNAL_SUPPRESS_LOCATION
+#	include <systemd/sd-journal.h>
+#endif
+
 #include "log.h"
+#include "util/gnu.h"
+#include "util/posix.h"
+#include "util/macro_utils.h"
+#include "rrr_strerror.h"
+
+// Uncomment for debug purposes, logs are only delivered to hooks
+//#define RRR_LOG_DISABLE_PRINT
 
 #define RRR_LOG_HOOK_MAX 5
 
@@ -43,33 +55,16 @@ int rrr_log_init(void) {
 	}
 
 	int ret = 0;
-
-	pthread_mutexattr_t attr;
-	if ((pthread_mutexattr_init(&attr)) != 0) {
-		fprintf(stderr, "%s", "Could not initialize mutexattr in rrr_log_init()\n");
+	if ((rrr_posix_mutex_init(&rrr_log_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((pthread_mutexattr_setpshared(&attr, 1)) != 0) {
-		fprintf(stderr, "%s", "Could not set pshared on mutexattr in rrr_log_init()\n");
-		ret = 1;
-		goto out_cleanup_mutexattr;
-	}
-
-	if ((pthread_mutex_init(&rrr_log_lock, &attr)) != 0) {
-		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
-		ret = 1;
-		goto out_cleanup_mutexattr;
-	}
-
 	rrr_log_is_initialized = 1;
 
-	goto out_cleanup_mutexattr;
-	out_cleanup_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
-		return ret;
+	return ret;
 }
 
 void rrr_log_cleanup(void) {
@@ -115,6 +110,12 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 		pthread_mutex_lock (&rrr_log_hook_lock);					\
 		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
 
+// Register and unregister functions should spin to keep the thread alive
+// thus obtaining the lock faster when there's a lot of messages being generated.
+#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN								\
+		while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { } \
+		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+
 #define LOCK_HOOK_UNCHECKED_END										\
 		pthread_cleanup_pop(1)
 
@@ -150,7 +151,7 @@ void rrr_log_hook_register (
 		RRR_BUG("BUG: Too many log hooks in rrr_log_hook_register\n");
 	}
 
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 
 	struct rrr_log_hook hook = {
 		 log,
@@ -169,7 +170,7 @@ void rrr_log_hook_register (
 }
 
 void rrr_log_hook_unregister_all_after_fork (void) {
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 	rrr_log_hook_count = 0;
 	LOCK_HOOK_UNCHECKED_END;
 }
@@ -179,7 +180,7 @@ void rrr_log_hook_unregister (
 ) {
 	int shifting_started = 0;
 
-	LOCK_HOOK_UNCHECKED_BEGIN;
+	LOCK_HOOK_UNCHECKED_BEGIN_SPIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
@@ -241,7 +242,7 @@ static void __rrr_log_hooks_call (
 
 	char tmp[RRR_LOG_HOOK_MSG_MAX_SIZE];
 	char *wpos = tmp;
-	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT, loglevel_translated, prefix_rpos);
+	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix_rpos);
 	if (size <= 0) {
 		// NOTE ! Jumping out of function
 		return;
@@ -286,18 +287,74 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (unsigned shor
 #define RRR_LOG_TRANSLATE_LOGLEVEL(translate) \
 	(rrr_config_global.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
 
+#ifdef HAVE_JOURNALD
+
+#define SET_IOVEC(str)	\
+		{ str, strlen(str) }
+
+static void __rrr_log_sd_journal_sendv (unsigned short loglevel, const char *prefix, const char *__restrict __format, va_list args) {
+	char *buf_priority = NULL;
+	char *buf_prefix = NULL;
+	char *buf_message = NULL;
+
+	if (rrr_asprintf(&buf_priority, "PRIORITY=%i", loglevel) < 0) {
+		goto out;
+	}
+
+	if (rrr_asprintf(&buf_prefix, "RRR_CONF=%s", prefix) < 0) {
+		goto out;
+	}
+
+	{
+		char message_format[strlen("MESSAGE=") + strlen(__format) + 1];
+		sprintf(message_format, "MESSAGE=%s", __format);
+		if (rrr_vasprintf(&buf_message, message_format, args) < 0) {
+			goto out;
+		}
+	}
+
+	struct iovec iovec[3] = {
+		SET_IOVEC(buf_priority),
+		SET_IOVEC(buf_prefix),
+		SET_IOVEC(buf_message)
+	};
+
+	int ret_tmp;
+	if ((ret_tmp = sd_journal_sendv(iovec, 3)) < 0) {
+		fprintf(stderr, "Warning: Syslog call sd_journal_sendv failed with %i\n", ret_tmp);
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf_priority);
+	RRR_FREE_IF_NOT_NULL(buf_prefix);
+	RRR_FREE_IF_NOT_NULL(buf_message);
+}
+#endif
+
 void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
 	va_list args;
 	va_start(args, __format);
 
 	// Don't call the hooks here due to potential lock problems
 
-	printf(RRR_LOG_HEADER_FORMAT,
-			RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
-			prefix
-	);
+#ifdef HAVE_JOURNALD
+	if (rrr_config_global.do_journald_output) {
+		__rrr_log_sd_journal_sendv(RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+	}
+	else {
+#endif
 
-	vprintf(__format, args);
+#ifndef RRR_LOG_DISABLE_PRINT
+		printf(RRR_LOG_HEADER_FORMAT_FULL,
+				RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout),
+				prefix
+		);
+		vprintf(__format, args);
+#endif
+
+#ifdef HAVE_JOURNALD
+	}
+#endif
 
 	va_end(args);
 }
@@ -306,21 +363,52 @@ void rrr_log_printf_plain (const char *__restrict __format, ...) {
 	va_list args;
 	va_start(args, __format);
 
-	LOCK_BEGIN;
 
-	vprintf(__format, args);
+#ifdef HAVE_JOURNALD
+	if (rrr_config_global.do_journald_output) {
+		int ret = sd_journal_printv(LOG_DEBUG, __format, args);
+		if (ret < 0) {
+			fprintf(stderr, "Warning: Syslog call sd_journal_printv failed with %i\n", ret);
+		}
+	}
+	else {
+#endif
 
-	LOCK_END;
+#ifndef RRR_LOG_DISABLE_PRINT
+		LOCK_BEGIN;
+		vprintf(__format, args);
+		LOCK_END;
+#endif
+
+#ifdef HAVE_JOURNALD
+	}
+#endif
 
 	va_end(args);
 }
 
 void rrr_log_printn_plain (const char *value, size_t value_size) {
-	LOCK_BEGIN;
 
-	printf("%.*s", (int) value_size, value);
 
-	LOCK_END;
+#ifdef HAVE_JOURNALD
+	if (rrr_config_global.do_journald_output) {
+		int ret = sd_journal_print(LOG_DEBUG, "%.*s", (int) value_size, value);
+		if (ret < 0) {
+			fprintf(stderr, "Warning: Syslog call sd_journal_print failed with %i\n", ret);
+		}
+	}
+	else {
+#endif
+
+#ifndef RRR_LOG_DISABLE_PRINT
+		LOCK_BEGIN;
+		printf("%.*s", (int) value_size, value);
+		LOCK_END;
+#endif
+
+#ifdef HAVE_JOURNALD
+	}
+#endif
 }
 
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
@@ -332,15 +420,26 @@ void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__
 
 	unsigned int loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
 
-	LOCK_BEGIN;
+#ifndef RRR_LOG_DISABLE_PRINT
 
-	printf(RRR_LOG_HEADER_FORMAT,
-			loglevel_translated,
-			prefix
-	);
-	vprintf(__format, args);
+#ifdef HAVE_JOURNALD
+	if (rrr_config_global.do_journald_output) {
+		__rrr_log_sd_journal_sendv(RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout), prefix, __format, args);
+	}
+	else {
+#endif
+		LOCK_BEGIN;
+		printf(RRR_LOG_HEADER_FORMAT_FULL,
+				loglevel_translated,
+				prefix
+		);
+		vprintf(__format, args);
+		LOCK_END;
+#ifdef HAVE_JOURNALD
+	}
+#endif
 
-	LOCK_END;
+#endif
 
 	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
 
@@ -364,12 +463,12 @@ void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, c
 		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
 	}
 
+#ifndef RRR_LOG_DISABLE_PRINT
 	LOCK_BEGIN;
-
-	fprintf(file, RRR_LOG_HEADER_FORMAT, loglevel_translated, prefix);
+	fprintf(file, RRR_LOG_HEADER_FORMAT_FULL, loglevel_translated, prefix);
 	vfprintf(file, __format, args);
-
 	LOCK_END;
+#endif
 
 	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
 

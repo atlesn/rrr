@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 #define RRR_STATS_TREE_OK			0
 #define RRR_STATS_TREE_HARD_ERROR	1

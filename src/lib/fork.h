@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <pthread.h>
 
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_FORK_MAX_FORKS 128
 

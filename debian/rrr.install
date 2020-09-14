@@ -1,6 +1,6 @@
 etc/*
 usr/bin/*
-usr/lib/x86_64-linux-gnu/perl5/*
+usr/lib/*/perl5/*
 usr/share/man/*
 usr/lib/rrr/cmodules/*
 usr/lib/rrr/averager.la
@@ -11,8 +11,6 @@ usr/lib/rrr/cmodule.la
 usr/lib/rrr/cmodule.so
 usr/lib/rrr/dummy.la
 usr/lib/rrr/dummy.so
-usr/lib/rrr/duplicator.la
-usr/lib/rrr/duplicator.so
 usr/lib/rrr/httpclient.la
 usr/lib/rrr/httpclient.so
 usr/lib/rrr/httpserver.la
@@ -37,3 +35,5 @@ usr/lib/rrr/socket.la
 usr/lib/rrr/socket.so
 usr/lib/rrr/voltmonitor.la
 usr/lib/rrr/voltmonitor.so
+usr/lib/rrr/file.la
+usr/lib/rrr/file.so
