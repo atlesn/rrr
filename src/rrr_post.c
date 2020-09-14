@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,25 +30,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <lib/read.h>
 #include <signal.h>
 
-#include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/rrr_config.h"
+#include "lib/log.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array.h"
-#include "lib/linked_list.h"
-#include "lib/rrr_socket.h"
-#include "lib/rrr_socket_read.h"
-#include "lib/rrr_socket_common.h"
+#include "lib/array_tree.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_read.h"
+#include "lib/socket/rrr_socket_common.h"
 #include "lib/rrr_strerror.h"
 #include "lib/read.h"
-#include "lib/vl_time.h"
-#include "lib/messages.h"
-#include "lib/gnu.h"
+#include "lib/messages/msg_msg.h"
+#include "lib/util/rrr_time.h"
+#include "lib/util/gnu.h"
+#include "lib/util/linked_list.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_post");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_post");
 
-#define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
+#define RRR_POST_DEFAULT_ARRAY_DEFINITION	"msg"
+#define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE	4096
 
 static volatile int rrr_post_abort = 0;
 static volatile int rrr_post_print_stats = 0;
@@ -58,8 +61,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'm',	"max-message-size",		"[-m|--max-message-size]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
 		{0,							's',	"sync",					"[-s|--sync]"},
@@ -87,8 +90,9 @@ struct rrr_post_data {
 	char *topic;
 	struct rrr_post_reading_collection readings;
 	uint64_t max_elements;
+	uint64_t max_message_size;
 	uint64_t elements_count;
-	struct rrr_array definition;
+	struct rrr_array_tree *tree;
 
 	int sync_byte_by_byte;
 	int quiet;
@@ -127,7 +131,9 @@ static void __rrr_post_destroy_data (struct rrr_post_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->topic);
 	RRR_LL_DESTROY(&data->readings, struct rrr_post_reading, free(node));
-	rrr_array_clear(&data->definition);
+	if (data->tree != NULL) {
+		rrr_array_tree_destroy(data->tree);
+	}
 }
 
 static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data *cmd) {
@@ -164,6 +170,8 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 
 static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data *cmd) {
 	int ret = 0;
+
+	char *array_tree_tmp = NULL;
 
 	// Socket
 	const char *socket = cmd_get_value(cmd, "socket", 0);
@@ -228,7 +236,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	}
 
 	// Readings
-	if (__rrr_post_add_readings(data, cmd) != 0) {
+	if ((ret = __rrr_post_add_readings(data, cmd)) != 0) {
 		goto out;
 	}
 
@@ -250,27 +258,21 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Array definition
 	const char *array_definition = cmd_get_value(cmd, "array_definition", 0);
 
-	struct rrr_array_parse_single_definition_callback_data callback_data = {
-			&data->definition, 0
-	};
-
-	if (array_definition == NULL) {
-		ret = rrr_array_parse_single_definition_callback(RRR_POST_DEFAULT_ARRAY_DEFINITION, &callback_data);
-	}
-	else {
-		if (cmd_iterate_subvalues (
-				cmd,
-				"array_definition",
-				0,
-				rrr_array_parse_single_definition_callback,
-				&callback_data
-		) != 0 ) {
-			ret = 1;
-		}
+	if (array_definition == NULL || *array_definition == '\0') {
+		array_definition = RRR_POST_DEFAULT_ARRAY_DEFINITION;
 	}
 
-	if (ret != 0 || callback_data.parse_ret != 0 || rrr_array_validate_definition(&data->definition) != 0) {
-		RRR_MSG_0("Error while parsing array definition\n");
+	array_tree_tmp = malloc(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
+	if (array_tree_tmp == NULL) {
+		RRR_MSG_0("Could not allocate temporary arry tree string in parse_config\n");
+		ret = 1;
+		goto out;
+	}
+
+	sprintf(array_tree_tmp, "%s;", array_definition);
+
+	if (rrr_array_tree_interpret_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+		RRR_MSG_0("Error while parsing array tree definition\n");
 		ret = 1;
 		goto out;
 	}
@@ -281,14 +283,32 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 
+	// Max message size, make sure default value is being set
+	data->max_message_size = RRR_POST_DEFAULT_MAX_MESSAGE_SIZE;
+
+	const char *max_message_size = cmd_get_value(cmd, "max-message-size", 0);
+	if (cmd_get_value (cmd, "max-message-size", 1) != NULL) {
+		RRR_MSG_0("Error: Only one 'max-message-size' argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+	if (max_message_size != NULL) {
+		if (cmd_convert_uint64_10(max_message_size, &data->max_message_size)) {
+			RRR_MSG_0("Could not understand argument 'max-message-size', must be and unsigned integer\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
 	out:
+	RRR_FREE_IF_NOT_NULL(array_tree_tmp);
 	return ret;
 }
 
 static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
-	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
+	if (rrr_socket_unix_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
 		RRR_MSG_0("Could not connect to socket\n");
 		ret = 1;
 		goto out;
@@ -308,7 +328,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = STDIN_FILENO;
 	}
 	else {
-		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, "rrr_post");
+		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post", 0);
 		if (data->input_fd < 0) {
 			RRR_MSG_0("Could not open input file %s: %s\n",
 					data->filename, rrr_strerror(errno));
@@ -330,10 +350,10 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 	}
 }
 
-static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_message *message) {
+static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_msg *message) {
 	int ret = 0;
 
-	if ((ret = rrr_socket_common_prepare_and_send_socket_msg_blocking((struct rrr_socket_msg *) message, data->output_fd, NULL)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_msg_blocking((struct rrr_msg *) message, data->output_fd, NULL)) != 0) {
 		RRR_MSG_0("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}
@@ -352,8 +372,8 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 		goto out;
 	}
 
-	struct rrr_message *message = NULL;
-	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
+	struct rrr_msg_msg *message = NULL;
+	if (rrr_msg_msg_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
@@ -381,10 +401,30 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 	out:
 	return ret;
 }
+struct rrr_post_read_callback_data {
+	struct rrr_post_data *data;
+};
 
-static int __rrr_post_read_message_callback (struct rrr_message *message, void *arg) {
-	struct rrr_post_data *data = arg;
+static int __rrr_post_read_callback (struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg) {
+	struct rrr_post_read_callback_data *callback_data = arg;
+	struct rrr_post_data *data = callback_data->data;
+
+	(void)(read_session);
+
 	int ret = 0;
+
+	struct rrr_msg_msg *message = NULL;
+
+	if ((ret = rrr_array_new_message_from_collection (
+			&message,
+			array_final,
+			rrr_time_get_64(),
+			data->topic,
+			(data->topic != NULL ? strlen(data->topic) : 0)
+	)) != 0) {
+		RRR_MSG_0("Could not create or send message in __rrr_post_read_callback\n");
+		goto out;
+	}
 
 	if ((ret = __rrr_post_send_message(data, message)) != 0) {
 		// Message printed in called function
@@ -392,29 +432,9 @@ static int __rrr_post_read_message_callback (struct rrr_message *message, void *
 
 	data->elements_count++;
 
-	RRR_FREE_IF_NOT_NULL(message);
-	return ret;
-}
-
-static int __rrr_post_read_callback(struct rrr_read_session *read_session, void *arg) {
-	struct rrr_post_data *data = arg;
-
-	int ret = 0;
-
-	if ((ret = rrr_array_new_message_from_buffer_with_callback (
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			data->topic,
-			(data->topic != NULL ? strlen(data->topic) : 0),
-			&data->definition,
-			__rrr_post_read_message_callback,
-			data
-	)) != 0) {
-		RRR_MSG_0("Could not create or send message in __rrr_post_read_callback\n");
-		goto out;
-	}
-
 	out:
+	RRR_FREE_IF_NOT_NULL(message);
+
 	return ret;
 }
 
@@ -439,6 +459,8 @@ static void __rrr_post_print_statistics (struct rrr_post_data *data) {
 static int __rrr_post_read (struct rrr_post_data *data) {
 	int ret = 0;
 
+	struct rrr_array array_tmp = {0};
+
 	struct rrr_read_session_collection read_sessions;
 	rrr_read_session_collection_init(&read_sessions);
 
@@ -451,19 +473,26 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
 
+	struct rrr_post_read_callback_data callback_data = {
+			data
+	};
 	while (	ret == 0 &&
 			(data->max_elements == 0 || data->elements_count < data->max_elements) &&
 			rrr_post_abort == 0
 	) {
-		ret = rrr_socket_common_receive_array (
+		uint64_t bytes_read = 0;
+		ret = rrr_socket_common_receive_array_tree (
+				&bytes_read,
 				&read_sessions,
 				data->input_fd,
-				0,
 				socket_read_flags,
-				&data->definition,
+				&array_tmp,
+				data->tree,
 				data->sync_byte_by_byte,
+				4096,
+				data->max_message_size,
 				__rrr_post_read_callback,
-				data
+				&callback_data
 		);
 
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
@@ -483,19 +512,23 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_read_session_collection_clear(&read_sessions);
 	return ret;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	struct cmd_data cmd;
 	struct rrr_post_data data;
@@ -503,11 +536,11 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_post_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 
@@ -551,15 +584,17 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-	if (data.quiet == 0) {
-		__rrr_post_print_statistics(&data);
-	}
+		if (data.quiet == 0) {
+			__rrr_post_print_statistics(&data);
+		}
 
-	rrr_set_debuglevel_on_exit();
-	__rrr_post_close(&data);
-	__rrr_post_destroy_data(&data);
-	cmd_destroy(&cmd);
-	rrr_socket_close_all();
-	rrr_strerror_cleanup();
-	return ret;
+		rrr_config_set_debuglevel_on_exit();
+		__rrr_post_close(&data);
+		__rrr_post_destroy_data(&data);
+		cmd_destroy(&cmd);
+		rrr_socket_close_all();
+		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
+		return ret;
 }

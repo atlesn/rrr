@@ -22,12 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "../../lib/log.h"
+
 #include "type_array.h"
 #include "../test.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
-#include "../../lib/messages.h"
+#include "../../lib/messages/msg_msg.h"
 #include "../../lib/instance_config.h"
+#include "../../lib/util/macro_utils.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;
@@ -41,13 +44,18 @@ void set_test_module_result(int result) {
 }
 
 struct test_module_data {
+	rrr_setting_uint exit_delay_ms;
 	int dummy;
+
 	char *test_method;
 	char *test_output_instance;
+
+	struct rrr_test_function_data test_function_data;
 };
 
 
 void data_init(struct test_module_data *data) {
+	memset(data, '\0', sizeof(*data));
 	data->dummy = 1;
 }
 
@@ -58,20 +66,25 @@ void data_cleanup(void *_data) {
 	RRR_FREE_IF_NOT_NULL(data->test_output_instance);
 }
 
-int parse_config (struct test_module_data *data, struct rrr_instance_config *config) {
+int parse_config (struct test_module_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
 	if (data->test_output_instance == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_str_to_h_conversion", test_function_data.do_array_str_to_h_conversion, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_blob_field_divide", test_function_data.do_blob_field_divide, 0);
 
 	out:
 	if (ret != 0) {
@@ -82,7 +95,7 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config *con
 }
 
 static void *thread_entry_test_module (struct rrr_thread *thread) {
-	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int ret = 0;
@@ -93,7 +106,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -108,31 +121,45 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		usleep (20000); // 20 ms
 	}*/
 
-	rrr_thread_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread);
 
 	if (strcmp(data->test_method, "test_dummy") == 0) {
 		rrr_posix_usleep(1000000); // 1s
 		ret = 0;
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {
-		/* Test array type and data endian conversion */
 		ret = test_array (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from array test: %i\n", ret);
 	}
 	else if (strcmp(data->test_method, "test_averager") == 0) {
 		ret = test_averager (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from averager test: %i\n", ret);
 	}
+	else if (strcmp(data->test_method, "test_anything") == 0) {
+		ret = test_anything (
+				&data->test_function_data,
+				thread_data->init_data.module->all_instances,
+				thread_data,
+				data->test_output_instance
+		);
+		TEST_MSG("Result from anything test: %i\n", ret);
+	}
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
 		ret = test_type_array_mysql (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from MySQL test: %i\n", ret);
@@ -148,6 +175,11 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 
 	set_test_module_result(ret);
 
+	if (data->exit_delay_ms > 0) {
+		TEST_MSG("Exit delay configured, %" PRIrrrbl " ms\n", data->exit_delay_ms);
+		rrr_posix_usleep(data->exit_delay_ms * 1000);
+	}
+
 	/* We exit without looping which also makes the other loaded modules exit */
 
 	out_message:
@@ -161,7 +193,6 @@ static struct rrr_module_operations module_operations = {
 		thread_entry_test_module,
 		NULL,
 		NULL,
-		NULL,
 		NULL
 };
 static const char *module_name = "test_module";
@@ -169,7 +200,7 @@ static const char *module_name = "test_module";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct rrr_instance_dynamic_data *data) {
+void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_SOURCE;

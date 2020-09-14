@@ -9,14 +9,16 @@
 /src/rrr_http_client
 /src/rrr_http_server
 /src/rrr_stats
+/src/rrr_passwd
+/src/rrr_auth
 /build_timestamp.h
 /build_directory.h
 input_data
 
 # debian
 /debian/rrr/
-/debian/rrr.debhelper.log
-/debian/rrr.substvars
+/debian/*.debhelper.log
+/debian/*.substvars
 /debian/autoconf.after
 /debian/autoconf.before
 /debian/autoreconf.after
@@ -28,8 +30,18 @@ input_data
 /debian/.debhelper/
 /debian/*.debhelper
 /debian/tmp/
+/debian/librrr-dev/
+/debian/librrr1/
+/debian/rrr-mod-mysql/
+/debian/rrr-mod-mariadb/
+/debian/rrr-mod-perl5/
+/debian/rrr-mod-python3/
+
 # http://www.gnu.org/software/automake
 
+/conftest
+/conftest.err
+/conftest.c
 INSTALL
 Makefile.in
 /ar-lib
@@ -58,6 +70,10 @@ variables.sh
 /lcov
 /main_coverage.info
 
+# valgrind
+vgcore.*
+massif.*
+
 # perl
 blib
 Makefile.PL
@@ -72,6 +88,7 @@ src/lib/perl5_xsi.c
 /src/tests/__pycache__/
 /src/__pycache__/
 /__pycache__/
+/misc/test_configs/__pycache__/
 
 # eclipse
 /Debug
@@ -109,3 +126,7 @@ src/lib/perl5_xsi.c
 # http://www.gnu.org/software/texinfo
 
 /texinfo.tex
+
+# FreeBSD
+*~
+.test_composite.sh

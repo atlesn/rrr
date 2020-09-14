@@ -13,6 +13,7 @@ program to post data to its modules.
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
 .Dl [-a|--array_definition[=]ARRAY DEFINITION]
+.Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
 .Dl [-s|--sync]
@@ -49,6 +50,10 @@ reading messages are generated before any reading of a file or standard input be
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
+.IP -m|--max-message-size[=]BYTES
+Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
+A value of 0 means unlimited message size.
+Defaults to 4096.
 .IP -c|--count[=]RECORDS
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC
@@ -83,13 +88,29 @@ A range of data types may be used in the data records given to
 Some types are of fixed length, and others require delimeters. An array definition describes the data to expect 
 in each record.
 .PP
-The specified definition is checked when the program starts
-to make sure its always possible to figure out the lenght of each received record from the data it contains. For instance, a
-record cannot end with a number given as ASCII string as it's not possible to determin when it ends. Such types must be followed
-by a separator type.
+Array definition may or may not contain conditional branches.
+This allows different input values to be parsed based on previously parsed values.
+Coditional branching is explained in the next chapter.
 .PP
-Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
+It is important to make sure that it is always possible to figure out the lenght of each received record from the data it contains.
+For instance, a definition cannot end with a number given as ASCII string as it's not possible to determin when it ends.
+Such data types are called
+.B weak dynamic lenght types,
+and these must be delimeted by a separator character which is guaranteed not to appear inside the data.
+RRR does not smart checking or validation of definition, but parsing of input data will fail if value boundaries cannot be correctly identified.
+.PP
+If parsing fails, this might lead to for instance a TCP connection to be closed or queued up UDP data to be dropped.
+Using
+.B debuglevel 4
+will expose how input data are parsed using the array definitions, this might assist in debugging such problems.
+.PP
+An array definition consists of one or more
+.B positions
+which each specifies a particular type of data to parse.
+Sequential fixed length values of the same type may be grouped together in a single position, and each item may be tagged to
 ease the extraction of data in later processing.
+Non-dynamic types may have both a length or element count set.
+Parsing four elements of one byte and parsing one element of four bytes only differ in how the data is represented after the array has been parsed.    
 .SS SYNTAX
 type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 .PP
@@ -99,7 +120,7 @@ Identifier name of the type
 .It length
 Length in bytes of the type (if required)
 .It count
-Item count of the sepcific type, defaults to 1 if not specified
+Item count of the specific type, defaults to 1 if not specified
 .It tag
 Optional custom identifier tag of the type
 .El
@@ -118,8 +139,11 @@ Unsigned number in the endianess of the machine. Might be unsafe for network tra
 .It blob
 Arbitary binary data. Lengt must be in the range 1-1024.
 .It sep
-One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
-must be in the range 1-64.
+One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR TAB.
+Length must be in the range 1-64.
+.It stx
+One or more STX or SOH characters.
+Length must be in the range 1-64.
 .El
 .PP
 Types
@@ -154,11 +178,117 @@ A full RRR message complete with headers and checksums.
 An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \\. The
 surrounding quotes are not included in the final string.
 .It nsep
-Match any numbers of bytes untill a separator character LF, CR, TAB or SPACE is found. The separator itself will not be included in the result, a
+Match any numbers of bytes untill a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be included in the result, a
 .B sep
 should follow afterwards to take care of it.
+.It err
+This is a special value which triggers and error and aborts parsing if reached.
+It can be used for instance in an ELSE block to trap invalid input data.
+If specified outside of a conditional block, parsing will always fail.
 .El
-
+.SS ARRAY CONDITIONAL BRANCHING
+RRR array support branching, which means that different sets of values may be parsed depending on previously parsed values.
+The array tree is only used when parsing, and when parsing is complete, a single linear array has been produced. 
+.PP
+A simple tree may look like this:
+.PP  
+.nf
+be1#type,be1#one
+IF ({type} == 1)
+	;
+ELSIF ({type} == 2)
+	be2#two
+	;
+ELSIF ({type} > 0)
+	blob{type}#x
+	;
+ELSE
+	err
+	;
+sep1#separator
+;
+.fi
+.PP
+Here, a byte is first parsed and given the name 'type'.
+Then, depending on it's value, either no more bytes are parsed, two bytes are parsed, or X number of bytes are parsed.
+At the end, a separator byte is parsed.
+.PP
+The length of the blob field would be, had type not been equal to 1 or 2, the value of the first byte.
+Note that blob lengths cannot be zero, in this case the parsing would fail if a first byte with the value 0 as the
+parser will attempt to parse the 'err' type which triggers parse failure.
+.PP
+When a parsing fails, all parsed input data is deleted any possible open network connection on which we received the
+erroneous data is closed.
+.PP
+In this example, should the first input byte have the value '2', the resulting array would look like this (tags only):
+.B type,one,two,separator.
+The same result would in this particular case, and if the same input had been used, have been produced as when using the definition
+.B  be1#type,be1#one,be2#two,sep1#separator;
+.PP
+All array trees may be written on a single line.
+In the one-line representation below of the earlier example, all spaces has been removed.
+Note the extra comma before IF which is needed to avoid that the IF letters become part of the 'one' tag.
+Also note that there is no comma after the ELSE keyword, this is valid syntax (a comma may however be added for readability).
+Redundant commas in the array definitions are ignored. 
+.PP
+be1#type,be1#one,IF({type}==1);ELSIF({type}==2)be2#two;ELSIF({type}>0)blob{type}#x;ELSEerr;sep1#separator;
+.PP
+All standard operators available in programming langauges are available, but is it not possible to assign values.
+The operator style is the same as for the C-language, and the same precedence rules are used.
+Parentheses may be used as well as bitwise operators.
+Constant decimal (positive or negative) or hexadecimal numbers (positive only) may be used.
+.PP
+In conditions, it is not possible to match strings or blobs directly.
+Their lowest bytes (big endian is assumed) are put into a 64-bit unsigned integer which is used for comparisons.
+This is useful for instance when comparing a single byte separator, it can be match directly against a decimal or hexadecimal number.
+.PP
+List of values to parse are separated with commas, like 'be1,be2,b3'.
+Commas before or after IF blocks are optional, and multiple consecutive commas are ignored.
+A block may be empty.
+There must not be any commas between IF, ELSIF and ELSE, but each of these blocks must end with semicolon. 
+The whole array tree itself always has at least one semicolon at the end.  
+.PP
+Value length and count specifiers may be replaced with tag names using the syntax '{tag}', the value from the tag will be used after being converterd to unsigned integer.
+Tag names may not be dynamically set. All replacement values must have been parsed previously in the same data set.
+.PP
+There may be newlines, spaces etc. anywhere except from inside a single value definition ('be1#one' cannot be written as 'be1 #one').
+At the same time, newlines and spaces are optional, they just help making the the array tree definition more readable.
+Note that a tag name like '#my_tag_name' followed by an IF block obviously cannot be written without a space or comma in between.
+If non-newline definitions are wanted, comma is recommended for these cases: '... #my_tag_name,IF ...'.
+.PP
+Note that it is possible to use both normal notation like "a == b + c" and reverse polish notiation (RPN) like "a b c + ==" in condition expressions.
+The two forms will produce the same result.
+.PP
+After parsing a condition, parantheses are removed and the condition expression will be stored in RPN.
+The condition will also appear in RPN without parantheses in any debug messages.
+.PP
+Note that the operators in any case will get sorted according to precedence,
+which means that the input "1 2 3 + *" will end up as "1 2 3 * +" (the multiplication will be carried out first).
+It is probably best to write an expression like this as "1 * (2 + 3)" to ensure the addition is performed first, if that's what you want.
+.PP
+Any condition expression which evaluates to non-zero is counted as true, and a zero result is counted as false.
+.PP
+The keyword REWIND followed by an unsigned integer may be used to "unparse" earlier positions in an array.
+For instance "be1,REWIND1,be2" would first parse one byte, then delete it from the resulting array and start parsing from the beginning, but now parsing two bytes.
+This function is useful in branched condition where for instance a byte needed to be parsed for use in a conditional check, and the same
+byte should also be included in a larger result value parsed later.
+.PP
+Note that the number after REWIND indicates how many array positions we are to revery and NOT the number of bytes.
+It is not possible to replace the number of rewind position with a tag, only decimal fixed values are allowed.
+If one attempts to rewind past the beginning of the array, the validation of the array tree will fail before the program starts.
+.PP
+In the following example, if the first parsed byte is an STX, it will not be included in the final value tagged "code".
+However if the first byte is not an STX, we rewind one position and include all bytes up to the end separator in the final result.
+The value with tag "indicator" will thus only be present in the result if the first byte is an STX.
+.PP
+.nf
+be1#indicator
+IF ({indicator} != 0x02)
+	REWIND1
+	;
+nsep#code,sep1
+;
+.fi
 .SH RETURN VALUE
 .B rrr_post
 returns 0 on success and 1 on failure.

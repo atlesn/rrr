@@ -1,3 +1,315 @@
+rrr (1.12-2) buster; urgency=medium
+
+  * Added RPM packages
+  * Improvements in log messages / silence some messages
+  * New parameters in file module file_max_messages_per_file and
+    file_max_read_step_size
+  * Fix in signal framework causing cmodule forks only to be killed
+    by SIGKILL resulting in ungraceful shutdown
+  * Fix for forks not getting initialized when there are lots (lots) of
+    debug messages being printed
+  * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 12 Sep 2020 16:42:46 +0200
+
+rrr (1.12-1) buster; urgency=medium
+
+  * Fix misc. build warnings
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 04 Sep 2020 10:52:36 +0200
+
+rrr (1.12-0) buster; urgency=medium
+
+  * Implement LibreSSL as an alternative to OpenSSL
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:45:18 +0200
+
+rrr (1.11-4) buster; urgency=medium
+  
+  * Fix bug with smart timeout in IP module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 03 Sep 2020 08:25:43 +0200
+
+rrr (1.11-3) buster; urgency=medium
+
+  * New configuration parameters in HTTP-server to allow push connections
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 28 Aug 2020 15:08:45 +0200
+
+rrr (1.11-2) buster; urgency=medium
+
+  * Fix bug causing crash on arm64 when debuglevel 1 was active
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 23:56:57 +0200
+
+rrr (1.11-1) buster; urgency=medium
+
+  * New file module to read from devices, files, sockets etc.
+  * Improvements in ip and socket framework
+  * Misc. bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 26 Aug 2020 13:30:45 +0200
+
+rrr (1.10-3) buster; urgency=medium
+
+  * Fixes in IP module
+    * Add TCP graylist timeout configuration parameter
+    * Add configurable TTL check like buffer module
+    * Add configurable smart timeout to update send of all messages to a single destination
+    * Improve preserve order algorithm, send order is now guaranteed
+    * Fix noisy debug messages
+    * Fix that returned RRR messages was not endian converted back to host
+    * Fix behaviour inconsistencies when using default target vs dynamic target
+  * Improve fork shutdown algorithm
+  * Misc fixes and cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 22 Aug 2020 20:39:53 +0200
+
+rrr (1.10-2) buster; urgency=medium
+
+  * Fix MQTT array data parsing from PUBLISH which did not work
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 17 Aug 2020 18:45:31 +0200
+
+rrr (1.10-1) buster; urgency=medium
+
+  * Fixes in array tree framework and IP module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 17 Aug 2020 00:44:07 +0200
+
+rrr (1.10-0) buster; urgency=medium
+
+  * New Array Tree framework for conditional array parsing (branching)
+  * Implement HTTP raw modes in httpclient and httpserver
+  * Misc smaller fixes and internal cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 16 Aug 2020 13:37:24 +0200
+
+rrr (1.9-2) buster; urgency=medium
+
+  * Fixes in configuration file parsing, allow spaces after parameters
+  * Fix proper connect retry vs restart in MQTT client
+  * Other small fixes in MQTT client 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 23:43:34 +0200
+
+rrr (1.9-1) buster; urgency=medium
+
+  * Merge security fix from 1.7-4
+  * Fix performance problems and bugs in journal module
+  * Fix performance problems in MQTT broker
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 11:37:29 +0200
+
+rrr (1.9-0) buster; urgency=medium
+
+  * Removed duplicator module, functionality is now in buffer module
+  * Create array manipulation helper functions in Perl5
+  * Remove old style array handling in Perl5
+  * Add TTL check for messages in buffer module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 05 Aug 2020 12:35:40 +0200
+
+rrr (1.8-1) buster; urgency=medium
+
+  * Fix bug causing multiple configuration parameters not to work
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 17:44:39 +0200
+
+rrr (1.8-0) buster; urgency=medium
+
+  * Support will messages and retain in MQTT broker.
+  * Misc. compliance fixes in MQTT broker.
+  * Misc. fixes in connection handling in MQTT commonn
+  * New configuration parameters in IP module to put timed out messages
+    to output queue
+  * Smaller packaging fixes (Debian)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 14:56:38 +0200
+
+rrr (1.7-4) buster; urgency=medium
+
+  * Fix concurrent access due to missing locks in stats engine
+    causing crashes.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 06 Aug 2020 00:15:03 +0200
+
+rrr (1.7-3) buster; urgency=medium
+
+  * Restart RRR service in post-installation script
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 31 Jul 2020 00:05:51 +0200
+
+rrr (1.7-2) buster; urgency=medium
+
+  * Change default prefix of journal message topic by removing
+    leading slash
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 30 Jul 2020 22:33:28 +0200
+
+rrr (1.7-1) buster; urgency=medium
+
+  * Add ability to filter messages from senders by MQTT topic
+    in all modules
+  * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 29 Jul 2020 23:27:07 +0200
+
+rrr (1.6-1) buster; urgency=medium
+
+  * Add missing install file
+  * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 27 Jul 2020 22:22:00 +0200
+
+rrr (1.6-0deb3) buster; urgency=medium
+
+  * Create split Debian packages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 24 Jul 2020 04:09:30 +0200
+
+rrr (1.5-5buster2) buster; urgency=medium
+
+  * Internal changes on length/size fields
+  * Fixes for compile warnings on 32bit
+  * Fixes for compile errrors on BSD with sockaddr_in6
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 23 Jul 2020 08:28:45 +0200
+
+rrr (1.5-4) buster; urgency=medium
+
+  * Misc. smaller fixes 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 20 Jul 2020 19:36:07 +0200
+>>>>>>> 5d27f110f7a11536d567a03541ce293f0c5cf316
+
+rrr (1.5-3) buster; urgency=medium
+
+  * New option in MQTT client to discard waiting messages upon
+    connect retry
+  * Misc. cleanup and fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 15:44:20 +0200
+
+rrr (1.5-2) buster; urgency=medium
+
+  * Fixes in HTTP server and support OPTIONS request
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 01:52:51 +0200
+
+rrr (1.5-1) buster; urgency=medium
+
+  * Bugfixes in HTTP header parsing
+  * HTTP server can now re-use connections for new requests
+  * Bugfixes regarding IP address handling, multiple modules
+  * Misc. cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 17 Jul 2020 17:34:57 +0200
+
+rrr (1.5) buster; urgency=medium
+
+  * New HTTP modules for client and server
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 15 Jul 2020 00:59:10 +0200
+
+rrr (1.4-2) buster; urgency=medium
+
+  * Fix username for RRR daemon
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 17:34:55 +0200
+
+rrr (1.4-1) buster; urgency=medium
+
+  * Fix bug in MQTT client causing 100% CPU usage
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 16 Jul 2020 13:04:09 +0200
+
+rrr (1.4) buster; urgency=medium
+
+  * New cmodule framework for easy creation of custom C-modules
+  * Large -internal- changes in perl5 and python3
+  * perl5 and python3 have more configuration options for their worker
+    fork, inherited from cmodule.
+  * Move stuff around in source tree
+  * Misc fixes and docs updates
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 01 Jul 2020 00:22:46 +0200
+
+rrr (1.3-3) buster; urgency=medium
+
+  * MQTT client identifier assigned by broker fixed
+  * Ability to prepend a topic in MQTT client
+  * Create runit files for Void linux
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 26 Jun 2020 01:44:52 +0200
+
+rrr (1.3-2) buster; urgency=medium
+
+  * New binary rrr_auth used to test password files
+  * Pass pre-made rrr_message to python3 source function for simplicity
+  * Remove rrr_setting class, new rrr_config class. Config function
+    only called once (per source/process fork).
+  * Misc. bugfixes in python3
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 24 Jun 2020 16:13:54 +0200
+
+rrr (1.3-1) buster; urgency=medium
+
+  * Improvements in MQTT to increase throughput
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Jun 2020 02:40:17 +0200
+
+rrr (1.3) buster; urgency=medium
+
+  * Added support for TLS in MQTT
+  * Added support for username and password authentication in MQTT
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jun 2020 23:52:31 +0200
+
+rrr (1.2-3) buster; urgency=medium
+
+  * Created max message size parameter in ip module and rrr_post
+  * Changed behaviour of SIGTERM
+  * Misc fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Jun 2020 19:44:32 +0200
+
+rrr (1.2-2) buster; urgency=medium
+
+  * Improvements in TCP error handling
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 19:04:45 +0200
+
+rrr (1.2-1) unstable; urgency=medium
+
+  * Fix perl5 false warnings about unused settings
+  * Fix incorrect counters in journal module
+  * Fix bugtrap in perl5 module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 13:21:01 +0200
+
+rrr (1.2) unstable; urgency=medium
+
+  * New log journal module
+  * Fixed bug in perl5 module causing fork not to be killed
+  * Misc fixes and improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 06 Jun 2020 18:21:13 +0200
+
+rrr (1.1-1) unstable; urgency=medium
+
+  * Fix a segfault in perl5
+  * Improvents in a few debug/error messages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 04 Jun 2020 18:12:38 +0200
+
+rrr (1.1) unstable; urgency=medium
+
+  * Create new log journal which rrr_stats can read from
+  * Minor bugfix
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 03 Jun 2020 16:34:32 +0200
+
 rrr (1.0) unstable; urgency=medium
 
   * First major release, no changes from 0.20

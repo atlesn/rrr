@@ -26,22 +26,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "../main.h"
-#include "../global.h"
 #include "../../build_timestamp.h"
-#include "../lib/posix.h"
+#include "../lib/log.h"
+#include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "../lib/stats_engine.h"
+#include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
+#include "../lib/rrr_config.h"
+#include "../lib/util/posix.h"
 
+#include "test_condition.h"
 #include "test_usleep.h"
 #include "test_fixp.h"
+#include "test_inet.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("test");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -53,15 +57,15 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_test_result(struct instance_metadata_collection *instances) {
-	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
+int main_get_test_result(struct rrr_instance_collection *instances) {
+	struct rrr_instance *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
-	void *handle = instance->dynamic_data->dl_ptr;
+	void *handle = instance->module_data->dl_ptr;
 
 	dlerror();
 
@@ -105,6 +109,12 @@ int rrr_test_library_functions (void) {
 
 	// OR all the return values, don't stop if a test fails
 
+	TEST_BEGIN("rrr_condition") {
+		ret_tmp = rrr_test_condition();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("rrr_posix_usleep") {
 		ret_tmp = rrr_test_usleep();
 	} TEST_RESULT(ret_tmp == 0);
@@ -117,19 +127,28 @@ int rrr_test_library_functions (void) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("inet functions") {
+		ret_tmp = rrr_test_inet();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
 }
 
-int main (int argc, const char **argv) {
-	struct rrr_signal_handler *signal_handler = NULL;
+int main (int argc, const char **argv, const char **env) {
+	struct rrr_signal_handler *signal_handler_fork = NULL;
+	struct rrr_signal_handler *signal_handler_interrupt = NULL;
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
-		ret = 1;
-		goto out_cleanup_fork_handler;
+		fprintf(stderr, "Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
 	}
 
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
@@ -141,13 +160,8 @@ int main (int argc, const char **argv) {
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler_interrupt = rrr_signal_handler_push(signal_interrupt, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -171,7 +185,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
+		if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -180,7 +194,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -216,19 +230,14 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	struct instance_metadata_collection *instances;
-	TEST_BEGIN("init instances") {
-		if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
-			ret = 1;
-		}
-	} TEST_RESULT(ret == 0);
+	struct rrr_instance_collection instances = {0};
 
 	if (ret != 0) {
 		goto out_cleanup_config;
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (rrr_instance_process_from_config(instances, config, library_paths) != 0) {
+		if (rrr_instance_create_from_config(&instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -239,9 +248,9 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (main_start_threads (
+		if (rrr_main_create_and_start_threads (
 				&collection,
-				instances,
+				&instances,
 				config,
 				&cmd,
 				&stats_engine,
@@ -261,33 +270,29 @@ int main (int argc, const char **argv) {
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
 
-	// During preload stage, signals are temporarily deactivated.
-	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
-
 	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
-			rrr_posix_usleep(10000);
+		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(&instances) == 0)) {
+			rrr_posix_usleep(100000);
+			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
 
-		ret = main_get_test_result(instances);
+		ret = main_get_test_result(&instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
-		main_threads_stop(collection, instances);
-
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_main_threads_stop_and_destroy(collection);
 	} TEST_RESULT(ret == 0);
 
-	rrr_thread_destroy_collection(collection, 0);
-
 	out_cleanup_instances:
-		rrr_instance_metadata_collection_destroy(instances);
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_instance_collection_clear(&instances);
 
 		// Don't unload modules in the test suite
 		//rrr_instance_unload_all(instances);
@@ -303,14 +308,17 @@ int main (int argc, const char **argv) {
 	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
 
-	out_cleanup_fork_handler:
+//	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:
-		rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler_interrupt);
+		rrr_signal_handler_remove(signal_handler_fork);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
 		return ret;
 }

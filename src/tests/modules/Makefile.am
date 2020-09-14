@@ -2,7 +2,11 @@ AM_CFLAGS = @AM_CFLAGS@ -Wextra
 
 check_LTLIBRARIES = test_module.la
 
-module_ldflags=-module -avoid-version -shared -L../../lib -lrrr
+if RRR_WITH_MYSQL
+mysql_include = -lrrrmysql
+endif
+
+module_ldflags=-module -avoid-version -shared -L../../lib/.libs -lrrr $(mysql_include)
 
 test_module_la_LDFLAGS = ${module_ldflags} -rpath /nowhere
 test_module_la_CFLAGS = ${AM_CFLAGS} \

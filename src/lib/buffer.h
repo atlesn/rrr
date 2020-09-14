@@ -23,20 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_BUFFER_H
 
 #include <pthread.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
 #include <inttypes.h>
-#include <unistd.h>
 #include <semaphore.h>
-
-#include "vl_time.h"
-#include "../global.h"
-
-// TODO : Re-order functions in .c-file and in this file
-// TODO : Move static inline functions from .h to .c
-// TODO : Fix so that mutexes may be destroyed properly
 
 //#define FIFO_DEBUG_COUNTER
 //#define FIFO_SPIN_DELAY 0 // microseconds
@@ -51,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_SEARCH_STOP	(1<<3)
 #define RRR_FIFO_SEARCH_GIVE	(1<<4)
 #define RRR_FIFO_SEARCH_FREE	(1<<5)
+#define RRR_FIFO_SEARCH_REPLACE	(1<<6)
 
 #define RRR_FIFO_WRITE_AGAIN	(1<<10)
 #define RRR_FIFO_WRITE_DROP		(1<<11)
@@ -131,7 +120,28 @@ struct rrr_fifo_buffer {
 	sem_t new_data_available;
 };
 
-static inline int rrr_fifo_buffer_get_entry_count (struct rrr_fifo_buffer *buffer) {
+int rrr_fifo_buffer_get_stats (
+		struct rrr_fifo_buffer_stats *stats,
+		struct rrr_fifo_buffer *buffer
+);
+void rrr_fifo_buffer_destroy (
+		struct rrr_fifo_buffer *buffer
+);
+int rrr_fifo_buffer_init (
+		struct rrr_fifo_buffer *buffer
+);
+int rrr_fifo_buffer_init_custom_free (
+		struct rrr_fifo_buffer *buffer,
+		void (*custom_free)(void *arg)
+);
+void rrr_fifo_buffer_set_do_ratelimit (
+		struct rrr_fifo_buffer *buffer,
+		int set
+);
+
+static inline int rrr_fifo_buffer_get_entry_count (
+		struct rrr_fifo_buffer *buffer
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
@@ -141,7 +151,9 @@ static inline int rrr_fifo_buffer_get_entry_count (struct rrr_fifo_buffer *buffe
 	return ret;
 }
 
-static inline int rrr_fifo_buffer_get_ratelimit_active (struct rrr_fifo_buffer *buffer) {
+static inline int rrr_fifo_buffer_get_ratelimit_active (
+		struct rrr_fifo_buffer *buffer
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
@@ -149,44 +161,6 @@ static inline int rrr_fifo_buffer_get_ratelimit_active (struct rrr_fifo_buffer *
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	return ret;
-}
-
-static inline void rrr_fifo_buffer_set_do_ratelimit(struct rrr_fifo_buffer *buffer, int set) {
-	pthread_mutex_lock(&buffer->ratelimit_mutex);
-	buffer->buffer_do_ratelimit = set;
-	pthread_mutex_unlock(&buffer->ratelimit_mutex);
-}
-
-static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigned int wait_milliseconds) {
-	if (wait_milliseconds == 0) {
-		return 0;
-	}
-
-//	printf ("Waiting for %u milliseconds\n", wait_milliseconds);
-
-	uint64_t time_start = rrr_time_get_64();
-	uint64_t time_end = time_start + (wait_milliseconds * 1000);
-
-	uint64_t microseconds = time_end % 1000000;
-	uint64_t seconds = (time_end - microseconds) / 1000 / 1000;
-
-	struct timespec wait_time;
-	wait_time.tv_sec = seconds;
-	wait_time.tv_nsec = microseconds * 1000;
-	int res = sem_timedwait(&buffer->new_data_available, &wait_time);
-
-/*	uint64_t time_end_real = time_get_64();
-
-	printf ("Waiting time was %" PRIu64 " result was %i\n", (time_end_real - time_start) / 1000, res);*/
-/*	if (res != 0) {
-		char buf[1024];
-		buf[0] = '\0';
-		strerror_r(errno, buf, sizeof(buf));
-		VL_MSG_0("Could wait on semaphore in buffer: %s\n", buf);
-		VL_MSG_0("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
-	}
-*/
-	return res;
 }
 
 /*
@@ -221,17 +195,16 @@ void rrr_fifo_buffer_clear (
 );
 int rrr_fifo_buffer_search (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
-int rrr_fifo_buffer_read_minimum (
+int rrr_fifo_buffer_search_and_replace (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		void *callback_data,
-		uint64_t minimum_order,
-		unsigned int wait_milliseconds
+		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
+		void *callback_arg,
+		unsigned int wait_milliseconds,
+		int call_again_after_looping
 );
 int rrr_fifo_buffer_clear_order_lt (
 		struct rrr_fifo_buffer *buffer,
@@ -239,8 +212,7 @@ int rrr_fifo_buffer_clear_order_lt (
 );
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
@@ -248,6 +220,14 @@ int rrr_fifo_buffer_read (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		void *callback_data,
+		unsigned int wait_milliseconds
+);
+int rrr_fifo_buffer_read_minimum (
+		struct rrr_fifo_buffer *buffer,
+		struct rrr_fifo_buffer_entry *last_element,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
+		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 );
 int rrr_fifo_buffer_with_write_lock_do (
@@ -266,10 +246,5 @@ int rrr_fifo_buffer_write_delayed (
 		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
 		void *callback_arg
 );
-
-void rrr_fifo_buffer_destroy(struct rrr_fifo_buffer *buffer);
-int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer);
-int rrr_fifo_buffer_init_custom_free(struct rrr_fifo_buffer *buffer, void (*custom_free)(void *arg));
-int rrr_fifo_buffer_get_stats (struct rrr_fifo_buffer_stats *stats, struct rrr_fifo_buffer *buffer);
 
 #endif

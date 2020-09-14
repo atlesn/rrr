@@ -22,7 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MAP_H
 #define RRR_MAP_H
 
-#include "linked_list.h"
+#include <stdio.h>
+
+#include "util/linked_list.h"
 
 #define RRR_MAP_ITERATE_BEGIN(map)									\
 	do { RRR_LL_ITERATE_BEGIN(map,struct rrr_map_item);				\
@@ -46,6 +48,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MAP_COUNT(map)											\
 	RRR_LL_COUNT(map)
+
+#define RRR_MAP_CLEAR(map)											\
+	rrr_map_clear(map)
 
 #define RRR_MAP_ITERATOR_CREATE(name,map) \
 	struct rrr_map_iterator name = { 0, map, NULL }
@@ -88,7 +93,6 @@ static inline struct rrr_map_item *rrr_map_iterator_next (struct rrr_map_iterato
 
 void rrr_map_item_destroy (struct rrr_map_item *item);
 void rrr_map_clear (struct rrr_map *map);
-int rrr_map_init (struct rrr_map *map);
 int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size);
 int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item);
 int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value);

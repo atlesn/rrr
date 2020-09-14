@@ -24,8 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "rrr_socket_msg.h"
-#include "utf8.h"
+#include "messages/msg.h"
+#include "util/utf8.h"
+#include "read_constants.h"
+#include "rrr_types.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
@@ -39,51 +41,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SETTINGS_MAX_NAME_SIZE 244
 #define RRR_SETTINGS_MAX_DATA_SIZE 1024
 
-typedef unsigned int rrr_setting_type;
-typedef unsigned long long int rrr_setting_uint;
+typedef rrr_biglength rrr_setting_uint;
 
-#define RRR_SETTING_ERROR 1
-#define RRR_SETTING_PARSE_ERROR 2
-#define RRR_SETTING_NOT_FOUND 3
-
-#define RRR_SETTINGS_PARSE_OPTIONAL_YESNO(string, target, default_yesno)									\
-do {int yesno = default_yesno;																				\
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\
-		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",					\
-				string, config->name);																		\
-			ret = 1; goto out;																				\
-		}																									\
-		ret = 0;																							\
-	} data->target = (yesno >= 0 ? yesno : default_yesno); } while(0)
-
-
-#define RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)										\
-do {if ((ret = rrr_settings_get_string_noconvert_silent(&data->target, config->settings, string)) != 0) {	\
-		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);			\
-			ret = 1; goto out;																				\
-		} ret = 0;																							\
-	} else {																								\
-		if (rrr_utf8_validate(data->target, strlen(data->target)) != 0) {									\
-			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);			\
-			ret = 1; goto out;																				\
-		}																									\
-	}} while(0)
-
-#define RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)									\
-do {rrr_setting_uint tmp_uint = default_uint;																\
-	if ((ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, string)) != 0) {				\
-		if (ret == RRR_SETTING_NOT_FOUND) {																	\
-			ret = 0;																						\
-		} else {																							\
-			RRR_MSG_0("Could not parse setting %s for instance %s\n", string, config->name);				\
-			ret = 1; goto out;																				\
-		}																									\
-	} data->target = tmp_uint; } while(0)
-
-
-// TODO : convert to RRR linked list
+// Use bit flag compatible values
+#define RRR_SETTING_ERROR			RRR_READ_HARD_ERROR
+#define RRR_SETTING_PARSE_ERROR		RRR_READ_SOFT_ERROR
+#define RRR_SETTING_NOT_FOUND		RRR_READ_INCOMPLETE
 
 struct rrr_setting {
 	rrr_u32 type;
@@ -94,7 +57,7 @@ struct rrr_setting {
 };
 
 struct rrr_setting_packed {
-	RRR_SOCKET_MSG_HEAD;
+	RRR_MSG_HEAD;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
 	rrr_u32 type;
 	rrr_u32 was_used;
@@ -111,13 +74,15 @@ struct rrr_instance_settings {
 	struct rrr_setting *settings;
 };
 
+// TODO : convert to RRR linked list
+
 struct rrr_settings_list {
 	char *data;
 	char **list;
 	unsigned int length;
 };
 
-struct rrr_socket_msg *rrr_setting_safe_cast (
+struct rrr_msg *rrr_setting_safe_cast (
 		struct rrr_setting_packed *setting
 );
 void rrr_settings_list_destroy (

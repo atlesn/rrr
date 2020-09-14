@@ -1,0 +1,89 @@
+<!DOCTYPE HTML>
+
+<html>
+<head>
+<title>RRR HTTP Push With MQTT</title>
+<meta charset="UTF-8">
+</head>
+<body>
+
+<style>
+#target {
+	border: 1px solid #ddd;
+	min-height: 300px;
+	min-width: 600px;
+	padding-left: 10px;
+	border-radius: 5px;
+	font-family: monospace;
+	font-size: 12px; display:
+	inline-block;
+	background-color: #000;
+	color: green;
+}
+</style>
+
+<p>
+	<label for="handle">
+		<b>Handle to use: </b>
+	</label>
+	&nbsp;
+	<input type="text" name="handle" id="handle" value="1" />
+</p>
+
+<p id="status"></p>
+
+<div id="target">
+	<p><b>Responses:</b></p>
+	<div id="target-text"></div>
+</div>
+
+<script>
+
+var request_count = 0;
+var request_done = 1;
+
+function sendRequest() {
+	if (request_done) {
+		request_done = 0;
+
+		document.getElementById("status").innerHTML = "Connection #" + (++request_count);
+
+		var ajax = new XMLHttpRequest();
+
+		// Server sends empty response after five seconds, we must
+		// not time out before this.
+		ajax.timeout = 10000;
+
+		var handle = document.getElementById("handle").value;
+
+		ajax.open("GET", "http://127.0.0.1:8000/?handle=" + handle);
+		ajax.onreadystatechange = function() {
+			try {
+				if (ajax.readyState === XMLHttpRequest.DONE) {
+					request_done = 1;
+					var status = ajax.status;
+					if (status === 0 || (status >= 200 && status < 400)) {
+						var obj = JSON.parse(ajax.responseText);
+						if (obj.content != "") {
+							document.getElementById("target-text").innerHTML =
+								"<p><b>&lt;" + handle + "&gt;</b>: " + obj.content + "</p>" +
+								document.getElementById("target-text").innerHTML
+							;
+						}
+					}
+				}
+			} catch (e) {}
+		}
+		ajax.send();
+
+	}
+	setTimeout("sendRequest()", 50);
+}
+
+sendRequest();
+
+</script>
+
+</body>
+
+</html>

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,10 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_POLL_HELPER_H
 #define RRR_POLL_HELPER_H
 
-#include "../global.h"
-#include "instance_collection.h"
+#include "instance_friends.h"
 #include "modules.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
 #define RRR_POLL_NO_SENDERS_OK	(1<<11)
@@ -38,52 +37,48 @@ typedef void rrr_message_broker_costumer_handle;
 
 struct rrr_poll_collection_entry {
 	RRR_LL_NODE(struct rrr_poll_collection_entry);
-	struct rrr_instance_thread_data *thread_data;
+	struct rrr_message_broker *message_broker;
+	rrr_message_broker_costumer_handle *message_broker_handle;
 };
 
 struct rrr_poll_collection {
 	RRR_LL_HEAD(struct rrr_poll_collection_entry);
 };
 
-void rrr_poll_collection_clear(struct rrr_poll_collection *collection);
-void rrr_poll_collection_clear_void(void *data);
-void rrr_poll_collection_init(struct rrr_poll_collection *collection);
-
-void rrr_poll_collection_remove (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find);
-
-int rrr_poll_collection_has (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find);
-
+void rrr_poll_collection_clear (
+		struct rrr_poll_collection *collection
+);
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
-		struct instance_metadata *instance
+		struct rrr_message_broker *message_broker,
+		const char *costumer_name
 );
-
-int rrr_poll_collection_add_from_senders (
-		struct rrr_poll_collection *poll_collection,
-		struct instance_metadata **faulty_instance,
-		struct rrr_instance_collection *senders
+int rrr_poll_do_poll_discard (
+		int *discarded_count,
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection
 );
-
 int rrr_poll_do_poll_delete (
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 );
-
+int rrr_poll_do_poll_search (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
+);
 int rrr_poll_collection_count (
 		struct rrr_poll_collection *collection
 );
-
-void rrr_poll_add_from_thread_senders (
+int rrr_poll_add_from_thread_senders (
+		struct rrr_instance **faulty_sender,
 		struct rrr_poll_collection *collection,
-		struct rrr_instance_thread_data *thread_data
-);
-
-void rrr_poll_remove_senders_also_in (
-		struct rrr_poll_collection *target,
-		const struct rrr_poll_collection *source
+		struct rrr_instance_runtime_data *thread_data
 );
 
 #endif /* RRR_POLL_HELPER_H */

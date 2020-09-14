@@ -28,39 +28,62 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
-#include "posix.h"
 #include "fork.h"
 #include "log.h"
 #include "rrr_strerror.h"
 #include "common.h"
+#include "util/posix.h"
 
-#define RRR_FORK_HANDLER_VERIFY_SELF()																	\
-	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {							\
+// Many forks may to lock the handle lock during shutdown. The shutdown
+// functions should, when looping and checking stuff, periodically, when
+// not iterating lists or accessing data, unlock and then sleep for this
+// interval before re-acquiring the lock.
+#define RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS 100
+
+// To accomdate problems in slow machines or VMs where threads might not
+// wake up within  RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS when waiting on
+// the lock, they should use the trylock with sleep function which
+// has a trylock/sleep loop to ensure it wakes up to take the lock while
+// the other user is sleeping between lock/unlock.
+#define RRR_FORK_TRYLOCK_LOOP_SLEEP_MS (RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS/10)
+
+#define RRR_FORK_HANDLER_VERIFY_SELF()										\
+	do {if (handler->self_t != pthread_self() || handler->self_p != getpid()) {				\
 		RRR_BUG("BUG: A fork function which must be called from main() was called from elsewhere\n");	\
 	}} while (0)
 
 #define RRR_FORK_HANDLER_ALLOCATION_SIZE \
 	(sizeof(struct rrr_fork_handler) + sysconf(_SC_PAGESIZE))
 
+
+static void __rrr_fork_handler_lock (
+	struct rrr_fork_handler *handler
+) {
+//	printf("%i %p trylock\n", getpid(), handler);
+	// Make sure that we actually wake up and take the lock while 
+	// other users sleep between unlock/lock
+	while (pthread_mutex_trylock (&handler->lock) != 0) {
+		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
+	}
+//	printf("%i %p locked\n", getpid(), handler);
+}
+
+static void __rrr_fork_handler_unlock (struct rrr_fork_handler *handler) {
+//	printf("%i %p unlock\n", getpid(), handler);
+	pthread_mutex_unlock (&handler->lock);
+}
+
 int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	int ret = 0;
 
 	struct rrr_fork_handler *handler = NULL;
-	pthread_mutexattr_t attr;
 
 	*result = NULL;
-
-	if (pthread_mutexattr_init(&attr) != 0)  {
-		RRR_MSG_0("Could not initialize mutexattr in rrr_fork_handler_init\n");
-		goto out;
-	}
-
-	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
 	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
 		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(handler, '\0', sizeof(*handler));
@@ -68,7 +91,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	handler->self_t = pthread_self();
 	handler->self_p = getpid();
 
-	if (pthread_mutex_init(&handler->lock, NULL) != 0) {
+	if (rrr_posix_mutex_init(&handler->lock, RRR_POSIX_MUTEX_IS_PSHARED) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
@@ -79,26 +102,42 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 
 	*result = handler;
 
-	goto out_destroy_mutexattr;
+	goto out;
 
 	out_free:
 		munmap(handler, RRR_FORK_HANDLER_ALLOCATION_SIZE);
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
 }
 
-void rrr_fork_handler_free (struct rrr_fork_handler *handler) {
+static void __rrr_fork_handler_free (struct rrr_fork_handler *handler) {
 	munmap(handler, RRR_FORK_HANDLER_ALLOCATION_SIZE);
+}
+
+static int __rrr_fork_clear (struct rrr_fork *fork) {
+	fork->exit_notify_arg = NULL;
+	fork->exit_notify = NULL;
+	fork->pid = 0;
+	fork->parent_pid = 0;
+	fork->was_waited_for = 0;
+	return 0;
 }
 
 void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
-	pthread_mutex_lock(&handler->lock);
-	// Cleanup forks here
-	pthread_mutex_unlock(&handler->lock);
+	__rrr_fork_handler_lock(handler);
+	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+		if (node->pid > 0) {
+			RRR_MSG_0("Warning: Child fork pid %i had not yet exited or exit notifications was not set while destroying fork handler.\n", node->pid);
+			if (node->was_waited_for != 1) {
+				RRR_MSG_0("Warning: Child fork pid %i had not been waited for while destroying fork handler, is now possibly a zombie.\n", node->pid);
+			}
+		}
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
+	__rrr_fork_handler_unlock(handler);
 	pthread_mutex_destroy(&handler->lock);
+	__rrr_fork_handler_free(handler);
 }
 
 // This is per fork
@@ -118,135 +157,184 @@ int rrr_fork_signal_handler (int s, void *arg) {
 	return RRR_SIGNAL_NOT_HANDLED;
 }
 
-static int __rrr_fork_clear (struct rrr_fork *fork) {
-	fork->exit_notify_arg = NULL;
-	fork->exit_notify = NULL;
-	fork->pid = 0;
-	fork->parent_pid = 0;
-	fork->has_exited = 0;
-	return 0;
-}
-
-static int __rrr_fork_tag_for_clearing (struct rrr_fork *fork) {
+static int __rrr_fork_set_waited_for (struct rrr_fork *fork) {
 	// The parent must call the notify function
-	fork->has_exited = 1;
+	fork->was_waited_for = 1;
 
 	return 0;
 }
 
 static int __rrr_fork_notify_and_clear (struct rrr_fork *fork) {
+	RRR_DBG_1("Notification to exit handlers for exited pid %i in parent pid %i\n",
+			fork->pid, getpid());
+
 	if (fork->exit_notify != NULL) {
 		fork->exit_notify(fork->pid, fork->exit_notify_arg);
 	}
+
 	return __rrr_fork_clear(fork);
 }
 
-void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
-	// Call this from main() only
-	RRR_FORK_HANDLER_VERIFY_SELF();
-
-	pthread_mutex_lock (&handler->lock);
-
-	// Signal handlers must be disabled before we do this
-
-	RRR_DBG_1("Sending SIGUSR1 to all forks and waiting\n");
-
-	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-		if (node->pid > 0) {
-			RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
-			kill(node->pid, SIGUSR1);
+static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
+	pid_t ret = waitpid(pid, status, options);
+	if (ret > 0) {
+		RRR_DBG_1("=== WAIT PID %i ========================================================================================\n", ret);
+		if (WIFSIGNALED(*status)) {
+			int signal = WTERMSIG(*status);
+			RRR_DBG_4("Fork %i was terminated by signal %i\n", ret, signal);
 		}
-	RRR_LL_ITERATE_END();
+		if (WIFEXITED(*status)) {
+			int child_status = WEXITSTATUS(*status);
+			RRR_DBG_4("Fork %i has exited with status %i\n", ret, child_status);
+		}
+	}
+	return ret;
+}
 
-	int active_forks = 0;
+static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handler *handler, int max_rounds) {
+	*active_forks_found = 0;
+
 	do {
-		active_forks = 0;
+		if (max_rounds-- <= 0) {
+			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
+			break;
+		}
+		*active_forks_found = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid > 0 && node->has_exited == 0) {
+			if (node->pid > 0 && node->was_waited_for == 0) {
+				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
 				pid_t pid;
 				int status;
 
-				if ((pid = waitpid(node->pid, &status, WNOHANG)) == node->pid) {
-					RRR_DBG_1("Waited for fork %i, exit status was %i\n", pid, status);
+				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
+					RRR_DBG_4("Wait pid %i ok\n", node->pid);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
 				else if (pid == -1 && errno == ECHILD) {
-					// Child does not exist
-					RRR_LL_ITERATE_SET_DESTROY();
+					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling: %s. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+							node->pid, getpid(), status, rrr_strerror(errno));
 				}
 
-				active_forks = 1;
+				*active_forks_found = 1;
 			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
+		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_set_waited_for(node));
 
-		pthread_mutex_unlock (&handler->lock);
-		rrr_posix_usleep(100000); // 100ms
-		pthread_mutex_lock (&handler->lock);
-	} while (active_forks > 0);
-
-	pthread_mutex_unlock (&handler->lock);
+		__rrr_fork_handler_unlock (handler);
+		rrr_posix_usleep(RRR_FORK_SHUTDOWN_PAUSE_INTERVAL_MS * 1000);
+		__rrr_fork_handler_lock (handler);
+	} while (*active_forks_found != 0);
 }
 
-void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *handler) {
+// Call from main() only
+void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
+	RRR_FORK_HANDLER_VERIFY_SELF();
+
+	__rrr_fork_handler_lock(handler);
+
+	// Signal handlers must be disabled before we do this
+
+	int active_forks_found = 1;
+	for (int i = 0; i < 10 && active_forks_found; i++) {
+		RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
+
+		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+			if (node->pid > 0) {
+				RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
+				kill(node->pid, SIGUSR1);
+			}
+	/*		else {
+	 *			// THIS ELSE CLAUSE SHOULD BE COMMENTED OUT
+	 *			// Only for testing errors
+	 *			node->pid = 5555;
+	 *		}*/
+		RRR_LL_ITERATE_END();
+
+		__rrr_fork_wait_loop(&active_forks_found, handler, 5); // 5 rounds = ~0.5 seconds
+	}
+
+	// Try SIGKILL
+	if (RRR_LL_COUNT(handler) > 0) {
+		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
+			if (node->pid > 0 && node->was_waited_for == 0) {
+				RRR_DBG_1("SIGKILL to fork %i\n", node->pid);
+				kill(node->pid, SIGKILL);
+			}
+		RRR_LL_ITERATE_END();
+
+		// Try waiting one last time
+		__rrr_fork_wait_loop(&active_forks_found, handler, 10); // 10 rounds = ~1 second
+		if (active_forks_found) {
+			RRR_MSG_0("At least one fork was still alive after waiting, we now have a possible ghost situation.\n");
+		}
+	}
+
+	__rrr_fork_handler_unlock (handler);
+}
+
+void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *handler, int force_wait_all) {
 	pid_t self = getpid();
 
 	// We cannot lock this because it's written to within signal context
-	if (rrr_fork_handler_signal_pending != 0) {
-		pthread_mutex_lock (&handler->lock);
+	if (rrr_fork_handler_signal_pending != 0 || force_wait_all) {
+		__rrr_fork_handler_lock(handler);
+		rrr_fork_handler_signal_pending = 0;
 
-		int outwaited_children = 0;
+		if (force_wait_all) {
+			RRR_DBG_4("Fork force wait all, self pid is %i\n", self);
+		}
+		else {
+			RRR_DBG_4("Fork handle SIGCHLD, self pid is %i\n", self);
+		}
+
+		int pid_count = 0;
+		pid_t waited_for_pids[RRR_FORK_MAX_FORKS];
+
+		pid_t pid_tmp;
+		int status;
+		while ((pid_tmp = __rrr_fork_waitpid(-1, &status, WNOHANG)) > 0) {
+			if (pid_count == RRR_FORK_MAX_FORKS) {
+				RRR_BUG("BUG: Too many forks in rrr_fork_handle_sigchld_and_notify_if_needed\n");
+			}
+			waited_for_pids[pid_count++] = pid_tmp;
+			RRR_DBG_4("Fork %i exited with status %i\n", pid_tmp, status);
+		}
+
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid <= 0 || node->has_exited != 0 || node->parent_pid != self) {
+			int was_waited_for = 0;
+
+			if (node->pid <= 0) {
 				RRR_LL_ITERATE_NEXT();
 			}
-
-			RRR_DBG_1("Waiting for pid %i with parent pid %i, we are pid %i\n",
-					node->pid, node->parent_pid, getpid());
-
-			pid_t pid = 0;
-			int status = 0;
-			if ((pid = waitpid(node->pid, &status, WNOHANG)) == node->pid) {
-				RRR_DBG_1("Wait for fork %i complete\n", pid);
-
-				if (WIFSIGNALED(status)) {
-					int signal = WTERMSIG(status);
-					RRR_DBG_1("Fork %i was terminated by signal %i\n", pid, signal);
-				}
-
-				if (WIFEXITED(status)) {
-					int child_status = WEXITSTATUS(status);
-					RRR_DBG_1("Fork %i has exited with status %i\n", pid, child_status);
-				}
-				// Reset node
-				RRR_LL_ITERATE_SET_DESTROY();
-
-				outwaited_children++;
+			else if (node->was_waited_for != 0) {
+				was_waited_for = 1;
 			}
-			else if (errno == ECHILD) {
-				RRR_MSG_0("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? Removing it.\n", node->pid);
+			else {
+				if (force_wait_all) {
+					int status;
+					RRR_DBG_4("Fork late wait for pid %i self is %i\n", node->pid, self);
+					if (__rrr_fork_waitpid(node->pid, &status, WNOHANG) > 0) {
+						was_waited_for = 1;
+					}
+					else {
+						RRR_DBG_4("Fork %i had not yet exited or we are not the parent when late-waiting\n", node->pid);
+					}
+				}
+				else {
+					for (int i = 0; i < pid_count; i++) {
+						if (waited_for_pids[i] == node->pid) {
+							was_waited_for = 1;
+						}
+					}
+				}
+			}
+
+			if (was_waited_for) {
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
+		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_notify_and_clear(node));
 
-		// Only reset signal_pending untill we've iterated the list without
-		// anything needing to be waited for
-		if (outwaited_children == 0) {
-			rrr_fork_handler_signal_pending = 0;
-		}
-
-		pthread_mutex_unlock (&handler->lock);
+		__rrr_fork_handler_unlock (handler);
 	}
-
-	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-		if (node->pid < 0 || node->has_exited == 0 || node->parent_pid != self) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		RRR_DBG_1("Notification for exited pid %i in parent pid %i\n",
-				node->pid, self);
-
-		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_notify_and_clear(node));
 }
 
 static struct rrr_fork *__rrr_fork_allocate_unlocked (struct rrr_fork_handler *handler) {
@@ -276,9 +364,7 @@ pid_t rrr_fork (
 	 *       when we attach a debugger. This seems however not to be a problem
 	 *       if when spin on trylock like this (also for some reason).
 	 */
-	while (pthread_mutex_trylock(&handler->lock) != 0) {
-		rrr_posix_usleep(5000);
-	}
+	__rrr_fork_handler_lock(handler);
 
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	if (result == NULL) {
@@ -310,7 +396,7 @@ pid_t rrr_fork (
 	result->exit_notify_arg = exit_notify_arg;
 
 	out_unlock:
-		pthread_mutex_unlock(&handler->lock);
+		__rrr_fork_handler_unlock (handler);
 	out:
 		return ret;
 }
@@ -323,14 +409,14 @@ void rrr_fork_unregister_exit_handler (
 		return;
 	}
 
-	pthread_mutex_lock(&handler->lock);
+	__rrr_fork_handler_lock (handler);
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (pid == node->pid) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
-	pthread_mutex_unlock(&handler->lock);
+	__rrr_fork_handler_unlock (handler);
 }
 
 void rrr_fork_unregister_exit_handler_void (void *arg) {

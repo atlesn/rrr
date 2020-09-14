@@ -27,12 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "posix.h"
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_strerror.h"
-#include "vl_time.h"
+#include "util/rrr_time.h"
+#include "util/posix.h"
 
 /*
  * Description of allocator:
@@ -337,17 +339,10 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 
 	struct rrr_mmap *result = NULL;
 
-    pthread_mutexattr_t attr;
-    if ((ret = pthread_mutexattr_init(&attr)) != 0) {
-    	RRR_MSG_0("Could not initialize mutexattr in rrr_mmap_new (%i)\n", ret);
-    	ret = 1;
-    	goto out;
-    }
-
 	if ((result = __rrr_mmap(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
 		ret = 1;
-		goto out_destroy_mutexattr;
+		goto out;
 	}
 
 	memset(result, '\0', sizeof(*result));
@@ -365,8 +360,7 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 
 //	printf ("mmap new heap size %" PRIu64 "\n", heap_size_padded);
 
-    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    if ((ret = pthread_mutex_init(&result->mutex, &attr)) != 0) {
+    if ((ret = rrr_posix_mutex_init(&result->mutex, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
     	RRR_MSG_0("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
     	ret = 1;
     	goto out_munmap_heap;
@@ -380,15 +374,12 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
     *target = result;
     result = NULL;
 
-    // NOTE : Remember to always destroy mutexattr
-	goto out_destroy_mutexattr;
+	goto out;
 
 	out_munmap_heap:
 		munmap(result->heap, heap_size);
 	out_munmap_main:
 		munmap(result, sizeof(*result));
-	out_destroy_mutexattr:
-		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
 }
