@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../build_timestamp.h"
 #include "main.h"
+#include "lib/log.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
@@ -40,10 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_config.h"
-#include "lib/log.h"
-#include "lib/rrr_time.h"
 #include "lib/rrr_strerror.h"
-#include "lib/macro_utils.h"
+#include "lib/util/macro_utils.h"
+#include "lib/util/rrr_time.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
@@ -208,7 +208,7 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -233,7 +233,7 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -243,12 +243,12 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_server_parse_config(&data, &cmd)) != 0) {
+	if (__rrr_http_server_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if ((ret = rrr_http_server_new(&http_server)) != 0) {
+	if (rrr_http_server_new(&http_server) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -256,10 +256,10 @@ int main (int argc, const char *argv[]) {
 	int transport_count = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_http_server_start_plain (
+		if (rrr_http_server_start_plain (
 				http_server,
 				data.http_port
-		)) != 0) {
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
@@ -283,12 +283,12 @@ int main (int argc, const char *argv[]) {
 			flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
 		}
 
-		if ((ret = rrr_http_server_start_tls (
+		if (rrr_http_server_start_tls (
 				http_server,
 				data.https_port,
 				&net_transport_config_tls,
 				flags
-		)) != 0) {
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
@@ -297,25 +297,24 @@ int main (int argc, const char *argv[]) {
 
 	if (transport_count == 0) {
 		RRR_MSG_0("Neither HTTP or HTTPS are active, check arguments.\n");
-		ret = 1;
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	rrr_signal_default_signal_actions_register();
 
 	uint64_t prev_stats_time = rrr_time_get_64();
 	int accept_count_total = 0;
 
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		// We must do this here, the HTTP server library does not do this
 		// itself as it is also used by RRR modules for which this is performed
 		// by the main process
-		rrr_thread_run_ghost_cleanup(&count);
+		rrr_thread_postponed_cleanup_run(&count);
 
 		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, NULL, NULL) != 0) {
+		if (rrr_http_server_tick(&accept_count, http_server, 5, NULL, NULL, NULL, NULL, NULL, NULL) != 0) {
 			ret = EXIT_FAILURE;
 			break;
 		}
@@ -335,6 +334,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_config_set_debuglevel_on_exit();
 
 		if (http_server != NULL) {
@@ -342,7 +342,7 @@ int main (int argc, const char *argv[]) {
 			http_server = NULL;
 		}
 
-		rrr_thread_run_ghost_cleanup(&count);
+		rrr_thread_postponed_cleanup_run(&count);
 		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
 
 		rrr_signal_handler_remove(signal_handler);

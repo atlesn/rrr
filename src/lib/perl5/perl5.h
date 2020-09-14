@@ -26,18 +26,20 @@ typedef struct av AV;
 typedef struct hv HV;
 typedef struct sv SV;
 typedef struct interpreter PerlInterpreter;
-struct rrr_socket_msg;
-struct rrr_message;
-struct rrr_message_addr;
+
+struct rrr_msg;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_instance_settings;
 struct rrr_setting;
+struct rrr_array;
 
 struct rrr_perl5_ctx {
 	struct rrr_perl5_ctx *next;
 	PerlInterpreter *interpreter;
 	void *private_data;
 
-	int (*send_message)(struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data);
+	int (*send_message)(struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data);
 	char *(*get_setting)(const char *key, void *private_data);
 	int (*set_setting)(const char *key, const char *value, void *private_data);
 };
@@ -59,11 +61,12 @@ struct rrr_perl5_settings_hv {
 int rrr_perl5_init3(int argc, char **argv, char **env);
 int rrr_perl5_sys_term(void);
 
+struct rrr_perl5_ctx *rrr_perl5_find_ctx (const PerlInterpreter *interpreter);
 void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data),
+		int (*send_message) (struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 );
@@ -71,8 +74,12 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_
 int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
 
+struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv);
 struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx);
 
+SV *rrr_perl5_deep_dereference(
+		SV *sv
+);
 void rrr_perl5_destruct_settings_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_settings_hv *source
@@ -87,31 +94,17 @@ void rrr_perl5_destruct_message_hv (
 		struct rrr_perl5_message_hv *source
 );
 int rrr_perl5_hv_to_message (
-		struct rrr_message **target_final,
-		struct rrr_message_addr *target_addr,
+		struct rrr_msg_msg **target_final,
+		struct rrr_msg_addr *target_addr,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
-);
-int rrr_perl5_message_to_hv (
-		struct rrr_perl5_message_hv *message_hv,
-		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
 );
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
+		const struct rrr_msg_msg *message,
+		struct rrr_msg_addr *message_addr,
+		struct rrr_array *array
 );
-
-/* Called from XSUB */
-int rrr_perl5_message_send (HV *message);
-SV *rrr_perl5_settings_get (HV *settings, const char *key);
-int rrr_perl5_settings_set (HV *settings, const char *key, const char *value);
-int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string);
-int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string);
-int rrr_perl5_debug_err (HV *debug, const char *string);
-
 
 #endif /* RRR_PERL5_H */

@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_SEARCH_STOP	(1<<3)
 #define RRR_FIFO_SEARCH_GIVE	(1<<4)
 #define RRR_FIFO_SEARCH_FREE	(1<<5)
+#define RRR_FIFO_SEARCH_REPLACE	(1<<6)
 
 #define RRR_FIFO_WRITE_AGAIN	(1<<10)
 #define RRR_FIFO_WRITE_DROP		(1<<11)
@@ -198,13 +199,19 @@ int rrr_fifo_buffer_search (
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
+int rrr_fifo_buffer_search_and_replace (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
+		void *callback_arg,
+		unsigned int wait_milliseconds,
+		int call_again_after_looping
+);
 int rrr_fifo_buffer_clear_order_lt (
 		struct rrr_fifo_buffer *buffer,
 		uint64_t order_min
 );
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
@@ -231,12 +238,12 @@ int rrr_fifo_buffer_with_write_lock_do (
 );
 int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
 		void *callback_arg
 );
 int rrr_fifo_buffer_write_delayed (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
 		void *callback_arg
 );
 

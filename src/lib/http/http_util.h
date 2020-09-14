@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
+#include "../rrr_types.h"
+
 struct rrr_http_uri {
 	char *protocol;
 	char *host;
@@ -36,14 +38,14 @@ void rrr_http_util_print_where_message (
 		const char *end
 );
 int rrr_http_util_decode_urlencoded_string (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		char *target,
-		ssize_t input_size
+		rrr_length input_size
 );
 char *rrr_http_util_encode_uri (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		const char *input,
-		ssize_t input_size
+		rrr_length input_size
 );
 const char *rrr_http_util_find_quoted_string_end (
 		const char *start,
@@ -51,9 +53,9 @@ const char *rrr_http_util_find_quoted_string_end (
 		char endchr
 );
 int rrr_http_util_unquote_string (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		char *target,
-		ssize_t length
+		rrr_length length
 );
 char *rrr_http_util_quote_header_value (
 		const char *input,
@@ -70,14 +72,14 @@ const char *rrr_http_util_find_whsp (
 );
 int rrr_http_util_strtoull (
 		unsigned long long int *result,
-		ssize_t *result_len,
+		rrr_length *result_len,
 		const char *start,
 		const char *end,
 		int base
 );
 int rrr_http_util_strcasestr (
 		const char **result_start,
-		ssize_t *result_len,
+		rrr_length *result_len,
 		const char *start,
 		const char *end,
 		const char *needle
@@ -87,14 +89,27 @@ const char *rrr_http_util_strchr (
 		const char *end,
 		char chr
 );
-ssize_t rrr_http_util_count_whsp (
+rrr_length rrr_http_util_count_whsp (
 		const char *start,
 		const char *end
 );
-void rrr_http_util_strtolower (char *str);
-void rrr_http_util_strtoupper (char *str);
-void rrr_http_util_uri_destroy (struct rrr_http_uri *uri);
-int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri);
-void rrr_http_util_nprintf (size_t length, const char *format, ...);
+void rrr_http_util_strtolower (
+		char *str
+);
+void rrr_http_util_strtoupper (
+		char *str
+);
+void rrr_http_util_uri_destroy (
+		struct rrr_http_uri *uri
+);
+int rrr_http_util_uri_parse (
+		struct rrr_http_uri **uri_result,
+		const char *uri
+);
+void rrr_http_util_nprintf (
+		rrr_length length,
+		const char *format,
+		...
+);
 
 #endif /* RRR_HTTP_UTIL_H */

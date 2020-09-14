@@ -37,12 +37,25 @@ struct rrr_mqtt_topic_token {
 int rrr_mqtt_topic_filter_validate_name (
 		const char *topic_filter
 );
+int rrr_mqtt_topic_validate_name_with_end (
+		const char *topic_name,
+		const char *end
+);
 int rrr_mqtt_topic_validate_name (
 		const char *topic_name
 );
 int rrr_mqtt_topic_match_tokens_recursively (
 		const struct rrr_mqtt_topic_token *sub_token,
 		const struct rrr_mqtt_topic_token *pub_token
+);
+int rrr_mqtt_topic_match_str_with_end (
+		const char *sub_filter,
+		const char *pub_topic,
+		const char *pub_topic_end
+);
+int rrr_mqtt_topic_match_str (
+		const char *sub_filter,
+		const char *pub_topic
 );
 int rrr_mqtt_topic_match_tokens_recursively_acl (
 		const struct rrr_mqtt_topic_token *token_master,
@@ -54,6 +67,11 @@ void rrr_mqtt_topic_token_destroy (
 int rrr_mqtt_topic_tokens_clone (
 		struct rrr_mqtt_topic_token **target,
 		const struct rrr_mqtt_topic_token *first_token
+);
+int rrr_mqtt_topic_tokenize_with_end (
+		struct rrr_mqtt_topic_token **first_token,
+		const char *topic,
+		const char *end
 );
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,

@@ -4,7 +4,7 @@ if RRR_WITH_MYSQL
 mysql = mysql.la
 mysql_la_SOURCES = p_mysql.c
 mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
-mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
+mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS} -lrrrmysql
 endif
 
 if RRR_WITH_PYTHON3
@@ -12,7 +12,7 @@ python3 = python3.la
 python3_la_SOURCES = p_python3.c
 python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 # Python3 libraries are linked in librrr
-python3_la_LDFLAGS = ${module_ldflags}
+python3_la_LDFLAGS = ${module_ldflags} -lrrrpython3
 endif
 
 # A non-working version of voltmonitor is compiled if usb is disabled 
@@ -31,14 +31,14 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la buffer.la \
-	ipclient.la ip.la averager.la \
-	duplicator.la mqttbroker.la mqttclient.la socket.la \
+lib_LTLIBRARIES = dummy.la raw.la \
+	ipclient.la ip.la averager.la file.la \
+	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
+module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
@@ -61,9 +61,6 @@ ipclient_la_SOURCES = p_ipclient.c
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c
 
-duplicator_la_LDFLAGS = ${module_ldflags}
-duplicator_la_SOURCES = p_duplicator.c
-
 ip_la_LDFLAGS = ${module_ldflags}
 ip_la_SOURCES = p_ip.c
 
@@ -83,6 +80,9 @@ httpclient_la_LDFLAGS = ${module_ldflags}
 httpclient_la_SOURCES = p_httpclient.c
 
 httpserver_la_LDFLAGS = ${module_ldflags}
-httpserver_la_SOURCES = src_httpserver.c
+httpserver_la_SOURCES = p_httpserver.c
+
+file_la_LDFLAGS = ${module_ldflags}
+file_la_SOURCES = src_file.c
 
 libdir=${exec_prefix}/lib/rrr

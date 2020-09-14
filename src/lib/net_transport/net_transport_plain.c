@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <poll.h>
+
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -31,9 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../read.h"
-#include "../ip.h"
-#include "../ip_accept_data.h"
-#include "../macro_utils.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
@@ -44,12 +46,19 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 }
 
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
-//	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+	free(plain);
+}
 
-	// This will call back into our close() function for each handle
-	rrr_net_transport_common_cleanup(transport);
+static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
+) {
+	int fd = *((int*) arg);
 
-	// Do not free here, upstream does that after destroying lock
+	*submodule_private_ptr = 0;
+	*submodule_private_fd = fd;
+
+	return 0;
 }
 
 static int __rrr_net_transport_plain_connect (
@@ -69,7 +78,7 @@ static int __rrr_net_transport_plain_connect (
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_DBG_1("Could not connect to server '%s' port '%u'\n", host, port);
-		ret = 1;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -78,8 +87,8 @@ static int __rrr_net_transport_plain_connect (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			NULL,
-			accept_data->ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback,
+			&accept_data->ip_data.fd
 	)) != 0) {
 		RRR_MSG_0("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
@@ -143,8 +152,7 @@ static int __rrr_net_transport_plain_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
-				read_flags,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,
@@ -158,7 +166,12 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+			if (ret == RRR_SOCKET_HARD_ERROR) {
+				RRR_MSG_0("Hard error while reading from remote in __rrr_net_transport_plain_read_message\n");
+			}
+			else {
+				RRR_DBG_1("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+			}
 			goto out;
 		}
 	}
@@ -179,12 +192,7 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
-		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			goto out;
-		}
-		RRR_MSG_0("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
-		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
+	if ((ret = rrr_socket_send_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
 		goto out;
 	}
 
@@ -214,8 +222,8 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
-			NULL,
-			ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
+			&ip_data.fd
 	)) != 0) {
 		RRR_MSG_0("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
 		goto out_destroy_ip;
@@ -256,10 +264,10 @@ int __rrr_net_transport_plain_accept (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			NULL,
-			accept_data->ip_data.fd
+			__rrr_net_transport_plain_handle_allocate_and_add_callback,
+			&accept_data->ip_data.fd
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
 	}
@@ -282,6 +290,12 @@ int __rrr_net_transport_plain_accept (
 		return ret;
 }
 
+static int __rrr_net_transport_plain_poll (
+		struct rrr_net_transport_handle *handle
+) {
+	return rrr_socket_check_alive (handle->submodule_private_fd);
+}
+
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
@@ -289,7 +303,8 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
-	__rrr_net_transport_plain_send
+	__rrr_net_transport_plain_send,
+	__rrr_net_transport_plain_poll
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {

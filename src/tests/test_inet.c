@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_inet.h"
 #include "../lib/log.h"
-#include "../lib/ip_util.h"
+#include "../lib/ip/ip_util.h"
 
 int rrr_test_inet (void) {
 	struct sockaddr_in6 in6;
@@ -71,8 +71,8 @@ int rrr_test_inet (void) {
 	int result = 0;
 
 	if (target_len != sizeof(in)) {
-		TEST_MSG("IPv4 mapped IPv6 to IPv4 convesion failure: Size mismatch %u vs %lu\n",
-			target_len, sizeof(in));
+		TEST_MSG("IPv4 mapped IPv6 to IPv4 convesion failure: Size mismatch %u vs %llu\n",
+			target_len, (long long unsigned) sizeof(in));
 		result |= 1;
 	}
 

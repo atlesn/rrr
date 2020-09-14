@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PERL5_TYPES_H
 
 #include "type.h"
+#include "fixed_point.h"
 
 struct rrr_perl5_ctx;
 typedef struct sv SV;
@@ -43,11 +44,21 @@ struct rrr_perl5_type_definition {
 	int (*to_value)(RRR_PERL5_TYPE_TO_VALUE_ARGS);
 };
 
+extern const struct rrr_perl5_type_definition *rrr_perl5_type_definition_string;
+
+int rrr_perl5_type_auto_sv_to_fixp (
+		rrr_fixp *result,
+		struct rrr_perl5_ctx *ctx,
+		SV *sv
+);
 const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_name (
 		const char *name
 );
 const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_id (
 		uint8_t type_in
+);
+const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_sv (
+		SV *sv
 );
 
 #endif /* RRR_PERL5_TYPES_H */

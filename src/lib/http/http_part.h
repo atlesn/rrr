@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_common.h"
 
-#include "../linked_list.h"
 #include "../read_constants.h"
+#include "../util/linked_list.h"
 
 #define RRR_HTTP_PARSE_OK			RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR 	RRR_READ_HARD_ERROR
@@ -45,15 +45,27 @@ enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_MULTIPART
 };
 
-#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
-#define RRR_HTTP_HEADER_FIELD_NO_PAIRS		(1<<1)
+#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE	(1<<0)
+#define RRR_HTTP_HEADER_FIELD_NO_PAIRS			(1<<1)
 
 #define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
 		int chunk_idx,								\
 		int chunk_total,							\
 		const char *data_start,						\
-		ssize_t data_size,							\
+		rrr_biglength data_size,					\
 		void *arg
+
+#define RRR_HTTP_PART_DATA_LENGTH(part) \
+	((part)->data_length)
+
+#define RRR_HTTP_PART_TOP_LENGTH(part) \
+	((part)->headroom_length + (part)->header_length)
+
+#define RRR_HTTP_PART_BODY_LENGTH(part) \
+	(RRR_HTTP_PART_DATA_LENGTH(part))
+
+#define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
+	((data_ptr) + RRR_HTTP_PART_TOP_LENGTH(part))
 
 struct rrr_http_header_field_definition;
 
@@ -88,8 +100,8 @@ struct rrr_http_header_field_definition {
 
 struct rrr_http_chunk {
 	RRR_LL_NODE(struct rrr_http_chunk);
-	ssize_t start;
-	ssize_t length;
+	size_t start;
+	size_t length;
 };
 
 struct rrr_http_chunks {
@@ -107,9 +119,19 @@ struct rrr_http_part {
 	int response_code;
 	char *response_str;
 
+	// Setting this causes everything else in a response
+	// struct to be ignored when sending
+	char *response_raw_data;
+	size_t response_raw_data_size;
+
 	char *request_method_str;
 	enum rrr_http_method request_method;
 	char *request_uri;
+
+	// Setting this causes raw data to be sent as opposed to
+	// generating headers and body
+	const char *request_raw_data;
+	size_t request_raw_data_size;
 
 	int parse_complete;
 	int header_complete;
@@ -118,16 +140,27 @@ struct rrr_http_part {
 
 //	const void *data_ptr;
 
-	ssize_t headroom_length;
-	ssize_t header_length;
-	ssize_t data_length;
+	size_t headroom_length;
+	size_t header_length;
+	size_t data_length;
+	int data_length_unknown;
 };
 
 void rrr_http_part_destroy (struct rrr_http_part *part);
 void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
-const struct rrr_http_header_field *rrr_http_part_get_header_field (
+void rrr_http_part_set_allocated_raw_response (
+		struct rrr_http_part *part,
+		char **raw_data_source,
+		size_t raw_data_size
+);
+void rrr_http_part_set_raw_request_ptr (
+		struct rrr_http_part *part,
+		const char *raw_data,
+		size_t raw_data_size
+);
+const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name_lowercase
 );
@@ -149,6 +182,10 @@ int rrr_http_part_header_fields_iterate (
 		int (*callback)(struct rrr_http_header_field *field, void *arg),
 		void *callback_arg
 );
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
+);
 int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
@@ -161,10 +198,10 @@ int rrr_http_part_process_multipart (
 );
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
-		ssize_t *target_size,
-		ssize_t *parsed_bytes,
+		size_t *target_size,
+		size_t *parsed_bytes,
 		const char *data_ptr,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
@@ -177,5 +214,8 @@ int rrr_http_part_merge_chunks (
 		struct rrr_http_part *part,
 		const char *data_ptr
 );
-void rrr_http_part_dump_header (struct rrr_http_part *part);
+void rrr_http_part_dump_header (
+		struct rrr_http_part *part
+);
+
 #endif /* RRR_HTTP_PART_H */

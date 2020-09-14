@@ -24,10 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
 
-int rrr_parse_check_eof (const struct rrr_parse_pos *pos) {
-	return (pos->pos >= pos->size);
+void rrr_parse_pos_init (
+		struct rrr_parse_pos *target,
+		const char *data,
+		int size
+) {
+	target->data = data;
+	target->pos = 0;
+	target->size = size;
+	target->line = 1;
+	target->line_begin_pos = 0;
 }
 
 void rrr_parse_ignore_space_and_tab (struct rrr_parse_pos *pos) {
@@ -39,7 +47,7 @@ void rrr_parse_ignore_space_and_tab (struct rrr_parse_pos *pos) {
 
 	while ((c == ' ' || c == '\t') && pos->pos < pos->size) {
 		pos->pos++;
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 
@@ -61,18 +69,21 @@ void rrr_parse_ignore_spaces_and_increment_line (struct rrr_parse_pos *pos) {
 			// Windows
 			pos->pos++;
 			pos->line++;
+			pos->line_begin_pos = pos->pos + 1;
 		}
 		else if (c == '\n') {
 			// UNIX
 			pos->line++;
+			pos->line_begin_pos = pos->pos + 1;
 		}
 		else if (c == '\r') {
 			// MAC
 			pos->line++;
+			pos->line_begin_pos = pos->pos + 1;
 		}
 
 		pos->pos++;
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 
@@ -134,40 +145,72 @@ int rrr_parse_match_word_case (
 	return ret;
 }
 
-#define MATCH_C_LETTER(c) 				\
-	(	((c) >= 'a' && (c) <= 'z') ||	\
-		((c) >= 'A' && (c) <= 'Z') ||	\
-		((c) >= '0' && (c) <= '9') ||	\
-		((c) == '_') ||					\
-		((c) == '-'))
-
-int rrr_parse_check_letters (
-		const char *str
+int rrr_parse_match_word (
+		struct rrr_parse_pos *pos,
+		const char *word
 ) {
-	const char *pos = str;
-	while (*pos != '\0') {
-		if (!MATCH_C_LETTER(*pos)) {
-			return 1;
+	// Default result = not matching
+	int ret = 0;
+
+	const char *word_pos = word;
+	int pos_orig = pos->pos;
+
+	while (*word_pos != '\0' && pos->pos < pos->size) {
+		char c = pos->data[pos->pos];
+
+		if (*word_pos != c) {
+			break;
 		}
+
+		pos->pos++;
+		word_pos++;
 	}
-	return 0;
+
+	if (*word_pos == '\0') {
+		ret = 1; // Matching
+	}
+	else {
+		pos->pos = pos_orig; // Revert
+	}
+
+	return ret;
 }
 
-void rrr_parse_letters (
+int rrr_parse_match_letters_simple (
+		struct rrr_parse_pos *pos
+) {
+	int ret = 0; // No letters matched
+
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		char letter = *(pos->data + pos->pos);
+		if (!RRR_PARSE_MATCH_C_LETTER(letter)) {
+			break;
+		}
+		ret = 1; // At least one letter matched
+		pos->pos++;
+	}
+
+	return ret;
+}
+
+void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		int *start,
 		int *end,
-		int allow_space_tab,
-		int allow_commas
+		int flags
 ) {
 	*start = pos->pos;
 	*end = pos->pos;
 
 	char c = pos->data[pos->pos];
-	while (!rrr_parse_check_eof(pos)) {
-		if (	MATCH_C_LETTER(c) ||
-				(allow_space_tab && (c == ' ' || c == '\t')) ||
-				(allow_commas && (c == ',' || c == ';'))
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
+				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
+				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
+				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
+				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
+				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
 		) {
 			// OK
 		}
@@ -176,10 +219,54 @@ void rrr_parse_letters (
 		}
 
 		pos->pos++;
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 		c = pos->data[pos->pos];
+	}
+
+	*end = pos->pos - 1;
+}
+
+void rrr_parse_match_until (
+		struct rrr_parse_pos *pos,
+		int *start,
+		int *end,
+		int flags
+) {
+	*start = pos->pos;
+	*end = pos->pos;
+
+	int pos_orig = pos->pos;
+
+	int found = 0;
+	char c = pos->data[pos->pos];
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		if (	((flags & RRR_PARSE_MATCH_SPACE_TAB) && RRR_PARSE_MATCH_C_SPACE_TAB(c)) ||
+				((flags & RRR_PARSE_MATCH_COMMAS) && RRR_PARSE_MATCH_C_COMMAS(c)) ||
+				((flags & RRR_PARSE_MATCH_LETTERS) && RRR_PARSE_MATCH_C_LETTER(c)) ||
+				((flags & RRR_PARSE_MATCH_HEX) && RRR_PARSE_MATCH_C_HEX(c)) ||
+				((flags & RRR_PARSE_MATCH_NUMBERS) && RRR_PARSE_MATCH_C_NUMBER(c)) ||
+				((flags & RRR_PARSE_MATCH_NEWLINES) && RRR_PARSE_MATCH_C_NEWLINES(c)) ||
+				((flags & RRR_PARSE_MATCH_NULL) && RRR_PARSE_MATCH_C_NULL(c))
+		) {
+			found = 1;
+			break;
+		}
+
+		pos->pos++;
+		if (RRR_PARSE_CHECK_EOF(pos)) {
+			if (flags & RRR_PARSE_MATCH_END) {
+				found = 1;
+			}
+			break;
+		}
+		c = pos->data[pos->pos];
+	}
+
+	if (found == 0) {
+		// If end terminator was not found, we did not match. Revert.
+		pos->pos = pos_orig;
 	}
 
 	*end = pos->pos - 1;
@@ -194,13 +281,13 @@ void rrr_parse_non_newline (
 	*end = pos->pos;
 
 	char c = pos->data[pos->pos];
-	while (!rrr_parse_check_eof(pos)) {
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
 		if (c == '\r' || c == '\n') {
 			break;
 		}
 
 		pos->pos++;
-		if (rrr_parse_check_eof(pos)) {
+		if (RRR_PARSE_CHECK_EOF(pos)) {
 			break;
 		}
 		c = pos->data[pos->pos];
@@ -260,7 +347,7 @@ int rrr_parse_str_split (
 	}
 
 	if ((tmp = strdup(str)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_parse_str_split\n");
+		RRR_MSG_0("Could not allocate memory in rrr_parse_str_split\n");
 		ret = 1;
 		goto out;
 	}
@@ -272,7 +359,7 @@ int rrr_parse_str_split (
 //		printf ("Split pos %s\n", pos);
 
 		if (elements_count == elements_max) {
-			RRR_MSG_0("Too many elements while splitting string (more than %u)\n", elements_max);
+			RRR_MSG_0("Too many elements while splitting string (more than %lu)\n", elements_max);
 			ret = 1;
 			goto out;
 		}

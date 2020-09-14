@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
+#include "../log.h"
+
 #include "http_server_worker.h"
 #include "http_common.h"
 #include "http_session.h"
@@ -30,14 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../net_transport/net_transport.h"
 #include "../threads.h"
-#include "../log.h"
-#include "../posix.h"
 #include "../array.h"
-#include "../ip_util.h"
+#include "../ip/ip_util.h"
+#include "../util/posix.h"
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_raw_arg,
+		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
@@ -53,20 +58,20 @@ int rrr_http_server_worker_preliminary_data_new (
 
 	memset (data, '\0', sizeof(*data));
 
-	if (pthread_mutex_init(&data->lock, NULL) != 0) {
-		RRR_MSG_0("Could not initialize mutex in __rrr_http_server_worker_thread_data_new\n");
-		ret = 1;
-		goto out_free;
-	}
-
 	data->final_callback = final_callback;
 	data->final_callback_arg = final_callback_arg;
+
+	data->unique_id_generator_callback = unique_id_generator_callback;
+	data->unique_id_generator_callback_arg = unique_id_generator_callback_arg;
+
+	data->final_callback_raw = final_callback_raw;
+	data->final_callback_raw_arg = final_callback_raw_arg;
 
 	*result = data;
 
 	goto out;
-	out_free:
-		free(data);
+//	out_free:
+//		free(data);
 	out:
 		return ret;
 }
@@ -77,14 +82,31 @@ void rrr_http_server_worker_preliminary_data_destroy (
 	if (worker_data == NULL) {
 		return;
 	}
-	pthread_mutex_destroy(&worker_data->lock);
 	free(worker_data);
 }
 
-void rrr_http_server_worker_preliminary_data_destroy_void (
+static int __rrr_http_server_worker_preliminary_data_destroy_callback (
+		struct rrr_thread *thread,
 		void *arg
 ) {
-	rrr_http_server_worker_preliminary_data_destroy(arg);
+	(void)(arg);
+
+	if (thread->private_data == NULL) {
+		return 0;
+	}
+
+	rrr_http_server_worker_preliminary_data_destroy(thread->private_data);
+	thread->private_data = NULL;
+
+	return 0;
+}
+
+static void __rrr_http_server_worker_preliminary_data_destroy_void_intermediate (
+		void *arg
+) {
+	struct rrr_thread *thread = arg;
+
+	rrr_thread_with_lock_do(thread, __rrr_http_server_worker_preliminary_data_destroy_callback, NULL);
 }
 
 static void __rrr_http_server_worker_close_transport (
@@ -100,7 +122,7 @@ static int __rrr_http_server_worker_push_response_headers (
 	int ret = RRR_HTTP_OK;
 
 	ret |= rrr_http_part_header_field_push(response_part, "connection", "close");
-	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST");
+	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST, PUT");
 
 	return ret;
 }
@@ -176,7 +198,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	}
 
 	if (overshoot_bytes == 0) {
-		worker_data->receive_complete = 1;
+		worker_data->request_complete = 1;
 	}
 
 	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, response_part)) != RRR_HTTP_OK) {
@@ -185,6 +207,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	if (worker_data->final_callback != NULL) {
 		ret = worker_data->final_callback (
+				worker_data->thread,
+				handle,
 				request_part,
 				response_part,
 				data_ptr,
@@ -192,6 +216,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				(const struct sockaddr *) &worker_data->sockaddr,
 				worker_data->socklen,
 				overshoot_bytes,
+				unique_id,
 				worker_data->final_callback_arg
 		);
 	}
@@ -222,13 +247,28 @@ static int __rrr_http_server_worker_net_transport_ctx_do_reading (
 
 	int ret = 0;
 
+	rrr_http_unique_id unique_id = 0;
+
+	if (worker_data->unique_id_generator_callback != NULL) {
+		if ((ret = worker_data->unique_id_generator_callback(
+				&unique_id,
+				worker_data->unique_id_generator_callback_arg
+		)) != 0) {
+			RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_reading\n");
+			goto out;
+		}
+	}
+
 	if ((ret = rrr_http_session_transport_ctx_receive (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			worker_data->read_max_size,
+			unique_id,
 			__rrr_http_server_worker_http_session_receive_callback,
-			worker_data
+			worker_data,
+			worker_data->final_callback_raw,
+			worker_data->final_callback_raw_arg
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR) {
 			RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
@@ -241,10 +281,40 @@ static int __rrr_http_server_worker_net_transport_ctx_do_reading (
 	return ret;
 }
 
-void *rrr_http_server_worker_thread_entry (
+static int __rrr_http_server_worker_preliminary_data_get_callback (
+		struct rrr_thread *thread,
+		void *arg
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	if (thread->private_data == NULL) {
+		return 1;
+	}
+
+	struct rrr_http_server_worker_preliminary_data *worker_data_preliminary = thread->private_data;
+
+	worker_data->read_max_size = worker_data_preliminary->read_max_size;
+	worker_data->transport = worker_data_preliminary->transport;
+	worker_data->transport_handle = worker_data_preliminary->transport_handle;
+	worker_data->sockaddr = worker_data_preliminary->sockaddr;
+	worker_data->socklen = worker_data_preliminary->socklen;
+
+	worker_data->final_callback = worker_data_preliminary->final_callback;
+	worker_data->final_callback_arg = worker_data_preliminary->final_callback_arg;
+
+	worker_data->unique_id_generator_callback = worker_data_preliminary->unique_id_generator_callback;
+	worker_data->unique_id_generator_callback_arg = worker_data_preliminary->unique_id_generator_callback_arg;
+
+	worker_data->final_callback_raw = worker_data_preliminary->final_callback_raw;
+	worker_data->final_callback_raw_arg = worker_data_preliminary->final_callback_raw_arg;
+
+	return 0;
+}
+
+static void __rrr_http_server_worker_thread_entry (
 		struct rrr_thread *thread
 ) {
-	struct rrr_http_server_worker_preliminary_data *worker_data_preliminary = thread->private_data;
+	// DO NOT use private_data except from inside lock wrapper callback
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START);
@@ -257,15 +327,15 @@ void *rrr_http_server_worker_thread_entry (
 	// be valid, main thread will not destroy it before threads have shut down.
 	// The lock only protects the data members of the worker data struct, not
 	// what they point to. DO NOT have members like char * in the struct.
-	pthread_mutex_lock(&worker_data_preliminary->lock);
-	worker_data.read_max_size = worker_data_preliminary->read_max_size;
-	worker_data.transport = worker_data_preliminary->transport;
-	worker_data.transport_handle = worker_data_preliminary->transport_handle;
-	worker_data.sockaddr = worker_data_preliminary->sockaddr;
-	worker_data.socklen = worker_data_preliminary->socklen;
-	worker_data.final_callback = worker_data_preliminary->final_callback;
-	worker_data.final_callback_arg = worker_data_preliminary->final_callback_arg;
-	pthread_mutex_unlock(&worker_data_preliminary->lock);
+
+	if (rrr_thread_with_lock_do (
+			thread,
+			__rrr_http_server_worker_preliminary_data_get_callback,
+			&worker_data
+	) != 0) {
+		RRR_MSG_0("Failed to get preliminary data in HTTP server worker\n");
+		goto out;
+	}
 
 //	char buf[256];
 //	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &worker_data.sockaddr, worker_data.socklen);
@@ -275,6 +345,8 @@ void *rrr_http_server_worker_thread_entry (
 	if (worker_data.transport_handle == 0) {
 		goto out;
 	}
+
+	worker_data.thread = thread;
 
 	// All usage of private data pointer (http_session) of the transport handle
 	// must be done with net transport handle lock held.
@@ -309,7 +381,7 @@ void *rrr_http_server_worker_thread_entry (
 			break;
 		}
 
-		if (worker_data.receive_complete) {
+		if (worker_data.request_complete) {
 			break;
 		}
 
@@ -320,7 +392,15 @@ void *rrr_http_server_worker_thread_entry (
 
 	// This cleans up HTTP data
 	pthread_cleanup_pop(1);
-
 	out:
-	pthread_exit(0);
+	return;
+}
+
+void *rrr_http_server_worker_thread_entry_intermediate (
+		struct rrr_thread *thread
+) {
+	pthread_cleanup_push(__rrr_http_server_worker_preliminary_data_destroy_void_intermediate, thread);
+	__rrr_http_server_worker_thread_entry(thread);
+	pthread_cleanup_pop(1);
+	return NULL;
 }

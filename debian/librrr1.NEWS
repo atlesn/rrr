@@ -1,0 +1,7 @@
+rrr (1.7-2) buster; urgency=medium
+
+  Leading slash for journal module default MQTT topic has been removed. Applications
+  which utilize this topic, for instance by MQTT subscritions, might need to be
+  updated.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 30 Jul 2020 22:33:22 +0200
