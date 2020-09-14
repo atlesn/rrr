@@ -36,9 +36,7 @@ struct rrr_global_config rrr_config_global = {
 		0,
 		0,
 		0,
-#ifdef HAVE_JOURNALD
 		0,
-#endif
 		"main",
 		0
 };
