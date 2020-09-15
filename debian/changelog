@@ -1,3 +1,9 @@
+Implement native SystemD journal logging
+New configuration parameters in file module
+Fix crash in high-load logging situtations in statistics engine
+Misc. bugfixes and cleanups
+
+
 rrr (1.12-2) buster; urgency=medium
 
   * Added RPM packages
