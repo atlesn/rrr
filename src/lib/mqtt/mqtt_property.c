@@ -198,7 +198,10 @@ int rrr_mqtt_property_save_blob (
 }
 
 int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
-	if ((target->data = (char *) malloc(sizeof(value))) == NULL) {
+	// Keep on separate line to suppress warning from static code analysis
+	size_t allocation_size = sizeof(value);
+
+	if ((target->data = (char *) malloc(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
