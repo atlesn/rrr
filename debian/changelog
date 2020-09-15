@@ -1,8 +1,10 @@
-Implement native SystemD journal logging
-New configuration parameters in file module
-Fix crash in high-load logging situtations in statistics engine
-Misc. bugfixes and cleanups
+rrr (1.13-0) buster; urgency=medium
 
+  * Implement native SystemD journal logging
+  * Fix crash in high-load logging situtations in statistics engine
+  * Misc. bugfixes and cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 15 Sep 2020 18:31:55 +0200
 
 rrr (1.12-2) buster; urgency=medium
 
