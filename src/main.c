@@ -25,11 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "lib/log.h"
+#include "lib/util/readfile.h"
+#include "lib/map.h"
 #include "lib/common.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
 #include "lib/threads.h"
+#include "lib/rrr_strerror.h"
+#include "lib/parse.h"
+#include "lib/rrr_types.h"
 
 #define RRR_MAIN_DEFAULT_MESSAGE_TTL_S 30
 #define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
@@ -221,10 +226,136 @@ static int __rrr_main_check_do_journald_logging (const char **env) {
 #endif
 }
 
+static int __rrr_main_parse_environment_file_parse (struct rrr_map *target, struct rrr_parse_pos *pos) {
+	int ret = 0;
+
+	char *line_tmp = NULL;
+
+	char *var_tmp = NULL;
+	size_t var_length_tmp;
+
+	char *val_tmp = NULL;
+
+	while (!RRR_PARSE_CHECK_EOF(pos)) {
+		rrr_parse_ignore_spaces_and_increment_line(pos);
+		if (RRR_PARSE_CHECK_EOF(pos)) {
+			break;
+		}
+
+		if (*(pos->data + pos->pos) == '#') {
+			rrr_parse_comment(pos);
+			continue;
+		}
+
+		int line_start;
+		int line_end;
+		rrr_parse_non_newline(pos, &line_start, &line_end);
+
+		RRR_FREE_IF_NOT_NULL(line_tmp);
+		if ((ret = rrr_parse_str_extract(&line_tmp, pos, line_start, line_end - line_start + 1)) != 0) {
+			goto out;
+		}
+		pos->pos = line_start;
+
+		RRR_FREE_IF_NOT_NULL(var_tmp);
+		if ((ret = rrr_parse_str_extract_until(&var_tmp, &var_length_tmp, line_tmp, '=')) != 0) {
+			goto out;
+		}
+		pos->pos += var_length_tmp;
+
+		// No equal sign = found ?
+		if (var_length_tmp == 0) {
+			rrr_parse_str_trim(line_tmp);
+
+			if ((ret = rrr_map_item_add_new(target, line_tmp, "1")) != 0) {
+				goto out;
+			}
+		}
+		else {
+			rrr_parse_str_trim(var_tmp);
+
+			pos->pos++; // Go beyond =
+			rrr_parse_ignore_space_and_tab(pos);
+			if (RRR_PARSE_CHECK_EOF(pos) || pos->pos > line_end) {
+				RRR_MSG_0("Value missing after = in environment file at line %i\n", pos->line);
+				ret = 1;
+				goto out;
+			}
+
+			RRR_FREE_IF_NOT_NULL(val_tmp);
+			if ((ret = rrr_parse_str_extract(&val_tmp, pos, pos->pos, line_end - pos->pos + 1)) != 0) {
+				goto out;
+			}
+			rrr_parse_str_trim(val_tmp);
+
+			if ((ret = rrr_map_item_add_new(target, var_tmp, val_tmp)) != 0) {
+				goto out;
+			}
+		}
+
+		pos->pos = line_end + 1;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(line_tmp);
+	RRR_FREE_IF_NOT_NULL(var_tmp);
+	RRR_FREE_IF_NOT_NULL(val_tmp);
+	return ret;
+}
+
+static int __rrr_main_parse_environment_file (struct rrr_map *target, const char *environment_file) {
+	int ret = 0;
+
+	rrr_biglength env_data_size;
+	char *env_data = NULL;
+
+	if (rrr_readfile_read (
+			&env_data,
+			&env_data_size,
+			environment_file,
+			0,
+			1 // ENOENT is OK
+	) != 0) {
+		RRR_MSG_0("Failed to read environment file '%s'\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (env_data_size == 0) {
+		// Don't use RRR_DBG_1, debuglevel is not set yet
+		RRR_MSG_1("Note: Environment file '%s' not found, not loading.\n", environment_file);
+		goto out;
+	}
+
+	// Protection before storing to int type in rrr_parse_pos struct
+	if (env_data_size > 0xfffffff) { // Seven f's
+		RRR_MSG_0("Environment file '%s' too big (was %" PRIrrrbl " bytes)", env_data_size);
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_parse_pos pos = {0};
+	rrr_parse_pos_init(&pos, env_data, env_data_size);
+
+	if ((ret = __rrr_main_parse_environment_file_parse(target, &pos)) != 0) {
+		RRR_MSG_0("Parsing of environment file '%s' failed\n", environment_file);
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(env_data);
+	return ret;
+}
+
 int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env, cmd_conf config) {
+	int ret = EXIT_SUCCESS;
+
+	struct rrr_map environment_map = {0};
+
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
-		return EXIT_FAILURE;
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	unsigned int no_watchdog_timers = 0;
@@ -235,20 +366,30 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int debuglevel_on_exit = 0;
 	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
 
+	const char *environment_file = cmd_get_value(cmd, "environment-file", 0);
+	if (environment_file != NULL) {
+		if (__rrr_main_parse_environment_file(&environment_map, environment_file) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+
 	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
 	if (message_ttl_s_string != NULL) {
 		if (cmd_convert_uint64_10(message_ttl_s_string, &message_ttl_us) != 0) {
 			RRR_MSG_0(
 					"Could not understand time-to-live argument '%s', use a number\n",
 					message_ttl_s_string);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 
 		// Make sure things does not get outahand during multiplication. Input from user
 		// is in seconds, convert to microseconds
 		if (message_ttl_us > UINT32_MAX) {
 			RRR_MSG_0("Value of time-to-live was too big, maximum is %u\n", UINT32_MAX);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 
 		message_ttl_us *= 1000 * 1000;
@@ -264,13 +405,15 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			RRR_MSG_0(
 					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 		if (debuglevel_tmp < 0 || debuglevel_tmp > __RRR_DEBUGLEVEL_ALL) {
 			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 		debuglevel = debuglevel_tmp;
 	}
@@ -285,13 +428,15 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			RRR_MSG_0(
 					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
 					debuglevel_on_exit_string);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __RRR_DEBUGLEVEL_ALL) {
 			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
-			return EXIT_FAILURE;
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
@@ -326,12 +471,14 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	);
 
 #ifdef HAVE_JOURNALD
-	RRR_DBG_1 ("Check for SystemD enviornment: %s\n",
+	RRR_DBG_1 ("Check for SystemD environment: %s\n",
 		(do_journald_output ? "Found, using native journald logging" : "Not found, using stdout logging")
 	);
 #endif
 
-	return 0;
+	out:
+	rrr_map_clear(&environment_map);
+	return ret;
 }
 
 int rrr_main_print_help_and_version (

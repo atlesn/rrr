@@ -102,6 +102,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 // Not implemented (yet). TTL check is present in duplicator and buffer modules
 //		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"ttl",					"[-t|--time-to-live]"},
 		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
