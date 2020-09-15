@@ -201,7 +201,7 @@ static int __rrr_main_has_env (const char **env, const char *var) {
 	return 0;
 }
 
-static int __rrr_main_check_do_journald_logging (const char **env, unsigned int debuglevel) {
+static int __rrr_main_check_do_journald_logging (const char **env) {
 #ifdef HAVE_JOURNALD
 	// Check if inode of stderr matches the one in JOURNAL_STREAM (and if the variable exists)
 	struct stat stat;
@@ -214,14 +214,6 @@ static int __rrr_main_check_do_journald_logging (const char **env, unsigned int 
 	buf[127] = '\0';
 
 	int result = __rrr_main_has_env(env, buf);
-
-	if (debuglevel & 1) {
-		RRR_MSG_1 ("Check for SystemD enviornment %s: %s\n",
-			buf,
-			(result ? "Found, using native journald logging" : "Not found, using stdout logging")
-		);
-	}
-
 	return result;
 #else
 	(void)(env);
@@ -241,7 +233,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
-	unsigned int do_journald_output = 0;
+	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
 
 	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
 	if (message_ttl_s_string != NULL) {
@@ -311,7 +303,6 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	if (cmd_exists(cmd, "no_thread_restart", 0)) {
 		no_thread_restart = 1;
 	}
-
 	if (cmd_exists(cmd, "loglevel-translation", 0)) {
 		rfc5424_loglevel_output = 1;
 	}
@@ -319,10 +310,6 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	if (cmd_exists(cmd, "loglevel-translation", 0)) {
 		rfc5424_loglevel_output = 1;
 	}
-
-	// Pass in debuglevel to print info message if debug is enabled, global
-	// config is not set yet	
-	do_journald_output = __rrr_main_check_do_journald_logging(env, debuglevel);
 
 	rrr_config_init (
 			debuglevel,
@@ -337,6 +324,12 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 #endif
 			message_ttl_us
 	);
+
+#ifdef HAVE_JOURNALD
+	RRR_DBG_1 ("Check for SystemD enviornment: %s\n",
+		(do_journald_output ? "Found, using native journald logging" : "Not found, using stdout logging")
+	);
+#endif
 
 	return 0;
 }
