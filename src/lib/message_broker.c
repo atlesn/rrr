@@ -351,7 +351,7 @@ int rrr_message_broker_setup_split_output_buffer (
 	}
 
 	while (slots--) {
-		if (__rrr_message_broker_split_output_buffer_new_and_add(&costumer->split_buffers) != 0) {
+		if ((ret = __rrr_message_broker_split_output_buffer_new_and_add(&costumer->split_buffers)) != 0) {
 			goto out_unlock;
 		}
 	}
