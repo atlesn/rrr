@@ -163,14 +163,15 @@ static void influxdb_send_data_callback (
 
 	int ret = INFLUXDB_OK;
 
+	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
+
 	if (rrr_http_query_builder_init(&query_builder) != 0) {
 		RRR_MSG_0("Could not initialize query builder in influxdb_send_data_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	char *uri = NULL;
 	if ((ret = rrr_asprintf(&uri, "/write?db=%s", data->database)) <= 0) {
 		RRR_MSG_0("Error while creating URI in send_data of influxdb instance %s return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);
