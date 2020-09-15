@@ -20,6 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 #include "main.h"
 #include "lib/log.h"
@@ -189,14 +191,42 @@ void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection
 	rrr_thread_destroy_collection (collection);
 }
 
-// Append = to var to avoid partial match being tolerated
-int rrr_main_has_env (const char **env, const char *var) {
+// Append = to var to avoid partial match being tolerated. Value may be added after = to match this as well.
+static int __rrr_main_has_env (const char **env, const char *var) {
 	for (const char **pos = env; *pos != NULL; pos++) {
 		if (strncmp(*pos, var, strlen(var)) == 0) {
 			return 1;
 		}
 	}
 	return 0;
+}
+
+static int __rrr_main_check_do_journald_logging (const char **env, unsigned int debuglevel) {
+#ifdef HAVE_JOURNALD
+	// Check if inode of stderr matches the one in JOURNAL_STREAM (and if the variable exists)
+	struct stat stat;
+	if (fstat(fileno(stderr), &stat) != 0) {
+		RRR_MSG_0("Warning: fstat of stderr failed in __rrr_main_check_do_journald_logging, disabling journald output\n");
+		return 0;
+	}
+	char buf[128];
+	snprintf(buf, 128, "JOURNAL_STREAM=%lu:%lu", stat.st_dev, stat.st_ino);
+	buf[127] = '\0';
+
+	int result = __rrr_main_has_env(env, buf);
+
+	if (debuglevel & 1) {
+		RRR_MSG_1 ("Check for SystemD enviornment %s: %s\n",
+			buf,
+			(result ? "Found, using native journald logging" : "Not found, using stdout logging")
+		);
+	}
+
+	return result;
+#else
+	(void)(env);
+	return 0;
+#endif
 }
 
 int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env, cmd_conf config) {
@@ -211,11 +241,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
-#ifdef HAVE_JOURNALD
-	unsigned int do_journald_output = rrr_main_has_env(env, "JOURNAL_STREAM=") && rrr_main_has_env(env, "INVOCATION_ID=");
-#else
-	(void)(env);
-#endif
+	unsigned int do_journald_output = 0;
 
 	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
 	if (message_ttl_s_string != NULL) {
@@ -293,6 +319,10 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	if (cmd_exists(cmd, "loglevel-translation", 0)) {
 		rfc5424_loglevel_output = 1;
 	}
+
+	// Pass in debuglevel to print info message if debug is enabled, global
+	// config is not set yet	
+	do_journald_output = __rrr_main_check_do_journald_logging(env, debuglevel);
 
 	rrr_config_init (
 			debuglevel,
