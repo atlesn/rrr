@@ -474,7 +474,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 		return ret;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char *argv[], const char *env[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -517,7 +517,7 @@ int main (int argc, const char *argv[]) {
 
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out_cleanup_signal;
 	}
 
@@ -537,7 +537,7 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
-	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
+	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	// Load configuration and fork
 	int config_i = 0;
@@ -545,6 +545,12 @@ int main (int argc, const char *argv[]) {
 	 	 // We fork one child for every specified config file
 
 		const char *config_string = node->tag;
+
+		// This message is to force creation of a common log fd prior to
+		// forking for log libraries requiring this (like SystemD journald)
+		if (RRR_DEBUGLEVEL_1 || rrr_config_global.do_journald_output) {
+			RRR_MSG_1("RRR starting configuration <%s>\n", config_string);
+		}
 
 		pid_t pid = rrr_fork (
 				fork_handler,

@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.12-2)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.12-2", [Full version])
+AC_INIT([Read Route Record], 1.13-0)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.13-0", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 12, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 13, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -511,6 +511,14 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	], [
 		AC_MSG_RESULT([no])
 	])
+
+	AC_CHECK_HEADER([systemd/sd-journal.h], [], AC_MSG_ERROR([missing SystemD development headers]))
+	AC_CHECK_LIB(systemd, sd_journal_print, [], AC_MSG_ERROR([sd_journal_print from libsystemd]))
+
+	AC_DEFINE([HAVE_JOURNALD], [1], [Have native SystemD/journald logging])
+
+	JOURNALD_LIBS="-lsystemd"
+	AC_SUBST([JOURNALD_LIBS])
 ],[
 	AC_MSG_RESULT([no])
 ])
@@ -535,6 +543,10 @@ AS_IF([test "x$enable_runit" = xyes], [
 ],[
 	AC_MSG_RESULT([no])
 ])
+
+# Clear all automatically added libs. Library users must specify
+# libraries locally in Makefile.am
+LIBS=""
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])

@@ -156,8 +156,7 @@ int rrr_readdir_foreach_prefix (
 		}
 
 		if (prefix == NULL || __rrr_readdir_prefix_match(entry->d_name, prefix)) {
-			if (callback (entry, orig_path, real_path, d_type, private_data) != 0) {
-				ret = 1;
+			if ((ret = callback (entry, orig_path, real_path, d_type, private_data)) != 0) {
 				goto out;
 			}
 		}
