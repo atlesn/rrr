@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "stats_engine.h"
 #include "stats_message.h"
-
 #include "../read.h"
 #include "../random.h"
 #include "../socket/rrr_socket.h"
@@ -52,38 +51,36 @@ struct rrr_stats_client {
 	int first_log_journal_messages_sent;
 };
 
-static int __rrr_stats_engine_journal_lock (struct rrr_stats_engine *engine) {
-	int ret = pthread_mutex_lock(&engine->journal_lock);
-	if (ret == 0) {
-		engine->journal_lock_usercount++;
-	}
+static void __rrr_stats_engine_journal_lock (struct rrr_stats_engine *engine) {
+	pthread_mutex_lock(&engine->journal_lock);
+	engine->journal_lock_usercount++;
 	if (engine->journal_lock_usercount > 2) {
-		RRR_BUG("BUG: Journal lock usercount was > 2\n");
+		RRR_BUG("BUG: Stats engine journal lock usercount was > 2\n");
 	}
-	return ret;
 }
 
-static int __rrr_stats_engine_journal_unlock (struct rrr_stats_engine *engine) {
-	int ret = pthread_mutex_unlock(&engine->journal_lock);
-	if (ret == 0) {
-		engine->journal_lock_usercount--;
+static void __rrr_stats_engine_journal_unlock (struct rrr_stats_engine *engine) {
+	engine->journal_lock_usercount--;
+	int usercount_now = engine->journal_lock_usercount;
+
+	pthread_mutex_unlock(&engine->journal_lock);
+
+	if (usercount_now < 0) {
+		RRR_BUG("BUG: Stats engine journal lock usercount was < 0\n");
 	}
-	if (engine->journal_lock_usercount < 0) {
-		RRR_BUG("BUG: Journal lock usercount was < 0\n");
-	}
-	return ret;
 }
-
-#define JOURNAL_LOCK(engine) \
-	__rrr_stats_engine_journal_lock(engine)
-
-#define JOURNAL_UNLOCK(engine) \
-	__rrr_stats_engine_journal_unlock(engine)
 
 static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	struct rrr_stats_engine *engine = arg;
-	JOURNAL_UNLOCK(engine);
+	__rrr_stats_engine_journal_unlock(engine);
 }
+
+#define JOURNAL_LOCK(engine) 												\
+	__rrr_stats_engine_journal_lock(engine);								\
+	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)		\
+
+#define JOURNAL_UNLOCK()													\
+	pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (
 		unsigned short loglevel_translated,
@@ -102,7 +99,6 @@ static void __rrr_stats_engine_log_listener (
 	(void)(prefix);
 
 	JOURNAL_LOCK(stats);
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 	if (stats->journal_lock_usercount > 1) {
 		// Prevent log loops when sending log messages generates new messages when debug is active
@@ -133,13 +129,16 @@ static void __rrr_stats_engine_log_listener (
 	new_message = NULL;
 
 	out:
-	pthread_cleanup_pop(1);
+	JOURNAL_UNLOCK();
 	if (message != NULL) {
 		rrr_stats_message_destroy(new_message);
 	}
 }
 
-static int __rrr_stats_client_new (struct rrr_stats_client **target, struct rrr_stats_engine *engine) {
+static int __rrr_stats_client_new (
+		struct rrr_stats_client **target,
+		struct rrr_stats_engine *engine
+) {
 	struct rrr_stats_client *client = malloc(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
@@ -155,7 +154,9 @@ static int __rrr_stats_client_new (struct rrr_stats_client **target, struct rrr_
 	return 0;
 }
 
-static void __rrr_stats_client_destroy (struct rrr_stats_client *client) {
+static void __rrr_stats_client_destroy (
+		struct rrr_stats_client *client
+) {
 	free(client);
 }
 
@@ -167,17 +168,23 @@ static void __rrr_stats_client_destroy_void (void *client) {
 	__rrr_stats_client_destroy (client);
 }
 
-static int __rrr_stats_named_message_list_destroy (struct rrr_stats_named_message_list *list) {
+static int __rrr_stats_named_message_list_destroy (
+		struct rrr_stats_named_message_list *list
+) {
 	RRR_LL_DESTROY(list, struct rrr_stats_message, rrr_stats_message_destroy(node));
 	free(list);
 	return 0;
 }
 
-static void __rrr_stats_named_message_list_collection_clear (struct rrr_stats_named_message_list_collection *collection) {
+static void __rrr_stats_named_message_list_collection_clear (
+		struct rrr_stats_named_message_list_collection *collection
+) {
 	RRR_LL_DESTROY(collection, struct rrr_stats_named_message_list, __rrr_stats_named_message_list_destroy(node));
 }
 
-static void __rrr_stats_log_journal_clear (struct rrr_stats_log_journal *collection) {
+static void __rrr_stats_log_journal_clear (
+		struct rrr_stats_log_journal *collection
+) {
 	RRR_LL_DESTROY(collection, struct rrr_stats_message, rrr_stats_message_destroy(node));
 }
 
@@ -198,7 +205,9 @@ static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
 }
 
 // To provide memory fence, this must be called prior to any thread starting or forking
-int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
+int rrr_stats_engine_init (
+		struct rrr_stats_engine *stats
+) {
 	int ret = 0;
 	char *filename = NULL;
 
@@ -270,7 +279,9 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		return ret;
 }
 
-void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
+void rrr_stats_engine_cleanup (
+		struct rrr_stats_engine *stats
+) {
 	if (stats->initialized == 0) {
 		return;
 	}
@@ -299,7 +310,10 @@ struct rrr_stats_engine_read_callback_data {
 	struct rrr_stats_engine *engine;
 };
 
-static int __rrr_stats_engine_read_callback (struct rrr_read_session *read_session, void *arg) {
+static int __rrr_stats_engine_read_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
 	struct rrr_stats_engine *stats = arg;
 
 	(void)(stats);
@@ -324,7 +338,7 @@ int __rrr_stats_engine_multicast_send_intermediate (
 	);
 }
 
-int __rrr_stats_engine_unicast_send_intermediate (
+static int __rrr_stats_engine_unicast_send_intermediate (
 		struct rrr_msg *data,
 		size_t size,
 		void *callback_arg
@@ -384,7 +398,10 @@ static int __rrr_stats_engine_pack_message (
 	return callback((struct rrr_msg *) &message_packed, total_size, callback_arg);
 }
 
-static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *stats, struct rrr_stats_named_message_list *list) {
+static int __rrr_stats_engine_send_messages_from_list (
+		struct rrr_stats_engine *stats,
+		struct rrr_stats_named_message_list *list
+) {
 	int ret = 0;
 
 	int has_clients = (rrr_socket_client_collection_count(&stats->client_collection) > 0 ? 1 : 0);
@@ -427,7 +444,9 @@ static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *
 	return ret;
 }
 
-static int __rrr_stats_engine_send_messages (struct rrr_stats_engine *stats) {
+static int __rrr_stats_engine_send_messages (
+		struct rrr_stats_engine *stats
+) {
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(&stats->named_message_list, struct rrr_stats_named_message_list);
@@ -441,7 +460,9 @@ static int __rrr_stats_engine_send_messages (struct rrr_stats_engine *stats) {
 	return ret;
 }
 
-static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_engine *stats) {
+static void __rrr_stats_engine_journal_send_to_new_clients (
+		struct rrr_stats_engine *stats
+) {
 	// All messages will be sent by the normal function the first iteration
 	if (stats->log_journal_last_sent_message == NULL) {
 		return;
@@ -454,7 +475,6 @@ static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_eng
 		if (client->first_log_journal_messages_sent == 0) {
 			// If journal is busy, just don't do anything.
 			JOURNAL_LOCK(stats);
-			pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 			// If there are more than 100 messages in the queue, clean up by removing entries from the beginning
 			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
@@ -475,14 +495,16 @@ static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_eng
 				}
 			RRR_LL_ITERATE_END();
 
-			pthread_cleanup_pop(1);
+			JOURNAL_UNLOCK();
 
 			client->first_log_journal_messages_sent = 1;
 		}
 	RRR_LL_ITERATE_END();
 }
 
-static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_engine *stats) {
+static void __rrr_stats_engine_log_journal_send_to_clients (
+		struct rrr_stats_engine *stats
+) {
 	int start_sending = 0;
 
 	if (stats->log_journal_last_sent_message == NULL) {
@@ -492,7 +514,6 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 	again:
 
 	JOURNAL_LOCK(stats);
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 	int max = 100;
 
@@ -521,7 +542,7 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 		}
 	RRR_LL_ITERATE_END();
 
-	pthread_cleanup_pop(1);
+	JOURNAL_UNLOCK();
 
 	if (start_sending == 0) {
 		start_sending = 1;
@@ -529,9 +550,10 @@ static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_eng
 	}
 }
 
-static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats) {
+static void __rrr_stats_engine_log_journal_trim (
+		struct rrr_stats_engine *stats
+) {
 	JOURNAL_LOCK(stats);
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, stats);
 
 	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
 		if (RRR_LL_COUNT(&stats->log_journal) > RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES) {
@@ -542,10 +564,12 @@ static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats)
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, rrr_stats_message_destroy(node));
 
-	pthread_cleanup_pop(1);
+	JOURNAL_UNLOCK();
 }
 
-static void __rrr_stats_engine_log_journal_tick (struct rrr_stats_engine *stats) {
+static void __rrr_stats_engine_log_journal_tick (
+		struct rrr_stats_engine *stats
+) {
 	// New clients receive the full journal up to last_message mark
 	__rrr_stats_engine_journal_send_to_new_clients(stats);
 
@@ -556,7 +580,9 @@ static void __rrr_stats_engine_log_journal_tick (struct rrr_stats_engine *stats)
 	__rrr_stats_engine_log_journal_trim(stats);
 }
 
-int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
+int rrr_stats_engine_tick (
+		struct rrr_stats_engine *stats
+) {
 	int ret = 0;
 
 	if (stats->initialized == 0) {
@@ -682,7 +708,10 @@ static int __rrr_stats_engine_message_register_nolock (
 		return ret;
 }
 
-static int __rrr_stats_engine_handle_exists_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {
+static int __rrr_stats_engine_handle_exists_nolock (
+		struct rrr_stats_engine *stats,
+		unsigned int stats_handle
+) {
 	RRR_LL_ITERATE_BEGIN(&stats->named_message_list, struct rrr_stats_named_message_list);
 		if (node->owner_handle == stats_handle) {
 			return 1;
@@ -691,7 +720,10 @@ static int __rrr_stats_engine_handle_exists_nolock (struct rrr_stats_engine *sta
 	return 0;
 }
 
-static void __rrr_stats_engine_handle_unregister_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {
+static void __rrr_stats_engine_handle_unregister_nolock (
+		struct rrr_stats_engine *stats,
+		unsigned int stats_handle
+) {
 	int did_unregister = 0;
 
 	RRR_LL_ITERATE_BEGIN(&stats->named_message_list, struct rrr_stats_named_message_list);
@@ -707,7 +739,10 @@ static void __rrr_stats_engine_handle_unregister_nolock (struct rrr_stats_engine
 	}
 }
 
-static int __rrr_stats_engine_handle_register_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {
+static int __rrr_stats_engine_handle_register_nolock (
+		struct rrr_stats_engine *stats,
+		unsigned int stats_handle
+) {
 	int ret = 0;
 
 	struct rrr_stats_named_message_list *entry = malloc(sizeof(*entry));

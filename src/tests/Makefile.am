@@ -10,7 +10,8 @@ SUBDIRS = modules
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo ${python}
 
-test_LDFLAGS = -ldl -lpthread -lm -L../lib -lrrr -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
+test_LDFLAGS = -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
+test_LDADD = -lrrr -ldl -lpthread -lm -L../lib -lrrr
 test_SOURCES = test.c ../main.c \
 	test_usleep.c test_fixp.c test_inet.c test_condition.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
