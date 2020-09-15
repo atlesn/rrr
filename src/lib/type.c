@@ -297,7 +297,10 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 
 	int ret = RRR_TYPE_PARSE_OK;
 
-	if ((node->data = (char *) malloc(sizeof(rrr_type_ustr))) == NULL) {
+	// Keep on separate line to suppress warning from static code analysis
+	size_t allocation_size = sizeof(rrr_type_ustr);
+
+	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_ustr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
@@ -379,7 +382,10 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 
 	int ret = RRR_TYPE_PARSE_OK;
 
-	if ((node->data = (char *) malloc(sizeof(rrr_type_istr))) == NULL) {
+	// Keep on separate line to suppress warning from static code analysis
+	size_t allocation_size = sizeof(rrr_type_istr);
+
+	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_istr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
@@ -861,7 +867,10 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 		return RRR_TYPE_PARSE_INCOMPLETE;
 	}
 
-	if ((node->data = (char *) malloc(sizeof(fixp))) == NULL) {
+	// Keep on separate line to suppress warning from static code analysis
+	size_t allocation_size = sizeof(fixp);
+
+	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_fixp\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;

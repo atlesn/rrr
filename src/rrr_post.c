@@ -365,14 +365,15 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_ms
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
+	struct rrr_msg_msg *message = NULL;
 	char *text = NULL;
+
 	if (rrr_asprintf(&text, "%" PRIu64, reading->value) <= 0) {
 		RRR_MSG_0("Could not create reading text in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
 
-	struct rrr_msg_msg *message = NULL;
 	if (rrr_msg_msg_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;

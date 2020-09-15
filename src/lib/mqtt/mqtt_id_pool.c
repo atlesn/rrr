@@ -179,33 +179,3 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 
 	pthread_mutex_unlock(&pool->lock);
 }
-
-int rrr_mqtt_id_pool_reserve_id_hard (struct rrr_mqtt_id_pool *pool, uint16_t id) {
-	int ret = 0;
-
-	MIN_MAJ_MASK(id);
-
-	pthread_mutex_lock(&pool->lock);
-
-	RRR_DBG_3("Hard reserve ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
-			id, min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
-
-	if (maj >= pool->allocated_majors) {
-		ssize_t diff = maj - pool->allocated_majors;
-		if (__rrr_mqtt_id_pool_realloc(pool, diff + 1) != 0) {
-			RRR_BUG("No more room in ID pool in rrr_mqtt_id_pool_reserve_id_hard\n");
-		}
-	}
-
-	if ((pool->pool[maj] & mask) != 0) {
-		RRR_DBG_1("Hard reserve of ID %u failed, already taken.\n", id);
-		ret = 1;
-		goto out;
-	}
-
-	pool->pool[maj] |= mask;
-
-	out:
-	pthread_mutex_unlock(&pool->lock);
-	return ret;
-}
