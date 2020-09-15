@@ -1525,6 +1525,15 @@ After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
 as long as the user running RRR has permission to do that. Defaults to 'no'.
 
+.It file_max_open=UNSIGNED INTEGER
+Maximum number of simultaneously open files. If multiple files are open at the same time,
+.B file
+will iterate all the files and read read only one message from each of the files at a time.
+If there is only one open file, all messages in this file will be processed in order before
+a new one is opened.
+Defaults to and has a maximum value (if set) of 65536.
+May be set to 0 which means that there is no maximum number of open files.
+
 .It file_try_keyboard_input={yes|no} (LINUX/FREEBSD ONLY)
 If set to yes, and character devices are found in the directory,
 .B file

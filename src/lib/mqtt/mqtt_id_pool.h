@@ -51,6 +51,5 @@ void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool);
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id);
-int rrr_mqtt_id_pool_reserve_id_hard (struct rrr_mqtt_id_pool *pool, uint16_t id);
 
 #endif /* RRR_MQTT_ID_POOL_H */
