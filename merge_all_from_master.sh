@@ -20,3 +20,8 @@ merge freebsd
 merge voidlinux
 merge ubuntu
 merge debian-testing
+merge mysql-5.7
+merge mysql-8.0
+merge junction
+merge snmp
+
