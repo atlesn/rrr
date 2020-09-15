@@ -207,7 +207,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_RFC5424_LOGLEVEL_INFO		6
 #define RRR_RFC5424_LOGLEVEL_DEBUG		7
 
-#define RRR_LOG_HEADER_FORMAT "<%u> <%s> "
+#define RRR_LOG_HEADER_FORMAT_NO_LEVEL "<%s> "
+#define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
 

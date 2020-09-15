@@ -365,14 +365,15 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_ms
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
+	struct rrr_msg_msg *message = NULL;
 	char *text = NULL;
+
 	if (rrr_asprintf(&text, "%" PRIu64, reading->value) <= 0) {
 		RRR_MSG_0("Could not create reading text in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
 
-	struct rrr_msg_msg *message = NULL;
 	if (rrr_msg_msg_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
@@ -517,7 +518,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	return ret;
 }
 
-int main (int argc, const char *argv[]) {
+int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
@@ -536,7 +537,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_post_data_init(&data);
 
-	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
 	}
 

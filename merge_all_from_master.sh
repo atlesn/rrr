@@ -15,8 +15,8 @@ merge() {
 merge bugfix
 merge development
 merge development-freebsd
+merge development-voidlinux
 merge freebsd
 merge voidlinux
-merge archlinux
 merge ubuntu
 merge debian-testing
