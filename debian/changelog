@@ -1,3 +1,9 @@
+rrr (1.13-0bullseye1) bullseye; urgency=medium
+
+  * Debian testing release
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 15 Sep 2020 19:44:07 +0200
+
 rrr (1.13-0) buster; urgency=medium
 
   * Implement native SystemD journal logging
