@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/read.h"
 #include "../lib/array_tree.h"
+#include "../lib/read_constants.h"
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/socket/rrr_socket_common.h"
@@ -52,9 +53,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE 4096
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
+#define RRR_FILE_MAX_MAX_OPEN 65536
+#define RRR_FILE_DEFAULT_MAX_OPEN RRR_FILE_MAX_MAX_OPEN
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
+
+#define RRR_FILE_STOP RRR_READ_EOF
 
 struct file {
 	RRR_LL_NODE(struct file);
@@ -85,6 +90,7 @@ struct file_data {
 	rrr_setting_uint probe_interval;
 	rrr_setting_uint max_messages_per_file;
 	rrr_setting_uint max_read_step_size;
+	rrr_setting_uint max_open;
 
 	char *topic;
 	size_t topic_len;
@@ -113,6 +119,10 @@ static int file_collection_has (const struct file_collection *files, const char 
 		}
 	RRR_LL_ITERATE_END();
 	return 0;
+}
+
+static int file_collection_count (const struct file_collection *files) {
+	return RRR_LL_COUNT(files);
 }
 
 static int file_collection_push (
@@ -217,8 +227,15 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_open", max_open, RRR_FILE_DEFAULT_MAX_OPEN);
 
 	/* Don't goto out in errors, check all possible errors first. */
+
+	if (data->max_open > RRR_FILE_MAX_MAX_OPEN) {
+		RRR_MSG_0("Parameter file_max_open out of range for file instance %s (%" PRIrrrbl ">%i).\n",
+				config->name, data->max_open, RRR_FILE_MAX_MAX_OPEN);
+		ret = 1;
+	}
 
 	if (	!RRR_INSTANCE_CONFIG_EXISTS("file_input_types") &&
 			data->do_read_all_to_message == 0 &&
@@ -274,6 +291,11 @@ static int file_probe_callback (
 	int fd = 0;
 
 	if (file_collection_has(&data->files, orig_path)) {
+		goto out;
+	}
+
+	if (data->max_open > 0 && file_collection_count(&data->files) >= (int) data->max_open) {
+		ret = RRR_FILE_STOP;
 		goto out;
 	}
 
@@ -671,7 +693,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			(data->prefix != NULL ? data->prefix : "")
 	);
 
-	const uint64_t sleep_interval = (data->probe_interval < 10 ? data->probe_interval * 1000 : 10000);
+	const uint64_t sleep_interval = (data->probe_interval > 50 ? data->probe_interval * 1000 : 50000); // Min 50ms
 	const uint64_t probe_interval = data->probe_interval * 1000;
 
 	uint64_t time_prev_stats = rrr_time_get_64();
@@ -693,8 +715,12 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now >= time_next_probe) {
-			if (file_probe(data) != 0) {
-				break;
+//			printf("probe interval %" PRIu64 "\n", probe_interval);
+			int ret_tmp;
+			if ((ret_tmp = file_probe(data)) != 0) {
+				if (ret_tmp != RRR_FILE_STOP) {
+					break;
+				}
 			}
 			time_next_probe = time_now + probe_interval;
 		}
@@ -720,7 +746,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		}
 		else if (consecutive_nothing_happened > 100) {
 //			printf("Short sleep %i bytes read %" PRIu64 "\n", consecutive_nothing_happened, bytes_read_tmp);
-			rrr_posix_usleep (10000 > sleep_interval ? sleep_interval : 10000); // 10ms
+			rrr_posix_usleep (2000); // 2ms
 		}
 
 		if (time_now - time_prev_stats > 1000000) {
