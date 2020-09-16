@@ -50,6 +50,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'q',	"query",				"[-q|--query[=]HTTP QUERY]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},

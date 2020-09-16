@@ -54,6 +54,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},

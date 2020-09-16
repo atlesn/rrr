@@ -99,8 +99,8 @@ int signal_interrupt (int s, void *arg) {
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",				"{CONFIGURATION FILE}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"-d|--debuglevel DEBUGLEVEL"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"library-tests",		"-l|--library-tests"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel DEBUGLEVEL]"},
+		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"library-tests",		"[-l|--library-tests]"},
 		{0,							'\0',	NULL, 					""}
 };
 
