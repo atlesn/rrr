@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/environment_file.h"
 #include "lib/map.h"
 
-#define RRR_MAIN_DEFAULT_MESSAGE_TTL_S 30
 #define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_main_check_wait_for_data {
@@ -257,7 +256,6 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
-	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
@@ -282,39 +280,6 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	GETENV_YESNO(RRR_ENV_NO_WATCHDOG_TIMERS, no_watchdog_timers);
 	GETENV_YESNO(RRR_ENV_NO_THREAD_RESTART, no_thread_restart);
 	GETENV_YESNO(RRR_ENV_LOGLEVEL_TRANSLATION, rfc5424_loglevel_output);
-
-	if (getenv(RRR_ENV_TIME_TO_LIVE) != NULL) {
-		unsigned int message_ttl_s = 0;
-		GETENV_U(RRR_ENV_TIME_TO_LIVE, message_ttl_s);
-		message_ttl_us = message_ttl_s * 1000 * 1000;
-	}
-
-	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
-	if (message_ttl_s_string != NULL) {
-		if (cmd_convert_uint64_10(message_ttl_s_string, &message_ttl_us) != 0) {
-			RRR_MSG_0(
-					"Could not understand time-to-live argument '%s', use a number\n",
-					message_ttl_s_string);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-
-		// Make sure things does not get outahand during multiplication. Input from user
-		// is in seconds, convert to microseconds
-		if (message_ttl_us > UINT32_MAX) {
-			RRR_MSG_0("Value of time-to-live was too big, maximum is %u\n", UINT32_MAX);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-
-		message_ttl_us *= 1000 * 1000;
-	}
-
-	if (message_ttl_us == 0) {
-		RRR_MSG_0("Message TTL was zero after parsing environment and command line arguments\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
@@ -369,11 +334,11 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	if (cmd_exists(cmd, "no-thread-restart", 0)) {
 		no_thread_restart = 1;
 	}
+
 	if (cmd_exists(cmd, "loglevel-translation", 0)) {
 		rfc5424_loglevel_output = 1;
 	}
 
-	SETENV(RRR_ENV_TIME_TO_LIVE,			PRIu64,	message_ttl_us / 1000 / 1000);
 	SETENV(RRR_ENV_DEBUGLEVEL,				"%u",	debuglevel);
 	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,		"%u",	debuglevel_on_exit);
 	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,		"%u",	no_watchdog_timers);
@@ -392,19 +357,17 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
-			do_journald_output,
-			message_ttl_us
+			do_journald_output
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%u, doe:%u, nwt:%u, ntr:%u, lt:%u, jo:%u, ttl:%" PRIu64 "\n",
+	RRR_DBG_1("Global configuration: d:%u, doe:%u, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
 			debuglevel,
 			debuglevel_on_exit,
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
-			do_journald_output,
-			message_ttl_us
+			do_journald_output
 	);
 
 #ifdef HAVE_JOURNALD
