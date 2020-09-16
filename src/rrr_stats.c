@@ -80,7 +80,7 @@ static volatile int rrr_stats_abort = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"socket",				"[RRR SOCKET (PREFIX)] ..."},
-		{0,							'e',	"exact_path",			"[-e|--exact_path]"},
+		{0,							'e',	"exact-path",			"[-e|--exact-path]"},
 		{0,							'j',	"journal",				"[-j|--journal]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -213,7 +213,7 @@ static int __rrr_stats_read_message (
 }
 
 static int __rrr_stats_parse_config (struct rrr_stats_data *data, struct cmd_data *cmd) {
-	if (cmd_exists(cmd, "exact_path", 0)) {
+	if (cmd_exists(cmd, "exact-path", 0)) {
 		data->socket_path_exact = 1;
 	}
 

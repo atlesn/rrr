@@ -61,7 +61,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'm',	"max-message-size",		"[-m|--max-message-size]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
@@ -257,7 +257,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	}
 
 	// Array definition
-	const char *array_definition = cmd_get_value(cmd, "array_definition", 0);
+	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
 
 	if (array_definition == NULL || *array_definition == '\0') {
 		array_definition = RRR_POST_DEFAULT_ARRAY_DEFINITION;
@@ -278,7 +278,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 
-	if (cmd_get_value (cmd, "array_definition", 1) != NULL) {
+	if (cmd_get_value (cmd, "array-definition", 1) != NULL) {
 		RRR_MSG_0("Error: Only one array_definition argument may be specified\n");
 		ret = 1;
 		goto out;
