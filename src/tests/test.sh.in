@@ -13,7 +13,7 @@ if test "x$TEST_VARIABLES_SET" != "x1"; then
 fi
 
 
-TEST="./test $1 $2 $3 $4"
+TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_SOCKET=.rrr_test.sock
 TEST_DATA_FILE=.test_data.tmp
 TEST_DATA_GENERATOR=./make_test_data
