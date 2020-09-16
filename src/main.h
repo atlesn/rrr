@@ -22,6 +22,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MAIN_H
 #define RRR_MAIN_H
 
+#define RRR_ENV_DEBUGLEVEL				"RRR_DEBUGLEVEL"
+#define RRR_ENV_DEBUGLEVEL_ON_EXIT		"RRR_DEBUGLEVEL_ON_EXIT"
+#define RRR_ENV_NO_WATCHDOG_TIMERS		"RRR_NO_WATCHDOG_TIMERS"
+#define RRR_ENV_NO_THREAD_RESTART		"RRR_NO_THREAD_RESTART"
+#define RRR_ENV_LOGLEVEL_TRANSLATION	"RRR_LOGLEVEL_TRANSLATION"
+#define RRR_ENV_TIME_TO_LIVE			"RRR_TIME_TO_LIVE"
+
 #include "lib/cmdlineparser/cmdline_defines.h"
 
 struct cmd_data;

@@ -20,6 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
+#include <strings.h>
+#include <errno.h>
 #include <sys/stat.h>
 
 #include "main.h"
@@ -202,8 +204,8 @@ static int __rrr_main_has_env (const char **env, const char *var) {
 	return 0;
 }
 
-static int __rrr_main_check_do_journald_logging (const char **env) {
 #ifdef HAVE_JOURNALD
+static int __rrr_main_check_do_journald_logging (const char **env) {
 	// Check if inode of stderr matches the one in JOURNAL_STREAM (and if the variable exists)
 	struct stat stat;
 	if (fstat(fileno(stderr), &stat) != 0) {
@@ -216,16 +218,46 @@ static int __rrr_main_check_do_journald_logging (const char **env) {
 
 	int result = __rrr_main_has_env(env, buf);
 	return result;
-#else
-	(void)(env);
-	return 0;
-#endif
 }
+#endif
+
+#define SETENV_STR(name, var)																					\
+	do { if (setenv(name, var, 1) != 0) {																		\
+		RRR_MSG_0("Failed to set environment variable %s in rrr_main_parse_cmd_arguments_and_env\n", name);		\
+		ret = EXIT_FAILURE;																						\
+		goto out;																								\
+	}} while(0)
+
+#define SETENV(name, type, var)							\
+	do { char buf[128]; sprintf(buf, type, var);		\
+		SETENV_STR(name, buf);							\
+	} while(0)
+
+#define GETENV_YESNO(name, target)													\
+	do { char *env; if ((env = getenv(name)) != 0) {								\
+		target = (strcasecmp(env, "no") != 0 && strcasecmp(env, "0") != 0) ? 1 : 0;	\
+	}} while(0)
+
+#define GETENV_U(name, target)														\
+	do { char *env; if ((env = getenv(name)) != 0) {								\
+		char *endptr; target = strtoul(env, &endptr, 10);							\
+		if (*env != '\0' && (errno != 0 || *endptr != '\0')) {						\
+			RRR_MSG_0("Invalid value '%s' in environment variable " name "\n", env);\
+			ret = EXIT_FAILURE; goto out;											\
+		}																			\
+	}} while(0)
 
 int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env, cmd_conf config) {
 	int ret = EXIT_SUCCESS;
 
 	struct rrr_map environment_map = {0};
+
+	unsigned int debuglevel = 0;
+	unsigned int debuglevel_on_exit = 0;
+	unsigned int no_watchdog_timers = 0;
+	unsigned int no_thread_restart = 0;
+	unsigned int rfc5424_loglevel_output = 0;
+	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
 
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
@@ -233,20 +265,28 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		goto out;
 	}
 
-	unsigned int no_watchdog_timers = 0;
-	unsigned int no_thread_restart = 0;
-	unsigned int rfc5424_loglevel_output = 0;
-	uint64_t message_ttl_us = RRR_MAIN_DEFAULT_MESSAGE_TTL_S * 1000 * 1000;
-	unsigned int debuglevel = 0;
-	unsigned int debuglevel_on_exit = 0;
-	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
-
 	const char *environment_file = cmd_get_value(cmd, "environment-file", 0);
 	if (environment_file != NULL) {
 		if (rrr_environment_file_parse(&environment_map, environment_file) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
+	}
+
+	RRR_MAP_ITERATE_BEGIN(&environment_map);
+		SETENV_STR(node_tag, node_value);
+	RRR_MAP_ITERATE_END();
+
+	GETENV_U(RRR_ENV_DEBUGLEVEL, debuglevel);
+	GETENV_U(RRR_ENV_DEBUGLEVEL_ON_EXIT, debuglevel_on_exit);
+	GETENV_YESNO(RRR_ENV_NO_WATCHDOG_TIMERS, no_watchdog_timers);
+	GETENV_YESNO(RRR_ENV_NO_THREAD_RESTART, no_thread_restart);
+	GETENV_YESNO(RRR_ENV_LOGLEVEL_TRANSLATION, rfc5424_loglevel_output);
+
+	if (getenv(RRR_ENV_TIME_TO_LIVE) != NULL) {
+		unsigned int message_ttl_s = 0;
+		GETENV_U(RRR_ENV_TIME_TO_LIVE, message_ttl_s);
+		message_ttl_us = message_ttl_s * 1000 * 1000;
 	}
 
 	const char *message_ttl_s_string = cmd_get_value(cmd, "time-to-live", 0);
@@ -268,6 +308,12 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		}
 
 		message_ttl_us *= 1000 * 1000;
+	}
+
+	if (message_ttl_us == 0) {
+		RRR_MSG_0("Message TTL was zero after parsing environment and command line arguments\n");
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
@@ -327,9 +373,18 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		rfc5424_loglevel_output = 1;
 	}
 
-	if (cmd_exists(cmd, "loglevel-translation", 0)) {
-		rfc5424_loglevel_output = 1;
-	}
+	SETENV(RRR_ENV_TIME_TO_LIVE,			PRIu64,	message_ttl_us / 1000 / 1000);
+	SETENV(RRR_ENV_DEBUGLEVEL,				"%u",	debuglevel);
+	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,		"%u",	debuglevel_on_exit);
+	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,		"%u",	no_watchdog_timers);
+	SETENV(RRR_ENV_NO_THREAD_RESTART,		"%u",	no_thread_restart);
+	SETENV(RRR_ENV_LOGLEVEL_TRANSLATION,	"%u",	rfc5424_loglevel_output);
+
+#ifdef HAVE_JOURNALD
+	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
+#else
+	unsigned int do_journald_output = 0;
+#endif
 
 	rrr_config_init (
 			debuglevel,
@@ -337,11 +392,18 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
-#ifdef HAVE_JOURNALD
 			do_journald_output,
-#else
-			0,
-#endif
+			message_ttl_us
+	);
+
+	// DBG-macros must be used after global debuglevel has been set
+	RRR_DBG_1("Global configuration: d:%u, doe:%u, nwt:%u, ntr:%u, lt:%u, jo:%u, ttl:%" PRIu64 "\n",
+			debuglevel,
+			debuglevel_on_exit,
+			no_watchdog_timers,
+			no_thread_restart,
+			rfc5424_loglevel_output,
+			do_journald_output,
 			message_ttl_us
 	);
 
