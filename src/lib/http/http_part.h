@@ -168,6 +168,11 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name_lowercase
 );
+const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
+		const struct rrr_http_part *part,
+		const char *name_lowercase,
+		const char *value_anycase
+);
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part
 );

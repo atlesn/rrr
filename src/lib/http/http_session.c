@@ -963,18 +963,19 @@ static int __rrr_http_session_request_receive_try_websocket (
 	char *accept_str_tmp = NULL;
 	char *accept_base64_tmp = NULL;
 
-	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(session->request_part, "connection");
-	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get(session->request_part, "upgrade");
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get_with_value(session->request_part, "connection", "upgrade");
+	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get_with_value(session->request_part, "upgrade", "websocket");
 
 	if (connection == NULL || upgrade == NULL) {
 		goto out;
 	}
 
-	if (strcasecmp(connection->value, "upgrade") != 0 || strcasecmp(upgrade->value, "websocket") != 0) {
-		goto out;
-	}
-
 	*do_websocket = 1;
+
+	if (read_session->rx_overshoot_size) {
+		RRR_DBG_1("Extra data received from client after websocket HTTP request\n");
+		goto out_bad_request;
+	}
 
 	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
 	if (sec_websocket_version == NULL) {
@@ -1037,8 +1038,9 @@ static int __rrr_http_session_request_receive_try_websocket (
 	rrr_SHA1Reset(&sha1_ctx);
 	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
 
-	if (sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
-		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_request_receive_try_websocket\n");
+	if (!rrr_SHA1Result(&sha1_ctx) || sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
+		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_request_receive_try_websocket (Corrupt: %i - Computed: %i)\n",
+				sha1_ctx.Corrupted, sha1_ctx.Computed);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -1057,6 +1059,8 @@ static int __rrr_http_session_request_receive_try_websocket (
 	if ((ret = rrr_http_part_header_field_push(session->response_part, "sec-websocket-accept", accept_base64_tmp)) != 0) {
 		goto out;
 	}
+
+	session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS;
 
 	goto out;
 	out_bad_request:
@@ -1134,6 +1138,15 @@ static int __rrr_http_session_request_receive_callback (
 			data_to_use
 	)) != 0) {
 		goto out;
+	}
+
+	if (do_websocket != 0) {
+		if (session->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+			RRR_DBG_3("Upgrading HTTP connection to WebSocket\n");
+		}
+		else {
+			RRR_DBG_1("Upgrade HTTP connection to WebSocket failed\n");
+		}
 	}
 
 	if (do_websocket == 0 && (ret = receive_data->callback (

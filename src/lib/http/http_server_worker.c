@@ -40,6 +40,8 @@ int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		void *websocket_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
 		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
@@ -57,6 +59,9 @@ int rrr_http_server_worker_preliminary_data_new (
 	}
 
 	memset (data, '\0', sizeof(*data));
+
+	data->websocket_callback = websocket_callback;
+	data->websocket_callback_arg = websocket_callback_arg;
 
 	data->final_callback = final_callback;
 	data->final_callback_arg = final_callback_arg;
@@ -239,7 +244,44 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	return ret;
 }
 
-static int __rrr_http_server_worker_net_transport_ctx_do_reading (
+static int __rrr_http_server_worker_websocket_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
+
+	int ret = 0;
+
+	if ((ret = worker_data->websocket_callback (
+			do_websocket,
+			handle,
+			request_part,
+			response_part,
+			data_ptr,
+			// Address was cached when accepting
+			(const struct sockaddr *) &worker_data->sockaddr,
+			worker_data->socklen,
+			overshoot_bytes,
+			unique_id,
+			worker_data->final_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	if (*do_websocket) {
+		worker_data->websocket_unique_id = unique_id;
+	}
+
+	out:
+	if (ret != 0 || response_part->response_code != 0) {
+		worker_data->request_complete = 1;
+	}
+	return ret;
+}
+
+static int __rrr_http_server_worker_net_transport_ctx_do_work (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -247,36 +289,41 @@ static int __rrr_http_server_worker_net_transport_ctx_do_reading (
 
 	int ret = 0;
 
-	rrr_http_unique_id unique_id = 0;
+	if (worker_data->websocket_unique_id != 0) {
+		printf("Websocket tick\n");
+	}
+	else {
+		rrr_http_unique_id unique_id = 0;
 
-	if (worker_data->unique_id_generator_callback != NULL) {
-		if ((ret = worker_data->unique_id_generator_callback(
-				&unique_id,
-				worker_data->unique_id_generator_callback_arg
+		if (worker_data->unique_id_generator_callback != NULL) {
+			if ((ret = worker_data->unique_id_generator_callback(
+					&unique_id,
+					worker_data->unique_id_generator_callback_arg
+			)) != 0) {
+				RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_work\n");
+				goto out;
+			}
+		}
+
+		if ((ret = rrr_http_session_transport_ctx_receive (
+				handle,
+				RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
+				RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
+				worker_data->read_max_size,
+				unique_id,
+				__rrr_http_server_worker_websocket_callback,
+				worker_data,
+				__rrr_http_server_worker_http_session_receive_callback,
+				worker_data,
+				worker_data->final_callback_raw,
+				worker_data->final_callback_raw_arg
 		)) != 0) {
-			RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_reading\n");
+			if (ret != RRR_HTTP_SOFT_ERROR) {
+				RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
+						worker_data->transport_handle);
+			}
 			goto out;
 		}
-	}
-
-	if ((ret = rrr_http_session_transport_ctx_receive (
-			handle,
-			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
-			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
-			worker_data->read_max_size,
-			unique_id,
-			NULL,
-			NULL,
-			__rrr_http_server_worker_http_session_receive_callback,
-			worker_data,
-			worker_data->final_callback_raw,
-			worker_data->final_callback_raw_arg
-	)) != 0) {
-		if (ret != RRR_HTTP_SOFT_ERROR) {
-			RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
-					worker_data->transport_handle);
-		}
-		goto out;
 	}
 
 	out:
@@ -300,6 +347,9 @@ static int __rrr_http_server_worker_preliminary_data_get_callback (
 	worker_data->transport_handle = worker_data_preliminary->transport_handle;
 	worker_data->sockaddr = worker_data_preliminary->sockaddr;
 	worker_data->socklen = worker_data_preliminary->socklen;
+
+	worker_data->websocket_callback = worker_data_preliminary->websocket_callback;
+	worker_data->websocket_callback_arg = worker_data_preliminary->websocket_callback_arg;
 
 	worker_data->final_callback = worker_data_preliminary->final_callback;
 	worker_data->final_callback_arg = worker_data_preliminary->final_callback_arg;
@@ -369,7 +419,7 @@ static void __rrr_http_server_worker_thread_entry (
 		if ((ret_tmp = rrr_net_transport_handle_with_transport_ctx_do (
 				worker_data.transport,
 				worker_data.transport_handle,
-				__rrr_http_server_worker_net_transport_ctx_do_reading,
+				__rrr_http_server_worker_net_transport_ctx_do_work,
 				&worker_data
 		)) != 0) {
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {

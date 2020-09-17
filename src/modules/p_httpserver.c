@@ -74,6 +74,8 @@ struct httpserver_data {
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
+	struct rrr_map websocket_topic_filters;
+
 	pthread_mutex_t oustanding_responses_lock;
 };
 
@@ -81,6 +83,7 @@ static void httpserver_data_cleanup(void *arg) {
 	struct httpserver_data *data = arg;
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
+	rrr_map_clear(&data->websocket_topic_filters);
 }
 
 static int httpserver_data_init (
@@ -163,6 +166,12 @@ static int httpserver_parse_config (
 		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
 				data->worker_threads, config->name);
 		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->websocket_topic_filters, config, "http_server_websocket_topic_filters")) != 0) {
+		RRR_MSG_0("Could not parse setting http_server_websocket_topic_filters for instance %s\n",
+				config->name);
 		goto out;
 	}
 
@@ -727,6 +736,75 @@ static int httpserver_receive_raw_broker_callback (
 	return ret;
 }
 
+// NOTE : Worker thread CTX in httpserver_receive_websocket_callback
+static int httpserver_receive_websocket_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS
+) {
+	*do_websocket = 1;
+
+	(void)(data_ptr);
+	(void)(handle);
+	(void)(overshoot_bytes);
+	(void)(sockaddr);
+	(void)(socklen);
+	(void)(unique_id);
+
+	int ret = 0;
+
+	struct httpserver_callback_data *callback_data = arg;
+
+	// Skip first /
+	const char *topic_begin = request_part->request_uri + 1;
+	if (strlen(topic_begin) == 0) {
+		RRR_MSG_0("Received zero-length websocket topic from client in httpserver instance %s\n",
+				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
+		goto out_bad_request;
+	}
+
+	if (strchr(topic_begin, '?') != NULL) {
+		RRR_MSG_0("Received websocket request with query string set (by using ?), this is not supported\n");
+		goto out_bad_request;
+	}
+
+	if (rrr_mqtt_topic_validate_name(topic_begin) != 0) {
+		RRR_MSG_0("Received invalid websocket topic '%s' from client in httpserver instance %s\n",
+				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
+		goto out_bad_request;
+	}
+
+	int topic_ok = 0;
+	RRR_MAP_ITERATE_BEGIN(&callback_data->httpserver_data->websocket_topic_filters);
+		if (rrr_mqtt_topic_match_str(topic_begin, node_tag)) {
+			RRR_DBG_3("httpserver %s websocket topic '%s' matched with topic filter '%s'\n",
+					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+					topic_begin,
+					node_tag);
+			topic_ok = 1;
+			break;
+		}
+		else {
+			RRR_DBG_3("httpserver %s websocket topic '%s' mismatch with topic filter '%s'\n",
+					INSTANCE_D_NAME(callback_data->httpserver_data->thread_data),
+					topic_begin,
+					node_tag);
+		}
+	RRR_MAP_ITERATE_END();
+
+	if (!topic_ok) {
+		goto out_not_found;
+	}
+
+	goto out;
+	out_not_found:
+		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		goto out;
+	out_bad_request:
+		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		goto out;
+	out:
+		return ret;
+}
+
 // NOTE : Worker thread CTX in httpserver_receive_raw_callback
 static int httpserver_receive_raw_callback (
 		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
@@ -846,6 +924,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 				data->worker_threads,
 				httpserver_unique_id_generator_callback,
 				&callback_data,
+				(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_receive_websocket_callback : NULL),
+				(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 				(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
 				(data->do_receive_raw_data ? &callback_data : NULL),
 				httpserver_receive_callback,

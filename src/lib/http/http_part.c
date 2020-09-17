@@ -278,7 +278,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"accept-language",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"accept-encoding",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"cache-control",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
-		{"connection",			0,										__rrr_http_header_parse_single_string_value},
+		{"connection",			RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
+		{"upgrade",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
 		{"content-disposition",	0,										__rrr_http_header_parse_content_disposition_value},
 		{"content-length",		RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_unsigned_value},
 		{"content-type",		0,										__rrr_http_header_parse_content_type_value},
@@ -292,6 +293,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"vary",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
 		{"x-clue",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
 		{"sec-websocket-key",	RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
+		{"sec-websocket-version",RRR_HTTP_HEADER_FIELD_NO_PAIRS,		__rrr_http_header_parse_single_string_value},
 		{NULL, 0, NULL}
 };
 
@@ -472,6 +474,25 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 						node->name);
 			}
 			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
+		const struct rrr_http_part *part,
+		const char *name_lowercase,
+		const char *value_anycase
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (strcmp(name_lowercase, node->name) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in __rrr_http_header_field_collection_get_field, definition must be added\n",
+						node->name);
+			}
+			if (node->value != NULL && strcasecmp(value_anycase, node->value) == 0) {
+				return node;
+			}
 		}
 	RRR_LL_ITERATE_END();
 	return NULL;
