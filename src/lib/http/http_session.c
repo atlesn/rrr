@@ -42,7 +42,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
+#include "../util/rrr_endian.h"
 #include "../sha1/sha1.h"
+
+static void __rrr_http_session_websocket_state_clear (struct rrr_http_session_websocket_state *ws_state) {
+	RRR_FREE_IF_NOT_NULL(ws_state->fragment_buffer);
+	memset(ws_state, '\0', sizeof(*ws_state));
+}
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
@@ -54,6 +60,7 @@ static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
+	__rrr_http_session_websocket_state_clear(&session->websocket_state);
 	free(session);
 }
 
@@ -752,7 +759,7 @@ struct rrr_http_session_receive_data {
 	ssize_t parse_complete_pos;
 	ssize_t received_bytes; // Used only for stall timeout
 	rrr_http_unique_id unique_id;
-	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS);
+	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
@@ -1267,7 +1274,7 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
@@ -1360,4 +1367,227 @@ int rrr_http_session_transport_ctx_receive (
 
 	out:
 	return ret;
+}
+
+struct rrr_http_session_websocket_callback_data {
+	struct rrr_http_session *session;
+	rrr_http_unique_id unique_id;
+	int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS);
+	void *callback_arg;
+};
+/*
+      0                   1                   2                   3
+      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+     +-+-+-+-+-------+-+-------------+-------------------------------+
+     |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+     |I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+     |N|V|V|V|       |S|             |   (if payload len==126/127)   |
+     | |1|2|3|       |K|             |                               |
+     +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+     |     Extended payload length continued, if payload len == 127  |
+     + - - - - - - - - - - - - - - - +-------------------------------+
+     |                               |Masking-key, if MASK set to 1  |
+     +-------------------------------+-------------------------------+
+     | Masking-key (continued)       |          Payload Data         |
+     +-------------------------------- - - - - - - - - - - - - - - - +
+     :                     Payload Data continued ...                :
+     + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+	 */
+
+#define CHECK_LENGTH()																\
+	do {if (read_session->rx_buf_wpos < (rrr_slength) header_new.header_len) {		\
+		ret = RRR_READ_INCOMPLETE; goto out;										\
+	}} while (0)
+
+int __rrr_http_session_websocket_get_target_size (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_http_session_websocket_callback_data *callback_data = arg;
+
+	int ret = RRR_READ_OK;
+
+	struct rrr_http_session_websocket_header header_new = {0};
+
+	header_new.header_len = 2;
+	CHECK_LENGTH();
+
+	uint16_t flags = rrr_be16toh(*((uint16_t *) read_session->rx_buf_ptr));
+	uint8_t payload_len = flags & 0x7f;
+	flags >>= 7;
+	header_new.mask = flags & 1;
+	flags >>= 1;
+	header_new.opcode = flags & 0xf;
+	flags >>= 4;
+	header_new.rsv3 = flags & 1;
+	flags >>= 1;
+	header_new.rsv2 = flags & 1;
+	flags >>= 1;
+	header_new.rsv1 = flags & 1;
+	flags >>= 1;
+	header_new.fin = flags & 1;
+	flags >>= 1;
+
+	if (payload_len == 126) {
+		header_new.header_len += 2;
+		CHECK_LENGTH();
+		header_new.payload_len = rrr_be16toh(*((uint16_t *) read_session->rx_buf_ptr + header_new.header_len - 2));
+	}
+	else if (payload_len == 127) {
+		header_new.header_len += 8;
+		CHECK_LENGTH();
+		header_new.payload_len = rrr_be64toh(*((uint64_t *) read_session->rx_buf_ptr + header_new.header_len - 8));
+	}
+	else {
+		header_new.payload_len = payload_len;
+	}
+
+	if (header_new.mask) {
+		header_new.header_len += 4;
+		CHECK_LENGTH();
+		header_new.masking_key = rrr_be32toh(*((uint32_t *) read_session->rx_buf_ptr + header_new.header_len - 4));
+	}
+
+	rrr_biglength target_len = header_new.header_len + header_new.payload_len;
+
+	if (target_len > (rrr_biglength) SSIZE_MAX) {
+		RRR_MSG_0("Total specified length og websocket frame was too big (%" PRIrrrbl ">%li)\n",
+				target_len, SSIZE_MAX);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	callback_data->session->websocket_state.header = header_new;
+	read_session->target_size = target_len;
+
+	out:
+	return ret;
+}
+
+int __rrr_http_session_websocket_receive_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_http_session_websocket_callback_data *callback_data = arg;
+	struct rrr_http_session_websocket_state *ws_state = &callback_data->session->websocket_state;
+
+	int ret = RRR_READ_OK;
+
+	char *payload = read_session->rx_buf_ptr + ws_state->header.header_len;
+	const ssize_t payload_size = read_session->rx_buf_wpos - ws_state->header.header_len;
+
+	if (ws_state->header.mask) {
+		ssize_t max = payload_size;
+		if (max < 0) {
+			RRR_BUG("BUG: wpos < header_len in __rrr_http_session_websocket_receive_callback\n");
+		}
+
+		uint32_t masking_key_be = rrr_htobe32(ws_state->header.masking_key);
+		ssize_t i = 0;
+		max -= 4;
+		for (; i < max; i += 4) {
+			*((uint32_t *) payload + i) = *((uint32_t *) payload + i) ^ masking_key_be;
+		}
+
+		i -= 4;
+		max += 4;
+		for (; i < max; i++) {
+			payload[i] = payload[i] ^ ws_state->header.masking_key_bytes[i % 4];
+		}
+	}
+
+	// Save these in case header is reset
+	const unsigned short int fin = ws_state->header.fin;
+	const uint8_t opcode = ws_state->header.opcode;
+
+	if (opcode) {
+		// First non-fin frame has opcode, start new fragmented frame and reset header
+		__rrr_http_session_websocket_state_clear(ws_state);
+		ws_state->last_opcode = opcode;
+	}
+
+	// NOTE : DO NOT ACCESS HEADER DATA BELOW THIS POINT
+
+	const char *payload_to_callback;
+	ssize_t payload_size_to_callback;
+
+	if (!ws_state->last_opcode) {
+		RRR_MSG_0("Missing opcode in first websocket frame fragment\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	// Shortcut for single frames
+	if (ws_state->fragment_buffer == NULL && fin) {
+		payload_to_callback = payload;
+		payload_size_to_callback = payload_size;
+		goto out_callback;
+	}
+
+	uint64_t new_fragment_size = ws_state->fragment_buffer_size + payload_size;
+	if (new_fragment_size < ws_state->fragment_buffer_size) {
+		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	{
+		char *buf_new;
+		if ((buf_new = realloc (ws_state->fragment_buffer, new_fragment_size)) == NULL) {
+			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n");
+			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
+			goto out;
+		}
+		ws_state->fragment_buffer = buf_new;
+	}
+
+	memcpy(ws_state->fragment_buffer + ws_state->fragment_buffer_size, payload, payload_size);
+	ws_state->fragment_buffer_size = new_fragment_size;
+
+	if (fin) {
+		payload_to_callback = ws_state->fragment_buffer;
+		payload_size_to_callback = ws_state->fragment_buffer_size;
+		goto out_callback;
+	}
+
+	goto out_no_clear;
+	out_callback:
+		ret = callback_data->callback(ws_state->last_opcode, payload_to_callback, payload_size_to_callback, callback_data->unique_id, callback_data->callback_arg);
+	out:
+		__rrr_http_session_websocket_state_clear(&callback_data->session->websocket_state);
+	out_no_clear:
+		return ret;
+}
+
+int rrr_http_session_transport_ctx_websocket_tick (
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		rrr_http_unique_id unique_id,
+		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *callback_arg
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	int ret = 0;
+
+	struct rrr_http_session_websocket_callback_data callback_data = {
+			session,
+			unique_id,
+			callback,
+			callback_arg
+	};
+
+	ret = rrr_net_transport_ctx_read_message (
+			handle,
+			100,
+			4096,
+			65535,
+			read_max_size,
+			__rrr_http_session_websocket_get_target_size,
+			&callback_data,
+			__rrr_http_session_websocket_receive_callback,
+			&callback_data
+	);
+
+	return ret & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE);
 }

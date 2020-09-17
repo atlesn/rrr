@@ -40,9 +40,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	rrr_http_unique_id unique_id,				\
 	void *arg
 
-#define RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS	\
+#define RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
 	int *do_websocket,								\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+
+#define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
+	uint8_t opcode, const char *payload, uint64_t payload_size, rrr_http_unique_id unique_id, void *arg
 
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
 	rrr_http_unique_id *result,								\
@@ -55,6 +58,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_thread *thread,								\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
+struct rrr_http_session_websocket_header {
+	unsigned short int fin;
+	unsigned short int rsv1;
+	unsigned short int rsv2;
+	unsigned short int rsv3;
+	unsigned short int opcode;
+	unsigned short int mask;
+	uint8_t header_len;
+	uint64_t payload_len;
+	union {
+		uint32_t masking_key;
+		uint8_t masking_key_bytes[4];
+	};
+};
+
+struct rrr_http_session_websocket_state {
+	struct rrr_http_session_websocket_header header;
+	char *fragment_buffer;
+	uint64_t fragment_buffer_size;
+	uint8_t last_opcode;
+};
+
 struct rrr_http_session {
 	int is_client;
 	enum rrr_http_method method;
@@ -62,6 +87,7 @@ struct rrr_http_session {
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
+	struct rrr_http_session_websocket_state websocket_state;
 };
 
 struct rrr_net_transport;
@@ -115,12 +141,19 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
+);
+int rrr_http_session_transport_ctx_websocket_tick (
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		rrr_http_unique_id unique_id,
+		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *callback_arg
 );
 
 #endif /* RRR_HTTP_SESSION_H */

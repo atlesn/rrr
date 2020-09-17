@@ -40,7 +40,7 @@ int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_raw_arg,
@@ -245,7 +245,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 }
 
 static int __rrr_http_server_worker_websocket_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -281,6 +281,19 @@ static int __rrr_http_server_worker_websocket_callback (
 	return ret;
 }
 
+
+static int __rrr_http_server_worker_websocket_frame_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	int ret = 0;
+
+	printf("Received opcode %u length %" PRIu64 "\n", opcode, payload_size);
+
+	return ret;
+}
+
 static int __rrr_http_server_worker_net_transport_ctx_do_work (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -290,7 +303,17 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	int ret = 0;
 
 	if (worker_data->websocket_unique_id != 0) {
-	//	printf("Websocket tick\n");
+		if ((ret = rrr_http_session_transport_ctx_websocket_tick (
+				handle,
+				worker_data->read_max_size,
+				worker_data->websocket_unique_id,
+				__rrr_http_server_worker_websocket_frame_callback,
+				worker_data
+		)) != 0) {
+			RRR_MSG_0("HTTP worker %i: Error %i while processing websocket data\n",
+					worker_data->transport_handle, ret);
+			goto out;
+		}
 	}
 	else {
 		rrr_http_unique_id unique_id = 0;

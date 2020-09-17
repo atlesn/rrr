@@ -738,7 +738,7 @@ static int httpserver_receive_raw_broker_callback (
 
 // NOTE : Worker thread CTX in httpserver_receive_websocket_callback
 static int httpserver_receive_websocket_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
 	*do_websocket = 1;
 
