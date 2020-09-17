@@ -31,7 +31,7 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("sha");
 /*
  *  Function prototype
  */
-void usage();
+void usage(void);
 
 
 /*  
@@ -55,7 +55,7 @@ void usage();
  */
 int main(int argc, char *argv[])
 {
-    SHA1Context sha;                /* SHA-1 context                 */
+    rrr_SHA1Context sha;                /* SHA-1 context                 */
     FILE        *fp;                /* File pointer for reading files*/
     char        c;                  /* Character read from file      */
     int         i;                  /* Counter                       */
@@ -125,12 +125,12 @@ int main(int argc, char *argv[])
         /*
          *  Reset the SHA-1 context and process input
          */
-        SHA1Reset(&sha);
+        rrr_SHA1Reset(&sha);
 
         c = fgetc(fp);
         while(!feof(fp))
         {
-            SHA1Input(&sha, &c, 1);
+            rrr_SHA1Input(&sha, (const unsigned char *) &c, 1);
             c = fgetc(fp);
         }
 
@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
             fclose(fp);
         }
 
-        if (!SHA1Result(&sha))
+        if (!rrr_SHA1Result(&sha))
         {
             fprintf(stderr,
                     "sha: could not compute message digest for %s\n",
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
  *  Comments:
  *
  */
-void usage()
+void usage(void)
 {
     printf("usage: sha <file> [<file> ...]\n");
     printf("\tThis program will display the message digest\n");

@@ -34,9 +34,9 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("sha");
 #define TESTB   TESTB_1 TESTB_2
 #define TESTC   "a"
 
-int main()
+int main(void)
 {
-    SHA1Context sha;
+    rrr_SHA1Context sha;
     int i;
 
     /*
@@ -44,10 +44,10 @@ int main()
      */
     printf("\nTest A: 'abc'\n");
 
-    SHA1Reset(&sha);
-    SHA1Input(&sha, (const unsigned char *) TESTA, strlen(TESTA));
+    rrr_SHA1Reset(&sha);
+    rrr_SHA1Input(&sha, (const unsigned char *) TESTA, strlen(TESTA));
 
-    if (!SHA1Result(&sha))
+    if (!rrr_SHA1Result(&sha))
     {
         fprintf(stderr, "ERROR-- could not compute message digest\n");
     }
@@ -68,10 +68,10 @@ int main()
      */
     printf("\nTest B:\n");
 
-    SHA1Reset(&sha);
-    SHA1Input(&sha, (const unsigned char *) TESTB, strlen(TESTB));
+    rrr_SHA1Reset(&sha);
+    rrr_SHA1Input(&sha, (const unsigned char *) TESTB, strlen(TESTB));
 
-    if (!SHA1Result(&sha))
+    if (!rrr_SHA1Result(&sha))
     {
         fprintf(stderr, "ERROR-- could not compute message digest\n");
     }
@@ -92,12 +92,12 @@ int main()
      */
     printf("\nTest C: One million 'a' characters\n");
 
-    SHA1Reset(&sha);
+    rrr_SHA1Reset(&sha);
     for(i = 1; i <= 1000000; i++) {
-        SHA1Input(&sha, (const unsigned char *) TESTC, 1);
+        rrr_SHA1Input(&sha, (const unsigned char *) TESTC, 1);
     }
 
-    if (!SHA1Result(&sha))
+    if (!rrr_SHA1Result(&sha))
     {
         fprintf(stderr, "ERROR-- could not compute message digest\n");
     }

@@ -28,7 +28,7 @@
  *  This structure will hold context information for the hashing
  *  operation
  */
-typedef struct SHA1Context
+typedef struct rrr_SHA1Context
 {
     unsigned Message_Digest[5]; /* Message Digest (output)          */
 
@@ -40,14 +40,14 @@ typedef struct SHA1Context
 
     int Computed;               /* Is the digest computed?          */
     int Corrupted;              /* Is the message digest corruped?  */
-} SHA1Context;
+} rrr_SHA1Context;
 
 /*
  *  Function Prototypes
  */
-void SHA1Reset(SHA1Context *);
-int SHA1Result(SHA1Context *);
-void SHA1Input( SHA1Context *,
+void rrr_SHA1Reset(rrr_SHA1Context *);
+int rrr_SHA1Result(rrr_SHA1Context *);
+void rrr_SHA1Input( rrr_SHA1Context *,
                 const unsigned char *,
                 unsigned);
 
