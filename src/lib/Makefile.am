@@ -130,6 +130,9 @@ librrr_umask_la_SOURCES = rrr_umask.c
 librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
 librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 
+libadd_rrr_sha1 = sha1/libsha1.la
+sha1_libsha1_la_SOURCES = sha1/sha1.c
+
 libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_readdir}			\
 				${libadd_rrr_strerror}			\
@@ -137,7 +140,8 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_log}				\
 				${libadd_rrr_umask}				\
 				${libadd_rrr_conversion_warning}\
-				${libadd_rrr_posix}
+				${libadd_rrr_posix}				\
+				${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD =  ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm
+librrr_la_LIBADD = ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm

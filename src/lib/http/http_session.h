@@ -40,6 +40,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	rrr_http_unique_id unique_id,				\
 	void *arg
 
+#define RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS	\
+	int *do_websocket,								\
+	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
 	rrr_http_unique_id *result,								\
 	void *arg
@@ -111,6 +115,8 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),

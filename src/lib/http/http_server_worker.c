@@ -265,6 +265,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_reading (
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			worker_data->read_max_size,
 			unique_id,
+			NULL,
+			NULL,
 			__rrr_http_server_worker_http_session_receive_callback,
 			worker_data,
 			worker_data->final_callback_raw,

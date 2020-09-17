@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <limits.h>
 
@@ -750,6 +751,8 @@ struct rrr_http_session_receive_data {
 	ssize_t parse_complete_pos;
 	ssize_t received_bytes; // Used only for stall timeout
 	rrr_http_unique_id unique_id;
+	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS);
+	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 	int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
@@ -892,6 +895,9 @@ static int __rrr_http_session_transport_ctx_send_response (
 	const char *response_str = NULL;
 
 	switch (response_part->response_code) {
+		case RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS:
+			response_str = "HTTP/1.1 101 Switching Protocols\r\n";
+			break;
 		case RRR_HTTP_RESPONSE_CODE_OK:
 			response_str = "HTTP/1.1 200 OK\r\n";
 			break;
@@ -939,6 +945,99 @@ static int __rrr_http_session_transport_ctx_send_response (
 		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_session_transport_ctx_send_response\n",
 				handle->handle);
 	out:
+		return ret;
+}
+
+static int __rrr_http_session_request_receive_try_websocket (
+		int *do_websocket,
+		struct rrr_http_session_receive_data *receive_data,
+		struct rrr_http_session *session,
+		struct rrr_read_session *read_session,
+		const char *data_to_use
+) {
+	*do_websocket = 0;
+
+	int ret = 0;
+
+	char *accept_str = NULL;
+
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(session->request_part, "connection");
+	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get(session->request_part, "upgrade");
+
+	if (connection == NULL || upgrade == NULL) {
+		goto out;
+	}
+
+	if (strcasecmp(connection->value, "upgrade") != 0 || strcasecmp(upgrade->value, "websocket") != 0) {
+		goto out;
+	}
+
+	*do_websocket = 1;
+
+	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
+	if (sec_websocket_version == NULL) {
+		RRR_DBG_1("Field Sec-WebSocket-Version missing in HTTP request with Connection: Upgrade and Upgrade: websocket headers set\n");
+		goto out_bad_request;
+	}
+
+	if (strcasecmp(sec_websocket_version->value, "13") != 0) {
+		RRR_DBG_1("Received HTTP request with WebSocket upgrade and version '%s' set, but only version '13' is supported\n",
+				sec_websocket_version->value);
+		goto out_bad_request;
+	}
+
+	const struct rrr_http_header_field *sec_websocket_key = rrr_http_part_header_field_get(session->request_part, "sec-websocket-key");
+	if (sec_websocket_key == NULL) {
+		RRR_DBG_1("HTTP request with WebSocket upgrade missing field Sec-WebSocket-Key\n");
+		goto out_bad_request;
+	}
+
+	if (sec_websocket_key->binary_value == NULL) {
+		RRR_BUG("BUG: Binary value was not set for sec-websocket-key header field in __rrr_http_session_request_receive_try_websocket\n");
+	}
+
+	if (sec_websocket_key->binary_value_size != 16) {
+		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %u\n",
+				sec_websocket_key->binary_value_size);
+		goto out_bad_request;
+	}
+
+	if ((ret = receive_data->websocket_callback (
+			do_websocket,
+			receive_data->handle,
+			session->request_part,
+			session->response_part,
+			data_to_use,
+			(const struct sockaddr *) &read_session->src_addr,
+			read_session->src_addr_len,
+			read_session->rx_overshoot_size,
+			receive_data->unique_id,
+			receive_data->websocket_callback_arg
+	)) != RRR_HTTP_OK) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "connection", "upgrade")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "upgrade", "websocket")) != 0) {
+		goto out;
+	}
+
+	if (rrr_asprintf(&accept_str, "%s%s", sec_websocket_key->value, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
+		RRR_MSG_0("Failed to concatenate accept-string in __rrr_http_session_request_receive_try_websocket\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+
+
+	goto out;
+	out_bad_request:
+		session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+	out:
+		RRR_FREE_IF_NOT_NULL(accept_str);
 		return ret;
 }
 
@@ -1000,7 +1099,18 @@ static int __rrr_http_session_request_receive_callback (
 		goto out;
 	}
 
-	if ((ret = receive_data->callback (
+	int do_websocket = 0;
+	if (receive_data->websocket_callback != NULL && (ret = __rrr_http_session_request_receive_try_websocket (
+			&do_websocket,
+			receive_data,
+			session,
+			read_session,
+			data_to_use
+	)) != 0) {
+		goto out;
+	}
+
+	if (do_websocket == 0 && (ret = receive_data->callback (
 			receive_data->handle,
 			session->request_part,
 			session->response_part,
@@ -1116,6 +1226,8 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_CALLBACK_ARGS),
+		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
@@ -1130,6 +1242,8 @@ int rrr_http_session_transport_ctx_receive (
 			0,
 			0,
 			unique_id,
+			websocket_callback,
+			websocket_callback_arg,
 			callback,
 			callback_arg,
 			raw_callback,

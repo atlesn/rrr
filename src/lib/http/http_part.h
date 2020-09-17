@@ -79,10 +79,14 @@ struct rrr_http_header_field {
 
 	char *name;
 
-	// This is filled by known header field parsers
+	// This is filled by known header field parsers. Pointer
+	// must always be checked for NULL before usage, they are
+	// only set for certain header field types.
 	long long int value_signed;
 	long long unsigned int value_unsigned;
 	char *value;
+	void *binary_value;
+	size_t binary_value_size;
 };
 
 struct rrr_http_header_field_collection {

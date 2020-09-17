@@ -278,6 +278,8 @@ static void influxdb_send_data_callback (
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			0, // No max read size
 			0, // No unique id
+			NULL,
+			NULL,
 			influxdb_receive_http_response,
 			&response_callback_data,
 			NULL,

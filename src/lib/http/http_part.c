@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../threads.h"
 #include "../util/macro_utils.h"
+#include "../util/base64.h"
 
 #define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
 		const char *data_start =								\
@@ -119,6 +120,31 @@ static int __rrr_http_header_parse_single_string_value (RRR_HTTP_HEADER_FIELD_PA
 	if ((field->value = strdup(subvalue->name)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_header_parse_string_value\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	if ((ret = __rrr_http_header_parse_single_string_value(field)) != 0) {
+		goto out;
+	}
+
+	if (field->binary_value != NULL) {
+		RRR_BUG("BUG: binary_value was not NULL in __rrr_http_header_parse_base64_value\n");
+	}
+
+	if ((field->binary_value = rrr_base64_decode (
+			(unsigned char *) field->value,
+			strlen(field->value),
+			&field->binary_value_size
+	)) == NULL) {
+		RRR_MSG_0("Base64 decoding failed for field type '%s'\n", field->name);
+		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
@@ -265,6 +291,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"user-agent",			RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
 		{"vary",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
 		{"x-clue",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
+		{"sec-websocket-key",	RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
 		{NULL, 0, NULL}
 };
 
@@ -303,6 +330,7 @@ static void __rrr_http_header_field_destroy (struct rrr_http_header_field *field
 	rrr_http_field_collection_clear(&field->fields);
 	RRR_FREE_IF_NOT_NULL(field->name);
 	RRR_FREE_IF_NOT_NULL(field->value);
+	RRR_FREE_IF_NOT_NULL(field->binary_value);
 	free (field);
 }
 

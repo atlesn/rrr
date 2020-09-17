@@ -1,0 +1,5 @@
+This program is released under the GNU General Public License as
+published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version with the additional
+exemption that the sha1 library/binaries by Paul E. Jones <paulej@packetizer.com>
+may be linked with RRR libraries without any restrictions applying.
