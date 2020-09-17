@@ -36,6 +36,10 @@
  *      implementation only works with messages with a length that is a
  *      multiple of the size of an 8-bit character.
  *
+ *  Changelog:
+ *     - 2020-09-17: Ensure integer sizes
+ *       Atle Solbakken <atle@goliathdns.no>
+ *
  */
 
 #include "sha1.h"
@@ -206,7 +210,7 @@ void rrr_SHA1Input(     rrr_SHA1Context         *context,
  */
 void rrr_SHA1ProcessMessageBlock(rrr_SHA1Context *context)
 {
-    const unsigned K[] =            /* Constants defined in SHA-1   */      
+    const uint32_t K[] =            /* Constants defined in SHA-1   */
     {
         0x5A827999,
         0x6ED9EBA1,
@@ -214,19 +218,19 @@ void rrr_SHA1ProcessMessageBlock(rrr_SHA1Context *context)
         0xCA62C1D6
     };
     int         t;                  /* Loop counter                 */
-    unsigned    temp;               /* Temporary word value         */
-    unsigned    W[80];              /* Word sequence                */
-    unsigned    A, B, C, D, E;      /* Word buffers                 */
+    uint32_t    temp;               /* Temporary word value         */
+    uint32_t    W[80];              /* Word sequence                */
+    uint32_t    A, B, C, D, E;      /* Word buffers                 */
 
     /*
      *  Initialize the first 16 words in the array W
      */
     for(t = 0; t < 16; t++)
     {
-        W[t] = ((unsigned) context->Message_Block[t * 4]) << 24;
-        W[t] |= ((unsigned) context->Message_Block[t * 4 + 1]) << 16;
-        W[t] |= ((unsigned) context->Message_Block[t * 4 + 2]) << 8;
-        W[t] |= ((unsigned) context->Message_Block[t * 4 + 3]);
+        W[t] = ((uint32_t) context->Message_Block[t * 4]) << 24;
+        W[t] |= ((uint32_t) context->Message_Block[t * 4 + 1]) << 16;
+        W[t] |= ((uint32_t) context->Message_Block[t * 4 + 2]) << 8;
+        W[t] |= ((uint32_t) context->Message_Block[t * 4 + 3]);
     }
 
     for(t = 16; t < 80; t++)

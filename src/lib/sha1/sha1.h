@@ -19,10 +19,16 @@
  *
  *      Please read the file sha1.c for more information.
  *
+ *  Changelog:
+ *     - 2020-09-17: Ensure integer sizes
+ *       Atle Solbakken <atle@goliathdns.no>
+ *
  */
 
 #ifndef _SHA1_H_
 #define _SHA1_H_
+
+#include <inttypes.h>
 
 /* 
  *  This structure will hold context information for the hashing
@@ -30,7 +36,7 @@
  */
 typedef struct rrr_SHA1Context
 {
-    unsigned Message_Digest[5]; /* Message Digest (output)          */
+    uint32_t Message_Digest[5]; /* Message Digest (output)          */
 
     unsigned Length_Low;        /* Message length in bits           */
     unsigned Length_High;       /* Message length in bits           */

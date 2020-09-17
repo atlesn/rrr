@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
+#include "../sha1/sha1.h"
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
@@ -959,7 +960,8 @@ static int __rrr_http_session_request_receive_try_websocket (
 
 	int ret = 0;
 
-	char *accept_str = NULL;
+	char *accept_str_tmp = NULL;
+	char *accept_base64_tmp = NULL;
 
 	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(session->request_part, "connection");
 	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get(session->request_part, "upgrade");
@@ -1013,7 +1015,7 @@ static int __rrr_http_session_request_receive_try_websocket (
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
 			receive_data->websocket_callback_arg
-	)) != RRR_HTTP_OK) {
+	)) != RRR_HTTP_OK || session->response_part->response_code != 0) {
 		goto out;
 	}
 
@@ -1025,19 +1027,43 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out;
 	}
 
-	if (rrr_asprintf(&accept_str, "%s%s", sec_websocket_key->value, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
+	if (rrr_asprintf(&accept_str_tmp, "%s%s", sec_websocket_key->value, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
 		RRR_MSG_0("Failed to concatenate accept-string in __rrr_http_session_request_receive_try_websocket\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
 
+	rrr_SHA1Context sha1_ctx;
+	rrr_SHA1Reset(&sha1_ctx);
+	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
 
+	if (sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
+		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_request_receive_try_websocket\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	size_t accept_base64_length = 0;
+	if ((accept_base64_tmp = (char *) rrr_base64_encode (
+			(const unsigned char *) sha1_ctx.Message_Digest,
+			sizeof(sha1_ctx.Message_Digest),
+			&accept_base64_length
+	)) == NULL) {
+		RRR_MSG_0("Base64 encoding failed in __rrr_http_session_request_receive_try_websocket\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "sec-websocket-accept", accept_base64_tmp)) != 0) {
+		goto out;
+	}
 
 	goto out;
 	out_bad_request:
 		session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out:
-		RRR_FREE_IF_NOT_NULL(accept_str);
+		RRR_FREE_IF_NOT_NULL(accept_str_tmp);
+		RRR_FREE_IF_NOT_NULL(accept_base64_tmp);
 		return ret;
 }
 
