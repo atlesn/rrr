@@ -693,13 +693,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 			(data->prefix != NULL ? data->prefix : "")
 	);
 
-	uint64_t sleep_interval = (data->probe_interval > 50 ? data->probe_interval * 1000 : 50000); // Min 50ms
-	uint64_t probe_interval = data->probe_interval * 1000;
-
-	// Max 1s
-	if (sleep_interval > 1000000) {
-		sleep_interval = 1000000;
-	}
+	const uint64_t probe_interval = data->probe_interval * 1000;
 
 	uint64_t time_prev_stats = rrr_time_get_64();
 	uint64_t time_next_probe = time_prev_stats;
@@ -746,8 +740,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 		messages_count_prev = data->message_count;
 
 		if (consecutive_nothing_happened > 1000) {
-//			printf("Long sleep %" PRIu64 "\n", sleep_interval);
-			rrr_posix_usleep (sleep_interval);
+//			printf("Long sleep\n");
+			rrr_posix_usleep (5000); // 5ms
 		}
 		else if (consecutive_nothing_happened > 100) {
 //			printf("Short sleep %i bytes read %" PRIu64 "\n", consecutive_nothing_happened, bytes_read_tmp);
