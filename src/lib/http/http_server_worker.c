@@ -290,7 +290,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	int ret = 0;
 
 	if (worker_data->websocket_unique_id != 0) {
-		printf("Websocket tick\n");
+	//	printf("Websocket tick\n");
 	}
 	else {
 		rrr_http_unique_id unique_id = 0;

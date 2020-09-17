@@ -1034,7 +1034,7 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out;
 	}
 
-	rrr_SHA1Context sha1_ctx;
+	rrr_SHA1Context sha1_ctx = {0};
 	rrr_SHA1Reset(&sha1_ctx);
 	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
 
@@ -1044,6 +1044,8 @@ static int __rrr_http_session_request_receive_try_websocket (
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
+
+	rrr_SHA1toBE(&sha1_ctx);
 
 	size_t accept_base64_length = 0;
 	if ((accept_base64_tmp = (char *) rrr_base64_encode (

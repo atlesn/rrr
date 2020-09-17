@@ -39,10 +39,12 @@
  *  Changelog:
  *     - 2020-09-17: Ensure integer sizes
  *       Atle Solbakken <atle@goliathdns.no>
- *
+ *     - 2020-09-17: Add SHA1toBE function
+ *       Atle Solbakken <atle@goliathdns.no>
  */
 
 #include "sha1.h"
+#include "../util/rrr_endian.h"
 
 /*
  *  Define the circular shift macro
@@ -120,6 +122,28 @@ int rrr_SHA1Result(rrr_SHA1Context *context)
     }
 
     return 1;
+}
+
+/*
+ * SHA1toBE
+ *
+ * Description:
+ * 		Flip endianess from host to be for all five 32-bit blocks
+ *
+ *  Parameters:
+ *      context: [in/out]
+ *          The context to use
+ *  Returns:
+ *      No return value
+ *
+ *  Comments:
+ *  	Should be called once after SHA1Result for instance when the digest
+ *  	is to be converted to base64 or used in some other byte-by-byte way
+ */
+void rrr_SHA1toBE(rrr_SHA1Context *context) {
+	for (int i = 0; i < 5; i++) {
+		context->Message_Digest[i] = rrr_htobe32(context->Message_Digest[i]);
+	}
 }
 
 /*  

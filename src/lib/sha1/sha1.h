@@ -22,6 +22,8 @@
  *  Changelog:
  *     - 2020-09-17: Ensure integer sizes
  *       Atle Solbakken <atle@goliathdns.no>
+ *     - 2020-09-17: Add SHA1toBE function
+ *       Atle Solbakken <atle@goliathdns.no>
  *
  */
 
@@ -53,6 +55,7 @@ typedef struct rrr_SHA1Context
  */
 void rrr_SHA1Reset(rrr_SHA1Context *);
 int rrr_SHA1Result(rrr_SHA1Context *);
+void rrr_SHA1toBE(rrr_SHA1Context *context);
 void rrr_SHA1Input( rrr_SHA1Context *,
                 const unsigned char *,
                 unsigned);

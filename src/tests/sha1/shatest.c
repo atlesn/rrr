@@ -16,6 +16,10 @@
  *  Portability Issues:
  *      None.
  *
+ *  Changelog:
+ *     - 2020-09-17: Add left zero padding when printing 32-bit groups
+ *       Atle Solbakken <atle@goliathdns.no>
+ *
  */
 
 #include <stdio.h>
@@ -56,7 +60,7 @@ int main(void)
         printf("\t");
         for(i = 0; i < 5 ; i++)
         {
-            printf("%X ", sha.Message_Digest[i]);
+            printf("%08X ", sha.Message_Digest[i]);
         }
         printf("\n");
         printf("Should match:\n");
@@ -80,7 +84,7 @@ int main(void)
         printf("\t");
         for(i = 0; i < 5 ; i++)
         {
-            printf("%X ", sha.Message_Digest[i]);
+            printf("%08X ", sha.Message_Digest[i]);
         }
         printf("\n");
         printf("Should match:\n");
@@ -106,7 +110,7 @@ int main(void)
         printf("\t");
         for(i = 0; i < 5 ; i++)
         {
-            printf("%X ", sha.Message_Digest[i]);
+            printf("%08X ", sha.Message_Digest[i]);
         }
         printf("\n");
         printf("Should match:\n");
