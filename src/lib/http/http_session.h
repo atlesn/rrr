@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <sys/socket.h>
 
+#include "../websocket/websocket.h"
 #include "http_common.h"
 #include "http_fields.h"
 #include "http_part.h"
@@ -58,28 +59,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_thread *thread,								\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
-struct rrr_http_session_websocket_header {
-	unsigned short int fin;
-	unsigned short int rsv1;
-	unsigned short int rsv2;
-	unsigned short int rsv3;
-	unsigned short int opcode;
-	unsigned short int mask;
-	uint8_t header_len;
-	uint64_t payload_len;
-	union {
-		uint32_t masking_key;
-		uint8_t masking_key_bytes[4];
-	};
-};
-
-struct rrr_http_session_websocket_state {
-	struct rrr_http_session_websocket_header header;
-	char *fragment_buffer;
-	uint64_t fragment_buffer_size;
-	uint8_t last_opcode;
-};
-
 struct rrr_http_session {
 	int is_client;
 	enum rrr_http_method method;
@@ -87,7 +66,7 @@ struct rrr_http_session {
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
-	struct rrr_http_session_websocket_state websocket_state;
+	struct rrr_websocket_state ws_state;
 };
 
 struct rrr_net_transport;

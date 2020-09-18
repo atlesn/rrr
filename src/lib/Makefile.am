@@ -54,6 +54,8 @@ http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
 		http/http_server.c http/http_server_worker.c
 
+websocket = websocket/websocket.c
+
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
 			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
 
@@ -91,7 +93,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${net_transport_libressl} \
 					${util} ${ip} ${message_holder} ${messages} \
-					${input} ${input_system}
+					${input} ${input_system} ${websocket}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

@@ -283,7 +283,7 @@ static int __rrr_http_server_worker_websocket_callback (
 
 
 static int __rrr_http_server_worker_websocket_frame_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+		RRR_WEBSOCKET_FRAME_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -310,8 +310,10 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				__rrr_http_server_worker_websocket_frame_callback,
 				worker_data
 		)) != 0) {
-			RRR_MSG_0("HTTP worker %i: Error %i while processing websocket data\n",
-					worker_data->transport_handle, ret);
+			if (ret != RRR_READ_EOF) {
+				RRR_MSG_0("HTTP worker %i: Error %i while processing websocket data\n",
+						worker_data->transport_handle, ret);
+			}
 			goto out;
 		}
 	}
@@ -448,6 +450,9 @@ static void __rrr_http_server_worker_thread_entry (
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				RRR_DBG_2("HTTP worker %i: Failed while working with client, soft error\n",
 						worker_data.transport_handle);
+			}
+			else if (ret_tmp == RRR_READ_EOF) {
+				break;
 			}
 			else {
 				RRR_MSG_0("HTTP worker %i: Failed while working with client, hard error\n",
