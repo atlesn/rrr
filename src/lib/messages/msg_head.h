@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // This bit is reserved for holding the type=control number
 #define RRR_MSG_CTRL_F_RESERVED		(1<<0)
 #define RRR_MSG_CTRL_F_ACK			(1<<1)
+#define RRR_MSG_CTRL_F_PING			(1<<2)
+#define RRR_MSG_CTRL_F_PONG			(1<<3)
 
 // These bits are used by higher level structures. If more flags are needed,
 // reserve more USR-bits here to avoid collisions and only refer to them by
