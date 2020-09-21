@@ -379,6 +379,8 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	RRR_DBG_1 ("Check for SystemD environment: %s\n",
 		(do_journald_output ? "Found, using native journald logging" : "Not found, using stdout logging")
 	);
+#else
+	(void)(do_journald_output);
 #endif
 
 	out:
