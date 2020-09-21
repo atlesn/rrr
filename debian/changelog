@@ -1,6 +1,12 @@
-rrr (1.13-0rpi1) buster; urgency=medium
+rrr (1.13-1) buster; urgency=medium
 
-  * Non-maintainer upload.
+  * Fix for ip module array byte by byte skipping which caused bug trap
+  * Fixes for mmap channel shutdown hang when fork had been killed
+  * In cmodule framwork, use ping-pong system to check if fork is alive
+  * Fix in file module for keyboard events getting lost on slow HW
+  * Fix for long sleeps in file module causing thread restart by WD
+  * Fix for journald output not working on 32-bit
+  * Misc. log message improvements
 
  -- LBSdrift <lbsdrift@posten.local>  Thu, 17 Sep 2020 15:54:50 +0100
 
