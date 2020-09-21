@@ -561,9 +561,6 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 			config_check_complete_message_printed = 1;
 			config_check_complete = 1;
 		}
-		else if (config_complete_tmp == 0) {
-			printf("Config not complete\n");
-		}
 
 		if (read_count_tmp == 0) {
 			consecutive_nothing_happened++;
