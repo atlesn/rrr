@@ -132,7 +132,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 			int retries = 0;
 
 			// Will always free the message also upon errors
-			if ((ret = rrr_cmodule_channel_send_message (
+			if ((ret = rrr_cmodule_channel_send_message_and_address (
 					sent_total,
 					&retries,
 					node->channel_to_fork,
@@ -368,6 +368,11 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
 	}
 
+	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_MSG_CTRL_F_PONG)) {
+		callback_data->worker->pong_receive_time = rrr_time_get_64();
+		RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_CTRL_F_PONG);
+	}
+
 	// CTRL type is returned by FLAGS() macro, clear it to
 	// make sure no unknown flags are set
 	RRR_MSG_CTRL_F_CLEAR(&msg_copy, RRR_MSG_TYPE_CTRL);
@@ -491,6 +496,27 @@ static int __rrr_cmodule_helper_read_thread_read_from_forks (
 	return ret;
 }
 
+static int __rrr_cmodule_helper_reader_thread_check_pong (
+		struct rrr_cmodule_helper_reader_thread_data *data
+) {
+	int ret = 0;
+
+	uint64_t min_time = rrr_time_get_64() - (RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S * 1000 * 1000);
+
+	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(data->parent_thread_data), struct rrr_cmodule_worker);
+		if (node->pong_receive_time == 0) {
+			node->pong_receive_time = rrr_time_get_64();
+		}
+		else if (node->pong_receive_time < min_time) {
+			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
+					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
+			ret = 1;
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
 static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread) {
 	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
 
@@ -535,6 +561,9 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 			config_check_complete_message_printed = 1;
 			config_check_complete = 1;
 		}
+		else if (config_complete_tmp == 0) {
+			printf("Config not complete\n");
+		}
 
 		if (read_count_tmp == 0) {
 			consecutive_nothing_happened++;
@@ -556,6 +585,10 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 
 		uint64_t now_time = rrr_time_get_64();
 		if (now_time - start_time > 1000000) {
+			if ((__rrr_cmodule_helper_reader_thread_check_pong(data))) {
+				break;
+			}
+
 			RRR_DBG_1("Instance %s read thread '%s' messages per second: %i\n",
 					INSTANCE_D_NAME(data->parent_thread_data), thread->name, read_count);
 
@@ -671,6 +704,22 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	}
 }
 
+static void __rrr_cmodule_helper_send_ping (struct rrr_instance_runtime_data *thread_data) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+
+	int sent_total = 0;
+
+	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
+		if (rrr_cmodule_channel_send_message_simple(&sent_total, node->channel_to_fork, &msg) != 0) {
+			RRR_MSG_0("Warning: Failed to send PING message to worker fork %s pid %ld\n",
+					node->name, (long) node->pid);
+			// Don't trigger error here. The reader thread will exit causing restart
+			// if the fork fails.
+		}
+	RRR_LL_ITERATE_END();
+}
+
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
@@ -750,6 +799,8 @@ void rrr_cmodule_helper_loop (
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now > next_stats_time) {
+			__rrr_cmodule_helper_send_ping(thread_data);
+
 			int output_buffer_count = 0;
 			int output_buffer_ratelimit_active = 0;
 

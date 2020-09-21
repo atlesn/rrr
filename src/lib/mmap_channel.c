@@ -171,7 +171,13 @@ static int __rrr_mmap_channel_allocate (
 	return ret;
 }
 
+static void __rrr_mmap_channel_cond_wait_cleanup (void *arg) {
+	pthread_mutex_t *mutex = arg;
+	pthread_mutex_unlock(mutex);
+}
+
 static int __rrr_mmap_channel_cond_wait (
+		int *in_timedwait,
 		pthread_mutex_t *mutex,
 		pthread_cond_t *cond,
 		unsigned int timeout_us
@@ -184,9 +190,12 @@ static int __rrr_mmap_channel_cond_wait (
 	}
 
 	pthread_mutex_lock(mutex);
+	pthread_cleanup_push(__rrr_mmap_channel_cond_wait_cleanup, mutex);
 
 	struct timespec time;
 	rrr_time_gettimeofday_timespec(&time, timeout_us);
+
+	*in_timedwait = 1;
 
 	if ((ret = pthread_cond_timedwait (
 			cond,
@@ -205,10 +214,12 @@ static int __rrr_mmap_channel_cond_wait (
 		goto out_unlock;
 	}
 
+	*in_timedwait = 0;
+
 	out_unlock:
-		pthread_mutex_unlock(mutex);
+		pthread_cleanup_pop(1);
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_mmap_channel_write_using_callback (
@@ -246,6 +257,7 @@ int rrr_mmap_channel_write_using_callback (
 //		uint64_t time_start = rrr_time_get_64();
 //		printf("mmap channel %p %s full wait %u us\n", target, target->name, full_wait_time_us);
 		if ((ret = __rrr_mmap_channel_cond_wait(
+				&target->in_full_cond,
 				&target->index_lock,
 				&target->full_cond,
 				full_wait_time_us
@@ -376,6 +388,7 @@ int rrr_mmap_channel_read_with_callback (
 //		uint64_t time_start = rrr_time_get_64();
 //		printf("mmap channel %p %s empty wait %u us\n", source, source->name, empty_wait_time_us);
 		if ((ret = __rrr_mmap_channel_cond_wait (
+				&source->in_empty_cond,
 				&source->index_lock,
 				&source->empty_cond,
 				empty_wait_time_us
@@ -568,9 +581,23 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 }
 
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
+	pthread_mutex_lock(&target->index_lock);
+	if (target->in_empty_cond) {
+		RRR_MSG_0("Warning: Not destroying empty condition of mmap channel %s, it's possibly still being used\n",
+				target->name);
+	}
+	else {
+		pthread_cond_destroy(&target->empty_cond);
+	}
+	if (target->in_full_cond) {
+		RRR_MSG_0("Warning: Not destroying full condition of mmap channel %s, it's possibly still being used\n",
+				target->name);
+	}
+	else {
+		pthread_cond_destroy(&target->full_cond);
+	}
+	pthread_mutex_unlock(&target->index_lock);
 	pthread_mutex_destroy(&target->index_lock);
-	pthread_cond_destroy(&target->empty_cond);
-	pthread_cond_destroy(&target->full_cond);
 
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {

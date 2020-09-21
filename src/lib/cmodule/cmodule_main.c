@@ -210,6 +210,33 @@ static void __rrr_cmodule_worker_kill_and_destroy (
 	__rrr_cmodule_worker_destroy(worker);
 }
 
+// Will always free the message also upon errors
+int rrr_cmodule_worker_send_message_and_address_to_parent (
+		struct rrr_cmodule_worker *worker,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
+) {
+	int sent_total = 0;
+	int retries = 0;
+
+	// Will always free the message also upon errors
+	int ret = rrr_cmodule_channel_send_message_and_address (
+			&sent_total,
+			&retries,
+			worker->channel_to_parent,
+			&worker->deferred_to_parent,
+			message,
+			message_addr,
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US
+	);
+
+	worker->total_msg_processed += 1;
+	worker->total_msg_mmap_to_parent += sent_total;
+	worker->to_parent_write_retry_counter += retries;
+
+	return ret;
+}
+
 struct rrr_cmodule_process_callback_data {
 	struct rrr_cmodule_worker *worker;
 	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
@@ -219,29 +246,45 @@ struct rrr_cmodule_process_callback_data {
 static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_process_callback_data *callback_data = arg;
 
+	int ret = 0;
+
 	const struct rrr_msg_msg *msg = data;
-	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
-	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
-				MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
+	if (RRR_MSG_IS_CTRL(msg)) {
+		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING)) {
+			RRR_DBG_4("cmodule worker %s pid %ld received PING\n", callback_data->worker->name, (long) getpid());
+			callback_data->worker->ping_received = 1;
+		}
+		else {
+			RRR_DBG_4("Warning: cmodule worker %s pid %ld received unknown control message %u\n",
+					callback_data->worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
+		}
 	}
+	else {
+		const struct rrr_msg_msg *msg_msg = data;
+		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
 
-	callback_data->worker->total_msg_mmap_to_fork++;
+		if (MSG_TOTAL_SIZE(msg_msg) + sizeof(*msg_addr) != data_size) {
+			RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
+					MSG_TOTAL_SIZE(msg_msg), sizeof(*msg_addr), data_size);
+		}
 
-	int ret = callback_data->process_callback (
-			callback_data->worker,
-			msg,
-			msg_addr,
-			0, // <-- Not in spawn context
-			callback_data->process_callback_arg
-	);
+		callback_data->worker->total_msg_mmap_to_fork++;
 
-	if (ret != 0) {
-		RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
-		if (callback_data->worker->config_data->do_drop_on_error) {
-			RRR_MSG_0("Dropping message per configuration in worker %s\n", callback_data->worker->name);
-			ret = 0;
+		ret = callback_data->process_callback (
+				callback_data->worker,
+				msg_msg,
+				msg_addr,
+				0, // <-- Not in spawn context
+				callback_data->process_callback_arg
+		);
+
+		if (ret != 0) {
+			RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
+			if (callback_data->worker->config_data->do_drop_on_error) {
+				RRR_MSG_0("Dropping message per configuration in worker %s\n", callback_data->worker->name);
+				ret = 0;
+			}
 		}
 	}
 
@@ -288,6 +331,23 @@ static int __rrr_cmodule_worker_spawn_message (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
+int __rrr_cmodule_worker_send_pong (
+		struct rrr_cmodule_worker *worker
+) {
+	int ret = 0;
+
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
+
+	int sent_total = 0;
+
+	ret = rrr_cmodule_channel_send_message_simple(&sent_total, worker->channel_to_parent, &msg);
+
+	worker->total_msg_mmap_to_parent += sent_total;
+
 	return ret;
 }
 
@@ -340,8 +400,8 @@ static int __rrr_cmodule_worker_loop (
 					&read_callback_data
 			)) != 0) {
 				if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
-					RRR_MSG_0("Error from mmap read function in worker fork named %s\n",
-							worker->name);
+					RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
+							worker->name, (long) getpid());
 					ret = 1;
 					goto loop_out;
 				}
@@ -356,6 +416,16 @@ static int __rrr_cmodule_worker_loop (
 				}
 				next_spawn_time = 0;
 			}
+		}
+
+		if (worker->ping_received) {
+			if (__rrr_cmodule_worker_send_pong(worker) != 0) {
+				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld\n",
+						worker->name, (long) getpid());
+			}
+			// Always set to 0, maybe this fork should be killed if PONG messages
+			// are not received by parent.
+			worker->ping_received = 0;
 		}
 
 //		printf("%" PRIu64 " - %" PRIu64 "\n", prev_total_msg_mmap_from_parent, prev_total_processed_msg);

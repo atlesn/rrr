@@ -51,6 +51,8 @@ struct rrr_mmap_channel {
 	pthread_mutex_t index_lock;
 	pthread_cond_t empty_cond;
 	pthread_cond_t full_cond;
+	int in_empty_cond;
+	int in_full_cond;
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
