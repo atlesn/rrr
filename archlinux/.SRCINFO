@@ -14,7 +14,7 @@ pkgbase = rrr
 	depends = mariadb-clients
 	optdepends = systemd: systemd daemon support
 	provides = rrr
-	source = git+https://github.com/atlesn/rrr.git#tag=v1.13-0
+	source = git+https://github.com/atlesn/rrr.git#tag=v1.13-1
 	md5sums = SKIP
 
 pkgname = rrr
