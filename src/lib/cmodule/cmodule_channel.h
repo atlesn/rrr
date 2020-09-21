@@ -26,13 +26,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
+struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_setting_packed;
 struct rrr_mmap_channel;
 struct rrr_cmodule_deferred_message_collection;
 
-int rrr_cmodule_channel_send_message (
+int rrr_cmodule_channel_send_message_simple (
+		int *sent_total,
+		struct rrr_mmap_channel *channel,
+		const struct rrr_msg *message
+);
+int rrr_cmodule_channel_send_message_and_address (
 		int *sent_total,
 		int *retries,
 		struct rrr_mmap_channel *channel,
