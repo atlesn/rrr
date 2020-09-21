@@ -25,6 +25,8 @@ sub config {
 	# Set a custom setting
 	$settings->set("my_new_setting", "5");
 
+	sleep(2);
+
 	return 1;
 }
 
