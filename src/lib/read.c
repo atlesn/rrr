@@ -333,7 +333,8 @@ int rrr_read_message_using_callbacks (
 		// may change the read complete method. This function may called multiple times if it does
 		// not return OK the first time. In that case, we will read more data repeatedly time until
 		// OK is returned.
-		if ((ret = function_get_target_size(read_session, functions_callback_arg)) != RRR_READ_OK) {
+		const int ret_from_get_target_size = function_get_target_size(read_session, functions_callback_arg);
+		if (ret_from_get_target_size != RRR_READ_OK && ret_from_get_target_size != RRR_READ_INCOMPLETE) {
 			goto out;
 		}
 
@@ -353,10 +354,20 @@ int rrr_read_message_using_callbacks (
 			}
 			memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, read_session->rx_buf_wpos - read_session->rx_buf_skip);
 
-			free(read_session->rx_buf_ptr);
+			// Put new buffer into overshoot so that it is picked up again
+			// in the next read loop
+			read_session->rx_overshoot = new_buf;
+			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
-			read_session->rx_buf_ptr = new_buf;
-			read_session->rx_buf_wpos -= read_session->rx_buf_skip;
+			free(read_session->rx_buf_ptr);
+			read_session->rx_buf_ptr = NULL;
+			read_session->rx_buf_skip = 0;
+
+			return ret_from_get_target_size;
+		}
+		else if (ret_from_get_target_size != RRR_READ_OK) {
+			ret = ret_from_get_target_size;
+			goto out;
 		}
 
 		if (read_session->target_size == 0 &&
@@ -603,7 +614,6 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 //	printf ("Array wpos: %li\n", wpos);
 
 	ssize_t import_length = 0;
-	ssize_t skipped_bytes = 0;
 
 	while (wpos > 0) {
 		if (pos_max != NULL && pos > pos_max) {
@@ -629,15 +639,10 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 			break;
 		}
 		else {
-			if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
-				if (data->do_byte_by_byte_sync != 0) {
-					skipped_bytes++;
-					pos++;
-					wpos--;
-					ret = RRR_READ_OK;
-				}
+			if (ret == RRR_TYPE_PARSE_SOFT_ERR && data->do_byte_by_byte_sync != 0) {
+				read_session->rx_buf_skip += 1;
+				return RRR_READ_INCOMPLETE;
 			}
-
 			return ret;
 		}
 	}
@@ -648,9 +653,6 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	// Raw size to read for socket framework
 	read_session->target_size = import_length;
-
-	// Read position for array framework
-	read_session->rx_buf_skip = skipped_bytes;
 
 	if (read_session->target_size == read_session->rx_buf_wpos) {
 		read_session->eof_ok_now = 1;
