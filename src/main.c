@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -211,8 +211,13 @@ static int __rrr_main_check_do_journald_logging (const char **env) {
 		RRR_MSG_0("Warning: fstat of stderr failed in __rrr_main_check_do_journald_logging, disabling journald output\n");
 		return 0;
 	}
+
+	// Type inside of struct may vary (long or long long)
+	unsigned long long int dev = stat.st_dev;
+	unsigned long long int ino = stat.st_ino;
+
 	char buf[128];
-	snprintf(buf, 128, "JOURNAL_STREAM=%lu:%lu", stat.st_dev, stat.st_ino);
+	snprintf(buf, 128, "JOURNAL_STREAM=%llu:%llu", dev, ino);
 	buf[127] = '\0';
 
 	int result = __rrr_main_has_env(env, buf);
@@ -374,6 +379,8 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	RRR_DBG_1 ("Check for SystemD environment: %s\n",
 		(do_journald_output ? "Found, using native journald logging" : "Not found, using stdout logging")
 	);
+#else
+	(void)(do_journald_output);
 #endif
 
 	out:
