@@ -1,3 +1,15 @@
+rrr (1.13-1) buster; urgency=medium
+
+  * Fix for ip module array byte by byte skipping which caused bug trap
+  * Fixes for mmap channel shutdown hang when fork had been killed
+  * In cmodule framwork, use ping-pong system to check if fork is alive
+  * Fix in file module for keyboard events getting lost on slow HW
+  * Fix for long sleeps in file module causing thread restart by WD
+  * Fix for journald output not working on 32-bit
+  * Misc. log message improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 21 Sep 2020 22:05:59 +0200
+
 rrr (1.13-0) buster; urgency=medium
 
   * Implement native SystemD journal logging
