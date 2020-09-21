@@ -363,7 +363,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
-			return ret_from_get_target_size;
+			return (ret_from_get_target_size == RRR_READ_OK ? RRR_READ_INCOMPLETE : ret_from_get_target_size);
 		}
 		else if (ret_from_get_target_size != RRR_READ_OK) {
 			ret = ret_from_get_target_size;
