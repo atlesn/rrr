@@ -35,13 +35,53 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 
-struct rrr_cmodule_mmap_channel_callback_data {
+
+struct rrr_cmodule_mmap_channel_write_simple_callback_data {
+	const struct rrr_msg *message;
+};
+
+static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void *arg) {
+	struct rrr_cmodule_mmap_channel_write_simple_callback_data *callback_data = arg;
+	memcpy(target, callback_data->message, sizeof(*(callback_data->message)));
+	return 0;
+}
+
+int rrr_cmodule_channel_send_message_simple (
+		int *sent_total,
+		struct rrr_mmap_channel *channel,
+		const struct rrr_msg *message
+) {
+	int ret = 0;
+
+	*sent_total = 0;
+
+	struct rrr_cmodule_mmap_channel_write_simple_callback_data callback_data = {
+			message
+	};
+
+	if ((ret = rrr_mmap_channel_write_using_callback (
+			channel,
+			sizeof(*message),
+			0,
+			__rrr_cmodule_mmap_channel_write_simple_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	(*sent_total)++;
+
+	out:
+	return ret;
+}
+
+struct rrr_cmodule_mmap_channel_write_callback_data {
 	const struct rrr_msg_addr *addr_msg;
 	const struct rrr_msg_msg *msg;
 };
 
 static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
-	struct rrr_cmodule_mmap_channel_callback_data *data = arg;
+	struct rrr_cmodule_mmap_channel_write_callback_data *data = arg;
 
 	void *msg_pos = target;
 	void *msg_addr_pos = target + MSG_TOTAL_SIZE(data->msg);
@@ -52,7 +92,7 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 	return 0;
 }
 
-int rrr_cmodule_channel_send_message (
+int rrr_cmodule_channel_send_message_and_address (
 		int *sent_total,
 		int *retries,
 		struct rrr_mmap_channel *channel,
@@ -114,7 +154,7 @@ int rrr_cmodule_channel_send_message (
 		message_addr = NULL;
 
 		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message pid %i\n", getpid());
+			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message_simple pid %i\n", getpid());
 			ret = 0;
 			goto out;
 		}
@@ -137,7 +177,7 @@ int rrr_cmodule_channel_send_message (
 			goto out;
 		}
 
-		struct rrr_cmodule_mmap_channel_callback_data callback_data = {
+		struct rrr_cmodule_mmap_channel_write_callback_data callback_data = {
 			message_addr,
 			message
 		};
