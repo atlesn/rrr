@@ -171,46 +171,6 @@ static int __rrr_mmap_channel_allocate (
 	return ret;
 }
 
-static int __rrr_mmap_channel_cond_wait (
-		pthread_mutex_t *mutex,
-		pthread_cond_t *cond,
-		unsigned int timeout_us
-) {
-	int ret = 0;
-
-	if (timeout_us == 0) {
-		ret = RRR_MMAP_CHANNEL_FULL_OR_EMPTY;
-		goto out;
-	}
-
-	pthread_mutex_lock(mutex);
-
-	struct timespec time;
-	rrr_time_gettimeofday_timespec(&time, timeout_us);
-
-	if ((ret = pthread_cond_timedwait (
-			cond,
-			mutex,
-			&time
-	)) != 0) {
-		switch (ret) {
-			case ETIMEDOUT:
-				ret = RRR_MMAP_CHANNEL_FULL_OR_EMPTY;
-				break;
-			default:
-				RRR_MSG_0("Error while waiting on condition in __rrr_mmap_channel_cond_wait: %i\n", ret);
-				ret = RRR_MMAP_CHANNEL_ERROR;
-				break;
-		};
-		goto out_unlock;
-	}
-
-	out_unlock:
-		pthread_mutex_unlock(mutex);
-	out:
-	return ret;
-}
-
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,
@@ -243,16 +203,10 @@ int rrr_mmap_channel_write_using_callback (
 			ret = RRR_MMAP_CHANNEL_FULL;
 			goto out_unlock;
 		}
+
 //		uint64_t time_start = rrr_time_get_64();
-//		printf("mmap channel %p %s full wait %u us\n", target, target->name, full_wait_time_us);
-		if ((ret = __rrr_mmap_channel_cond_wait(
-				&target->index_lock,
-				&target->full_cond,
-				full_wait_time_us
-		)) != 0) {
-//			printf("mmap channel %p %s full wait timeout result %i\n", target, target->name, ret);
-			goto out_unlock;
-		}
+//		printf("mmap channel %p %s full wait timeout result %i\n", target, target->name, ret);
+		rrr_posix_usleep(full_wait_time_us);
 //		printf("mmap channel %p %s full wait done in %" PRIu64 "\n", target, target->name, rrr_time_get_64() - time_start);
 
 	attempt_block_lock:
@@ -297,12 +251,6 @@ int rrr_mmap_channel_write_using_callback (
 		target->wpos = 0;
 	}
 	pthread_mutex_unlock(&target->index_lock);
-
-	if ((ret = pthread_cond_signal(&target->empty_cond)) != 0) {
-		RRR_MSG_0("Error while signalling empty condition in rrr_mmap_channel_write_using_callback: %i\n", ret);
-		ret = RRR_MMAP_CHANNEL_ERROR;
-		goto out_unlock;
-	}
 
 	out_unlock:
 	if (do_unlock_block) {
@@ -360,7 +308,7 @@ int rrr_mmap_channel_read_with_callback (
 	goto attempt_block_lock;
 
 	attempt_read_wait:
-		// We MUST NOT hold index lock and block lock simultaneously. cond_wait will lock index.
+		// We MUST NOT hold index lock and block lock simultaneously.
 		if (do_unlock_block) {
 			pthread_mutex_unlock(&block->block_lock);
 			do_unlock_block = 0;
@@ -375,14 +323,7 @@ int rrr_mmap_channel_read_with_callback (
 		}
 //		uint64_t time_start = rrr_time_get_64();
 //		printf("mmap channel %p %s empty wait %u us\n", source, source->name, empty_wait_time_us);
-		if ((ret = __rrr_mmap_channel_cond_wait (
-				&source->index_lock,
-				&source->empty_cond,
-				empty_wait_time_us
-		)) != 0) {
-//			printf("mmap channel %p %s empty wait timeout result %i in %" PRIu64 "\n", source, source->name, ret, rrr_time_get_64() - time_start);
-			goto out_unlock;
-		}
+		rrr_posix_usleep(empty_wait_time_us);
 //		printf("mmap channel %p %s empty wait done in %" PRIu64 "\n", source, source->name, rrr_time_get_64() - time_start);
 
 	attempt_block_lock:
@@ -437,12 +378,6 @@ int rrr_mmap_channel_read_with_callback (
 		block->size_data = 0;
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
-
-		if ((ret = pthread_cond_signal(&source->full_cond)) != 0) {
-			RRR_MSG_0("Error while signalling full condition in __rrr_mmap_channel_read_with_callback: %i\n", ret);
-			ret = RRR_MMAP_CHANNEL_ERROR;
-			goto out_unlock;
-		}
 
 		pthread_mutex_lock(&source->index_lock);
 		source->rpos++;
@@ -568,9 +503,14 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 }
 
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
-	pthread_mutex_destroy(&target->index_lock);
-	pthread_cond_destroy(&target->empty_cond);
-	pthread_cond_destroy(&target->full_cond);
+	if (pthread_mutex_trylock(&target->index_lock) != 0) {
+		RRR_MSG_0("Warning: Not destroying index lock of mmap channel %s, it's possibly still being used\n",
+				target->name);
+	}
+	else {
+		pthread_mutex_unlock(&target->index_lock);
+		pthread_mutex_destroy(&target->index_lock);
+	}
 
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
@@ -579,7 +519,14 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 				RRR_MSG_0("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
 			}
 		}
-		pthread_mutex_destroy(&target->blocks[i].block_lock);
+		if (pthread_mutex_trylock(&target->blocks[i].block_lock) != 0) {
+			RRR_MSG_0("Warning: Not destroying block lock %i of mmap channel %s, it's possibly still being used\n",
+					i, target->name);
+		}
+		else {
+			pthread_mutex_unlock(&target->blocks[i].block_lock);
+			pthread_mutex_destroy(&target->blocks[i].block_lock);
+		}
 	}
 	if (msg_count > 1) {
 		RRR_MSG_0("Last message duplicated %i times\n", msg_count - 1);
@@ -633,18 +580,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		}
 	}
 
-	if ((ret = rrr_posix_cond_init(&result->empty_cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
-		RRR_MSG_0("Could not initialize empty condition mutex in rrr_mmap_channel_new: %i\n", ret);
-		ret = 1;
-		goto out_destroy_mutexes;
-	}
-
-	if ((ret = rrr_posix_cond_init(&result->full_cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
-		RRR_MSG_0("Could not initialize full condition mutex in rrr_mmap_channel_new: %i\n", ret);
-		ret = 1;
-		goto out_destroy_empty_cond;
-	}
-
     strncpy(result->name, name, sizeof(result->name));
     result->name[sizeof(result->name) - 1] = '\0';
 
@@ -656,8 +591,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	// Remember to destroy mutex attributes
 	goto out;
 
-	out_destroy_empty_cond:
-		pthread_cond_destroy(&result->empty_cond);
 	out_destroy_mutexes:
 		// Be careful with the counters, we should only destroy initialized locks
 		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
