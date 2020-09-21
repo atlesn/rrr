@@ -528,7 +528,8 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 	int config_check_complete_message_printed = 0;
 
 	int read_count = 0;
-	int usleep_count = 0;
+	int usleep_count_short = 0;
+	int usleep_count_long = 0;
 
 	// Let it overflow, DO NOT use signed
 	unsigned int consecutive_nothing_happened = 0;
@@ -572,11 +573,11 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 //		printf("Tick: %i, read_count: %i\n", tick, read_count);
 
 		if (consecutive_nothing_happened > 250) {
-			usleep_count += 1000;
+			usleep_count_long += 1;
 			rrr_posix_usleep(100000); // 100 ms
 		}
 		else if (consecutive_nothing_happened > 100) {
-			usleep_count++;
+			usleep_count_short++;
 			rrr_posix_usleep(100); // 100 us
 		}
 
@@ -593,9 +594,11 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 			// avoid collisions
 			rrr_stats_instance_update_rate(data->stats, 15, "from_fork_read_counter", read_count);
 			rrr_stats_instance_update_rate(data->stats, 16, "from_fork_ticks", tick);
-			rrr_stats_instance_update_rate(data->stats, 17, "from_fork_usleeps", usleep_count);
+			rrr_stats_instance_update_rate(data->stats, 17, "from_fork_usleeps_short", usleep_count_short);
+			rrr_stats_instance_update_rate(data->stats, 18, "from_fork_usleeps_long", usleep_count_long);
 
-			usleep_count = 0;
+			usleep_count_short = 0;
+			usleep_count_long = 0;
 			read_count = 0;
 			tick = 0;
 
