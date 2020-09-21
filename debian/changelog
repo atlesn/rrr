@@ -8,7 +8,7 @@ rrr (1.13-1) buster; urgency=medium
   * Fix for journald output not working on 32-bit
   * Misc. log message improvements
 
- -- LBSdrift <lbsdrift@posten.local>  Thu, 17 Sep 2020 15:54:50 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 21 Sep 2020 22:05:59 +0200
 
 rrr (1.13-0) buster; urgency=medium
 
