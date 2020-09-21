@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../settings.h"
 #include "../util/linked_list.h"
 
+#define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S 10
+
 struct rrr_instance_config_data;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
@@ -85,6 +87,11 @@ struct rrr_cmodule_worker {
 
 	uint64_t total_msg_processed;
 
+	// Used by fork only
+	int ping_received;
+	// Used by parent reader thread only. Unprotected, only access from reader thread.
+	uint64_t pong_receive_time;
+
 	// Unmanaged pointers provided by application
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
@@ -102,7 +109,11 @@ struct rrr_cmodule {
 	// Used by message_broker_cmodule poll functions, not managed
 	void *callback_data_tmp;
 };
-
+int rrr_cmodule_worker_send_message_and_address_to_parent (
+		struct rrr_cmodule_worker *worker,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
+);
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
