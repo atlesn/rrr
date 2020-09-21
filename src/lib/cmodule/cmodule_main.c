@@ -260,6 +260,9 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 					callback_data->worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
 		}
 	}
+	else if (!callback_data->worker->config_data->do_processing) {
+		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n");
+	}
 	else {
 		const struct rrr_msg_msg *msg_msg = data;
 		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
@@ -392,21 +395,19 @@ static int __rrr_cmodule_worker_loop (
 			next_spawn_time = time_now + worker->config_data->spawn_interval_us;
 		}
 
-		if (worker->config_data->do_processing) {
-			if ((ret = rrr_cmodule_channel_receive_messages (
-					worker->channel_to_fork,
-					RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-					__rrr_cmodule_worker_loop_read_callback,
-					&read_callback_data
-			)) != 0) {
-				if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
-					RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
-							worker->name, (long) getpid());
-					ret = 1;
-					goto loop_out;
-				}
-				ret = 0;
+		if ((ret = rrr_cmodule_channel_receive_messages (
+				worker->channel_to_fork,
+				RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+				__rrr_cmodule_worker_loop_read_callback,
+				&read_callback_data
+		)) != 0) {
+			if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
+				RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
+						worker->name, (long) getpid());
+				ret = 1;
+				goto loop_out;
 			}
+			ret = 0;
 		}
 
 		if (worker->config_data->do_spawning) {
