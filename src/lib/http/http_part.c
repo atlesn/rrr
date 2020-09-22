@@ -594,10 +594,10 @@ static int __rrr_http_parse_request (
 	const char *start_orig = start;
 
 	rrr_length protocol_length = 0;
-	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		if (	rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/0.9") ||
-				rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/1.0") ||
-				rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/2.0")
+	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
+		if (	rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/0.9") ||
+				rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.0") ||
+				rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/2.0")
 		) {
 			result->response_code = RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED;
 		}
