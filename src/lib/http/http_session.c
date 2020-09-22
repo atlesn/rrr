@@ -748,7 +748,7 @@ int rrr_http_session_transport_ctx_raw_request_send (
 struct rrr_http_session_receive_data {
 	struct rrr_net_transport_handle *handle;
 	ssize_t parse_complete_pos;
-	ssize_t received_bytes; // Used only for stall timeout
+	ssize_t received_bytes; // Used only for stall timeout and sleeping
 	rrr_http_unique_id unique_id;
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
@@ -1169,13 +1169,13 @@ int rrr_http_session_transport_ctx_receive (
 			break;
 		}
 
-		// TODO : Maybe this is not needed or we should sleep only if nothing was read
-		rrr_posix_usleep(500);
-
 		uint64_t time_now = rrr_time_get_64();
 
 		if (prev_received_bytes != callback_data.received_bytes) {
 			time_last_change = time_now;
+		}
+		else {
+			rrr_posix_usleep(500);
 		}
 
 		if (time_now - time_start > timeout_total_us) {

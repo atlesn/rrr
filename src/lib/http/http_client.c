@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
 
 int rrr_http_client_data_init (
 		struct rrr_http_client_data *data,
@@ -317,6 +318,8 @@ static void __rrr_http_client_send_request_callback_final (
 		}
 	}
 
+	uint64_t request_start_time = rrr_time_get_64();
+
 	if ((ret = rrr_http_session_transport_ctx_receive (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
@@ -330,6 +333,9 @@ static void __rrr_http_client_send_request_callback_final (
 	)) != 0) {
 		goto out;
 	}
+
+	uint64_t request_end_time = rrr_time_get_64();
+	RRR_DBG_3("HTTP total request time: %" PRIu64 "ms\n", (request_end_time - request_start_time) / 1000);
 
 	if (callback_data->response_code >= 300 && callback_data->response_code <= 399) {
 		if (callback_data->response_argument == NULL) {
