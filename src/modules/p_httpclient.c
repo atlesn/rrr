@@ -616,27 +616,10 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = RRR_FIFO_OK;
 
-	if ((ret = httpclient_send_request_locked(data, entry)) != 0) {
-		if (ret == RRR_HTTP_SOFT_ERROR) {
-			RRR_DBG_1("Soft error while sending message in httpclient instance %s, deferring message\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_defer;
-		}
-		RRR_MSG_0("Hard error while sending message in httpclient instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
-	}
-
-	goto out;
-	out_defer:
-		rrr_msg_holder_incref_while_locked(entry);
-		RRR_LL_APPEND(&data->defer_queue, entry);
-		rrr_msg_holder_unlock(entry);
-		return RRR_FIFO_SEARCH_STOP;
-	out:
-		rrr_msg_holder_unlock(entry);
-		return ret;
+	rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&data->defer_queue, entry);
+	rrr_msg_holder_unlock(entry);
+	return ret;
 }
 
 static void httpclient_data_cleanup(void *arg) {
@@ -788,10 +771,18 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		rrr_thread_update_watchdog_time(thread);
 
+		// This module does not always reach cancellation points
+		pthread_testcancel();
+
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
+			uint64_t send_time_limit = rrr_time_get_64() + 2 * 1000 * 1000; // 2 seconds
 			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
+				if (rrr_time_get_64() > send_time_limit) {
+					RRR_LL_ITERATE_BREAK();
+				}
+
 				rrr_msg_holder_lock(node);
 				if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
