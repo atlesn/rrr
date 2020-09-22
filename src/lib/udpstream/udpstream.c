@@ -392,16 +392,15 @@ static int __rrr_udpstream_send_reset (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		uint16_t stream_id,
-		uint32_t frame_id
+		uint32_t connect_handle
 ) {
 	struct rrr_udpstream_frame_packed frame = {0};
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
 	frame.stream_id = rrr_htobe16(stream_id);
 
-	// If frame ID is zero, remote should perform a hard reset which implies creating a
-	// new connection and sending any data in send buffers again
-	frame.frame_id = rrr_htobe32(frame_id);
+	// Reset with connect handle is sent if wish to clean any existing stream on remote
+	frame.connect_handle = rrr_htobe32(connect_handle);
 
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, 3);
 }
@@ -443,7 +442,7 @@ static uint32_t __rrr_udpstream_allocate_connect_handle (
 	return 0;
 }
 
-static int __rrr_udpstream_send_connect (
+static int __rrr_udpstream_send_reset_and_connect (
 		uint32_t *connect_handle_result,
 		struct rrr_udpstream *data,
 		const struct sockaddr *addr,
@@ -469,27 +468,42 @@ static int __rrr_udpstream_send_connect (
 		}
 	}
 
-	struct rrr_udpstream_frame_packed frame = {0};
+	{
+		RRR_DBG_2("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
 
-	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
-	frame.connect_handle = rrr_htobe32(connect_handle);
-
-	struct rrr_udpstream_stream *stream = NULL;
-	if ((stream = __rrr_udpstream_create_and_add_stream(data, addr, addr_len)) == NULL) {
-		RRR_MSG_0("Could not add stream to collection in __rrr_udpstream_send_connect\n");
-		ret = 1;
-		goto out;
+		struct rrr_udpstream_frame_packed frame = {0};
+		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
+		frame.connect_handle = rrr_htobe32(connect_handle);
+		if (__rrr_udpstream_checksum_and_send_packed_frame(data, addr, addr_len, &frame, NULL, 0, 3) != 0) {
+			RRR_MSG_0("Could not send RST packet in __rrr_udpstream_send_connect\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
-	stream->connect_handle = connect_handle;
+	{
+		RRR_DBG_2("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
 
-	if (__rrr_udpstream_checksum_and_send_packed_frame(data, stream->remote_addr, stream->remote_addr_len, &frame, NULL, 0, 3) != 0) {
-		RRR_MSG_0("Could not send CONNECT packet in __rrr_udpstream_send_connect\n");
-		ret = 1;
-		goto out;
+		struct rrr_udpstream_frame_packed frame = {0};
+
+		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
+		frame.connect_handle = rrr_htobe32(connect_handle);
+
+		struct rrr_udpstream_stream *stream = NULL;
+		if ((stream = __rrr_udpstream_create_and_add_stream(data, addr, addr_len)) == NULL) {
+			RRR_MSG_0("Could not add stream to collection in __rrr_udpstream_send_connect\n");
+			ret = 1;
+			goto out;
+		}
+
+		stream->connect_handle = connect_handle;
+
+		if (__rrr_udpstream_checksum_and_send_packed_frame(data, stream->remote_addr, stream->remote_addr_len, &frame, NULL, 0, 3) != 0) {
+			RRR_MSG_0("Could not send CONNECT packet in __rrr_udpstream_send_connect\n");
+			ret = 1;
+			goto out;
+		}
 	}
-
-	RRR_DBG_2("Sent CONNECT with handle %" PRIu32 "\n", connect_handle);
 
 	*connect_handle_result = connect_handle;
 
@@ -683,9 +697,12 @@ static int __rrr_udpstream_handle_received_connect (
 		RRR_DBG_2("Outbound UDP-stream connection established with stream id %u connect handle was %u\n",
 				stream->stream_id, frame->connect_handle);
 	}
-	else if (stream != NULL && stream->stream_id != 0) {
+	else if (stream != NULL && stream->stream_id != 0 && frame->stream_id != 0) {
 		// Already connected
-		RRR_DBG_2("Incoming UDP-stream duplicate CONNECT (response)\n");
+		RRR_DBG_2("Incoming UDP-stream duplicate CONNECT (response or old unknown stream) stream_id local %" PRIu32 " stream id remote %" PRIu32 "\n",
+				stream->stream_id,
+				frame->stream_id
+		);
 		goto out;
 	}
 	else {
@@ -744,6 +761,7 @@ static int __rrr_udpstream_handle_received_connect (
 		send_response:
 		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %u\n",
 				stream_id, (stream != NULL ? stream->connect_handle : 0), addr_len);
+
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
 			RRR_MSG_0("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;
@@ -756,27 +774,18 @@ static int __rrr_udpstream_handle_received_connect (
 }
 
 static int __rrr_udpstream_handle_received_reset (
-		struct rrr_udpstream_stream *stream,
-		struct rrr_udpstream_frame *new_frame
+		struct rrr_udpstream_stream *stream
 ) {
 	int ret = 0;
 
-	RRR_DBG_3("UDP-stream RX RST %u\n", new_frame->stream_id);
+	RRR_DBG_3("UDP-stream RX RST connect handle %" PRIu32 " stream id %" PRIu32 "\n",
+			stream->connect_handle, stream->stream_id);
 
-	if (new_frame->frame_id == 0) {
-		RRR_DBG_3("Performing hard reset for stream ID %u\n", new_frame->stream_id);
+	stream->receive_buffer.frame_id_max = stream->receive_buffer.frame_id_counter;
+	stream->send_buffer.frame_id_max = stream->send_buffer.frame_id_counter;
+	stream->hard_reset_received = 1;
 
-		stream->receive_buffer.frame_id_max = stream->receive_buffer.frame_id_counter;
-		stream->send_buffer.frame_id_max = stream->send_buffer.frame_id_counter;
-		stream->hard_reset_received = 1;
-
-		goto out;
-	}
-	else {
-		// Soft reset, continue until received last frame id. Do not send any more frames.
-		stream->receive_buffer.frame_id_max = new_frame->frame_id;
-		stream->send_buffer.frame_id_max = stream->send_buffer.frame_id_counter;
-	}
+	goto out;
 
 	out:
 	return ret;
@@ -876,19 +885,24 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	if (new_frame->stream_id == 0) {
-		RRR_DBG_2("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
-				new_frame->flags_and_type);
+	struct rrr_udpstream_stream *stream = NULL;
+
+	if (new_frame->stream_id != 0) {
+		stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id);
+	}
+	else if (new_frame->connect_handle != 0) {
+		stream = __rrr_udpstream_find_stream_by_connect_handle(data, new_frame->connect_handle);
+	}
+	else {
+		RRR_DBG_1("Received UDP-stream packet with zero stream ID and zero connect ID, dropping it\n");
 		goto out;
 	}
 
-	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id);
-
 	if (stream == NULL) {
 		// Check that unknown packet is not a reset, if not we would keep sending resets back and forward
-		if (!RRR_UDPSTREAM_FRAME_IS_RESET(frame)) {
+		if (!RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
 			RRR_DBG_2("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
-			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
+			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, new_frame->connect_handle) != 0) {
 				RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
@@ -911,7 +925,13 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
-		ret = __rrr_udpstream_handle_received_reset(stream, new_frame);
+		ret = __rrr_udpstream_handle_received_reset(stream);
+		goto out;
+	}
+
+	if (new_frame->stream_id == 0) {
+		RRR_DBG_2("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
+				new_frame->flags_and_type);
 		goto out;
 	}
 
@@ -1920,7 +1940,7 @@ int rrr_udpstream_connect_raw (
 		RRR_BUG("FD was 0 in rrr_udpstream_connect_raw, must bind first\n");
 	}
 
-	if ((ret = __rrr_udpstream_send_connect(connect_handle, data, addr, socklen)) != 0) {
+	if ((ret = __rrr_udpstream_send_reset_and_connect(connect_handle, data, addr, socklen)) != 0) {
 		RRR_MSG_0("Could not send connect packet in rrr_udpstream_connect_raw\n");
 		goto out;
 	}

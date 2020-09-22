@@ -430,6 +430,49 @@ int rrr_udpstream_asd_new (
 		return ret;
 }
 
+static int __rrr_udpstream_asd_queue_control_frame (
+		struct rrr_udpstream_asd *session,
+		uint32_t connect_handle,
+		uint32_t message_id,
+		uint32_t ack_flags
+) {
+	int ret = 0;
+
+	struct rrr_udpstream_asd_control_queue_entry *entry = malloc(sizeof(*entry));
+	if (entry == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
+		ret = 1;
+		goto out;
+	}
+
+	entry->connect_handle = connect_handle;
+	entry->ack_flags = ack_flags;
+	entry->message_id = message_id;
+
+	RRR_LL_APPEND(&session->control_send_queue, entry);
+
+	out:
+	return ret;
+}
+
+int __rrr_udpstream_asd_send_control_message (
+		struct rrr_udpstream_asd *session,
+		uint32_t flags,
+		uint32_t connect_handle,
+		uint32_t message_id
+) {
+	struct rrr_udpstream_asd_control_msg control_msg = {
+			flags,
+			message_id
+	};
+
+	uint64_t application_data = __rrr_udpstream_asd_control_msg_join(control_msg);
+
+	RRR_DBG_3("ASD TX %u:%u CTRL flags %u\n", connect_handle, message_id, flags);
+
+	return rrr_udpstream_send_control_frame(&session->udpstream, connect_handle, application_data);
+}
+
 static int __rrr_udpstream_asd_buffer_connect_if_needed (
 		struct rrr_udpstream_asd *session
 ) {
@@ -440,7 +483,14 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	int udpstream_ret = rrr_udpstream_connection_check(&session->udpstream, session->connect_handle);
 	if (udpstream_ret == 0) {
 		session->connection_attempt_time = 0;
-		session->is_connected = 1;
+		if (session->is_connected == 0) {
+			RRR_DBG_2("ASD %u TX RST\n", session->connect_handle);
+			if ((ret = __rrr_udpstream_asd_send_control_message(session, RRR_UDPSTREAM_ASD_ACK_FLAGS_RST, session->connect_handle, 0)) != 0) {
+				RRR_MSG_0("Could not queue reset frame in __rrr_udpstream_asd_buffer_connect_if_needed\n");
+				goto out;
+			}
+			session->is_connected = 1;
+		}
 		goto out;
 	}
 	else if (udpstream_ret == RRR_UDPSTREAM_NOT_READY) {
@@ -463,6 +513,10 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 		}
 
 		uint32_t connect_handle = session->connect_handle;
+
+		RRR_DBG_2("ASD %u CONNECT send queue count %i\n",
+				session->connect_handle, RRR_LL_COUNT(&session->send_queue));
+
 		if ((ret = rrr_udpstream_connect (
 				&connect_handle,
 				&session->udpstream,
@@ -487,29 +541,15 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	return ret;
 }
 
-static int __rrr_udpstream_asd_queue_control_frame (
+void __rrr_udpstream_asd_release_queue_clear_by_handle (
 		struct rrr_udpstream_asd *session,
-		uint32_t connect_handle,
-		uint32_t message_id,
-		uint32_t ack_flags
+		uint32_t connect_handle
 ) {
-	int ret = 0;
-
-	struct rrr_udpstream_asd_control_queue_entry *entry = malloc(sizeof(*entry));
-	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
-		ret = 1;
-		goto out;
-	}
-
-	entry->connect_handle = connect_handle;
-	entry->ack_flags = ack_flags;
-	entry->message_id = message_id;
-
-	RRR_LL_APPEND(&session->control_send_queue, entry);
-
-	out:
-	return ret;
+	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue_new);
+		if (node->source_connect_handle == connect_handle) {
+			__rrr_udpstream_asd_queue_clear(node);
+		}
+	RRR_LL_ITERATE_END();
 }
 
 static int __rrr_udpstream_asd_control_frame_listener (
@@ -573,6 +613,11 @@ static int __rrr_udpstream_asd_control_frame_listener (
 		if (node != NULL) {
 			node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK;
 		}
+	}
+	else if (control_msg.flags == RRR_UDPSTREAM_ASD_ACK_FLAGS_RST) {
+		RRR_DBG_3("ASD RX RST %" PRIu32 "\n",
+				connect_handle);
+		__rrr_udpstream_asd_release_queue_clear_by_handle(session, connect_handle);
 	}
 	else {
 		RRR_DBG_1("UDP-stream ASD received control frame with unknown ACK flags %u for stream-id %u\n",
@@ -690,22 +735,6 @@ int __rrr_udpstream_asd_send_message (
 	out:
 	RRR_FREE_IF_NOT_NULL(message_network);
 	return ret;
-}
-
-int __rrr_udpstream_asd_send_control_message (
-		struct rrr_udpstream_asd *session,
-		uint32_t flags,
-		uint32_t connect_handle,
-		uint32_t message_id
-) {
-	struct rrr_udpstream_asd_control_msg control_msg = {
-			flags,
-			message_id
-	};
-
-	uint64_t application_data = __rrr_udpstream_asd_control_msg_join(control_msg);
-
-	return rrr_udpstream_send_control_frame(&session->udpstream, connect_handle, application_data);
 }
 
 static int __rrr_udpstream_asd_do_release_queue_send_tasks (
