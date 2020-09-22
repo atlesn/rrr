@@ -944,9 +944,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_m
 }
 
 static int __rrr_udpstream_asd_receive_messages_callback (
-		void **joined_data,
-		const struct rrr_udpstream_receive_data *receive_data,
-		void *arg
+		RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_asd_receive_messages_callback_data *callback_data = arg;
 
@@ -986,12 +984,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 static int __rrr_udpstream_asd_do_receive_tasks (
 		int *receive_count,
 		struct rrr_udpstream_asd *session,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg
 ) {
 	int ret = 0;
@@ -1201,12 +1194,7 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*final_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
 		struct rrr_udpstream_asd *session
 ) {

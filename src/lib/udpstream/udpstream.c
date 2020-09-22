@@ -1083,9 +1083,9 @@ struct ack_list {
 
 struct rrr_udpstream_process_receive_buffer_callback_data {
 	struct rrr_udpstream_stream *stream;
-	int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg);
+	int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS);
 	void *callback_validator_arg;
-	int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg);
+	int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS);
 	void *receive_callback_arg;
 
 	uint32_t accumulated_data_size;
@@ -1204,16 +1204,11 @@ int rrr_udpstream_default_allocator (
 static int __rrr_udpstream_process_receive_buffer (
 		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
-		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
+		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
 		void *validator_callback_arg,
-		int (*final_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		int (*final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
@@ -1316,6 +1311,8 @@ static int __rrr_udpstream_process_receive_buffer (
 		const struct sockaddr *use_addr = stream->remote_addr;
 		socklen_t use_sockaddr_len = stream->remote_addr_len;
 
+		// XXX : Do we need this NULL check? All frames should have a remote address set
+
 		if (use_addr == NULL) {
 			use_addr = node->last_frame->source_addr;
 			use_sockaddr_len = node->last_frame->source_addr_len;
@@ -1410,6 +1407,8 @@ static int __rrr_udpstream_process_receive_buffer (
 
 	if ((ret = allocator_callback (
 			accumulated_data_size,
+			stream->remote_addr,
+			stream->remote_addr_len,
 			__rrr_udpstream_process_receive_buffer_callback,
 			&callback_data,
 			allocator_callback_arg
@@ -1429,16 +1428,11 @@ static int __rrr_udpstream_process_receive_buffer (
 // memory in receive_data->data or free it, also upon errors
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
-		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
+		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
 		void *validator_callback_arg,
-		int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
 		void *receive_callback_arg
 ) {
 	int ret = 0;
