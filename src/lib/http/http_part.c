@@ -570,6 +570,13 @@ static int __rrr_http_parse_request (
 		goto out;
 	}
 
+	if (strlen(result->request_method_str) == 0) {
+		RRR_MSG_0("Request method missing in HTTP request\n");
+		rrr_http_util_print_where_message(start, end);
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
 	start += space - start;
 	start += rrr_http_util_count_whsp(start, end);
 
@@ -605,6 +612,13 @@ static int __rrr_http_parse_request (
 			result->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		}
 		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	if (start_orig + protocol_length != crlf) {
+		RRR_MSG_0("Extra data after protocol version in HTTP request\n");
+		rrr_http_util_print_where_message(start_orig + protocol_length, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}

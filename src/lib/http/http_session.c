@@ -1037,6 +1037,34 @@ static int __rrr_http_session_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
+	// ASCII validation
+	int rnrn_counter = 4;
+	for (const unsigned char *pos = (const unsigned char *) read_session->rx_buf_ptr; pos < (const unsigned char *) end; pos++) {
+//		printf("pos: %02x\n", *pos);
+		if (*pos == '\r' && (rnrn_counter == 4 || rnrn_counter == 2)) {
+			--rnrn_counter;
+		}
+		else if (*pos == '\n' && (rnrn_counter == 3 || rnrn_counter == 1)) {
+			if (--rnrn_counter == 0) {
+				break; // Header complete
+			}
+		}
+		else {
+			rnrn_counter = 4;
+
+			if (*pos > 0x7f) {
+				RRR_MSG_0("Received non-ASCII character %02x in HTTP request\n", *pos);
+				ret = RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+		}
+	}
+
+	if (rnrn_counter != 0) {
+		ret = RRR_READ_INCOMPLETE;
+		goto out;
+	}
+
 	if (receive_data->parse_complete_pos > read_session->rx_buf_wpos) {
 		RRR_MSG_0("Warning: Client sent some extra data after completed HTTP parse\n");
 		ret = RRR_READ_SOFT_ERROR;
