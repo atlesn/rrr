@@ -1100,13 +1100,13 @@ static int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	long double intermediate = 0;
 	if (rrr_fixp_to_ldouble(&intermediate, *((rrr_fixp *) (node->data))) != 0) {
-		RRR_MSG_0("Could not convert fixedpoint in__rrr_type_fixp_to_str\n");
+		RRR_MSG_0("Could not convert fixp in __rrr_type_fixp_to_str\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_asprintf(&buf, "%.10Lf", intermediate) <= 0) {
-		RRR_MSG_0("Could not allocate memory in__rrr_type_fixp_to_str\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_fixp_to_str\n");
 		ret = 0;
 		goto out;
 	}
