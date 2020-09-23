@@ -1059,7 +1059,7 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
+static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
 	rrr_length output_size = node->total_stored_length * 4;
@@ -1089,7 +1089,7 @@ int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return ret;
 }
 
-int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
+static int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
 	char *buf = NULL;
@@ -1119,7 +1119,7 @@ int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return ret;
 }
 
-int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
+static int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
 	if (node->total_stored_length == 0) {
@@ -1154,7 +1154,7 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return ret;
 }
 
-int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
+static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 	if (node->total_stored_length == 0) {
 		RRR_BUG("BUG: Length was 0 in __rrr_type_str_to_str\n");
 	}
@@ -1173,7 +1173,7 @@ int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return 0;
 }
 
-uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
+static uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
 	const char *end = node->data + node->total_stored_length;
 	rrr_length get_length = node->total_stored_length > sizeof(uint64_t) ? sizeof(uint64_t) : node->total_stored_length;
 
@@ -1184,7 +1184,7 @@ uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
 	return __rrr_type_expand_be(get_length, end - get_length, 0);
 }
 
-uint64_t __rrr_type_64_to_64 (RRR_TYPE_TO_64_ARGS) {
+static uint64_t __rrr_type_64_to_64 (RRR_TYPE_TO_64_ARGS) {
 	return *((uint64_t *) node->data);
 }
 
