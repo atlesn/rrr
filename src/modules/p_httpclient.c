@@ -37,12 +37,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
+#include "../lib/helpers/nullsafe_str.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -79,7 +81,6 @@ static int httpclient_send_request_callback (
 ) {
 	(void)(data);
 	(void)(response_code);
-	(void)(response_argument);
 	(void)(chunk_idx);
 	(void)(chunk_total);
 	(void)(data_start);
@@ -95,10 +96,11 @@ static int httpclient_send_request_callback (
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", response_code);
 	}
 
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i %s\n",
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,response_arg);
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s'\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			response_code,
-			(response_argument != NULL ? response_argument : "(no response string)")
+			response_arg_str
 	);
 
 	return ret;
