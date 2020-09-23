@@ -165,6 +165,10 @@ int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) 
 
 	int bytes = snprintf(buf, 511, "%.10Lf", intermediate);
 
+	if (bytes <= 0) {
+		return 1;
+	}
+
 	if (bytes > 511 || bytes > target_size - 1) {
 		return 1;
 	}
@@ -185,13 +189,11 @@ int rrr_fixp_to_new_str_double (char **target, rrr_fixp fixp) {
 
 	long double intermediate = 0;
 	if (rrr_fixp_to_ldouble(&intermediate, fixp) != 0) {
-		RRR_MSG_0("Could not convert fixp in rrr_fixp_to_new_str_double\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_asprintf(&buf, "%.10Lf", intermediate) <= 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_fixp_to_new_str_double\n");
 		ret = 0;
 		goto out;
 	}
