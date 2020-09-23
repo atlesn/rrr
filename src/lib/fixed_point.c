@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "fixed_point.h"
 #include "rrr_types.h"
 #include "util/rrr_endian.h"
+#include "util/gnu.h"
 
 static const double decimal_fractions_base2[24] = {
 		1.0/2.0,
@@ -173,6 +174,34 @@ int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) 
 	memcpy(target, buf, strlen(buf));
 
 	return 0;
+}
+
+int rrr_fixp_to_new_str_double (char **target, rrr_fixp fixp) {
+	int ret = 0;
+
+	*target = NULL;
+
+	char *buf = NULL;
+
+	long double intermediate = 0;
+	if (rrr_fixp_to_ldouble(&intermediate, fixp) != 0) {
+		RRR_MSG_0("Could not convert fixp in rrr_fixp_to_new_str_double\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_asprintf(&buf, "%.10Lf", intermediate) <= 0) {
+		RRR_MSG_0("Could not allocate memory in rrr_fixp_to_new_str_double\n");
+		ret = 0;
+		goto out;
+	}
+
+	*target = buf;
+	buf = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf);
+	return ret;
 }
 
 static long double __rrr_fixp_convert_char (char c) {

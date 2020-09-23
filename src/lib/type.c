@@ -1092,30 +1092,17 @@ static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 static int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
-	char *buf = NULL;
-
 	if (node->total_stored_length == 0) {
 		RRR_BUG("BUG: Length was 0 in __rrr_type_fixp_to_str\n");
 	}
 
-	long double intermediate = 0;
-	if (rrr_fixp_to_ldouble(&intermediate, *((rrr_fixp *) (node->data))) != 0) {
+	if (rrr_fixp_to_new_str_double (target, *((rrr_fixp *) (node->data))) != 0) {
 		RRR_MSG_0("Could not convert fixp in __rrr_type_fixp_to_str\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_asprintf(&buf, "%.10Lf", intermediate) <= 0) {
-		RRR_MSG_0("Could not allocate memory in __rrr_type_fixp_to_str\n");
-		ret = 0;
-		goto out;
-	}
-
-	*target = buf;
-	buf = NULL;
-
 	out:
-	RRR_FREE_IF_NOT_NULL(buf);
 	return ret;
 }
 
