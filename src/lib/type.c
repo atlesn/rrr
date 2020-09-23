@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_msg.h"
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
+#include "util/gnu.h"
 
 static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -1088,6 +1089,36 @@ int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return ret;
 }
 
+int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
+	int ret = 0;
+
+	char *buf = NULL;
+
+	if (node->total_stored_length == 0) {
+		RRR_BUG("BUG: Length was 0 in __rrr_type_fixp_to_str\n");
+	}
+
+	long double intermediate = 0;
+	if (rrr_fixp_to_ldouble(&intermediate, *((rrr_fixp *) (node->data))) != 0) {
+		RRR_MSG_0("Could not convert fixedpoint in__rrr_type_fixp_to_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_asprintf(&buf, "%.10Lf", intermediate) <= 0) {
+		RRR_MSG_0("Could not allocate memory in__rrr_type_fixp_to_str\n");
+		ret = 0;
+		goto out;
+	}
+
+	*target = buf;
+	buf = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf);
+	return ret;
+}
+
 int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
@@ -1168,7 +1199,7 @@ RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__rrr_type_import_ustr,	
 RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR,	RRR_TYPE_MAX_ISTR,	__rrr_type_import_istr,	NULL,								NULL,					NULL,						NULL,					NULL,					__rrr_type_blob_to_64,	RRR_TYPE_NAME_ISTR);
 RRR_TYPE_DEFINE(sep, RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__rrr_type_import_sep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_SEP);
 RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__rrr_type_import_msg,	NULL,								__rrr_type_msg_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_MSG);
-RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_FIXP);
+RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_fixp_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_FIXP);
 RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STR);
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_NSEP);
 RRR_TYPE_DEFINE(stx, RRR_TYPE_STX,		RRR_TYPE_MAX_STX,	__rrr_type_import_stx,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	__rrr_type_blob_to_64,	RRR_TYPE_NAME_STX);
