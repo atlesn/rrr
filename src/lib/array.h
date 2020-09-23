@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_map;
 struct rrr_msg_msg;
+struct rrr_nullsafe_str;
 
 struct rrr_array_value_packed {
 	rrr_type type;
@@ -89,6 +90,11 @@ int rrr_array_push_value_blob_with_tag_with_size (
 		const char *tag,
 		const char *value,
 		size_t value_size
+);
+int rrr_array_push_value_blob_with_tag_nullsafe (
+		struct rrr_array *collection,
+		const char *tag,
+		const struct rrr_nullsafe_str *str
 );
 int rrr_array_push_value_str_with_tag (
 		struct rrr_array *collection,

@@ -240,9 +240,11 @@ int rrr_http_session_transport_ctx_add_query_field (
 	return rrr_http_field_collection_add (
 			&session->request_part->fields,
 			name,
+			(name != NULL ? strlen(name) : 0),
 			value,
 			value_size,
-			content_type
+			content_type,
+			(content_type != NULL ? strlen(content_type) : 0)
 	);
 }
 
@@ -256,9 +258,11 @@ int rrr_http_session_query_field_add (
 	return rrr_http_field_collection_add (
 			&session->request_part->fields,
 			name,
+			(name != NULL ? strlen(name) : 0),
 			value,
 			value_size,
-			content_type
+			content_type,
+			(content_type != NULL ? strlen(content_type) : 0)
 	);
 }
 
@@ -338,8 +342,8 @@ static int __rrr_http_session_multipart_field_send (
 	char *content_type_buf = NULL;
 	char *body_buf = NULL;
 
-	if (node->name != NULL) {
-		if ((name_buf = rrr_http_util_quote_header_value(node->name, '"', '"')) == NULL) {
+	if (rrr_nullsafe_str_isset(node->name)) {
+		if ((name_buf = rrr_http_util_quote_header_value_nullsafe(node->name, '"', '"')) == NULL) {
 			RRR_MSG_0("Could not quote field name_buf in __rrr_http_session_multipart_field_send\n");
 			ret = 1;
 			goto out;
@@ -352,8 +356,9 @@ static int __rrr_http_session_multipart_field_send (
 		}
 	}
 
-	if (node->content_type != NULL && *(node->content_type) != '\0') {
-		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", node->content_type)) <= 0) {
+	if (rrr_nullsafe_str_isset(node->content_type)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->content_type);
+		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", value)) <= 0) {
 			RRR_MSG_0("Could not create content_type_buf in __rrr_http_session_multipart_field_send return was %i\n", ret);
 			ret = 1;
 			goto out;
@@ -381,8 +386,12 @@ static int __rrr_http_session_multipart_field_send (
 		goto out;
 	}
 
-	if (node->value != NULL) {
-		if ((ret = __rrr_http_session_multipart_form_data_body_send_wrap_chunk(handle, node->value, node->value_size)) != 0) {
+	if (rrr_nullsafe_str_isset(node->value)) {
+		if ((ret = __rrr_http_session_multipart_form_data_body_send_wrap_chunk(
+				handle,
+				node->value->str,
+				node->value->len
+		)) != 0) {
 			RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_session_multipart_field_send B\n");
 			goto out;
 		}
@@ -541,15 +550,18 @@ static int __rrr_http_session_request_send_make_headers_callback (
 	struct rrr_string_builder *builder = arg;
 
 	// Note : Only plain values supported
-	if (field->value == NULL || *(field->value) == '\0') {
+	if (!rrr_nullsafe_str_isset(field->value)) {
 		return 0;
 	}
 
 	int ret = 0;
 
-	ret |= rrr_string_builder_append(builder, field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
+
+	ret |= rrr_string_builder_append(builder, name);
 	ret |= rrr_string_builder_append(builder, ": ");
-	ret |= rrr_string_builder_append(builder, field->value);
+	ret |= rrr_string_builder_append(builder, value);
 	ret |= rrr_string_builder_append(builder, "\r\n");
 
 	return ret;
@@ -588,14 +600,14 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 
 	pthread_cleanup_push(rrr_string_builder_destroy_void, header_builder);
 
-	host_buf = rrr_http_util_quote_header_value(callback_data->host, '"', '"');
+	host_buf = rrr_http_util_quote_header_value(callback_data->host, strlen(callback_data->host), '"', '"');
 	if (host_buf == NULL) {
 		RRR_MSG_0("Invalid host '%s' in rrr_http_session_send_request\n", callback_data->host);
 		ret = 1;
 		goto out;
 	}
 
-	user_agent_buf = rrr_http_util_quote_header_value(session->user_agent, '"', '"');
+	user_agent_buf = rrr_http_util_quote_header_value(session->user_agent, strlen(session->user_agent), '"', '"');
 	if (user_agent_buf == NULL) {
 		RRR_MSG_0("Invalid user agent '%s' in rrr_http_session_send_request\n", session->user_agent);
 		ret = 1;
@@ -751,7 +763,7 @@ int rrr_http_session_transport_ctx_raw_request_send (
 struct rrr_http_session_receive_data {
 	struct rrr_net_transport_handle *handle;
 	ssize_t parse_complete_pos;
-	ssize_t received_bytes; // Used only for stall timeout
+	ssize_t received_bytes; // Used only for stall timeout and sleeping
 	rrr_http_unique_id unique_id;
 	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
@@ -826,7 +838,7 @@ static int __rrr_http_session_send_header_field_callback (struct rrr_http_header
 	char *send_data = NULL;
 	size_t send_data_length = 0;
 
-	if (field->name == NULL || field->value == NULL) {
+	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
 		RRR_BUG("BUG: Name or value was NULL in __rrr_http_session_send_header_field_callback\n");
 	}
 	if (RRR_LL_COUNT(&field->fields) > 0) {
@@ -835,7 +847,10 @@ static int __rrr_http_session_send_header_field_callback (struct rrr_http_header
 
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &send_data);
 
-	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", field->name, field->value)) <= 0) {
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
+
+	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", name, value)) <= 0) {
 		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_session_send_header_field_callback\n");
 		ret = 1;
 		goto out;
@@ -879,11 +894,11 @@ static int __rrr_http_session_transport_ctx_send_response (
 		RRR_BUG("BUG: Response part was NULL in rrr_http_session_send_response\n");
 	}
 
-	if (response_part->response_raw_data != NULL) {
+	if (response_part->response_raw_data_nullsafe != NULL) {
 		if ((ret = rrr_net_transport_ctx_send_blocking (
 				handle,
-				response_part->response_raw_data,
-				response_part->response_raw_data_size
+				response_part->response_raw_data_nullsafe->str,
+				response_part->response_raw_data_nullsafe->len
 		)) != 0 ) {
 			goto out_err;
 		}
@@ -950,6 +965,24 @@ static int __rrr_http_session_transport_ctx_send_response (
 		return ret;
 }
 
+static int __rrr_http_session_request_receive_check_websocket_version (
+		struct rrr_http_session *session
+) {
+	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
+	if (sec_websocket_version == NULL) {
+		RRR_DBG_1("Field Sec-WebSocket-Version missing in HTTP request with Connection: Upgrade and Upgrade: websocket headers set\n");
+		return 1;
+	}
+
+	if (rrr_nullsafe_str_cmpto(sec_websocket_version->value, "13") != 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,sec_websocket_version->value);
+		RRR_DBG_1("Received HTTP request with WebSocket upgrade and version '%s' set, but only version '13' is supported\n",
+				value);
+		return 1;
+	}
+	return 0;
+}
+
 static int __rrr_http_session_request_receive_try_websocket (
 		int *do_websocket,
 		struct rrr_http_session_receive_data *receive_data,
@@ -978,15 +1011,7 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out_bad_request;
 	}
 
-	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
-	if (sec_websocket_version == NULL) {
-		RRR_DBG_1("Field Sec-WebSocket-Version missing in HTTP request with Connection: Upgrade and Upgrade: websocket headers set\n");
-		goto out_bad_request;
-	}
-
-	if (strcasecmp(sec_websocket_version->value, "13") != 0) {
-		RRR_DBG_1("Received HTTP request with WebSocket upgrade and version '%s' set, but only version '13' is supported\n",
-				sec_websocket_version->value);
+	if (__rrr_http_session_request_receive_check_websocket_version(session) != 0) {
 		goto out_bad_request;
 	}
 
@@ -996,13 +1021,13 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out_bad_request;
 	}
 
-	if (sec_websocket_key->binary_value == NULL) {
+	if (!rrr_nullsafe_str_isset(sec_websocket_key->binary_value_nullsafe)) {
 		RRR_BUG("BUG: Binary value was not set for sec-websocket-key header field in __rrr_http_session_request_receive_try_websocket\n");
 	}
 
-	if (sec_websocket_key->binary_value_size != 16) {
-		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %u\n",
-				sec_websocket_key->binary_value_size);
+	if (rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe) != 16) {
+		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrrl "\n",
+				rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe));
 		goto out_bad_request;
 	}
 
@@ -1029,7 +1054,8 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out;
 	}
 
-	if (rrr_asprintf(&accept_str_tmp, "%s%s", sec_websocket_key->value, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(sec_websocket_key_str, sec_websocket_key->value);
+	if (rrr_asprintf(&accept_str_tmp, "%s%s", sec_websocket_key_str, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
 		RRR_MSG_0("Failed to concatenate accept-string in __rrr_http_session_request_receive_try_websocket\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
@@ -1189,6 +1215,34 @@ static int __rrr_http_session_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
+	// ASCII validation
+	int rnrn_counter = 4;
+	for (const unsigned char *pos = (const unsigned char *) read_session->rx_buf_ptr; pos < (const unsigned char *) end; pos++) {
+//		printf("pos: %02x\n", *pos);
+		if (*pos == '\r' && (rnrn_counter == 4 || rnrn_counter == 2)) {
+			--rnrn_counter;
+		}
+		else if (*pos == '\n' && (rnrn_counter == 3 || rnrn_counter == 1)) {
+			if (--rnrn_counter == 0) {
+				break; // Header complete
+			}
+		}
+		else {
+			rnrn_counter = 4;
+
+			if (*pos > 0x7f) {
+				RRR_MSG_0("Received non-ASCII character %02x in HTTP request\n", *pos);
+				ret = RRR_READ_SOFT_ERROR;
+				goto out;
+			}
+		}
+	}
+
+	if (rnrn_counter != 0) {
+		ret = RRR_READ_INCOMPLETE;
+		goto out;
+	}
+
 	if (receive_data->parse_complete_pos > read_session->rx_buf_wpos) {
 		RRR_MSG_0("Warning: Client sent some extra data after completed HTTP parse\n");
 		ret = RRR_READ_SOFT_ERROR;
@@ -1325,13 +1379,13 @@ int rrr_http_session_transport_ctx_receive (
 			break;
 		}
 
-		// TODO : Maybe this is not needed or we should sleep only if nothing was read
-		rrr_posix_usleep(500);
-
 		uint64_t time_now = rrr_time_get_64();
 
 		if (prev_received_bytes != callback_data.received_bytes) {
 			time_last_change = time_now;
+		}
+		else {
+			rrr_posix_usleep(500);
 		}
 
 		if (time_now - time_start > timeout_total_us) {

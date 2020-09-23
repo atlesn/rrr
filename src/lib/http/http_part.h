@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read_constants.h"
 #include "../util/linked_list.h"
+#include "../helpers/nullsafe_str.h"
 
 #define RRR_HTTP_PARSE_OK			RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR 	RRR_READ_HARD_ERROR
@@ -77,16 +78,15 @@ struct rrr_http_header_field {
 
 	const struct rrr_http_header_field_definition *definition;
 
-	char *name;
+	struct rrr_nullsafe_str *name;
 
 	// This is filled by known header field parsers. Pointer
 	// must always be checked for NULL before usage, they are
 	// only set for certain header field types.
 	long long int value_signed;
 	long long unsigned int value_unsigned;
-	char *value;
-	void *binary_value;
-	size_t binary_value_size;
+	struct rrr_nullsafe_str *binary_value_nullsafe;
+	struct rrr_nullsafe_str *value;
 };
 
 struct rrr_http_header_field_collection {
@@ -125,12 +125,12 @@ struct rrr_http_part {
 
 	// Setting this causes everything else in a response
 	// struct to be ignored when sending
-	char *response_raw_data;
-	size_t response_raw_data_size;
+	struct rrr_nullsafe_str *response_raw_data_nullsafe;
 
-	char *request_method_str;
+	struct rrr_nullsafe_str *request_method_str_nullsafe;
 	enum rrr_http_method request_method;
-	char *request_uri;
+
+	struct rrr_nullsafe_str *request_uri_nullsafe;
 
 	// Setting this causes raw data to be sent as opposed to
 	// generating headers and body
@@ -154,7 +154,7 @@ void rrr_http_part_destroy (struct rrr_http_part *part);
 void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
-void rrr_http_part_set_allocated_raw_response (
+int rrr_http_part_set_allocated_raw_response (
 		struct rrr_http_part *part,
 		char **raw_data_source,
 		size_t raw_data_size
@@ -166,7 +166,7 @@ void rrr_http_part_set_raw_request_ptr (
 );
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
-		const char *name_lowercase
+		const char *name
 );
 const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
 		const struct rrr_http_part *part,

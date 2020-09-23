@@ -70,8 +70,9 @@ udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
 message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
 
-
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
+
+helpers = helpers/nullsafe_str.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
@@ -93,7 +94,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${net_transport_libressl} \
 					${util} ${ip} ${message_holder} ${messages} \
-					${input} ${input_system} ${websocket}
+					${input} ${input_system} ${helpers} ${websocket}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

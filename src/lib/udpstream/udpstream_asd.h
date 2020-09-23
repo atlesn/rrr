@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_NOT_READY		RRR_UDPSTREAM_NOT_READY
 #define RRR_UDPSTREAM_ASD_BUFFER_FULL	RRR_UDPSTREAM_BUFFER_FULL
 
+#define RRR_UDPSTREAM_ASD_ACK_FLAGS_RST			(0<<0)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_MSG			(1<<0)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK		(1<<1)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK		(1<<2)
@@ -160,12 +161,7 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*final_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
 		struct rrr_udpstream_asd *session
 );

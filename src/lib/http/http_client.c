@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
 
 int rrr_http_client_data_init (
 		struct rrr_http_client_data *data,
@@ -127,18 +129,22 @@ static int __rrr_http_client_receive_http_part_callback (
 	// Moved-codes. Maybe this parsing is too persmissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
 		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
-		if (location == NULL) {
+		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
 			RRR_MSG_0("Could not find Location-field in HTTP response %i %s\n",
 					response_part->response_code, response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
-		RRR_DBG_2("HTTP Redirect to %s\n", location->value);
 
-		if (callback_data->response_argument != NULL) {
+		{
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, location->value);
+			RRR_DBG_2("HTTP Redirect to '%s'\n", value);
+		}
+
+		if (rrr_nullsafe_str_isset(callback_data->response_argument)) {
 			RRR_BUG("Response argument was not NULL in __rrr_http_client_receive_callback, possible double call with non-200 response\n");
 		}
-		if ((callback_data->response_argument = strdup(location->value)) == NULL) {
+		if (rrr_nullsafe_str_dup(&callback_data->response_argument, location->value) != 0) {
 			RRR_MSG_0("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
@@ -317,6 +323,8 @@ static void __rrr_http_client_send_request_callback_final (
 		}
 	}
 
+	uint64_t request_start_time = rrr_time_get_64();
+
 	if ((ret = rrr_http_session_transport_ctx_receive (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
@@ -333,8 +341,11 @@ static void __rrr_http_client_send_request_callback_final (
 		goto out;
 	}
 
+	uint64_t request_end_time = rrr_time_get_64();
+	RRR_DBG_3("HTTP total request time: %" PRIu64 "ms\n", (request_end_time - request_start_time) / 1000);
+
 	if (callback_data->response_code >= 300 && callback_data->response_code <= 399) {
-		if (callback_data->response_argument == NULL) {
+		if (!rrr_nullsafe_str_isset(callback_data->response_argument)) {
 			RRR_BUG("BUG: Argument was NULL with 300<=code<=399\n");
 		}
 
@@ -346,10 +357,11 @@ static void __rrr_http_client_send_request_callback_final (
 			goto out;
 		}
 
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, callback_data->response_argument);
 		RRR_DBG_3("HTTP redirect from server '%s', from '%s' to '%s' (%s, %s, %s, %u)\n",
 				data->server,
 				endpoint_and_query_to_free,
-				callback_data->response_argument,
+				response_arg,
 				(uri->protocol != NULL ? uri->protocol : "-"),
 				(uri->host != NULL ? uri->host : "-"),
 				(uri->endpoint != NULL ? uri->endpoint : "-"),
@@ -409,7 +421,7 @@ static int __rrr_http_client_send_keepalive_request_callback (
 static void __rrr_http_client_receive_callback_data_cleanup (
 		struct rrr_http_client_request_callback_data *callback_data
 ) {
-	RRR_FREE_IF_NOT_NULL(callback_data->response_argument);
+	rrr_nullsafe_str_destroy_if_not_null(callback_data->response_argument);
 	memset(callback_data, '\0', sizeof(*callback_data));
 }
 
