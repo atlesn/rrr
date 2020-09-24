@@ -131,6 +131,8 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int ping_interval_s,
+		int timeout_s,
 		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 );

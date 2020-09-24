@@ -54,7 +54,7 @@ static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
-	rrr_websocket_state_clear(&session->ws_state);
+	rrr_websocket_state_clear_all(&session->ws_state);
 	free(session);
 }
 
@@ -1441,6 +1441,8 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int ping_interval_s,
+		int timeout_s,
 		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 ) {
@@ -1455,7 +1457,24 @@ int rrr_http_session_transport_ctx_websocket_tick (
 			callback_arg
 	};
 
-	ret = rrr_websocket_transport_ctx_read_frames (
+	if ((ret = rrr_websocket_check_timeout(&session->ws_state, timeout_s)) != 0) {
+		RRR_DBG_2("HTTP websocket session timed out after %i seconds of inactivity\n", timeout_s);
+		ret = RRR_READ_EOF;
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_enqueue_ping_if_needed(&session->ws_state, ping_interval_s)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_transport_ctx_send_frames (
+			handle,
+			&session->ws_state
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = (rrr_websocket_transport_ctx_read_frames (
 			handle,
 			&session->ws_state,
 			100,
@@ -1464,7 +1483,10 @@ int rrr_http_session_transport_ctx_websocket_tick (
 			read_max_size,
 			__rrr_http_session_websocket_frame_callback,
 			&callback_data
-	);
+	)) & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE)) != 0) {
+		goto out;
+	}
 
-	return ret & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE);
+	out:
+	return ret;
 }

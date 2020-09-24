@@ -32,7 +32,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_thread;
 struct rrr_http_part;
+/*
+struct rrr_http_server_worker_config_data {
+	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
+	void *websocket_callback_arg;
 
+	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_arg;
+
+	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
+};
+*/
 struct rrr_http_server_worker_preliminary_data {
 	// Locking is provided by using thread framework lock wrapper.
 	// DO NOT access this struct except from in callback of the wrapper.
@@ -91,6 +102,8 @@ struct rrr_http_server_worker_data {
 	rrr_http_unique_id websocket_unique_id;
 
 	int request_complete;
+
+	uint64_t bytes_total;
 };
 
 int rrr_http_server_worker_preliminary_data_new (

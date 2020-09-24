@@ -36,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip_util.h"
 #include "../util/posix.h"
 
+#define RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S	5
+#define RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S			(RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S*2)
+
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
@@ -288,7 +291,7 @@ static int __rrr_http_server_worker_websocket_callback (
 
 
 static int __rrr_http_server_worker_websocket_frame_callback (
-		RRR_WEBSOCKET_FRAME_CALLBACK_ARGS
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -307,11 +310,15 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 
 	int ret = 0;
 
+	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &worker_data->bytes_total, handle);
+
 	if (worker_data->websocket_unique_id != 0) {
 		if ((ret = rrr_http_session_transport_ctx_websocket_tick (
 				handle,
 				worker_data->read_max_size,
 				worker_data->websocket_unique_id,
+				RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S,
+				RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S,
 				__rrr_http_server_worker_websocket_frame_callback,
 				worker_data
 		)) != 0) {
@@ -442,6 +449,8 @@ static void __rrr_http_server_worker_thread_entry (
 
 	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.transport_handle);
 
+	unsigned int consecutive_nothing_happened = 0; // Let it overflow
+	uint64_t prev_bytes_total = 0;
 	while (rrr_thread_check_encourage_stop(thread) == 0) {
 		rrr_thread_update_watchdog_time(thread);
 
@@ -470,7 +479,21 @@ static void __rrr_http_server_worker_thread_entry (
 			break;
 		}
 
-		rrr_posix_usleep(1000);
+		if (prev_bytes_total != worker_data.bytes_total) {
+			consecutive_nothing_happened = 0;
+		}
+		else {
+			consecutive_nothing_happened++;
+		}
+
+		if (consecutive_nothing_happened > 1000) {
+			rrr_posix_usleep(30000); // 30 ms
+		}
+		else if (consecutive_nothing_happened > 100) {
+			rrr_posix_usleep(1000); // 1 ms
+		}
+
+		prev_bytes_total = worker_data.bytes_total;
 	}
 
 	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.transport_handle);

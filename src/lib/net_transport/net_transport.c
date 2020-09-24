@@ -677,6 +677,23 @@ void rrr_net_transport_ctx_handle_application_data_bind (
 	handle->application_ptr_destroy = application_data_destroy;
 }
 
+void rrr_net_transport_ctx_get_socket_stats (
+		uint64_t *bytes_read_total,
+		uint64_t *bytes_written_total,
+		uint64_t *bytes_total,
+		struct rrr_net_transport_handle *handle
+) {
+	if (bytes_read_total != NULL) {
+		*bytes_read_total = handle->bytes_read_total;
+	}
+	if (bytes_written_total != NULL) {
+		*bytes_written_total = handle->bytes_written_total;
+	}
+	if (bytes_total != NULL) {
+		*bytes_total = handle->bytes_read_total + handle->bytes_written_total;
+	}
+}
+
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		int transport_handle,

@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
 #include "../type.h"
 
 static void __rrr_websocket_frame_destroy (
@@ -42,12 +43,19 @@ static void __rrr_websocket_frame_destroy (
 	free(frame);
 }
 
-void rrr_websocket_state_clear (
+void rrr_websocket_state_clear_receive (
 		struct rrr_websocket_state *ws_state
 ) {
-	RRR_FREE_IF_NOT_NULL(ws_state->fragment_buffer);
-	memset(ws_state, '\0', sizeof(*ws_state));
+	RRR_FREE_IF_NOT_NULL(ws_state->receive_state.fragment_buffer);
+	memset(&ws_state->receive_state, '\0', sizeof(ws_state->receive_state));
+}
+
+void rrr_websocket_state_clear_all (
+		struct rrr_websocket_state *ws_state
+) {
+	rrr_websocket_state_clear_receive(ws_state);
 	RRR_LL_DESTROY(&ws_state->send_queue, struct rrr_websocket_frame, __rrr_websocket_frame_destroy(node));
+	memset(ws_state, '\0', sizeof(*ws_state));
 }
 
 int rrr_websocket_frame_enqueue (
@@ -78,7 +86,98 @@ int rrr_websocket_frame_enqueue (
 		*payload = NULL;
 	}
 
+	ws_state->last_enqueued_opcode = frame->header.opcode;
+
 	RRR_LL_PUSH(&ws_state->send_queue, frame);
+
+	out:
+	return ret;
+}
+
+int rrr_websocket_check_timeout (
+		struct rrr_websocket_state *ws_state,
+		int timeout_s
+) {
+	if (ws_state->last_receive_time == 0) {
+		ws_state->last_receive_time = rrr_time_get_64();
+	}
+
+	uint64_t timeout_limit = rrr_time_get_64() - timeout_s * 1000 * 1000;
+
+	if (ws_state->last_receive_time > timeout_limit) {
+		return 0;
+	}
+
+	return 1;
+}
+
+int rrr_websocket_enqueue_ping_if_needed (
+		struct rrr_websocket_state *ws_state,
+		int ping_interval_s
+) {
+	if (ws_state->last_receive_time == 0) {
+		ws_state->last_receive_time = rrr_time_get_64();
+	}
+
+	uint64_t ping_limit = rrr_time_get_64() - ping_interval_s * 1000 * 1000;
+
+	if (ws_state->last_receive_time > ping_limit || ws_state->last_enqueued_opcode == RRR_WEBSOCKET_OPCODE_PING) {
+		return 0;
+	}
+
+	return rrr_websocket_frame_enqueue (
+			ws_state,
+			RRR_WEBSOCKET_OPCODE_PING,
+			NULL,
+			0,
+			0
+	);
+}
+
+static int __rrr_websocket_transport_ctx_send_frame (
+		struct rrr_net_transport_handle *handle,
+		struct rrr_websocket_frame *frame
+) {
+	int ret = 0;
+
+	RRR_DBG_3("Websocket %i send frame opcode %i size %" PRIu64 "\n",
+			handle->handle, frame->header.opcode, frame->header.payload_len);
+
+	uint8_t header[14];
+	memset(header, '\0', sizeof(header));
+
+	uint8_t pos = 0;
+
+	// Flags, opcode
+	header[pos] = frame->header.opcode;
+	header[pos] |= 1 << 7; // Fin
+	pos++;
+
+	if (frame->header.payload_len < 126) {
+		header[pos] = frame->header.payload_len;
+		pos++;
+	}
+	else if (frame->header.payload_len <= 65535) {
+		header[pos] = 126;
+		pos++;
+		uint16_t tmp = rrr_htobe16(frame->header.payload_len);
+		memcpy (header + pos, &tmp, sizeof(tmp));
+		pos += sizeof(tmp);
+	}
+	else {
+		header[pos] = 127;
+		pos++;
+		uint64_t tmp = rrr_htobe64(frame->header.payload_len);
+		memcpy (header + pos, &tmp, sizeof(tmp));
+		pos += sizeof(tmp);
+	}
+
+	// Masking key here, not used
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
+		RRR_MSG_0("Failed to send websocket header in __rrr_websocket_transport_ctx_send_frame\n");
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -172,7 +271,7 @@ int __rrr_websocket_get_target_size (
 	}
 
 	callback_data->ws_state->last_receive_time = rrr_time_get_64();
-	callback_data->ws_state->header = header_new;
+	callback_data->ws_state->receive_state.header = header_new;
 	read_session->target_size = target_len;
 
 	out:
@@ -189,11 +288,11 @@ int __rrr_websocket_receive_callback_intermediate (
 	int ret = 0;
 
 	RRR_DBG_3("Websocket receive frame type %u size %" PRIu64 "\n",
-			ws_state->last_opcode, payload_size);
+			ws_state->last_receive_opcode, payload_size);
 
 	// last_receive time is updated in get_target_size function
 
-	switch (ws_state->last_opcode) {
+	switch (ws_state->last_receive_opcode) {
 		case RRR_WEBSOCKET_OPCODE_CONNECTION_CLOSE:
 			ret = RRR_READ_EOF;
 			goto out;
@@ -210,7 +309,7 @@ int __rrr_websocket_receive_callback_intermediate (
 			break;
 		default:
 			ret = final_callback (
-					ws_state->last_opcode,
+					ws_state->last_receive_opcode,
 					payload,
 					payload_size,
 					final_callback_arg
@@ -231,16 +330,16 @@ int __rrr_websocket_receive_callback (
 
 	int ret = RRR_READ_OK;
 
-	char *payload = read_session->rx_buf_ptr + ws_state->header.header_len;
-	const ssize_t payload_size = read_session->rx_buf_wpos - ws_state->header.header_len;
+	char *payload = read_session->rx_buf_ptr + ws_state->receive_state.header.header_len;
+	const ssize_t payload_size = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
 
-	if (ws_state->header.mask) {
+	if (ws_state->receive_state.header.mask) {
 		ssize_t max = payload_size;
 		if (max < 0) {
 			RRR_BUG("BUG: wpos < header_len in __rrr_websocket_receive_callback\n");
 		}
 
-		uint32_t masking_key_be = rrr_htobe32(ws_state->header.masking_key);
+		uint32_t masking_key_be = rrr_htobe32(ws_state->receive_state.header.masking_key);
 		ssize_t i = 0;
 		max -= 4;
 		for (; i < max; i += 4) {
@@ -250,18 +349,18 @@ int __rrr_websocket_receive_callback (
 		i -= 4;
 		max += 4;
 		for (; i < max; i++) {
-			payload[i] = payload[i] ^ ws_state->header.masking_key_bytes[i % 4];
+			payload[i] = payload[i] ^ ws_state->receive_state.header.masking_key_bytes[i % 4];
 		}
 	}
 
 	// Save these in case header is reset
-	const unsigned short int fin = ws_state->header.fin;
-	const uint8_t opcode = ws_state->header.opcode;
+	const unsigned short int fin = ws_state->receive_state.header.fin;
+	const uint8_t opcode = ws_state->receive_state.header.opcode;
 
 	// Zero opcode means CONTINUATION frame
 	if (opcode) {
 		// First non-fin frame has opcode, start new fragmented frame and reset header
-		rrr_websocket_state_clear(ws_state);
+		rrr_websocket_state_clear_receive(ws_state);
 
 		switch (opcode) {
 			case RRR_WEBSOCKET_OPCODE_CONNECTION_CLOSE:
@@ -282,7 +381,7 @@ int __rrr_websocket_receive_callback (
 				goto out;
 		};
 
-		ws_state->last_opcode = opcode;
+		ws_state->last_receive_opcode = opcode;
 	}
 
 	if (!fin && opcode != RRR_WEBSOCKET_OPCODE_TEXT && opcode != RRR_WEBSOCKET_OPCODE_BINARY) {
@@ -296,21 +395,21 @@ int __rrr_websocket_receive_callback (
 	const char *payload_to_callback;
 	ssize_t payload_size_to_callback;
 
-	if (!ws_state->last_opcode) {
+	if (!ws_state->last_receive_opcode) {
 		RRR_MSG_0("Missing opcode in first websocket frame fragment\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	// Shortcut for single frames
-	if (ws_state->fragment_buffer == NULL && fin) {
+	if (ws_state->receive_state.fragment_buffer == NULL && fin) {
 		payload_to_callback = payload;
 		payload_size_to_callback = payload_size;
 		goto out_callback;
 	}
 
-	uint64_t new_fragment_size = ws_state->fragment_buffer_size + payload_size;
-	if (new_fragment_size < ws_state->fragment_buffer_size) {
+	uint64_t new_fragment_size = ws_state->receive_state.fragment_buffer_size + payload_size;
+	if (new_fragment_size < ws_state->receive_state.fragment_buffer_size) {
 		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -318,20 +417,20 @@ int __rrr_websocket_receive_callback (
 
 	{
 		char *buf_new;
-		if ((buf_new = realloc (ws_state->fragment_buffer, new_fragment_size)) == NULL) {
+		if ((buf_new = realloc (ws_state->receive_state.fragment_buffer, new_fragment_size)) == NULL) {
 			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n");
 			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
 			goto out;
 		}
-		ws_state->fragment_buffer = buf_new;
+		ws_state->receive_state.fragment_buffer = buf_new;
 	}
 
-	memcpy(ws_state->fragment_buffer + ws_state->fragment_buffer_size, payload, payload_size);
-	ws_state->fragment_buffer_size = new_fragment_size;
+	memcpy(ws_state->receive_state.fragment_buffer + ws_state->receive_state.fragment_buffer_size, payload, payload_size);
+	ws_state->receive_state.fragment_buffer_size = new_fragment_size;
 
 	if (fin) {
-		payload_to_callback = ws_state->fragment_buffer;
-		payload_size_to_callback = ws_state->fragment_buffer_size;
+		payload_to_callback = ws_state->receive_state.fragment_buffer;
+		payload_size_to_callback = ws_state->receive_state.fragment_buffer_size;
 		goto out_callback;
 	}
 
@@ -345,7 +444,7 @@ int __rrr_websocket_receive_callback (
 				callback_data->callback_arg
 		);
 	out:
-		rrr_websocket_state_clear(callback_data->ws_state);
+		rrr_websocket_state_clear_receive(callback_data->ws_state);
 	out_no_clear:
 		return ret;
 }
@@ -383,6 +482,16 @@ int rrr_websocket_transport_ctx_send_frames (
 	struct rrr_net_transport_handle *handle,
 	struct rrr_websocket_state *ws_state
 ) {
+	int ret = 0;
 
+	RRR_LL_ITERATE_BEGIN(&ws_state->send_queue, struct rrr_websocket_frame);
+		if ((ret = __rrr_websocket_transport_ctx_send_frame(handle, node)) != 0) {
+			goto out;
+		}
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&ws_state->send_queue, 0; __rrr_websocket_frame_destroy(node));
+
+	out:
+	return ret;
 }
 

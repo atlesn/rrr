@@ -63,18 +63,26 @@ struct rrr_websocket_frame_collection {
 	RRR_LL_HEAD(struct rrr_websocket_frame);
 };
 
-struct rrr_websocket_state {
+struct rrr_websocket_state_receive {
 	struct rrr_websocket_header header;
 	char *fragment_buffer;
 	uint64_t fragment_buffer_size;
-	uint8_t last_opcode;
+};
+
+struct rrr_websocket_state {
+	struct rrr_websocket_state_receive receive_state;
+	uint8_t last_receive_opcode;
 	uint64_t last_receive_time;
+	uint8_t last_enqueued_opcode;
 	struct rrr_websocket_frame_collection send_queue;
 };
 
 struct rrr_net_transport_handle;
 
-void rrr_websocket_state_clear (
+void rrr_websocket_state_clear_receive (
+		struct rrr_websocket_state *ws_state
+);
+void rrr_websocket_state_clear_all (
 		struct rrr_websocket_state *ws_state
 );
 int rrr_websocket_frame_enqueue (
@@ -83,6 +91,14 @@ int rrr_websocket_frame_enqueue (
 		char **payload,
 		uint64_t payload_len,
 		unsigned short int do_mask
+);
+int rrr_websocket_check_timeout (
+		struct rrr_websocket_state *ws_state,
+		int timeout_s
+);
+int rrr_websocket_enqueue_ping_if_needed (
+		struct rrr_websocket_state *ws_state,
+		int ping_interval_s
 );
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
@@ -93,6 +109,10 @@ int rrr_websocket_transport_ctx_read_frames (
 		ssize_t read_max_size,
 		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
+);
+int rrr_websocket_transport_ctx_send_frames (
+	struct rrr_net_transport_handle *handle,
+	struct rrr_websocket_state *ws_state
 );
 
 #endif /* RRR_WEBSOCKET_H */
