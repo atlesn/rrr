@@ -254,23 +254,26 @@ int __rrr_websocket_get_target_size (
 	flags >>= 1;
 
 	if (payload_len == 126) {
+		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
 		header_new.header_len += 2;
 		CHECK_LENGTH();
-		header_new.payload_len = rrr_be16toh(*((uint16_t *) read_session->rx_buf_ptr + header_new.header_len - 2));
+		header_new.payload_len = rrr_be16toh(*((uint16_t *) pos));
 	}
 	else if (payload_len == 127) {
+		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
 		header_new.header_len += 8;
 		CHECK_LENGTH();
-		header_new.payload_len = rrr_be64toh(*((uint64_t *) read_session->rx_buf_ptr + header_new.header_len - 8));
+		header_new.payload_len = rrr_be64toh(*((uint64_t *) pos));
 	}
 	else {
 		header_new.payload_len = payload_len;
 	}
 
 	if (header_new.mask) {
+		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
 		header_new.header_len += 4;
 		CHECK_LENGTH();
-		header_new.masking_key = rrr_be32toh(*((uint32_t *) read_session->rx_buf_ptr + header_new.header_len - 4));
+		header_new.masking_key = rrr_be32toh(*((uint32_t *) pos));
 	}
 
 	rrr_biglength target_len = header_new.header_len + header_new.payload_len;
