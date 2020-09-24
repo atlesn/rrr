@@ -321,14 +321,7 @@ static int __rrr_http_server_accept_if_free_thread (
 static int __rrr_http_server_allocate_threads (
 		struct rrr_thread_collection *threads,
 		int count,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -339,14 +332,7 @@ static int __rrr_http_server_allocate_threads (
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
-				unique_id_generator_callback,
-				unique_id_generator_callback_arg,
-				websocket_callback,
-				websocket_callback_arg,
-				final_callback_raw,
-				final_callback_raw_arg,
-				final_callback,
-				final_callback_arg
+				callbacks
 		)) != 0) {
 			RRR_MSG_0("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
 			goto out;
@@ -388,14 +374,7 @@ int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,
 		int max_threads,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -404,14 +383,7 @@ int rrr_http_server_tick (
 	if ((ret = __rrr_http_server_allocate_threads (
 			server->threads,
 			max_threads,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
-			websocket_callback,
-			websocket_callback_arg,
-			final_callback_raw,
-			final_callback_raw_arg,
-			final_callback,
-			final_callback_arg
+			callbacks
 	)) != 0) {
 		RRR_MSG_0("Could not allocate threads in rrr_http_server_tick\n");
 		goto out;

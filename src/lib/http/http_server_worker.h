@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "http_session.h"
+#include "http_server_common.h"
 
 struct rrr_net_transport;
 struct rrr_thread;
@@ -41,17 +42,7 @@ struct rrr_http_server_worker_config_data {
 	socklen_t socklen;
 	ssize_t read_max_size;
 
-	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
-	void *websocket_callback_arg;
-
-	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
-
-	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-
-	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_raw_arg;
+	struct rrr_http_server_callbacks callbacks;
 };
 
 struct rrr_http_server_worker_preliminary_data {
@@ -72,18 +63,15 @@ struct rrr_http_server_worker_data {
 	rrr_http_unique_id websocket_unique_id;
 	int request_complete;
 	uint64_t bytes_total;
+
+	// May be set by application in websocket handshake callback, free()
+	// will be called on this when the worker exits
+	void *websocket_application_data;
 };
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		const struct rrr_http_server_callbacks *callbacks
 );
 void rrr_http_server_worker_preliminary_data_destroy_if_not_null (
 		struct rrr_http_server_worker_preliminary_data *worker_data

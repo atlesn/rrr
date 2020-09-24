@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_part.h"
 
-#define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS	\
+#define RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS	\
 	struct rrr_net_transport_handle *handle,	\
 	const struct rrr_http_part *request_part,	\
 	struct rrr_http_part *response_part,		\
@@ -38,12 +38,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	const struct sockaddr *sockaddr,			\
 	socklen_t socklen,							\
 	ssize_t overshoot_bytes,					\
-	rrr_http_unique_id unique_id,				\
-	void *arg
+	rrr_http_unique_id unique_id
 
 #define RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
-	int *do_websocket,								\
-	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+	int *do_websocket,										\
+	RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS,			\
+	void *arg
+
+#define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS		\
+	RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS,	\
+	int websocket_upgrade_in_progress,				\
+	void *arg
 
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	uint8_t opcode, const char *payload, uint64_t payload_size, rrr_http_unique_id unique_id, void *arg
@@ -54,10 +59,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS			\
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
-
-#define RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS		\
-	struct rrr_thread *thread,								\
-	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
 struct rrr_http_session {
 	int is_client;

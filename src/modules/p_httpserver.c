@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX					"httpserver/request/"
 #define RRR_HTTPSERVER_RAW_TOPIC_PREFIX						"httpserver/raw/"
+#define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX				"httpserver/websocket/"
 #define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS				2000
 #define RRR_HTTPSERVER_WORKER_THREADS_MAX					1024
 
@@ -72,6 +73,7 @@ struct httpserver_data {
 	int do_get_raw_response_from_senders;
 	int do_receive_raw_data;
 	int do_receive_full_request;
+	int do_accept_websocket_binary;
 
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
@@ -174,6 +176,15 @@ static int httpserver_parse_config (
 	if ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->websocket_topic_filters, config, "http_server_websocket_topic_filters")) != 0) {
 		RRR_MSG_0("Could not parse setting http_server_websocket_topic_filters for instance %s\n",
 				config->name);
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_accept_websocket_binary", do_accept_websocket_binary, 0);
+
+	if (data->do_accept_websocket_binary && RRR_LL_COUNT(&data->websocket_topic_filters) == 0) {
+		RRR_MSG_0("http_server_accept_websocket_binary was set in httpserver instance %s, but no websocket topics are defined in http_server_websocket_topic_filters. This is a configuration error.\n",
+				config->name);
+		ret = 1;
 		goto out;
 	}
 
@@ -376,9 +387,15 @@ struct httpserver_callback_data {
 static int httpserver_generate_unique_topic (
 		char **result,
 		const char *prefix,
-		rrr_http_unique_id unique_id
+		rrr_http_unique_id unique_id,
+		const char *extra
 ) {
-	if (rrr_asprintf(result, "%s%" PRIu64, prefix, unique_id) <= 0) {
+	if (rrr_asprintf(result, "%s%" PRIu64 "%s%s",
+			prefix,
+			unique_id,
+			(extra != NULL ? "/" : ""),
+			(extra != NULL ? extra : "")
+	) <= 0) {
 		RRR_MSG_0("Could not create topic in httpserver_generate_unique_topic\n");
 		return 1;
 	}
@@ -490,7 +507,8 @@ static int httpserver_receive_get_raw_response (
 	if ((ret = httpserver_generate_unique_topic (
 			&callback_data.topic_filter,
 			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
-			unique_id
+			unique_id,
+			NULL
 	)) != 0) {
 		goto out;
 	}
@@ -631,7 +649,8 @@ static int httpserver_receive_callback (
 	if ((ret = httpserver_generate_unique_topic (
 			&request_topic,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
-			unique_id
+			unique_id,
+			NULL
 	)) != 0) {
 		goto out;
 	}
@@ -685,7 +704,7 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (data->do_get_raw_response_from_senders) {
+	if (data->do_get_raw_response_from_senders && !websocket_upgrade_in_progress) {
 		if ((ret = httpserver_receive_get_raw_response (
 				handle,
 				thread,
@@ -712,6 +731,7 @@ struct receive_raw_broker_callback_data {
 	const char *data;
 	ssize_t data_size;
 	rrr_http_unique_id unique_id;
+	const char *topic_extra;
 };
 
 static int httpserver_receive_raw_broker_callback (
@@ -724,14 +744,13 @@ static int httpserver_receive_raw_broker_callback (
 
 	char *topic = NULL;
 
-	if (write_callback_data->parent_data->do_get_raw_response_from_senders) {
-		if ((ret = httpserver_generate_unique_topic(
-				&topic,
-				RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
-				write_callback_data->unique_id
-		)) != 0) {
-			goto out;
-		}
+	if ((ret = httpserver_generate_unique_topic (
+			&topic,
+			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
+			write_callback_data->unique_id,
+			write_callback_data->topic_extra
+	)) != 0) {
+		goto out;
 	}
 
 	if ((ret = rrr_msg_msg_new_with_data (
@@ -760,9 +779,11 @@ static int httpserver_receive_raw_broker_callback (
 }
 
 // NOTE : Worker thread CTX in httpserver_receive_websocket_callback
-static int httpserver_receive_websocket_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
+static int httpserver_websocket_handshake_callback (
+		RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
+	struct httpserver_callback_data *callback_data = arg;
+
 	*do_websocket = 1;
 
 	(void)(data_ptr);
@@ -774,7 +795,7 @@ static int httpserver_receive_websocket_callback (
 
 	int ret = 0;
 
-	struct httpserver_callback_data *callback_data = arg;
+	void *new_application_data = NULL;
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, request_part->request_uri_nullsafe);
 
@@ -792,9 +813,9 @@ static int httpserver_receive_websocket_callback (
 		goto out_bad_request;
 	}
 
-	if (strchr(topic_begin, '?') != NULL) {
-		RRR_MSG_0("Received websocket request with query string set (by using ?), this is not supported\n");
-		goto out_bad_request;
+	char *questionmark = strchr(topic_begin, '?');
+	if (questionmark) {
+		*questionmark = '\0';
 	}
 
 	if (rrr_mqtt_topic_validate_name(topic_begin) != 0) {
@@ -825,6 +846,18 @@ static int httpserver_receive_websocket_callback (
 		goto out_not_found;
 	}
 
+	if ((new_application_data = malloc(strlen(topic_begin) + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(new_application_data, topic_begin, strlen(topic_begin) + 1);
+
+	RRR_FREE_IF_NOT_NULL(*websocket_application_data);
+	*websocket_application_data = new_application_data;
+	new_application_data = NULL;
+
 	goto out;
 	out_not_found:
 		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
@@ -833,6 +866,64 @@ static int httpserver_receive_websocket_callback (
 		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		goto out;
 	out:
+		RRR_FREE_IF_NOT_NULL(new_application_data);
+		return ret;
+}
+
+int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
+	struct httpserver_callback_data *callback_data = arg;
+	struct httpserver_data *data = callback_data->httpserver_data;
+
+	int ret = 0;
+
+	char *topic = NULL;
+
+	struct receive_raw_broker_callback_data write_callback_data = {
+		callback_data->httpserver_data,
+		NULL,
+		0,
+		unique_id,
+		*websocket_application_data
+	};
+
+	if (payload_size > SSIZE_MAX) {
+		RRR_MSG_0("Payload too long for frame with opcode %u in httpserver_websocket_frame_callback %" PRIu64 ">%li",
+				opcode, payload_size, (long int) SSIZE_MAX);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY) {
+		if (!data->do_accept_websocket_binary) {
+			RRR_DBG_3("httpserver instance %s dropping received binary websocket frame per configuration\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+
+		write_callback_data.data = payload;
+		write_callback_data.data_size = payload_size;
+
+		goto out_write_entry;
+	}
+	else if (opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
+		write_callback_data.data = payload;
+		write_callback_data.data_size = payload_size;
+
+		goto out_write_entry;
+	}
+
+	goto out;
+	out_write_entry:
+		ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpserver_receive_raw_broker_callback,
+			&write_callback_data
+		);
+	out:
+		RRR_FREE_IF_NOT_NULL(topic);
 		return ret;
 }
 
@@ -846,7 +937,8 @@ static int httpserver_receive_raw_callback (
 		receive_callback_data->httpserver_data,
 		data,
 		data_size,
-		unique_id
+		unique_id,
+		NULL
 	};
 
 	return rrr_message_broker_write_entry (
@@ -944,6 +1036,19 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			http_server->threads
 	};
 
+	struct rrr_http_server_callbacks callbacks = {
+			httpserver_unique_id_generator_callback,
+			&callback_data,
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+			(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
+			(data->do_receive_raw_data ? &callback_data : NULL),
+			httpserver_receive_callback,
+			&callback_data
+	};
+
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		rrr_thread_update_watchdog_time(thread);
 
@@ -953,14 +1058,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 				&accept_count,
 				http_server,
 				data->worker_threads,
-				httpserver_unique_id_generator_callback,
-				&callback_data,
-				(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_receive_websocket_callback : NULL),
-				(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-				(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
-				(data->do_receive_raw_data ? &callback_data : NULL),
-				httpserver_receive_callback,
-				&callback_data
+				&callbacks
 		) != 0) {
 			RRR_MSG_0("Failure in main loop in httpserver instance %s\n",
 					INSTANCE_D_NAME(thread_data));

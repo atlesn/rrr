@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_session.h"
 #include "http_part.h"
+#include "http_server_common.h"
 
 #include "../net_transport/net_transport.h"
 #include "../threads.h"
@@ -41,14 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
-		void *websocket_callback_arg,
-		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -63,17 +57,7 @@ int rrr_http_server_worker_preliminary_data_new (
 
 	memset (data, '\0', sizeof(*data));
 
-	data->config_data.websocket_callback = websocket_callback;
-	data->config_data.websocket_callback_arg = websocket_callback_arg;
-
-	data->config_data.final_callback = final_callback;
-	data->config_data.final_callback_arg = final_callback_arg;
-
-	data->config_data.unique_id_generator_callback = unique_id_generator_callback;
-	data->config_data.unique_id_generator_callback_arg = unique_id_generator_callback_arg;
-
-	data->config_data.final_callback_raw = final_callback_raw;
-	data->config_data.final_callback_raw_arg = final_callback_raw_arg;
+	data->config_data.callbacks = *callbacks;
 
 	*result = data;
 
@@ -117,11 +101,12 @@ static void __rrr_http_server_worker_preliminary_data_destroy_void_intermediate 
 	rrr_thread_with_lock_do(thread, __rrr_http_server_worker_preliminary_data_destroy_callback, NULL);
 }
 
-static void __rrr_http_server_worker_close_transport (
+static void __rrr_http_server_worker_data_cleanup (
 		void *arg
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 	rrr_net_transport_handle_close_tag_list_push(worker_data->config_data.transport, worker_data->config_data.transport_handle);
+	RRR_FREE_IF_NOT_NULL(worker_data->websocket_application_data);
 }
 
 static int __rrr_http_server_worker_push_response_headers (
@@ -210,7 +195,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		}
 	}
 
-	if (overshoot_bytes == 0) {
+	if (overshoot_bytes == 0 && !websocket_upgrade_in_progress) {
 		worker_data->request_complete = 1;
 	}
 
@@ -218,8 +203,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		goto out;
 	}
 
-	if (worker_data->config_data.final_callback != NULL) {
-		ret = worker_data->config_data.final_callback (
+	if (worker_data->config_data.callbacks.final_callback != NULL) {
+		ret = worker_data->config_data.callbacks.final_callback (
 				worker_data->thread,
 				handle,
 				request_part,
@@ -230,7 +215,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				worker_data->config_data.socklen,
 				overshoot_bytes,
 				unique_id,
-				worker_data->config_data.final_callback_arg
+				websocket_upgrade_in_progress,
+				worker_data->config_data.callbacks.final_callback_arg
 		);
 	}
 
@@ -262,7 +248,8 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 
 	int ret = 0;
 
-	if ((ret = worker_data->config_data.websocket_callback (
+	if ((ret = worker_data->config_data.callbacks.websocket_handshake_callback (
+			&worker_data->websocket_application_data,
 			do_websocket,
 			handle,
 			request_part,
@@ -273,7 +260,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			worker_data->config_data.socklen,
 			overshoot_bytes,
 			unique_id,
-			worker_data->config_data.final_callback_arg
+			worker_data->config_data.callbacks.final_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -295,11 +282,18 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
-	int ret = 0;
+	if (worker_data->config_data.callbacks.websocket_frame_callback) {
+		return worker_data->config_data.callbacks.websocket_frame_callback (
+				&worker_data->websocket_application_data,
+				opcode,
+				payload,
+				payload_size,
+				unique_id,
+				worker_data->config_data.callbacks.websocket_handshake_callback_arg
+		);
+	}
 
-	printf("Received opcode %u length %" PRIu64 "\n", opcode, payload_size);
-
-	return ret;
+	return 0;
 }
 
 static int __rrr_http_server_worker_net_transport_ctx_do_work (
@@ -332,10 +326,10 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	else {
 		rrr_http_unique_id unique_id = 0;
 
-		if (worker_data->config_data.unique_id_generator_callback != NULL) {
-			if ((ret = worker_data->config_data.unique_id_generator_callback(
+		if (worker_data->config_data.callbacks.unique_id_generator_callback != NULL) {
+			if ((ret = worker_data->config_data.callbacks.unique_id_generator_callback(
 					&unique_id,
-					worker_data->config_data.unique_id_generator_callback_arg
+					worker_data->config_data.callbacks.unique_id_generator_callback_arg
 			)) != 0) {
 				RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_work\n");
 				goto out;
@@ -352,8 +346,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				worker_data,
 				__rrr_http_server_worker_http_session_receive_callback,
 				worker_data,
-				worker_data->config_data.final_callback_raw,
-				worker_data->config_data.final_callback_raw_arg
+				worker_data->config_data.callbacks.final_callback_raw,
+				worker_data->config_data.callbacks.final_callback_raw_arg
 		)) != 0) {
 			if (ret != RRR_HTTP_SOFT_ERROR) {
 				RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
@@ -429,7 +423,7 @@ static void __rrr_http_server_worker_thread_entry (
 	// function in net transport will fail if the handle has been freed, this means
 	// that the HTTP session has also been freed.
 
-	pthread_cleanup_push(__rrr_http_server_worker_close_transport, &worker_data);
+	pthread_cleanup_push(__rrr_http_server_worker_data_cleanup, &worker_data);
 
 	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.config_data.transport_handle);
 

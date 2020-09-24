@@ -813,6 +813,7 @@ static int __rrr_http_session_response_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			0,
+			0,
 			receive_data->callback_arg
 	)) != 0) {
 		goto out;
@@ -1183,7 +1184,7 @@ static int __rrr_http_session_request_receive_callback (
 		}
 	}
 
-	if (do_websocket == 0 && (ret = receive_data->callback (
+	if ((ret = receive_data->callback (
 			receive_data->handle,
 			session->request_part,
 			session->response_part,
@@ -1192,6 +1193,7 @@ static int __rrr_http_session_request_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
+			do_websocket,
 			receive_data->callback_arg
 	)) != RRR_HTTP_OK) {
 		goto out;
