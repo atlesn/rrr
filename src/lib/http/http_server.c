@@ -169,15 +169,15 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		socklen_t socklen,
 		void *arg
 ) {
-	struct rrr_http_server_worker_preliminary_data *worker_data = arg;
+	struct rrr_http_server_worker_preliminary_data *worker_data_preliminary = arg;
 
-	worker_data->error = 0;
+	worker_data_preliminary->error = 0;
 
 	if (rrr_http_session_transport_ctx_server_new (
 			handle
 	) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
-		worker_data->error = 1;
+		worker_data_preliminary->error = 1;
 	}
 	else {
 /*		char buf[256];
@@ -186,15 +186,15 @@ static void __rrr_http_server_accept_create_http_session_callback (
 
 		// DO NOT STORE HANDLE POINTER
 		
-		worker_data->transport = handle->transport;
-		worker_data->transport_handle = handle->handle;
+		worker_data_preliminary->config_data.transport = handle->transport;
+		worker_data_preliminary->config_data.transport_handle = handle->handle;
 
-		if (socklen > sizeof(worker_data->sockaddr)) {
+		if (socklen > sizeof(worker_data_preliminary->config_data.sockaddr)) {
 			RRR_BUG("BUG: Socklen too long in __rrr_http_Server_accept_create_http_session_callback\n");
 		}
 
-		memcpy(&worker_data->sockaddr, sockaddr, socklen);
-		worker_data->socklen = socklen;
+		memcpy(&worker_data_preliminary->config_data.sockaddr, sockaddr, socklen);
+		worker_data_preliminary->config_data.socklen = socklen;
 	}
 }
 
@@ -202,7 +202,7 @@ static int __rrr_http_server_accept (
 		int *did_accept,
 		struct rrr_net_transport *transport,
 		int handle,
-		struct rrr_http_server_worker_preliminary_data *worker_data
+		struct rrr_http_server_worker_preliminary_data *worker_data_preliminary
 ) {
 	int ret = 0;
 
@@ -212,19 +212,19 @@ static int __rrr_http_server_accept (
 			transport,
 			handle,
 			__rrr_http_server_accept_create_http_session_callback,
-			worker_data
+			worker_data_preliminary
 	)) != 0) {
 		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_read_write\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (worker_data->transport_handle != 0) {
+	if (worker_data_preliminary->config_data.transport_handle != 0) {
 		*did_accept = 1;
 	}
 
 	out:
-	return ret | worker_data->error;
+	return ret | worker_data_preliminary->error;
 }
 
 struct rrr_http_server_accept_if_free_thread_callback_data {

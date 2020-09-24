@@ -32,8 +32,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_thread;
 struct rrr_http_part;
-/*
+
 struct rrr_http_server_worker_config_data {
+	struct rrr_net_transport *transport;
+	int transport_handle;
+
+	struct sockaddr_storage sockaddr;
+	socklen_t socklen;
+	ssize_t read_max_size;
+
 	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
 
@@ -42,8 +49,11 @@ struct rrr_http_server_worker_config_data {
 
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
+
+	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *final_callback_raw_arg;
 };
-*/
+
 struct rrr_http_server_worker_preliminary_data {
 	// Locking is provided by using thread framework lock wrapper.
 	// DO NOT access this struct except from in callback of the wrapper.
@@ -52,57 +62,15 @@ struct rrr_http_server_worker_preliminary_data {
 	// add pointers to data which may be modified outside of thread lock
 	// wrapper.
 
-	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
-	void *websocket_callback_arg;
-
-	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
-
-	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-
-	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_raw_arg;
-
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
-
+	struct rrr_http_server_worker_config_data config_data;
 	int error;
-
-	struct rrr_net_transport *transport;
-	int transport_handle;
-
-	ssize_t read_max_size;
 };
 
 struct rrr_http_server_worker_data {
-	struct rrr_net_transport *transport;
-	int transport_handle;
-
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
-
-	ssize_t read_max_size;
-
-	// Helper pointers
+	struct rrr_http_server_worker_config_data config_data;
 	struct rrr_thread *thread;
-
-	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
-	void *websocket_callback_arg;
-
-	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
-
-	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-
-	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_raw_arg;
-
 	rrr_http_unique_id websocket_unique_id;
-
 	int request_complete;
-
 	uint64_t bytes_total;
 };
 

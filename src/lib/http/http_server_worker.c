@@ -63,17 +63,17 @@ int rrr_http_server_worker_preliminary_data_new (
 
 	memset (data, '\0', sizeof(*data));
 
-	data->websocket_callback = websocket_callback;
-	data->websocket_callback_arg = websocket_callback_arg;
+	data->config_data.websocket_callback = websocket_callback;
+	data->config_data.websocket_callback_arg = websocket_callback_arg;
 
-	data->final_callback = final_callback;
-	data->final_callback_arg = final_callback_arg;
+	data->config_data.final_callback = final_callback;
+	data->config_data.final_callback_arg = final_callback_arg;
 
-	data->unique_id_generator_callback = unique_id_generator_callback;
-	data->unique_id_generator_callback_arg = unique_id_generator_callback_arg;
+	data->config_data.unique_id_generator_callback = unique_id_generator_callback;
+	data->config_data.unique_id_generator_callback_arg = unique_id_generator_callback_arg;
 
-	data->final_callback_raw = final_callback_raw;
-	data->final_callback_raw_arg = final_callback_raw_arg;
+	data->config_data.final_callback_raw = final_callback_raw;
+	data->config_data.final_callback_raw_arg = final_callback_raw_arg;
 
 	*result = data;
 
@@ -121,7 +121,7 @@ static void __rrr_http_server_worker_close_transport (
 		void *arg
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
-	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
+	rrr_net_transport_handle_close_tag_list_push(worker_data->config_data.transport, worker_data->config_data.transport_handle);
 }
 
 static int __rrr_http_server_worker_push_response_headers (
@@ -161,7 +161,7 @@ static int __rrr_http_server_worker_initialize_response (
 
 	if (__rrr_http_server_worker_push_response_headers(response_part) != 0) {
 		RRR_MSG_0("HTTP worker %i: Could not push default response headers in __rrr_http_server_worker_net_transport_ctx_send_response\n",
-				worker_data->transport_handle);
+				worker_data->config_data.transport_handle);
 		return RRR_HTTP_HARD_ERROR;
 	}
 
@@ -199,14 +199,14 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
 		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
 
-		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->sockaddr, worker_data->socklen);
+		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->config_data.sockaddr, worker_data->config_data.socklen);
 
 		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
-				worker_data->transport_handle, ip_buf, method_buf, uri_buf);
+				worker_data->config_data.transport_handle, ip_buf, method_buf, uri_buf);
 
 		if (overshoot_bytes > 0) {
 			RRR_MSG_2("HTTP worker %i %s has %li bytes overshoot, expecting another request\n",
-					worker_data->transport_handle, ip_buf, overshoot_bytes);
+					worker_data->config_data.transport_handle, ip_buf, overshoot_bytes);
 		}
 	}
 
@@ -218,19 +218,19 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		goto out;
 	}
 
-	if (worker_data->final_callback != NULL) {
-		ret = worker_data->final_callback (
+	if (worker_data->config_data.final_callback != NULL) {
+		ret = worker_data->config_data.final_callback (
 				worker_data->thread,
 				handle,
 				request_part,
 				response_part,
 				data_ptr,
 				// Address was cached when accepting
-				(const struct sockaddr *) &worker_data->sockaddr,
-				worker_data->socklen,
+				(const struct sockaddr *) &worker_data->config_data.sockaddr,
+				worker_data->config_data.socklen,
 				overshoot_bytes,
 				unique_id,
-				worker_data->final_callback_arg
+				worker_data->config_data.final_callback_arg
 		);
 	}
 
@@ -262,18 +262,18 @@ static int __rrr_http_server_worker_websocket_callback (
 
 	int ret = 0;
 
-	if ((ret = worker_data->websocket_callback (
+	if ((ret = worker_data->config_data.websocket_callback (
 			do_websocket,
 			handle,
 			request_part,
 			response_part,
 			data_ptr,
 			// Address was cached when accepting
-			(const struct sockaddr *) &worker_data->sockaddr,
-			worker_data->socklen,
+			(const struct sockaddr *) &worker_data->config_data.sockaddr,
+			worker_data->config_data.socklen,
 			overshoot_bytes,
 			unique_id,
-			worker_data->final_callback_arg
+			worker_data->config_data.final_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -315,7 +315,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	if (worker_data->websocket_unique_id != 0) {
 		if ((ret = rrr_http_session_transport_ctx_websocket_tick (
 				handle,
-				worker_data->read_max_size,
+				worker_data->config_data.read_max_size,
 				worker_data->websocket_unique_id,
 				RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S,
 				RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S,
@@ -324,7 +324,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 		)) != 0) {
 			if (ret != RRR_READ_EOF) {
 				RRR_MSG_0("HTTP worker %i: Error %i while processing websocket data\n",
-						worker_data->transport_handle, ret);
+						worker_data->config_data.transport_handle, ret);
 			}
 			goto out;
 		}
@@ -332,10 +332,10 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	else {
 		rrr_http_unique_id unique_id = 0;
 
-		if (worker_data->unique_id_generator_callback != NULL) {
-			if ((ret = worker_data->unique_id_generator_callback(
+		if (worker_data->config_data.unique_id_generator_callback != NULL) {
+			if ((ret = worker_data->config_data.unique_id_generator_callback(
 					&unique_id,
-					worker_data->unique_id_generator_callback_arg
+					worker_data->config_data.unique_id_generator_callback_arg
 			)) != 0) {
 				RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_work\n");
 				goto out;
@@ -346,18 +346,18 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				handle,
 				RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 				RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
-				worker_data->read_max_size,
+				worker_data->config_data.read_max_size,
 				unique_id,
 				__rrr_http_server_worker_websocket_callback,
 				worker_data,
 				__rrr_http_server_worker_http_session_receive_callback,
 				worker_data,
-				worker_data->final_callback_raw,
-				worker_data->final_callback_raw_arg
+				worker_data->config_data.final_callback_raw,
+				worker_data->config_data.final_callback_raw_arg
 		)) != 0) {
 			if (ret != RRR_HTTP_SOFT_ERROR) {
 				RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
-						worker_data->transport_handle);
+						worker_data->config_data.transport_handle);
 			}
 			goto out;
 		}
@@ -379,23 +379,7 @@ static int __rrr_http_server_worker_preliminary_data_get_callback (
 
 	struct rrr_http_server_worker_preliminary_data *worker_data_preliminary = thread->private_data;
 
-	worker_data->read_max_size = worker_data_preliminary->read_max_size;
-	worker_data->transport = worker_data_preliminary->transport;
-	worker_data->transport_handle = worker_data_preliminary->transport_handle;
-	worker_data->sockaddr = worker_data_preliminary->sockaddr;
-	worker_data->socklen = worker_data_preliminary->socklen;
-
-	worker_data->websocket_callback = worker_data_preliminary->websocket_callback;
-	worker_data->websocket_callback_arg = worker_data_preliminary->websocket_callback_arg;
-
-	worker_data->final_callback = worker_data_preliminary->final_callback;
-	worker_data->final_callback_arg = worker_data_preliminary->final_callback_arg;
-
-	worker_data->unique_id_generator_callback = worker_data_preliminary->unique_id_generator_callback;
-	worker_data->unique_id_generator_callback_arg = worker_data_preliminary->unique_id_generator_callback_arg;
-
-	worker_data->final_callback_raw = worker_data_preliminary->final_callback_raw;
-	worker_data->final_callback_raw_arg = worker_data_preliminary->final_callback_raw_arg;
+	worker_data->config_data = worker_data_preliminary->config_data;
 
 	return 0;
 }
@@ -431,7 +415,7 @@ static void __rrr_http_server_worker_thread_entry (
 //	printf("http worker start: %s family %i socklen %i\n", buf, worker_data.sockaddr.ss_family, worker_data.socklen);
 
 	// This might happen upon server shutdown
-	if (worker_data.transport_handle == 0) {
+	if (worker_data.config_data.transport_handle == 0) {
 		goto out;
 	}
 
@@ -447,7 +431,7 @@ static void __rrr_http_server_worker_thread_entry (
 
 	pthread_cleanup_push(__rrr_http_server_worker_close_transport, &worker_data);
 
-	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.transport_handle);
+	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.config_data.transport_handle);
 
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
 	uint64_t prev_bytes_total = 0;
@@ -456,21 +440,21 @@ static void __rrr_http_server_worker_thread_entry (
 
 		int ret_tmp = 0;
 		if ((ret_tmp = rrr_net_transport_handle_with_transport_ctx_do (
-				worker_data.transport,
-				worker_data.transport_handle,
+				worker_data.config_data.transport,
+				worker_data.config_data.transport_handle,
 				__rrr_http_server_worker_net_transport_ctx_do_work,
 				&worker_data
 		)) != 0) {
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				RRR_DBG_2("HTTP worker %i: Failed while working with client, soft error\n",
-						worker_data.transport_handle);
+						worker_data.config_data.transport_handle);
 			}
 			else if (ret_tmp == RRR_READ_EOF) {
 				break;
 			}
 			else {
 				RRR_MSG_0("HTTP worker %i: Failed while working with client, hard error\n",
-						worker_data.transport_handle);
+						worker_data.config_data.transport_handle);
 			}
 			break;
 		}
@@ -496,7 +480,7 @@ static void __rrr_http_server_worker_thread_entry (
 		prev_bytes_total = worker_data.bytes_total;
 	}
 
-	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.transport_handle);
+	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.config_data.transport_handle);
 
 	// This cleans up HTTP data
 	pthread_cleanup_pop(1);
