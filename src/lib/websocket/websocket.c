@@ -414,26 +414,18 @@ int __rrr_websocket_receive_callback_interpret_step (
 
 	int ret = RRR_READ_OK;
 
-	char *payload = read_session->rx_buf_ptr + ws_state->receive_state.header.header_len;
+	uint8_t *payload = (uint8_t *) read_session->rx_buf_ptr + ws_state->receive_state.header.header_len;
 	const ssize_t payload_size = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
 
 	if (ws_state->receive_state.header.mask) {
-		ssize_t max = payload_size;
-		if (max < 0) {
-			RRR_BUG("BUG: wpos < header_len in __rrr_websocket_receive_callback\n");
-		}
+		union {
+			uint32_t key_32;
+			uint8_t key_8[4];
+		} key;
+		key.key_32 = rrr_htobe32(ws_state->receive_state.header.masking_key);
 
-		uint32_t masking_key_be = rrr_htobe32(ws_state->receive_state.header.masking_key);
-		ssize_t i = 0;
-		max -= 4;
-		for (; i < max; i += 4) {
-			*((uint32_t *) payload + i) = *((uint32_t *) payload + i) ^ masking_key_be;
-		}
-
-		i -= 4;
-		max += 4;
-		for (; i < max; i++) {
-			payload[i] = payload[i] ^ ws_state->receive_state.header.masking_key_bytes[i % 4];
+		for (ssize_t i = 0; i < payload_size; i++) {
+			payload[i] = payload[i] ^ key.key_8[i % 4];
 		}
 	}
 

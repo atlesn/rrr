@@ -10,11 +10,30 @@
 <script>
 
 var ws = null;
+var message_counter = 0;
+
+function ws_update_statusbox (is_connected) {
+	var status = (is_connected ? "CONNECTED" : "NOT CONNECTED");
+	var colour = (is_connected ? "green" : "gray");
+
+	document.getElementById('status').innerHTML = status;
+	document.getElementById('status').className = colour;
+}
 
 function ws_send_alive() {
 	if (ws != null) {
 		try {
-			ws.send('Alive');
+			ws.send('alive');
+		}
+		catch (e) {
+		}
+	}
+}
+
+function ws_send_special(text) {
+	if (ws != null) {
+		try {
+			ws.send(text);
 		}
 		catch (e) {
 		}
@@ -22,9 +41,12 @@ function ws_send_alive() {
 }
 
 function ws_init() {
+	ws_update_statusbox(false);
+
 	ws = new WebSocket("ws://127.0.0.1:8000/my_topic");
 	ws.onopen = function(event) {
-		ws.send('Connected');
+		ws_update_statusbox(true);
+		ws.send('connected');
 	};
 	ws.onclose = function(event) {
 		ws_init();
@@ -32,20 +54,74 @@ function ws_init() {
 	ws.onmessage = function(event) {
 		try {
 			var json = JSON.parse(event.data);
-			document.getElementById('target').innerHTML += "<p>" + json.msg + "</p>\n";
+			document.getElementById('target').innerHTML =
+				"<p><b>" + (++message_counter) + "</b>&nbsp;" + json.msg + "</p>\n" +
+				document.getElementById('target').innerHTML;
 		}
 		catch (e) {
 		}
 	};
 }
 
+function send_from_form() {
+	ws_send_special(document.getElementById('input').value);
+}
+
 setInterval("ws_send_alive()", 5000);
 
-ws_init();
+window.onload = function() { ws_init() };
 
 </script>
-<div id="target">
+<style>
+div.gray {
+	background-color: gray;
+}
+div.green {
+	background-color: green;
+}
+#status {
+	border: 1px solid #000;
+	font-weight: bold;
+	font-size: 1.5em;
+	text-align: center;
+	min-width: 20em;
+	padding: 0.5em;
+}
+#target {
+	border: 1px solid #000;
+	padding: 0.5em;
+}
+#inputbox {
+	border: 1px solid #000;
+	padding: 0.5em;
+}
+#container {
+	display: inline-block;
+	min-width: 20em;
+}
+input {
+	border: 1px solid #000;
+	background-color: #ddd;
+}
+</style>
+
+<div id="container">
+	<div id="status">
+	</div>
+	<br />
+	<div id="inputbox">
+	<form onsubmit="send_from_form();return false;" action="#">
+		<b>Message to server:</b>&nbsp;
+		<input type="input" id="input"value="I am your master">&nbsp;
+		<input type="submit" value="Send" >
+	</form>
+	</div>
+	<br />
+	<div id="target">
+	<p>Waiting for messages...</p>
+	</div>
 </div>
+
 </body>
 
 </html>

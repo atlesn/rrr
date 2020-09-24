@@ -15,25 +15,39 @@ bless $debug, rrr::rrr_helper::rrr_debug;
 
 my %connections;
 
+sub escape {
+	my $msg = shift;
+
+	$msg =~ s/\\/\\\\/;
+	$msg =~ s/"/\\"/;
+
+	return $msg;
+}
+
 sub source {
 	my $message = shift;
-
-	my $data = "{\"msg\": \"Hello\"}";
 
 	my $timeout_limit = time - 10;
 
 	my @to_destroy;
 
 	foreach my $topic (keys(%connections)) {
+		my $msg_escaped = escape($connections{$topic}->{'msg'});
+		my $data = "{\"msg\": \"Hello! Last message received was '$msg_escaped'\"}";
+
 		if ($connections{$topic}->{'time'} < $timeout_limit) {
 			print "Destroy " . $topic . "\n";
 			push @to_destroy, $topic;
 		}
-		$message->{'data'} = $data;
-		$message->{'data_length'} = length $data;
-		$message->{'topic'} = $topic;
-		print "Send topic " . $topic . "\n";
-		$message->send();
+		else {
+			$message->{'data'} = $data;
+			$message->{'data_length'} = length $data;
+			$message->{'topic'} = $topic;
+
+			print "Send topic " . $topic . "\n";
+
+			$message->send();
+		}
 	}
 
 	foreach my $topic (@to_destroy) {
@@ -47,10 +61,11 @@ sub source {
 sub process {
 	my $message = shift;
 
-	print "Received topic " . $message->{'topic'} . "\n";
+	print "Received topic " . $message->{'topic'} . " message '" . $message->{'data'} . "'\n";
 
 	$connections{$message->{'topic'}} = {
-		"time" => time
+		"time" => time,
+		"msg" => $message->{'data'}
 	};
 
 	return 1;
