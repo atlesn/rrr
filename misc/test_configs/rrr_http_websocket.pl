@@ -13,20 +13,33 @@ use bytes;
 my $debug = { };
 bless $debug, rrr::rrr_helper::rrr_debug;
 
-my @connections;
+my %connections;
 
 sub source {
 	my $message = shift;
 
-	my $data = "{\"Hello\"}";
+	my $data = "{\"msg\": \"Hello\"}";
 
-	foreach my $topic (@connections) {
+	my $timeout_limit = time - 10;
+
+	my @to_destroy;
+
+	foreach my $topic (keys(%connections)) {
+		if ($connections{$topic}->{'time'} < $timeout_limit) {
+			print "Destroy " . $topic . "\n";
+			push @to_destroy, $topic;
+		}
 		$message->{'data'} = $data;
 		$message->{'data_length'} = length $data;
 		$message->{'topic'} = $topic;
 		print "Send topic " . $topic . "\n";
 		$message->send();
 	}
+
+	foreach my $topic (@to_destroy) {
+		delete $connections{$topic};
+	}
+
 
 	return 1;
 }
@@ -36,7 +49,9 @@ sub process {
 
 	print "Received topic " . $message->{'topic'} . "\n";
 
-	push @connections, $message->{'topic'};
+	$connections{$message->{'topic'}} = {
+		"time" => time
+	};
 
 	return 1;
 }

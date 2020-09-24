@@ -1,17 +1,51 @@
 <!DOCTYPE HTML>
 
 <html>
+
+<head>
 <title>RRR WebSocket test</title>
-</html>
+</head>
 
 <body>
 <script>
-var ws = new WebSocket("ws://127.0.0.1:8000/my_topic");
-ws.addEventListener('open', function (event) {
-	ws.send('Hello Server!');
-});
+
+var ws = null;
+
+function ws_send_alive() {
+	if (ws != null) {
+		try {
+			ws.send('Alive');
+		}
+		catch (e) {
+		}
+	}
+}
+
+function ws_init() {
+	ws = new WebSocket("ws://127.0.0.1:8000/my_topic");
+	ws.onopen = function(event) {
+		ws.send('Connected');
+	};
+	ws.onclose = function(event) {
+		ws_init();
+	};
+	ws.onmessage = function(event) {
+		try {
+			var json = JSON.parse(event.data);
+			document.getElementById('target').innerHTML += "<p>" + json.msg + "</p>\n";
+		}
+		catch (e) {
+		}
+	};
+}
+
+setInterval("ws_send_alive()", 5000);
+
+ws_init();
 
 </script>
+<div id="target">
+</div>
 </body>
 
 </html>
