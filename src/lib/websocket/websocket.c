@@ -290,7 +290,7 @@ int __rrr_websocket_get_target_size (
 	return ret;
 }
 
-int __rrr_websocket_receive_callback_intermediate (
+int __rrr_websocket_receive_callback_final_step (
 		struct rrr_websocket_state *ws_state,
 		const char *payload,
 		uint64_t payload_size,
@@ -334,7 +334,68 @@ int __rrr_websocket_receive_callback_intermediate (
 	return ret;
 }
 
-int __rrr_websocket_receive_callback (
+int __rrr_websocket_receive_callback_fragmentation_step (
+		struct rrr_websocket_state *ws_state,
+		uint8_t fin,
+		char *payload,
+		ssize_t payload_size,
+		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	const char *payload_to_callback;
+	ssize_t payload_size_to_callback;
+
+	// Shortcut for single frames
+	if (ws_state->receive_state.fragment_buffer == NULL && fin) {
+		payload_to_callback = payload;
+		payload_size_to_callback = payload_size;
+		goto out_callback;
+	}
+
+	uint64_t new_fragment_size = ws_state->receive_state.fragment_buffer_size + payload_size;
+	if (new_fragment_size < ws_state->receive_state.fragment_buffer_size) {
+		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	{
+		char *buf_new;
+		if ((buf_new = realloc (ws_state->receive_state.fragment_buffer, new_fragment_size)) == NULL) {
+			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n");
+			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
+			goto out;
+		}
+		ws_state->receive_state.fragment_buffer = buf_new;
+	}
+
+	memcpy(ws_state->receive_state.fragment_buffer + ws_state->receive_state.fragment_buffer_size, payload, payload_size);
+	ws_state->receive_state.fragment_buffer_size = new_fragment_size;
+
+	if (fin) {
+		payload_to_callback = ws_state->receive_state.fragment_buffer;
+		payload_size_to_callback = ws_state->receive_state.fragment_buffer_size;
+		goto out_callback;
+	}
+
+	goto out_no_clear;
+	out_callback:
+		ret = __rrr_websocket_receive_callback_final_step (
+				ws_state,
+				payload_to_callback,
+				payload_size_to_callback,
+				callback,
+				callback_arg
+		);
+	out:
+		rrr_websocket_state_clear_receive(ws_state);
+	out_no_clear:
+		return ret;
+}
+
+int __rrr_websocket_receive_callback_interpret_step (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
@@ -408,63 +469,23 @@ int __rrr_websocket_receive_callback (
 		goto out;
 	}
 
-	// NOTE : DO NOT ACCESS HEADER DATA BELOW THIS POINT
-
-	const char *payload_to_callback;
-	ssize_t payload_size_to_callback;
-
 	if (!ws_state->last_receive_opcode) {
 		RRR_MSG_0("Missing opcode in first websocket frame fragment\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	// Shortcut for single frames
-	if (ws_state->receive_state.fragment_buffer == NULL && fin) {
-		payload_to_callback = payload;
-		payload_size_to_callback = payload_size;
-		goto out_callback;
-	}
+	ret = __rrr_websocket_receive_callback_fragmentation_step (
+			callback_data->ws_state,
+			fin,
+			payload,
+			payload_size,
+			callback_data->callback,
+			callback_data->callback_arg
+	);
 
-	uint64_t new_fragment_size = ws_state->receive_state.fragment_buffer_size + payload_size;
-	if (new_fragment_size < ws_state->receive_state.fragment_buffer_size) {
-		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	{
-		char *buf_new;
-		if ((buf_new = realloc (ws_state->receive_state.fragment_buffer, new_fragment_size)) == NULL) {
-			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n");
-			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
-			goto out;
-		}
-		ws_state->receive_state.fragment_buffer = buf_new;
-	}
-
-	memcpy(ws_state->receive_state.fragment_buffer + ws_state->receive_state.fragment_buffer_size, payload, payload_size);
-	ws_state->receive_state.fragment_buffer_size = new_fragment_size;
-
-	if (fin) {
-		payload_to_callback = ws_state->receive_state.fragment_buffer;
-		payload_size_to_callback = ws_state->receive_state.fragment_buffer_size;
-		goto out_callback;
-	}
-
-	goto out_no_clear;
-	out_callback:
-		ret = __rrr_websocket_receive_callback_intermediate (
-				ws_state,
-				payload_to_callback,
-				payload_size_to_callback,
-				callback_data->callback,
-				callback_data->callback_arg
-		);
 	out:
-		rrr_websocket_state_clear_receive(callback_data->ws_state);
-	out_no_clear:
-		return ret;
+	return ret;
 }
 
 int rrr_websocket_transport_ctx_read_frames (
@@ -491,7 +512,7 @@ int rrr_websocket_transport_ctx_read_frames (
 			read_max_size,
 			__rrr_websocket_get_target_size,
 			&callback_data,
-			__rrr_websocket_receive_callback,
+			__rrr_websocket_receive_callback_interpret_step,
 			&callback_data
 	);
 }
