@@ -510,11 +510,13 @@ static void __rrr_http_server_worker_thread_entry (
 			consecutive_nothing_happened++;
 		}
 
-		if (consecutive_nothing_happened > 1000) {
+		if (consecutive_nothing_happened > 250) {
 			rrr_posix_usleep(30000); // 30 ms
+//			printf("long sleep\n");
 		}
-		else if (consecutive_nothing_happened > 100) {
+		else if (consecutive_nothing_happened > 25) {
 			rrr_posix_usleep(1000); // 1 ms
+//			printf("short sleep\n");
 		}
 
 		prev_bytes_total = worker_data.bytes_total;
