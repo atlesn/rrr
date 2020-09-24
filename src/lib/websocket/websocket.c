@@ -379,8 +379,8 @@ int __rrr_websocket_receive_callback (
 			case RRR_WEBSOCKET_OPCODE_CONNECTION_CLOSE:
 			case RRR_WEBSOCKET_OPCODE_PING:
 			case RRR_WEBSOCKET_OPCODE_PONG:
-				if (payload_size != 0) {
-					RRR_MSG_0("Received websocket control packet of type %u with non-zero length payload\n", opcode);
+				if (payload_size > 125) {
+					RRR_MSG_0("Received websocket control packet of type %u with payload longer than 125 bytes\n", opcode);
 					ret = RRR_READ_SOFT_ERROR;
 					goto out;
 				}
