@@ -47,8 +47,11 @@ int rrr_nullsafe_str_new (
 
 	*result = NULL;
 
-	if (len == 0) {
-		RRR_BUG("BUG: len was 0 in rrr_http_nullsafe_str_new\n");
+	if (len == 0 && str != NULL) {
+		RRR_BUG("BUG: len was 0 but str was not NULL in rrr_nullsafe_str_new\n");
+	}
+	else if (len != 0 && str == NULL) {
+		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
 
 	struct rrr_nullsafe_str *new_str = NULL;
