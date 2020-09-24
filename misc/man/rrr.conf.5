@@ -588,7 +588,7 @@ module:
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
 
-.It perl5_source_interval=MILLISECONDS
+.It perl5_source_interval_ms=MILLISECONDS
 How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
 
 .It perl5_source_sub=SUBROUTINE NAME
@@ -1080,18 +1080,6 @@ By default, no websocket connection upgrades are accepted.
 .It http_server_accept_websocket_binary={yes|no}
 Allow binary websocket frames. Data from such frames are put into plain RRR messages.
 If set to no or left undefined, received binary frames will be ignored. 
-
-
-
-
-
-
-
-
-
-
-
-
 
 .It http_server_tls_*
 Refer to the
