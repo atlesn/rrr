@@ -344,6 +344,12 @@ int __rrr_websocket_receive_callback_fragmentation_step (
 ) {
 	int ret = 0;
 
+	if (!ws_state->last_receive_opcode) {
+		RRR_MSG_0("Missing opcode in first websocket frame fragment\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
 	const char *payload_to_callback;
 	ssize_t payload_size_to_callback;
 
@@ -382,6 +388,7 @@ int __rrr_websocket_receive_callback_fragmentation_step (
 
 	goto out_no_clear;
 	out_callback:
+		// Remember to set callback data prior to goto out_callback
 		ret = __rrr_websocket_receive_callback_final_step (
 				ws_state,
 				payload_to_callback,
@@ -465,12 +472,6 @@ int __rrr_websocket_receive_callback_interpret_step (
 
 	if (!fin && opcode != RRR_WEBSOCKET_OPCODE_TEXT && opcode != RRR_WEBSOCKET_OPCODE_BINARY) {
 		RRR_MSG_0("Received fragmented websocket frame of type %i which is not allowed, only TEXT and BINARY may be fragmented\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if (!ws_state->last_receive_opcode) {
-		RRR_MSG_0("Missing opcode in first websocket frame fragment\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
