@@ -32,7 +32,13 @@ sub source {
 	my @to_destroy;
 
 	foreach my $topic (keys(%connections)) {
-		my $msg_escaped = escape($connections{$topic}->{'msg'});
+		my $msg_truncated = $connections{$topic}->{'msg'};
+		if (length $msg_truncated > 20) {
+			$msg_truncated =~ /^(.{15}).+(.{4})$/;
+			$msg_truncated = $1 . "..." . $2;
+		}
+
+		my $msg_escaped = escape($msg_truncated);
 		my $data = "{\"msg\": \"Hello! Last message received was '$msg_escaped'\"}";
 
 		if ($connections{$topic}->{'time'} < $timeout_limit) {
@@ -61,7 +67,7 @@ sub source {
 sub process {
 	my $message = shift;
 
-	print "Received topic " . $message->{'topic'} . " message '" . $message->{'data'} . "'\n";
+	print "Received topic " . $message->{'topic'} . " message length " . (length $message->{'data'}) . "\n";
 
 	$connections{$message->{'topic'}} = {
 		"time" => time,

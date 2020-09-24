@@ -462,19 +462,19 @@ int __rrr_websocket_receive_callback_interpret_step (
 				goto out;
 		};
 
-		ws_state->last_receive_opcode = opcode;
-	}
+		if (!fin && opcode != RRR_WEBSOCKET_OPCODE_TEXT && opcode != RRR_WEBSOCKET_OPCODE_BINARY) {
+			RRR_MSG_0("Received fragmented websocket frame of type %i which is not allowed, only TEXT and BINARY may be fragmented\n");
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+		}
 
-	if (!fin && opcode != RRR_WEBSOCKET_OPCODE_TEXT && opcode != RRR_WEBSOCKET_OPCODE_BINARY) {
-		RRR_MSG_0("Received fragmented websocket frame of type %i which is not allowed, only TEXT and BINARY may be fragmented\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
+		ws_state->last_receive_opcode = opcode;
 	}
 
 	ret = __rrr_websocket_receive_callback_fragmentation_step (
 			callback_data->ws_state,
 			fin,
-			payload,
+			(char *) payload,
 			payload_size,
 			callback_data->callback,
 			callback_data->callback_arg

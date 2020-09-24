@@ -67,9 +67,16 @@ function send_from_form() {
 	ws_send_special(document.getElementById('input').value);
 }
 
-setInterval("ws_send_alive()", 5000);
+function send_huge_data() {
+	var data = "";
+	for (var i = 0; i < 65535 * 16; i++) {
+		data += "abcdefghijkl ";
+	}
+	data += "!";
+	ws_send_special(data);
+}
 
-window.onload = function() { ws_init() };
+// Init is called in script at the end of the document body
 
 </script>
 <style>
@@ -91,13 +98,13 @@ div.green {
 	border: 1px solid #000;
 	padding: 0.5em;
 }
-#inputbox {
-	border: 1px solid #000;
-	padding: 0.5em;
-}
 #container {
 	display: inline-block;
 	min-width: 20em;
+}
+div.inputbox {
+	border: 1px solid #000;
+	padding: 0.5em;
 }
 input {
 	border: 1px solid #000;
@@ -109,7 +116,7 @@ input {
 	<div id="status">
 	</div>
 	<br />
-	<div id="inputbox">
+	<div class="inputbox">
 	<form onsubmit="send_from_form();return false;" action="#">
 		<b>Message to server:</b>&nbsp;
 		<input type="input" id="input"value="I am your master">&nbsp;
@@ -117,11 +124,20 @@ input {
 	</form>
 	</div>
 	<br />
+	<div class="inputbox">
+	<form onsubmit="send_huge_data();return false;" action="#">
+		<input type="submit" value="Send huge data">
+	</form>
+	</div>
+	<br />
 	<div id="target">
 	<p>Waiting for messages...</p>
 	</div>
 </div>
-
+<script>
+setInterval("ws_send_alive()", 5000);
+ws_init();
+</script>
 </body>
 
 </html>
