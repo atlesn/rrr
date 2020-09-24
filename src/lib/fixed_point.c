@@ -175,7 +175,7 @@ int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) 
 
 	buf[bytes] = '\0';
 
-	memcpy(target, buf, strlen(buf));
+	memcpy(target, buf, bytes + 1);
 
 	return 0;
 }
