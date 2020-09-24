@@ -730,8 +730,7 @@ struct receive_raw_broker_callback_data {
 	struct httpserver_data *parent_data;
 	const char *data;
 	ssize_t data_size;
-	rrr_http_unique_id unique_id;
-	const char *topic_extra;
+	const char *topic;
 };
 
 static int httpserver_receive_raw_broker_callback (
@@ -742,24 +741,13 @@ static int httpserver_receive_raw_broker_callback (
 
 	int ret = 0;
 
-	char *topic = NULL;
-
-	if ((ret = httpserver_generate_unique_topic (
-			&topic,
-			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
-			write_callback_data->unique_id,
-			write_callback_data->topic_extra
-	)) != 0) {
-		goto out;
-	}
-
 	if ((ret = rrr_msg_msg_new_with_data (
 			(struct rrr_msg_msg **) &entry_new->message,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
 			rrr_time_get_64(),
-			topic,
-			(topic != NULL ? strlen(topic) : 0),
+			write_callback_data->topic,
+			(write_callback_data->topic != NULL ? strlen(write_callback_data->topic) : 0),
 			write_callback_data->data,
 			write_callback_data->data_size
 	)) != 0) {
@@ -770,10 +758,9 @@ static int httpserver_receive_raw_broker_callback (
 	entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
 
 	RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
-			INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, topic);
+			INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(topic);
 	rrr_msg_holder_unlock(entry_new);
 	return ret;
 }
@@ -870,6 +857,58 @@ static int httpserver_websocket_handshake_callback (
 		return ret;
 }
 
+int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+	struct httpserver_callback_data *httpserver_callback_data = arg;
+
+	(void)(websocket_application_data);
+
+	int ret = 0;
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	struct receive_get_response_callback_data callback_data = {0};
+
+	pthread_cleanup_push(httpserver_receive_get_raw_response_cleanup, &callback_data);
+
+	if ((ret = httpserver_generate_unique_topic (
+			&callback_data.topic_filter,
+			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
+			unique_id,
+			"#"
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_poll_do_poll_search (
+			httpserver_callback_data->httpserver_data->thread_data,
+			&httpserver_callback_data->httpserver_data->thread_data->poll,
+			httpserver_receive_get_response_callback,
+			&callback_data,
+			0
+	)) != 0) {
+		RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
+		goto out;
+	}
+
+	if (callback_data.response_size > SSIZE_MAX) {
+		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%li\n",
+				unique_id, callback_data.response_size, (long int) SSIZE_MAX);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	*data = callback_data.response;
+	*data_len = callback_data.response_size;
+
+	callback_data.response = NULL;
+
+	out:
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
 int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
 	struct httpserver_data *data = callback_data->httpserver_data;
@@ -878,16 +917,24 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 
 	char *topic = NULL;
 
+	if ((ret = httpserver_generate_unique_topic (
+			&topic,
+			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
+			unique_id,
+			*websocket_application_data
+	)) != 0) {
+		goto out;
+	}
+
 	struct receive_raw_broker_callback_data write_callback_data = {
 		callback_data->httpserver_data,
 		NULL,
 		0,
-		unique_id,
-		*websocket_application_data
+		topic
 	};
 
 	if (payload_size > SSIZE_MAX) {
-		RRR_MSG_0("Payload too long for frame with opcode %u in httpserver_websocket_frame_callback %" PRIu64 ">%li",
+		RRR_MSG_0("Payload too long for frame with opcode %u in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
 				opcode, payload_size, (long int) SSIZE_MAX);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -933,15 +980,27 @@ static int httpserver_receive_raw_callback (
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
 
+	int ret = 0;
+
+	char *topic = NULL;
+
+	if ((ret = httpserver_generate_unique_topic (
+			&topic,
+			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
+			unique_id,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
 	struct receive_raw_broker_callback_data write_callback_data = {
 		receive_callback_data->httpserver_data,
 		data,
 		data_size,
-		unique_id,
-		NULL
+		topic
 	};
 
-	return rrr_message_broker_write_entry (
+	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(receive_callback_data->httpserver_data->thread_data),
 			NULL,
 			0,
@@ -950,7 +1009,9 @@ static int httpserver_receive_raw_callback (
 			&write_callback_data
 	);
 
-	return 0;
+	out:
+	RRR_FREE_IF_NOT_NULL(topic);
+	return ret;
 }
 
 int httpserver_unique_id_generator_callback (
@@ -1042,6 +1103,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
 			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
 			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 			(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
 			(data->do_receive_raw_data ? &callback_data : NULL),

@@ -121,6 +121,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(overshoot_bytes);
 	(void)(request_part);
 	(void)(unique_id);
+	(void)(websocket_upgrade_in_progress);
 
 	int ret = RRR_HTTP_OK;
 

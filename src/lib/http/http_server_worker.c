@@ -276,6 +276,28 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 	return ret;
 }
 
+static int __rrr_http_server_worker_websocket_get_response_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	if (worker_data->config_data.callbacks.websocket_get_response_callback) {
+		return worker_data->config_data.callbacks.websocket_get_response_callback (
+				&worker_data->websocket_application_data,
+				worker_data->websocket_unique_id,
+				data,
+				data_len,
+				is_binary,
+				worker_data->config_data.callbacks.websocket_get_response_callback_arg
+		);
+	}
+
+	return 0;
+}
 
 static int __rrr_http_server_worker_websocket_frame_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
@@ -313,6 +335,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				worker_data->websocket_unique_id,
 				RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S,
 				RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S,
+				__rrr_http_server_worker_websocket_get_response_callback,
+				worker_data,
 				__rrr_http_server_worker_websocket_frame_callback,
 				worker_data
 		)) != 0) {

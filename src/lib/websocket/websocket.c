@@ -81,7 +81,7 @@ int rrr_websocket_frame_enqueue (
 	frame->header.mask = do_mask;
 	frame->header.payload_len = payload_len;
 
-	if (payload != NULL) {
+	if (payload != NULL && *payload != NULL) {
 		frame->payload = *payload;
 		*payload = NULL;
 	}

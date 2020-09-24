@@ -53,6 +53,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	uint8_t opcode, const char *payload, uint64_t payload_size, rrr_http_unique_id unique_id, void *arg
 
+#define RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
+	void **data, ssize_t *data_len, int *is_binary, void *arg
+
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
 	rrr_http_unique_id *result,								\
 	void *arg
@@ -134,8 +137,10 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		rrr_http_unique_id unique_id,
 		int ping_interval_s,
 		int timeout_s,
-		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *callback_arg
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
 );
 
 #endif /* RRR_HTTP_SESSION_H */

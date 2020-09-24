@@ -1444,14 +1444,55 @@ static int __rrr_http_session_websocket_frame_callback (
 	);
 }
 
+static int __rrr_http_session_transport_ctx_websocket_get_responses (
+		struct rrr_websocket_state *ws_state,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg
+) {
+	int ret = 0;
+
+	void *response_data = NULL;
+	ssize_t response_data_len = 0;
+	int response_is_binary = 0;
+
+	do {
+		RRR_FREE_IF_NOT_NULL(response_data);
+		if ((ret = get_response_callback (
+				&response_data,
+				&response_data_len,
+				&response_is_binary,
+				get_response_callback_arg
+		)) != 0) {
+			goto out;
+		}
+		if (response_data) {
+			if ((ret = rrr_websocket_frame_enqueue (
+					ws_state,
+					(response_is_binary ? RRR_WEBSOCKET_OPCODE_BINARY : RRR_WEBSOCKET_OPCODE_TEXT),
+					(char**) &response_data,
+					response_data_len,
+					0
+			)) != 0) {
+				goto out;
+			}
+		}
+	} while (response_data != NULL);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(response_data);
+	return ret;
+}
+
 int rrr_http_session_transport_ctx_websocket_tick (
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int ping_interval_s,
 		int timeout_s,
-		int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *callback_arg
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 
@@ -1460,8 +1501,8 @@ int rrr_http_session_transport_ctx_websocket_tick (
 	struct rrr_http_session_websocket_frame_callback_data callback_data = {
 			session,
 			unique_id,
-			callback,
-			callback_arg
+			frame_callback,
+			frame_callback_arg
 	};
 
 	if ((ret = rrr_websocket_check_timeout(&session->ws_state, timeout_s)) != 0) {
@@ -1471,6 +1512,14 @@ int rrr_http_session_transport_ctx_websocket_tick (
 	}
 
 	if ((ret = rrr_websocket_enqueue_ping_if_needed(&session->ws_state, ping_interval_s)) != 0) {
+		goto out;
+	}
+
+	if (__rrr_http_session_transport_ctx_websocket_get_responses (
+			&session->ws_state,
+			get_response_callback,
+			get_response_callback_arg
+	) != 0) {
 		goto out;
 	}
 
