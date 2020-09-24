@@ -38,8 +38,8 @@ struct rrr_http_server_worker_config_data {
 	struct rrr_net_transport *transport;
 	int transport_handle;
 
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
 	ssize_t read_max_size;
 
 	struct rrr_http_server_callbacks callbacks;

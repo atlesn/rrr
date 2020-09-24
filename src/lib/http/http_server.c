@@ -189,12 +189,12 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		worker_data_preliminary->config_data.transport = handle->transport;
 		worker_data_preliminary->config_data.transport_handle = handle->handle;
 
-		if (socklen > sizeof(worker_data_preliminary->config_data.sockaddr)) {
+		if (socklen > sizeof(worker_data_preliminary->config_data.addr)) {
 			RRR_BUG("BUG: Socklen too long in __rrr_http_Server_accept_create_http_session_callback\n");
 		}
 
-		memcpy(&worker_data_preliminary->config_data.sockaddr, sockaddr, socklen);
-		worker_data_preliminary->config_data.socklen = socklen;
+		memcpy(&worker_data_preliminary->config_data.addr, sockaddr, socklen);
+		worker_data_preliminary->config_data.addr_len = socklen;
 	}
 }
 

@@ -963,9 +963,9 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 	out_write_entry:
 		ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),
-			NULL,
-			0,
-			0,
+			addr,
+			addr_len,
+			RRR_IP_TCP,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data
 		);
@@ -976,7 +976,7 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 
 // NOTE : Worker thread CTX in httpserver_receive_raw_callback
 static int httpserver_receive_raw_callback (
-		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SERVER_WORKER_RAW_RECEIVE_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
 
@@ -1002,8 +1002,8 @@ static int httpserver_receive_raw_callback (
 
 	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(receive_callback_data->httpserver_data->thread_data),
-			NULL,
-			0,
+			addr,
+			addr_len,
 			0,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data

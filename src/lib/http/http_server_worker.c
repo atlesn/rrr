@@ -184,7 +184,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
 		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
 
-		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->config_data.sockaddr, worker_data->config_data.socklen);
+		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->config_data.addr, worker_data->config_data.addr_len);
 
 		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
 				worker_data->config_data.transport_handle, ip_buf, method_buf, uri_buf);
@@ -211,8 +211,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				response_part,
 				data_ptr,
 				// Address was cached when accepting
-				(const struct sockaddr *) &worker_data->config_data.sockaddr,
-				worker_data->config_data.socklen,
+				(const struct sockaddr *) &worker_data->config_data.addr,
+				worker_data->config_data.addr_len,
 				overshoot_bytes,
 				unique_id,
 				websocket_upgrade_in_progress,
@@ -238,6 +238,26 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	return ret;
 }
 
+static int __rrr_http_server_worker_http_session_receive_raw_callback (
+		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	if (worker_data->config_data.callbacks.final_callback_raw) {
+		return worker_data->config_data.callbacks.final_callback_raw (
+				(const struct sockaddr *) &worker_data->config_data.addr,
+				worker_data->config_data.addr_len,
+				data,
+				data_size,
+				unique_id,
+				worker_data->config_data.callbacks.final_callback_raw_arg
+		);
+	}
+
+
+	return 0;
+}
+
 static int __rrr_http_server_worker_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -256,8 +276,8 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			response_part,
 			data_ptr,
 			// Address was cached when accepting
-			(const struct sockaddr *) &worker_data->config_data.sockaddr,
-			worker_data->config_data.socklen,
+			(const struct sockaddr *) &worker_data->config_data.addr,
+			worker_data->config_data.addr_len,
 			overshoot_bytes,
 			unique_id,
 			worker_data->config_data.callbacks.final_callback_arg
@@ -307,6 +327,8 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 	if (worker_data->config_data.callbacks.websocket_frame_callback) {
 		return worker_data->config_data.callbacks.websocket_frame_callback (
 				&worker_data->websocket_application_data,
+				(const struct sockaddr *) &worker_data->config_data.addr,
+				worker_data->config_data.addr_len,
 				opcode,
 				payload,
 				payload_size,
@@ -370,8 +392,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				worker_data,
 				__rrr_http_server_worker_http_session_receive_callback,
 				worker_data,
-				worker_data->config_data.callbacks.final_callback_raw,
-				worker_data->config_data.callbacks.final_callback_raw_arg
+				__rrr_http_server_worker_http_session_receive_raw_callback,
+				worker_data
 		)) != 0) {
 			if (ret != RRR_HTTP_SOFT_ERROR) {
 				RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
