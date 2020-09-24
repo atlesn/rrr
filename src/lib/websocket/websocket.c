@@ -380,7 +380,12 @@ int __rrr_websocket_receive_callback (
 			case RRR_WEBSOCKET_OPCODE_PING:
 			case RRR_WEBSOCKET_OPCODE_PONG:
 				if (payload_size > 125) {
-					RRR_MSG_0("Received websocket control packet of type %u with payload longer than 125 bytes\n", opcode);
+					RRR_MSG_0("Received websocket control packet of type %u with payload longer than 125 bytes, this is an error.\n", opcode);
+					ret = RRR_READ_SOFT_ERROR;
+					goto out;
+				}
+				if (!fin) {
+					RRR_MSG_0("Received websocket control packet of type %u with FIN flag left unset, this is an error.\n", opcode);
 					ret = RRR_READ_SOFT_ERROR;
 					goto out;
 				}
