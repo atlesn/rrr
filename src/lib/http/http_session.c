@@ -1085,6 +1085,11 @@ static int __rrr_http_session_request_receive_try_websocket (
 		goto out;
 	}
 
+	char *newline = strchr(accept_base64_tmp, '\n');
+	if (newline) {
+		*newline = '\0';
+	}
+
 	if ((ret = rrr_http_part_header_field_push(session->response_part, "sec-websocket-accept", accept_base64_tmp)) != 0) {
 		goto out;
 	}

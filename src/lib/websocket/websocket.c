@@ -86,8 +86,6 @@ int rrr_websocket_frame_enqueue (
 		*payload = NULL;
 	}
 
-	ws_state->last_enqueued_opcode = frame->header.opcode;
-
 	RRR_LL_PUSH(&ws_state->send_queue, frame);
 
 	out:
@@ -121,9 +119,11 @@ int rrr_websocket_enqueue_ping_if_needed (
 
 	uint64_t ping_limit = rrr_time_get_64() - ping_interval_s * 1000 * 1000;
 
-	if (ws_state->last_receive_time > ping_limit || ws_state->last_enqueued_opcode == RRR_WEBSOCKET_OPCODE_PING) {
+	if (ws_state->last_receive_time > ping_limit || ws_state->waiting_for_pong) {
 		return 0;
 	}
+
+	ws_state->waiting_for_pong = 1;
 
 	return rrr_websocket_frame_enqueue (
 			ws_state,
@@ -140,43 +140,55 @@ static int __rrr_websocket_transport_ctx_send_frame (
 ) {
 	int ret = 0;
 
+	if (frame->header.mask) {
+		RRR_BUG("BUG: Masking bit set for frame but is not supported (yet) in __rrr_websocket_transport_ctx_send_frame\n");
+	}
+
 	RRR_DBG_3("Websocket %i send frame opcode %i size %" PRIu64 "\n",
 			handle->handle, frame->header.opcode, frame->header.payload_len);
 
 	uint8_t header[14];
 	memset(header, '\0', sizeof(header));
 
-	uint8_t pos = 0;
+	{
+		uint8_t pos = 0;
 
-	// Flags, opcode
-	header[pos] = frame->header.opcode;
-	header[pos] |= 1 << 7; // Fin
-	pos++;
-
-	if (frame->header.payload_len < 126) {
-		header[pos] = frame->header.payload_len;
+		header[pos] = frame->header.opcode;
+		header[pos] |= 0x80; // FIN
 		pos++;
-	}
-	else if (frame->header.payload_len <= 65535) {
-		header[pos] = 126;
-		pos++;
-		uint16_t tmp = rrr_htobe16(frame->header.payload_len);
-		memcpy (header + pos, &tmp, sizeof(tmp));
-		pos += sizeof(tmp);
-	}
-	else {
-		header[pos] = 127;
-		pos++;
-		uint64_t tmp = rrr_htobe64(frame->header.payload_len);
-		memcpy (header + pos, &tmp, sizeof(tmp));
-		pos += sizeof(tmp);
+
+		if (frame->header.payload_len < 126) {
+			header[pos] = frame->header.payload_len;
+			pos++;
+		}
+		else if (frame->header.payload_len <= 65535) {
+			header[pos] = 126;
+			pos++;
+			uint16_t tmp = rrr_htobe16(frame->header.payload_len);
+			memcpy (header + pos, &tmp, sizeof(tmp));
+			pos += sizeof(tmp);
+		}
+		else {
+			header[pos] = 127;
+			pos++;
+			uint64_t tmp = rrr_htobe64(frame->header.payload_len);
+			memcpy (header + pos, &tmp, sizeof(tmp));
+			pos += sizeof(tmp);
+		}
+
+		// Masking key here, not supported
+
+		if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
+			RRR_DBG_1("Failed to send websocket header for handle %i\n", handle->handle);
+			goto out;
+		}
 	}
 
-	// Masking key here, not used
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
-		RRR_MSG_0("Failed to send websocket header in __rrr_websocket_transport_ctx_send_frame\n");
-		goto out;
+	if (frame->header.payload_len > 0) {
+		if ((ret = rrr_net_transport_ctx_send_blocking(handle, frame->payload, frame->header.payload_len)) != 0) {
+			RRR_DBG_1("Failed to send websocket payload for handle %i\n", handle->handle);
+			goto out;
+		}
 	}
 
 	out:
@@ -306,6 +318,7 @@ int __rrr_websocket_receive_callback_intermediate (
 			);
 			break;
 		case RRR_WEBSOCKET_OPCODE_PONG:
+			ws_state->waiting_for_pong = 0;
 			break;
 		default:
 			ret = final_callback (

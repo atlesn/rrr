@@ -39,12 +39,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	uint8_t opcode, const char *payload, uint64_t payload_size, void *arg
 
 struct rrr_websocket_header {
-	unsigned short int fin;
-	unsigned short int rsv1;
-	unsigned short int rsv2;
-	unsigned short int rsv3;
-	unsigned short int opcode;
-	unsigned short int mask;
+	uint8_t fin;
+	uint8_t rsv1;
+	uint8_t rsv2;
+	uint8_t rsv3;
+	uint8_t opcode;
+	uint8_t mask;
 	uint8_t header_len;
 	uint64_t payload_len;
 	union {
@@ -73,7 +73,8 @@ struct rrr_websocket_state {
 	struct rrr_websocket_state_receive receive_state;
 	uint8_t last_receive_opcode;
 	uint64_t last_receive_time;
-	uint8_t last_enqueued_opcode;
+	uint8_t last_enqueued_pcode;
+	int waiting_for_pong;
 	struct rrr_websocket_frame_collection send_queue;
 };
 
