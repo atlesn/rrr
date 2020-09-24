@@ -85,7 +85,7 @@ int rrr_http_server_worker_preliminary_data_new (
 		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
 		void *final_callback_arg
 );
-void rrr_http_server_worker_preliminary_data_destroy (
+void rrr_http_server_worker_preliminary_data_destroy_if_not_null (
 		struct rrr_http_server_worker_preliminary_data *worker_data
 );
 void *rrr_http_server_worker_thread_entry_intermediate (

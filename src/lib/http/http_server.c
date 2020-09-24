@@ -379,7 +379,7 @@ static int __rrr_http_server_allocate_threads (
 
 	out:
 	if (worker_data != NULL) {
-		rrr_http_server_worker_preliminary_data_destroy(worker_data);
+		rrr_http_server_worker_preliminary_data_destroy_if_not_null(worker_data);
 	}
 	return ret;
 }

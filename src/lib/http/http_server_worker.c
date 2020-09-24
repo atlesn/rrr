@@ -84,7 +84,7 @@ int rrr_http_server_worker_preliminary_data_new (
 		return ret;
 }
 
-void rrr_http_server_worker_preliminary_data_destroy (
+void rrr_http_server_worker_preliminary_data_destroy_if_not_null (
 		struct rrr_http_server_worker_preliminary_data *worker_data
 ) {
 	if (worker_data == NULL) {
@@ -103,7 +103,7 @@ static int __rrr_http_server_worker_preliminary_data_destroy_callback (
 		return 0;
 	}
 
-	rrr_http_server_worker_preliminary_data_destroy(thread->private_data);
+	rrr_http_server_worker_preliminary_data_destroy_if_not_null(thread->private_data);
 	thread->private_data = NULL;
 
 	return 0;
