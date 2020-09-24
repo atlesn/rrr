@@ -252,7 +252,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	return ret;
 }
 
-static int __rrr_http_server_worker_websocket_callback (
+static int __rrr_http_server_worker_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
@@ -348,7 +348,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 				RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 				worker_data->config_data.read_max_size,
 				unique_id,
-				__rrr_http_server_worker_websocket_callback,
+				__rrr_http_server_worker_websocket_handshake_callback,
 				worker_data,
 				__rrr_http_server_worker_http_session_receive_callback,
 				worker_data,
