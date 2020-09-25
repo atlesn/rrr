@@ -108,4 +108,4 @@ If different endpoints are wanted, the parameter `http_server_receive_full_reque
 The Python module can be used instead of the Perl5 module to process HTTP requests. 
 
 ## See also
-* [HTTP Websocket Server](http/http_websocket.md)
+* [HTTP Websocket Server](http_websocket.md)

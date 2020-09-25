@@ -39,10 +39,10 @@ How it works:
 
 * The `http_server_websocket_topic_filters=#` parameter in the configuration tells the HTTP server to allow Websocket connection upgrades on client request, regardless of the URL used (but the endpoint in the URL may not be empty).
 * The **httpserver** and **perl5** modules are set up to read messages from each other.
-* The client (run by the browser) uses a Javascript to connect to the RRR HTTP server. Whenever a connection is complete, it reconnects.
+* The client (run by the browser) uses a Javascript to connect to the RRR HTTP server. Whenever a connection is lost, it reconnects.
 * The client sends 'alive' messages periodically. The Perl5 script receives these messages and identifies that a connection is open.
 * The Perl5 scripts sends a message back to the client every two seconds containing the latest received data from the client
-* If a browser is disconnected, the Perl5 script eventually detects that no messages is being sent from the browser, and it stops generating messages.
+* If a browser is disconnected, the Perl5 script eventually detects that no messages are being sent from the browser, and it stops generating messages.
 
 ## Run the example
 
@@ -68,4 +68,4 @@ having many threads running.
 The Python module can be used instead of the Perl5 module to process Websocket messages. 
 
 ## See also
-* [HTTP Push Server with MQTT](http/http_push_mqtt.md)
+* [HTTP Push Server with MQTT](http_push_mqtt.md)
