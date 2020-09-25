@@ -26,22 +26,23 @@ The particular files used to run example are somewhat large, open them using the
 * [http\_websocket.pl](http_websocket.pl) - The Perl script which handles and generates Websocket frames
 * [http\_websocket.html](http_websocket.html) - An HTML file to open in a browser which creates a Websocket connection
 
-The setup consists of four parts:
+The setup consists of three parts:
 
-* **httpserver** handles HTTP connections at a low-level (just parses and forwards data)
-* **perl5**
-  * Keeps track of open connections and their handle IDSs
-  * Saves the last received message from each clients
-  * Runs its `source` subroutine on a regular basis and sends back the last received message
+* **httpserver** handles HTTP- and Websocket connections
 * A **browser** runs a Javascript which ensures that a Websocket connection to the server is always open
+* **perl5**
+  * Keeps track of open connections and their HTTP unique IDs
+  * Saves the last received message from each clients
+  * Runs its `source` subroutine on a regular basis and sends back the last received message to each connected browser
 
 How it works:
 
 * The `http_server_websocket_topic_filters=#` parameter in the configuration tells the HTTP server to allow Websocket connection upgrades on client request, regardless of the URL used (but the endpoint in the URL may not be empty).
 * The **httpserver** and **perl5** modules are set up to read messages from each other.
 * The client (run by the browser) uses a Javascript to connect to the RRR HTTP server. Whenever a connection is complete, it reconnects.
-* The client sends 'alive' messages periodically. The Perl5 script receives this and identifies that a connection is open.
-* The Perl5 scripts sends a message back to the client every two seconds
+* The client sends 'alive' messages periodically. The Perl5 script receives these messages and identifies that a connection is open.
+* The Perl5 scripts sends a message back to the client every two seconds containing the latest received data from the client
+* If a browser is disconnected, the Perl5 script eventually detects that no messages is being sent from the browser, and it stops generating messages.
 
 ## Run the example
 
@@ -54,10 +55,9 @@ This example requires having one terminal window and a browser open.
 
 * If the HTML file is opened in the browser prior to the RRR web server being started, the browser might wait a bit before it tries to reconnect.
 * When the browser has connected, a green box will appear confirming that a websocket connection has been initiated.
-* The client will begin to send 'alive' messages over the Websocket connection, which triggers the Perl5 script to send messages back containing the data from the last received message.
-* All messages received will be logged in the message box
+* All messages received by the browser will be logged in the message box
 * Custom messages can be sent over the Websocket connection by using the provided input form
-* If a browser is disconnected, the Perl5 script eventually detects that no messages is being sent from the browser, and it stops generating messages.
+* Note that in this particular example there is no immediate response by the Perl5 script to a received message, it only generates a message every two seconds
 
 ## Notes
 
