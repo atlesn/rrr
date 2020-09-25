@@ -6,8 +6,6 @@ A HTTP server processes request from clients and generates responses.
 In this example, a web browser opens up a Websocket connection to the RRR HTTP server.
 A Websocket connections starts out as a normal HTTP connection which is then upgraded to exchange Websocket frames.
 
-Before trying out this example, you might want to look at a [simpler RRR HTTP-server configuration](http_server.md).
-
 ## Application
 
 * Asynchronus messages to and from web browsers using Websocket technique
