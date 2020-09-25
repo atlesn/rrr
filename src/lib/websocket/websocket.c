@@ -238,7 +238,7 @@ int __rrr_websocket_get_target_size (
 	CHECK_LENGTH();
 
 	uint16_t flags = rrr_be16toh(*((uint16_t *) read_session->rx_buf_ptr));
-	uint8_t payload_len = flags & 0x7f;
+	const uint8_t payload_len = flags & 0x7f;
 	flags >>= 7;
 	header_new.mask = flags & 1;
 	flags >>= 1;
@@ -251,7 +251,6 @@ int __rrr_websocket_get_target_size (
 	header_new.rsv1 = flags & 1;
 	flags >>= 1;
 	header_new.fin = flags & 1;
-	flags >>= 1;
 
 	if (payload_len == 126) {
 		const char *pos = read_session->rx_buf_ptr + header_new.header_len;

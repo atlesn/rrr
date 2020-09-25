@@ -1505,7 +1505,7 @@ int rrr_http_session_transport_ctx_websocket_tick (
 			frame_callback_arg
 	};
 
-	if ((ret = rrr_websocket_check_timeout(&session->ws_state, timeout_s)) != 0) {
+	if (rrr_websocket_check_timeout(&session->ws_state, timeout_s) != 0) {
 		RRR_DBG_2("HTTP websocket session timed out after %i seconds of inactivity\n", timeout_s);
 		ret = RRR_READ_EOF;
 		goto out;
