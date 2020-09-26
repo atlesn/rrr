@@ -157,16 +157,18 @@ int rrr_websocket_enqueue_ping_if_needed (
 		return 0;
 	}
 
-	if (ws_state->last_receive_time == 0) {
-		ws_state->last_receive_time = rrr_time_get_64();
+	if (ws_state->last_ping_time == 0) {
+		ws_state->last_ping_time = rrr_time_get_64();
+		return 0;
 	}
 
 	uint64_t ping_limit = rrr_time_get_64() - ping_interval_s * 1000 * 1000;
 
-	if (ws_state->last_receive_time > ping_limit || ws_state->waiting_for_pong) {
+	if (ws_state->last_ping_time > ping_limit || ws_state->waiting_for_pong) {
 		return 0;
 	}
 
+	ws_state->last_ping_time = rrr_time_get_64();
 	ws_state->waiting_for_pong = 1;
 
 	return rrr_websocket_frame_enqueue (

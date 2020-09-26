@@ -73,6 +73,7 @@ struct rrr_websocket_state {
 	struct rrr_websocket_state_receive receive_state;
 	uint8_t last_receive_opcode;
 	uint64_t last_receive_time;
+	uint64_t last_ping_time;
 	uint8_t last_enqueued_pcode;
 	int waiting_for_pong;
 	struct rrr_websocket_frame_collection send_queue;
