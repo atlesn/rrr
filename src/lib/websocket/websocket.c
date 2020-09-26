@@ -44,6 +44,12 @@ static void __rrr_websocket_frame_destroy (
 	free(frame);
 }
 
+void rrr_websocket_state_set_client_mode (
+		struct rrr_websocket_state *ws_state
+) {
+	ws_state->do_mask_outgoing_frames = 1;
+}
+
 void rrr_websocket_state_clear_receive (
 		struct rrr_websocket_state *ws_state
 ) {
@@ -98,8 +104,7 @@ int rrr_websocket_frame_enqueue (
 		struct rrr_websocket_state *ws_state,
 		uint8_t opcode,
 		char **payload,
-		uint64_t payload_len,
-		unsigned short int do_mask
+		uint64_t payload_len
 ) {
 	int ret = 0;
 
@@ -114,7 +119,7 @@ int rrr_websocket_frame_enqueue (
 	memset(frame, '\0', sizeof(*frame));
 
 	frame->header.opcode = opcode;
-	frame->header.mask = do_mask;
+	frame->header.mask = ws_state->do_mask_outgoing_frames;
 	frame->header.payload_len = payload_len;
 
 	if (payload != NULL && *payload != NULL) {
@@ -175,25 +180,36 @@ int rrr_websocket_enqueue_ping_if_needed (
 			ws_state,
 			RRR_WEBSOCKET_OPCODE_PING,
 			NULL,
-			0,
 			0
 	);
 }
 
-static int __rrr_websocket_transport_ctx_send_frame (
+static void __rrr_websocket_payload_mask_unmask (
+		uint8_t *payload,
+		ssize_t payload_size,
+		uint32_t masking_key_h
+) {
+	union {
+		uint32_t key_32;
+		uint8_t key_8[4];
+	} key;
+	key.key_32 = rrr_htobe32(masking_key_h);
+
+	for (ssize_t i = 0; i < payload_size; i++) {
+		payload[i] = payload[i] ^ key.key_8[i % 4];
+	}
+}
+
+static int __rrr_websocket_transport_ctx_frame_send (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_frame *frame
 ) {
 	int ret = 0;
 
-	if (frame->header.mask) {
-		RRR_BUG("BUG: Masking bit set for frame but is not supported (yet) in __rrr_websocket_transport_ctx_send_frame\n");
-	}
-
 	RRR_DBG_3("Websocket %i send frame opcode %i size %" PRIu64 "\n",
 			handle->handle, frame->header.opcode, frame->header.payload_len);
 
-	uint8_t header[14];
+	uint8_t header[32]; // Make sure it's big enough when new stuff is added
 	memset(header, '\0', sizeof(header));
 
 	{
@@ -203,26 +219,37 @@ static int __rrr_websocket_transport_ctx_send_frame (
 		header[pos] |= 0x80; // FIN
 		pos++;
 
+		uint8_t mask_flag_shifted = (frame->header.mask ? 1 << 7 : 0);
+
 		if (frame->header.payload_len < 126) {
-			header[pos] = frame->header.payload_len;
+			header[pos] = mask_flag_shifted | frame->header.payload_len;
 			pos++;
 		}
 		else if (frame->header.payload_len <= 65535) {
-			header[pos] = 126;
+			header[pos] = mask_flag_shifted | 126;
 			pos++;
 			uint16_t tmp = rrr_htobe16(frame->header.payload_len);
 			memcpy (header + pos, &tmp, sizeof(tmp));
 			pos += sizeof(tmp);
 		}
 		else {
-			header[pos] = 127;
+			header[pos] = mask_flag_shifted | 127;
 			pos++;
 			uint64_t tmp = rrr_htobe64(frame->header.payload_len);
 			memcpy (header + pos, &tmp, sizeof(tmp));
 			pos += sizeof(tmp);
 		}
 
-		// Masking key here, not supported
+		if (frame->header.mask) {
+			frame->header.masking_key = (uint32_t) rrr_rand();
+			uint32_t masking_key_be = rrr_htobe32(frame->header.masking_key);
+			memcpy (header + pos, &masking_key_be, sizeof(masking_key_be));
+			pos += sizeof(masking_key_be);
+		}
+
+		if (pos > sizeof(header)) {
+			RRR_BUG("BUG: pos exceeds header size in __rrr_websocket_transport_ctx_send_frame\n");
+		}
 
 		if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
 			RRR_DBG_1("Failed to send websocket header for handle %i\n", handle->handle);
@@ -231,6 +258,10 @@ static int __rrr_websocket_transport_ctx_send_frame (
 	}
 
 	if (frame->header.payload_len > 0) {
+		if (frame->header.mask) {
+			__rrr_websocket_payload_mask_unmask((uint8_t *) frame->payload, frame->header.payload_len, frame->header.masking_key);
+		}
+
 		if ((ret = rrr_net_transport_ctx_send_blocking(handle, frame->payload, frame->header.payload_len)) != 0) {
 			RRR_DBG_1("Failed to send websocket payload for handle %i\n", handle->handle);
 			goto out;
@@ -362,7 +393,6 @@ int __rrr_websocket_receive_callback_final_step (
 					ws_state,
 					RRR_WEBSOCKET_OPCODE_PONG,
 					NULL,
-					0,
 					0
 			);
 			break;
@@ -461,18 +491,10 @@ int __rrr_websocket_receive_callback_interpret_step (
 	int ret = RRR_READ_OK;
 
 	uint8_t *payload = (uint8_t *) read_session->rx_buf_ptr + ws_state->receive_state.header.header_len;
-	const ssize_t payload_size = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
+	const ssize_t payload_len = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
 
 	if (ws_state->receive_state.header.mask) {
-		union {
-			uint32_t key_32;
-			uint8_t key_8[4];
-		} key;
-		key.key_32 = rrr_htobe32(ws_state->receive_state.header.masking_key);
-
-		for (ssize_t i = 0; i < payload_size; i++) {
-			payload[i] = payload[i] ^ key.key_8[i % 4];
-		}
+		__rrr_websocket_payload_mask_unmask(payload, payload_len, ws_state->receive_state.header.masking_key);
 	}
 
 	// Save these in case header is reset
@@ -488,7 +510,7 @@ int __rrr_websocket_receive_callback_interpret_step (
 			case RRR_WEBSOCKET_OPCODE_CONNECTION_CLOSE:
 			case RRR_WEBSOCKET_OPCODE_PING:
 			case RRR_WEBSOCKET_OPCODE_PONG:
-				if (payload_size > 125) {
+				if (payload_len > 125) {
 					RRR_MSG_0("Received websocket control packet of type %u with payload longer than 125 bytes, this is an error.\n", opcode);
 					ret = RRR_READ_SOFT_ERROR;
 					goto out;
@@ -521,7 +543,7 @@ int __rrr_websocket_receive_callback_interpret_step (
 			callback_data->ws_state,
 			fin,
 			(char *) payload,
-			payload_size,
+			payload_len,
 			callback_data->callback,
 			callback_data->callback_arg
 	);
@@ -566,7 +588,7 @@ int rrr_websocket_transport_ctx_send_frames (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(&ws_state->send_queue, struct rrr_websocket_frame);
-		if ((ret = __rrr_websocket_transport_ctx_send_frame(handle, node)) != 0) {
+		if ((ret = __rrr_websocket_transport_ctx_frame_send(handle, node)) != 0) {
 			goto out;
 		}
 		RRR_LL_ITERATE_SET_DESTROY();

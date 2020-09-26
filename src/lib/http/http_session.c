@@ -198,6 +198,8 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			}
 		}
 
+		rrr_websocket_state_set_client_mode(&session->ws_state);
+
 		// Transport framework responsible for cleaning up
 		rrr_net_transport_ctx_handle_application_data_bind (
 				handle,
@@ -1630,8 +1632,7 @@ static int __rrr_http_session_websocket_get_responses (
 					ws_state,
 					(response_is_binary ? RRR_WEBSOCKET_OPCODE_BINARY : RRR_WEBSOCKET_OPCODE_TEXT),
 					(char**) &response_data,
-					response_data_len,
-					0
+					response_data_len
 			)) != 0) {
 				goto out;
 			}

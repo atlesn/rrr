@@ -76,6 +76,7 @@ struct rrr_websocket_state {
 	uint64_t last_ping_time;
 	uint8_t last_enqueued_pcode;
 	int waiting_for_pong;
+	int do_mask_outgoing_frames;
 	struct rrr_websocket_frame_collection send_queue;
 
 	// Used when client creates request
@@ -88,6 +89,9 @@ struct rrr_websocket_state {
 
 struct rrr_net_transport_handle;
 
+void rrr_websocket_state_set_client_mode (
+		struct rrr_websocket_state *ws_state
+);
 void rrr_websocket_state_clear_receive (
 		struct rrr_websocket_state *ws_state
 );
@@ -102,8 +106,7 @@ int rrr_websocket_frame_enqueue (
 		struct rrr_websocket_state *ws_state,
 		uint8_t opcode,
 		char **payload,
-		uint64_t payload_len,
-		unsigned short int do_mask
+		uint64_t payload_len
 );
 int rrr_websocket_check_timeout (
 		struct rrr_websocket_state *ws_state,
