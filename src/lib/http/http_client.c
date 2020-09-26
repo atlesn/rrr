@@ -659,7 +659,9 @@ static int __rrr_http_client_send_request (
 	}
 	else if (transport != NULL) {
 		rrr_net_transport_destroy(transport);
-		*transport_keepalive = NULL;
+		if (transport_keepalive != NULL) {
+			*transport_keepalive = NULL;
+		}
 	}
 	return ret;
 }

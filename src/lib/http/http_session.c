@@ -1676,11 +1676,11 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		goto out;
 	}
 
-	if (__rrr_http_session_websocket_get_responses (
+	if ((ret = __rrr_http_session_websocket_get_responses (
 			&session->ws_state,
 			get_response_callback,
 			get_response_callback_arg
-	) != 0) {
+	)) != 0) {
 		goto out;
 	}
 

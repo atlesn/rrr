@@ -656,6 +656,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 	// Raw size to read for socket framework
 	read_session->target_size = import_length;
 
+	printf("%li <> %li\n", read_session->target_size, read_session->rx_buf_wpos);
 	if (read_session->target_size == read_session->rx_buf_wpos) {
 		read_session->eof_ok_now = 1;
 	}
