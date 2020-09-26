@@ -74,6 +74,7 @@ struct httpserver_data {
 	int do_receive_raw_data;
 	int do_receive_full_request;
 	int do_accept_websocket_binary;
+	int do_receive_websocket_rrr_message;
 
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
@@ -180,12 +181,25 @@ static int httpserver_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_accept_websocket_binary", do_accept_websocket_binary, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_websocket_rrr_message", do_receive_websocket_rrr_message, 0);
 
 	if (data->do_accept_websocket_binary && RRR_LL_COUNT(&data->websocket_topic_filters) == 0) {
 		RRR_MSG_0("http_server_accept_websocket_binary was set in httpserver instance %s, but no websocket topics are defined in http_server_websocket_topic_filters. This is a configuration error.\n",
 				config->name);
 		ret = 1;
 		goto out;
+	}
+
+	if (data->do_receive_websocket_rrr_message) {
+		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_accept_websocket_binary",
+				if (data->do_accept_websocket_binary == 0) {
+					RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
+							config->name);
+					ret = 1;
+					goto out;
+				}
+		);
+		data->do_accept_websocket_binary = 1;
 	}
 
 	out:
@@ -731,6 +745,7 @@ struct receive_raw_broker_callback_data {
 	const char *data;
 	ssize_t data_size;
 	const char *topic;
+	int is_full_rrr_msg;
 };
 
 static int httpserver_receive_raw_broker_callback (
@@ -738,29 +753,104 @@ static int httpserver_receive_raw_broker_callback (
 		void *arg
 ) {
 	struct receive_raw_broker_callback_data *write_callback_data = arg;
+	struct httpserver_data *data = write_callback_data->parent_data;
 
 	int ret = 0;
 
-	if ((ret = rrr_msg_msg_new_with_data (
-			(struct rrr_msg_msg **) &entry_new->message,
-			MSG_TYPE_MSG,
-			MSG_CLASS_DATA,
-			rrr_time_get_64(),
-			write_callback_data->topic,
-			(write_callback_data->topic != NULL ? strlen(write_callback_data->topic) : 0),
-			write_callback_data->data,
-			write_callback_data->data_size
-	)) != 0) {
-		RRR_MSG_0("Could not create message in httpserver_receive_raw_broker_callback\n");
-		goto out;
+	char *topic_tmp = NULL;
+
+	struct rrr_msg *msg_to_free = NULL;
+
+	if (write_callback_data->is_full_rrr_msg) {
+		if ((msg_to_free = malloc(write_callback_data->data_size)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for RRR message in httpserver_receive_raw_broker_callback\n");
+			ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
+			goto out;
+		}
+		memcpy(msg_to_free, write_callback_data->data, write_callback_data->data_size);
+
+		if (rrr_msg_head_to_host_and_verify(msg_to_free, write_callback_data->data_size)) {
+			RRR_MSG_0("Received RRR message of which head verification failed in HTTP server instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+
+		if (rrr_msg_check_data_checksum_and_length(msg_to_free, write_callback_data->data_size) != 0) {
+			RRR_MSG_0("Received RRR message CRC32 mismatch in HTTP server instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+
+		{
+			struct rrr_msg_msg *msg_msg = (struct rrr_msg_msg *) msg_to_free;
+			if (rrr_msg_msg_to_host_and_verify(msg_msg, write_callback_data->data_size) != 0) {
+				RRR_MSG_0("Received RRR message was invalid in HTTP server instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
+			if (write_callback_data->topic != NULL) {
+				if (MSG_TOPIC_LENGTH(msg_msg)) {
+					if (rrr_asprintf(&topic_tmp, "%s/%.*s", write_callback_data->topic, MSG_TOPIC_LENGTH(msg_msg), MSG_TOPIC_PTR(msg_msg)) <= 0) {
+						RRR_MSG_0("Failed to allocate memory for topic A in httpserver_receive_raw_broker_callback\n");
+						ret = RRR_HTTP_HARD_ERROR;
+						goto out;
+					}
+				}
+				else {
+					if (rrr_asprintf(&topic_tmp, "%s", write_callback_data->topic) <= 0) {
+						RRR_MSG_0("Failed to allocate memory for topic B in httpserver_receive_raw_broker_callback\n");
+						ret = RRR_HTTP_HARD_ERROR;
+						goto out;
+					}
+				}
+			}
+
+			if (topic_tmp != NULL) {
+				if (rrr_msg_msg_topic_set(&msg_msg, topic_tmp, strlen(topic_tmp)) != 0) {
+					RRR_MSG_0("Failed to set topic in httpserver_receive_raw_broker_callback\n");
+					ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
+					goto out;
+				}
+				msg_to_free = (struct rrr_msg *) msg_msg;
+			}
+		}
+
+		entry_new->message = msg_to_free;
+		entry_new->data_length = MSG_TOTAL_SIZE(msg_to_free);
+
+		msg_to_free = NULL;
+
+		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %li topic '%s'\n",
+				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
+	}
+	else {
+		if ((ret = rrr_msg_msg_new_with_data (
+				(struct rrr_msg_msg **) &entry_new->message,
+				MSG_TYPE_MSG,
+				MSG_CLASS_DATA,
+				rrr_time_get_64(),
+				write_callback_data->topic,
+				(write_callback_data->topic != NULL ? strlen(write_callback_data->topic) : 0),
+				write_callback_data->data,
+				write_callback_data->data_size
+		)) != 0) {
+			RRR_MSG_0("Could not create message in httpserver_receive_raw_broker_callback\n");
+			goto out;
+		}
+
+		entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
+
+		RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
+				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
 	}
 
-	entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
-
-	RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
-			INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
-
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	RRR_FREE_IF_NOT_NULL(msg_to_free);
 	rrr_msg_holder_unlock(entry_new);
 	return ret;
 }
@@ -930,7 +1020,8 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 		callback_data->httpserver_data,
 		NULL,
 		0,
-		topic
+		topic,
+		0
 	};
 
 	if (payload_size > SSIZE_MAX) {
@@ -945,6 +1036,12 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 			RRR_DBG_3("httpserver instance %s dropping received binary websocket frame per configuration\n",
 					INSTANCE_D_NAME(data->thread_data));
 			goto out;
+		}
+
+		if (data->do_receive_websocket_rrr_message) {
+			// To avoid extra data copying and because payload is const, validation
+			// of RRR message is performed in write callback
+			write_callback_data.is_full_rrr_msg = 1;
 		}
 
 		write_callback_data.data = payload;
@@ -997,7 +1094,8 @@ static int httpserver_receive_raw_callback (
 		receive_callback_data->httpserver_data,
 		data,
 		data_size,
-		topic
+		topic,
+		0
 	};
 
 	ret = rrr_message_broker_write_entry (

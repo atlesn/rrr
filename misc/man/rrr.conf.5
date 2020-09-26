@@ -1081,6 +1081,14 @@ By default, no websocket connection upgrades are accepted.
 Allow binary websocket frames. Data from such frames are put into plain RRR messages.
 If set to no or left undefined, received binary frames will be ignored. 
 
+.It http_server_receive_websocket_rrr_message={yes|no}
+If set to yes and websocket frames of binary type is received, these are interpreted as being RRR messages of any type.
+RRR message validation and endian conversion will be performed, and the socket will be closed if this fails. Implies
+.B http_server_accept_websocket_binary=yes.
+Messages of text type are not affected by this parameter.
+If set to no or left unset, binary messages are either ignored or received as-is depending on the value of
+.B http_server_accept_websocket_binary.
+
 .It http_server_tls_*
 Refer to the
 .B TLS

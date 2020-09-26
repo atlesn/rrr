@@ -312,7 +312,9 @@ static int __rrr_http_client_send_websocket_frame_final_callback (
 ) {
 	int ret = RRR_READ_OK;
 
-	printf("Received response\n");
+	(void)(read_session);
+	(void)(array_final);
+	(void)(arg);
 
 	return ret;
 }
@@ -379,6 +381,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 				goto out;
 			}
 
+			*is_binary = 1;
 			*data_len = MSG_TOTAL_SIZE(msg_tmp);
 
 			rrr_msg_msg_prepare_for_network(msg_tmp);
@@ -405,6 +408,10 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	(void)(payload_size);
 	(void)(unique_id);
 	(void)(http_client_data);
+
+	if (payload_size < INT_MAX) {
+		printf("Received response: %.*s\n", (int) payload_size, payload);
+	}
 
 	return 0;
 }
