@@ -85,7 +85,7 @@ int rrr_http_client_data_reset (
 	return ret;
 }
 
-void rrr_http_client_data_cleanup (
+void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 ) {
 	RRR_FREE_IF_NOT_NULL(data->server);

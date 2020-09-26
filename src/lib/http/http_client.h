@@ -108,7 +108,7 @@ int rrr_http_client_data_reset (
 		const struct rrr_http_client_config *config,
 		enum rrr_http_transport transport_force
 );
-void rrr_http_client_data_cleanup (
+void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );
 

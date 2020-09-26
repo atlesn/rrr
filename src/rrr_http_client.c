@@ -34,7 +34,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/log.h"
+#include "lib/array_tree.h"
+#include "lib/map.h"
+#include "lib/messages/msg_msg.h"
+#include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_common.h"
 #include "lib/http/http_client.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
@@ -51,6 +56,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
 		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT |
+		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
 		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
 		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
@@ -66,7 +74,29 @@ static const struct cmd_arg_rule cmd_rules[] = {
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
 	int websocket_upgrade;
+	struct rrr_array_tree *tree;
+	struct rrr_read_session_collection read_sessions;
+	struct rrr_map tags;
 };
+
+static void __rrr_http_client_data_cleanup (
+		struct rrr_http_client_data *data
+) {
+	rrr_http_client_request_data_cleanup(&data->request_data);
+	if (data->tree != NULL) {
+		rrr_array_tree_destroy(data->tree);
+	}
+	rrr_read_session_collection_clear(&data->read_sessions);
+	rrr_map_clear(&data->tags);
+}
+
+static int __rrr_http_client_save_tag_callback (
+		const char *tag,
+		void *arg
+) {
+	struct rrr_http_client_data *data = arg;
+	return rrr_map_item_add_new(&data->tags, tag, tag);
+}
 
 static int __rrr_http_client_parse_config (
 		struct rrr_http_client_data *data,
@@ -74,7 +104,60 @@ static int __rrr_http_client_parse_config (
 ) {
 	int ret = 0;
 
+	char *array_tree_tmp = NULL;
+
 	struct rrr_http_client_request_data *request_data = &data->request_data;
+
+	// HTTP CLIENT EXECUTABLE SPECIFIC PARAMETERS
+
+	// Websocket upgrade
+	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+		data->websocket_upgrade = 1;
+	}
+
+	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
+
+	if (cmd_get_value (cmd, "array-definition", 1) != NULL) {
+		RRR_MSG_0("Error: Only one array-definition argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = cmd_iterate_subvalues_if_exists(cmd, "tags-to-send", __rrr_http_client_save_tag_callback, data)) != 0) {
+		RRR_MSG_0("Failed to store tags in __rrr_http_client_parse_config\n");
+		goto out;
+	}
+
+	if (array_definition == NULL) {
+		if (RRR_MAP_COUNT(&data->tags)) {
+			RRR_MSG_0("Tags was specified while no array definition was specified\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if (data->websocket_upgrade != 1) {
+			RRR_MSG_0("Array-definition specified while websocket mode was not active\n");
+			ret = 1;
+			goto out;
+		}
+		array_tree_tmp = malloc(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
+		if (array_tree_tmp == NULL) {
+			RRR_MSG_0("Could not allocate temporary arry tree string in parse_config\n");
+			ret = 1;
+			goto out;
+		}
+
+		sprintf(array_tree_tmp, "%s;", array_definition);
+
+		if (rrr_array_tree_interpret_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+			RRR_MSG_0("Error while parsing array tree definition\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	// HTTP CLIENT FRAMEWORK PARAMETERS
 
 	// Server name
 	const char *server = cmd_get_value(cmd, "server", 0);
@@ -135,11 +218,6 @@ static int __rrr_http_client_parse_config (
 		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
 	}
 
-	// Websocket upgrade
-	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
-		data->websocket_upgrade = 1;
-	}
-
 	// HTTP port
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 0;
@@ -171,6 +249,7 @@ static int __rrr_http_client_parse_config (
 	request_data->http_port = port_tmp;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(array_tree_tmp);
 	return ret;
 }
 
@@ -219,16 +298,103 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
-static int __rrr_http_client_make_websocket_response_callback (RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+struct rrr_http_client_send_websocket_frame_callback_data {
+	void **data;
+	ssize_t *data_len;
+	int *is_binary;
+	struct rrr_http_client_data *http_client_data;
+};
+
+static int __rrr_http_client_send_websocket_frame_final_callback (
+		struct rrr_read_session *read_session,
+		struct rrr_array *array_final,
+		void *arg
+) {
+	int ret = RRR_READ_OK;
+
+	printf("Received response\n");
+
+	return ret;
+}
+
+static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(http_client_data);
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp = NULL;
+	char *raw_tmp = NULL;
+	struct rrr_array array = {0};
 
 	*data = NULL;
 	*data_len = 0;
 	*is_binary = 0;
 
-	return 0;
+	if (http_client_data->tree == NULL) {
+		goto out;
+	}
+
+	struct rrr_http_client_send_websocket_frame_callback_data callback_data = {
+			data,
+			data_len,
+			is_binary,
+			http_client_data
+	};
+
+	uint64_t bytes_read = 0;
+	if ((ret = rrr_socket_common_receive_array_tree (
+		&bytes_read,
+		&http_client_data->read_sessions,
+		STDIN_FILENO,
+		RRR_SOCKET_READ_METHOD_READ_FILE|RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_NO_GETSOCKOPTS|RRR_SOCKET_READ_USE_POLL,
+		&array,
+		http_client_data->tree,
+		1, // Do sync byte by byte
+		65535,
+		1 * 1024 * 1024 * 1024, // 1 GB
+		__rrr_http_client_send_websocket_frame_final_callback,
+		&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if (rrr_array_count(&array)) {
+		if (RRR_LL_COUNT(&http_client_data->tags)) {
+			ssize_t target_size = 0;
+			int found_tags = 0;
+			if ((ret = rrr_array_selected_tags_export(&raw_tmp, &target_size, &found_tags, &array, &http_client_data->tags)) != 0) {
+				RRR_MSG_0("Failed to get specified array tags from input data, return was %i\n", ret);
+				goto out;
+			}
+
+			*data_len = target_size;
+
+			*data = raw_tmp;
+			raw_tmp = NULL;
+			goto out;
+		}
+		else {
+			if ((ret = rrr_array_new_message_from_collection(&msg_tmp, &array, rrr_time_get_64(), NULL, 0)) != 0) {
+				RRR_MSG_0("Failed to create RRR array message from input data\n");
+				goto out;
+			}
+
+			*data_len = MSG_TOTAL_SIZE(msg_tmp);
+
+			rrr_msg_msg_prepare_for_network(msg_tmp);
+			rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_tmp);
+
+			*data = msg_tmp;
+			msg_tmp = NULL;
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	RRR_FREE_IF_NOT_NULL(raw_tmp);
+	rrr_array_clear(&array);
+	return ret;
 }
 
 static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS) {
@@ -315,6 +481,16 @@ int main (int argc, const char **argv, const char **env) {
 			goto out;
 		}
 
+/*		if (data.tree != NULL) {
+			int flags = fcntl(0, F_GETFL, 0);
+			flags |= O_NONBLOCK;
+			if (fcntl(STDIN_FILENO, F_SETFL) != 0) {
+				RRR_MSG_0("Failed to set non-block mode on STDIN: %s\n", rrr_strerror(errno));
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+		}*/
+
 		uint64_t prev_bytes_total = 0;
 		while (1) {
 			uint64_t bytes_total = 0;
@@ -324,7 +500,7 @@ int main (int argc, const char **argv, const char **env) {
 					&data.request_data,
 					net_transport_keepalive,
 					net_transport_keepalive_handle,
-					__rrr_http_client_make_websocket_response_callback,
+					__rrr_http_client_send_websocket_frame_callback,
 					&data,
 					__rrr_http_client_receive_websocket_frame_callback,
 					&data
@@ -334,7 +510,7 @@ int main (int argc, const char **argv, const char **env) {
 				}
 				goto out;
 			}
-			printf("tick %" PRIu64 "\n", bytes_total);
+//			printf("tick %" PRIu64 "\n", bytes_total);
 			if (prev_bytes_total == bytes_total) {
 				rrr_posix_usleep(5000); // 5 ms
 			}
@@ -363,7 +539,7 @@ int main (int argc, const char **argv, const char **env) {
 		if (net_transport_keepalive != NULL) {
 			rrr_net_transport_destroy(net_transport_keepalive);
 		}
-		rrr_http_client_data_cleanup(&data.request_data);
+		__rrr_http_client_data_cleanup(&data);
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();

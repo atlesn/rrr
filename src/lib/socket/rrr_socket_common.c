@@ -107,7 +107,7 @@ int rrr_socket_common_receive_array_tree (
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
 			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
-			return 1;
+			return RRR_SOCKET_HARD_ERROR;
 		}
 	}
 
