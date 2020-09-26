@@ -69,9 +69,22 @@ sub process {
 
 	print "Received topic " . $message->{'topic'} . " message length " . (length $message->{'data'}) . "\n";
 
+	my $msg_text = "";
+
+	if ($message->count_positions() > 0) {
+		$msg_text = ($message->get_tag_all("msg"))[0];
+		if (!defined $msg_text)  {
+			print "Received array message missing tag 'msg', ignoring\n";
+			return 1;
+		}
+	}
+	else {
+		$msg_text = $message->{'data'};
+	}
+
 	$connections{$message->{'topic'}} = {
 		"time" => time,
-		"msg" => $message->{'data'}
+		"msg" => $msg_text
 	};
 
 	return 1;
