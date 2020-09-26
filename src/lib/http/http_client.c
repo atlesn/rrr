@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 
 int rrr_http_client_data_init (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		const char *user_agent
 ) {
 	int ret = 0;
@@ -58,7 +58,7 @@ int rrr_http_client_data_init (
 }
 
 int rrr_http_client_data_reset (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		const struct rrr_http_client_config *config,
 		enum rrr_http_transport transport_force
 ) {
@@ -86,7 +86,7 @@ int rrr_http_client_data_reset (
 }
 
 void rrr_http_client_data_cleanup (
-		struct rrr_http_client_data *data
+		struct rrr_http_client_request_data *data
 ) {
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
@@ -153,6 +153,14 @@ static int __rrr_http_client_receive_http_part_callback (
 
 		goto out;
 	}
+	else if (response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+		if (callback_data->method != RRR_HTTP_METHOD_GET_WEBSOCKET) {
+			RRR_MSG_0("Unexpected response 101 '%s' from server\n",
+					response_part->response_str);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+	}
 	else if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
 				response_part->response_code, response_part->response_str);
@@ -175,7 +183,7 @@ static int __rrr_http_client_receive_http_part_callback (
 }
 
 static int __rrr_http_client_update_target_if_not_null (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		const char *protocol,
 		const char *server,
 		const char *endpoint,
@@ -220,12 +228,36 @@ static int __rrr_http_client_update_target_if_not_null (
 	return 0;
 }
 
+static int __rrr_http_client_send_request_websocket_handshake_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
+) {
+	struct rrr_http_client_request_callback_data *callback_data = arg;
+
+	(void)(handle);
+	(void)(request_part);
+	(void)(response_part);
+	(void)(data_ptr);
+	(void)(sockaddr);
+	(void)(socklen);
+	(void)(overshoot_bytes);
+	(void)(unique_id);
+	(void)(callback_data);
+
+	int ret = 0;
+
+	RRR_DBG_3("HTTP WebSocket handshake response from server received\n");
+
+	*do_websocket = 1;
+
+	return ret;
+}
+
 static void __rrr_http_client_send_request_callback_final (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
 	struct rrr_http_client_request_callback_data *callback_data = arg;
-	struct rrr_http_client_data *data = callback_data->data;
+	struct rrr_http_client_request_data *data = callback_data->data;
 
 	int ret = 0;
 
@@ -332,8 +364,8 @@ static void __rrr_http_client_send_request_callback_final (
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			data->read_max_size,
 			0,
-			NULL,
-			NULL,
+			__rrr_http_client_send_request_websocket_handshake_callback,
+			callback_data,
 			__rrr_http_client_receive_http_part_callback,
 			callback_data,
 			callback_data->raw_callback,
@@ -442,7 +474,7 @@ void __rrr_http_client_send_request_connect_callback (
 // Note that data in the struct may change if there are any redirects
 // Note that query prepare callback is not called if raw request data is set
 static int __rrr_http_client_send_request (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -512,8 +544,12 @@ static int __rrr_http_client_send_request (
 		}
 	}
 
-	RRR_DBG_3("Using server %s port %u transport %s\n",
-			data->server, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
+	RRR_DBG_3("Using server %s port %u transport %s method '%s'\n",
+			data->server,
+			port_to_use,
+			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
+			RRR_HTTP_METHOD_TO_STR(method)
+	);
 
 	if (transport == NULL) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
@@ -623,12 +659,13 @@ static int __rrr_http_client_send_request (
 	}
 	else if (transport != NULL) {
 		rrr_net_transport_destroy(transport);
+		*transport_keepalive = NULL;
 	}
 	return ret;
 }
 
 int rrr_http_client_send_request (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -658,7 +695,7 @@ int rrr_http_client_send_request (
 }
 
 int rrr_http_client_send_raw_request (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -688,7 +725,7 @@ int rrr_http_client_send_raw_request (
 }
 
 int rrr_http_client_send_request_simple (
-		struct rrr_http_client_data *data,
+		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
@@ -709,4 +746,107 @@ int rrr_http_client_send_request_simple (
 			final_callback,
 			final_callback_arg
 	);
+}
+
+int rrr_http_client_start_websocket_simple (
+		struct rrr_http_client_request_data *data,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	return __rrr_http_client_send_request (
+			data,
+			RRR_HTTP_METHOD_GET_WEBSOCKET,
+			transport_keepalive,
+			transport_keepalive_handle,
+			net_transport_config,
+			NULL,
+			0,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			final_callback,
+			final_callback_arg
+	);
+}
+
+struct rrr_http_client_websocket_tick_callback_data {
+	uint64_t bytes_total;
+	int timeout_s;
+	struct rrr_http_client_request_data *request_data;
+	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS);
+	void *get_response_callback_arg;
+	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
+	void *frame_callback_arg;
+};
+
+static int __rrr_http_client_transport_ctx_websocket_tick (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_client_websocket_tick_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
+
+	if ((ret = rrr_http_session_transport_ctx_websocket_tick (
+			handle,
+			1 * 1024 * 1024 * 1024, // 1 GB
+			0,
+			0,
+			callback_data->timeout_s,
+			callback_data->get_response_callback,
+			callback_data->get_response_callback_arg,
+			callback_data->frame_callback,
+			callback_data->frame_callback_arg
+	)) != 0) {
+		if (ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP client: Error %i while processing websocket data\n", ret);
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_client_websocket_tick (
+		uint64_t *bytes_total,
+		int timeout_s,
+		struct rrr_http_client_request_data *data,
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle,
+		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
+) {
+	if (transport_keepalive == NULL) {
+		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_websocket_tick\n");
+	}
+
+	struct rrr_http_client_websocket_tick_callback_data callback_data = {
+			*bytes_total,
+			timeout_s,
+			data,
+			get_response_callback,
+			get_response_callback_arg,
+			frame_callback,
+			frame_callback_arg
+	};
+
+	int ret = rrr_net_transport_handle_with_transport_ctx_do (
+			transport_keepalive,
+			transport_keepalive_handle,
+			__rrr_http_client_transport_ctx_websocket_tick,
+			&callback_data
+	);
+
+	*bytes_total = callback_data.bytes_total;
+
+	return ret;
 }

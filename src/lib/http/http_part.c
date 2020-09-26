@@ -325,6 +325,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"vary",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
 		{"x-clue",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
 		{"sec-websocket-key",	RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
+		{"sec-websocket-accept",RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
 		{"sec-websocket-version",RRR_HTTP_HEADER_FIELD_NO_PAIRS,		__rrr_http_header_parse_single_string_value},
 		{NULL, 0, NULL}
 };

@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_http_client_data http_client_data;
+	struct rrr_http_client_request_data http_client_data;
 	struct rrr_msg_holder_collection defer_queue;
 
 	int do_no_data;

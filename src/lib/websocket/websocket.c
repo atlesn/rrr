@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../util/rrr_time.h"
+#include "../random.h"
 #include "../helpers/nullsafe_str.h"
 #include "../type.h"
 
@@ -56,6 +57,41 @@ void rrr_websocket_state_clear_all (
 	rrr_websocket_state_clear_receive(ws_state);
 	RRR_LL_DESTROY(&ws_state->send_queue, struct rrr_websocket_frame, __rrr_websocket_frame_destroy(node));
 	memset(ws_state, '\0', sizeof(*ws_state));
+}
+
+int rrr_websocket_state_get_key_base64 (
+		char **target,
+		struct rrr_websocket_state *ws_state
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	unsigned char *base64 = NULL;
+
+	if (ws_state->websocket_key_64[0] == 0 && ws_state->websocket_key_64[1] == 0) {
+		RRR_ASSERT(sizeof(rrr_rand) < sizeof(uint32_t),rrr_rand_is_at_least_4_bytes);
+		for (int i = 0; i < 4; i++) {
+			ws_state->websocket_key_32[i] = (uint32_t) rrr_rand();
+		}
+	}
+
+	size_t out_len = 0;
+	if ((base64 = rrr_base64_encode((const unsigned char *) ws_state->websocket_key_8, sizeof(ws_state->websocket_key_8), &out_len)) == NULL) {
+		RRR_MSG_0("Failed to encode base64 in rrr_websocket_state_get_key_base64\n");
+		ret = 1;
+		goto out;
+	}
+
+	char *newline = strchr((char *) base64, '\n');
+	if (newline) {
+		*newline = '\0';
+	}
+
+	*target = (char *) base64;
+
+	out:
+	return ret;
 }
 
 int rrr_websocket_frame_enqueue (
@@ -96,6 +132,10 @@ int rrr_websocket_check_timeout (
 		struct rrr_websocket_state *ws_state,
 		int timeout_s
 ) {
+	if (timeout_s == 0) {
+		return 0;
+	}
+
 	if (ws_state->last_receive_time == 0) {
 		ws_state->last_receive_time = rrr_time_get_64();
 	}
@@ -113,6 +153,10 @@ int rrr_websocket_enqueue_ping_if_needed (
 		struct rrr_websocket_state *ws_state,
 		int ping_interval_s
 ) {
+	if (ping_interval_s == 0) {
+		return 0;
+	}
+
 	if (ws_state->last_receive_time == 0) {
 		ws_state->last_receive_time = rrr_time_get_64();
 	}
@@ -287,6 +331,7 @@ int __rrr_websocket_get_target_size (
 	callback_data->ws_state->last_receive_time = rrr_time_get_64();
 	callback_data->ws_state->receive_state.header = header_new;
 	read_session->target_size = target_len;
+	read_session->read_complete_method = RRR_READ_COMPLETE_METHOD_TARGET_LENGTH;
 
 	out:
 	return ret;

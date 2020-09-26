@@ -36,9 +36,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/log.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/http/http_client.h"
+#include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
 #include "lib/util/rrr_time.h"
+#include "lib/util/posix.h"
+
+#define RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S 10
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
@@ -46,6 +50,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
+		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade"},
 		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
 		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
@@ -58,8 +63,18 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,							'\0',	NULL,					NULL}
 };
 
-static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, struct cmd_data *cmd) {
+struct rrr_http_client_data {
+	struct rrr_http_client_request_data request_data;
+	int websocket_upgrade;
+};
+
+static int __rrr_http_client_parse_config (
+		struct rrr_http_client_data *data,
+		struct cmd_data *cmd
+) {
 	int ret = 0;
+
+	struct rrr_http_client_request_data *request_data = &data->request_data;
 
 	// Server name
 	const char *server = cmd_get_value(cmd, "server", 0);
@@ -74,8 +89,8 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		goto out;
 	}
 
-	data->server= strdup(server);
-	if (data->server == NULL) {
+	request_data->server= strdup(server);
+	if (request_data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
@@ -92,8 +107,8 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		endpoint = "/";
 	}
 
-	data->endpoint = strdup(endpoint);
-	if (data->endpoint == NULL) {
+	request_data->endpoint = strdup(endpoint);
+	if (request_data->endpoint == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
@@ -101,7 +116,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 
 	// No certificate verification
 	if (cmd_exists(cmd, "no-cert-verify", 0)) {
-		data->ssl_no_cert_verify = 1;
+		request_data->ssl_no_cert_verify = 1;
 	}
 
 	if (cmd_exists(cmd, "ssl-force", 0) && cmd_exists(cmd, "plain-force", 0)) {
@@ -112,12 +127,17 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 
 	// Force SSL
 	if (cmd_exists(cmd, "ssl-force", 0)) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
 	// Force Plaintext
 	if (cmd_exists(cmd, "plain-force", 0)) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	}
+
+	// Websocket upgrade
+	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+		data->websocket_upgrade = 1;
 	}
 
 	// HTTP port
@@ -136,7 +156,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		}
 	}
 	if (port_tmp == 0) {
-		if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
+		if (request_data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 			port_tmp = 443;
 		}
 		else {
@@ -148,7 +168,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		ret = 1;
 		goto out;
 	}
-	data->http_port = port_tmp;
+	request_data->http_port = port_tmp;
 
 	out:
 	return ret;
@@ -199,6 +219,30 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
+static int __rrr_http_client_make_websocket_response_callback (RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(http_client_data);
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	return 0;
+}
+
+static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(opcode);
+	(void)(payload);
+	(void)(payload_size);
+	(void)(unique_id);
+	(void)(http_client_data);
+
+	return 0;
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -213,11 +257,13 @@ int main (int argc, const char **argv, const char **env) {
 	rrr_strerror_init();
 
 	struct cmd_data cmd;
-	struct rrr_http_client_data data;
+	struct rrr_http_client_data data = {0};
+	struct rrr_net_transport *net_transport_keepalive = NULL;
+	int net_transport_keepalive_handle = 0;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	if (rrr_http_client_data_init(&data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
+	if (rrr_http_client_data_init(&data.request_data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -245,7 +291,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.do_retry = 0;
+	data.request_data.do_retry = 0;
 
 	struct rrr_net_transport_config net_transport_config = {
 			NULL,
@@ -256,24 +302,68 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if (rrr_http_client_send_request_simple (
-			&data,
-			RRR_HTTP_METHOD_GET,
-			&net_transport_config,
-			__rrr_http_client_final_callback,
-			NULL
-	) != 0) {
-		ret = EXIT_FAILURE;
-		goto out;
+	if (data.websocket_upgrade) {
+		if (rrr_http_client_start_websocket_simple (
+				&data.request_data,
+				&net_transport_keepalive,
+				&net_transport_keepalive_handle,
+				&net_transport_config,
+				__rrr_http_client_final_callback,
+				NULL
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		uint64_t prev_bytes_total = 0;
+		while (1) {
+			uint64_t bytes_total = 0;
+			if ((ret = rrr_http_client_websocket_tick (
+					&bytes_total,
+					RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S,
+					&data.request_data,
+					net_transport_keepalive,
+					net_transport_keepalive_handle,
+					__rrr_http_client_make_websocket_response_callback,
+					&data,
+					__rrr_http_client_receive_websocket_frame_callback,
+					&data
+			)) != 0) {
+				if (ret != RRR_READ_EOF) {
+					ret = EXIT_FAILURE;
+				}
+				goto out;
+			}
+			printf("tick %" PRIu64 "\n", bytes_total);
+			if (prev_bytes_total == bytes_total) {
+				rrr_posix_usleep(5000); // 5 ms
+			}
+			prev_bytes_total = bytes_total;
+		}
+	}
+	else {
+		if (rrr_http_client_send_request_simple (
+				&data.request_data,
+				RRR_HTTP_METHOD_GET,
+				&net_transport_config,
+				__rrr_http_client_final_callback,
+				NULL
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 	}
 
-	if (data.do_retry) {
+	if (data.request_data.do_retry) {
 		goto retry;
 	}
 
 	out:
 		rrr_config_set_debuglevel_on_exit();
-		rrr_http_client_data_cleanup(&data);
+		if (net_transport_keepalive != NULL) {
+			rrr_net_transport_destroy(net_transport_keepalive);
+		}
+		rrr_http_client_data_cleanup(&data.request_data);
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();

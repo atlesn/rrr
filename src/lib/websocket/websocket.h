@@ -76,6 +76,13 @@ struct rrr_websocket_state {
 	uint8_t last_enqueued_pcode;
 	int waiting_for_pong;
 	struct rrr_websocket_frame_collection send_queue;
+
+	// Used when client creates request
+	union {
+		uint8_t websocket_key_8[16];
+		uint64_t websocket_key_32[4];
+		uint64_t websocket_key_64[2];
+	};
 };
 
 struct rrr_net_transport_handle;
@@ -84,6 +91,10 @@ void rrr_websocket_state_clear_receive (
 		struct rrr_websocket_state *ws_state
 );
 void rrr_websocket_state_clear_all (
+		struct rrr_websocket_state *ws_state
+);
+int rrr_websocket_state_get_key_base64 (
+		char **target,
 		struct rrr_websocket_state *ws_state
 );
 int rrr_websocket_frame_enqueue (
