@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "test_fixp.h"
 #include "../lib/fixed_point.h"
+#include "../lib/util/macro_utils.h"
 
 int rrr_test_fixp(void) {
 	int ret = 0;
@@ -40,6 +41,8 @@ int rrr_test_fixp(void) {
 	const char *a_str = "+1.5yuiyuiyuiyu";
 	const char *b_str = "-1.5##%%¤#";
 	const char *c_str = "15.671875";
+
+	char *tmp = NULL;
 
 	ret |= rrr_fixp_str_to_fixp(&fixp_a, a_str, strlen(a_str), &endptr);
 	if (endptr - a_str != 4) {
@@ -96,6 +99,16 @@ int rrr_test_fixp(void) {
 		goto out;
 	}
 
+	if ((ret = rrr_fixp_to_new_str_double (&tmp, fixp_c)) != 0) {
+		TEST_MSG("Conversion from fixed point to new string failed\n");
+		goto out;
+	}
+	if (strcmp(buf, tmp) != 0) {
+		TEST_MSG("Mismatch from static and dynamic fixp to string functions: '%s'<>'%s'\n", buf, tmp);
+		ret = 1;
+		goto out;
+	}
+
 	long double dbl = 0;
 	if ((ret = rrr_fixp_to_ldouble(&dbl, fixp_a)) != 0) {
 		TEST_MSG("Conversion from fixed point to ldouble failed\n");
@@ -146,5 +159,6 @@ int rrr_test_fixp(void) {
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(tmp);
 	return (ret != 0);
 }
