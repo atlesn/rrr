@@ -821,7 +821,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		payload_size = strlen(payload) + 1;
 	}
 
-	if (payload != NULL) {
+	if (payload != NULL && payload_size > 0) {
 		if (rrr_mqtt_p_payload_new_with_allocated_payload (
 				&publish->payload,
 				&payload, // Set to NULL if success
@@ -841,8 +841,8 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",
-			INSTANCE_D_NAME(thread_data), publish->topic);
+	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s payload size is %ld bytes\n",
+			INSTANCE_D_NAME(thread_data), publish->topic, (long int) payload_size);
 
 	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, &private_data->session, publish) != 0) {
 		RRR_MSG_0("Could not publish message in mqtt client instance %s\n",
