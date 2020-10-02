@@ -416,9 +416,10 @@ static int __rrr_array_collection_iterate_chosen_tags (
 		else {
 			if (node->tag != NULL) {
 				const char *tag = node->tag;
+				const rrr_length tag_length = node->tag_length;
 				RRR_MAP_ITERATE_BEGIN_CONST(tags);
-//					printf ("Match tag %s vs %s\n", tag, (char *) node->value_primary_);
-					if (strcmp (tag, node_tag) == 0) {
+//					printf ("Match tag '%s' vs '%s'\n", tag, (char *) node_tag);
+					if (strncmp (tag, node_tag, tag_length) == 0) {
 						found = 1;
 						RRR_LL_ITERATE_LAST();
 					}
