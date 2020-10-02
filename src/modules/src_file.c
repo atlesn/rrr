@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
 #define RRR_FILE_MAX_MAX_OPEN 65536
 #define RRR_FILE_DEFAULT_MAX_OPEN RRR_FILE_MAX_MAX_OPEN
+#define RRR_FILE_DEFAULT_TIMEOUT 0
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
@@ -70,6 +71,7 @@ struct file {
 	char *real_path;
 	int fd;
 	uint64_t total_messages;
+	uint64_t last_read_time;
 };
 
 struct file_collection {
@@ -91,6 +93,7 @@ struct file_data {
 	rrr_setting_uint max_messages_per_file;
 	rrr_setting_uint max_read_step_size;
 	rrr_setting_uint max_open;
+	rrr_setting_uint timeout_s;
 
 	char *topic;
 	size_t topic_len;
@@ -228,6 +231,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_open", max_open, RRR_FILE_DEFAULT_MAX_OPEN);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT);
 
 	/* Don't goto out in errors, check all possible errors first. */
 
@@ -553,6 +557,19 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 
 	struct rrr_array array_final = {0};
 
+	if (data->timeout_s != 0) {
+		uint64_t time_min = rrr_time_get_64() - (data->timeout_s * 1000 * 1000);
+		if (file->last_read_time == 0) {
+			file->last_read_time = rrr_time_get_64();
+		}
+		else if (file->last_read_time < time_min) {
+			RRR_DBG_1("Timeout for file %s in instance %s, closing.\n",
+					file->orig_path, INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_READ_EOF;
+			goto out;
+		}
+	}
+
 	int socket_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_NO_GETSOCKOPTS;
 
 	if (file->type == DT_CHR || file->type == DT_SOCK || file->type == DT_FIFO) {
@@ -596,6 +613,8 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 		}
 		goto out;
 	}
+
+	file->last_read_time = rrr_time_get_64();
 
 	if (data->do_read_all_to_message) {
 		if (data->tree != NULL) {

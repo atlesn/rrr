@@ -336,7 +336,9 @@ static int __ipclient_asd_reconnect (struct ipclient_data *data) {
 struct ipclient_udpstream_allocator_callback_data {
 	struct ipclient_data *data;
 	uint32_t size;
-	int (*callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_data);
+	const struct sockaddr *remote_addr;
+	socklen_t remote_addr_len;
+	int (*callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS);
 	void *udpstream_callback_data;
 };
 
@@ -352,7 +354,13 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	// Points to data inside entry, not to be freed except from when entry is destroyed
 	void *joined_data = NULL;
 
-	if (rrr_msg_holder_util_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
+	if (rrr_msg_holder_util_new_with_empty_message (
+			&entry,
+			callback_data->size,
+			callback_data->remote_addr,
+			callback_data->remote_addr_len,
+			RRR_IP_UDP
+	) != 0) {
 		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
 		goto out;
@@ -385,17 +393,19 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 }
 
 static int ipclient_udpstream_allocator (
-		uint32_t size,
-		int (*callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_data),
-		void *udpstream_callback_data,
-		void *arg
+		RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS
 ) {
 	struct ipclient_data *data = arg;
 
 	int ret = 0;
 
 	struct ipclient_udpstream_allocator_callback_data callback_data = {
-			data, size, callback, udpstream_callback_data
+			data,
+			size,
+			remote_addr,
+			remote_addr_len,
+			receive_callback,
+			udpstream_callback_arg
 	};
 
 	if ((ret = rrr_message_broker_with_ctx_and_buffer_lock_do (
