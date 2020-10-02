@@ -26,6 +26,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
+#define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,source) \
+	char name[256]; rrr_nullsafe_str_output_strip_null_append_null_trim(source, name, sizeof(name))
+
+struct rrr_nullsafe_str;
+
 struct rrr_http_uri {
 	char *protocol;
 	char *host;
@@ -39,26 +44,24 @@ void rrr_http_util_print_where_message (
 );
 int rrr_http_util_decode_urlencoded_string (
 		rrr_length *output_size,
-		char *target,
-		rrr_length input_size
+		struct rrr_nullsafe_str *str
 );
 char *rrr_http_util_encode_uri (
 		rrr_length *output_size,
-		const char *input,
-		rrr_length input_size
-);
-const char *rrr_http_util_find_quoted_string_end (
-		const char *start,
-		const char *end,
-		char endchr
+		const struct rrr_nullsafe_str *str
 );
 int rrr_http_util_unquote_string (
 		rrr_length *output_size,
-		char *target,
-		rrr_length length
+		struct rrr_nullsafe_str *str
 );
 char *rrr_http_util_quote_header_value (
 		const char *input,
+		rrr_length length,
+		char delimeter_start,
+		char delimeter_end
+);
+char *rrr_http_util_quote_header_value_nullsafe (
+		struct rrr_nullsafe_str *str,
 		char delimeter_start,
 		char delimeter_end
 );
@@ -93,18 +96,12 @@ rrr_length rrr_http_util_count_whsp (
 		const char *start,
 		const char *end
 );
-void rrr_http_util_strtolower (
-		char *str
-);
-void rrr_http_util_strtoupper (
-		char *str
-);
 void rrr_http_util_uri_destroy (
 		struct rrr_http_uri *uri
 );
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
-		const char *uri
+		struct rrr_nullsafe_str *str
 );
 void rrr_http_util_nprintf (
 		rrr_length length,
