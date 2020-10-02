@@ -1565,6 +1565,9 @@ Read as most the specified number of bytes each round.
 This parameter is not respected when file_read_all_to_message is 'yes', and having both these parameter specified is an error.
 Must be greater than zero, defaults to 4096.
 
+.It file_timeout_s=SECONDS
+If no message is read in the specified amount of seconds, close the file. Defaults to 0 which means no timeout. 
+
 .El
 .SS mysql (DAI)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
