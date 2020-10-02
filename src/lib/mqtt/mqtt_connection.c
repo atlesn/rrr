@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
+#include "../util/posix.h"
 
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_OK;
@@ -832,6 +833,8 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			// Nothing was read
 			break;
 		}
+
+		rrr_posix_usleep(500);
 		read_loops++;
 	}
 

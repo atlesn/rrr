@@ -96,22 +96,23 @@ int rrr_socket_common_receive_array_tree (
 
 	if (ret != RRR_SOCKET_OK) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			return 0;
+			ret = RRR_READ_OK; // Clear INCOMPLETE return value
 		}
 		else if (ret == RRR_SOCKET_READ_EOF) {
-			return ret;
+			// OK, return EOF
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array_tree\n");
-			return RRR_SOCKET_SOFT_ERROR;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
 			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array_tree\n");
-			return 1;
+		}
+		else {
+			RRR_BUG("Unknown return value %i while reading data in rrr_socket_common_receive_array_tree\n", ret);
 		}
 	}
 
-	return 0;
+	return ret;
 }
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
