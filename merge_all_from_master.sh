@@ -12,6 +12,7 @@ merge() {
 	git push || exit 1
 }
 
+merge websocket
 merge bugfix
 merge development
 merge development-freebsd

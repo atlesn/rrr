@@ -244,6 +244,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	};															\
 	uint16_t data_size
 
+#define RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS							\
+	void **joined_data,												\
+	void *allocation_handle,										\
+	void *udpstream_callback_arg
+
+#define RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS						\
+	uint32_t size,													\
+	const struct sockaddr *remote_addr,								\
+	socklen_t remote_addr_len,										\
+	int (*receive_callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS),	\
+	void *udpstream_callback_arg,									\
+	void *arg
+
+#define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS						\
+	RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
+
+#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS					\
+	void **joined_data,												\
+	const struct rrr_udpstream_receive_data *receive_data,			\
+	void *arg
+
 struct rrr_udpstream_ack_data {
 	uint32_t ack_id_first;
 	uint32_t ack_id_last;
@@ -389,16 +410,11 @@ int rrr_udpstream_default_allocator (
 
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
-		int (*allocator_callback) (
-				uint32_t size,
-				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
-				void *udpstream_callback_arg,
-				void *arg
-		),
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
-		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
+		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
 		void *validator_callback_arg,
-		int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
 		void *receive_callback_arg
 );
 // This should be called on a regular basis to perform all reading from network. If a control frame

@@ -261,7 +261,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		}
 	}
 	else if (!callback_data->worker->config_data->do_processing) {
-		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n");
+		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n",
+				callback_data->worker->name);
 	}
 	else {
 		const struct rrr_msg_msg *msg_msg = data;
@@ -420,9 +421,10 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (worker->ping_received) {
-			if (__rrr_cmodule_worker_send_pong(worker) != 0) {
-				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
+			if ((ret = __rrr_cmodule_worker_send_pong(worker)) != 0) {
+				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
+						worker->name, (long) getpid(), ret);
+				ret = 0;
 			}
 			// Always set to 0, maybe this fork should be killed if PONG messages
 			// are not received by parent.

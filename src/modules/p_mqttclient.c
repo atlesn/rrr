@@ -800,7 +800,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out_free;
 		}
 
-		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(&private_data->publish_values_from_array_list)) {
+		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(tags_to_use)) {
 			RRR_DBG_1("Note: Only %i tags out of %i specified in configuration was found in message when sending array data in mqtt instance %s\n",
 					found_tags, RRR_MAP_COUNT(&private_data->publish_values_from_array_list), INSTANCE_D_NAME(thread_data));
 		}
@@ -821,7 +821,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		payload_size = strlen(payload) + 1;
 	}
 
-	if (payload != NULL) {
+	if (payload != NULL && payload_size > 0) {
 		if (rrr_mqtt_p_payload_new_with_allocated_payload (
 				&publish->payload,
 				&payload, // Set to NULL if success
@@ -841,8 +841,8 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",
-			INSTANCE_D_NAME(thread_data), publish->topic);
+	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s payload size is %ld bytes\n",
+			INSTANCE_D_NAME(thread_data), publish->topic, (long int) payload_size);
 
 	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, &private_data->session, publish) != 0) {
 		RRR_MSG_0("Could not publish message in mqtt client instance %s\n",
