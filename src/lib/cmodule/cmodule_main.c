@@ -421,9 +421,10 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (worker->ping_received) {
-			if (__rrr_cmodule_worker_send_pong(worker) != 0) {
-				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
+			if ((ret = __rrr_cmodule_worker_send_pong(worker)) != 0) {
+				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
+						worker->name, (long) getpid(), ret);
+				ret = 0;
 			}
 			// Always set to 0, maybe this fork should be killed if PONG messages
 			// are not received by parent.
