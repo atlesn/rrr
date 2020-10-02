@@ -800,7 +800,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out_free;
 		}
 
-		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(&private_data->publish_values_from_array_list)) {
+		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(tags_to_use)) {
 			RRR_DBG_1("Note: Only %i tags out of %i specified in configuration was found in message when sending array data in mqtt instance %s\n",
 					found_tags, RRR_MAP_COUNT(&private_data->publish_values_from_array_list), INSTANCE_D_NAME(thread_data));
 		}
