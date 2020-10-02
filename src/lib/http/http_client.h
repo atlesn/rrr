@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
 	struct rrr_http_client_data *data, 				\
 	int response_code,								\
-	const char *response_argument,					\
+	const struct rrr_nullsafe_str *response_arg,	\
 	int chunk_idx,									\
 	int chunk_total,								\
 	const char *data_start,							\
@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_http_session *session,				\
 	void *arg
 
+struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
 struct rrr_http_session;
@@ -69,7 +70,7 @@ struct rrr_http_client_request_callback_data {
 	enum rrr_http_method method;
 
 	int response_code;
-	char *response_argument;
+	struct rrr_nullsafe_str *response_argument;
 
 	// Errors do not propagate through net transport framework. Return
 	// value of http callbacks is saved here.

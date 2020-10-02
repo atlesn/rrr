@@ -160,7 +160,7 @@ static int __rrr_http_client_final_callback (
 	int ret = 0;
 
 	(void)(response_code);
-	(void)(response_argument);
+	(void)(response_arg);
 	(void)(data);
 	(void)(chunk_idx);
 	(void)(chunk_total);

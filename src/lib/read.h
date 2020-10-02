@@ -30,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //struct rrr_socket_client;
 
+#define RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS		\
+		ssize_t *result,										\
+		void *data,												\
+		ssize_t data_size,										\
+		void *arg
+
 struct rrr_read_session_collection {
 	RRR_LL_HEAD(struct rrr_read_session);
 };
@@ -162,10 +168,7 @@ int rrr_read_common_receive_message_callback (
 		void *arg
 );
 int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
-		ssize_t *result,
-		void *data,
-		ssize_t data_size,
-		void *arg
+		RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
 );
 int rrr_read_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_read_session *read_session,

@@ -2,6 +2,7 @@
 
 package main;
 
+use Socket qw(:DEFAULT :crlf inet_ntop);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
@@ -161,29 +162,24 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	# Do some modifications to the message
-	#$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
-
-	#print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
-
-	#my $message_text = get_from_tag_or_default($message, "log_message", "no message");
-	#chomp $message_text;
-
-	#print "log prefix: '" . get_from_tag_or_default($message, "log_prefix", "no prefix") . "'\n";
-	#print "log message: '$message_text'\n";
-
-	#my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
+	if (length $message->{'ip_addr'} == 28) {
+		my ($port, $ip_address) = unpack_sockaddr_in6 $message->{'ip_addr'};
+		my $ip_str = inet_ntop AF_INET6, $ip_address; 
+		print "Source: $ip_str:$port type " . $message->{'ip_so_type'} . "\n";
+	}
+	else {
+		my ($port, $ip_address) = unpack_sockaddr_in $message->{'ip_addr'};
+		my $ip_str = inet_ntop AF_INET, $ip_address; 
+		print "Source: $ip_str:$port type " . $message->{'ip_so_type'} . "\n";
+	}
 
 	# Create an array in the message and write some values
 	#push_tag_str($message, "value_a", "This is the 'a' value");
 	#push_tag_h($message, "value_number", 12345);
-	#push_tag_array($message, "value_numbers", \@numbers, "h");
 	#push_tag_blob($message, "value_blob", "abcd");
 
-	$message->{'ip_so_type'} = "tcp";
-
 	# This can be used to duplicate a message if called multiple times
-	$message->send();
+	# $message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;
