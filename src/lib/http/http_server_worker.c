@@ -185,11 +185,16 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	if (RRR_DEBUGLEVEL_2) {
 		char ip_buf[256];
+		char method_buf[40];
+		char uri_buf[256];
+
+		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
+		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
 
 		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->sockaddr, worker_data->socklen);
 
 		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
-				worker_data->transport_handle, ip_buf, request_part->request_method_str, request_part->request_uri);
+				worker_data->transport_handle, ip_buf, method_buf, uri_buf);
 
 		if (overshoot_bytes > 0) {
 			RRR_MSG_2("HTTP worker %i %s has %li bytes overshoot, expecting another request\n",
