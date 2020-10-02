@@ -37,12 +37,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
+#include "../lib/helpers/nullsafe_str.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -79,7 +81,6 @@ static int httpclient_send_request_callback (
 ) {
 	(void)(data);
 	(void)(response_code);
-	(void)(response_argument);
 	(void)(chunk_idx);
 	(void)(chunk_total);
 	(void)(data_start);
@@ -95,10 +96,11 @@ static int httpclient_send_request_callback (
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", response_code);
 	}
 
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i %s\n",
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,response_arg);
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s'\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			response_code,
-			(response_argument != NULL ? response_argument : "(no response string)")
+			response_arg_str
 	);
 
 	return ret;
@@ -476,14 +478,6 @@ static int httpclient_send_request_locked (
 		}
 	}
 
-	if (data->message_timeout_us != 0) {
-		if (rrr_time_get_64() > entry->send_time + data->message_timeout_us) {
-			RRR_MSG_0("Send timeout for message in httpclient instance %s, dropping it.\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-	}
-
 	if (data->do_send_raw_data) {
 		if (MSG_DATA_LENGTH(message) == 0) {
 			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had 0 length data. Dropping it.\n",
@@ -614,29 +608,12 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// Important : Set send_time for correct timeout behavior
 	entry->send_time = rrr_time_get_64();
 
-	int ret = RRR_FIFO_OK;
+	int ret = RRR_FIFO_SEARCH_GIVE;
 
-	if ((ret = httpclient_send_request_locked(data, entry)) != 0) {
-		if (ret == RRR_HTTP_SOFT_ERROR) {
-			RRR_DBG_1("Soft error while sending message in httpclient instance %s, deferring message\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_defer;
-		}
-		RRR_MSG_0("Hard error while sending message in httpclient instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
-	}
-
-	goto out;
-	out_defer:
-		rrr_msg_holder_incref_while_locked(entry);
-		RRR_LL_APPEND(&data->defer_queue, entry);
-		rrr_msg_holder_unlock(entry);
-		return RRR_FIFO_SEARCH_STOP;
-	out:
-		rrr_msg_holder_unlock(entry);
-		return ret;
+	//rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&data->defer_queue, entry);
+	rrr_msg_holder_unlock(entry);
+	return ret;
 }
 
 static void httpclient_data_cleanup(void *arg) {
@@ -791,9 +768,22 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
+			int send_timeout_count = 0;
+//			int pos = 0;
 			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
+//				printf("send loop %i/%i\n", pos++, RRR_LL_COUNT(&data->defer_queue));
+				if (rrr_thread_check_encourage_stop(thread)) {
+					RRR_LL_ITERATE_BREAK();
+				}
+				rrr_thread_update_watchdog_time(thread);
+
 				rrr_msg_holder_lock(node);
-				if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
+
+				if (data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) {
+						send_timeout_count++;
+						RRR_LL_ITERATE_SET_DESTROY();
+				}
+				else if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
 					}
@@ -810,16 +800,21 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				rrr_msg_holder_unlock(node);
 			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_holder_decref(node));
 
+			if (send_timeout_count > 0) {
+				RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
+						send_timeout_count,
+						INSTANCE_D_NAME(data->thread_data));
+			}
+
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
 			}
 		}
-		else {
-			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, httpclient_poll_callback, 30) != 0) {
-				RRR_MSG_0("Error while polling in httpclient instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
+
+		if (rrr_poll_do_poll_search(thread_data, &thread_data->poll, httpclient_poll_callback, thread_data, RRR_LL_COUNT(&data->defer_queue) > 0 ? 0 : 30) != 0) {
+			RRR_MSG_0("Error while polling in httpclient instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
 		}
 	}
 
