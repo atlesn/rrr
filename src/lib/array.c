@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 #include "util/gnu.h"
 #include "util/rrr_endian.h"
+#include "helpers/nullsafe_str.h"
 #include "parse.h"
 
 static int __rrr_array_clone (
@@ -245,6 +246,20 @@ int rrr_array_push_value_blob_with_tag_with_size (
 	);
 }
 
+int rrr_array_push_value_blob_with_tag_nullsafe (
+		struct rrr_array *collection,
+		const char *tag,
+		const struct rrr_nullsafe_str *str
+) {
+	return __rrr_array_push_value_x_with_tag_with_size (
+			collection,
+			tag,
+			str->str,
+			str->len,
+			&rrr_type_definition_blob
+	);
+}
+
 int rrr_array_push_value_str_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
@@ -401,9 +416,10 @@ static int __rrr_array_collection_iterate_chosen_tags (
 		else {
 			if (node->tag != NULL) {
 				const char *tag = node->tag;
+				const rrr_length tag_length = node->tag_length;
 				RRR_MAP_ITERATE_BEGIN_CONST(tags);
-//					printf ("Match tag %s vs %s\n", tag, (char *) node->value_primary_);
-					if (strcmp (tag, node_tag) == 0) {
+//					printf ("Match tag '%s' vs '%s'\n", tag, (char *) node_tag);
+					if (strncmp (tag, node_tag, tag_length) == 0) {
 						found = 1;
 						RRR_LL_ITERATE_LAST();
 					}

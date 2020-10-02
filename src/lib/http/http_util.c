@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
+#include "../helpers/nullsafe_str.h"
 
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||
@@ -222,15 +223,16 @@ void rrr_http_util_print_where_message (
 
 int rrr_http_util_decode_urlencoded_string (
 		rrr_length *output_size,
-		char *target,
-		rrr_length input_size
+		struct rrr_nullsafe_str *str
 ) {
 	int ret = 0;
 
 	*output_size = 0;
 
-	const char *start = target;
-	const char *end = start + input_size;
+	const unsigned char *start = str->str;
+	const unsigned char *end = str->str + str->len;
+
+	unsigned char *target = str->str;
 
 	rrr_length wpos = 0;
 
@@ -247,9 +249,9 @@ int rrr_http_util_decode_urlencoded_string (
 			unsigned long long int result = 0;
 
 			rrr_length result_len = 0;
-			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
+			if (rrr_http_util_strtoull (&result, &result_len, (const char *) start + 1, (const char *) start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in urlencoded string\n");
-				rrr_http_util_print_where_message(start, end);
+				rrr_http_util_print_where_message((const char *) start, (const char *) end);
 				ret = 1;
 				goto out;
 			}
@@ -276,10 +278,9 @@ int rrr_http_util_decode_urlencoded_string (
 // We allow non-ASCII here
 char *rrr_http_util_encode_uri (
 		rrr_length *output_size,
-		const char *input,
-		rrr_length input_size
+		const struct rrr_nullsafe_str *str
 ) {
-	rrr_biglength result_max_length = input_size * 3;
+	rrr_biglength result_max_length = (str != NULL ? str->len * 3 : 0);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_max_length,"rrr_http_util_encode_uri");
 
 	*output_size = 0;
@@ -292,13 +293,18 @@ char *rrr_http_util_encode_uri (
 		err = 1;
 		goto out;
 	}
-	memset(result, '\0', result_max_length);
+
+	memset(result, '\0', result_max_length + 1);
+
+	if (result_max_length == 0) {
+		goto out;
+	}
 
 	char *wpos = result;
 	char *wpos_max = result + result_max_length;
 
-	for (rrr_length i = 0; i < input_size; i++) {
-		unsigned char c = *((unsigned char *) input + i);
+	for (rrr_length i = 0; i < str->len; i++) {
+		unsigned char c = *((unsigned char *) str->str + i);
 
 		if (__rrr_http_util_is_alphanumeric(c) || __rrr_http_util_is_uri_unreserved_rfc2396(c)) {
 			*wpos = c;
@@ -324,34 +330,14 @@ char *rrr_http_util_encode_uri (
 	return result;
 }
 
-const char *rrr_http_util_find_quoted_string_end (
-		const char *start,
-		const char *end,
-		char endchr
-) {
-	int escape_next = 0;
-	while (start < end) {
-		if (*start == '\\') {
-			escape_next = 1;
-		}
-		else if (escape_next) {
-			escape_next = 0;
-		}
-		else if (*start == endchr) {
-			return start;
-		}
-		start++;
-	}
-	return NULL;
-}
-
 int rrr_http_util_unquote_string (
 		rrr_length *output_size,
-		char *target,
-		rrr_length target_length
+		struct rrr_nullsafe_str *str
 ) {
-	char *start = target;
-	char *end = target + target_length;
+	unsigned char *start = str->str;
+	unsigned char *end = str->str + str->len;
+
+	unsigned char *target = str->str;
 
 	*output_size = 0;
 
@@ -405,10 +391,10 @@ int rrr_http_util_unquote_string (
 // TODO : Support RFC8187. This function is less forgiving than the standard.
 char *rrr_http_util_quote_header_value (
 		const char *input,
+		rrr_length length,
 		char delimeter_start,
 		char delimeter_end
 ) {
-	rrr_biglength length = strlen(input);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(length, "rrr_http_util_quote_header_value A");
 
 	if (length == 0) {
@@ -453,7 +439,7 @@ char *rrr_http_util_quote_header_value (
 	}
 
 	if (needs_quote == 0) {
-		strcpy(result, input);
+		memcpy(result, input, length);
 	}
 	else {
 		*wpos = delimeter_start;
@@ -486,6 +472,23 @@ char *rrr_http_util_quote_header_value (
 	}
 
 	return result;
+}
+
+char *rrr_http_util_quote_header_value_nullsafe (
+		struct rrr_nullsafe_str *str,
+		char delimeter_start,
+		char delimeter_end
+) {
+	if (!rrr_nullsafe_str_isset(str)) {
+		return NULL;
+	}
+
+	return rrr_http_util_quote_header_value (
+			str->str,
+			str->len,
+			delimeter_start,
+			delimeter_end
+	);
 }
 
 const char *rrr_http_util_find_crlf (
@@ -673,24 +676,6 @@ rrr_length rrr_http_util_count_whsp (
 	return ret;
 }
 
-void rrr_http_util_strtolower (
-		char *str
-) {
-	size_t len = strlen(str);
-	for (size_t i = 0; i < len; i++) {
-		str[i] = tolower(str[i]);
-	}
-}
-
-void rrr_http_util_strtoupper (
-		char *str
-) {
-	size_t len = strlen(str);
-	for (size_t i = 0; i < len; i++) {
-		str[i] = toupper(str[i]);
-	}
-}
-
 void rrr_http_util_uri_destroy (
 		struct rrr_http_uri *uri
 ) {
@@ -700,17 +685,50 @@ void rrr_http_util_uri_destroy (
 	free(uri);
 }
 
+static int __rrr_http_util_uri_validate_characters (
+		unsigned char *invalid,
+		const struct rrr_nullsafe_str *str
+) {
+	*invalid = '\0';
+
+	for (size_t i = 0; i < str->len; i++) {
+		unsigned char c = *((unsigned char *) str->str + i);
+		if (	(c >= 'A' && c <= 'Z') ||
+				(c >= 'a' && c <= 'z') ||
+				(c >= '0' && c <= '9') ||
+				(c >= '!' && c <= '/' && c != '"') ||
+				(c == '_' || c == '~' || c == ':' || c == '?' || c == '[' || c == ']' || c == '@' || c == ';' || c == '=')
+		) {
+			// OK
+		}
+		else {
+			*invalid = c;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
-		const char *uri
+		struct rrr_nullsafe_str *str
 ) {
 	int ret = 0;
 	struct rrr_http_uri *uri_new = NULL;
 
 	*uri_result = NULL;
 
-	if (uri == NULL) {
-		RRR_BUG("uri was NULL in rrr_http_uri_parse\n");
+	if (!rrr_nullsafe_str_isset(str)) {
+		RRR_BUG("BUG: str was NULL in rrr_http_uri_parse\n");
+	}
+
+	unsigned char invalid;
+	if (__rrr_http_util_uri_validate_characters(&invalid, str) != 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+		RRR_MSG_0("Invalid characters in URI '%s' (first invalid character is 0x%02x)\n",
+				name, invalid);
+		ret = 1;
+		goto out;
 	}
 
 	if ((uri_new = malloc(sizeof(*uri_new))) == NULL) {
@@ -721,16 +739,14 @@ int rrr_http_util_uri_parse (
 
 	memset(uri_new, '\0', sizeof(*uri_new));
 
-	size_t len = strlen(uri);
-
-	const char *pos = uri;
-	const char *end = uri + len;
+	const char *pos = str->str;
+	const char *end = str->str + str->len;
 
 	const char *new_pos;
 	rrr_length result_len;
 
 	// Parse protocol if present
-	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") && new_pos == pos) {
+	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") == 0 && new_pos == pos) {
 		if ((uri_new->protocol = strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
 			ret = 1;
@@ -746,7 +762,8 @@ int rrr_http_util_uri_parse (
 			uri_new->protocol = strdup("http");
 		}
 		else {
-			RRR_MSG_0("Unsupported or missing protocol name in URI '%s'\n", uri);
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+			RRR_MSG_0("Unsupported or missing protocol name in URI '%s'\n", name);
 			ret = 1;
 			goto out_destroy;
 		}
@@ -773,7 +790,8 @@ int rrr_http_util_uri_parse (
 			}
 			else if (*pos == '-') {
 				if (result_len == 0) {
-					RRR_MSG_0("Invalid hostname in URI '%s', cannot begin with '-'\n", uri);
+					RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+					RRR_MSG_0("Invalid hostname in URI '%s', cannot begin with '-'\n", name);
 					ret = 1;
 					goto out_destroy;
 				}
@@ -786,7 +804,8 @@ int rrr_http_util_uri_parse (
 				break;
 			}
 			else {
-				RRR_MSG_0("Invalid character %c in URI '%s' hostname\n", *pos, uri);
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+				RRR_MSG_0("Invalid character %c in URI '%s' hostname\n", *pos, name);
 				ret = 1;
 				goto out_destroy;
 			}
@@ -808,7 +827,8 @@ int rrr_http_util_uri_parse (
 			pos++;
 			unsigned long long port = 0;
 			if (rrr_http_util_strtoull(&port, &result_len, pos, end, 10) != 0 || port < 1 || port > 65535) {
-				RRR_MSG_0("Invalid port in URL '%s'\n", uri);
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+				RRR_MSG_0("Invalid port in URL '%s'\n", name);
 				ret = 1;
 				goto out_destroy;
 			}
@@ -833,7 +853,8 @@ int rrr_http_util_uri_parse (
 			result_len++;
 		}
 		else {
-			RRR_MSG_0("Invalid character %c in URI endpoint '%s'\n", *pos, uri);
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
+			RRR_MSG_0("Invalid character %c in URI endpoint '%s'\n", *pos, name);
 			ret = 1;
 			goto out_destroy;
 		}

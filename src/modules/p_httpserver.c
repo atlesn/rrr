@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_server.h"
+#include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/stats/stats_instance.h"
@@ -44,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/gnu.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/helpers/nullsafe_str.h"
 //#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
@@ -217,20 +219,30 @@ static int httpserver_worker_process_field_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	struct rrr_type_value *value_tmp = NULL;
 	int do_add_field = 0;
-	const char *name_to_use = field->name;
+	struct rrr_type_value *value_tmp = NULL;
+	struct rrr_nullsafe_str *name_to_use = NULL;
+
+	if (rrr_nullsafe_str_dup(&name_to_use, field->name) != 0) {
+		RRR_MSG_0("Could not duplicate name in httpserver_worker_process_field_callback\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
 
 	if (callback_data->parent_data->do_http_fields_accept_any) {
 		do_add_field = 1;
 	}
 	else if (RRR_MAP_COUNT(&callback_data->parent_data->http_fields_accept) > 0) {
 		RRR_MAP_ITERATE_BEGIN(&callback_data->parent_data->http_fields_accept);
-			if (strcmp(node_tag, field->name) == 0) {
+			if (rrr_nullsafe_str_cmpto(field->name, node_tag) == 0) {
 				do_add_field = 1;
 				if (node->value != NULL && node->value_size > 0 && *(node->value) != '\0') {
 					// Do name translation
-					name_to_use = node->value;
+					if (rrr_nullsafe_str_set(name_to_use, node->value, strlen(node->value)) != 0) {
+						RRR_MSG_0("Could not set name in httpserver_worker_process_field_callback\n");
+						ret = RRR_HTTP_HARD_ERROR;
+						goto out;
+					}
 					RRR_LL_ITERATE_LAST();
 				}
 			}
@@ -241,15 +253,17 @@ static int httpserver_worker_process_field_callback (
 		goto out;
 	}
 
-	if (field->content_type != NULL && strcmp(field->content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
+	if (	rrr_nullsafe_str_isset(field->value) &&
+			rrr_nullsafe_str_cmpto_case(field->content_type, RRR_MESSAGE_MIME_TYPE) == 0
+	) {
 		if (rrr_type_value_allocate_and_import_raw (
 				&value_tmp,
 				&rrr_type_definition_msg,
-				field->value,
-				field->value + field->value_size,
-				strlen(name_to_use),
-				name_to_use,
-				field->value_size,
+				field->value->str,
+				field->value->str + field->value->len,
+				name_to_use->len,
+				name_to_use->str,
+				field->value->len,
 				1 // <-- We only support one message per field
 		) != 0) {
 			RRR_MSG_0("Failed to import RRR message from HTTP field\n");
@@ -260,18 +274,20 @@ static int httpserver_worker_process_field_callback (
 		RRR_LL_APPEND(callback_data->array, value_tmp);
 		value_tmp = NULL;
 	}
-	else if (field->value != NULL && field->value_size > 0) {
+	else if (rrr_nullsafe_str_isset(field->value)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,name_to_use);
 		ret = rrr_array_push_value_str_with_tag_with_size (
 				callback_data->array,
-				name_to_use,
-				field->value,
-				field->value_size
+				name,
+				field->value->str,
+				field->value->len
 		);
 	}
 	else {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,name_to_use);
 		ret = rrr_array_push_value_u64_with_tag (
 				callback_data->array,
-				name_to_use,
+				name,
 				0
 		);
 	}
@@ -283,6 +299,7 @@ static int httpserver_worker_process_field_callback (
 	}
 
 	out:
+	rrr_nullsafe_str_destroy_if_not_null(name_to_use);
 	if (value_tmp != NULL) {
 		rrr_type_value_destroy(value_tmp);
 	}
@@ -522,11 +539,15 @@ static int httpserver_receive_get_raw_response (
 			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
 
 	// Will set our pointer to NULL
-	rrr_http_part_set_allocated_raw_response (
+	if (rrr_http_part_set_allocated_raw_response (
 			response_part,
 			&callback_data.response,
 			callback_data.response_size
-	);
+	) != 0) {
+		RRR_MSG_0("Failed to set raw response in httpserver_receive_get_raw_response\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
 
 	out:
 	pthread_cleanup_pop(1);
@@ -548,22 +569,24 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
-	ret |= rrr_array_push_value_str_with_tag(target_array, "http_method", part->request_method_str);
-	ret |= rrr_array_push_value_str_with_tag(target_array, "http_endpoint", part->request_uri);
+	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
+	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
-	if (content_type != NULL && *(content_type->value) != '\0') {
+	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
 		ret |= rrr_array_push_value_str_with_tag (
 				target_array,
 				"http_content_type",
-				content_type->value
+				value
 		);
 	}
 
-	if (content_transfer_encoding != NULL && *(content_transfer_encoding->value) != '\0') {
+	if (content_transfer_encoding != NULL && rrr_nullsafe_str_isset(content_transfer_encoding->value)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_transfer_encoding->value);
 		ret |= rrr_array_push_value_str_with_tag (
 				target_array,
 				"http_content_transfer_encoding",
-				content_transfer_encoding->value
+				value
 		);
 	}
 
