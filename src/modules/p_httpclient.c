@@ -66,6 +66,9 @@ struct httpclient_data {
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
 
+	char *server_tag;
+	int do_server_tag_force;
+
 	rrr_setting_uint message_timeout_us;
 
 	rrr_setting_uint redirects_max;
@@ -89,6 +92,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	rrr_msg_holder_collection_clear(&data->defer_queue);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
+	RRR_FREE_IF_NOT_NULL(data->server_tag);
 }
 
 static int httpclient_send_request_callback (
@@ -283,6 +287,60 @@ static int httpclient_get_metadata_from_message (
 	return ret;
 }
 
+static int httpclient_session_query_prepare_callback_process_override (
+		char **result,
+		struct httpclient_data *data,
+		const struct rrr_array *array,
+		const char *tag,
+		int do_force,
+		const char *debug_name
+) {
+	int ret = RRR_HTTP_OK;
+
+	*result = NULL;
+
+	char *data_to_free = NULL;
+
+	const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(array, tag);
+	if (value == NULL) {
+		// Use default if force is not enabled
+	}
+	else {
+		if (value->definition->to_str == NULL) {
+			RRR_MSG_0("Warning: Received message in httpclient instance %s where the specified type of the %s tagged '%s' in the message was of type '%s' which cannot be used as a string\n",
+					INSTANCE_D_NAME(data->thread_data),
+					debug_name,
+					data->endpoint_tag,
+					value->definition->identifier
+			);
+		}
+		else if (value->definition->to_str(&data_to_free, value) != 0) {
+			RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as %s in httpserver instance %s\n",
+					data->endpoint_tag,
+					debug_name,
+					INSTANCE_D_NAME(data->thread_data)
+			);
+		}
+	}
+
+	if (data_to_free == NULL && do_force) {
+		RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable %s tag '%s' (which is enforced in configuration), dropping it\n",
+				INSTANCE_D_NAME(data->thread_data),
+				debug_name,
+				data->endpoint_tag
+		);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	*result = data_to_free;
+	data_to_free = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_to_free);
+	return ret;
+}
+
 struct httpclient_add_fields_callback_data {
 	struct httpclient_data *data;
 	const struct rrr_msg_msg *message;
@@ -313,28 +371,15 @@ static int httpclient_session_query_prepare_callback (
 		}
 	}
 
-	if (data->endpoint_tag != NULL) {
-		const struct rrr_type_value *endpoint_value = rrr_array_value_get_by_tag(&array_from_msg_tmp, data->endpoint_tag);
-		if (endpoint_value == NULL) {
-			// Use default endpoint if force is not enabled
-		}
-		else {
-			if (endpoint_value->definition->to_str == NULL) {
-				RRR_MSG_0("Warning: Received message in httpclient instance %s where the specified type of the endpoint tagged '%s' in the message was of type '%s' which cannot be used as a string\n",
-						INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag, endpoint_value->definition->identifier);
-			}
-			else if (endpoint_value->definition->to_str(&endpoint_to_free, endpoint_value) != 0) {
-				RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as endpoint in httpserver instance %s\n",
-						data->endpoint_tag, INSTANCE_D_NAME(data->thread_data));
-			}
-		}
-
-		if (endpoint_to_free == NULL && data->do_endpoint_tag_force) {
-			RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable endpoint tag '%s' (which is enforced in configuration), dropping it\n",
-					INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag);
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
+	if (data->endpoint_tag != NULL && (ret = httpclient_session_query_prepare_callback_process_override (
+			&endpoint_to_free,
+			data,
+			&array_from_msg_tmp,
+			data->endpoint_tag,
+			data->do_endpoint_tag_force,
+			"endpoint"
+	)) != 0) {
+		goto out;
 	}
 
 	if (data->do_no_data == 0) {
@@ -764,6 +809,9 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_endpoint_tag", endpoint_tag);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_tag_force", do_endpoint_tag_force, 0);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_tag", server_tag);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_tag_force", do_server_tag_force, 0);
+
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
 				config->name, RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX);
@@ -830,6 +878,22 @@ static int httpclient_parse_config (
 		}
 		if (RRR_INSTANCE_CONFIG_EXISTS("http_endpoint")) {
 			RRR_MSG_0("http_endpoint_tag_force was 'yes' in httpclient instance %s while http_endpoint was also set, this is a configuration error\n",
+					config->name);
+			ret = 1;
+		}
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	if (data->do_server_tag_force != 0) {
+		if (data->server_tag == NULL) {
+			RRR_MSG_0("http_server_tag_force was 'yes' in httpclient instance %s but no tag was specified in http_server_tag\n",
+					config->name);
+			ret = 1;
+		}
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_server")) {
+			RRR_MSG_0("http_server_tag_force was 'yes' in httpclient instance %s while http_server was also set, this is a configuration error\n",
 					config->name);
 			ret = 1;
 		}
