@@ -425,10 +425,24 @@ AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_MYSQL], [1], [Compile with MySQL module])
 	AX_LIB_MYSQL([5.0.0])
-#	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
-	AC_MSG_CHECKING([integer sizes for MySQL])
+	AC_MSG_CHECKING([headers for MariaDB/MySQL])
 	AC_RUN_IFELSE([
 		AC_LANG_SOURCE([[
+			#include <mysql/mysql.h>
+			
+			int main (int argc, char *argv[]) {
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([MariaDB/MySQL header mysql/mysql.h not found])
+	])
+	AC_MSG_CHECKING([integer sizes for MariaDB/MySQL])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <mysql/mysql.h>
 			#include <stdint.h>
 			#include <stdio.h>
 			

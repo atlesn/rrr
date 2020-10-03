@@ -49,54 +49,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	125
 #define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME_S 2
 
-struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data {
-	int transport_handle;
-};
-
 void __rrr_mqtt_broker_listen_ipv4_and_ipv6_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data *callback_data = arg;
-	callback_data->transport_handle = handle->handle;
+	(void)(handle);
+	(void)(arg);
+	// Nothing to do
 }
 
 static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-		int *listen_handle,
 		struct rrr_net_transport *transport,
 		int port
 ) {
 	int ret = 0;
 
-	*listen_handle = 0;
-
-	struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data callback_data = { 0 };
 	if ((ret = rrr_net_transport_bind_and_listen (
 			transport,
 			port,
 			__rrr_mqtt_broker_listen_ipv4_and_ipv6_callback,
-			&callback_data
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Could not listen on port %i in __rrr_mqtt_broker_listen_ipv4_and_ipv6\n", port);
 		ret = 1;
 		goto out;
 	}
 
-	*listen_handle = callback_data.transport_handle;
-
 	out:
 	return ret;
 }
 
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-		int *listen_handle,
 		struct rrr_mqtt_broker_data *broker,
 		const struct rrr_net_transport_config *net_transport_config,
 		int port
 ) {
 	int ret = 0;
-
-	*listen_handle = 0;
 
 	// TODO : For multiple ports, transport may be re-used
 
@@ -110,7 +98,6 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 	}
 
 	ret = __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-			listen_handle,
 			rrr_mqtt_transport_get_latest(broker->mqtt_data.transport),
 			port
 	);
@@ -1119,8 +1106,7 @@ int rrr_mqtt_broker_new (
 }
 
 int rrr_mqtt_broker_accept_connections (
-		struct rrr_mqtt_broker_data *data,
-		int listen_handle
+		struct rrr_mqtt_broker_data *data
 ) {
 	int ret = 0;
 
@@ -1133,7 +1119,6 @@ int rrr_mqtt_broker_accept_connections (
 		ret = rrr_mqtt_transport_accept (
 				&new_handle,
 				data->mqtt_data.transport,
-				listen_handle,
 				rrr_mqtt_conn_accept_and_connect_callback
 		);
 		if (new_handle != 0) {
@@ -1164,14 +1149,12 @@ int rrr_mqtt_broker_accept_connections (
 
 int rrr_mqtt_broker_synchronized_tick (
 		int *something_happened,
-		struct rrr_mqtt_broker_data *data,
-		int listen_handle
+		struct rrr_mqtt_broker_data *data
 ) {
 	int ret = 0;
 
 	if ((ret = rrr_mqtt_broker_accept_connections (
-			data,
-			listen_handle
+			data
 	)) != 0) {
 		goto out;
 	}
