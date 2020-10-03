@@ -367,7 +367,7 @@ static void __rrr_http_client_send_request_callback_final (
 			goto out;
 		}
 
-		if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->server)) != 0) {
+		if ((ret = rrr_http_session_transport_ctx_request_send(handle, callback_data->request_header_host)) != 0) {
 			RRR_MSG_0("Could not send request in __rrr_http_client_send_request_callback\n");
 			goto out;
 		}
@@ -565,6 +565,8 @@ static int __rrr_http_client_send_request (
 		}
 	}
 
+	const char *server_to_use = data->server;
+
 	if (connection_prepare_callback != NULL) {
 		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, connection_prepare_callback_arg)) != 0) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
@@ -575,9 +577,10 @@ static int __rrr_http_client_send_request (
 			RRR_MSG_0("Error %i from HTTP client connection prepare callback\n", ret);
 			goto out;
 		}
+		if (server_to_free != NULL) {
+			server_to_use = server_to_free;
+		}
 	}
-
-	const char *server_to_use = (server_to_free != NULL ? server_to_free : data->server);
 
 	if (server_to_use == NULL) {
 		RRR_BUG("BUG: No server set in __rrr_http_client_send_request\n");
@@ -586,6 +589,8 @@ static int __rrr_http_client_send_request (
 	if (port_to_use == 0) {
 		RRR_BUG("BUG: Port was 0 in __rrr_http_client_send_request\n");
 	}
+
+	callback_data.request_header_host = server_to_use;
 
 	RRR_DBG_3("Using server %s port %u transport %s method '%s'\n",
 			server_to_use,

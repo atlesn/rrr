@@ -97,6 +97,8 @@ struct rrr_http_client_request_callback_data {
 	const char *raw_request_data;
 	size_t raw_request_data_size;
 
+	const char *request_header_host;
+
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;
 	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
