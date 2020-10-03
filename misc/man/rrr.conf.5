@@ -1226,7 +1226,8 @@ When receiving part data, HTTP response data is put into messages for other modu
 
 The raw method will put full HTTP responses including headers into messages. No processing will be performed on the data, and
 chunked data may be present in the messages if the server has responded with this. May be used in conjunction with raw functionallity in
-.B httpserver. If there are redirects from the server, one message will be created for every redirect response.
+.B httpserver.
+If there are redirects from the server, one message will be created for every redirect response.
 
 If the original message which caused the query had a topic set, this topic will be present in generated messages.
 
