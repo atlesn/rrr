@@ -298,5 +298,10 @@ int rrr_net_transport_accept (
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
 );
+int rrr_net_transport_accept_all_handles (
+		struct rrr_net_transport *transport,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+);
 
 #endif /* RRR_NET_TRANSPORT_H */
