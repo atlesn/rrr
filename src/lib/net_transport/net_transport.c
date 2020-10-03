@@ -654,6 +654,7 @@ int rrr_net_transport_ctx_send_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
+		pthread_testcancel();
 	} while (ret != RRR_NET_TRANSPORT_SEND_OK);
 
 	return ret;
