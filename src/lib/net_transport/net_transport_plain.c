@@ -34,14 +34,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_read.h"
 #include "../read.h"
 #include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
 #include "../util/macro_utils.h"
+
+static void __rrr_net_transport_plain_data_destroy (struct rrr_net_transport_plain_data *data) {
+	RRR_FREE_IF_NOT_NULL(data);
+}
+
+static int __rrr_net_transport_plain_data_new (struct rrr_net_transport_plain_data **result) {
+	*result = NULL;
+
+	struct rrr_net_transport_plain_data *data = malloc(sizeof(*data));
+	if (data == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_net_transport_plain_data_new\n");
+		return 1;
+	}
+
+	memset(data, '\0', sizeof(*data));
+
+	*result = data;
+
+	return 0;
+}
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
 		RRR_MSG_0("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
 		return 1;
 	}
+	__rrr_net_transport_plain_data_destroy (handle->submodule_private_ptr);
 	return 0;
 }
 
@@ -50,13 +72,24 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 	free(plain);
 }
 
+struct rrr_net_transport_plain_allocate_and_add_callback_data {
+	const struct rrr_ip_data *ip_data;
+};
+
 static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
-	int fd = *((int*) arg);
+	struct rrr_net_transport_plain_allocate_and_add_callback_data *callback_data = arg;
 
-	*submodule_private_ptr = 0;
-	*submodule_private_fd = fd;
+	struct rrr_net_transport_plain_data *data = NULL;
+	if (__rrr_net_transport_plain_data_new(&data) != 0) {
+		return 1;
+	}
+
+	data->ip_data = *(callback_data->ip_data);
+
+	*submodule_private_ptr = data;
+	*submodule_private_fd = callback_data->ip_data->fd;
 
 	return 0;
 }
@@ -82,13 +115,17 @@ static int __rrr_net_transport_plain_connect (
 		goto out;
 	}
 
+	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
+			&accept_data->ip_data
+	};
+
 	int new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
-			&accept_data->ip_data.fd
+			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
@@ -217,17 +254,23 @@ int __rrr_net_transport_plain_bind_and_listen (
 		goto out;
 	}
 
+	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
+			&ip_data
+	};
+
 	int new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
-			&ip_data.fd
+			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
 		goto out_destroy_ip;
 	}
+
+	RRR_DBG_7("Plain listening started on port %u transport handle %p/%i\n", port, transport, new_handle);
 
 	ret = callback(transport, new_handle, callback_final, callback_final_arg, callback_arg);
 
@@ -259,17 +302,30 @@ int __rrr_net_transport_plain_accept (
 		goto out;
 	}
 
+	struct rrr_net_transport_plain_allocate_and_add_callback_data callback_data = {
+			&accept_data->ip_data
+	};
+
 	int new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			__rrr_net_transport_plain_handle_allocate_and_add_callback,
-			&accept_data->ip_data.fd
+			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
+	}
+
+	const struct rrr_net_transport_plain_data *listen_plain_data = listen_handle->submodule_private_ptr;
+
+	{
+		char buf[128];
+		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
+		RRR_DBG_7("Plain transport accepted connection on port %u from %s transport handle %p/%i\n",
+				listen_plain_data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
 	ret = callback (

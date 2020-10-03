@@ -24,8 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "net_transport.h"
 
+#include "../ip/ip.h"
+
 struct rrr_net_transport_plain {
 	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_plain);
+};
+
+struct rrr_net_transport_plain_data {
+	struct rrr_ip_data ip_data;
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target);

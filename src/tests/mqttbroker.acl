@@ -6,6 +6,9 @@ TOPIC mytopic
 	DEFAULT DENY
 	USER atle WRITE
 
+TOPIC datetime
+	DEFAULT WRITE
+
 # Test for case insensitivity
 ToPiC x/#
 	DEFauLT ReaD

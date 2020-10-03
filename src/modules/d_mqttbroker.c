@@ -347,11 +347,10 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			RRR_NET_TRANSPORT_PLAIN
 		};
 
-		// In case transport type is set to BOTH, we must reset
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 				&listen_handle_plain,
 				data->mqtt_broker_data,
-				&net_transport_config_tmp,
+				&net_transport_config_tmp, // <-- Pass in *temporary* struct
 				data->server_port_plain
 		) != 0) {
 			RRR_MSG_0("Could not start plain network transport in mqtt broker instance %s\n",
@@ -363,10 +362,10 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_tls);
 
-		// In case transport type is set to BOTH, we set it to TLS
 		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;
 
-		// Only change temporary struct
+		// In case transport type is set to BOTH, we set it to TLS. Do not modify the
+		// original struct, only this temporary one.
 		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
 
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
