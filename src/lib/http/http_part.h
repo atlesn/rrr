@@ -80,9 +80,12 @@ struct rrr_http_header_field {
 
 	struct rrr_nullsafe_str *name;
 
-	// This is filled by known header field parsers
+	// This is filled by known header field parsers. Pointer
+	// must always be checked for NULL before usage, they are
+	// only set for certain header field types.
 	long long int value_signed;
 	long long unsigned int value_unsigned;
+	struct rrr_nullsafe_str *binary_value_nullsafe;
 	struct rrr_nullsafe_str *value;
 };
 
@@ -164,6 +167,11 @@ void rrr_http_part_set_raw_request_ptr (
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name
+);
+const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
+		const struct rrr_http_part *part,
+		const char *name_lowercase,
+		const char *value_anycase
 );
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part

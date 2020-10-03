@@ -408,6 +408,8 @@ int rrr_read_message_using_callbacks (
 
 			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
+			read_session->target_size = 0;
+			read_session->read_complete_method = 0;
 		}
 	}
 	else if (read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ ||
@@ -654,6 +656,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 	// Raw size to read for socket framework
 	read_session->target_size = import_length;
 
+	printf("%li <> %li\n", read_session->target_size, read_session->rx_buf_wpos);
 	if (read_session->target_size == read_session->rx_buf_wpos) {
 		read_session->eof_ok_now = 1;
 	}

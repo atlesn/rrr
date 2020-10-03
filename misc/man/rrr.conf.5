@@ -588,7 +588,7 @@ module:
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
 
-.It perl5_source_interval=MILLISECONDS
+.It perl5_source_interval_ms=MILLISECONDS
 How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
 
 .It perl5_source_sub=SUBROUTINE NAME
@@ -1028,10 +1028,15 @@ will be added. The latter two values will only be added if present in request he
 These fields are always added regardless of other options, except from the
 .B http_server_allow_empty_messages
 option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
-Defaults to 'no'.
+The generated RRR message will have a topic of
+.B httpserver/request/uuu
+where uuu is a unique ID for one HTTP connection. Defaults to no. 
 
 .It http_server_receive_raw_data={yes|no}
 When receiving a request from a client, put the full request including header into an RRR message for other instances to pick up.
+The generated RRR messages will have a topic of
+.B httpserver/raw/uuu
+where uuu is a unique ID for one HTTP connection. Defaults to no. 
 
 .It http_server_get_raw_response_from_senders={yes|no}
 Instead of sending standard responses to clients, like "204 No Content", check senders of httpserver for raw data responses.
@@ -1047,12 +1052,42 @@ to 'httpserver/raw/uuu' for
 .B httpserver
 to pick it up.   
 If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
+If a connection is to be upgraded to websocket, this option is ignored for that connection. Defaults to no.
 
 .It http_server_raw_response_timeout_ms=MILLISECONDS
 Timeout when waiting for raw response from senders. May be zero to indicate no timeout. Defaults to 1500ms.
 
 .It http_server_worker_threads=UNSIGNED INTEGER
 How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 
+
+.It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
+If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
+with one or more of the specified topic filters.
+The full URL except from the first / of the URL and the query string (after ? inclusive) is used as the MQTT topic.
+
+By default, the text from websocket text frames will be put into RRR messages for other modules to pick up.
+These messages will have a topic identifying the current connection, like
+.B httpserver/websocket/uuu/TOPIC
+where
+.B uuu
+is a unique ID identifying the websocket connection and
+.B TOPIC
+is the topic set in the URL endpoint.
+The unique ID will be the same as for any HTTP message received previously on the same connection, which might or might not have caused
+RRR messages to be generated depending on other configuration options.
+By default, no websocket connection upgrades are accepted.
+
+.It http_server_accept_websocket_binary={yes|no}
+Allow binary websocket frames. Data from such frames are put into plain RRR messages.
+If set to no or left undefined, received binary frames will be ignored. 
+
+.It http_server_receive_websocket_rrr_message={yes|no}
+If set to yes and websocket frames of binary type is received, these are interpreted as being RRR messages of any type.
+RRR message validation and endian conversion will be performed, and the socket will be closed if this fails. Implies
+.B http_server_accept_websocket_binary=yes.
+Messages of text type are not affected by this parameter.
+If set to no or left unset, binary messages are either ignored or received as-is depending on the value of
+.B http_server_accept_websocket_binary.
 
 .It http_server_tls_*
 Refer to the
@@ -1094,6 +1129,18 @@ If GET method is used, any query values from RRR messages will be appended to th
 will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
 Defaults to
 .B /.
+
+.It http_endpoint_tag=ARRAY TAG
+If specified and the specified tag is present in a message, this endpoint will be used and
+.B http_endpoint
+, if defined, will be ignored. If left unspecified, only
+.B http_endpoint
+will be used.
+
+.It http_endpoint_tag_force={yes|no}
+If set to yes, the tag specified in
+.B http_endpoint_tag
+must be present in messages to httpclient. If not present, the message will get dropped. Defaults to 'no',
 
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be

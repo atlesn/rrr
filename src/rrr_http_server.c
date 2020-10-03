@@ -307,6 +307,10 @@ int main (int argc, const char **argv, const char **env) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 	int accept_count_total = 0;
 
+	struct rrr_http_server_callbacks callbacks = {
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	};
+
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		// We must do this here, the HTTP server library does not do this
@@ -315,7 +319,7 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_thread_postponed_cleanup_run(&count);
 
 		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, 5, NULL, NULL, NULL, NULL, NULL, NULL) != 0) {
+		if (rrr_http_server_tick(&accept_count, http_server, 5, &callbacks) != 0) {
 			ret = EXIT_FAILURE;
 			break;
 		}

@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_READ_METHOD_RECV			(1<<5)
 #define RRR_SOCKET_READ_NO_GETSOCKOPTS		(1<<6)
 #define RRR_SOCKET_READ_INPUT_DEVICE		(1<<7)
+#define RRR_SOCKET_READ_USE_POLL			(1<<8)
 
 #define RRR_SOCKET_CLIENT_TIMEOUT_S 30
 
