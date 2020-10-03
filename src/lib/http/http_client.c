@@ -105,7 +105,8 @@ static int __rrr_http_client_receive_chunk_callback (
 			chunk_idx,
 			chunk_total,
 			data_start,
-			data_size,
+			chunk_data_size,
+			part_data_size,
 			callback_data->final_callback_arg
 	);
 }

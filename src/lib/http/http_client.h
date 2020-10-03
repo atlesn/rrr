@@ -37,8 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	const struct rrr_nullsafe_str *response_arg,	\
 	int chunk_idx,									\
 	int chunk_total,								\
-	const char *data_start,							\
-	ssize_t data_size,								\
+	const char *chunk_data_start,					\
+	size_t chunk_data_size,							\
+	size_t part_data_size,							\
 	void *arg
 
 #define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\

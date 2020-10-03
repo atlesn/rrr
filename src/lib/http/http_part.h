@@ -53,7 +53,8 @@ enum rrr_http_parse_type {
 		int chunk_idx,								\
 		int chunk_total,							\
 		const char *data_start,						\
-		rrr_biglength data_size,					\
+		rrr_biglength chunk_data_size,				\
+		rrr_biglength part_data_size,				\
 		void *arg
 
 #define RRR_HTTP_PART_DATA_LENGTH(part) \

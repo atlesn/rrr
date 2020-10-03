@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
+#include "../lib/string_builder.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
@@ -61,6 +62,7 @@ struct httpclient_data {
 	int do_drop_on_error;
 	int do_keepalive;
 	int do_receive_raw_data;
+	int do_receive_part_data;
 	int do_send_raw_data;
 
 	char *endpoint_tag;
@@ -99,36 +101,153 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
 }
 
+struct httpclient_create_message_callback_data {
+	struct httpclient_data *httpclient_data;
+	const char *data;
+	size_t data_size;
+	const struct rrr_msg_msg *msg_orig;
+};
+
+static int httpclient_create_message_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	struct httpclient_create_message_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	rrr_biglength size = callback_data->data_size;
+
+	if (size > 0xffffffff) { // Eight f's
+		RRR_MSG_0("HTTP length too long in httpclient_create_message_callback, max is 0xffffffff\n");
+		ret = RRR_MESSAGE_BROKER_DROP;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			(struct rrr_msg_msg **) &new_entry->message,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			MSG_TOPIC_PTR(callback_data->msg_orig),
+			MSG_TOPIC_LENGTH(callback_data->msg_orig),
+			callback_data->data,
+			size
+	)) != 0) {
+		RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	out:
+	rrr_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+struct httpclient_final_callback_data {
+	struct httpclient_data *httpclient_data;
+	struct rrr_string_builder **response_data_joined;
+	const struct rrr_msg_msg *msg_orig;
+};
+
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
 	(void)(data);
 	(void)(response_code);
-	(void)(chunk_idx);
-	(void)(chunk_total);
-	(void)(data_start);
-	(void)(data_size);
+	(void)(chunk_data_start);
 
 	// Note : Don't mix up rrr_http_client_data and httpclient_data
 
-	struct httpclient_data *httpclient_data = arg;
+	struct httpclient_final_callback_data *callback_data = arg;
+	struct httpclient_data *httpclient_data = callback_data->httpclient_data;
 
 	int ret = RRR_HTTP_OK;
+
+	char *data_to_free = NULL;
 
 	if (response_code < 200 || response_code > 299) {
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", response_code);
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,response_arg);
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s' data size %lli chunk %i of %i\n",
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s' data size %" PRIrrrbl " of ~%" PRIrrrbl " chunk %i of %i\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			response_code,
 			response_arg_str,
-			(long long int) data_size,
-			chunk_idx,
+			chunk_data_size,
+			part_data_size,
+			chunk_idx + 1,
 			chunk_total
 	);
 
+	if (!httpclient_data->do_receive_part_data) {
+		goto out;
+	}
+
+	// First chunk, make sure response data builder is reset
+	if (chunk_idx == 0 && *(callback_data->response_data_joined) != NULL) {
+		rrr_string_builder_destroy(*(callback_data->response_data_joined));
+		*(callback_data->response_data_joined) = NULL;
+	}
+
+	if (chunk_data_size > 0) {
+		if (*(callback_data->response_data_joined) == NULL) {
+			if ((rrr_string_builder_new(callback_data->response_data_joined)) != 0) {
+				RRR_MSG_0("Could not allocate memory for response string builder in httpclient_final_callback\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+			if (rrr_string_builder_reserve(*(callback_data->response_data_joined), part_data_size) != 0) {
+				RRR_MSG_0("Could not allocate %" PRIrrrbl " bytes of memory for response in httpclient_final_callback\n", part_data_size);
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+	}
+
+	if (	rrr_string_builder_length(*(callback_data->response_data_joined)) + chunk_data_size > part_data_size ||
+			rrr_string_builder_length(*(callback_data->response_data_joined)) + chunk_data_size > rrr_string_builder_size(*(callback_data->response_data_joined))
+	) {
+		RRR_BUG("BUG: Size inconsistencies in httpclient_final_callback %" PRIrrrbl ", %" PRIrrrbl ", %" PRIrrrbl ", %" PRIrrrbl "\n",
+				rrr_string_builder_length(*(callback_data->response_data_joined)),
+				rrr_string_builder_size(*(callback_data->response_data_joined)),
+				chunk_data_size,
+				part_data_size
+		);
+	}
+
+	rrr_string_builder_unchecked_append_raw(*(callback_data->response_data_joined), chunk_data_start, chunk_data_size);
+
+	// Last chunk?
+	if (chunk_idx + 1 == chunk_total) {
+		size_t data_length = 0;
+		if (*(callback_data->response_data_joined) != NULL) {
+			data_length = rrr_string_builder_length(*(callback_data->response_data_joined));
+			data_to_free = rrr_string_builder_buffer_takeover(*(callback_data->response_data_joined));
+		}
+		struct httpclient_create_message_callback_data callback_data_broker = {
+				httpclient_data,
+				data_to_free,
+				data_length,
+				callback_data->msg_orig
+		};
+
+		RRR_DBG_3("httpclient instance %s creating message with HTTP response size %" PRIrrrbl "\n",
+				INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), rrr_string_builder_length(*(callback_data->response_data_joined)));
+
+		ret = rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
+				NULL,
+				0,
+				0,
+				httpclient_create_message_callback,
+				&callback_data_broker
+		);
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_to_free);
 	return ret;
 }
 
@@ -553,52 +672,6 @@ static int httpclient_reset_client_data (
 	return RRR_HTTP_OK;
 }
 
-struct httpclient_raw_create_message_callback_data {
-	struct httpclient_data *httpclient_data;
-	const char *data;
-	ssize_t data_size;
-	const struct rrr_msg_msg *msg_orig;
-};
-
-static int httpclient_raw_create_message_callback (
-		struct rrr_msg_holder *new_entry,
-		void *arg
-) {
-	struct httpclient_raw_create_message_callback_data *callback_data = arg;
-
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	rrr_biglength size = callback_data->data_size;
-
-	if (size > 0xffffffff) { // Eight f's
-		RRR_MSG_0("HTTP length too long in httpclient_raw_create_message_callback, max is 0xffffffff\n");
-		ret = RRR_MESSAGE_BROKER_DROP;
-		goto out;
-	}
-
-	if ((ret = rrr_msg_msg_new_with_data (
-			(struct rrr_msg_msg **) &new_entry->message,
-			MSG_TYPE_MSG,
-			MSG_CLASS_DATA,
-			rrr_time_get_64(),
-			MSG_TOPIC_PTR(callback_data->msg_orig),
-			MSG_TOPIC_LENGTH(callback_data->msg_orig),
-			callback_data->data,
-			size
-	)) != 0) {
-		RRR_MSG_0("Failed to create message in httpclient_raw_create_message_callback\n");
-		ret = RRR_MESSAGE_BROKER_ERR;
-		goto out;
-	}
-
-	RRR_DBG_3("httpclient instance %s created raw httpclient data message with data size %" PRIrrrbl "\n",
-			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), size);
-
-	out:
-	rrr_msg_holder_unlock(new_entry);
-	return ret;
-}
-
 struct httpclient_raw_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct rrr_msg_msg *msg_orig;
@@ -614,22 +687,30 @@ static int httpclient_raw_callback (
 
 	int ret = 0;
 
-	struct httpclient_raw_create_message_callback_data callback_data_broker = {
+	if (!httpclient_data->do_receive_raw_data) {
+		goto out;
+	}
+
+	struct httpclient_create_message_callback_data callback_data_broker = {
 			httpclient_data,
 			data,
 			data_size,
 			callback_data->msg_orig
 	};
 
-	return rrr_message_broker_write_entry (
+	RRR_DBG_3("httpclient instance %s creating message with raw HTTP response size %" PRIrrrbl "\n",
+			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data), data_size);
+
+	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
 			NULL,
 			0,
 			0,
-			httpclient_raw_create_message_callback,
+			httpclient_create_message_callback,
 			&callback_data_broker
 	);
 
+	out:
 	return ret;
 }
 
@@ -637,7 +718,8 @@ static int httpclient_raw_callback (
 		struct httpclient_data *data,							\
 		int is_redirect,										\
 		const struct rrr_msg_msg *message,						\
-		struct httpclient_raw_callback_data *raw_callback_data
+		struct httpclient_raw_callback_data *raw_callback_data,	\
+		struct httpclient_final_callback_data *final_callback_data
 
 static int httpclient_send_request_raw_data_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
@@ -658,17 +740,16 @@ static int httpclient_send_request_raw_data_callback (
 			MSG_DATA_LENGTH(message),
 			NULL,
 			NULL,
-			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
-			(data->do_receive_raw_data ? raw_callback_data : NULL),
+			httpclient_raw_callback,
+			raw_callback_data,
 			httpclient_final_callback,
-			data
+			final_callback_data
 	);
 }
 
 static int httpclient_send_request_from_message_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
 ) {
-
 	int ret = 0;
 
 	struct rrr_array array_from_msg_tmp = {0};
@@ -696,12 +777,12 @@ static int httpclient_send_request_from_message_callback (
 			&data->net_transport_config,
 			(is_redirect == 0 ? httpclient_connection_prepare_callback : NULL),
 			(is_redirect == 0 ? &prepare_callback_data : NULL),
-			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
-			(data->do_receive_raw_data ? raw_callback_data : NULL),
+			httpclient_raw_callback,
+			raw_callback_data,
 			httpclient_session_query_prepare_callback,
 			&prepare_callback_data,
 			httpclient_final_callback,
-			data
+			final_callback_data
 	);
 
 	out:
@@ -717,6 +798,8 @@ static int httpclient_send_request_intermediate_retry_handling (
 ) {
 	int ret = 0;
 
+	struct rrr_string_builder *response_data_joined_tmp = NULL;
+
 	int is_redirect = 0;
 	retry:
 
@@ -729,7 +812,13 @@ static int httpclient_send_request_intermediate_retry_handling (
 			message
 	};
 
-	ret = callback(data, is_redirect, message, &raw_callback_data);
+	struct httpclient_final_callback_data final_callback_data = {
+			data,
+			&response_data_joined_tmp,
+			message
+	};
+
+	ret = callback(data, is_redirect, message, &raw_callback_data, &final_callback_data);
 
 	if (ret != RRR_HTTP_OK) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
@@ -767,6 +856,9 @@ static int httpclient_send_request_intermediate_retry_handling (
 	}
 
 	out:
+	if (response_data_joined_tmp != NULL) {
+		rrr_string_builder_destroy(response_data_joined_tmp);
+	}
 	return ret;
 }
 
@@ -891,6 +983,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_keepalive", do_keepalive, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);

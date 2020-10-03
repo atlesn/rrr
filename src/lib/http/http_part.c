@@ -1350,7 +1350,7 @@ int rrr_http_part_chunks_iterate (
 	}
 
 	if (RRR_LL_COUNT(&part->chunks) == 0) {
-		ret = callback(0, 1, data_start, data_end - data_start, callback_arg);
+		ret = callback(0, 1, data_start, data_end - data_start, part->data_length, callback_arg);
 		goto out;
 	}
 
@@ -1365,7 +1365,7 @@ int rrr_http_part_chunks_iterate (
 		}
 
 		// NOTE : Length might be 0
-		if ((ret = callback(i, chunks_total, data_start, node->length, callback_arg)) != 0) {
+		if ((ret = callback(i, chunks_total, data_start, node->length, part->data_length, callback_arg)) != 0) {
 			goto out;
 		}
 

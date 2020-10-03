@@ -263,13 +263,14 @@ static int __rrr_http_client_final_callback (
 	(void)(data);
 	(void)(chunk_idx);
 	(void)(chunk_total);
+	(void)(part_data_size);
 	(void)(arg);
 
-	if (data_start != NULL && data_size > 0) {
+	if (chunk_data_start != NULL && chunk_data_size > 0) {
 //		const char *separator_line = "=============================";
 //		size_t separator_line_length = strlen(separator_line);
 
-		int bytes;
+		ssize_t bytes;
 
 //		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
 
@@ -277,18 +278,16 @@ static int __rrr_http_client_final_callback (
 
 //		printf("data start: %p size %li\n", data_start, data_size);
 
-		bytes = write (STDOUT_FILENO, data_start, data_size);
-		if (bytes < data_size) {
-			if (bytes > 0) {
-				data_start += bytes;
-				data_size -= bytes;
-				goto retry;
-			}
-			else {
-				RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
+		bytes = write (STDOUT_FILENO, chunk_data_start, chunk_data_size);
+		if (bytes < 0) {
+			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		else {
+			chunk_data_start += bytes;
+			chunk_data_size -= bytes;
+			goto retry;
 		}
 
 		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
