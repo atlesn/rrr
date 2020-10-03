@@ -560,6 +560,7 @@ static int __rrr_net_transport_libressl_send (
 				break;
 			}
 		}
+		pthread_testcancel();
 	}
 
 	out:
