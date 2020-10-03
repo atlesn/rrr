@@ -1398,12 +1398,13 @@ int rrr_type_value_clone (
 	new_value->tag = NULL;
 	if (new_value->tag_length > 0) {
 		// Do not use strdup, no \0 at the end
-		if ((new_value->tag = malloc(new_value->tag_length)) == NULL) {
+		if ((new_value->tag = malloc(new_value->tag_length + 1)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
 			ret = 1;
 			goto out;
 		}
 		memcpy(new_value->tag, source->tag, new_value->tag_length);
+		new_value->tag[new_value->tag_length] = '\0';
 	}
 	else if (new_value->tag != NULL) {
 		RRR_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
