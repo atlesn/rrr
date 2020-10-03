@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void *arg
 
 #define RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS	\
+	char **endpoint_override,						\
 	char **query_string,							\
 	struct rrr_http_session *session,				\
 	void *arg

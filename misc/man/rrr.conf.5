@@ -1130,6 +1130,18 @@ will detect whether a query string already exists in the URL and prefix the firs
 Defaults to
 .B /.
 
+.It http_endpoint_tag=ARRAY TAG
+If specified and the specified tag is present in a message, this endpoint will be used and
+.B http_endpoint
+, if defined, will be ignored. If left unspecified, only
+.B http_endpoint
+will be used.
+
+.It http_endpoint_tag_force={yes|no}
+If set to yes, the tag specified in
+.B http_endpoint_tag
+must be present in messages to httpclient. If not present, the message will get dropped. Defaults to 'no',
+
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,

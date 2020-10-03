@@ -294,19 +294,11 @@ static void __rrr_http_client_send_request_callback_final (
 		}
 	}
 	else {
-		const char *endpoint = data->endpoint;
-
-		if (endpoint == NULL || *(endpoint) == '\0') {
-			if ((endpoint_to_free = strdup("/")) == NULL) {
-				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request_callback\n");
-				ret = RRR_HTTP_HARD_ERROR;
-				goto out;
-			}
-			endpoint = endpoint_to_free;
-		}
+		const char *endpoint_to_use = NULL;
 
 		if (callback_data->query_prepare_callback != NULL) {
 			if	((ret = callback_data->query_prepare_callback (
+					&endpoint_to_free,
 					&query_to_free,
 					handle->application_private_ptr,
 					callback_data->query_prepare_callback_arg)
@@ -319,28 +311,51 @@ static void __rrr_http_client_send_request_callback_final (
 			}
 		}
 
+		// Endpoint to use precedence:
+		// 1. endpoint from query prepare callback
+		// 2. endpoint from configuration
+		// 3. default endpoint /
+
+		if (endpoint_to_free == NULL || *(endpoint_to_free) == '\0') {
+			if (data->endpoint != NULL) {
+				endpoint_to_use = data->endpoint;
+			}
+			else {
+				RRR_FREE_IF_NOT_NULL(endpoint_to_free);
+				if ((endpoint_to_free = strdup("/")) == NULL) {
+					RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request_callback\n");
+					ret = RRR_HTTP_HARD_ERROR;
+					goto out;
+				}
+				endpoint_to_use = endpoint_to_free;
+			}
+		}
+		else {
+			endpoint_to_use = endpoint_to_free;
+		}
+
 		if (query_to_free != NULL && *(query_to_free) != '\0') {
-			if (strchr(endpoint, '?') != 0) {
+			if (strchr(endpoint_to_use, '?') != 0) {
 				RRR_MSG_0("HTTP endpoint '%s' already contained a query string, cannot append query '%s' from callback. Request aborted.\n",
-						endpoint, query_to_free);
+						endpoint_to_use, query_to_free);
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
-			if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint, query_to_free)) <= 0) {
+			if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint_to_use, query_to_free)) <= 0) {
 				RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback return was %i\n", ret);
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
 		}
 		else {
-			if ((endpoint_and_query_to_free = strdup(endpoint)) == NULL) {
+			if ((endpoint_and_query_to_free = strdup(endpoint_to_use)) == NULL) {
 				RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_send_request_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
 		}
 
-		RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
+		RRR_DBG_3("HTTP using endpoint_to_use: '%s'\n", endpoint_and_query_to_free);
 
 		if ((ret = rrr_http_session_transport_ctx_set_endpoint (
 				handle,
