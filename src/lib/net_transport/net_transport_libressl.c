@@ -526,10 +526,12 @@ static int __rrr_net_transport_libressl_send (
 		int ret_tmp = poll(&pfd, 1, 0);
 		if (ret_tmp == -1) {
 			RRR_MSG_1("Poll failed for TLS fd %i while writing: %s\n", pfd.fd, rrr_strerror(errno));
+			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
 		else if ((pfd.revents & (POLLERR|POLLNVAL))) {
 			RRR_MSG_1("Bad file descriptor for TLS fd %i while writing\n", pfd.fd);
+			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
 		else if ((pfd.revents & (pfd.events|POLLHUP))) {
@@ -544,6 +546,7 @@ static int __rrr_net_transport_libressl_send (
 			}
 			else if (bytes == -1) {
 				RRR_MSG_1("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->ctx));
+				ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 				goto out;
 			}
 			else {

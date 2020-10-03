@@ -654,7 +654,7 @@ int rrr_net_transport_ctx_send_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-	} while (ret != 0);
+	} while (ret != RRR_NET_TRANSPORT_SEND_OK);
 
 	return ret;
 }
