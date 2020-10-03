@@ -688,10 +688,6 @@ static int __rrr_http_client_send_request (
 		goto out;
 	}
 
-//	rrr_http_session_add_query_field(data->session, "a", "1");
-//	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
-//	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
-
 	out:
 	RRR_FREE_IF_NOT_NULL(server_to_free);
 	__rrr_http_client_receive_callback_data_cleanup(&callback_data);
