@@ -934,3 +934,35 @@ int rrr_net_transport_accept (
 
 	return ret;
 }
+
+int rrr_net_transport_accept_all_handles (
+		struct rrr_net_transport *transport,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		pthread_mutex_lock(&node->lock_);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			ret = transport->methods->accept (
+					node,
+					__rrr_net_transport_accept_callback_intermediate,
+					NULL,
+					callback,
+					callback_arg
+			);
+			if (ret != 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+		}
+		pthread_mutex_unlock(&node->lock_);
+	RRR_LL_ITERATE_END();
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+	return ret;
+}

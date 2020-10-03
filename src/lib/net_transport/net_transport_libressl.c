@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
 #include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
 
 static void __rrr_net_transport_libressl_destroy (
@@ -296,6 +297,8 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 		goto out;
 	}
 
+	RRR_DBG_7("LibreSSL listening started on port %u transport handle %p/%i\n", port, transport, new_handle);
+
 	ret = callback (
 			transport,
 			new_handle,
@@ -393,6 +396,13 @@ int __rrr_net_transport_libressl_accept (
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
+	}
+
+	{
+		char buf[128];
+		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
+		RRR_DBG_7("LibreSSL accepted connection on port %u from %s transport handle %p/%i\n",
+				data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
 	ret = callback (

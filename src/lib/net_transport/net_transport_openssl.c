@@ -525,6 +525,8 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 		goto out;
 	}
 
+	RRR_DBG_7("OpenSSL listening started on port %u transport handle %p/%i\n", port, transport, new_handle);
+
 	ret = callback (
 			transport,
 			new_handle,
@@ -639,6 +641,13 @@ int __rrr_net_transport_openssl_accept (
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
+	}
+
+	{
+		char buf[128];
+		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
+		RRR_DBG_7("OpenSSL accepted connection on port %u from %s transport handle %p/%i\n",
+				listen_ssl_data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
 	ret = callback(
