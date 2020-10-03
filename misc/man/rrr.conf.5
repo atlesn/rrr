@@ -1113,10 +1113,15 @@ module:
 .PP
 .Bl -tag -width -indent
 .It http_server=SERVER OR IP
-Server to send data to, defaults to 'localhost'.
+.It http_port=PORT
+Server and port to send data to, defaults to 'localhost' and the default port depends on the
+chosen transport type (TLS/Plain).
 .B httpclient
-will follow any redirects from the server, also to other servers. Redirects may be disabled.
-  
+will follow any redirects from the server, also to other servers.
+To disallow redirection, use the
+.B http_max_redirects
+parameter.
+ 
 .It http_endpoint=ENDPOINT
 The endpoint to request from the server, e.g.
 .B /index.php.
@@ -1131,26 +1136,29 @@ Defaults to
 .B /.
 
 .It http_endpoint_tag=ARRAY TAG
-If specified and the specified tag is present in a message, this endpoint will be used and
-.B http_endpoint
-, if defined, will be ignored. If left unspecified, only
-.B http_endpoint
-will be used.
-
+.It http_server_tag=ARRAY TAG
+.It http_port_tag=ARRAY TAG
 .It http_endpoint_tag_force={yes|no}
-If set to yes, the tag specified in
-.B http_endpoint_tag
-must be present in messages to httpclient. If not present, the message will get dropped. Defaults to 'no',
+.It http_server_tag_force={yes|no}
+.It http_port_tag_force={yes|no}
+These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
+identified by the tag of the value.
+If the
+.B force
+options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+If the HTTP server responds with a redirect, the redirection will be followed and values from the messages will not be used.
+To disallow redirection, use the
+.B http_max_redirects
+parameter.
+
+Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string.
 
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
-
-.It http_port=PORT
-Port to use when connecting to the server. Defaults to 80 for HTTP and 443 for HTTPS. Redirects from the server to other
-ports will override this value.
 
 .It http_method={get|post_urlencoded|post_multipart}
 Which method to use when sending data to the server. Defaults to

@@ -41,10 +41,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	ssize_t data_size,								\
 	void *arg
 
-#define RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS	\
+#define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\
 	char **endpoint_override,						\
 	char **query_string,							\
 	struct rrr_http_session *session,				\
+	void *arg
+
+#define RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS	\
+	char **server_override,									\
+	uint16_t *port_override,								\
 	void *arg
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
@@ -92,7 +97,7 @@ struct rrr_http_client_request_callback_data {
 	const char *raw_request_data;
 	size_t raw_request_data_size;
 
-	int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS);
+	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;
 	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
 	void *raw_callback_arg;
@@ -120,9 +125,11 @@ int rrr_http_client_send_request (
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
-		int (*query_perpare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		int (*query_perpare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
 		void *query_prepare_callback_arg,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
@@ -135,6 +142,8 @@ int rrr_http_client_send_raw_request (
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),

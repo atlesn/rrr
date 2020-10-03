@@ -1074,11 +1074,11 @@ static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	for (rrr_length i = 0; i < node->total_stored_length; i += (rrr_length) sizeof(rrr_type_be)) {
 		if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
 			int64_t tmp = *((int64_t *) (node->data + i));
-			sprintf(wpos, "%" PRIi64 ",", tmp);
+			sprintf(wpos, "%s%" PRIi64, (i > 0 ? "," : ""), tmp);
 		}
 		else {
 			uint64_t tmp = *((uint64_t *) (node->data + i));
-			sprintf(wpos, "%" PRIu64 ",", tmp);
+			sprintf(wpos, "%s%" PRIu64, (i > 0 ? "," : ""), tmp);
 		}
 		wpos = result + strlen(result);
 	}

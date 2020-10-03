@@ -498,14 +498,18 @@ static int __rrr_http_client_send_request (
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
-		int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
 		void *query_prepare_callback_arg,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
+
+	char *server_to_free = NULL;
 
 	struct rrr_http_client_request_callback_data callback_data = {0};
 
@@ -561,8 +565,30 @@ static int __rrr_http_client_send_request (
 		}
 	}
 
+	if (connection_prepare_callback != NULL) {
+		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, connection_prepare_callback_arg)) != 0) {
+			if (ret == RRR_HTTP_SOFT_ERROR) {
+				RRR_DBG_3("Note: HTTP query aborted by soft error from connection prepare callback\n");
+				ret = 0;
+				goto out;
+			}
+			RRR_MSG_0("Error %i from HTTP client connection prepare callback\n", ret);
+			goto out;
+		}
+	}
+
+	const char *server_to_use = (server_to_free != NULL ? server_to_free : data->server);
+
+	if (server_to_use == NULL) {
+		RRR_BUG("BUG: No server set in __rrr_http_client_send_request\n");
+	}
+
+	if (port_to_use == 0) {
+		RRR_BUG("BUG: Port was 0 in __rrr_http_client_send_request\n");
+	}
+
 	RRR_DBG_3("Using server %s port %u transport %s method '%s'\n",
-			data->server,
+			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(method)
@@ -622,12 +648,12 @@ static int __rrr_http_client_send_request (
 			if ((ret = rrr_net_transport_connect (
 					transport,
 					port_to_use,
-					data->server,
+					server_to_use,
 					__rrr_http_client_send_request_connect_callback,
 					&transport_handle
 			))) {
 				RRR_MSG_0("Keepalive connection failed to server %s port %u transport %s in http client return was %i\n",
-						data->server, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
+						server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
@@ -647,12 +673,12 @@ static int __rrr_http_client_send_request (
 		if ((ret = rrr_net_transport_connect_and_close_after_callback (
 				transport,
 				port_to_use,
-				data->server,
+				server_to_use,
 				__rrr_http_client_send_request_callback,
 				&callback_data
 		)) != 0) {
 			RRR_MSG_0("Connection failed to server %s port %u transport %s in http client return was %i\n",
-					data->server, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
+					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
@@ -667,6 +693,7 @@ static int __rrr_http_client_send_request (
 //	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
 
 	out:
+	RRR_FREE_IF_NOT_NULL(server_to_free);
 	__rrr_http_client_receive_callback_data_cleanup(&callback_data);
 	if (transport_keepalive != NULL) {
 		*transport_keepalive = transport;
@@ -689,9 +716,11 @@ int rrr_http_client_send_request (
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
-		int (*query_prepare_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
 		void *query_prepare_callback_arg,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
@@ -704,6 +733,8 @@ int rrr_http_client_send_request (
 			net_transport_config,
 			NULL,
 			0,
+			connection_prepare_callback,
+			connection_prepare_callback_arg,
 			raw_callback,
 			raw_callback_args,
 			query_prepare_callback,
@@ -721,6 +752,8 @@ int rrr_http_client_send_raw_request (
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
@@ -734,6 +767,8 @@ int rrr_http_client_send_raw_request (
 			net_transport_config,
 			raw_request_data,
 			raw_request_data_size,
+			connection_prepare_callback,
+			connection_prepare_callback_arg,
 			raw_callback,
 			raw_callback_args,
 			NULL,
@@ -762,6 +797,8 @@ int rrr_http_client_send_request_simple (
 			NULL,
 			NULL,
 			NULL,
+			NULL,
+			NULL,
 			final_callback,
 			final_callback_arg
 	);
@@ -783,6 +820,8 @@ int rrr_http_client_start_websocket_simple (
 			net_transport_config,
 			NULL,
 			0,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

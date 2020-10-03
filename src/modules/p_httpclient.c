@@ -69,6 +69,9 @@ struct httpclient_data {
 	char *server_tag;
 	int do_server_tag_force;
 
+	char *port_tag;
+	int do_port_tag_force;
+
 	rrr_setting_uint message_timeout_us;
 
 	rrr_setting_uint redirects_max;
@@ -93,6 +96,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->defer_queue);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);
+	RRR_FREE_IF_NOT_NULL(data->port_tag);
 }
 
 static int httpclient_send_request_callback (
@@ -341,15 +345,66 @@ static int httpclient_session_query_prepare_callback_process_override (
 	return ret;
 }
 
-struct httpclient_add_fields_callback_data {
+struct httpclient_prepare_callback_data {
 	struct httpclient_data *data;
 	const struct rrr_msg_msg *message;
+	const struct rrr_array *array_from_msg;
+	int is_redirect;
 };
 
-static int httpclient_session_query_prepare_callback (
-		RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS
+#define HTTPCLIENT_PREPARE_OVERRIDE(name)												\
+	do {if (	data->RRR_PASTE(name,_tag) != NULL &&									\
+				(ret = httpclient_session_query_prepare_callback_process_override (		\
+						&RRR_PASTE(name,_to_free),										\
+						data,															\
+						callback_data->array_from_msg,									\
+						data->RRR_PASTE(name,_tag),										\
+						data->RRR_PASTE_3(do_,name,_tag_force),							\
+						RRR_QUOTE(name)													\
+				)) != 0) { goto out; }} while (0)
+
+static int httpclient_connection_prepare_callback (
+		RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS
 ) {
-	struct httpclient_add_fields_callback_data *callback_data = arg;
+	struct httpclient_prepare_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+
+	int ret = 0;
+
+	*server_override = NULL;
+	// DO NOT set *port_ovveride to zero here, leave it as is
+
+	char *server_to_free = NULL;
+	char *port_to_free = NULL;
+
+	HTTPCLIENT_PREPARE_OVERRIDE(server);
+	HTTPCLIENT_PREPARE_OVERRIDE(port);
+
+	if (port_to_free != NULL) {
+		char *end = NULL;
+		unsigned long long port = strtoull(port_to_free, &end, 10);
+		if (end == NULL || *end != '\0' || port == 0 || port > 65535) {
+			RRR_MSG_0("Warning: Invalid override port value of '%s' in message to httpclient instance %s, dropping it\n",
+					port_to_free, INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+		*port_override = port;
+	}
+
+	*server_override = server_to_free;
+	server_to_free = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(server_to_free);
+	RRR_FREE_IF_NOT_NULL(port_to_free);
+	return ret;
+}
+
+static int httpclient_session_query_prepare_callback (
+		RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS
+) {
+	struct httpclient_prepare_callback_data *callback_data = arg;
 	struct httpclient_data *data = callback_data->data;
 	const struct rrr_msg_msg *message = callback_data->message;
 
@@ -359,31 +414,14 @@ static int httpclient_session_query_prepare_callback (
 	int ret = RRR_HTTP_OK;
 
 	char *endpoint_to_free = NULL;
-	struct rrr_array array_from_msg_tmp = {0};
 	struct rrr_array array_to_send_tmp = {0};
 
-	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
-	if (MSG_IS_ARRAY(message)) {
-		if ((ret = httpclient_get_values_from_message(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
-			goto out;
-		}
-	}
-
-	if (data->endpoint_tag != NULL && (ret = httpclient_session_query_prepare_callback_process_override (
-			&endpoint_to_free,
-			data,
-			&array_from_msg_tmp,
-			data->endpoint_tag,
-			data->do_endpoint_tag_force,
-			"endpoint"
-	)) != 0) {
-		goto out;
-	}
+	HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
 
 	if (data->do_no_data == 0) {
-		rrr_array_append_from(&array_to_send_tmp, &array_from_msg_tmp);
+		rrr_array_append_from(&array_to_send_tmp, callback_data->array_from_msg);
 
 		if (data->do_rrr_msg_to_array) {
 			if ((ret = httpclient_get_metadata_from_message(&array_to_send_tmp, message))) {
@@ -421,7 +459,7 @@ static int httpclient_session_query_prepare_callback (
 	else {
 		// Add chosen array fields
 		RRR_MAP_ITERATE_BEGIN(&data->http_client_config.tags);
-			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(&array_from_msg_tmp, node_tag);
+			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(callback_data->array_from_msg, node_tag);
 			if (value == NULL) {
 				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s.\n",
 						node_tag, INSTANCE_D_NAME(data->thread_data));
@@ -463,15 +501,20 @@ static int httpclient_session_query_prepare_callback (
 
 	{
 		const char *endpoint_to_print = (endpoint_to_free != NULL ? endpoint_to_free : data->http_client_config.endpoint);
-		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
-				INSTANCE_D_NAME(data->thread_data), message->timestamp, endpoint_to_print);
+		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s%s\n",
+				INSTANCE_D_NAME(data->thread_data),
+				message->timestamp,
+				endpoint_to_print,
+				(callback_data->is_redirect ? " (redirection, endpoint might have changed)" : "")
+		);
 	}
 
-	*endpoint_override = endpoint_to_free;
-	endpoint_to_free = NULL;
+	if (callback_data->is_redirect == 0) {
+		*endpoint_override = endpoint_to_free;
+		endpoint_to_free = NULL;
+	}
 
 	out:
-		rrr_array_clear(&array_from_msg_tmp);
 		rrr_array_clear(&array_to_send_tmp);
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		return ret;
@@ -589,14 +632,18 @@ static int httpclient_raw_callback (
 
 #define HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS 					\
 		struct httpclient_data *data,							\
+		int is_redirect,										\
 		const struct rrr_msg_msg *message,						\
 		struct httpclient_raw_callback_data *raw_callback_data
 
 static int httpclient_send_request_raw_data_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
 ) {
-	RRR_DBG_2("httpclient instance %s sending raw request from message with timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(data->thread_data), message->timestamp);
+	RRR_DBG_2("httpclient instance %s sending raw request from message with timestamp %" PRIu64 "%s\n",
+			INSTANCE_D_NAME(data->thread_data),
+			message->timestamp,
+			(is_redirect ? " (redirection)" : "")
+	);
 
 	return rrr_http_client_send_raw_request (
 			&data->http_client_data,
@@ -606,8 +653,10 @@ static int httpclient_send_request_raw_data_callback (
 			&data->net_transport_config,
 			MSG_DATA_PTR(message),
 			MSG_DATA_LENGTH(message),
+			NULL,
+			NULL,
 			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
-			(data->do_receive_raw_data ? &raw_callback_data : NULL),
+			(data->do_receive_raw_data ? raw_callback_data : NULL),
 			httpclient_send_request_callback,
 			data
 	);
@@ -616,24 +665,45 @@ static int httpclient_send_request_raw_data_callback (
 static int httpclient_send_request_from_message_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
 ) {
-	struct httpclient_add_fields_callback_data add_fields_callback_data = {
-		data,
-		message
+
+	int ret = 0;
+
+	struct rrr_array array_from_msg_tmp = {0};
+
+	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
+
+	if (MSG_IS_ARRAY(message)) {
+		if ((ret = httpclient_get_values_from_message(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	}
+
+	struct httpclient_prepare_callback_data prepare_callback_data = {
+			data,
+			message,
+			&array_from_msg_tmp,
+			is_redirect
 	};
 
-	return rrr_http_client_send_request (
+	ret = rrr_http_client_send_request (
 			&data->http_client_data,
 			data->http_client_config.method,
 			(data->do_keepalive ? &data->keepalive_transport : NULL),
 			(data->do_keepalive ? &data->keepalive_handle : 0),
 			&data->net_transport_config,
+			(is_redirect == 0 ? httpclient_connection_prepare_callback : NULL),
+			(is_redirect == 0 ? &prepare_callback_data : NULL),
 			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
-			(data->do_receive_raw_data ? &raw_callback_data : NULL),
+			(data->do_receive_raw_data ? raw_callback_data : NULL),
 			httpclient_session_query_prepare_callback,
-			&add_fields_callback_data,
+			&prepare_callback_data,
 			httpclient_send_request_callback,
 			data
 	);
+
+	out:
+	rrr_array_clear(&array_from_msg_tmp);
+	return ret;
 }
 
 static int httpclient_send_request_intermediate_retry_handling (
@@ -644,6 +714,7 @@ static int httpclient_send_request_intermediate_retry_handling (
 ) {
 	int ret = 0;
 
+	int is_redirect = 0;
 	retry:
 
 	if (redirect_retry_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX || redirect_retry_max < 0) {
@@ -655,7 +726,7 @@ static int httpclient_send_request_intermediate_retry_handling (
 			message
 	};
 
-	ret = callback(data, message, &raw_callback_data);
+	ret = callback(data, is_redirect, message, &raw_callback_data);
 
 	if (ret != RRR_HTTP_OK) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
@@ -681,6 +752,7 @@ static int httpclient_send_request_intermediate_retry_handling (
 
 	if (data->http_client_data.do_retry != 0) {
 		if (--redirect_retry_max >= 0) {
+			is_redirect = 1;
 			goto retry;
 		}
 		else {
@@ -787,6 +859,24 @@ static int httpclient_data_init (
 		return ret;
 }
 
+#define HTTPCLIENT_OVERRIDE_TAG_GET(parameter) 																					\
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));		\
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0)
+
+#define HTTPCLIENT_OVERRIDE_TAG_VALIDATE(parameter)						\
+	do {if (data->RRR_PASTE_3(do_,parameter,_tag_force) != 0) {			\
+		if (data->RRR_PASTE(parameter,_tag) == NULL) {					\
+			RRR_MSG_0("http_" RRR_QUOTE(parameter) " was 'yes' in httpclient instance %s but no tag was specified in http_" RRR_QUOTE(parameter) "_tag\n",\
+					config->name);										\
+			ret = 1;													\
+		}																\
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_" RRR_QUOTE(parameter))) {	\
+			RRR_MSG_0("http_" RRR_QUOTE(parameter) "_tag_force was 'yes' in httpclient instance %s while http_" RRR_QUOTE(parameter) " was also set, this is a configuration error\n",\
+					config->name);										\
+			ret = 1;													\
+		}																\
+		if (ret != 0) { goto out; }}} while(0)
+
 static int httpclient_parse_config (
 		struct httpclient_data *data,
 		struct rrr_instance_config_data *config
@@ -806,11 +896,9 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_endpoint_tag", endpoint_tag);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_tag_force", do_endpoint_tag_force, 0);
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_tag", server_tag);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_tag_force", do_server_tag_force, 0);
+	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
+	HTTPCLIENT_OVERRIDE_TAG_GET(server);
+	HTTPCLIENT_OVERRIDE_TAG_GET(port);
 
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
@@ -846,8 +934,8 @@ static int httpclient_parse_config (
 					config->name);
 			ret = 1;
 		}
-		if (data->endpoint_tag != NULL) {
-			RRR_MSG_0("http_endpoint_tag was set while  http_send_raw_data was yes in httpclient instance %s, this is an invalid combination.\n",
+		if (data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
+			RRR_MSG_0("http_{endpoint|server|port}_tag parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
 					config->name);
 			ret = 1;
 		}
@@ -870,37 +958,9 @@ static int httpclient_parse_config (
 		goto out;
 	}
 
-	if (data->do_endpoint_tag_force != 0) {
-		if (data->endpoint_tag == NULL) {
-			RRR_MSG_0("http_endpoint_tag_force was 'yes' in httpclient instance %s but no tag was specified in http_endpoint_tag\n",
-					config->name);
-			ret = 1;
-		}
-		if (RRR_INSTANCE_CONFIG_EXISTS("http_endpoint")) {
-			RRR_MSG_0("http_endpoint_tag_force was 'yes' in httpclient instance %s while http_endpoint was also set, this is a configuration error\n",
-					config->name);
-			ret = 1;
-		}
-		if (ret != 0) {
-			goto out;
-		}
-	}
-
-	if (data->do_server_tag_force != 0) {
-		if (data->server_tag == NULL) {
-			RRR_MSG_0("http_server_tag_force was 'yes' in httpclient instance %s but no tag was specified in http_server_tag\n",
-					config->name);
-			ret = 1;
-		}
-		if (RRR_INSTANCE_CONFIG_EXISTS("http_server")) {
-			RRR_MSG_0("http_server_tag_force was 'yes' in httpclient instance %s while http_server was also set, this is a configuration error\n",
-					config->name);
-			ret = 1;
-		}
-		if (ret != 0) {
-			goto out;
-		}
-	}
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(server);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
 
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,
