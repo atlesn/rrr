@@ -961,7 +961,7 @@ int rrr_net_transport_accept_all_handles (
 			}
 		}
 		pthread_mutex_unlock(&node->lock_);
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
+	RRR_LL_ITERATE_END();
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
