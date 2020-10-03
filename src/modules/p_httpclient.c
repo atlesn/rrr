@@ -99,7 +99,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
 }
 
-static int httpclient_send_request_callback (
+static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
 	(void)(data);
@@ -120,10 +120,13 @@ static int httpclient_send_request_callback (
 	}
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,response_arg);
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s'\n",
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s' data size %lli chunk %i of %i\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			response_code,
-			response_arg_str
+			response_arg_str,
+			(long long int) data_size,
+			chunk_idx,
+			chunk_total
 	);
 
 	return ret;
@@ -657,7 +660,7 @@ static int httpclient_send_request_raw_data_callback (
 			NULL,
 			(data->do_receive_raw_data ? httpclient_raw_callback : NULL),
 			(data->do_receive_raw_data ? raw_callback_data : NULL),
-			httpclient_send_request_callback,
+			httpclient_final_callback,
 			data
 	);
 }
@@ -697,7 +700,7 @@ static int httpclient_send_request_from_message_callback (
 			(data->do_receive_raw_data ? raw_callback_data : NULL),
 			httpclient_session_query_prepare_callback,
 			&prepare_callback_data,
-			httpclient_send_request_callback,
+			httpclient_final_callback,
 			data
 	);
 
