@@ -222,140 +222,6 @@ static int httpclient_session_add_field (
 		return ret;
 }
 
-struct httpclient_add_fields_callback_data {
-	struct httpclient_data *data;
-	const struct rrr_array *array;
-	const char *endpoint_to_use;
-};
-
-static int httpclient_session_query_prepare_callback (
-		RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS
-) {
-	struct httpclient_add_fields_callback_data *callback_data = arg;
-	struct httpclient_data *data = callback_data->data;
-
-	*query_string = NULL;
-	*endpoint_override = NULL;
-
-	int ret = RRR_HTTP_OK;
-
-	char *endpoint = NULL;
-
-	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(callback_data->array) > 0)) {
-		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_add_fields_callback\n");
-	}
-
-	if (callback_data->endpoint_to_use != NULL && *(callback_data->endpoint_to_use) != '\0') {
-		if ((endpoint = strdup(callback_data->endpoint_to_use)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for endpoint in httpclient_session_query_prepare_callback\n");
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_http_session_set_keepalive (
-			session,
-			data->do_keepalive
-	)) != 0) {
-		RRR_MSG_0("Failed to set keep-alive in httpclient_session_add_fields_callback\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
-		// Add all array fields
-		RRR_LL_ITERATE_BEGIN(callback_data->array, const struct rrr_type_value);
-			if ((ret = httpclient_session_add_field (
-					data,
-					session,
-					node,
-					node->tag // NULL allowed
-			)) != RRR_HTTP_OK) {
-				goto out;
-			}
-		RRR_LL_ITERATE_END();
-	}
-	else {
-		// Add chosen array fields
-		RRR_MAP_ITERATE_BEGIN(&data->http_client_config.tags);
-			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(callback_data->array, node_tag);
-			if (value == NULL) {
-				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s.\n",
-						node_tag, INSTANCE_D_NAME(data->thread_data));
-				goto out;
-			}
-
-			// If value is set in map, tag is to be translated
-			const char *tag_to_use = (node_value != NULL && *node_value != '\0') ? node_value : node_tag;
-
-			if ((ret = httpclient_session_add_field (
-					data,
-					session,
-					value,
-					tag_to_use
-			)) != RRR_HTTP_OK) {
-				goto out;
-			}
-		RRR_MAP_ITERATE_END();
-	}
-
-	RRR_MAP_ITERATE_BEGIN(&data->http_client_config.fields);
-		RRR_DBG_3("HTTP add field value with tag '%s' value '%s'\n",
-				node_tag, node_value != NULL ? node_value : "(no value)");
-		if ((ret = rrr_http_session_query_field_add (
-				session,
-				node_tag,
-				node_value,
-				strlen(node_value),
-				"text/plain"
-		)) != RRR_HTTP_OK) {
-			goto out;
-		}
-	RRR_MAP_ITERATE_END();
-
-	if (RRR_DEBUGLEVEL_3) {
-		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(session->method));
-		rrr_http_session_query_fields_dump(session);
-	}
-
-	*endpoint_override = endpoint;
-	endpoint = NULL;
-
-	out:
-		RRR_FREE_IF_NOT_NULL(endpoint);
-		return ret;
-}
-
-static int httpclient_reset_client_data (
-		struct httpclient_data *data
-) {
-	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
-
-	switch (data->net_transport_config.transport_type) {
-		case RRR_NET_TRANSPORT_TLS:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-			 break;
-		case RRR_NET_TRANSPORT_PLAIN:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
-			 break;
-		default:
-			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
-			break;
-	};
-
-	if (rrr_http_client_data_reset (
-			&data->http_client_data,
-			&data->http_client_config,
-			http_transport_force
-	) != 0) {
-		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return RRR_HTTP_HARD_ERROR;
-	}
-
-	return RRR_HTTP_OK;
-}
-
 static int httpclient_get_values_from_message (
 		struct rrr_array *target_array,
 		const struct rrr_msg_msg *message
@@ -415,6 +281,185 @@ static int httpclient_get_metadata_from_message (
 
 	out:
 	return ret;
+}
+
+struct httpclient_add_fields_callback_data {
+	struct httpclient_data *data;
+	const struct rrr_msg_msg *message;
+};
+
+static int httpclient_session_query_prepare_callback (
+		RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS
+) {
+	struct httpclient_add_fields_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+	const struct rrr_msg_msg *message = callback_data->message;
+
+	*query_string = NULL;
+	*endpoint_override = NULL;
+
+	int ret = RRR_HTTP_OK;
+
+	char *endpoint_to_free = NULL;
+	struct rrr_array array_from_msg_tmp = {0};
+	struct rrr_array array_to_send_tmp = {0};
+
+	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
+	array_to_send_tmp.version = RRR_ARRAY_VERSION;
+
+	if (MSG_IS_ARRAY(message)) {
+		if ((ret = httpclient_get_values_from_message(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	}
+
+	if (data->endpoint_tag != NULL) {
+		const struct rrr_type_value *endpoint_value = rrr_array_value_get_by_tag(&array_from_msg_tmp, data->endpoint_tag);
+		if (endpoint_value == NULL) {
+			// Use default endpoint if force is not enabled
+		}
+		else {
+			if (endpoint_value->definition->to_str == NULL) {
+				RRR_MSG_0("Warning: Received message in httpclient instance %s where the specified type of the endpoint tagged '%s' in the message was of type '%s' which cannot be used as a string\n",
+						INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag, endpoint_value->definition->identifier);
+			}
+			else if (endpoint_value->definition->to_str(&endpoint_to_free, endpoint_value) != 0) {
+				RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as endpoint in httpserver instance %s\n",
+						data->endpoint_tag, INSTANCE_D_NAME(data->thread_data));
+			}
+		}
+
+		if (endpoint_to_free == NULL && data->do_endpoint_tag_force) {
+			RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable endpoint tag '%s' (which is enforced in configuration), dropping it\n",
+					INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	if (data->do_no_data == 0) {
+		rrr_array_append_from(&array_to_send_tmp, &array_from_msg_tmp);
+
+		if (data->do_rrr_msg_to_array) {
+			if ((ret = httpclient_get_metadata_from_message(&array_to_send_tmp, message))) {
+				goto out;
+			}
+		}
+	}
+
+	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(&array_to_send_tmp) > 0)) {
+		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_add_fields_callback\n");
+	}
+
+	if ((ret = rrr_http_session_set_keepalive (
+			session,
+			data->do_keepalive
+	)) != 0) {
+		RRR_MSG_0("Failed to set keep-alive in httpclient_session_add_fields_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
+		// Add all array fields
+		RRR_LL_ITERATE_BEGIN(&array_to_send_tmp, const struct rrr_type_value);
+			if ((ret = httpclient_session_add_field (
+					data,
+					session,
+					node,
+					node->tag // NULL allowed
+			)) != RRR_HTTP_OK) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	}
+	else {
+		// Add chosen array fields
+		RRR_MAP_ITERATE_BEGIN(&data->http_client_config.tags);
+			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(&array_from_msg_tmp, node_tag);
+			if (value == NULL) {
+				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s.\n",
+						node_tag, INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+
+			// If value is set in map, tag is to be translated
+			const char *tag_to_use = (node_value != NULL && *node_value != '\0') ? node_value : node_tag;
+
+			if ((ret = httpclient_session_add_field (
+					data,
+					session,
+					value,
+					tag_to_use
+			)) != RRR_HTTP_OK) {
+				goto out;
+			}
+		RRR_MAP_ITERATE_END();
+	}
+
+	RRR_MAP_ITERATE_BEGIN(&data->http_client_config.fields);
+		RRR_DBG_3("HTTP add field value with tag '%s' value '%s'\n",
+				node_tag, node_value != NULL ? node_value : "(no value)");
+		if ((ret = rrr_http_session_query_field_add (
+				session,
+				node_tag,
+				node_value,
+				strlen(node_value),
+				"text/plain"
+		)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	RRR_MAP_ITERATE_END();
+
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(session->method));
+		rrr_http_session_query_fields_dump(session);
+	}
+
+	{
+		const char *endpoint_to_print = (endpoint_to_free != NULL ? endpoint_to_free : data->http_client_config.endpoint);
+		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
+				INSTANCE_D_NAME(data->thread_data), message->timestamp, endpoint_to_print);
+	}
+
+	*endpoint_override = endpoint_to_free;
+	endpoint_to_free = NULL;
+
+	out:
+		rrr_array_clear(&array_from_msg_tmp);
+		rrr_array_clear(&array_to_send_tmp);
+		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
+		return ret;
+}
+
+static int httpclient_reset_client_data (
+		struct httpclient_data *data
+) {
+	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+
+	switch (data->net_transport_config.transport_type) {
+		case RRR_NET_TRANSPORT_TLS:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+			 break;
+		case RRR_NET_TRANSPORT_PLAIN:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
+			 break;
+		default:
+			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+			break;
+	};
+
+	if (rrr_http_client_data_reset (
+			&data->http_client_data,
+			&data->http_client_config,
+			http_transport_force
+	) != 0) {
+		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		return RRR_HTTP_HARD_ERROR;
+	}
+
+	return RRR_HTTP_OK;
 }
 
 struct httpclient_raw_create_message_callback_data {
@@ -500,14 +545,11 @@ static int httpclient_raw_callback (
 #define HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS 					\
 		struct httpclient_data *data,							\
 		const struct rrr_msg_msg *message,						\
-		struct httpclient_raw_callback_data *raw_callback_data,	\
-		void *arg
+		struct httpclient_raw_callback_data *raw_callback_data
 
 static int httpclient_send_request_raw_data_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
 ) {
-	(void)(arg);
-
 	RRR_DBG_2("httpclient instance %s sending raw request from message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(data->thread_data), message->timestamp);
 
@@ -526,23 +568,12 @@ static int httpclient_send_request_raw_data_callback (
 	);
 }
 
-struct httpclient_send_request_from_message_callback {
-	const struct rrr_array *array_to_send;
-	const char *endpoint_to_use;
-};
-
 static int httpclient_send_request_from_message_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
 ) {
-	struct httpclient_send_request_from_message_callback *callback_data = arg;
-
-	RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
-			INSTANCE_D_NAME(data->thread_data), message->timestamp, callback_data->endpoint_to_use);
-
 	struct httpclient_add_fields_callback_data add_fields_callback_data = {
 		data,
-		callback_data->array_to_send,
-		callback_data->endpoint_to_use
+		message
 	};
 
 	return rrr_http_client_send_request (
@@ -560,12 +591,11 @@ static int httpclient_send_request_from_message_callback (
 	);
 }
 
-static int httpclient_send_request_intermediate (
+static int httpclient_send_request_intermediate_retry_handling (
 		struct httpclient_data *data,
 		const struct rrr_msg_msg *message,
 		long long int redirect_retry_max, // DO NOT use unsigned here.
-		int (*callback)(HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS),
-		void *callback_arg
+		int (*callback)(HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS)
 ) {
 	int ret = 0;
 
@@ -580,7 +610,7 @@ static int httpclient_send_request_intermediate (
 			message
 	};
 
-	ret = callback(data, message, &raw_callback_data, callback_arg);
+	ret = callback(data, message, &raw_callback_data);
 
 	if (ret != RRR_HTTP_OK) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
@@ -626,13 +656,6 @@ static int httpclient_send_request_locked (
 ) {
 	struct rrr_msg_msg *message = entry->message;
 
-	char *endpoint_to_free = NULL;
-	struct rrr_array array_from_msg_tmp = {0};
-	struct rrr_array array_to_send_tmp = {0};
-
-	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
-	array_to_send_tmp.version = RRR_ARRAY_VERSION;
-
 	int ret = RRR_HTTP_OK;
 
 	if (data->do_keepalive == 0 || data->keepalive_handle == 0) {
@@ -653,87 +676,25 @@ static int httpclient_send_request_locked (
 			goto out;
 		}
 
-		ret = httpclient_send_request_intermediate (
+		ret = httpclient_send_request_intermediate_retry_handling (
 				data,
 				message,
 				0,
-				httpclient_send_request_raw_data_callback,
-				NULL
+				httpclient_send_request_raw_data_callback
 		);
 	}
 	else {
-		if (MSG_IS_ARRAY(message)) {
-			if ((ret = httpclient_get_values_from_message(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
-				goto out;
-			}
-		}
-
-		const char *endpoint_to_use = data->http_client_data.endpoint;
-
-		if (data->endpoint_tag != NULL) {
-			const struct rrr_type_value *endpoint = rrr_array_value_get_by_tag(&array_from_msg_tmp, data->endpoint_tag);
-			if (endpoint == NULL) {
-				// Use default endpoint if force is not enabled
-			}
-			else {
-				if (endpoint->definition->to_str == NULL) {
-					RRR_MSG_0("Warning: Received message in httpclient instance %s where the specified type of the endpoint tagged '%s' in the message was of type '%s' which cannot be used as a string\n",
-							INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag, endpoint->definition->identifier);
-				}
-				else if (endpoint->definition->to_str(&endpoint_to_free, endpoint) != 0) {
-					RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as endpoint in httpserver instance %s\n",
-							data->endpoint_tag, INSTANCE_D_NAME(data->thread_data));
-				}
-				else {
-					endpoint_to_use = endpoint_to_free;
-				}
-			}
-
-			if (endpoint_to_free == NULL && data->do_endpoint_tag_force) {
-				RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable endpoint tag '%s' (which is enforced in configuration), dropping it\n",
-						INSTANCE_D_NAME(data->thread_data),	data->endpoint_tag);
-				goto out;
-			}
-		}
-
-		if (data->do_no_data == 0) {
-			// Add any values from the message first, these take precedence if some
-			// tags match the tags added when data->do_rrr_msg_to_array is active. If
-			// for instance 'timestamp' is present in the message array while
-			// rrr_msg_to_array is active, the array will in the end contain two values
-			// with this tag. Applications will then normally use the first one.
-
-			// If tag filtering is performed, this is done in add_fields_callback. Here, all
-			// values are prepared in the temporary array.
-			rrr_array_append_from(&array_to_send_tmp, &array_from_msg_tmp);
-
-			if (data->do_rrr_msg_to_array) {
-				if ((ret = httpclient_get_metadata_from_message(&array_to_send_tmp, message))) {
-					goto out;
-				}
-			}
-		}
-
-		struct httpclient_send_request_from_message_callback callback_data = {
-			&array_to_send_tmp,
-			endpoint_to_use
-		};
-
-		ret = httpclient_send_request_intermediate (
+		ret = httpclient_send_request_intermediate_retry_handling (
 				data,
 				message,
 				data->redirects_max,
-				httpclient_send_request_from_message_callback,
-				&callback_data
+				httpclient_send_request_from_message_callback
 		);
 	}
 
 	// Do not add anything here, let return value from last function call propagate
 
 	out:
-	RRR_FREE_IF_NOT_NULL(endpoint_to_free);
-	rrr_array_clear(&array_from_msg_tmp);
-	rrr_array_clear(&array_to_send_tmp);
 	return ret;
 }
 

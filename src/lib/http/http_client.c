@@ -279,7 +279,7 @@ static void __rrr_http_client_send_request_callback_final (
 
 	if (callback_data->raw_request_data != NULL) {
 		if (callback_data->raw_request_data_size == 0) {
-			RRR_DBG_1("Raw request data was set in __rrr_http_client_send_request_callback_final but szie was 0, nothing to send.\n");
+			RRR_DBG_1("Raw request data was set in __rrr_http_client_send_request_callback_final but size was 0, nothing to send.\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
@@ -303,11 +303,13 @@ static void __rrr_http_client_send_request_callback_final (
 					handle->application_private_ptr,
 					callback_data->query_prepare_callback_arg)
 			) != RRR_HTTP_OK) {
-				ret &= ~(RRR_HTTP_NO_RESULT);
-				if (ret != 0) {
-					RRR_MSG_0("Error %i while making query string in __rrr_http_client_send_request_callback\n", ret);
+				if (ret == RRR_HTTP_SOFT_ERROR) {
+					RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_send_request_callback_final\n");
+					ret = 0;
 					goto out;
 				}
+				RRR_MSG_0("Error %i from query prepare callback in __rrr_http_client_send_request_callback\n", ret);
+				goto out;
 			}
 		}
 
@@ -355,7 +357,7 @@ static void __rrr_http_client_send_request_callback_final (
 			}
 		}
 
-		RRR_DBG_3("HTTP using endpoint_to_use: '%s'\n", endpoint_and_query_to_free);
+		RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
 
 		if ((ret = rrr_http_session_transport_ctx_set_endpoint (
 				handle,
