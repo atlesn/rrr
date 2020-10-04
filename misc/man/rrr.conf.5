@@ -1583,6 +1583,28 @@ Note that this is probably not useful for sockets and character devices. Cannot 
 .B file_input_types,
 but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
 
+.It file_read_all_method={simple|structured}
+May be set if
+.B file_read_all_to_message
+is 'yes'.
+If set to 'simple', the contents of the file is put into a plain message.
+If set to 'structured', the constents of the file along with metadata is put into an array array message.
+For the latter, the array fields
+.B data, size, path_original, path_resolved, atime, mtime, and ctime
+will be present in the generated messages.
+
+The
+.B data
+and
+.B size
+fields contain the actual raw data of the file and the it's size.  
+
+The two
+.B path_
+fields contain the original path and resolved symbolic link path respectively. If there was not symlic, they are equal.
+
+The time parameters is in epoch time format with seconds resolution and describe file access time, modification time and creation time. 
+
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that
 .B any type of file or socket will be deleted
