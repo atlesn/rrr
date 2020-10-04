@@ -1422,7 +1422,7 @@ static int ip_start_udp (struct ip_data *data) {
 		}
 
 		if (ret_6 != 0 && ret_4 != 0) {
-			RRR_MSG_0("UDP socket creation failed for both IPv4 and IPv6 in ip instance %s\n",
+			RRR_MSG_0("UDP socket creation failed for both IPv4 and IPv6 on port %u in ip instance %s\n",
 					data->source_udp_port, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
