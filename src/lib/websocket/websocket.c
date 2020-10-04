@@ -449,7 +449,7 @@ int __rrr_websocket_receive_callback_fragmentation_step (
 	{
 		char *buf_new;
 		if ((buf_new = realloc (ws_state->receive_state.fragment_buffer, new_fragment_size)) == NULL) {
-			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n");
+			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n", new_fragment_size);
 			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
 			goto out;
 		}
@@ -531,7 +531,7 @@ int __rrr_websocket_receive_callback_interpret_step (
 		};
 
 		if (!fin && opcode != RRR_WEBSOCKET_OPCODE_TEXT && opcode != RRR_WEBSOCKET_OPCODE_BINARY) {
-			RRR_MSG_0("Received fragmented websocket frame of type %i which is not allowed, only TEXT and BINARY may be fragmented\n");
+			RRR_MSG_0("Received fragmented websocket frame of type %i which is not allowed, only TEXT and BINARY may be fragmented\n", opcode);
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}

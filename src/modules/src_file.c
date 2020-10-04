@@ -278,7 +278,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 		else {
 			RRR_MSG_0("Unknown value '%s' for file_read_all_method in file instance %s, valid options are 'simple' and 'structured'.\n",
-					config->name);
+					data->read_all_method, config->name);
 			ret = 1;
 		}
 	}

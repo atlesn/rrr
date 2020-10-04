@@ -154,7 +154,8 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 			field->value->len,
 			&base64_len
 	)) == NULL) {
-		RRR_MSG_0("Base64 decoding failed for field type '%s'\n", field->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
+		RRR_MSG_0("Base64 decoding failed for field '%s'\n", name);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -527,8 +528,9 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
 			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
 				RRR_BUG("Attempted to retrieve field %s which was not parsed in __rrr_http_header_field_collection_get_field, definition must be added\n",
-						node->name);
+						name);
 			}
 			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
 				return node;

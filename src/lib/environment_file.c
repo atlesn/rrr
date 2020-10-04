@@ -126,7 +126,7 @@ int rrr_environment_file_parse (
 			0,
 			1 // ENOENT is OK
 	) != 0) {
-		RRR_MSG_0("Failed to read environment file '%s'\n");
+		RRR_MSG_0("Failed to read environment file '%s'\n", environment_file);
 		ret = 1;
 		goto out;
 	}
@@ -139,7 +139,7 @@ int rrr_environment_file_parse (
 
 	// Protection before storing to int type in rrr_parse_pos struct
 	if (env_data_size > 0xfffffff) { // Seven f's
-		RRR_MSG_0("Environment file '%s' too big (was %" PRIrrrbl " bytes)", env_data_size);
+		RRR_MSG_0("Environment file '%s' too big (was %" PRIrrrbl " bytes)", environment_file, env_data_size);
 		ret = 1;
 		goto out;
 	}

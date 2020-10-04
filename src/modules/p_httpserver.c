@@ -897,7 +897,7 @@ static int httpserver_websocket_handshake_callback (
 
 	if (rrr_mqtt_topic_validate_name(topic_begin) != 0) {
 		RRR_MSG_0("Received invalid websocket topic '%s' from client in httpserver instance %s\n",
-				INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
+				topic_begin, INSTANCE_D_NAME(callback_data->httpserver_data->thread_data));
 		goto out_bad_request;
 	}
 
