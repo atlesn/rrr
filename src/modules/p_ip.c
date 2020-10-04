@@ -75,8 +75,10 @@ struct ip_data {
 //	struct rrr_msg_msg_holder_collection delivery_buffer;
 	unsigned int source_udp_port;
 	unsigned int source_tcp_port;
-	struct rrr_ip_data ip_udp;
-	struct rrr_ip_data ip_tcp_listen;
+	struct rrr_ip_data ip_udp_4;
+	struct rrr_ip_data ip_udp_6;
+	struct rrr_ip_data ip_tcp_listen_4;
+	struct rrr_ip_data ip_tcp_listen_6;
 	int ip_tcp_default_target_fd;
 	struct rrr_array_tree *definitions;
 	struct rrr_read_session_collection read_sessions_udp;
@@ -650,6 +652,7 @@ static int ip_read_loop (
 
 static int ip_tcp_read_data (
 		struct ip_data *data,
+		struct rrr_ip_data *listen_data,
 		struct rrr_ip_accept_data_collection *accept_data_collection,
 		uint64_t end_time
 ) {
@@ -662,7 +665,7 @@ static int ip_tcp_read_data (
 
 	if (rrr_ip_accept (
 			&accept_data,
-			&data->ip_tcp_listen,
+			listen_data,
 			"ip",
 			0
 	) != 0) {
@@ -701,7 +704,10 @@ static int ip_udp_read_data (
 	int ret = 0;
 
 	if (data->source_udp_port > 0) {
-		if ((ret = ip_read_loop (data, 0, data->ip_udp.fd, &data->read_sessions_udp, end_time)) != 0) {
+		if (data->ip_udp_4.fd != 0 && (ret = ip_read_loop (data, 0, data->ip_udp_4.fd, &data->read_sessions_udp, end_time)) != 0) {
+			goto out;
+		}
+		if (data->ip_udp_6.fd != 0 && (ret = ip_read_loop (data, 0, data->ip_udp_6.fd, &data->read_sessions_udp, end_time)) != 0) {
 			goto out;
 		}
 	}
@@ -852,7 +858,7 @@ static int ip_send_message_raw_default_target (
 	else {
 		ret = rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 			written_bytes,
-			&ip_data->ip_udp,
+			&ip_data->ip_udp_6,
 			ip_data->target_port,
 			ip_data->target_host,
 			(void *) send_data, // Cast away const OK
@@ -965,7 +971,7 @@ static int ip_send_raw (
 		ret = rrr_socket_sendto_nonblock (
 			&err,
 			written_bytes,
-			ip_data->ip_udp.fd,
+			ip_data->ip_udp_6.fd,
 			(void *) send_data, // Cast away const OK
 			send_size,
 			(const struct sockaddr *) &addr,
@@ -974,7 +980,11 @@ static int ip_send_raw (
 
 		if (ret != 0) {
 			RRR_MSG_0("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
-					INSTANCE_D_NAME(thread_data), ((const struct sockaddr *) &addr)->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
+					INSTANCE_D_NAME(thread_data),
+					((const struct sockaddr *) &addr)->sa_family,
+					ip_data->ip_udp_6.fd,
+					rrr_strerror(err)
+			);
 			goto out;
 		}
 	}
@@ -1395,6 +1405,115 @@ static int ip_send_loop (
 	return ret;
 }
 
+static int ip_start_udp (struct ip_data *data) {
+	int ret = 0;
+
+	data->ip_udp_4.port = data->source_udp_port;
+	data->ip_udp_6.port = data->source_udp_port;
+
+	if (data->source_udp_port == 0) {
+		int ret_4, ret_6 = 0;
+
+		if ((ret_6 = rrr_ip_network_start_udp_nobind(&data->ip_udp_6, 1)) != 0) {
+			RRR_DBG_1("Note: Could not initialize UDP IPv6 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		if ((ret_4 = rrr_ip_network_start_udp_nobind(&data->ip_udp_4, 0)) != 0) {
+			RRR_DBG_1("Note: Could not initialize UDP IPv4 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+
+		if (ret_6 != 0 && ret_4 != 0) {
+			RRR_MSG_0("UDP socket creation failed for both IPv4 and IPv6 in ip instance %s\n",
+					data->source_udp_port, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+
+		RRR_DBG_1("ip instance %s not bound on any UDP port\n", INSTANCE_D_NAME(data->thread_data));
+	}
+	else {
+		int ret_4, ret_6 = 0;
+		if ((ret_6 = rrr_ip_network_start_udp(&data->ip_udp_6, 1)) != 0) {
+			RRR_DBG_1("Note: Could not initialize UDP IPv6 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else {
+			RRR_DBG_1("ip instance %s listening on and/or sending from UDP port %d IPv6 (possibly dual-stack)\n",
+					INSTANCE_D_NAME(data->thread_data), data->source_udp_port);
+		}
+
+		if ((ret_4 = rrr_ip_network_start_udp(&data->ip_udp_4, 0)) != 0) {
+			RRR_DBG_1("Note: Could not initialize UDP IPv4 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else {
+			RRR_DBG_1("ip instance %s listening on and/or sending from UDP port %d IPv4\n",
+					INSTANCE_D_NAME(data->thread_data), data->source_udp_port);
+		}
+
+		if (ret_6 != 0 && ret_4 != 0) {
+			RRR_MSG_0("Bind failed for both IPv4 and IPv6 on port %u in ip instance %s\n",
+					data->source_udp_port, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+		else if (ret_6) {
+			RRR_DBG_1("Note: Bind failed for IPv6 on port %u, but IPv4 listening succedded in ip instance %s. Assuming IPv4-only stack.\n",
+					data->source_udp_port, INSTANCE_D_NAME(data->thread_data));
+		}
+		else if (ret_4) {
+			RRR_DBG_1("Note: Bind failed for IPv4 on port %u, but IPv6 listening succedded in ip instance %s. Assuming dual-stack.\n",
+					data->source_udp_port, INSTANCE_D_NAME(data->thread_data));
+		}
+	}
+
+	goto out;
+	out:
+		return ret;
+}
+
+static int ip_start_tcp (struct ip_data *data) {
+	int ret = 0;
+
+	if (data->source_tcp_port > 0) {
+		data->ip_tcp_listen_4.port = data->source_tcp_port;
+		data->ip_tcp_listen_6.port = data->source_tcp_port;
+
+		int ret_4, ret_6 = 0;
+
+		if ((ret_6 = rrr_ip_network_start_tcp(&data->ip_tcp_listen_6, 10, 1)) != 0) {
+			RRR_DBG_1("Note: Could not initialize TCP IPv6 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else {
+			RRR_DBG_1("ip instance %s listening on IPv6 (possibly dual-stack) TCP port %d\n",
+					INSTANCE_D_NAME(data->thread_data), data->source_tcp_port);
+		}
+
+		if ((ret_4 = rrr_ip_network_start_tcp(&data->ip_tcp_listen_4, 10, 0)) != 0) {
+			RRR_DBG_1("Note: Could not initialize TCP IPv4 network in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		}
+		else {
+			RRR_DBG_1("ip instance %s listening on IPv4 TCP port %d\n",
+					INSTANCE_D_NAME(data->thread_data), data->source_tcp_port);
+		}
+
+		if (ret_6 != 0 && ret_4 != 0) {
+			RRR_MSG_0("Listening failed for both IPv4 and IPv6 on port %u in ip instance %s\n",
+					data->source_tcp_port, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+		else if (ret_6) {
+			RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succedded in ip instance %s. Assuming IPv4-only stack.\n",
+					data->source_tcp_port, INSTANCE_D_NAME(data->thread_data));
+		}
+		else if (ret_4) {
+			RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succedded in ip instance %s. Assuming dual-stack.\n",
+					data->source_tcp_port, INSTANCE_D_NAME(data->thread_data));
+		}
+	}
+
+	out:
+		return ret;
+}
+
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1432,38 +1551,22 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message_no_network_cleanup;
 	}
 
-	if (data->source_udp_port == 0) {
-		if (rrr_ip_network_start_udp_ipv4_nobind(&data->ip_udp) != 0) {
-			RRR_MSG_0("Could not initialize network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message_no_network_cleanup;
-		}
-		RRR_DBG_1("ip instance %s started, not listening on any UDP port\n", INSTANCE_D_NAME(thread_data));
-	}
-	else {
-		data->ip_udp.port = data->source_udp_port;
-		if (rrr_ip_network_start_udp_ipv4(&data->ip_udp) != 0) {
-			RRR_MSG_0("Could not initialize UDP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message_no_network_cleanup;
-		}
-		RRR_DBG_1("ip instance %s listening on and/or sending from UDP port %d\n",
-				INSTANCE_D_NAME(thread_data), data->source_udp_port);
+	if (ip_start_udp(data) != 0) {
+		goto out_message_no_network_cleanup;
 	}
 
-	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_udp);
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_udp_4);
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_udp_6);
 
-	if (data->source_tcp_port > 0) {
-		data->ip_tcp_listen.port = data->source_tcp_port;
-		if (rrr_ip_network_start_tcp_ipv4_and_ipv6(&data->ip_tcp_listen, 10) != 0) {
-			RRR_MSG_0("Could not initialize TCP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_cleanup_udp;
-		}
-		RRR_DBG_1("ip instance %s listening on TCP port %d\n",
-				INSTANCE_D_NAME(thread_data), data->source_tcp_port);
+	if (ip_start_tcp(data) != 0) {
+		goto out_cleanup_udp;
 	}
+
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_tcp_listen_4);
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_tcp_listen_6);
 
 	rrr_ip_graylist_init(&tcp_graylist, data->graylist_timeout_ms * 1000LLU);
 
-	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_tcp_listen);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_accept_data);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_connect_data);
 	pthread_cleanup_push(rrr_ip_graylist_clear_void, &tcp_graylist);
@@ -1509,8 +1612,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
-			if (ip_tcp_read_data(data, &tcp_accept_data, end_time) != 0) {
-				RRR_MSG_0("Error while reading tcp data in ip instance %s\n",
+			if (data->ip_tcp_listen_4.fd != 0 && ip_tcp_read_data(data, &data->ip_tcp_listen_4, &tcp_accept_data, end_time) != 0) {
+				RRR_MSG_0("Error while reading tcp data on IPv4 in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
+			}
+			if (data->ip_tcp_listen_6.fd != 0 && ip_tcp_read_data(data, &data->ip_tcp_listen_6, &tcp_accept_data, end_time) != 0) {
+				RRR_MSG_0("Error while reading tcp data on IPv6 in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -1584,9 +1692,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 
 	out_cleanup_udp:
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_message_no_network_cleanup:

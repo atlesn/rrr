@@ -64,19 +64,19 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_bind_and_listen (
+	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
 			transport,
 			port,
 			__rrr_mqtt_broker_listen_ipv4_and_ipv6_callback,
 			NULL
 	)) != 0) {
-		RRR_MSG_0("Could not listen on port %i in __rrr_mqtt_broker_listen_ipv4_and_ipv6\n", port);
 		ret = 1;
 		goto out;
 	}
 
+	goto out;
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
