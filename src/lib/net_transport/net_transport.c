@@ -429,13 +429,6 @@ void rrr_net_transport_ctx_handle_close_while_locked (
 	}
 }
 
-int rrr_net_transport_handle_tag_for_closing (
-		struct rrr_net_transport *transport,
-		int transport_handle
-) {
-	return rrr_net_transport_handle_close_tag_list_push(transport, transport_handle);
-}
-
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
 		int transport_handle
