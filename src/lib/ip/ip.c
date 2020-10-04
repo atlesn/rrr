@@ -205,20 +205,23 @@ int rrr_ip_network_start_udp (
 	struct sockaddr_storage s;
 	memset(&s, '\0', sizeof(s));
 
+	size_t size = 0;
 	if (do_ipv6) {
 		struct sockaddr_in6 *si = (struct sockaddr_in6 *) &s;
 		si->sin6_family = AF_INET6;
 		si->sin6_port = htons(data->port);
 		memset (&si->sin6_addr, 0, sizeof(si->sin6_addr));
+		size = sizeof(*si);
 	}
 	else {
 		struct sockaddr_in *si = (struct sockaddr_in *) &s;
 		si->sin_family = AF_INET;
 		si->sin_port = htons(data->port);
 		si->sin_addr.s_addr = INADDR_ANY;
+		size = sizeof(*si);
 	}
 
-	if (bind (fd, (struct sockaddr *) &s, sizeof(s)) == -1) {
+	if (bind (fd, (struct sockaddr *) &s, size) == -1) {
 		RRR_DBG_1 ("Note: Could not bind to port %d %s: %s\n",
 				data->port, (do_ipv6 ? "IPv6" : "IPv4"), rrr_strerror(errno));
 		goto out_close_socket;
