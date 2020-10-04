@@ -105,6 +105,7 @@ static void __rrr_http_server_worker_data_cleanup (
 		void *arg
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
+	//printf("push handle %i to close tag list\n", worker_data->config_data.transport_handle);
 	rrr_net_transport_handle_close_tag_list_push(worker_data->config_data.transport, worker_data->config_data.transport_handle);
 	RRR_FREE_IF_NOT_NULL(worker_data->websocket_application_data);
 }

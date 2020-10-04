@@ -307,7 +307,7 @@ static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
 		struct rrr_net_transport_handle_close_tag_node *node
 ) {
 	// Ignore errors
-//	printf("Close handle %i\n", node->transport_handle);
+	//printf("Close handle %i which has been tagged\n", node->transport_handle);
 	rrr_net_transport_handle_close(transport, node->transport_handle);
 	free(node);
 }
@@ -997,6 +997,8 @@ int rrr_net_transport_accept_all_handles (
 	int ret = 0;
 
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	rrr_net_transport_maintenance(transport);
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
