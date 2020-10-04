@@ -107,7 +107,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		int handle,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(void **submodule_private_ptr, int *submodule_private_fd, void *arg),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -885,11 +885,13 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	(void)(arg);
 
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
+	if (final_callback) {
+		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
 
-	final_callback(handle, final_callback_arg);
+		final_callback(handle, final_callback_arg);
 
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+	}
 
 	return ret;
 }
@@ -897,17 +899,61 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 int rrr_net_transport_bind_and_listen (
 		struct rrr_net_transport *transport,
 		unsigned int port,
+		int do_ipv6,
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 ) {
 	return transport->methods->bind_and_listen (
 			transport,
 			port,
+			do_ipv6,
 			__rrr_net_transport_bind_and_listen_callback_intermediate,
 			NULL,
 			callback,
 			arg
 	);
+}
+
+int rrr_net_transport_bind_and_listen_dualstack (
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
+		void *arg
+) {
+	int ret_6 = transport->methods->bind_and_listen (
+			transport,
+			port,
+			1, // IPv6
+			__rrr_net_transport_bind_and_listen_callback_intermediate,
+			NULL,
+			callback,
+			arg
+	);
+
+	int ret_4 = transport->methods->bind_and_listen (
+			transport,
+			port,
+			0, // IPv4
+			__rrr_net_transport_bind_and_listen_callback_intermediate,
+			NULL,
+			callback,
+			arg
+	);
+
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (ret_6 != 0 && ret_4 != 0) {
+		RRR_MSG_0("Listening failed for both IPv4 and IPv6 on port %u\n", port);
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+	}
+	else if (ret_6) {
+		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succedded. Assuming IPv4-only stack.\n", port);
+	}
+	else if (ret_4) {
+		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succedded. Assuming dual-stack.\n", port);
+	}
+
+	return ret;
 }
 
 static int __rrr_net_transport_accept_callback_intermediate (

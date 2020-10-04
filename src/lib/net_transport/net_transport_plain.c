@@ -61,7 +61,6 @@ static int __rrr_net_transport_plain_data_new (struct rrr_net_transport_plain_da
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
 		RRR_MSG_0("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
-		return 1;
 	}
 	__rrr_net_transport_plain_data_destroy (handle->submodule_private_ptr);
 	return 0;
@@ -250,7 +249,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 
 	ip_data.port = port;
 
-	if ((ret = rrr_ip_network_start_tcp_ipv4_and_ipv6(&ip_data, 10)) != 0) {
+	if ((ret = rrr_ip_network_start_tcp(&ip_data, 10, do_ipv6)) != 0) {
 		goto out;
 	}
 
@@ -266,7 +265,6 @@ int __rrr_net_transport_plain_bind_and_listen (
 			__rrr_net_transport_plain_handle_allocate_and_add_callback ,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
 		goto out_destroy_ip;
 	}
 

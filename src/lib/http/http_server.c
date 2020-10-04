@@ -85,16 +85,7 @@ int rrr_http_server_new (struct rrr_http_server **target) {
 		return ret;
 }
 
-static void __rrr_http_server_bind_and_listen_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	int *transport_handle = arg;
-	*transport_handle = handle->handle;
-}
-
 static int __rrr_http_server_start (
-		int *result_handle,
 		struct rrr_net_transport **result_transport,
 		uint16_t port,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -112,11 +103,11 @@ static int __rrr_http_server_start (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_bind_and_listen (
+	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
 			*result_transport,
 			port,
-			__rrr_http_server_bind_and_listen_callback,
-			result_handle
+			NULL,
+			NULL
 	)) != 0) {
 		ret = 1;
 		goto out;
@@ -141,7 +132,7 @@ int rrr_http_server_start_plain (
 			RRR_NET_TRANSPORT_PLAIN
 	};
 
-	ret = __rrr_http_server_start (&server->handle_http, &server->transport_http, port, &net_transport_config_plain, 0);
+	ret = __rrr_http_server_start (&server->transport_http, port, &net_transport_config_plain, 0);
 
 	return ret;
 }
@@ -158,7 +149,7 @@ int rrr_http_server_start_tls (
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
 
-	ret = __rrr_http_server_start (&server->handle_https, &server->transport_https, port, &net_transport_config_tls, net_transport_flags);
+	ret = __rrr_http_server_start (&server->transport_https, port, &net_transport_config_tls, net_transport_flags);
 
 	return ret;
 }
@@ -201,16 +192,14 @@ static void __rrr_http_server_accept_create_http_session_callback (
 static int __rrr_http_server_accept (
 		int *did_accept,
 		struct rrr_net_transport *transport,
-		int handle,
 		struct rrr_http_server_worker_preliminary_data *worker_data_preliminary
 ) {
 	int ret = 0;
 
 	*did_accept = 0;
 
-	if ((ret = rrr_net_transport_accept (
+	if ((ret = rrr_net_transport_accept_all_handles(
 			transport,
-			handle,
 			__rrr_http_server_accept_create_http_session_callback,
 			worker_data_preliminary
 	)) != 0) {
@@ -229,7 +218,6 @@ static int __rrr_http_server_accept (
 
 struct rrr_http_server_accept_if_free_thread_callback_data {
 	struct rrr_net_transport *transport;
-	int transport_handle;
 	struct rrr_thread *result_thread_to_start;
 };
 
@@ -256,7 +244,6 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 	if ((ret = __rrr_http_server_accept (
 			&did_accept,
 			callback_data->transport,
-			callback_data->transport_handle,
 			locked_thread->private_data
 	)) != 0) {
 		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_if_free_thread_callback\n");
@@ -276,14 +263,12 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 static int __rrr_http_server_accept_if_free_thread (
 		int *accept_count,
 		struct rrr_net_transport *transport,
-		int transport_handle,
 		struct rrr_thread_collection *threads
 ) {
 	int ret = 0;
 
 	struct rrr_http_server_accept_if_free_thread_callback_data callback_data = {
 			transport,
-			transport_handle,
 			NULL
 	};
 
@@ -396,7 +381,6 @@ int rrr_http_server_tick (
 		if ((ret = __rrr_http_server_accept_if_free_thread (
 				&accept_count_tmp,
 				server->transport_http,
-				server->handle_http,
 				server->threads
 		)) != 0) {
 			goto out;
@@ -409,7 +393,6 @@ int rrr_http_server_tick (
 		if ((ret = __rrr_http_server_accept_if_free_thread (
 				&accept_count_tmp,
 				server->transport_https,
-				server->handle_https,
 				server->threads
 		)) != 0) {
 			goto out;

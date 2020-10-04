@@ -451,6 +451,11 @@ Source port used for sending and receiving packtes, defaults to 5555.
 .It ipclient_listen={yes|no}
 Accept incoming connections if set to yes. Default is no.
 
+.It ipclient_ipv4_only={yes|no}
+If set to yes, start IPv4 networking only. If left unset or set to no, IPv6 will be attempted first, and IPv4
+will only be attemted if IPv6 fails.
+If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the operating system.
+
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El

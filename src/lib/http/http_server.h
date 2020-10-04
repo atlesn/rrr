@@ -35,9 +35,6 @@ struct rrr_http_server {
 	struct rrr_net_transport *transport_http;
 	struct rrr_net_transport *transport_https;
 
-	int handle_http;
-	int handle_https;
-
 	struct rrr_thread_collection *threads;
 };
 

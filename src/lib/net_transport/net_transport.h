@@ -120,13 +120,16 @@ struct rrr_net_transport_collection {
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS											\
 	struct rrr_net_transport *transport,												\
 	unsigned int port,																	\
+	int do_ipv6,																		\
 	int (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS),		\
 	void *callback_arg,																	\
 	void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
 	void *callback_final_arg
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS							\
-	void **submodule_private_ptr, int *submodule_private_fd, void *arg
+	void **submodule_private_ptr,												\
+	int *submodule_private_fd,													\
+	void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS							\
 	struct rrr_net_transport_handle *handle,									\
@@ -295,7 +298,14 @@ int rrr_net_transport_send_blocking (
 int rrr_net_transport_bind_and_listen (
 		struct rrr_net_transport *transport,
 		unsigned int port,
-		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		int do_ipv6,
+		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
+		void *arg
+);
+int rrr_net_transport_bind_and_listen_dualstack (
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
 int rrr_net_transport_accept (
