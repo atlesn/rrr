@@ -654,7 +654,8 @@ int rrr_net_transport_ctx_send_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-	} while (ret != 0);
+		pthread_testcancel();
+	} while (ret != RRR_NET_TRANSPORT_SEND_OK);
 
 	return ret;
 }
@@ -675,6 +676,23 @@ void rrr_net_transport_ctx_handle_application_data_bind (
 	}
 	handle->application_private_ptr = application_data;
 	handle->application_ptr_destroy = application_data_destroy;
+}
+
+void rrr_net_transport_ctx_get_socket_stats (
+		uint64_t *bytes_read_total,
+		uint64_t *bytes_written_total,
+		uint64_t *bytes_total,
+		struct rrr_net_transport_handle *handle
+) {
+	if (bytes_read_total != NULL) {
+		*bytes_read_total = handle->bytes_read_total;
+	}
+	if (bytes_written_total != NULL) {
+		*bytes_written_total = handle->bytes_written_total;
+	}
+	if (bytes_total != NULL) {
+		*bytes_total = handle->bytes_read_total + handle->bytes_written_total;
+	}
 }
 
 int rrr_net_transport_handle_with_transport_ctx_do (
@@ -932,5 +950,37 @@ int rrr_net_transport_accept (
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
 
+	return ret;
+}
+
+int rrr_net_transport_accept_all_handles (
+		struct rrr_net_transport *transport,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		pthread_mutex_lock(&node->lock_);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			ret = transport->methods->accept (
+					node,
+					__rrr_net_transport_accept_callback_intermediate,
+					NULL,
+					callback,
+					callback_arg
+			);
+			if (ret != 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+		}
+		pthread_mutex_unlock(&node->lock_);
+	RRR_LL_ITERATE_END();
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }

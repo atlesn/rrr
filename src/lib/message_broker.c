@@ -535,7 +535,7 @@ int rrr_message_broker_get_next_unique_id (
 
 	*result = 0;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry");
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_get_next_unique_id");
 
 	if ((ret = rrr_fifo_buffer_with_write_lock_do (
 			&costumer->main_queue,

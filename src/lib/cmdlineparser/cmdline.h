@@ -116,10 +116,9 @@ int cmd_exists (
 		const char *key,
 		cmd_arg_count index
 );
-int cmd_iterate_subvalues (
+int cmd_iterate_subvalues_if_exists (
 		struct cmd_data *data,
 		const char *key,
-		cmd_arg_count req_index,
 		int (*callback)(const char *value, void *arg),
 		void *callback_arg
 );

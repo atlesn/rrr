@@ -28,10 +28,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "http_session.h"
+#include "http_server_common.h"
 
 struct rrr_net_transport;
 struct rrr_thread;
 struct rrr_http_part;
+
+struct rrr_http_server_worker_config_data {
+	struct rrr_net_transport *transport;
+	int transport_handle;
+
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+	ssize_t read_max_size;
+
+	struct rrr_http_server_callbacks callbacks;
+};
 
 struct rrr_http_server_worker_preliminary_data {
 	// Locking is provided by using thread framework lock wrapper.
@@ -41,60 +53,27 @@ struct rrr_http_server_worker_preliminary_data {
 	// add pointers to data which may be modified outside of thread lock
 	// wrapper.
 
-	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
-
-	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-
-	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_raw_arg;
-
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
-
+	struct rrr_http_server_worker_config_data config_data;
 	int error;
-
-	struct rrr_net_transport *transport;
-	int transport_handle;
-
-	ssize_t read_max_size;
 };
 
 struct rrr_http_server_worker_data {
-	struct rrr_net_transport *transport;
-	int transport_handle;
-
-	struct sockaddr_storage sockaddr;
-	socklen_t socklen;
-
-	ssize_t read_max_size;
-
-	// Helper pointers
+	struct rrr_http_server_worker_config_data config_data;
 	struct rrr_thread *thread;
-
-	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_arg;
-
-	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
-	void *unique_id_generator_callback_arg;
-
-	int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *final_callback_raw_arg;
-
+	rrr_http_unique_id websocket_unique_id;
 	int request_complete;
+	uint64_t bytes_total;
+
+	// May be set by application in websocket handshake callback, free()
+	// will be called on this when the worker exits
+	void *websocket_application_data;
 };
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*final_callback_raw)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_raw_arg,
-		int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		const struct rrr_http_server_callbacks *callbacks
 );
-void rrr_http_server_worker_preliminary_data_destroy (
+void rrr_http_server_worker_preliminary_data_destroy_if_not_null (
 		struct rrr_http_server_worker_preliminary_data *worker_data
 );
 void *rrr_http_server_worker_thread_entry_intermediate (

@@ -13,13 +13,14 @@ if test "x$TEST_VARIABLES_SET" != "x1"; then
 fi
 
 
-TEST="./test $1 $2 $3 $4"
+TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_SOCKET=.rrr_test.sock
 TEST_DATA_FILE=.test_data.tmp
 TEST_DATA_GENERATOR=./make_test_data
+TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg
 
 RRR_POST=../rrr_post
-RRR_POST_ARGS="$TEST_SOCKET -d 8 -f - -c 1 -a be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg"
+RRR_POST_ARGS="$TEST_SOCKET -d 8 -f - -c 1 -a $TEST_DATA_ARRAY_DEFINITION"
 
 SEND_IP=./send_ip
 SEND_IP_PORT=2222
@@ -27,9 +28,18 @@ SEND_IP_PORT=2222
 SEND_FIFO=./send_fifo
 SEND_FIFO_FILENAME=/tmp/rrr_test_fifo.sock
 
+SEND_WEBSOCKET="../rrr_http_client"
+SEND_WEBSOCKET_ARGS="-a $TEST_DATA_ARRAY_DEFINITION -s 127.0.0.1 -p 8880 -e /x -w"
+
 fail () {
 	echo "Test $1 failed" 1>&2
 	exit 1
+}
+
+do_websocket_send() {
+	sleep 1
+	echo \$ $SEND_WEBSOCKET $SEND_WEBSOCKET_ARGS \< $TEST_DATA_FILE
+	$SEND_WEBSOCKET $SEND_WEBSOCKET_ARGS < $TEST_DATA_FILE
 }
 
 do_rrr_post() {
@@ -61,6 +71,17 @@ print_test_header () {
 do_test_simple () {
 	conf=$1
 	print_test_header SIMPLE $conf
+	echo \$ $TEST $conf
+	$TEST $conf
+	if test $? -ne 0; then
+		fail $conf
+	fi
+}
+
+do_test_websocket() {
+	conf=$1
+	print_test_header SOCKET $conf
+ 	do_websocket_send &
 	echo \$ $TEST $conf
 	$TEST $conf
 	if test $? -ne 0; then
@@ -101,6 +122,16 @@ do_test_fifo() {
 	fi
 }
 
+do_test_standalone() {
+	conf=$1
+	print_test_header STANDALONE $conf
+	echo \$ $TEST $conf
+	$TEST $conf
+	if test $? -ne 0; then
+		fail $conf 
+	fi
+}
+
 $TEST_DATA_GENERATOR $TEST_DATA_FILE
 if test $? -ne 0; then
 	fail "data generation"
@@ -112,6 +143,10 @@ do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
+do_test_standalone test_file.conf
+
+do_test_websocket test_websocket.conf
+
 do_test_ip test_ip.conf
 
 do_test_fifo test_fifo.conf
@@ -120,7 +155,6 @@ do_test_socket test_socket.conf
 do_test_socket test_http.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
-
 do_test_socket test_cmodule.conf
 
 echo "With perl5: $RRR_WITH_PERL5"

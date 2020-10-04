@@ -147,12 +147,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	data->do_sync_byte_by_byte = yesno;
 
 	if (data->receive_rrr_message != 0 && data->tree != NULL) {
-		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
+		RRR_MSG_0("Array definition cannot be specified with socket_input_types whith socket_receive_rrr_message being 'yes' in instance %s\n",
 				config->name);
 		ret = 1;
 		goto out;
 	}
-	else if (data->receive_rrr_message == 0 && data->tree != NULL) {
+	else if (data->receive_rrr_message == 0 && data->tree == NULL) {
 		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		ret = 1;

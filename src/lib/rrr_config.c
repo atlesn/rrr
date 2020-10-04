@@ -37,8 +37,7 @@ struct rrr_global_config rrr_config_global = {
 		0,
 		0,
 		0,
-		"main",
-		0
+		"main"
 };
 
 void rrr_config_set_debuglevel_on_exit(void) {
@@ -61,8 +60,7 @@ void rrr_config_init (
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
 		unsigned int rfc5424_loglevel_output,
-		unsigned int do_journald_output,
-		uint64_t message_ttl_s
+		unsigned int do_journald_output
 ) {
 	pthread_mutex_lock(&rrr_config_global_mutex);
 	rrr_config_global.debuglevel = debuglevel;
@@ -72,7 +70,6 @@ void rrr_config_init (
 	rrr_config_global.no_thread_restart = no_thread_restart;
 	rrr_config_global.rfc5424_loglevel_output = rfc5424_loglevel_output;
 	rrr_config_global.log_prefix = rrr_default_log_prefix;
-	rrr_config_global.message_ttl_us = message_ttl_s;
 	rrr_config_global.do_journald_output = do_journald_output;
 	pthread_mutex_unlock(&rrr_config_global_mutex);
 }
