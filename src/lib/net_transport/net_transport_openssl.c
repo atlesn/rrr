@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
