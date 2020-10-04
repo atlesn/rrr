@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 #include "lib/environment_file.h"
 #include "lib/map.h"
+#include "lib/rrr_strerror.h"
 
 #define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
@@ -193,6 +194,7 @@ void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection
 	rrr_thread_destroy_collection (collection);
 }
 
+#ifdef HAVE_JOURNALD
 // Append = to var to avoid partial match being tolerated. Value may be added after = to match this as well.
 static int __rrr_main_has_env (const char **env, const char *var) {
 	for (const char **pos = env; *pos != NULL; pos++) {
@@ -203,7 +205,6 @@ static int __rrr_main_has_env (const char **env, const char *var) {
 	return 0;
 }
 
-#ifdef HAVE_JOURNALD
 static int __rrr_main_check_do_journald_logging (const char **env) {
 	// Check if inode of stderr matches the one in JOURNAL_STREAM (and if the variable exists)
 	struct stat stat;
@@ -244,9 +245,9 @@ static int __rrr_main_check_do_journald_logging (const char **env) {
 
 #define GETENV_U(name, target)														\
 	do { char *env; if ((env = getenv(name)) != 0) {								\
-		char *endptr; target = strtoul(env, &endptr, 10);							\
+		char *endptr; errno = 0; target = strtoul(env, &endptr, 10);							\
 		if (*env != '\0' && (errno != 0 || *endptr != '\0')) {						\
-			RRR_MSG_0("Invalid value '%s' in environment variable " name "\n", env);\
+			RRR_MSG_0("Invalid value '%s' in environment variable " name ": %s\n", env, rrr_strerror(errno));\
 			ret = EXIT_FAILURE; goto out;											\
 		}																			\
 	}} while(0)
@@ -353,6 +354,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 #ifdef HAVE_JOURNALD
 	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
 #else
+	(void)(env);
 	unsigned int do_journald_output = 0;
 #endif
 
