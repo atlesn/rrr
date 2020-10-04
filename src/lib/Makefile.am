@@ -54,13 +54,15 @@ http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
 		http/http_server.c http/http_server_worker.c
 
+websocket = websocket/websocket.c
+
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
 			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
 # posix.c is in libadd further down
-util = util/gnu.c util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
+util = util/gnu.c util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c util/readfile.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -88,11 +90,11 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					read.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_friends.c poll_helper.c modules.c \
 					string_builder.c random.c condition.c \
-					fixed_point.c passwd.c \
+					fixed_point.c passwd.c environment_file.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${net_transport_libressl} \
 					${util} ${ip} ${message_holder} ${messages} \
-					${input} ${input_system} ${helpers}
+					${input} ${input_system} ${helpers} ${websocket}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 
@@ -131,6 +133,9 @@ librrr_umask_la_SOURCES = rrr_umask.c
 librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
 librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 
+libadd_rrr_sha1 = sha1/libsha1.la
+sha1_libsha1_la_SOURCES = sha1/sha1.c
+
 libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_readdir}			\
 				${libadd_rrr_strerror}			\
@@ -138,7 +143,8 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_log}				\
 				${libadd_rrr_umask}				\
 				${libadd_rrr_conversion_warning}\
-				${libadd_rrr_posix}
+				${libadd_rrr_posix}				\
+				${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD =  ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm
+librrr_la_LIBADD = ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm

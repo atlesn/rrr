@@ -107,7 +107,7 @@ static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
 		int handle,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(void **submodule_private_ptr, int *submodule_private_fd, void *arg),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
 		void *submodule_callback_arg
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -654,7 +654,8 @@ int rrr_net_transport_ctx_send_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-	} while (ret != 0);
+		pthread_testcancel();
+	} while (ret != RRR_NET_TRANSPORT_SEND_OK);
 
 	return ret;
 }
@@ -675,6 +676,23 @@ void rrr_net_transport_ctx_handle_application_data_bind (
 	}
 	handle->application_private_ptr = application_data;
 	handle->application_ptr_destroy = application_data_destroy;
+}
+
+void rrr_net_transport_ctx_get_socket_stats (
+		uint64_t *bytes_read_total,
+		uint64_t *bytes_written_total,
+		uint64_t *bytes_total,
+		struct rrr_net_transport_handle *handle
+) {
+	if (bytes_read_total != NULL) {
+		*bytes_read_total = handle->bytes_read_total;
+	}
+	if (bytes_written_total != NULL) {
+		*bytes_written_total = handle->bytes_written_total;
+	}
+	if (bytes_total != NULL) {
+		*bytes_total = handle->bytes_read_total + handle->bytes_written_total;
+	}
 }
 
 int rrr_net_transport_handle_with_transport_ctx_do (
@@ -867,11 +885,13 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	(void)(arg);
 
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
+	if (final_callback) {
+		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
 
-	final_callback(handle, final_callback_arg);
+		final_callback(handle, final_callback_arg);
 
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+	}
 
 	return ret;
 }
@@ -879,17 +899,61 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 int rrr_net_transport_bind_and_listen (
 		struct rrr_net_transport *transport,
 		unsigned int port,
+		int do_ipv6,
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 ) {
 	return transport->methods->bind_and_listen (
 			transport,
 			port,
+			do_ipv6,
 			__rrr_net_transport_bind_and_listen_callback_intermediate,
 			NULL,
 			callback,
 			arg
 	);
+}
+
+int rrr_net_transport_bind_and_listen_dualstack (
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
+		void *arg
+) {
+	int ret_6 = transport->methods->bind_and_listen (
+			transport,
+			port,
+			1, // IPv6
+			__rrr_net_transport_bind_and_listen_callback_intermediate,
+			NULL,
+			callback,
+			arg
+	);
+
+	int ret_4 = transport->methods->bind_and_listen (
+			transport,
+			port,
+			0, // IPv4
+			__rrr_net_transport_bind_and_listen_callback_intermediate,
+			NULL,
+			callback,
+			arg
+	);
+
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (ret_6 != 0 && ret_4 != 0) {
+		RRR_MSG_0("Listening failed for both IPv4 and IPv6 on port %u\n", port);
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+	}
+	else if (ret_6) {
+		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succedded. Assuming IPv4-only stack.\n", port);
+	}
+	else if (ret_4) {
+		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succedded. Assuming dual-stack.\n", port);
+	}
+
+	return ret;
 }
 
 static int __rrr_net_transport_accept_callback_intermediate (
@@ -932,5 +996,37 @@ int rrr_net_transport_accept (
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
 
+	return ret;
+}
+
+int rrr_net_transport_accept_all_handles (
+		struct rrr_net_transport *transport,
+		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		pthread_mutex_lock(&node->lock_);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			ret = transport->methods->accept (
+					node,
+					__rrr_net_transport_accept_callback_intermediate,
+					NULL,
+					callback,
+					callback_arg
+			);
+			if (ret != 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+		}
+		pthread_mutex_unlock(&node->lock_);
+	RRR_LL_ITERATE_END();
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }

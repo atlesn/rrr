@@ -1,16 +1,17 @@
-.Dd 2020-05-25
+.Dd 2020-09-16
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .SH SYNOPSIS
 .B rrr {CONFIGURATION FILES OR DIRECTORIES}
-.Dl [-W|--no_watchdog_timers]
-.Dl [-T|--no_thread_restart]
+.Dl [-W|--no-watchdog-timers]
+.Dl [-T|--no-thread-restart]
 .Dl [-s|--stats]
 .Dl [-l|--loglevel-translation]
+.Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
-.Dl [-D|--debuglevel_on_exit[=]FLAGS]
+.Dl [-D|--debuglevel-on-exit[=]FLAGS]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -85,19 +86,48 @@ Debug socket closing and opening (high rate at initialization)
 .It 128
 Debug startup and closing of threads (high rate if modules start and stop threads frequently, otherwise low rate)
 .El
-.IP -W|--no_watchdog_timers
+.IP -W|--no-watchdog-timers
 Do not monitor threads for becoming unresponsive. If not set and a thread is found to be hung, all threads are terminated and
-.IP -T|--no_thread_restart
-When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
 .B rrr
-restarts them.
+will then restart all of them. One instance of a module corresponds to one thread.
+.IP -T|--no-thread-restart
+When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
 .IP -s|--stats
-Enable statistics engine which
+Enable the statistics engine which
+.Xr rrr_stats(1)
+can connect to.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
-.Xr rrr_stats(1),
-can connect to.
+.IP -e|--environment-file
+Specify an environment file to read in before the program starts.
+The file should contain one variable per line, like VARIABLE=VALUE. 
+The =VALUE part may be omitted, in which case the variable will be set to 1.
+Any variables may be specified, and they will override any variables already set in the environment.
+No error is produced if the specified file does not exist, but an error is produced if it does exist but cannot be opened.
+
+Comments are specified by beginning a line with #.
+
+Some variables corresponding to command line arguments may be set in the environment or environment file.
+If a variable is specified both in the environment and at the command line, the command line argument will take precedence.
+
+.Bl -tag -width -indent
+.It RRR_DEBUGLEVEL
+.It RRR_DEBUGLEVEL_ON_EXIT
+.It RRR_NO_WATCHDOG_TIMERS
+.It RRR_NO_THREAD_RESTART
+.It RRR_LOGLEVEL_TRANSLATION
+.El
+
+For on/off variables, "no" or "0" will be interpreted as
+.B off,
+anything else wil be interpreted as
+.B on.
+
+While the environment file may be specified for all
+.B rrr
+binaries, only the variables which have corresponding command line arguments in each binary are used.
+Other variables are ignored, which means that the same environment file may be used for all binaries.
 .SH SIGNALS
 .IP SIGINT|Ctrl+C
 Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.
