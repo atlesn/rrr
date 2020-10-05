@@ -294,6 +294,46 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	return ret;
 }
 
+struct python3_fork_callback_data {
+	struct rrr_instance_runtime_data *thread_data;
+	pid_t *fork_pid;
+};
+
+static int python3_fork (void *arg) {
+	struct python3_fork_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct python3_data *data = thread_data->private_data;
+
+	int ret = 0;
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		ret = 1;
+		goto out;
+	}
+	if (rrr_cmodule_helper_parse_config(thread_data, "python3", "function") != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_cmodule_helper_start_worker_fork (
+			callback_data->fork_pid,
+			thread_data,
+			python3_init_wrapper_callback,
+			data,
+			python3_configuration_callback,
+			NULL, // <-- in the init wrapper, this callback arg is set to child_data
+			python3_process_callback,
+			NULL  // <-- in the init wrapper, this callback is set to child_data
+	) != 0) {
+		RRR_MSG_0("Error while starting python3 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static void *thread_entry_python3 (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
@@ -309,34 +349,15 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	RRR_DBG_1("python3 instance %s\n", INSTANCE_D_NAME(thread_data));
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
-
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		goto out_message;
-	}
-	if (rrr_cmodule_helper_parse_config(thread_data, "python3", "function") != 0) {
-		goto out_message;
-	}
-
 	pid_t fork_pid = 0;
 
-	if (rrr_cmodule_helper_start_worker_fork (
-			&fork_pid,
-			thread_data,
-			python3_init_wrapper_callback,
-			data,
-			python3_configuration_callback,
-			NULL, // <-- in the init wrapper, this callback arg is set to child_data
-			python3_process_callback,
-			NULL  // <-- in the init wrapper, this callback is set to child_data
-	) != 0) {
-		RRR_MSG_0("Error while starting perl5 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
+	struct python3_fork_callback_data fork_callback_data = {
+		thread_data, &fork_pid
+	};
+
+	if (rrr_thread_start_condition_helper_fork(thread, python3_fork, &fork_callback_data) != 0) {
 		goto out_message;
 	}
-
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
 	RRR_DBG_1 ("python3 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -373,7 +394,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = RRR_THREAD_START_PRIORITY_FORK;
 }
 
 void unload(void) {

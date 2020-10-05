@@ -61,8 +61,7 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 			return 1;
 		}
 
-		if (	rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_RUNNING ||
-				rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
+		if (	rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
 				rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_STOPPED
 		) {
 			// OK
@@ -146,7 +145,6 @@ int rrr_main_create_and_start_threads (
 				instance->module_data->operations.preload,
 				instance->module_data->operations.poststop,
 				instance->module_data->operations.cancel_function,
-				instance->module_data->start_priority,
 				instance->module_data->instance_name,
 				RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 				runtime_data[threads_total]

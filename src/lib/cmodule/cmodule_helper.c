@@ -510,9 +510,7 @@ static int __rrr_cmodule_helper_reader_thread_check_pong (
 static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread) {
 	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	int config_check_complete = 0;
 	int config_check_complete_message_printed = 0;
@@ -645,7 +643,6 @@ static int __rrr_cmodule_helper_threads_start (
 			NULL,
 			NULL,
 			NULL,
-			RRR_THREAD_START_PRIORITY_NORMAL,
 			name,
 			RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 			data

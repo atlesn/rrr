@@ -37,28 +37,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // #define RRR_THREADS_MAX 32
 
 /* Tell a thread to start after initializing */
-#define RRR_THREAD_SIGNAL_START	(1<<0)
+#define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<0)
 
 /* Tell a thread to cancel */
-#define RRR_THREAD_SIGNAL_KILL	(1<<1)
+#define RRR_THREAD_SIGNAL_KILL				(1<<1)
 
 /* Tell a thread politely to cancel */
 #define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
 
+/* Tell a thread to proceed after all forking threads have reached RUNNING_FORKED */
+#define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<3)
+
 /* Can only be set in thread control */
-#define RRR_THREAD_STATE_FREE 0
+#define RRR_THREAD_STATE_NEW 0
 
 /* Set by the thread after we reserved it and by thread cleanup */
 #define RRR_THREAD_STATE_STOPPED 1
 
-/* Set after the thread is initializing */
-#define RRR_THREAD_STATE_INIT 2
-
 /* Set after the thread is finished with initializing and is waiting for start signal */
 #define RRR_THREAD_STATE_INITIALIZED 3
-
-/* Set by the thread itself when started */
-#define RRR_THREAD_STATE_RUNNING 4
 
 /* Set by the thread itself when it has started and has completed forking (if it forks)
  * We only check for this if thread is started with INSTANCE_START_PRIORITY_FORK */
@@ -66,21 +63,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /* Thread has to do a few cleanup operations before stopping */
 // #define RRR_THREAD_STATE_STOPPING 6
-
-/* Priority 0 threads are started first. They have no wait points. This need not to be set, zero is default. */
-#define RRR_THREAD_START_PRIORITY_NORMAL 0
-
-/* Modules which forks are started at the same time as NORMAL. They first set RUNNING when they receive start signal,
- * and after forking the must set RUNNING_FORKED.
- * Modules should not fork again without a restart of all modules unless the forked process only is short-lived. */
-#define RRR_THREAD_START_PRIORITY_FORK 1
-
-/* Network modules must start after fork modules to prevent forked process to inherit file handles.
- * This also goes for other modules which use open(). */
-#define RRR_THREAD_START_PRIORITY_NETWORK 2
-
-/* Used for error-checking */
-#define RRR_THREAD_START_PRIORITY_MAX RRR_THREAD_START_PRIORITY_NETWORK
 
 // Milliseconds
 #define RRR_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
@@ -116,9 +98,7 @@ struct rrr_thread {
 	pthread_mutex_t mutex;
 	int signal;
 	int state;
-	int start_signal_sent;
 	int is_watchdog;
-	int start_priority;
 	char name[RRR_THREAD_NAME_MAX_LENGTH];
 	void *private_data;
 
@@ -278,6 +258,14 @@ int rrr_thread_new_collection (
 void rrr_thread_destroy_collection (
 		struct rrr_thread_collection *collection
 );
+void rrr_thread_start_condition_helper_nofork (
+		struct rrr_thread *thread
+);
+int rrr_thread_start_condition_helper_fork (
+		struct rrr_thread *thread,
+		int (*fork_callback)(void *arg),
+		void *callback_arg
+);
 int rrr_thread_start_all_after_initialized (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
@@ -300,7 +288,6 @@ struct rrr_thread *rrr_thread_allocate_preload_and_register (
 		int (*preload_routine) (struct rrr_thread *),
 		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
-		int start_priority,
 		const char *name,
 		uint64_t watchdog_timeout_us,
 		void *private_data

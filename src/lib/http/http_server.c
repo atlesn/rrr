@@ -287,7 +287,8 @@ static int __rrr_http_server_accept_if_free_thread (
 
 			// Thread is locked in callback so we must start it here outside the iteration
 			// The thread which received the start signal will not be iterated again
-			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START);
+			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_AFTERFORK);
 			ret = 0;
 
 			(*accept_count)++;
@@ -329,7 +330,6 @@ static int __rrr_http_server_allocate_threads (
 				NULL,
 				NULL,
 				NULL,
-				RRR_THREAD_START_PRIORITY_NORMAL,
 				"httpserver_worker",
 				RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS * 1000,
 				worker_data
