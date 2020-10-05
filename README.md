@@ -14,6 +14,15 @@ they pass through.
 As part of an application, RRR will handle tasks like networking, daemonizing, logging and buffering,
 allowing developers to focus on more specialized tasks.
 
+The use of RRR assists in creating
+**[message-passing](https://en.wikipedia.org/wiki/Message_passing)** and
+**[event-driven](https://en.wikipedia.org/wiki/Event-driven_programming)**
+application designs. RRR itself as well
+as the devices and other applications it interacts with can be considered to part of the same application. Inside
+a single instance of RRR, many modules may run at the same time and the only way for these to communicate is by
+passing messages to each other, and message passing is the only way for the modules to communicate with externals.
+
+
 Among other things, RRR can be used to:
 
 - Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
