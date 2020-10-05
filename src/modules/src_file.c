@@ -387,7 +387,7 @@ static int file_probe_callback (
 		}
 
 		if ((fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), data->do_unlink_on_close)) <= 0) {
-			RRR_MSG_0("Warning: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
+			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
 					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			goto out;
 		}
