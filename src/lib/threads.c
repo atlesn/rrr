@@ -330,7 +330,7 @@ void rrr_thread_start_condition_helper_nofork (
 		struct rrr_thread *thread
 ) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 }
@@ -341,7 +341,7 @@ int rrr_thread_start_condition_helper_fork (
 		void *callback_arg
 ) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 
 	int ret = fork_callback(callback_arg);
 
@@ -487,9 +487,9 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 //		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
 
-		// We or others might try to kill the thread
-		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
-			RRR_DBG_8 ("Thread %s/%p received kill signal or encourage stop\n", thread->name, thread);
+		// Main might try to stop the thread
+		if (rrr_thread_check_encourage_stop(thread)) {
+			RRR_DBG_8 ("Thread %s/%p received encourage stop\n", thread->name, thread);
 			break;
 		}
 
@@ -506,8 +506,8 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 				RRR_MSG_0 ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
 			}
 			else {
-				RRR_MSG_0 ("Thread %s/%p froze, attempting to kill\n", thread->name, thread);
-				rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_KILL);
+				RRR_MSG_0 ("Thread %s/%p froze, attempting encourage stop\n", thread->name, thread);
+				rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP);
 				break;
 			}
 		}
@@ -540,15 +540,13 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		}
 	}
 
-	rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_KILL);
-
 	// Wait for thread to set STOPPED
 	uint64_t prevtime = rrr_time_get_64();
 #ifndef RRR_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
 		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
-			RRR_MSG_0 ("Thread %s/%p not responding to kill. State is now %i. Killing it harder.\n", thread->name, thread, thread->state);
+			RRR_MSG_0 ("Thread %s/%p not responding to encourage stop. State is now %i. Trying to cancel it.\n", thread->name, thread, thread->state);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
 				RRR_MSG_0 ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
@@ -573,7 +571,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
 		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
-			RRR_MSG_0 ("Thread %s/%p not responding to cancellation, try again .\n", thread->name, thread);
+			RRR_MSG_0 ("Thread %s/%p not responding to cancellation.\n", thread->name, thread);
 			if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED) {
 				RRR_MSG_0 ("Thread %s/%p is stuck in INITIALIZED, has not started it's cleanup yet.\n", thread->name, thread);
 			}

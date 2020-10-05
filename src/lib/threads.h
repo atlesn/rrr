@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<0)
 
 /* Tell a thread to cancel */
-#define RRR_THREAD_SIGNAL_KILL				(1<<1)
+#define RRR_THREAD_SIGNAL_KILL_				(1<<1)
 
 /* Tell a thread politely to cancel */
 #define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
@@ -179,11 +179,6 @@ static inline void rrr_thread_signal_wait_with_watchdog_update(struct rrr_thread
 		}
 		rrr_posix_usleep (10000); // 10ms
 	}
-}
-
-/* Watchdog checks if thread should be killed */
-static inline int rrr_thread_check_kill_signal(struct rrr_thread *thread) {
-	return rrr_thread_check_signal(thread, RRR_THREAD_SIGNAL_KILL);
 }
 
 /* Threads should check this once in awhile to see if it should exit,
