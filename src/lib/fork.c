@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "common.h"
 #include "util/posix.h"
+#include "socket/rrr_socket.h"
 
 // Many forks may to lock the handle lock during shutdown. The shutdown
 // functions should, when looping and checking stuff, periodically, when
@@ -350,6 +351,11 @@ static struct rrr_fork *__rrr_fork_allocate_unlocked (struct rrr_fork_handler *h
 	return result;
 }
 
+int __rrr_fork_socket_lock_callback (void *arg) {
+	(void)(arg);
+	return fork();
+}
+
 pid_t rrr_fork (
 		struct rrr_fork_handler *handler,
 		void (*exit_notify)(pid_t pid, void *exit_notify_arg),
@@ -373,7 +379,8 @@ pid_t rrr_fork (
 		goto out_unlock;
 	}
 
-	ret = fork();
+	// Make sure the fork is not performed while the socket lock is held by someone else
+	ret = rrr_socket_with_lock_do(__rrr_fork_socket_lock_callback, NULL);
 
 	if (ret < 0) {
 		RRR_MSG_0("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));

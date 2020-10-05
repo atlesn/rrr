@@ -648,6 +648,8 @@ int rrr_cmodule_worker_fork_start (
 
 	// Append to LL after forking is OK
 
+	printf("Fork\n");
+
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,
 			__rrr_cmodule_parent_exit_notify_handler,
