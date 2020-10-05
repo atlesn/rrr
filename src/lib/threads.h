@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Can only be set in thread control */
 #define RRR_THREAD_STATE_NEW 0
 
-/* Set by the thread after we reserved it and by thread cleanup */
+/* Set by the thread when done */
 #define RRR_THREAD_STATE_STOPPED 1
 
 /* Set after the thread is finished with initializing and is waiting for start signal */

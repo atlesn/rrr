@@ -39,13 +39,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
-//#define VL_THREAD_INCAPACITATE_WATCHDOGS
+//#define RRR_THREAD_INCAPACITATE_WATCHDOGS
 
 // Threads which does not shutdown nicely will remain while others shut down
-//#define VL_THREAD_DISABLE_CANCELLING
+//#define RRR_THREAD_DISABLE_CANCELLING
 
 // Set this higher (like 1000) when debugging
-#define VL_THREAD_FREEZE_LIMIT_FACTOR 1
+#define RRR_THREAD_FREEZE_LIMIT_FACTOR 1
 
 // On some systems pthread_t is an int and on others it's a pointer
 static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
@@ -473,7 +473,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
-#ifdef VL_THREAD_INCAPACITATE_WATCHDOGS
+#ifdef RRR_THREAD_INCAPACITATE_WATCHDOGS
 	while (1) {
 		rrr_posix_usleep(5000000);
 	}
@@ -500,7 +500,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			break;
 		}
 		else if (!rrr_config_global.no_watchdog_timers &&
-				(prevtime + freeze_limit * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
+				(prevtime + freeze_limit * RRR_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
 			if (rrr_time_get_64() - prev_loop_time > 100000) { // 100 ms
 				RRR_MSG_0 ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
@@ -544,10 +544,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 	// Wait for thread to set STOPPED
 	uint64_t prevtime = rrr_time_get_64();
-#ifndef VL_THREAD_DISABLE_CANCELLING
+#ifndef RRR_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
-		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
+		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
 			RRR_MSG_0 ("Thread %s/%p not responding to kill. State is now %i. Killing it harder.\n", thread->name, thread, thread->state);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
@@ -572,24 +572,8 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	prevtime = rrr_time_get_64();
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
-		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
+		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
 			RRR_MSG_0 ("Thread %s/%p not responding to cancellation, try again .\n", thread->name, thread);
-
-
-			/* DISABLED : program crashes if thread has exited : pthread_cancel(thread->thread);
-			if (thread->cancel_function != NULL) {
-				int res = thread->cancel_function(thread);
-				RRR_MSG_0 ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
-				usleep(1000000);
-			}
-			else {
-			}
-			*/
-
-			/*if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_STOPPING) {
-				RRR_MSG_0 ("Thread %s/%p is stuck in STOPPING, not finished with it's cleanup.\n", thread->name, thread);
-			}
-			else */
 			if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED) {
 				RRR_MSG_0 ("Thread %s/%p is stuck in INITIALIZED, has not started it's cleanup yet.\n", thread->name, thread);
 			}
@@ -662,9 +646,6 @@ void rrr_thread_stop_and_join_all_no_unlock (
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
-	// Wait for watchdogs to change state of thread
-	//usleep (VL_THREAD_WATCHDOG_KILLTIME_LIMIT*1000*2);
-
 	// Join with the watchdogs. The other threads might be in hung up state.
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog) {
@@ -736,7 +717,6 @@ int rrr_thread_start (struct rrr_thread *thread) {
 
 	RRR_DBG_8 ("Thread %s Watchdog started\n", thread->name);
 
-	// Thread tries to set a signal first and therefore can't proceed untill we unlock
 	rrr_thread_unlock(thread);
 
 	return 0;
@@ -753,7 +733,7 @@ int rrr_thread_start (struct rrr_thread *thread) {
 }
 
 // Use of memory fence on private data pointer is optional, and only
-// needed is main and thread use the pointer after thread has started.
+// needed if main and thread use the pointer after thread has started.
 // If this is done, private pointer must exclusively be accessed through
 // lock wrapper function. If the thread or main frees the private pointer, it must
 // be set to NULL afterwards (inside callback of wrapper function). All callbacks
@@ -844,9 +824,7 @@ int rrr_thread_check_any_stopped (
 ) {
 	int ret = 0;
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		if (
-				rrr_thread_get_state(node) == RRR_THREAD_STATE_STOPPED ||
-//				rrr_thread_get_state(node) == RRR_THREAD_STATE_STOPPING ||
+		if (	rrr_thread_get_state(node) == RRR_THREAD_STATE_STOPPED ||
 				rrr_thread_is_ghost(node)
 		) {
 			RRR_DBG_8("Thread instance %s has stopped or is ghost\n", node->name);
