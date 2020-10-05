@@ -5,6 +5,10 @@ rrr (1.15-0) buster; urgency=medium
   * Ability to control HTTP endpoint and server from incoming RRR
     messages in httpclient
   * Improvements in IPv4 and IPv6 co-existence
+  * New structured read all functionallity in file module creating array
+    message with data and metadata
+  * Changes in thread startup to prevent threads using global locks
+    while other threads are forking
   * Misc. fixes
 
  -- Atle Solbakken <atle@goliathdns.no>  Sun, 04 Oct 2020 21:25:51 +0200
