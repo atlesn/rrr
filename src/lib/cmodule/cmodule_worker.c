@@ -309,7 +309,7 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 
 		callback_data->worker->total_msg_mmap_to_fork++;
 
-		RRR_DBG_5("cmodule worker %s received  messageof size %" PRIrrrl ", calling processor function\n",
+		RRR_DBG_5("cmodule worker %s received  message of size %" PRIrrrl ", calling processor function\n",
 				callback_data->worker->name, MSG_TOTAL_SIZE(msg_msg));
 
 		ret = callback_data->process_callback (
@@ -516,6 +516,9 @@ int rrr_cmodule_worker_loop_start (
 ) {
 	int ret = 0;
 
+	RRR_DBG_5("cmodule worker %s received running configure function\n",
+			worker->name);
+
 	if ((ret = configuration_callback(worker, configuration_callback_arg)) != 0) {
 		RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
 		goto out;
@@ -527,6 +530,9 @@ int rrr_cmodule_worker_loop_start (
 		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
+			worker->name);
 
 	struct rrr_msg control_msg = {0};
 	rrr_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
