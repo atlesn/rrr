@@ -237,7 +237,7 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 	data->ip_data.port = callback_data->port;
 
 	if (rrr_ip_network_start_tcp (&data->ip_data, 10, callback_data->do_ipv6) != 0) {
-		RRR_MSG_1("Note: Could not start IP listening in __rrr_net_transport_libressl_bind_and_listen_callback\n");
+		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_libressl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out_destroy_data;
 	}
