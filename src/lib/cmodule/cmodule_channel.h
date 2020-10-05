@@ -31,7 +31,6 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_setting_packed;
 struct rrr_mmap_channel;
-struct rrr_cmodule_deferred_message_collection;
 
 int rrr_cmodule_channel_send_message_simple (
 		int *sent_total,
@@ -39,11 +38,8 @@ int rrr_cmodule_channel_send_message_simple (
 		const struct rrr_msg *message
 );
 int rrr_cmodule_channel_send_message_and_address (
-		int *sent_total,
-		int *retries,
 		struct rrr_mmap_channel *channel,
-		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
 		unsigned int wait_time_us
 );

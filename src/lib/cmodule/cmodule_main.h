@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <pthread.h>
 
-#include "cmodule_defer_queue.h"
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
 
 #include "../settings.h"
+#include "../message_holder/message_holder_collection.h"
 #include "../util/linked_list.h"
 
 #define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S 10
@@ -73,8 +73,7 @@ struct rrr_cmodule_worker {
 
 	int config_complete;
 
-	struct rrr_cmodule_deferred_message_collection deferred_to_fork;
-	struct rrr_cmodule_deferred_message_collection deferred_to_parent;
+	struct rrr_msg_holder_collection queue_to_fork;
 
 	struct rrr_mmap_channel *channel_to_fork;
 	struct rrr_mmap_channel *channel_to_parent;
@@ -111,7 +110,7 @@ struct rrr_cmodule {
 };
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 );
 int rrr_cmodule_worker_loop_start (

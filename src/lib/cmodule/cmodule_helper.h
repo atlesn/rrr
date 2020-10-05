@@ -59,7 +59,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 );
@@ -67,7 +66,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 );

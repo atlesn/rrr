@@ -1,5 +1,4 @@
 /*
-
 Read Route Record
 
 Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
@@ -27,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 
-#include "cmodule_defer_queue.h"
 #include "cmodule_main.h"
 
 #include "../rrr_strerror.h"
@@ -125,17 +123,10 @@ static int __rrr_cmodule_worker_new (
 }
 
 // Parent need not to call this explicitly, done in destroy function.
-static void __rrr_cmodule_worker_clear_deferred_to_fork (
+static void __rrr_cmodule_worker_clear_queue_to_fork (
 		struct rrr_cmodule_worker *worker
 ) {
-	RRR_LL_DESTROY(&worker->deferred_to_fork, struct rrr_cmodule_deferred_message, rrr_cmodule_deferred_message_destroy(node));
-}
-
-// Called by child only before exiting
-static void __rrr_cmodule_worker_clear_deferred_to_parent (
-		struct rrr_cmodule_worker *worker
-) {
-	RRR_LL_DESTROY(&worker->deferred_to_parent, struct rrr_cmodule_deferred_message, rrr_cmodule_deferred_message_destroy(node));
+	rrr_msg_holder_collection_clear(&worker->queue_to_fork);
 }
 
 // Child MUST NOT call this when exiting
@@ -144,11 +135,7 @@ static void __rrr_cmodule_worker_destroy (
 ) {
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
-	__rrr_cmodule_worker_clear_deferred_to_fork(worker);
-
-	if (RRR_LL_COUNT(&worker->deferred_to_parent) != 0) {
-		RRR_BUG("BUG: deferred_to_parent count was not 0 in __rrr_cmodule_worker_destroy. Either the parent has by accident added something, or destroy was called from child fork.\n");
-	}
+	__rrr_cmodule_worker_clear_queue_to_fork(worker);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
 	free(worker);
@@ -210,29 +197,30 @@ static void __rrr_cmodule_worker_kill_and_destroy (
 	__rrr_cmodule_worker_destroy(worker);
 }
 
-// Will always free the message also upon errors
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 ) {
-	int sent_total = 0;
-	int retries = 0;
-
-	// Will always free the message also upon errors
-	int ret = rrr_cmodule_channel_send_message_and_address (
-			&sent_total,
-			&retries,
+	int ret;
+	
+	retry:
+	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
-			&worker->deferred_to_parent,
 			message,
 			message_addr,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	);
 
-	worker->total_msg_processed += 1;
-	worker->total_msg_mmap_to_parent += sent_total;
-	worker->to_parent_write_retry_counter += retries;
+	if (ret == 0) {
+		worker->total_msg_processed += 1;
+		worker->total_msg_mmap_to_parent++;
+	}
+	else if (ret == RRR_CMODULE_CHANNEL_FULL) {
+		rrr_posix_usleep(1); // Schedule
+		worker->to_parent_write_retry_counter += 1;
+		goto retry;
+	}
 
 	return ret;
 }
@@ -730,10 +718,6 @@ int rrr_cmodule_worker_fork_start (
 
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
-
-	// Clear deferred queue. DO NOT call the worker destroy function, doing this causes
-	// double free of mmap resources (parent calls destroy)
-	__rrr_cmodule_worker_clear_deferred_to_parent(worker);
 
 	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
 

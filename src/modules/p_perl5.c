@@ -86,15 +86,14 @@ struct perl5_child_data {
 };
 
 static int xsub_send_message (
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
 		void *private_data
 ) {
 	struct perl5_child_data *child_data = private_data;
 	int ret = 0;
 
-	// Always frees message
-	if ((ret = rrr_cmodule_ext_send_message_to_parent(
+	if ((ret = rrr_cmodule_ext_send_message_to_parent (
 			child_data->worker,
 			message,
 			message_addr
