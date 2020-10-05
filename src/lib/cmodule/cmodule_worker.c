@@ -284,6 +284,7 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 	const struct rrr_msg_msg *msg = data;
 
 	if (RRR_MSG_IS_CTRL(msg)) {
+		RRR_DBG_5("cmodule worker %s received control message\n", callback_data->worker->name);
 		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING)) {
 			RRR_DBG_4("cmodule worker %s pid %ld received PING\n", callback_data->worker->name, (long) getpid());
 			callback_data->worker->ping_received = 1;
@@ -307,6 +308,9 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		}
 
 		callback_data->worker->total_msg_mmap_to_fork++;
+
+		RRR_DBG_5("cmodule worker %s received  messageof size %" PRIrrrl ", calling processor function\n",
+				callback_data->worker->name, MSG_TOTAL_SIZE(msg_msg));
 
 		ret = callback_data->process_callback (
 				callback_data->worker,
@@ -418,6 +422,8 @@ static int __rrr_cmodule_worker_loop (
 		RRR_BUG("BUG: Spawning nor processing mode not set in __rrr_cmodule_worker_loop\n");
 	}
 
+	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
+
 	while (worker->received_stop_signal == 0) {
 		time_now = rrr_time_get_64();
 
@@ -442,6 +448,7 @@ static int __rrr_cmodule_worker_loop (
 
 		if (worker->do_spawning) {
 			if (time_now >= next_spawn_time) {
+				RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
 				if (__rrr_cmodule_worker_spawn_message(worker, process_callback, process_callback_arg) != 0) {
 					goto loop_out;
 				}
@@ -450,6 +457,7 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (worker->ping_received) {
+			RRR_DBG_5("cmodule worker %s ping received, sending pong\n", worker->name);
 			if ((ret = __rrr_cmodule_worker_send_pong(worker)) != 0) {
 				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
 						worker->name, (long) getpid(), ret);
@@ -479,6 +487,7 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (time_now - prev_stats_time > 1000000) {
+			RRR_DBG_5("cmodule worker %s alive\n", worker->name);
 			// No stats here for now
 			prev_stats_time = time_now;
 		}
