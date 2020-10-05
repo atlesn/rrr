@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
-#include "cmodule_main.h"
 
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"

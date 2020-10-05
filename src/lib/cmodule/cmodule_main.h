@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_NATIVE_H
-#define RRR_CMODULE_NATIVE_H
+#ifndef RRR_CMODULE_MAIN_H
+#define RRR_CMODULE_MAIN_H
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../../cmodules/cmodule.h"
@@ -28,9 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <pthread.h>
 
+#include "../log.h"
+
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
-
 #include "../settings.h"
 #include "../message_holder/message_holder_collection.h"
 #include "../util/linked_list.h"
@@ -41,6 +42,10 @@ struct rrr_instance_config_data;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
 struct rrr_mmap_channel;
+struct rrr_cmodule_worker;
+struct rrr_mmap;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 
 struct rrr_cmodule_config_data {
 	rrr_setting_uint spawn_interval_us;
@@ -57,45 +62,6 @@ struct rrr_cmodule_config_data {
 	char *log_prefix;
 };
 
-struct rrr_cmodule_worker {
-	RRR_LL_NODE(struct rrr_cmodule_worker);
-
-	// Pointer managed by parent rrr_cmodule struct
-	struct rrr_cmodule_config_data *config_data;
-
-	// Managed pointer
-	char *name;
-
-	pthread_mutex_t pid_lock;
-
-	pid_t pid;
-	int received_stop_signal;
-
-	int config_complete;
-
-	struct rrr_msg_holder_collection queue_to_fork;
-
-	struct rrr_mmap_channel *channel_to_fork;
-	struct rrr_mmap_channel *channel_to_parent;
-
-	uint64_t total_msg_mmap_to_fork;
-	uint64_t total_msg_mmap_to_parent;
-
-	unsigned long long int to_fork_write_retry_counter;
-	unsigned long long int to_parent_write_retry_counter;
-
-	uint64_t total_msg_processed;
-
-	// Used by fork only
-	int ping_received;
-	// Used by parent reader thread only. Unprotected, only access from reader thread.
-	uint64_t pong_receive_time;
-
-	// Unmanaged pointers provided by application
-	struct rrr_instance_settings *settings;
-	struct rrr_fork_handler *fork_handler;
-};
-
 struct rrr_cmodule {
 	RRR_LL_HEAD(struct rrr_cmodule_worker);
 	struct rrr_mmap *mmap;
@@ -108,34 +74,20 @@ struct rrr_cmodule {
 	// Used by message_broker_cmodule poll functions, not managed
 	void *callback_data_tmp;
 };
-int rrr_cmodule_worker_send_message_and_address_to_parent (
-		struct rrr_cmodule_worker *worker,
-		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr
-);
-int rrr_cmodule_worker_loop_start (
-		struct rrr_cmodule_worker *worker,
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
-		void *configuration_callback_arg,
-		int (*process_callback)(RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
-);
-int rrr_cmodule_worker_loop_init_wrapper_default (
-		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
-);
-int rrr_cmodule_worker_fork_start (
+
+int rrr_cmodule_main_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
-		void *init_wrapper_arg,
+		void *init_wrapper_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
-void rrr_cmodule_workers_stop (
+void rrr_cmodule_main_workers_stop (
 		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_destroy (
@@ -150,18 +102,8 @@ int rrr_cmodule_new (
 		struct rrr_fork_handler *fork_handler
 );
 // Call once in a while, like every second
-void rrr_cmodule_maintain (
+void rrr_cmodule_main_maintain (
 		struct rrr_cmodule *cmodule
 );
-void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
-		unsigned long long int *read_starvation_counter,
-		unsigned long long int *write_full_counter,
-		struct rrr_cmodule_worker *worker
-);
-void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
-		unsigned long long int *read_starvation_counter,
-		unsigned long long int *write_full_counter,
-		struct rrr_cmodule_worker *worker
-);
 
-#endif /* RRR_CMODULE_NATIVE_H */
+#endif /* RRR_CMODULE_MAIN_H */

@@ -28,12 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
+// To prevent global locks being held while forking, don't include
+// any frameworks using global locks
+
 #include "fork.h"
 #include "log.h"
-#include "rrr_strerror.h"
-#include "common.h"
+#include "signal_defines.h"
 #include "util/posix.h"
-#include "socket/rrr_socket.h"
 
 // Many forks may to lock the handle lock during shutdown. The shutdown
 // functions should, when looping and checking stuff, periodically, when
@@ -82,7 +83,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	*result = NULL;
 
 	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
-		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -212,8 +213,8 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
 				else if (pid == -1 && errno == ECHILD) {
-					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling: %s. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
-							node->pid, getpid(), status, rrr_strerror(errno));
+					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+							node->pid, getpid(), status, errno);
 				}
 
 				*active_forks_found = 1;
@@ -351,11 +352,6 @@ static struct rrr_fork *__rrr_fork_allocate_unlocked (struct rrr_fork_handler *h
 	return result;
 }
 
-int __rrr_fork_socket_lock_callback (void *arg) {
-	(void)(arg);
-	return fork();
-}
-
 pid_t rrr_fork (
 		struct rrr_fork_handler *handler,
 		void (*exit_notify)(pid_t pid, void *exit_notify_arg),
@@ -379,11 +375,11 @@ pid_t rrr_fork (
 		goto out_unlock;
 	}
 
-	// Make sure the fork is not performed while the socket lock is held by someone else
-	ret = rrr_socket_with_lock_do(__rrr_fork_socket_lock_callback, NULL);
+	ret = fork();
 
 	if (ret < 0) {
-		RRR_MSG_0("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));
+		// Don't use rrr_strerror while other forks might be forking
+		RRR_MSG_0("Error while forking in rrr_fork errno %i\n", errno);
 		ret = -1;
 		goto out_unlock;
 	}

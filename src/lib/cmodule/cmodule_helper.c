@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_helper.h"
 #include "cmodule_main.h"
+#include "cmodule_worker.h"
 #include "cmodule_channel.h"
 
 #include "../buffer.h"
@@ -844,7 +845,7 @@ void rrr_cmodule_helper_loop (
 
 			next_stats_time = time_now + 1000000;
 
-			rrr_cmodule_maintain(INSTANCE_D_CMODULE(thread_data));
+			rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
 		}
 
 		tick++;
@@ -920,7 +921,7 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
-int rrr_cmodule_helper_start_worker_fork (
+int rrr_cmodule_helper_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -930,7 +931,7 @@ int rrr_cmodule_helper_start_worker_fork (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-	return rrr_cmodule_worker_fork_start (
+	return rrr_cmodule_main_worker_fork_start (
 			handle_pid,
 			INSTANCE_D_CMODULE(thread_data),
 			INSTANCE_D_NAME(thread_data),

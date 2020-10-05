@@ -41,4 +41,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ASSERT(predicate,name)
 #endif
 
+#define ALLOCATE_TMP_NAME(target, name1, name2)								\
+	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {				\
+		RRR_MSG_0("Could not allocate temporary string for name\n");		\
+		ret = 1;															\
+		goto out;															\
+	}
+
 #endif /* RRR_MACRO_UTILS_H */

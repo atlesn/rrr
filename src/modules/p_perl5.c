@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
+#include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_ext.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
@@ -403,7 +404,7 @@ static int perl5_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_start_worker_fork (
+	if (rrr_cmodule_helper_worker_fork_start (
 			callback_data->fork_pid,
 			thread_data,
 			perl5_init_wrapper_callback,

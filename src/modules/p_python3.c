@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_addr.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
+#include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
 
@@ -315,7 +316,7 @@ static int python3_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_start_worker_fork (
+	if (rrr_cmodule_helper_worker_fork_start (
 			callback_data->fork_pid,
 			thread_data,
 			python3_init_wrapper_callback,
