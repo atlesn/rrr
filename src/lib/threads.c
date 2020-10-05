@@ -447,7 +447,7 @@ struct watchdog_data {
 };
 
 static void *__rrr_thread_watchdog_entry (void *arg) {
-	// COPY AND FREE !!!!
+	// Copy the data and free it immediately
 	struct watchdog_data data = *((struct watchdog_data *)arg);
 	free(arg);
 
