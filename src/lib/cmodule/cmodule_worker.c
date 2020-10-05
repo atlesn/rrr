@@ -257,6 +257,9 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 ) {
 	struct rrr_cmodule_worker *worker = arg;
 
+	RRR_DBG_5("cmodule worker %s notification to parent about used setting '%s'\n",
+			worker->name, setting->name);
+
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
 			setting,
@@ -516,7 +519,7 @@ int rrr_cmodule_worker_loop_start (
 ) {
 	int ret = 0;
 
-	RRR_DBG_5("cmodule worker %s received running configure function\n",
+	RRR_DBG_5("cmodule worker %s running configure function\n",
 			worker->name);
 
 	if ((ret = configuration_callback(worker, configuration_callback_arg)) != 0) {
