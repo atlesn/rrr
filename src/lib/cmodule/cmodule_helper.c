@@ -109,11 +109,31 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	return 0;
 }
 
+static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *worker) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+
+	if (rrr_cmodule_channel_send_message_simple(worker->channel_to_fork, &msg) != 0) {
+		// Don't trigger error here. The reader thread will exit causing restart
+		// if the fork fails (does not send any PONG back)
+	}
+}
+
+static void __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+
+	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
+		__rrr_cmodule_helper_send_ping_worker(node);
+	RRR_LL_ITERATE_END();
+}
+
 static int __rrr_cmodule_helper_send_messages_to_fork (
 		struct rrr_cmodule_worker *worker
 ) {
 	int ret = 0;
 
+	int i = 0;
 	RRR_LL_ITERATE_BEGIN(&worker->queue_to_fork, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 
@@ -128,6 +148,12 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 
 		struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
 
+		// Insert PING in between to make the child fork send PONGs back
+		// while it processes messages
+		if (i % 10 == 0) {
+			__rrr_cmodule_helper_send_ping_worker(worker);
+		}
+
 		if ((ret = rrr_cmodule_channel_send_message_and_address (
 				worker->channel_to_fork,
 				message,
@@ -136,6 +162,7 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 		)) != 0) {
 			if (ret == RRR_CMODULE_CHANNEL_FULL) {
 				worker->to_fork_write_retry_counter += 1;
+				ret = 0;
 			}
 			else {
 				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
@@ -148,6 +175,7 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 		else {
 			rrr_msg_holder_unlock(node);
 		}
+		i++;
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&worker->queue_to_fork, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	return ret;
@@ -666,22 +694,6 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	}
 }
 
-static void __rrr_cmodule_helper_send_ping (struct rrr_instance_runtime_data *thread_data) {
-	struct rrr_msg msg = {0};
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
-
-	int sent_total = 0;
-
-	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
-		if (rrr_cmodule_channel_send_message_simple(&sent_total, node->channel_to_fork, &msg) != 0) {
-			RRR_MSG_0("Warning: Failed to send PING message to worker fork %s pid %ld\n",
-					node->name, (long) node->pid);
-			// Don't trigger error here. The reader thread will exit causing restart
-			// if the fork fails.
-		}
-	RRR_LL_ITERATE_END();
-}
-
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
@@ -742,7 +754,7 @@ void rrr_cmodule_helper_loop (
 						50, // 50 ms
 						250
 				) != 0) {
-					break;
+					goto cleanup;
 				}
 			}
 		RRR_LL_ITERATE_END();
@@ -766,7 +778,7 @@ void rrr_cmodule_helper_loop (
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now > next_stats_time) {
-			__rrr_cmodule_helper_send_ping(thread_data);
+			__rrr_cmodule_helper_send_ping_all_workers(thread_data);
 
 			int output_buffer_count = 0;
 			int output_buffer_ratelimit_active = 0;

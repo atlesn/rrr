@@ -334,11 +334,11 @@ int __rrr_cmodule_worker_send_pong (
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	int sent_total = 0;
+	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, &msg);
 
-	ret = rrr_cmodule_channel_send_message_simple(&sent_total, worker->channel_to_parent, &msg);
-
-	worker->total_msg_mmap_to_parent += sent_total;
+	if (ret == 0) {
+		worker->total_msg_mmap_to_parent++;
+	}
 
 	return ret;
 }

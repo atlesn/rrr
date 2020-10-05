@@ -46,13 +46,10 @@ static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void 
 }
 
 int rrr_cmodule_channel_send_message_simple (
-		int *sent_total,
 		struct rrr_mmap_channel *channel,
 		const struct rrr_msg *message
 ) {
 	int ret = 0;
-
-	*sent_total = 0;
 
 	struct rrr_cmodule_mmap_channel_write_simple_callback_data callback_data = {
 			message
@@ -67,8 +64,6 @@ int rrr_cmodule_channel_send_message_simple (
 	)) != 0) {
 		goto out;
 	}
-
-	(*sent_total)++;
 
 	out:
 	return ret;
