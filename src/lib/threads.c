@@ -577,8 +577,6 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (10000); // 10 ms
 	}
 
-	RRR_DBG_8 ("Thread %s/%p WD state upon WD out: %i\n", thread->name, thread, rrr_thread_get_state(thread));
-
 	out_nostop:
 
 	RRR_DBG_8 ("Thread %s/%p WD state upon WD out: %i\n", thread->name, thread, rrr_thread_get_state(thread));
