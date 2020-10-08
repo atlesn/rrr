@@ -34,7 +34,8 @@ struct rrr_mmap_channel;
 
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		unsigned int full_wait_time_us
 );
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,

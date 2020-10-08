@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 
-
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
 	const struct rrr_msg *message;
 };
@@ -46,7 +45,8 @@ static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void 
 
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		unsigned int full_wait_time_us
 ) {
 	int ret = 0;
 
@@ -57,7 +57,7 @@ int rrr_cmodule_channel_send_message_simple (
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
 			sizeof(*message),
-			0,
+			full_wait_time_us,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
 			&callback_data
 	)) != 0) {
