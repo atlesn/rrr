@@ -461,12 +461,8 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	rrr_thread_unlock(thread);
 
 	RRR_DBG_8 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
-
-	// Wait a bit in case main thread does stuff
-	rrr_posix_usleep(20000);
-
+	rrr_posix_usleep(1000000);
 	RRR_DBG_8 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
-
 
 	rrr_thread_update_watchdog_time(thread);
 
@@ -481,7 +477,6 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 	uint64_t prev_loop_time = rrr_time_get_64();
 	while (1) {
-
 		uint64_t nowtime = rrr_time_get_64();
 		uint64_t prevtime = rrr_get_watchdog_time(thread);
 
@@ -496,7 +491,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		if (	!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING_FORKED) &&
 				!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)
 		) {
-			RRR_DBG_8 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
+			RRR_DBG_8 ("Thread %s/%p state is not RUNNING or INITIALIZED\n", thread->name, thread);
 			break;
 		}
 		else if (!rrr_config_global.no_watchdog_timers &&
@@ -507,7 +502,6 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			}
 			else {
 				RRR_MSG_0 ("Thread %s/%p froze, attempting encourage stop\n", thread->name, thread);
-				rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP);
 				break;
 			}
 		}
@@ -520,32 +514,26 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_STOPPED)) {
 		RRR_DBG_8 ("Watchdog for thread %s/%p: Thread has stopped by itself\n", thread->name, thread);
-		// Thread has stopped by itself
 		goto out_nostop;
 	}
-	// Wait for INIT and INITIALIZED stage to complete (thread should set RUNNING or STOPPED).
-	// We do not print a debug message if the thread is in INITIALIZED stage, it is normal
-	// in some circumstances that the thread hasn't been started yet when we want to stop it down.
-	int state = rrr_thread_get_state(thread);
-	if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_NEW) {
-		int limit = 10;
-
-		do {
-			state = rrr_thread_get_state(thread);
-			rrr_posix_usleep (50000); // 50 ms (x 10)
-		} while(--limit >= 0 && (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_NEW));
-
-		if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_NEW) {
-			RRR_MSG_0("Warning: Thread %s/%p slow to leave NEW/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
-		}
+	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_NEW)) {
+		RRR_MSG_0("Warning: Thread %s/%p state is still NEW\n", thread->name, thread);
 	}
+	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
+		RRR_MSG_0("Warning: Thread %s/%p state is still INITIALIZED\n", thread->name, thread);
+	}
+	
+	// Ensure this is always set
+	rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP);
+	
+	RRR_DBG_8 ("Wait for thread %s/%p to set STOPPED pass 1/2, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
 	// Wait for thread to set STOPPED
-	uint64_t prevtime = rrr_time_get_64();
+	uint64_t killtime = rrr_time_get_64() + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR;
 #ifndef RRR_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
-		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
+		if (nowtime > killtime) {
 			RRR_MSG_0 ("Thread %s/%p not responding to encourage stop. State is now %i. Trying to cancel it.\n", thread->name, thread, thread->state);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
@@ -564,15 +552,18 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	RRR_DBG_8 ("Thread watchdog cancelling disabled, soft stop signals only\n");
 #endif
 
-	RRR_DBG_8 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
+	RRR_DBG_8 ("Wait for thread %s/%p to set STOPPED pass 2/2, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
-	prevtime = rrr_time_get_64();
+	uint64_t ghosttime = rrr_time_get_64() + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR;
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
-		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * RRR_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
+		if (nowtime > ghosttime) {
 			RRR_MSG_0 ("Thread %s/%p not responding to cancellation.\n", thread->name, thread);
-			if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED) {
+			if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_NEW) {
+				RRR_MSG_0 ("Thread %s/%p is stuck in NEW, has not started it's cleanup yet.\n", thread->name, thread);
+			}
+			else if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED) {
 				RRR_MSG_0 ("Thread %s/%p is stuck in INITIALIZED, has not started it's cleanup yet.\n", thread->name, thread);
 			}
 			else if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_RUNNING_FORKED) {
@@ -586,11 +577,9 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (10000); // 10 ms
 	}
 
-	RRR_DBG_8 ("Thread %s/%p finished.\n", thread->name, thread);
-
 	out_nostop:
 
-	RRR_DBG_8 ("Thread %s/%p state after stopping: %i\n", thread->name, thread, rrr_thread_get_state(thread));
+	RRR_DBG_8 ("Thread %s/%p WD state upon WD out: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_STOPPED);
 
