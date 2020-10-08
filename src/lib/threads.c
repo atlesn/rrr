@@ -491,7 +491,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		if (	!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING_FORKED) &&
 				!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)
 		) {
-			RRR_DBG_8 ("Thread %s/%p state it not RUNNING or INITIALIZED\n", thread->name, thread);
+			RRR_DBG_8 ("Thread %s/%p state is not RUNNING or INITIALIZED\n", thread->name, thread);
 			break;
 		}
 		else if (!rrr_config_global.no_watchdog_timers &&
@@ -517,10 +517,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		goto out_nostop;
 	}
 	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_NEW)) {
-		RRR_MSG_0("Warning: Thread %s/%p state is still NEW\n");
+		RRR_MSG_0("Warning: Thread %s/%p state is still NEW\n", thread->name, thread);
 	}
 	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
-		RRR_MSG_0("Warning: Thread %s/%p state is still INITIALIZED\n");
+		RRR_MSG_0("Warning: Thread %s/%p state is still INITIALIZED\n", thread->name, thread);
 	}
 	
 	// Ensure this is always set
