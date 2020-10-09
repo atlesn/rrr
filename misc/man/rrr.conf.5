@@ -567,15 +567,23 @@ More details about Python in
 .SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
 perl script. The first and only argument to the source- and generate-functions
-is the RRR message in the form of a hash with different parameters which may be
-modified as needed. To pass the message back to RRR, the
-.B send()-method
-of the message must be called. If the message should not be passed on, simply skip
+is the RRR message in the form of an object/hash reference of type
+.B rrr_message
+with different parameters which may be modified as needed. To pass the message back to RRR, the
+.B $message->send()
+is called. If the message should not be passed on, simply skip
 the call to this method. The method may be called multiple times if required.
 .PP
+It is not possible to create new
+.B rrr_message
+objects from within the perl script. To send multiple messages in a single subroutine call,
+the object passed in must be re-used. IP-, array- and data information in the message may be
+cleared as needed when the message object is re-used.
+.PP
 It is possible to work with RRR array messages in the Perl script. This is done
-through calling dedicated functions on the message object received by source and
-process functions. The functions available are listed in the example scripts with comments.
+through calling dedicated functions on the
+.B rrr_message
+object received by source and process functions. The functions available are listed in the example scripts with comments.
 More details about types are found in 
 .Xr rrr_post(1)
 .PP
@@ -631,14 +639,16 @@ There must always be either a source- or process subroutine specified, or both. 
 is specified, there must also be at least one sender specified.
 .PP
 If a Perl instance receives messages from an IP-capable module, like
-.B udp,
-the address information of the original sender of a message is retained. Other IP-capable modules may
+.B ip or httpserver,
+the address information of the original sender of a message is accessible in the
+.B rrr_message
+object. Other IP-capable modules may
 then use this information if they read data from the Perl instance, for example if you wish to use
 a Perl script to generate a reply message to some remote host. There is no high-level method for modifying
 the address information inside the Perl script, but the values
-.B ip_addr
+.B $message->{'ip_addr'}
 and
-.B ip_addr_len
+.B $message->{'ip_addr_len'}
 are to be found in the message hash. The values are filled with data from
 .B struct sockaddr
 and
@@ -646,7 +656,7 @@ and
 which is provided by the operating system. These two values may be saved and re-used in later messages,
 or they may be modified if you know how to do that (not documented here).
 In addition,
-.B ip_so_type
+.B $message->{'ip_so_type'}
 can be either "udp" or "tcp" to describe a protocol type. Some modules may use this parameter. It can also be empty.
 .PP
 The IP information in a message can be accessed and modified through helper functions. IPv4 and IPv6 both work
@@ -655,39 +665,106 @@ with these transparently.
 .Bl -tag -width -indent
 .It my ($ip, $port) = $message->ip_get();
 Get IP (as text) and port from the message. Returns undefined if there is no IP information in the message.
+
 .It $message->ip_set($ip, $port);
 Set IP and port in a message. The $ip is in string representation (like 2a0a::1 or 4.4.4.4). Returns 1 on success and 0 on failure.
+
 .It $message->ip_clear();
 Delete IP information from a message. Always returns 1.
 .El
 .PP
-The following additional parameters are available in the rrr_message hash reference:
+The following additional parameters are available in the
+.B rrr_message
+object:
+.PP
 .Bl -tag -width -indent
-.It topic
+.It $message->{'topic'}
 The MQTT topic of the messsage.
-.It timestamp
+
+.It $message->{'timestamp'}
 The timestamp of the message.
-.It data
+
+.It $message->{'data'}
 The raw data of the message (ignored when array is being used). Updates to the message array will not affect this field, but data
 will be cleared if the message is sent with array fields set.
-.It data_length
+
+.It $message->{'data_length'}
 The length of the data.
-.It type_and_class
+
+.It $message->{'type_and_class'}
 Type and class of message, for internal use.
+.El
+.PP
+If the
+.B rrr_message
+object contains an array, helper functions must be used to access these. A non-array message will
+be treated as an array message if fields are added to it, and any data set in the message will be ignored when the message is sent.
+.PP
+The following functions are available for array field manipulation:
+.PP
+.Bl -tag -width -indent
+.It $message->clear_array()
+Clears all array fields, the message becomes a non-array message.
+
+.It $message->push_tag_blob(tag, data, size)
+Pushes a blob type. Caller must ensure that the data hase the specified size or more.
+
+.It $message->push_tag_str(tag, string)
+Pushes a string type.
+
+.It $message->push_tag_h(tag, number)
+Pushes a 64-bit integer. If the given number is unsigned, it will be stored as unsigned 64-bit in the array, otherwise it will be signed 64-bit.
+
+.It $message->push_tag_fixp(tag, fixed_pointer)
+Pushes an RRR fixed pointer type. If a string is given, string notation like
+.B /^(10#|16#|)-?\\d+\\.\\d+$/
+is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given is stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
+
+.It $message->push_tag(tag, value)
+Push a value or on array of values. The type will be identified automatically. Array values are passed by using a reference like 
+\\@my_array. If multiple values are given in an array, the must all have equal length.
+
+.It $message->clear_tag(tag)
+Deletes all array positions with the specified tags
+
+.It $message->set_tag_blob(tag, data, size)
+.It $message->set_tag_str(tag, string)
+.It $message->set_tag_h(tag, values)
+.It $message->set_tag_fixp(tag, fixed_point)
+Using these functions is the same as calling clear_tag(tag) and then the corresponding push_tag function.
+
+.It $message->get_tag_all(tag)
+Retrieve all values corresponding to the specified tag. Returns a list with one or more values or undefined.
+
+.It $message->get_position(position_number)
+Retrieve the value at the specified position. Returns a list with one or more values or undefined.
+
+.It $message->count_positions(tag)
+Count the number of positions in the array.
+
+.It $message->get_tag_names(tag)
+Get all tag names from the array. Returns a list with zero or more values.
+Always returns the same number of element as count_positions(). An empty string is used forositions without a tag.
+
+.It $message->get_tag_counts(tag)
+Get the value count at each position of the message. Returns a list with zero or more values.
+Always returns the same number of element as count_positions().
 .El
 .PP
 The
 .B rrr_debug
-class can be used to print out debug messages just like RRR does internally. Use these instead of perl print functions
+object can be used to print out debug messages just like RRR does internally. Use these instead of perl print functions
 if you wish to have your program output messages in a tidy controlled fashion. There are three different functions in this class:
 .PP
 .Bl -tag -width -indent
-.It msg(level, message)
+.It $debug->msg(level, message)
 Messages to this function are always printed prefixed with the specified loglevel (a number 0, 1, 2 etc.).
-.It dbg(level, message)
+
+.It $debug->dbg(level, message)
 Messages to this function are printed only if the specified loglevel (debuglevel) is active. If loglevel is 0 however,
 the message is always printed.
-.It err(message)
+
+.It $debug->err(message)
 Messages to this function are always printed with loglevel 0 and to STDERR output. Do not overuse this as it might
 cause broadcast messages on the system when RRR is run for instance by systemd. Error messages should usually be
 printed using the
@@ -829,8 +906,11 @@ sub process {
 	print "Get a position: " . join (",", $message->get_position(0)) . "\n";
 	print "Array position count: " . $message->count_positions() . "\n";
 
-	# This will clear all values from the array
+	# This will clear all values from the array which has the specified tag
 	$message->clear_tag("tag");
+
+	# This will clear all values from the array
+	# $message->clear_array();
 
 	# Pass on the modified message
 	$message->send();
