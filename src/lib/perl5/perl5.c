@@ -585,7 +585,7 @@ void rrr_perl5_destruct_message_hv (
 	free(source);
 }
 
-static int __rrr_perl5_hv_to_message_extract_array (
+static int __rrr_perl5_hv_to_message_process_array (
 		struct rrr_msg_msg **target,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
@@ -599,22 +599,22 @@ static int __rrr_perl5_hv_to_message_extract_array (
 	struct rrr_array array_tmp = {0};
 	HV *hv = source->hv;
 
-	// New style array handling
 	RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv);
 	if (array != NULL) {
 		if (rrr_array_append_from (
 				&array_tmp,
 				array
 		) != 0) {
-			RRR_MSG_0("Failed to clone array values in __rrr_perl5_hv_to_message_extract_array\n");
+			RRR_MSG_0("Failed to clone array values in __rrr_perl5_hv_to_message_process_array\n");
 			ret = 1;
 			goto out;
 		}
 	}
 
-	// av_len returns -1 when array is empty
-	if (/*av_len(array_values_final) < 0 && */RRR_LL_COUNT(&array_tmp) == 0) {
-		// No array values
+	if (RRR_LL_COUNT(&array_tmp) == 0) {
+		// No array values, make sure class does not have array
+		// class set in case it had this from earlier.
+		MSG_SET_CLASS(*target, MSG_CLASS_DATA);
 		ret = 0;
 		goto out;
 	}
@@ -626,7 +626,7 @@ static int __rrr_perl5_hv_to_message_extract_array (
 			MSG_TOPIC_PTR(*target),
 			MSG_TOPIC_LENGTH(*target)
 	) != 0) {
-		RRR_MSG_0("Could not create new array message in _rrr_perl5_hv_to_message_extract_array\n");
+		RRR_MSG_0("Could not create new array message in _rrr_perl5_hv_to_message_process_array\n");
 		ret = 1;
 		goto out;
 	}
@@ -770,8 +770,8 @@ int rrr_perl5_hv_to_message (
 	memcpy (MSG_TOPIC_PTR(target), topic_str, new_topic_len);
 	memcpy (MSG_DATA_PTR(target), data_str, new_data_len);
 
-	// This function will re-allocate the message and erase data if array values are set in the perl5 script
-	if (__rrr_perl5_hv_to_message_extract_array(&target, ctx, source)) {
+	// This function will re-allocate the message and erase data if array values are set in the perl5 script.
+	if (__rrr_perl5_hv_to_message_process_array(&target, ctx, source)) {
 		RRR_MSG_0("Error while converting HV to RRR message in rrr_perl5_hv_to_message\n");
 		ret = 1;
 		goto out;
