@@ -486,7 +486,11 @@ int rrr_udpstream_queue_outbound_data (
 void rrr_udpstream_close (
 		struct rrr_udpstream *data
 );
-int rrr_udpstream_bind (
+int rrr_udpstream_bind_v6_priority (
+		struct rrr_udpstream *data,
+		unsigned int local_port
+);
+int rrr_udpstream_bind_v4_only (
 		struct rrr_udpstream *data,
 		unsigned int local_port
 );

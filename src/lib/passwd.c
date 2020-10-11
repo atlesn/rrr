@@ -527,7 +527,7 @@ int rrr_passwd_iterate_lines (
 		}
 
 		RRR_FREE_IF_NOT_NULL(line_tmp);
-		if (rrr_parse_extract_string(&line_tmp, &parse_pos, line_start, (line_end - line_start) + 1) != 0) {
+		if (rrr_parse_str_extract(&line_tmp, &parse_pos, line_start, (line_end - line_start) + 1) != 0) {
 			RRR_MSG_0("Could not allocate memory for line in process()\n");
 			ret = 1;
 			goto out;

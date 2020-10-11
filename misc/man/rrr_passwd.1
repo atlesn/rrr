@@ -1,4 +1,4 @@
-.Dd 2020-06-17
+.Dd 2020-09-16
 .TH RRR_PASSWD 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -18,8 +18,9 @@ modules to authenticate users.
 .Dl [-P|--password[=]PASSWORD]
 .Dl [-s|--stdout]
 .Dl [-l|--loglevel-translation]
+.Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]DEBUG FLAGS]
-.Dl [-D|--debuglevel_on_exit[=]DEBUG FLAGS]
+.Dl [-D|--debuglevel-on-exit[=]DEBUG FLAGS]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -54,14 +55,18 @@ May be set to an empty string, e.g. "", to remove set an empty password for a us
 Don't modify the original file but print the final result to standard output.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
-.IP -D|--debuglevel_on_exit[=]FLAGS
+.IP -D|--debuglevel-on-exit[=]FLAGS
 Debuglevel to use when program exits.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
+.IP -e|--environment-file
+See
+.Xr rrr(1)
+for usage.
 
 .SH PASSWORD SECURITY
-If RRR is compiled without OpenSSL support, passwords will be stored in
+If RRR is compiled without OpenSSL/LibreSSL support, passwords will be stored in
 .B base64 encoded plain text.
 Otherwise, passwords will be stored using PKCS5_PBKDF2_HMAC with SHA-256 and 20,000 rounds.
 

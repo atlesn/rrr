@@ -181,8 +181,6 @@ static int __rrr_type_import_int (
 
 		memcpy(target_wpos, &result, sizeof(result));
 
-		RRR_DBG_3("Imported a %s64: 0x%" PRIx64 "\n", (RRR_TYPE_FLAG_IS_SIGNED(node->flags) ? "s" : "u"), result);
-
 		data_rpos += node->import_length;
 		target_wpos += sizeof(result);
 	}
@@ -226,7 +224,6 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 	memcpy(node->data, start, total_size);
-
 	node->total_stored_length = total_size;
 
 	*parsed_bytes = total_size;
@@ -856,7 +853,7 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 		RRR_BUG("import length was not 0 in __rrr_type_import_fixp\n");
 	}
 
-	int64_t fixp = 0;
+	rrr_fixp fixp = 0;
 	const char *endptr = NULL;
 
 	if ((ret = rrr_fixp_str_to_fixp(&fixp, start, end - start, &endptr)) != 0) {
@@ -1074,11 +1071,11 @@ static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	for (rrr_length i = 0; i < node->total_stored_length; i += (rrr_length) sizeof(rrr_type_be)) {
 		if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
 			int64_t tmp = *((int64_t *) (node->data + i));
-			sprintf(wpos, "%" PRIi64 ",", tmp);
+			sprintf(wpos, "%s%" PRIi64, (i > 0 ? "," : ""), tmp);
 		}
 		else {
 			uint64_t tmp = *((uint64_t *) (node->data + i));
-			sprintf(wpos, "%" PRIu64 ",", tmp);
+			sprintf(wpos, "%s%" PRIu64, (i > 0 ? "," : ""), tmp);
 		}
 		wpos = result + strlen(result);
 	}

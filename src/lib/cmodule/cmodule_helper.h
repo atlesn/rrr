@@ -45,7 +45,7 @@ int rrr_cmodule_helper_parse_config (
 		const char *config_prefix,
 		const char *config_suffix
 );
-int rrr_cmodule_helper_start_worker_fork (
+int rrr_cmodule_helper_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -59,7 +59,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 );
@@ -67,9 +66,8 @@ void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 );
 
-#endif /* RRR_CMODULE_COMMON_H */
+#endif /* RRR_CMODULE_HELPER_H */

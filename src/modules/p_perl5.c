@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
+#include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_ext.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
@@ -86,15 +87,14 @@ struct perl5_child_data {
 };
 
 static int xsub_send_message (
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
 		void *private_data
 ) {
 	struct perl5_child_data *child_data = private_data;
 	int ret = 0;
 
-	// Always frees message
-	if ((ret = rrr_cmodule_ext_send_message_to_parent(
+	if ((ret = rrr_cmodule_ext_send_message_to_parent (
 			child_data->worker,
 			message,
 			message_addr
@@ -274,7 +274,7 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 			process_callback,
 			&child_data
 	)) != 0) {
-		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
+		RRR_MSG_0("Error from worker loop in perl5_init_wrapper_callback\n");
 		// Don't goto out, run cleanup functions
 	}
 
@@ -383,6 +383,46 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	return ret;
 }
 
+struct perl5_fork_callback_data {
+	struct rrr_instance_runtime_data *thread_data;
+	pid_t *fork_pid;
+};
+
+static int perl5_fork (void *arg) {
+	struct perl5_fork_callback_data *callback_data = arg;
+	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct perl5_data *data = thread_data->private_data;
+
+	int ret = 0;
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		ret = 1;
+		goto out;
+	}
+	if (rrr_cmodule_helper_parse_config(thread_data, "perl5", "sub") != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_cmodule_helper_worker_fork_start (
+			callback_data->fork_pid,
+			thread_data,
+			perl5_init_wrapper_callback,
+			data,
+			perl5_configuration_callback,
+			NULL, // <-- in the init wrapper, this callback arg is set to child_data
+			perl5_process_callback,
+			NULL  // <-- in the init wrapper, this callback is set to child_data
+	) != 0) {
+		RRR_MSG_0("Error while starting perl5 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static void *thread_entry_perl5(struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
@@ -394,34 +434,15 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	pthread_cleanup_push(data_cleanup, data);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
-
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		goto out_message;
-	}
-	if (rrr_cmodule_helper_parse_config(thread_data, "perl5", "sub") != 0) {
-		goto out_message;
-	}
-
 	pid_t fork_pid = 0;
 
-	if (rrr_cmodule_helper_start_worker_fork (
-			&fork_pid,
-			thread_data,
-			perl5_init_wrapper_callback,
-			data,
-			perl5_configuration_callback,
-			NULL, // <-- in the init wrapper, this callback arg is set to child_data
-			perl5_process_callback,
-			NULL  // <-- in the init wrapper, this callback is set to child_data
-	) != 0) {
-		RRR_MSG_0("Error while starting perl5 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
+	struct perl5_fork_callback_data fork_callback_data = {
+		thread_data, &fork_pid
+	};
+
+	if (rrr_thread_start_condition_helper_fork(thread, perl5_fork, &fork_callback_data) != 0) {
 		goto out_message;
 	}
-
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -458,7 +479,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
-	data->start_priority = RRR_THREAD_START_PRIORITY_FORK;
 	data->dl_ptr = NULL;
 }
 

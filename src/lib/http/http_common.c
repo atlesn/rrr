@@ -26,6 +26,7 @@ const char *rrr_http_transport_str_http = "HTTP";
 const char *rrr_http_transport_str_https = "HTTPS";
 
 const char *rrr_http_method_str_get = "GET";
+const char *rrr_http_method_str_get_websocket = "GET (WebSocket)";
 const char *rrr_http_method_str_post_multipart_form_data = "POST_MULTIPART_FORM_DATA";
 const char *rrr_http_method_str_post_urlencoded = "POST_URLENCODED";
 const char *rrr_http_method_str_post_urlencoded_no_quoting = "POST_URLENCODED_NO_QUOTING";

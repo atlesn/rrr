@@ -55,8 +55,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		 CMD_ARG_FLAG_ALLOW_EMPTY,	'P',	"password",				"[-P|--password[=]PASSWORD]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	's',	"stdout",				"[-s|--stdout]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'h',	"help",					"[-h|--help]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}

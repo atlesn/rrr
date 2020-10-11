@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * 2 - Runtime information in modules, they tell what they do. Log messages between modules. (high rate)
  * 3 - Some data debugging is printed (high rate)
  * 4 - Debug locking, thread states and buffers (very high rate)
- * 5 - Alive-messages from some threads to see if they freeze (very high rate)
- * 6 - Debug hex prints (large outputs)
+ * 5 - Debug cmodule worker fork and mmap channel communication
+ * 6 - Not used
  * 7 - Debug sockets (high rate at initialization)
  * 8 - Internal thread debug. Usually low rate, but high rates with modules like http server.
  */

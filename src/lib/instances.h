@@ -69,7 +69,6 @@ struct rrr_instance_module_data {
 	const char *instance_name;
 	const char *module_name;
 	unsigned int type;
-	int start_priority;
 	struct rrr_module_operations operations;
 	void *special_module_operations;
 	void *dl_ptr;

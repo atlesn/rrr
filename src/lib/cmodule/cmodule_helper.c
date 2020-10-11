@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_helper.h"
 #include "cmodule_main.h"
+#include "cmodule_worker.h"
 #include "cmodule_channel.h"
 
 #include "../buffer.h"
@@ -109,100 +110,106 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	return 0;
 }
 
-// Will always free the message also upon errors
-static int __rrr_cmodule_helper_send_message_to_fork (
-		int *sent_total,
-		struct rrr_cmodule *cmodule,
-		pid_t worker_handle_pid,
-		struct rrr_msg_msg *msg,
-		const struct rrr_msg_addr *msg_addr
+static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *worker) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+
+	// Don't set retry-timer, we have many opportunities to send pings anyway
+	if (rrr_cmodule_channel_send_message_simple(worker->channel_to_fork, &msg, 0) != 0) {
+		// Don't trigger error here. The reader thread will exit causing restart
+		// if the fork fails (does not send any PONG back)
+	}
+}
+
+static void __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+	struct rrr_msg msg = {0};
+	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
+
+	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
+		__rrr_cmodule_helper_send_ping_worker(node);
+	RRR_LL_ITERATE_END();
+}
+
+static int __rrr_cmodule_helper_send_messages_to_fork (
+		struct rrr_cmodule_worker *worker
 ) {
 	int ret = 0;
-	int pid_was_found = 0;
 
-//	char buf[256];
-//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
-//	printf("cmodule message to fork: %s family %i socklen %lu\n",
-//			buf, ((struct sockaddr *) msg_addr->addr)->sa_family, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(&worker->queue_to_fork, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
 
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		if (node->pid == worker_handle_pid) {
-			pid_was_found = 1;
+		struct rrr_msg_addr addr_msg;
+		rrr_msg_addr_init(&addr_msg);
 
-			int retries = 0;
+		if (node->addr_len > 0) {
+			memcpy(&addr_msg.addr, &node->addr, sizeof(addr_msg.addr));
+			RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, node->addr_len);
+			addr_msg.protocol = node->protocol;
+		}
 
-			// Will always free the message also upon errors
-			if ((ret = rrr_cmodule_channel_send_message_and_address (
-					sent_total,
-					&retries,
-					node->channel_to_fork,
-					&node->deferred_to_fork,
-					msg,
-					msg_addr,
-					RRR_CMODULE_CHANNEL_WAIT_TIME_US
-			)) != 0) {
-				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
-				ret = 1;
-				goto out;
+		struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
+
+		// Insert PING in between to make the child fork send PONGs back
+		// while it processes messages
+		if (i % 10 == 0) {
+			__rrr_cmodule_helper_send_ping_worker(worker);
+		}
+
+		if ((ret = rrr_cmodule_channel_send_message_and_address (
+				worker->channel_to_fork,
+				message,
+				&addr_msg,
+				RRR_CMODULE_CHANNEL_WAIT_TIME_US
+		)) != 0) {
+			if (ret == RRR_CMODULE_CHANNEL_FULL) {
+				worker->to_fork_write_retry_counter += 1;
+				ret = 0;
 			}
+			else {
+				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
+			}
+			RRR_LL_ITERATE_LAST();
+		}
+		if (ret == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			rrr_msg_holder_unlock(node);
+		}
+		i++;
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&worker->queue_to_fork, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
-			node->to_fork_write_retry_counter += retries;
+	return ret;
+}
 
+static int __rrr_cmodule_helper_queue_entry_to_fork_nolock (
+		struct rrr_instance_runtime_data *thread_data,
+		pid_t fork_pid,
+		struct rrr_msg_holder *entry
+) {
+
+	int ret = 0;
+
+
+	int pid_was_found = 0;
+	RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
+		if (node->pid == fork_pid) {
+			pid_was_found = 1;
+			rrr_msg_holder_incref_while_locked(entry);
+			RRR_LL_APPEND(&node->queue_to_fork, entry);
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
 
 	if (pid_was_found == 0) {
-		free(msg);
-		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n", worker_handle_pid);
+		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n", fork_pid);
 		ret = 1;
 		goto out;
 	}
 
 	out:
 	return ret;
-}
-
-static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
-		int *count,
-		struct rrr_instance_runtime_data *thread_data,
-		pid_t fork_pid,
-		struct rrr_msg_holder *entry
-) {
-	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
-
-	struct rrr_msg_addr addr_msg;
-	int ret = 0;
-
-	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_message_holder_addr_differ);
-
-	// cmodule send will always free or take care of message memory
-	entry->message = NULL;
-
-//	printf ("perl5_input_callback: message %p\n", message);
-
-	rrr_msg_addr_init(&addr_msg);
-	if (entry->addr_len > 0) {
-		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
-		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, entry->addr_len);
-		addr_msg.protocol = entry->protocol;
-	}
-
-	if ((ret = __rrr_cmodule_helper_send_message_to_fork (
-			count,
-			thread_data->cmodule,
-			fork_pid,
-			message,
-			&addr_msg
-	)) != 0) {
-		RRR_MSG_0("Passing message to instance %s fork using memory map failed.\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	out:
-		return ret;
 }
 
 struct rrr_cmodule_helper_poll_callback_data {
@@ -217,31 +224,16 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
-	int input_count = 0;
-
-	// We have to check this here because we don't know wether the
-	// fork has exited, in which case we will retry messages for a
-	// long time and hang
-	if (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data))) {
-		ret = RRR_FIFO_SEARCH_STOP;
-		goto out;
-	}
-
-	ret = __rrr_cmodule_helper_send_entry_to_fork_nolock (
-			&input_count,
+	if ((ret = __rrr_cmodule_helper_queue_entry_to_fork_nolock (
 			thread_data,
 			callback_data->pid,
 			entry
-	);
-
-	callback_data->count += input_count;
-
-	if (ret != 0) {
+	)) != 0) {
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
 	}
 
-	if (callback_data->count > callback_data->max_count) {
+	if (++(callback_data->count) > callback_data->max_count) {
 		ret = RRR_FIFO_SEARCH_STOP;
 	}
 
@@ -520,9 +512,7 @@ static int __rrr_cmodule_helper_reader_thread_check_pong (
 static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread) {
 	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	int config_check_complete = 0;
 	int config_check_complete_message_printed = 0;
@@ -655,7 +645,6 @@ static int __rrr_cmodule_helper_threads_start (
 			NULL,
 			NULL,
 			NULL,
-			RRR_THREAD_START_PRIORITY_NORMAL,
 			name,
 			RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
 			data
@@ -704,22 +693,6 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	}
 }
 
-static void __rrr_cmodule_helper_send_ping (struct rrr_instance_runtime_data *thread_data) {
-	struct rrr_msg msg = {0};
-	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
-
-	int sent_total = 0;
-
-	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
-		if (rrr_cmodule_channel_send_message_simple(&sent_total, node->channel_to_fork, &msg) != 0) {
-			RRR_MSG_0("Warning: Failed to send PING message to worker fork %s pid %ld\n",
-					node->name, (long) node->pid);
-			// Don't trigger error here. The reader thread will exit causing restart
-			// if the fork fails.
-		}
-	RRR_LL_ITERATE_END();
-}
-
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
@@ -764,25 +737,30 @@ void rrr_cmodule_helper_loop (
 		}
 
 		int from_senders_count_tmp = 0;
-
-//		printf ("From fork: %i\n", from_child_count_tmp);
-
-		if (no_polling == 0) {
-			if (__rrr_cmodule_helper_poll_delete (
-					&from_senders_count_tmp,
-					thread_data,
-					poll,
-					fork_pid,
-					50, // 50 ms
-					250
-			) != 0) {
-				break;
+		int send_queue_total = 0;
+		RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
+			send_queue_total += RRR_LL_COUNT(&node->queue_to_fork);
+			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
+				goto cleanup;
 			}
-		}
+			rrr_posix_usleep(1); // Schedule
+			if (RRR_LL_COUNT(&node->queue_to_fork) < 250 && no_polling == 0) {
+				if (__rrr_cmodule_helper_poll_delete (
+						&from_senders_count_tmp,
+						thread_data,
+						poll,
+						fork_pid,
+						50, // 50 ms
+						250
+				) != 0) {
+					goto cleanup;
+				}
+			}
+		RRR_LL_ITERATE_END();
 
 		from_senders_counter += from_senders_count_tmp;
 
-		if (from_senders_count_tmp == 0) {
+		if (from_senders_count_tmp == 0 && send_queue_total == 0) {
 			consecutive_nothing_happened++;
 		}
 		else {
@@ -799,7 +777,7 @@ void rrr_cmodule_helper_loop (
 		uint64_t time_now = rrr_time_get_64();
 
 		if (time_now > next_stats_time) {
-			__rrr_cmodule_helper_send_ping(thread_data);
+			__rrr_cmodule_helper_send_ping_all_workers(thread_data);
 
 			int output_buffer_count = 0;
 			int output_buffer_ratelimit_active = 0;
@@ -818,13 +796,11 @@ void rrr_cmodule_helper_loop (
 				unsigned long long int read_starvation_counter = 0;
 				unsigned long long int write_full_counter = 0;
 				unsigned long long int write_retry_counter = 0;
-				unsigned long long int deferred_queue_entries = 0;
 
 				rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
-						&deferred_queue_entries,
 						INSTANCE_D_CMODULE(thread_data),
 						fork_pid
 				);
@@ -832,19 +808,17 @@ void rrr_cmodule_helper_loop (
 				rrr_stats_instance_update_rate(stats, 1, "mmap_to_child_full_events", write_full_counter);
 				rrr_stats_instance_update_rate(stats, 2, "mmap_to_child_starvation_events", read_starvation_counter);
 				rrr_stats_instance_update_rate(stats, 3, "mmap_to_child_write_retry_events", write_retry_counter);
-				rrr_stats_instance_post_base10_text(stats, "mmap_to_child_deferred_queue_entries", 0, deferred_queue_entries);
+				rrr_stats_instance_post_base10_text(stats, "mmap_to_child_send_queue_entries", 0, send_queue_total);
 			}
 			{
 				unsigned long long int read_starvation_counter = 0;
 				unsigned long long int write_full_counter = 0;
 				unsigned long long int write_retry_counter = 0;
-				unsigned long long int deferred_queue_entries = 0;
 
 				rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
-						&deferred_queue_entries,
 						INSTANCE_D_CMODULE(thread_data),
 						fork_pid
 				);
@@ -852,7 +826,6 @@ void rrr_cmodule_helper_loop (
 				rrr_stats_instance_update_rate(stats, 5, "mmap_to_parent_full_events", write_full_counter);
 				rrr_stats_instance_update_rate(stats, 6, "mmap_to_parent_starvation_events", read_starvation_counter);
 				rrr_stats_instance_update_rate(stats, 7, "mmap_to_parent_write_retry_events", write_retry_counter);
-				rrr_stats_instance_post_base10_text(stats, "mmap_to_parent_deferred_queue_entries", 0, deferred_queue_entries);
 			}
 
 //			rrr_stats_instance_post_base10_text(stats, "current_poll_timeout", 0, current_poll_wait_ms);
@@ -873,7 +846,7 @@ void rrr_cmodule_helper_loop (
 
 			next_stats_time = time_now + 1000000;
 
-			rrr_cmodule_maintain(INSTANCE_D_CMODULE(thread_data));
+			rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
 		}
 
 		tick++;
@@ -949,7 +922,7 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
-int rrr_cmodule_helper_start_worker_fork (
+int rrr_cmodule_helper_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -959,7 +932,7 @@ int rrr_cmodule_helper_start_worker_fork (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-	return rrr_cmodule_worker_fork_start (
+	return rrr_cmodule_main_worker_fork_start (
 			handle_pid,
 			INSTANCE_D_CMODULE(thread_data),
 			INSTANCE_D_NAME(thread_data),
@@ -977,7 +950,6 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid,
 		int is_to_parent
@@ -985,7 +957,6 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 	*read_starvation_counter = 0;
 	*write_full_counter = 0;
 	*write_retry_counter = 0;
-	*deferred_queue_entries = 0;
 
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
 		if (node->pid == pid) {
@@ -1003,8 +974,6 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 						node
 				);
 			}
-			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_fork);
-			*write_retry_counter = node->to_fork_write_retry_counter;
 			node->to_fork_write_retry_counter = 0;
 			RRR_LL_ITERATE_LAST();
 		}
@@ -1015,7 +984,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 ) {
@@ -1023,7 +991,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
-			deferred_queue_entries,
 			cmodule,
 			pid,
 			0 // <-- 0 = is not to parent, but to fork
@@ -1034,7 +1001,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
 		struct rrr_cmodule *cmodule,
 		pid_t pid
 ) {
@@ -1042,7 +1008,6 @@ void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
-			deferred_queue_entries,
 			cmodule,
 			pid,
 			1 // <-- 1 = is to parent
