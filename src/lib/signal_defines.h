@@ -19,17 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../log.h"
+#ifndef RRR_SIGNAL_DEFINES_H
+#define RRR_SIGNAL_DEFINES_H
 
-#include "cmodule_defines.h"
-#include "cmodule_ext.h"
-#include "cmodule_channel.h"
-#include "cmodule_worker.h"
+#define RRR_SIGNAL_HANDLED 0
+#define RRR_SIGNAL_NOT_HANDLED 1
 
-int rrr_cmodule_ext_send_message_to_parent (
-		struct rrr_cmodule_worker *worker,
-		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr
-) {
-	return rrr_cmodule_worker_send_message_and_address_to_parent(worker, message, message_addr);
-}
+#define RRR_SIGNALS_ACTIVE 1
+#define RRR_SIGNALS_NOT_ACTIVE 0
+
+#endif /* RRR_SIGNAL_DEFINES_H */

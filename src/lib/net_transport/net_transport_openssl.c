@@ -463,7 +463,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	ssl_data->ip_data.port = callback_data->port;
 
 	if (rrr_ip_network_start_tcp (&ssl_data->ip_data, 10, callback_data->do_ipv6) != 0) {
-		RRR_MSG_1("Note: Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
+		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
 		ret = 1;
 		goto out_free_ssl_data;
 	}

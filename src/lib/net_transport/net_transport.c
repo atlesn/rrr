@@ -131,10 +131,10 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	RRR_NET_TRANSPORT_HANDLE_LOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
 	new_handle->transport = transport;
-	new_handle->mode = mode;
 
-	// NOTE : This shallow member may be accessed with only collection lock held
+	// NOTE : These shallow members may be accessed with only collection lock held
 	new_handle->handle = handle;
+	new_handle->mode = mode;
 
 	if ((ret = submodule_callback (
 			&new_handle->submodule_private_ptr,
@@ -307,7 +307,7 @@ static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
 		struct rrr_net_transport_handle_close_tag_node *node
 ) {
 	// Ignore errors
-//	printf("Close handle %i\n", node->transport_handle);
+	//printf("Close handle %i which has been tagged\n", node->transport_handle);
 	rrr_net_transport_handle_close(transport, node->transport_handle);
 	free(node);
 }
@@ -427,13 +427,6 @@ void rrr_net_transport_ctx_handle_close_while_locked (
 	if (did_destroy != 1) {
 		RRR_BUG("Could not find transport handle %i in rrr_net_transport_close\n", handle->handle);
 	}
-}
-
-int rrr_net_transport_handle_tag_for_closing (
-		struct rrr_net_transport *transport,
-		int transport_handle
-) {
-	return rrr_net_transport_handle_close_tag_list_push(transport, transport_handle);
 }
 
 int rrr_net_transport_handle_close (
@@ -723,50 +716,47 @@ int rrr_net_transport_iterate_with_callback (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
-
 //		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
 
-		if (mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && mode != node->mode) {
-			goto unlock;
-		}
-
-		if ((ret = callback (
-				node,
-				arg
-		)) != 0) {
-			if (ret == RRR_READ_INCOMPLETE) {
-				ret = 0;
-				goto unlock;
-			}
-			else if (ret == RRR_READ_SOFT_ERROR) {
-				ret = 0;
-				// For nice treatment of remote, for instance send a disconnect packet
-				if (node->application_ptr_iterator_pre_destroy != NULL) {
-					ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
-				}
-
-				if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-					RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
-					RRR_LL_ITERATE_LAST();
+		if (mode == RRR_NET_TRANSPORT_SOCKET_MODE_ANY || mode == node->mode) {
+			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
+			if ((ret = callback (
+					node,
+					arg
+			)) != 0) {
+				if (ret == RRR_READ_INCOMPLETE) {
+					ret = 0;
 					goto unlock;
 				}
+				else if (ret == RRR_READ_SOFT_ERROR) {
+					ret = 0;
+					// For nice treatment of remote, for instance send a disconnect packet
+					if (node->application_ptr_iterator_pre_destroy != NULL) {
+						ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
+					}
 
-				// When pre_destroy returns 0 or is not set, go ahead with destruction
-				if (ret == 0) {
-					__rrr_net_transport_handle_destroy(node, 1);
-					RRR_LL_ITERATE_SET_DESTROY();
-					RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
+					if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+						RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
+						RRR_LL_ITERATE_LAST();
+						goto unlock;
+					}
+
+					// When pre_destroy returns 0 or is not set, go ahead with destruction
+					if (ret == 0) {
+						__rrr_net_transport_handle_destroy(node, 1);
+						RRR_LL_ITERATE_SET_DESTROY();
+						RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
+					}
+				}
+				else {
+					RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
+					ret = 1;
+					RRR_LL_ITERATE_LAST();
 				}
 			}
-			else {
-				RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
-				ret = 1;
-				RRR_LL_ITERATE_LAST();
-			}
+			unlock:
+			RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_iterate_with_callback");
 		}
-		unlock:
-		RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_iterate_with_callback");
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
@@ -1008,11 +998,13 @@ int rrr_net_transport_accept_all_handles (
 
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
+	rrr_net_transport_maintenance(transport);
+
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		pthread_mutex_lock(&node->lock_);
 		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_accept_all_handles");
 			ret = transport->methods->accept (
 					node,
 					__rrr_net_transport_accept_callback_intermediate,
@@ -1023,8 +1015,8 @@ int rrr_net_transport_accept_all_handles (
 			if (ret != 0) {
 				RRR_LL_ITERATE_LAST();
 			}
+			RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_accept_all_handles");
 		}
-		pthread_mutex_unlock(&node->lock_);
 	RRR_LL_ITERATE_END();
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
