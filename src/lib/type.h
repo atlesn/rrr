@@ -137,24 +137,24 @@ static const union type_system_endian {
 	)
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
-		rrr_length *import_length,		\
+		rrr_length *import_length,			\
 		const struct rrr_type_value *node,	\
 		const char *buf,					\
 		rrr_length buf_size
 
 #define RRR_TYPE_IMPORT_ARGS				\
 		struct rrr_type_value *node,		\
-		rrr_length *parsed_bytes,		\
+		rrr_length *parsed_bytes,			\
 		const char *start,					\
 		const char *end
 
 #define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
-		rrr_length *bytes,				\
+		rrr_length *bytes,					\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_EXPORT_ARGS				\
 		char *target,						\
-		rrr_length *written_bytes,		\
+		rrr_length *written_bytes,			\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_UNPACK_ARGS				\
@@ -162,7 +162,7 @@ static const union type_system_endian {
 
 #define RRR_TYPE_PACK_ARGS					\
 		char *target,						\
-		rrr_length *written_bytes,		\
+		rrr_length *written_bytes,			\
 		uint8_t *new_type_id,				\
 		const struct rrr_type_value *node
 

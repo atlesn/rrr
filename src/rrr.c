@@ -96,14 +96,15 @@ int rrr_signal_handler(int s, void *arg) {
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
-		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
-		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
+		{0,							'W',	"no-watchdog-timers",	"[-W|--no-watchdog-timers]"},
+		{0,							'T',	"no-thread-restart",	"[-T|--no-thread-restart]"},
 		{0,							's',	"stats",				"[-s|--stats]"},
 // Not implemented (yet). TTL check is present in duplicator and buffer modules
 //		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"ttl",					"[-t|--time-to-live]"},
 		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}

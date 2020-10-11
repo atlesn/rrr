@@ -65,7 +65,6 @@ int rrr_mqtt_transport_start (
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,
-		int listen_handle,
 		void (*new_connection_callback)(
 				struct rrr_net_transport_handle *handle,
 				const struct sockaddr *sockaddr,

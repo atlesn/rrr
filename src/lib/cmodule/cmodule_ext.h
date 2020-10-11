@@ -28,7 +28,7 @@ struct rrr_msg_addr;
 
 int rrr_cmodule_ext_send_message_to_parent (
 		struct rrr_cmodule_worker *worker,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 );
 

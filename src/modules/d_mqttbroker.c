@@ -285,9 +285,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(mqttbroker_data_cleanup, data);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (mqttbroker_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for mqtt broker instance '%s'\n", INSTANCE_D_NAME(thread_data));
@@ -329,9 +327,6 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
-	int listen_handle_plain = 0;
-	int listen_handle_tls = 0;
-
 	if (data->do_transport_plain) {
 		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_plain);
@@ -347,11 +342,9 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			RRR_NET_TRANSPORT_PLAIN
 		};
 
-		// In case transport type is set to BOTH, we must reset
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-				&listen_handle_plain,
 				data->mqtt_broker_data,
-				&net_transport_config_tmp,
+				&net_transport_config_tmp, // <-- Pass in *temporary* struct
 				data->server_port_plain
 		) != 0) {
 			RRR_MSG_0("Could not start plain network transport in mqtt broker instance %s\n",
@@ -359,18 +352,18 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			goto out_destroy_broker;
 		}
 	}
+
 	if (data->do_transport_tls) {
 		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_tls);
 
-		// In case transport type is set to BOTH, we set it to TLS
 		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;
 
-		// Only change temporary struct
+		// In case transport type is set to BOTH, we set it to TLS. Do not modify the
+		// original struct, only this temporary one.
 		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
 
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-				&listen_handle_plain,
 				data->mqtt_broker_data,
 				&net_transport_config_tmp, // <-- Pass in *temporary* struct
 				data->server_port_tls
@@ -389,23 +382,14 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 		rrr_thread_update_watchdog_time(thread);
 
-		int plain_something_happened = 0;
-		int tls_something_happened = 0;
+		int something_happened = 0;
 
-		if (listen_handle_plain) {
-			if (rrr_mqtt_broker_synchronized_tick(&plain_something_happened, data->mqtt_broker_data, listen_handle_plain) != 0) {
-				RRR_MSG_0("Error from MQTT broker while running plain transport tasks\n");
-				break;
-			}
-		}
-		if (listen_handle_tls) {
-			if (rrr_mqtt_broker_synchronized_tick(&tls_something_happened, data->mqtt_broker_data, listen_handle_tls) != 0) {
-				RRR_MSG_0("Error from MQTT broker while running TLS transport tasks\n");
-				break;
-			}
+		if (rrr_mqtt_broker_synchronized_tick(&something_happened, data->mqtt_broker_data) != 0) {
+			RRR_MSG_0("Error from MQTT broker while running tasks\n");
+			break;
 		}
 
-		if (plain_something_happened + tls_something_happened == 0) {
+		if (something_happened == 0) {
 			consecutive_nothing_happened++;
 		}
 		else {
@@ -460,7 +444,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_NETWORK;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = RRR_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {

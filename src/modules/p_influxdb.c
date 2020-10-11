@@ -123,6 +123,7 @@ static int influxdb_receive_http_response (
 	(void)(overshoot_bytes);
 	(void)(request_part);
 	(void)(unique_id);
+	(void)(websocket_upgrade_in_progress);
 
 	int ret = 0;
 
@@ -278,6 +279,8 @@ static void influxdb_send_data_callback (
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			0, // No max read size
 			0, // No unique id
+			NULL,
+			NULL,
 			influxdb_receive_http_response,
 			&response_callback_data,
 			NULL,
@@ -450,9 +453,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	pthread_cleanup_push(influxdb_data_destroy, influxdb_data);
 	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &error_buf_tmp);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (influxdb_parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Error while parsing configuration for influxdb instance %s\n",
