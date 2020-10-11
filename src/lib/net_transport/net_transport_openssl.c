@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
@@ -440,6 +441,7 @@ static int __rrr_net_transport_openssl_connect (
 struct rrr_net_transport_openssl_bind_and_listen_callback_data {
 	struct rrr_net_transport_tls *tls;
 	unsigned int port;
+	int do_ipv6;
 };
 
 static int __rrr_net_transport_openssl_bind_and_listen_callback (
@@ -460,8 +462,8 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 
 	ssl_data->ip_data.port = callback_data->port;
 
-	if (rrr_ip_network_start_tcp_ipv4_and_ipv6 (&ssl_data->ip_data, 10) != 0) {
-		RRR_MSG_0("Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
+	if (rrr_ip_network_start_tcp (&ssl_data->ip_data, 10, callback_data->do_ipv6) != 0) {
+		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
 		ret = 1;
 		goto out_free_ssl_data;
 	}
@@ -509,7 +511,8 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 
 	struct rrr_net_transport_openssl_bind_and_listen_callback_data callback_data = {
 			tls,
-			port
+			port,
+			do_ipv6
 	};
 
 	int new_handle;
@@ -520,10 +523,10 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 			__rrr_net_transport_openssl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_openssl_bind_and_listen return was %i\n", ret);
-		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_7("OpenSSL listening started on port %u transport handle %p/%i\n", port, transport, new_handle);
 
 	ret = callback (
 			transport,
@@ -639,6 +642,13 @@ int __rrr_net_transport_openssl_accept (
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
+	}
+
+	{
+		char buf[128];
+		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
+		RRR_DBG_7("OpenSSL accepted connection on port %u from %s transport handle %p/%i\n",
+				listen_ssl_data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
 	ret = callback(

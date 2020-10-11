@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../socket/rrr_socket_constants.h"
 #include "../read_constants.h"
+#include "../util/linked_list.h"
+#include "../settings.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
 	RRR_MSG_CTRL_F_USR_A
@@ -42,8 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS 100
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT 250
 
-#define RRR_CMODULE_FINAL_CALLBACK_ARGS					\
-		const struct rrr_msg_msg *msg,					\
+#define RRR_CMODULE_FINAL_CALLBACK_ARGS				\
+		const struct rrr_msg_msg *msg,				\
 		const struct rrr_msg_addr *msg_addr,		\
 		void *arg
 
@@ -51,11 +53,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		struct rrr_cmodule_worker *worker,				\
 		void *private_arg
 
-#define RRR_CMODULE_PROCESS_CALLBACK_ARGS					\
-		struct rrr_cmodule_worker *worker,					\
-		const struct rrr_msg_msg *message,					\
+#define RRR_CMODULE_PROCESS_CALLBACK_ARGS				\
+		struct rrr_cmodule_worker *worker,				\
+		const struct rrr_msg_msg *message,				\
 		const struct rrr_msg_addr *message_addr,		\
-		int is_spawn_ctx,									\
+		int is_spawn_ctx,								\
 		void *private_arg
 
 #define RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS 									\
@@ -66,7 +68,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		void *process_callback_arg,												\
 		void *private_arg
 
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_cmodule_worker;
-struct rrr_cmodule;
 
 #endif /* RRR_CMODULE_DEFINES_H */

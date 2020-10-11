@@ -1,7 +1,7 @@
-AC_INIT([Read Route Record], 1.14-0)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.14-0", [Full version])
+AC_INIT([Read Route Record], 1.15-0)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.15-0", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 14, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 15, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -429,6 +429,21 @@ AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_CHECKING([integer sizes for MySQL])
 	AC_RUN_IFELSE([
 		AC_LANG_SOURCE([[
+			#include <mysql/mysql.h>
+			
+			int main (int argc, char *argv[]) {
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([MariaDB/MySQL header mysql/mysql.h not found])
+	])
+	AC_MSG_CHECKING([integer sizes for MariaDB/MySQL])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <mysql/mysql.h>
 			#include <stdint.h>
 			#include <stdio.h>
 			

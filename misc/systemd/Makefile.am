@@ -6,7 +6,7 @@ systemd_DATA = rrr.service
 endif
 
 install-data-local:
-	chmod +x make-service.sh && ./make-service.sh rrr.service @bindir@ @RRR_CONF_DIR@
+	chmod +x make-service.sh && ./make-service.sh rrr.service @bindir@ @RRR_CONF_DIR@ @sysconfdir@
 
 clean-local:
 	echo "# DO NOT DELETE THIS FILE" > rrr.service

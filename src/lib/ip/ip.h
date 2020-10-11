@@ -75,11 +75,13 @@ void rrr_ip_graylist_init (
 void rrr_ip_network_cleanup (
 		void *arg
 );
-int rrr_ip_network_start_udp_ipv4_nobind (
-		struct rrr_ip_data *data
+int rrr_ip_network_start_udp_nobind (
+		struct rrr_ip_data *data,
+		int do_ipv6
 );
-int rrr_ip_network_start_udp_ipv4 (
-		struct rrr_ip_data *data
+int rrr_ip_network_start_udp (
+		struct rrr_ip_data *data,
+		int do_ipv6
 );
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 		ssize_t *written_bytes,
@@ -101,8 +103,10 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		const char *host,
 		struct rrr_ip_graylist *graylist
 );
-int rrr_ip_network_start_tcp_ipv4_and_ipv6 (
-		struct rrr_ip_data *data, int max_connections
+int rrr_ip_network_start_tcp (
+		struct rrr_ip_data *data,
+		int max_connections,
+		int do_ipv6
 );
 int rrr_ip_close (
 		struct rrr_ip_data *data
