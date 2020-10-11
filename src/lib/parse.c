@@ -296,7 +296,7 @@ void rrr_parse_non_newline (
 	*end = pos->pos - 1;
 }
 
-int rrr_parse_extract_string (
+int rrr_parse_str_extract (
 		char **target,
 		struct rrr_parse_pos *pos,
 		const int begin,
@@ -399,7 +399,7 @@ int rrr_parse_str_extract_until (
 	const char *end = strchr(str, end_char);
 
 	if (end == NULL) {
-		return 1;
+		return 0;
 	}
 
 	size_t length = end - pos;
@@ -435,6 +435,20 @@ void rrr_parse_str_strip_newlines (
 		}
 		else {
 			*(str + i) = *(str + i + skip_count);
+		}
+	}
+}
+
+void rrr_parse_str_trim (
+		char *str
+) {
+	size_t length = strlen(str);
+	for (char *pos = str + length -1; pos >= str; pos--) {
+		if (*pos == ' ' || *pos == '\r' || *pos == '\n' || *pos == '\t') {
+			*pos = '\0';
+		}
+		else {
+			break;
 		}
 	}
 }

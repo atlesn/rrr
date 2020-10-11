@@ -4,9 +4,10 @@ OUTPUT=$1
 BINDIR=$2
 CONFDIR=$3
 LIBDIR=$4
+SYSCONFDIR=$5
 
 rm -f $OUTPUT
 
 echo "#!/bin/sh" >> $OUTPUT
 echo >> $OUTPUT
-echo "exec su -c \"LD_LIBRARY_PATH=${LIBDIR} ${BINDIR}/rrr ${CONFDIR}\" - @RRR_DAEMON_USERNAME@" >> $OUTPUT
+echo "exec su -c \"LD_LIBRARY_PATH=${LIBDIR} ${BINDIR}/rrr -e ${SYSCONFDIR}/rrr.conf ${CONFDIR}\" - @RRR_DAEMON_USERNAME@" >> $OUTPUT

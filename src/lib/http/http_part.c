@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../threads.h"
 #include "../util/macro_utils.h"
+#include "../util/base64.h"
 #include "../helpers/nullsafe_str.h"
 
 #define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
@@ -131,6 +132,43 @@ static int __rrr_http_header_parse_single_string_value (RRR_HTTP_HEADER_FIELD_PA
 	}
 
 	out:
+	return ret;
+}
+
+static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	void *base64_data = NULL;
+	size_t base64_len = 0;
+
+	if ((ret = __rrr_http_header_parse_single_string_value(field)) != 0) {
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_isset(field->binary_value_nullsafe)) {
+		RRR_BUG("BUG: binary_value was not NULL in __rrr_http_header_parse_base64_value\n");
+	}
+
+	if ((base64_data = rrr_base64_decode (
+			field->value->str,
+			field->value->len,
+			&base64_len
+	)) == NULL) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
+		RRR_MSG_0("Base64 decoding failed for field '%s'\n", name);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new(&field->binary_value_nullsafe, NULL, 0)) != 0) {
+		RRR_MSG_0("Failed to allocate memory in __rrr_http_header_parse_base64_value\n");
+		goto out;
+	}
+
+	rrr_nullsafe_str_set_allocated(field->binary_value_nullsafe, &base64_data, base64_len);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(base64_data);
 	return ret;
 }
 
@@ -273,7 +311,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"accept-language",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"accept-encoding",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"cache-control",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
-		{"connection",			0,										__rrr_http_header_parse_single_string_value},
+		{"connection",			RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
+		{"upgrade",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
 		{"content-disposition",	0,										__rrr_http_header_parse_content_disposition_value},
 		{"content-length",		RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_unsigned_value},
 		{"content-type",		0,										__rrr_http_header_parse_content_type_value},
@@ -286,6 +325,9 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"user-agent",			RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
 		{"vary",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	__rrr_http_header_parse_single_string_value},
 		{"x-clue",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			NULL},
+		{"sec-websocket-key",	RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
+		{"sec-websocket-accept",RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_base64_value},
+		{"sec-websocket-version",RRR_HTTP_HEADER_FIELD_NO_PAIRS,		__rrr_http_header_parse_single_string_value},
 		{NULL, 0, NULL}
 };
 
@@ -323,6 +365,7 @@ static const struct rrr_http_header_field_definition *__rrr_http_header_field_ge
 static void __rrr_http_header_field_destroy (struct rrr_http_header_field *field) {
 	rrr_http_field_collection_clear(&field->fields);
 	rrr_nullsafe_str_destroy_if_not_null(field->name);
+	rrr_nullsafe_str_destroy_if_not_null(field->binary_value_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(field->value);
 	free (field);
 }
@@ -472,6 +515,26 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 						name);
 			}
 			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
+		const struct rrr_http_part *part,
+		const char *name_lowercase,
+		const char *value_anycase
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
+			if (node->definition == NULL || node->definition->parse == NULL) {
+				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in __rrr_http_header_field_collection_get_field, definition must be added\n",
+						name);
+			}
+			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
+				return node;
+			}
 		}
 	RRR_LL_ITERATE_END();
 	return NULL;
@@ -1289,7 +1352,7 @@ int rrr_http_part_chunks_iterate (
 	}
 
 	if (RRR_LL_COUNT(&part->chunks) == 0) {
-		ret = callback(0, 1, data_start, data_end - data_start, callback_arg);
+		ret = callback(0, 1, data_start, data_end - data_start, part->data_length, callback_arg);
 		goto out;
 	}
 
@@ -1304,7 +1367,7 @@ int rrr_http_part_chunks_iterate (
 		}
 
 		// NOTE : Length might be 0
-		if ((ret = callback(i, chunks_total, data_start, node->length, callback_arg)) != 0) {
+		if ((ret = callback(i, chunks_total, data_start, node->length, part->data_length, callback_arg)) != 0) {
 			goto out;
 		}
 

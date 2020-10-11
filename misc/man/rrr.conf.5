@@ -451,6 +451,11 @@ Source port used for sending and receiving packtes, defaults to 5555.
 .It ipclient_listen={yes|no}
 Accept incoming connections if set to yes. Default is no.
 
+.It ipclient_ipv4_only={yes|no}
+If set to yes, start IPv4 networking only. If left unset or set to no, IPv6 will be attempted first, and IPv4
+will only be attemted if IPv6 fails.
+If IPv6 succeeds, both IPv4 and IPv6 might actually be active depending on the operating system.
+
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
@@ -567,15 +572,23 @@ More details about Python in
 .SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
 perl script. The first and only argument to the source- and generate-functions
-is the RRR message in the form of a hash with different parameters which may be
-modified as needed. To pass the message back to RRR, the
-.B send()-method
-of the message must be called. If the message should not be passed on, simply skip
+is the RRR message in the form of an object/hash reference of type
+.B rrr_message
+with different parameters which may be modified as needed. To pass the message back to RRR, the
+.B $message->send()
+is called. If the message should not be passed on, simply skip
 the call to this method. The method may be called multiple times if required.
 .PP
+It is not possible to create new
+.B rrr_message
+objects from within the perl script. To send multiple messages in a single subroutine call,
+the object passed in must be re-used. IP-, array- and data information in the message may be
+cleared as needed when the message object is re-used.
+.PP
 It is possible to work with RRR array messages in the Perl script. This is done
-through calling dedicated functions on the message object received by source and
-process functions. The functions available are listed in the example scripts with comments.
+through calling dedicated functions on the
+.B rrr_message
+object received by source and process functions. The functions available are listed in the example scripts with comments.
 More details about types are found in 
 .Xr rrr_post(1)
 .PP
@@ -588,7 +601,7 @@ module:
 Path and filename of the perl script to use. The script is run once when the program starts,
 which means that code may be added outside the three subroutines mentioned below.
 
-.It perl5_source_interval=MILLISECONDS
+.It perl5_source_interval_ms=MILLISECONDS
 How long to wait between each call of the source subroutine (if defined). Defaults to 1000 ms.
 
 .It perl5_source_sub=SUBROUTINE NAME
@@ -631,14 +644,16 @@ There must always be either a source- or process subroutine specified, or both. 
 is specified, there must also be at least one sender specified.
 .PP
 If a Perl instance receives messages from an IP-capable module, like
-.B udp,
-the address information of the original sender of a message is retained. Other IP-capable modules may
+.B ip or httpserver,
+the address information of the original sender of a message is accessible in the
+.B rrr_message
+object. Other IP-capable modules may
 then use this information if they read data from the Perl instance, for example if you wish to use
 a Perl script to generate a reply message to some remote host. There is no high-level method for modifying
 the address information inside the Perl script, but the values
-.B ip_addr
+.B $message->{'ip_addr'}
 and
-.B ip_addr_len
+.B $message->{'ip_addr_len'}
 are to be found in the message hash. The values are filled with data from
 .B struct sockaddr
 and
@@ -646,7 +661,7 @@ and
 which is provided by the operating system. These two values may be saved and re-used in later messages,
 or they may be modified if you know how to do that (not documented here).
 In addition,
-.B ip_so_type
+.B $message->{'ip_so_type'}
 can be either "udp" or "tcp" to describe a protocol type. Some modules may use this parameter. It can also be empty.
 .PP
 The IP information in a message can be accessed and modified through helper functions. IPv4 and IPv6 both work
@@ -655,39 +670,106 @@ with these transparently.
 .Bl -tag -width -indent
 .It my ($ip, $port) = $message->ip_get();
 Get IP (as text) and port from the message. Returns undefined if there is no IP information in the message.
+
 .It $message->ip_set($ip, $port);
 Set IP and port in a message. The $ip is in string representation (like 2a0a::1 or 4.4.4.4). Returns 1 on success and 0 on failure.
+
 .It $message->ip_clear();
 Delete IP information from a message. Always returns 1.
 .El
 .PP
-The following additional parameters are available in the rrr_message hash reference:
+The following additional parameters are available in the
+.B rrr_message
+object:
+.PP
 .Bl -tag -width -indent
-.It topic
+.It $message->{'topic'}
 The MQTT topic of the messsage.
-.It timestamp
+
+.It $message->{'timestamp'}
 The timestamp of the message.
-.It data
+
+.It $message->{'data'}
 The raw data of the message (ignored when array is being used). Updates to the message array will not affect this field, but data
 will be cleared if the message is sent with array fields set.
-.It data_length
+
+.It $message->{'data_length'}
 The length of the data.
-.It type_and_class
+
+.It $message->{'type_and_class'}
 Type and class of message, for internal use.
+.El
+.PP
+If the
+.B rrr_message
+object contains an array, helper functions must be used to access these. A non-array message will
+be treated as an array message if fields are added to it, and any data set in the message will be ignored when the message is sent.
+.PP
+The following functions are available for array field manipulation:
+.PP
+.Bl -tag -width -indent
+.It $message->clear_array()
+Clears all array fields, the message becomes a non-array message.
+
+.It $message->push_tag_blob(tag, data, size)
+Pushes a blob type. Caller must ensure that the data hase the specified size or more.
+
+.It $message->push_tag_str(tag, string)
+Pushes a string type.
+
+.It $message->push_tag_h(tag, number)
+Pushes a 64-bit integer. If the given number is unsigned, it will be stored as unsigned 64-bit in the array, otherwise it will be signed 64-bit.
+
+.It $message->push_tag_fixp(tag, fixed_pointer)
+Pushes an RRR fixed pointer type. If a string is given, string notation like
+.B /^(10#|16#|)-?\\d+\\.\\d+$/
+is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given is stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
+
+.It $message->push_tag(tag, value)
+Push a value or on array of values. The type will be identified automatically. Array values are passed by using a reference like 
+\\@my_array. If multiple values are given in an array, the must all have equal length.
+
+.It $message->clear_tag(tag)
+Deletes all array positions with the specified tags
+
+.It $message->set_tag_blob(tag, data, size)
+.It $message->set_tag_str(tag, string)
+.It $message->set_tag_h(tag, values)
+.It $message->set_tag_fixp(tag, fixed_point)
+Using these functions is the same as calling clear_tag(tag) and then the corresponding push_tag function.
+
+.It $message->get_tag_all(tag)
+Retrieve all values corresponding to the specified tag. Returns a list with one or more values or undefined.
+
+.It $message->get_position(position_number)
+Retrieve the value at the specified position. Returns a list with one or more values or undefined.
+
+.It $message->count_positions(tag)
+Count the number of positions in the array.
+
+.It $message->get_tag_names(tag)
+Get all tag names from the array. Returns a list with zero or more values.
+Always returns the same number of element as count_positions(). An empty string is used forositions without a tag.
+
+.It $message->get_tag_counts(tag)
+Get the value count at each position of the message. Returns a list with zero or more values.
+Always returns the same number of element as count_positions().
 .El
 .PP
 The
 .B rrr_debug
-class can be used to print out debug messages just like RRR does internally. Use these instead of perl print functions
+object can be used to print out debug messages just like RRR does internally. Use these instead of perl print functions
 if you wish to have your program output messages in a tidy controlled fashion. There are three different functions in this class:
 .PP
 .Bl -tag -width -indent
-.It msg(level, message)
+.It $debug->msg(level, message)
 Messages to this function are always printed prefixed with the specified loglevel (a number 0, 1, 2 etc.).
-.It dbg(level, message)
+
+.It $debug->dbg(level, message)
 Messages to this function are printed only if the specified loglevel (debuglevel) is active. If loglevel is 0 however,
 the message is always printed.
-.It err(message)
+
+.It $debug->err(message)
 Messages to this function are always printed with loglevel 0 and to STDERR output. Do not overuse this as it might
 cause broadcast messages on the system when RRR is run for instance by systemd. Error messages should usually be
 printed using the
@@ -829,8 +911,11 @@ sub process {
 	print "Get a position: " . join (",", $message->get_position(0)) . "\n";
 	print "Array position count: " . $message->count_positions() . "\n";
 
-	# This will clear all values from the array
+	# This will clear all values from the array which has the specified tag
 	$message->clear_tag("tag");
+
+	# This will clear all values from the array
+	# $message->clear_array();
 
 	# Pass on the modified message
 	$message->send();
@@ -1028,10 +1113,15 @@ will be added. The latter two values will only be added if present in request he
 These fields are always added regardless of other options, except from the
 .B http_server_allow_empty_messages
 option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
-Defaults to 'no'.
+The generated RRR message will have a topic of
+.B httpserver/request/uuu
+where uuu is a unique ID for one HTTP connection. Defaults to no. 
 
 .It http_server_receive_raw_data={yes|no}
 When receiving a request from a client, put the full request including header into an RRR message for other instances to pick up.
+The generated RRR messages will have a topic of
+.B httpserver/raw/uuu
+where uuu is a unique ID for one HTTP connection. Defaults to no. 
 
 .It http_server_get_raw_response_from_senders={yes|no}
 Instead of sending standard responses to clients, like "204 No Content", check senders of httpserver for raw data responses.
@@ -1047,12 +1137,42 @@ to 'httpserver/raw/uuu' for
 .B httpserver
 to pick it up.   
 If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
+If a connection is to be upgraded to websocket, this option is ignored for that connection. Defaults to no.
 
 .It http_server_raw_response_timeout_ms=MILLISECONDS
 Timeout when waiting for raw response from senders. May be zero to indicate no timeout. Defaults to 1500ms.
 
 .It http_server_worker_threads=UNSIGNED INTEGER
 How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 
+
+.It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
+If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
+with one or more of the specified topic filters.
+The full URL except from the first / of the URL and the query string (after ? inclusive) is used as the MQTT topic.
+
+By default, the text from websocket text frames will be put into RRR messages for other modules to pick up.
+These messages will have a topic identifying the current connection, like
+.B httpserver/websocket/uuu/TOPIC
+where
+.B uuu
+is a unique ID identifying the websocket connection and
+.B TOPIC
+is the topic set in the URL endpoint.
+The unique ID will be the same as for any HTTP message received previously on the same connection, which might or might not have caused
+RRR messages to be generated depending on other configuration options.
+By default, no websocket connection upgrades are accepted.
+
+.It http_server_accept_websocket_binary={yes|no}
+Allow binary websocket frames. Data from such frames are put into plain RRR messages.
+If set to no or left undefined, received binary frames will be ignored. 
+
+.It http_server_receive_websocket_rrr_message={yes|no}
+If set to yes and websocket frames of binary type is received, these are interpreted as being RRR messages of any type.
+RRR message validation and endian conversion will be performed, and the socket will be closed if this fails. Implies
+.B http_server_accept_websocket_binary=yes.
+Messages of text type are not affected by this parameter.
+If set to no or left unset, binary messages are either ignored or received as-is depending on the value of
+.B http_server_accept_websocket_binary.
 
 .It http_server_tls_*
 Refer to the
@@ -1078,10 +1198,15 @@ module:
 .PP
 .Bl -tag -width -indent
 .It http_server=SERVER OR IP
-Server to send data to, defaults to 'localhost'.
+.It http_port=PORT
+Server and port to send data to, defaults to 'localhost' and the default port depends on the
+chosen transport type (TLS/Plain).
 .B httpclient
-will follow any redirects from the server, also to other servers. Redirects may be disabled.
-  
+will follow any redirects from the server, also to other servers.
+To disallow redirection, use the
+.B http_max_redirects
+parameter.
+ 
 .It http_endpoint=ENDPOINT
 The endpoint to request from the server, e.g.
 .B /index.php.
@@ -1095,15 +1220,30 @@ will detect whether a query string already exists in the URL and prefix the firs
 Defaults to
 .B /.
 
+.It http_endpoint_tag=ARRAY TAG
+.It http_server_tag=ARRAY TAG
+.It http_port_tag=ARRAY TAG
+.It http_endpoint_tag_force={yes|no}
+.It http_server_tag_force={yes|no}
+.It http_port_tag_force={yes|no}
+These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
+identified by the tag of the value.
+If the
+.B force
+options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+If the HTTP server responds with a redirect, the redirection will be followed and values from the messages will not be used.
+To disallow redirection, use the
+.B http_max_redirects
+parameter.
+
+Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string.
+
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
-
-.It http_port=PORT
-Port to use when connecting to the server. Defaults to 80 for HTTP and 443 for HTTPS. Redirects from the server to other
-ports will override this value.
 
 .It http_method={get|post_urlencoded|post_multipart}
 Which method to use when sending data to the server. Defaults to
@@ -1165,11 +1305,19 @@ The maximum number of redirects to allow from the server for a single message. M
 .It http_keepalive={yes|no}
 Keep connection to server open across multiple requests. When the server finally closes the connection, the client re-connects. Defaults to no.
 
+.It http_receive_part_data={yes|no}
 .It http_receive_raw_data={yes|no}
-Take the full response from the server and put it into an RRR message for other instances to pick up.
-If the original message which caused the query had a topic set, this topic will be present in the message with the raw data.
-May be used in conjunction with raw functionallity in
+When receiving part data, HTTP response data is put into messages for other modules to read from httpclient.
+
+The raw method will put full HTTP responses including headers into messages. No processing will be performed on the data, and
+chunked data may be present in the messages if the server has responded with this. May be used in conjunction with raw functionallity in
 .B httpserver.
+If there are redirects from the server, one message will be created for every redirect response.
+
+If the original message which caused the query had a topic set, this topic will be present in generated messages.
+
+Any combination of yes and no is allowed for the receive options. By default, no messages are generated by
+.B httpclient 
 
 .It http_send_raw_data={yes|no}
 Assume that received messages contains raw HTTP data (including headers), and send this to the specified server untouched.
@@ -1519,6 +1667,28 @@ Read all data from the entries and put it into an RRR message.
 Note that this is probably not useful for sockets and character devices. Cannot be used with
 .B file_input_types,
 but one of them must be specified. At most 32 MiB may be read per file. Defaults to 'no'.
+
+.It file_read_all_method={simple|structured}
+May be set if
+.B file_read_all_to_message
+is 'yes'.
+If set to 'simple', the contents of the file is put into a plain message.
+If set to 'structured', the constents of the file along with metadata is put into an array array message.
+For the latter, the array fields
+.B data, size, path_original, path_resolved, atime, mtime, and ctime
+will be present in the generated messages.
+
+The
+.B data
+and
+.B size
+fields contain the actual raw data of the file and the it's size.  
+
+The two
+.B path_
+fields contain the original path and resolved symbolic link path respectively. If there was not symlic, they are equal.
+
+The time parameters is in epoch time format with seconds resolution and describe file access time, modification time and creation time. 
 
 .It file_unlink_on_close={yes|no}
 After an open entry for any reason closes, attempt to unlink it. Note that

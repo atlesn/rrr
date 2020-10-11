@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((void)(x))
 
 #define RRR_PASTE(x, y) x ## y
+#define RRR_PASTE_3(x, y, z) x ## y ## z
 
 #define RRR_QUOTE(value) #value
 

@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
 #include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
 
 static void __rrr_net_transport_libressl_destroy (
@@ -210,6 +211,7 @@ static int __rrr_net_transport_libressl_connect (
 struct rrr_net_transport_libressl_bind_and_listen_callback_data {
 	struct rrr_net_transport_tls *tls;
 	unsigned int port;
+	int do_ipv6;
 };
 
 static int __rrr_net_transport_libressl_bind_and_listen_callback (
@@ -234,8 +236,8 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 
 	data->ip_data.port = callback_data->port;
 
-	if (rrr_ip_network_start_tcp_ipv4_and_ipv6 (&data->ip_data, 10) != 0) {
-		RRR_MSG_0("Could not start IP listening in __rrr_net_transport_libressl_bind_and_listen_callback\n");
+	if (rrr_ip_network_start_tcp (&data->ip_data, 10, callback_data->do_ipv6) != 0) {
+		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_libressl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out_destroy_data;
 	}
@@ -280,7 +282,8 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 
 	struct rrr_net_transport_libressl_bind_and_listen_callback_data callback_data = {
 			tls,
-			port
+			port,
+			do_ipv6
 	};
 
 	int new_handle;
@@ -291,10 +294,10 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 			__rrr_net_transport_libressl_bind_and_listen_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_bind_and_listen return was %i\n", ret);
-		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_7("LibreSSL listening started on port %u transport handle %p/%i\n", port, transport, new_handle);
 
 	ret = callback (
 			transport,
@@ -393,6 +396,13 @@ int __rrr_net_transport_libressl_accept (
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_accept return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
+	}
+
+	{
+		char buf[128];
+		rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &accept_data->addr, accept_data->len);
+		RRR_DBG_7("LibreSSL accepted connection on port %u from %s transport handle %p/%i\n",
+				data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
 	ret = callback (
@@ -516,10 +526,12 @@ static int __rrr_net_transport_libressl_send (
 		int ret_tmp = poll(&pfd, 1, 0);
 		if (ret_tmp == -1) {
 			RRR_MSG_1("Poll failed for TLS fd %i while writing: %s\n", pfd.fd, rrr_strerror(errno));
+			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
 		else if ((pfd.revents & (POLLERR|POLLNVAL))) {
 			RRR_MSG_1("Bad file descriptor for TLS fd %i while writing\n", pfd.fd);
+			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
 		else if ((pfd.revents & (pfd.events|POLLHUP))) {
@@ -534,6 +546,7 @@ static int __rrr_net_transport_libressl_send (
 			}
 			else if (bytes == -1) {
 				RRR_MSG_1("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->ctx));
+				ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 				goto out;
 			}
 			else {
@@ -547,6 +560,7 @@ static int __rrr_net_transport_libressl_send (
 				break;
 			}
 		}
+		pthread_testcancel();
 	}
 
 	out:

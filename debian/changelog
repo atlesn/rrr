@@ -1,8 +1,23 @@
-rrr (1.14-0bullseye1) bullseye; urgency=medium
+rrr (1.15-0bullseye1) buster; urgency=medium
 
   * Debian testing release
 
- -- Atle Solbakken <atle@goliathdns.no>  Fri, 02 Oct 2020 17:30:35 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 11 Oct 2020 15:38:31 +0200
+
+rrr (1.15-0) buster; urgency=medium
+
+  * New WebSocket functionallity in httpserver and httpclient modules
+  * New ways for making RRR messases from HTTP data
+  * Ability to control HTTP endpoint and server from incoming RRR
+    messages in httpclient
+  * Improvements in IPv4 and IPv6 co-existence
+  * New structured read all functionallity in file module creating array
+    message with data and metadata
+  * Changes in thread startup to prevent threads using global locks
+    while other threads are forking
+  * Misc. fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 11 Oct 2020 15:25:39 +0200
 
 rrr (1.14-0) buster; urgency=medium
 
