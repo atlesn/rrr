@@ -340,7 +340,8 @@ int rrr_udpstream_asd_new (
 		const char *remote_port,
 		uint32_t client_id,
 		int accept_connections,
-		int disallow_ip_swap
+		int disallow_ip_swap,
+		int v4_only
 ) {
 	int ret = 0;
 
@@ -383,9 +384,17 @@ int rrr_udpstream_asd_new (
 		goto out_free_remote_port;
 	}
 
-	if ((ret = rrr_udpstream_bind(&session->udpstream, local_port)) != 0) {
-		RRR_MSG_0("Could not bind to local port %u in rrr_udpstream_asd_new\n", local_port);
-		goto out_clear_udpstream;
+	if (v4_only) {
+		if ((ret = rrr_udpstream_bind_v4_only(&session->udpstream, local_port)) != 0) {
+			RRR_MSG_0("Could not bind to local port %u with IPv4 only in rrr_udpstream_asd_new\n", local_port);
+			goto out_clear_udpstream;
+		}
+	}
+	else {
+		if ((ret = rrr_udpstream_bind_v6_priority(&session->udpstream, local_port)) != 0) {
+			RRR_MSG_0("Could not bind to local port %u with IPv6 priority in rrr_udpstream_asd_new\n", local_port);
+			goto out_clear_udpstream;
+		}
 	}
 
 	if (rrr_posix_mutex_init(&session->message_id_lock, 0) != 0) {

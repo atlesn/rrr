@@ -181,6 +181,26 @@ int rrr_socket_read (
 
 	ssize_t bytes = 0;
 
+	if ((flags & RRR_SOCKET_READ_USE_POLL) != 0) {
+		struct pollfd pollfd = {0};
+		pollfd.events = POLLIN;
+		pollfd.fd = fd;
+
+		int frames = poll(&pollfd, 1, 0);
+		RRR_DBG_7("Socket %i poll result: %i\n", fd, frames);
+		if (frames < 0) {
+			if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
+				goto out;
+			}
+			RRR_MSG_0("Error from poll in rrr_socket_read: %s\n", rrr_strerror(errno));
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		if (frames == 0) {
+			goto out;
+		}
+	}
+
 	read_retry:
 	if ((flags & RRR_SOCKET_READ_METHOD_RECVFROM) != 0) {
 		/* Read and distinguish between senders based on source addresses */

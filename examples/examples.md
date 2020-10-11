@@ -54,3 +54,4 @@ GET queries, or raw data from another module.
 * [HTTP Forwarder](http/http_forwarder.md)
 * [HTTP Server](http/http_server.md)
 * [HTTP Push Server with MQTT](http/http_push_mqtt.md)
+* [HTTP Websocket Server](http/http_websocket.md)

@@ -68,8 +68,10 @@ struct ipclient_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	uint32_t client_number;
-	int disallow_remote_ip_swap;
-	int listen;
+
+	int do_disallow_remote_ip_swap;
+	int do_ipv4_only;
+	int do_listen;
 
 	uint64_t total_poll_count;
 	uint64_t total_queued_count;
@@ -154,8 +156,9 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config_data *c
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_disallow_remote_ip_swap", disallow_remote_ip_swap, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_listen", listen, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_disallow_remote_ip_swap", do_disallow_remote_ip_swap, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_listen", do_listen, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ipclient_ipv4_only", do_ipv4_only, 0);
 
 	// Reset any NOT_FOUND
 	ret = 0;
@@ -321,8 +324,9 @@ static int __ipclient_asd_reconnect (struct ipclient_data *data) {
 			data->ip_default_remote,
 			data->ip_default_remote_port,
 			data->client_number,
-			data->listen,
-			data->disallow_remote_ip_swap
+			data->do_listen,
+			data->do_disallow_remote_ip_swap,
+			data->do_ipv4_only
 	)) != 0) {
 		RRR_MSG_0("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -438,9 +442,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
@@ -614,7 +616,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = RRR_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {

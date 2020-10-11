@@ -257,24 +257,32 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 	return NULL;
 }
 
-int cmd_iterate_subvalues (
+int cmd_iterate_subvalues_if_exists (
 		struct cmd_data *data,
 		const char *key,
-		cmd_arg_count req_index,
 		int (*callback)(const char *value, void *arg),
 		void *callback_arg
 ) {
-	struct cmd_arg_pair *pair = cmd_find_pair(data, key, req_index);
-	if (pair == NULL) {
-		return 1;
-	}
-
-	RRR_LL_ITERATE_BEGIN(pair, struct cmd_arg_value);
-		if (callback(node->value, callback_arg) != 0) {
-			return 1;
+	for (int i = 0; 1; i++) {
+		const char *str = cmd_get_value(data, key, i);
+		if (str != NULL) {
+			for (int j = 0; 1; j++) {
+				str = cmd_get_subvalue(data, key, i, j);
+				if (str != NULL) {
+					int ret_tmp = callback(str, callback_arg);
+					if (ret_tmp != 0) {
+						return ret_tmp;
+					}
+				}
+				else {
+					break;
+				}
+			}
 		}
-	RRR_LL_ITERATE_END();
-
+		else {
+			break;
+		}
+	}
 	return 0;
 }
 
