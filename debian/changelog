@@ -11,7 +11,7 @@ rrr (1.15-0) buster; urgency=medium
     while other threads are forking
   * Misc. fixes
 
- -- Atle Solbakken <atle@goliathdns.no>  Sun, 04 Oct 2020 21:25:51 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 11 Oct 2020 15:25:39 +0200
 
 rrr (1.14-0) buster; urgency=medium
 
