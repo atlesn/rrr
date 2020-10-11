@@ -34,11 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SERVER_USER_AGENT						"RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS	5000
 
-#define RRR_HTTP_OK				RRR_READ_OK
-#define RRR_HTTP_HARD_ERROR		RRR_READ_HARD_ERROR
-#define RRR_HTTP_SOFT_ERROR		RRR_READ_SOFT_ERROR
-#define RRR_HTTP_NO_RESULT		RRR_READ_INCOMPLETE
+#define RRR_HTTP_OK						RRR_READ_OK
+#define RRR_HTTP_HARD_ERROR				RRR_READ_HARD_ERROR
+#define RRR_HTTP_SOFT_ERROR				RRR_READ_SOFT_ERROR
 
+#define RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS		101
 #define RRR_HTTP_RESPONSE_CODE_OK						200
 #define RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT			204
 #define RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST		400
@@ -46,6 +46,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR	500
 #define RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT			504
 #define RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED	505
+
+#define RRR_HTTP_WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 enum rrr_http_transport {
 	RRR_HTTP_TRANSPORT_ANY,
@@ -55,6 +57,7 @@ enum rrr_http_transport {
 
 enum rrr_http_method {
 	RRR_HTTP_METHOD_GET,
+	RRR_HTTP_METHOD_GET_WEBSOCKET,
 	RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA,
 	RRR_HTTP_METHOD_POST_URLENCODED,
 	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
@@ -63,7 +66,7 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_OPTIONS,
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
-	RRR_HTTP_METHOD_PUT
+	RRR_HTTP_METHOD_PUT,
 };
 
 extern const char *rrr_http_transport_str_any;
@@ -77,6 +80,7 @@ extern const char *rrr_http_transport_str_https;
 	)))
 
 extern const char *rrr_http_method_str_get;
+extern const char *rrr_http_method_str_get_websocket;
 extern const char *rrr_http_method_str_post_multipart_form_data;
 extern const char *rrr_http_method_str_post_urlencoded;
 extern const char *rrr_http_method_str_post_urlencoded_no_quoting;
@@ -85,12 +89,13 @@ extern const char *rrr_http_method_str_post_application_text_plain;
 
 #define RRR_HTTP_METHOD_TO_STR(method)																				\
 	(method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :														\
+	(method == RRR_HTTP_METHOD_GET_WEBSOCKET ? rrr_http_method_str_get_websocket :									\
 	(method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA ? rrr_http_method_str_post_multipart_form_data :			\
 	(method == RRR_HTTP_METHOD_POST_URLENCODED ? rrr_http_method_str_post_urlencoded :								\
 	(method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING ? rrr_http_method_str_post_urlencoded_no_quoting :		\
 	(method == RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM ? rrr_http_method_str_post_application_octet_stream :	\
 	(method == RRR_HTTP_METHOD_POST_TEXT_PLAIN ? rrr_http_method_str_post_application_text_plain : ("unknown")		\
-	))))))
+	)))))))
 
 typedef uint64_t rrr_http_unique_id;
 

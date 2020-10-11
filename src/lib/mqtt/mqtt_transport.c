@@ -121,7 +121,6 @@ int rrr_mqtt_transport_start (
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,
-		int listen_handle,
 		void (*new_connection_callback)(
 				struct rrr_net_transport_handle *handle,
 				const struct sockaddr *sockaddr,
@@ -141,9 +140,8 @@ int rrr_mqtt_transport_accept (
 	};
 
 	RRR_LL_ITERATE_BEGIN(&transport->transports, struct rrr_net_transport);
-		if ((ret = rrr_net_transport_accept (
+		if ((ret = rrr_net_transport_accept_all_handles (
 				node,
-				listen_handle,
 				new_connection_callback,
 				&callback_data
 		)) != 0) {

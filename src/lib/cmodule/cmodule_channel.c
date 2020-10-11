@@ -26,15 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
-#include "cmodule_main.h"
-#include "cmodule_defer_queue.h"
 
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
-
 
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
 	const struct rrr_msg *message;
@@ -47,13 +44,11 @@ static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void 
 }
 
 int rrr_cmodule_channel_send_message_simple (
-		int *sent_total,
 		struct rrr_mmap_channel *channel,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		unsigned int full_wait_time_us
 ) {
 	int ret = 0;
-
-	*sent_total = 0;
 
 	struct rrr_cmodule_mmap_channel_write_simple_callback_data callback_data = {
 			message
@@ -62,14 +57,12 @@ int rrr_cmodule_channel_send_message_simple (
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
 			sizeof(*message),
-			0,
+			full_wait_time_us,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
 			&callback_data
 	)) != 0) {
 		goto out;
 	}
-
-	(*sent_total)++;
 
 	out:
 	return ret;
@@ -93,131 +86,39 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 }
 
 int rrr_cmodule_channel_send_message_and_address (
-		int *sent_total,
-		int *retries,
 		struct rrr_mmap_channel *channel,
-		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
 		unsigned int wait_time_us
 ) {
 	int ret = 0;
 
-	// Note : There are gotos in this function, sorry.
-
-	*sent_total = 0;
-	*retries = 0;
-
-	// When adjusting retry and usleep, test for throughput afterwards. These numbers
-	// have no implication in low-traffic situations.
-	int retry_max_ = 50;
-
-	// Enable conditional wait in mmap after this many retries
-	int retry_sleep_start_max_ = 40;
-
-	// Extracted from deferred queue, freed every time before it is used and at out
-	struct rrr_msg_addr *message_addr_to_free = NULL;
-
-	{
-		int count_before_cleanup = RRR_LL_COUNT(deferred_queue);
-
-		while (RRR_LL_COUNT(deferred_queue) > RRR_CMODULE_DEFERRED_QUEUE_MAX) {
-			struct rrr_cmodule_deferred_message *msg = RRR_LL_SHIFT(deferred_queue);
-			rrr_cmodule_deferred_message_destroy(msg);
-		}
-
-		int count_after_cleanup = RRR_LL_COUNT(deferred_queue);
-		if (count_after_cleanup != count_before_cleanup) {
-			RRR_MSG_0("Warning: %i messages cleared from over-filled cmodule deferred queue in %s. Messages were lost.\n", count_before_cleanup - count_after_cleanup, channel->name);
-		}
+	if (message == NULL) {
+		RRR_BUG("BUG: message was NULL in rrr_cmodule_channel_send_message_and_address\n");
 	}
 
-	// If there are deferred messages, immediately push the new message to
-	// deferred queue and instead process the first one in the queue
-	if (RRR_LL_COUNT(deferred_queue) > 0) {
-		goto defer_message;
+	struct rrr_cmodule_mmap_channel_write_callback_data callback_data = {
+		message_addr,
+		message
+	};
+
+	if ((ret = rrr_mmap_channel_write_using_callback (
+			channel,
+			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
+			wait_time_us,
+			__rrr_cmodule_mmap_channel_write_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_MMAP_CHANNEL_FULL) {
+			goto out;
+		}
+		RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
+		ret = 1;
+		goto out;
 	}
 
-	goto send_message;
-
-	defer_message:
-		if (rrr_cmodule_deferred_message_new_and_push(deferred_queue, message, message_addr) != 0) {
-			RRR_MSG_0("Error while pushing deferred message in __rrr_cmodule_send_message\n");
-			ret = 1;
-			goto out;
-		}
-
-		// Ownership taken by queue
-		message = NULL;
-
-		// Not to be used anymore for now
-		message_addr = NULL;
-
-		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message_simple pid %i\n", getpid());
-			ret = 0;
-			goto out;
-		}
-
-	// We allow the function to be called with NULL message, in which case
-	// we just try to read from the deferred queue
-	send_message:
-		if (message == NULL) {
-			if (RRR_LL_COUNT(deferred_queue) > 0) {
-				struct rrr_cmodule_deferred_message *deferred_message = RRR_LL_SHIFT(deferred_queue);
-				RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-				rrr_cmodule_deferred_message_extract(&message, &message_addr_to_free, deferred_message);
-				rrr_cmodule_deferred_message_destroy(deferred_message);
-				message_addr = message_addr_to_free;
-			}
-		}
-
-		if (message == NULL) {
-			// Nothing to do if message still is NULL
-			goto out;
-		}
-
-		struct rrr_cmodule_mmap_channel_write_callback_data callback_data = {
-			message_addr,
-			message
-		};
-
-		while ((--retry_max_) >= 0) {
-			if ((ret = rrr_mmap_channel_write_using_callback (
-					channel,
-					MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-					(--retry_sleep_start_max_ <= 0 ? wait_time_us : 0),
-					__rrr_cmodule_mmap_channel_write_callback,
-					&callback_data
-			)) != 0) {
-				if (ret == RRR_MMAP_CHANNEL_FULL) {
-//					rrr_posix_usleep(5); // Symbolic sleep
-					(*retries)++;
-					ret = 0;
-					goto defer_message;
-				}
-				RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
-				ret = 1;
-				goto out;
-			}
-			else {
-				break;
-			}
-		}
-
-		(*sent_total)++;
-
-		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-		RRR_FREE_IF_NOT_NULL(message);
-
-		if (RRR_LL_COUNT(deferred_queue) > 0) {
-			goto send_message;
-		}
-
-		out:
-		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-		RRR_FREE_IF_NOT_NULL(message);
-		return ret;
+	out:
+	return ret;
 }
 
 int rrr_cmodule_channel_receive_messages (
@@ -252,8 +153,4 @@ void rrr_cmodule_channel_bubblesort (
 	do {
 		rrr_mmap_channel_bubblesort_pointers (channel, &was_sorted);
 	} while (was_sorted == 0 && --max_rounds > 0);
-
-//	if (was_sorted != 0) {
-//		printf("was sorted\n");
-//	}
 }

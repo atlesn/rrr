@@ -3,6 +3,7 @@
 OUTPUT=$1
 BINDIR=$2
 CONFDIR=$3
+SYSCONFDIR=$4
 
 rm -f $OUTPUT
 
@@ -12,7 +13,7 @@ echo "Description=@PACKAGE_STRING@" >> $OUTPUT
 echo >> $OUTPUT
 
 echo "[Service]" >> $OUTPUT
-echo "ExecStart=${BINDIR}/rrr -s -l ${CONFDIR}/" >> $OUTPUT
+echo "ExecStart=${BINDIR}/rrr -s -e ${SYSCONFDIR}/rrr.conf ${CONFDIR}/" >> $OUTPUT
 echo "KillSignal=SIGTERM" >> $OUTPUT
 echo "User=@RRR_DAEMON_USERNAME@" >> $OUTPUT
 echo "Group=@RRR_DAEMON_USERNAME@" >> $OUTPUT
