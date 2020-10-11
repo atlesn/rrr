@@ -25,11 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "string_builder.h"
+#include "type.h"
 #include "util/gnu.h"
 #include "util/macro_utils.h"
 
 void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
-	ssize_t length = strlen(str);
+	rrr_biglength length = strlen(str);
 	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
 	string_builder->wpos += length;
 	if (string_builder->wpos + 1 > string_builder->size) {
@@ -37,8 +38,9 @@ void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_buil
 	}
 }
 
-void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, size_t buf_size) {
+void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
 	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
+	string_builder->wpos += buf_size;
 }
 
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {
@@ -53,8 +55,12 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	string_builder->wpos = 0;
 }
 
-ssize_t rrr_string_builder_length (struct rrr_string_builder *string_builder) {
+rrr_biglength rrr_string_builder_length (struct rrr_string_builder *string_builder) {
 	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
+}
+
+rrr_biglength rrr_string_builder_size (struct rrr_string_builder *string_builder) {
+	return (string_builder->size);
 }
 
 int rrr_string_builder_new (struct rrr_string_builder **result) {
@@ -84,13 +90,13 @@ void rrr_string_builder_destroy_void (void *ptr) {
 	free(ptr);
 }
 
-int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes) {
+int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_biglength bytes) {
 	if (bytes == 0) {
 		return 0;
 	}
 
 	if (string_builder->wpos + bytes + 1 > string_builder->size) {
-		ssize_t new_size = bytes + 1 + string_builder->size + 1024;
+		rrr_biglength new_size = bytes + 1 + string_builder->size + 1024;
 		char *new_buf = realloc(string_builder->buf, new_size);
 		if (new_buf == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_string_builder_reserve\n");
@@ -108,7 +114,7 @@ int rrr_string_builder_append (struct rrr_string_builder *string_builder, const 
 		return 0;
 	}
 
-	ssize_t length = strlen(str);
+	rrr_biglength length = strlen(str);
 
 	if (rrr_string_builder_reserve(string_builder, length) != 0) {
 		return 1;
@@ -133,7 +139,7 @@ int rrr_string_builder_append_format (struct rrr_string_builder *string_builder,
 		goto out;
 	}
 
-	ssize_t length = strlen(tmp);
+	rrr_biglength length = strlen(tmp);
 	if (rrr_string_builder_reserve(string_builder, length) != 0) {
 		ret = 1;
 		goto out;

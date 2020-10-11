@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <limits.h>
 
@@ -35,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../random.h"
 #include "../read.h"
 #include "../string_builder.h"
+#include "../sha1/sha1.h"
 #include "../util/posix.h"
 #include "../util/gnu.h"
 #include "../util/base64.h"
@@ -52,6 +54,7 @@ static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
+	rrr_websocket_state_clear_all(&session->ws_state);
 	free(session);
 }
 
@@ -97,7 +100,7 @@ static int __rrr_http_session_prepare_part (struct rrr_http_part **part) {
 	return ret;
 }
 
-static void __rrr_http_session_destroy_part (struct rrr_http_part **part) {
+static void __rrr_http_session_destroy_part_if_not_null (struct rrr_http_part **part) {
 	if (*part != NULL) {
 		rrr_http_part_destroy(*part);
 		*part = NULL;
@@ -195,6 +198,8 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 			}
 		}
 
+		rrr_websocket_state_set_client_mode(&session->ws_state);
+
 		// Transport framework responsible for cleaning up
 		rrr_net_transport_ctx_handle_application_data_bind (
 				handle,
@@ -285,6 +290,145 @@ int rrr_http_session_set_keepalive (
 		ret = rrr_http_part_header_field_push(session->request_part, "Connection", "keep-alive");
 	}
 
+	return ret;
+}
+
+static int __rrr_http_session_websocket_make_accept_string (
+		char **accept_str,
+		const char *sec_websocket_key
+) {
+	int ret = 0;
+
+	char *accept_str_tmp = NULL;
+	char *accept_base64_tmp = NULL;
+
+	if (rrr_asprintf(&accept_str_tmp, "%s%s", sec_websocket_key, RRR_HTTP_WEBSOCKET_GUID) <= 0) {
+		RRR_MSG_0("Failed to concatenate accept-string in __rrr_http_session_make_websocket_accept_string\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	rrr_SHA1Context sha1_ctx = {0};
+	rrr_SHA1Reset(&sha1_ctx);
+	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
+
+	if (!rrr_SHA1Result(&sha1_ctx) || sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
+		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_websocket_make_accept_string (Corrupt: %i - Computed: %i)\n",
+				sha1_ctx.Corrupted, sha1_ctx.Computed);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_SHA1toBE(&sha1_ctx);
+
+	size_t accept_base64_length = 0;
+	if ((accept_base64_tmp = (char *) rrr_base64_encode (
+			(const unsigned char *) sha1_ctx.Message_Digest,
+			sizeof(sha1_ctx.Message_Digest),
+			&accept_base64_length
+	)) == NULL) {
+		RRR_MSG_0("Base64 encoding failed in __rrr_http_session_websocket_make_accept_string\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	char *newline = strchr(accept_base64_tmp, '\n');
+	if (newline) {
+		*newline = '\0';
+	}
+
+	*accept_str = accept_base64_tmp;
+	accept_base64_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(accept_base64_tmp);
+	RRR_FREE_IF_NOT_NULL(accept_str_tmp);
+	return ret;
+}
+
+static int __rrr_http_session_websocket_request_push_headers (
+		struct rrr_http_session *session
+) {
+	int ret = 0;
+
+	char *key = NULL;
+
+	if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "upgrade")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->request_part, "upgrade", "websocket")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_state_get_key_base64 (&key, &session->ws_state)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-key", key)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-version", "13")) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(key);
+	return ret;
+}
+
+static int __rrr_http_session_websocket_response_check_headers (
+		struct rrr_http_session *session
+) {
+	int ret = 0;
+
+	char *sec_websocket_key_tmp = NULL;
+	char *accept_str_tmp = NULL;
+
+	const struct rrr_http_header_field *field_connection = rrr_http_part_header_field_get_with_value(session->response_part, "connection", "upgrade");
+	const struct rrr_http_header_field *field_upgrade = rrr_http_part_header_field_get_with_value(session->response_part, "upgrade", "websocket");
+	const struct rrr_http_header_field *field_accept = rrr_http_part_header_field_get(session->response_part, "sec-websocket-accept");
+
+	if (field_connection == NULL) {
+		RRR_MSG_0("Missing 'Connection: upgrade' field in HTTP server WebSocket upgrade response\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (field_upgrade == NULL) {
+		RRR_MSG_0("Missing 'Upgrade: websocket' field in HTTP server WebSocket upgrade response\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (field_accept == NULL) {
+		RRR_MSG_0("Missing 'Sec-Websocket-Accept' field in HTTP server WebSocket upgrade response\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_state_get_key_base64(&sec_websocket_key_tmp, &session->ws_state)) != 0) {
+		RRR_MSG_0("Failed to get key from WebSocket state in __rrr_http_session_request_receive_try_websocket\n");
+		goto out;
+	}
+
+	if ((ret = __rrr_http_session_websocket_make_accept_string(&accept_str_tmp, sec_websocket_key_tmp)) != 0) {
+		RRR_MSG_0("Failed to make accept-string in __rrr_http_session_request_receive_try_websocket\n");
+		goto out;
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_accept_str,field_accept->value);
+	if (strcmp(accept_str_tmp, response_accept_str) != 0) {
+		RRR_MSG_0("WebSocket accept string from server mismatch (got '%s' but expected  '%s')\n",
+				response_accept_str, accept_str_tmp);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(sec_websocket_key_tmp);
+	RRR_FREE_IF_NOT_NULL(accept_str_tmp);
 	return ret;
 }
 
@@ -599,19 +743,22 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 
 	host_buf = rrr_http_util_quote_header_value(callback_data->host, strlen(callback_data->host), '"', '"');
 	if (host_buf == NULL) {
-		RRR_MSG_0("Invalid host '%s' in rrr_http_session_send_request\n", callback_data->host);
+		RRR_MSG_0("Invalid host '%s' in __rrr_http_session_send_request\n", callback_data->host);
 		ret = 1;
 		goto out;
 	}
 
 	user_agent_buf = rrr_http_util_quote_header_value(session->user_agent, strlen(session->user_agent), '"', '"');
 	if (user_agent_buf == NULL) {
-		RRR_MSG_0("Invalid user agent '%s' in rrr_http_session_send_request\n", session->user_agent);
+		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_session_send_request\n", session->user_agent);
 		ret = 1;
 		goto out;
 	}
 
-	if (session->method == RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&session->request_part->fields) > 0) {
+	if (	(session->method == RRR_HTTP_METHOD_GET ||
+			session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) &&
+			RRR_LL_COUNT(&session->request_part->fields) > 0
+	) {
 		extra_uri_tmp  = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &session->request_part->fields);
 
 		if (strchr(session->uri_str, '?') != NULL) {
@@ -653,7 +800,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			"Host: %s\r\n"
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
-			(session->method == RRR_HTTP_METHOD_GET ? "GET" : "POST"),
+			(session->method == RRR_HTTP_METHOD_GET || session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ? "GET" : "POST"),
 			uri_to_use,
 			host_buf,
 			user_agent_buf
@@ -664,8 +811,15 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
-		RRR_DBG_1("Could not send first part of HTTP request header in rrr_http_session_send_request\n");
+		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_session_send_request\n");
 		goto out;
+	}
+
+	if (session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) {
+		if ((ret =__rrr_http_session_websocket_request_push_headers(session)) != 0) {
+			RRR_MSG_0("Failed to prepare websocket connection in __rrr_http_session_request_send\n");
+			goto out;
+		}
 	}
 
 	rrr_string_builder_clear(header_builder);
@@ -675,7 +829,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			__rrr_http_session_request_send_make_headers_callback,
 			header_builder
 	) != 0) {
-		RRR_MSG_0("Failed to make header fields in rrr_http_session_send_request\n");
+		RRR_MSG_0("Failed to make header fields in __rrr_http_session_send_request\n");
 		ret = 1;
 		goto out;
 	}
@@ -685,7 +839,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 		RRR_FREE_IF_NOT_NULL(request_buf);
 		request_buf = rrr_string_builder_buffer_takeover(header_builder);
 		if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, header_builder_length)) != 0) {
-			RRR_MSG_0("Could not send second part of HTTP request header in rrr_http_session_send_request\n");
+			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_session_send_request\n");
 			goto out;
 		}
 	}
@@ -693,20 +847,20 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	if (session->method != RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&session->request_part->fields) > 0) {
 		if (session->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
 			if ((ret = __rrr_http_session_multipart_form_data_body_send (handle)) != 0) {
-				RRR_MSG_0("Could not send POST multipart body in rrr_http_session_send_request\n");
+				RRR_MSG_0("Could not send POST multipart body in __rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED) {
 			if ((ret = __rrr_http_session_post_x_www_form_body_send (handle, 0)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
 			// Application may choose to quote itself (influxdb has special quoting)
 			if ((ret = __rrr_http_session_post_x_www_form_body_send (handle, 1)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
@@ -720,7 +874,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 		}
 	}
 	else if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
-		RRR_MSG_0("Could not send last \\r\\n in rrr_http_session_send_request\n");
+		RRR_MSG_0("Could not send last \\r\\n in __rrr_http_session_send_request\n");
 		goto out;
 	}
 
@@ -762,6 +916,8 @@ struct rrr_http_session_receive_data {
 	ssize_t parse_complete_pos;
 	ssize_t received_bytes; // Used only for stall timeout and sleeping
 	rrr_http_unique_id unique_id;
+	int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
+	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 	int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
@@ -799,6 +955,43 @@ static int __rrr_http_session_response_receive_callback (
 		}
 	}
 
+	if (session->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+		if (receive_data->websocket_callback == NULL) {
+			RRR_MSG_0("Unexpected HTTP 101 Switching Protocols response from server, websocket upgrade was not requested\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((ret = __rrr_http_session_websocket_response_check_headers(session)) != 0) {
+			goto out;
+		}
+
+		if (read_session->rx_overshoot_size != 0) {
+
+		}
+
+		int do_websocket = 0;
+		if ((ret = receive_data->websocket_callback (
+				&do_websocket,
+				receive_data->handle,
+				session->request_part,
+				session->response_part,
+				read_session->rx_buf_ptr,
+				(const struct sockaddr *) &read_session->src_addr,
+				read_session->src_addr_len,
+				read_session->rx_overshoot_size,
+				0,
+				receive_data->websocket_callback_arg
+		))) {
+			goto out;
+		}
+
+		if (do_websocket != 1) {
+			// Application regrets websocket upgrade, close connection
+			goto out;
+		}
+	}
+
 	if ((ret = receive_data->callback (
 			receive_data->handle,
 			session->request_part,
@@ -808,6 +1001,7 @@ static int __rrr_http_session_response_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			0,
+			0,
 			receive_data->callback_arg
 	)) != 0) {
 		goto out;
@@ -815,8 +1009,8 @@ static int __rrr_http_session_response_receive_callback (
 
 	// ALWAYS destroy parts
 	out:
-	__rrr_http_session_destroy_part(&session->response_part);
-	__rrr_http_session_destroy_part(&session->request_part);
+	__rrr_http_session_destroy_part_if_not_null(&session->response_part);
+	__rrr_http_session_destroy_part_if_not_null(&session->request_part);
 
 	return ret;
 }
@@ -907,6 +1101,9 @@ static int __rrr_http_session_transport_ctx_send_response (
 	const char *response_str = NULL;
 
 	switch (response_part->response_code) {
+		case RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS:
+			response_str = "HTTP/1.1 101 Switching Protocols\r\n";
+			break;
 		case RRR_HTTP_RESPONSE_CODE_OK:
 			response_str = "HTTP/1.1 200 OK\r\n";
 			break;
@@ -954,6 +1151,120 @@ static int __rrr_http_session_transport_ctx_send_response (
 		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_session_transport_ctx_send_response\n",
 				handle->handle);
 	out:
+		return ret;
+}
+
+static int __rrr_http_session_websocket_request_check_version (
+		struct rrr_http_session *session
+) {
+	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
+	if (sec_websocket_version == NULL) {
+		RRR_DBG_1("Field Sec-WebSocket-Version missing in HTTP request with Connection: Upgrade and Upgrade: websocket headers set\n");
+		return 1;
+	}
+
+	if (rrr_nullsafe_str_cmpto(sec_websocket_version->value, "13") != 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,sec_websocket_version->value);
+		RRR_DBG_1("Received HTTP request with WebSocket upgrade and version '%s' set, but only version '13' is supported\n",
+				value);
+		return 1;
+	}
+	return 0;
+}
+
+static int __rrr_http_session_websocket_request_try (
+		int *do_websocket,
+		struct rrr_http_session_receive_data *receive_data,
+		struct rrr_http_session *session,
+		struct rrr_read_session *read_session,
+		const char *data_to_use
+) {
+	*do_websocket = 0;
+
+	int ret = 0;
+
+	char *accept_base64_tmp = NULL;
+
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get_with_value(session->request_part, "connection", "upgrade");
+	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get_with_value(session->request_part, "upgrade", "websocket");
+
+	if (connection == NULL || upgrade == NULL) {
+		goto out;
+	}
+
+	*do_websocket = 1;
+
+	if (session->request_part->request_method != RRR_HTTP_METHOD_GET) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_name,session->request_part->request_method_str_nullsafe);
+		RRR_DBG_1("Received websocket upgrade request which was not a GET request but '%s'\n", method_name);
+		goto out_bad_request;
+	}
+
+	if (read_session->rx_overshoot_size) {
+		RRR_DBG_1("Extra data received from client after websocket HTTP request\n");
+		goto out_bad_request;
+	}
+
+	if (__rrr_http_session_websocket_request_check_version(session) != 0) {
+		goto out_bad_request;
+	}
+
+	const struct rrr_http_header_field *sec_websocket_key = rrr_http_part_header_field_get(session->request_part, "sec-websocket-key");
+	if (sec_websocket_key == NULL) {
+		RRR_DBG_1("HTTP request with WebSocket upgrade missing field Sec-WebSocket-Key\n");
+		goto out_bad_request;
+	}
+
+	if (!rrr_nullsafe_str_isset(sec_websocket_key->binary_value_nullsafe)) {
+		RRR_BUG("BUG: Binary value was not set for sec-websocket-key header field in __rrr_http_session_request_receive_try_websocket\n");
+	}
+
+	if (rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe) != 16) {
+		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrrl "\n",
+				rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe));
+		goto out_bad_request;
+	}
+
+	if ((ret = receive_data->websocket_callback (
+			do_websocket,
+			receive_data->handle,
+			session->request_part,
+			session->response_part,
+			data_to_use,
+			(const struct sockaddr *) &read_session->src_addr,
+			read_session->src_addr_len,
+			read_session->rx_overshoot_size,
+			receive_data->unique_id,
+			receive_data->websocket_callback_arg
+	)) != RRR_HTTP_OK || session->response_part->response_code != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "connection", "upgrade")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "upgrade", "websocket")) != 0) {
+		goto out;
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(sec_websocket_key_str, sec_websocket_key->value);
+	if ((ret = __rrr_http_session_websocket_make_accept_string(&accept_base64_tmp, sec_websocket_key_str)) != 0) {
+		RRR_MSG_0("Failed to make accept-string in __rrr_http_session_request_receive_try_websocket\n");
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "sec-websocket-accept", accept_base64_tmp)) != 0) {
+		goto out;
+	}
+
+	session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS;
+
+	goto out;
+	out_bad_request:
+		session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+	out:
+		RRR_FREE_IF_NOT_NULL(accept_base64_tmp);
 		return ret;
 }
 
@@ -1015,6 +1326,26 @@ static int __rrr_http_session_request_receive_callback (
 		goto out;
 	}
 
+	int do_websocket = 0;
+	if (receive_data->websocket_callback != NULL && (ret = __rrr_http_session_websocket_request_try (
+			&do_websocket,
+			receive_data,
+			session,
+			read_session,
+			data_to_use
+	)) != 0) {
+		goto out;
+	}
+
+	if (do_websocket != 0) {
+		if (session->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+			RRR_DBG_3("Upgrading HTTP connection to WebSocket\n");
+		}
+		else {
+			RRR_DBG_1("Upgrade HTTP connection to WebSocket failed\n");
+		}
+	}
+
 	if ((ret = receive_data->callback (
 			receive_data->handle,
 			session->request_part,
@@ -1024,6 +1355,7 @@ static int __rrr_http_session_request_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
+			do_websocket,
 			receive_data->callback_arg
 	)) != RRR_HTTP_OK) {
 		goto out;
@@ -1035,8 +1367,8 @@ static int __rrr_http_session_request_receive_callback (
 
 	out:
 	// ALWAYS destroy parts
-	__rrr_http_session_destroy_part(&session->request_part);
-	__rrr_http_session_destroy_part(&session->response_part);
+	__rrr_http_session_destroy_part_if_not_null(&session->request_part);
+	__rrr_http_session_destroy_part_if_not_null(&session->response_part);
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
@@ -1159,6 +1491,8 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
@@ -1173,6 +1507,8 @@ int rrr_http_session_transport_ctx_receive (
 			0,
 			0,
 			unique_id,
+			websocket_callback,
+			websocket_callback_arg,
 			callback,
 			callback_arg,
 			raw_callback,
@@ -1243,6 +1579,128 @@ int rrr_http_session_transport_ctx_receive (
 			ret = RRR_HTTP_HARD_ERROR;
 		}
 		// Don't print error here, not needed.
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_http_session_websocket_frame_callback_data {
+	struct rrr_http_session *session;
+	rrr_http_unique_id unique_id;
+	int (*callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS);
+	void *callback_arg;
+};
+
+static int __rrr_http_session_websocket_frame_callback (
+		RRR_WEBSOCKET_FRAME_CALLBACK_ARGS
+) {
+	struct rrr_http_session_websocket_frame_callback_data *callback_data = arg;
+	return callback_data->callback (
+			opcode,
+			payload,
+			payload_size,
+			callback_data->unique_id,
+			callback_data->callback_arg
+	);
+}
+
+static int __rrr_http_session_websocket_get_responses (
+		struct rrr_websocket_state *ws_state,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg
+) {
+	int ret = 0;
+
+	void *response_data = NULL;
+	ssize_t response_data_len = 0;
+	int response_is_binary = 0;
+
+	do {
+		RRR_FREE_IF_NOT_NULL(response_data);
+		if ((ret = get_response_callback (
+				&response_data,
+				&response_data_len,
+				&response_is_binary,
+				get_response_callback_arg
+		)) != 0) {
+			goto out;
+		}
+		if (response_data) {
+			if ((ret = rrr_websocket_frame_enqueue (
+					ws_state,
+					(response_is_binary ? RRR_WEBSOCKET_OPCODE_BINARY : RRR_WEBSOCKET_OPCODE_TEXT),
+					(char**) &response_data,
+					response_data_len
+			)) != 0) {
+				goto out;
+			}
+		}
+	} while (response_data != NULL);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(response_data);
+	return ret;
+}
+
+int rrr_http_session_transport_ctx_websocket_tick (
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		rrr_http_unique_id unique_id,
+		int ping_interval_s,
+		int timeout_s,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	int ret = 0;
+
+	struct rrr_http_session_websocket_frame_callback_data callback_data = {
+			session,
+			unique_id,
+			frame_callback,
+			frame_callback_arg
+	};
+
+	if (rrr_websocket_check_timeout(&session->ws_state, timeout_s) != 0) {
+		RRR_DBG_2("HTTP websocket session timed out after %i seconds of inactivity\n", timeout_s);
+		ret = RRR_READ_EOF;
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_enqueue_ping_if_needed(&session->ws_state, ping_interval_s)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_session_websocket_get_responses (
+			&session->ws_state,
+			get_response_callback,
+			get_response_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_websocket_transport_ctx_send_frames (
+			handle,
+			&session->ws_state
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = (rrr_websocket_transport_ctx_read_frames (
+			handle,
+			&session->ws_state,
+			100,
+			4096,
+			65535,
+			read_max_size,
+			__rrr_http_session_websocket_frame_callback,
+			&callback_data
+	)) & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE)) != 0) {
 		goto out;
 	}
 

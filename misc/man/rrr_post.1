@@ -1,4 +1,4 @@
-.Dd 2020-05-25
+.Dd 2020-09-16
 .TH RRR_POST 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -12,15 +12,16 @@ program to post data to its modules.
 .B rrr_post {RRR SOCKET}
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
-.Dl [-a|--array_definition[=]ARRAY DEFINITION]
+.Dl [-a|--array-definition[=]ARRAY DEFINITION]
 .Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
 .Dl [-s|--sync]
 .Dl [-q|--quiet]
 .Dl [-l|--loglevel-translation]
+.Dl [-e|--environment-file[=]ENVIRONMENT FILE]
 .Dl [-d|--debuglevel[=]FLAGS]
-.Dl [-D|--debuglevel_on_exit[=]FLAGS]
+.Dl [-D|--debuglevel-on-exit[=]FLAGS]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -46,7 +47,7 @@ option. If left unspecified, no file or standard input reading is performed.
 .IP -r|--readings[=]reading1,reading2,...
 Generate simple RRR messages, one for each reading specified. The reading value is an unsigned integer stored as 64 bits. If specified, the
 reading messages are generated before any reading of a file or standard input begins.
-.IP -a|--array_definition[=]DEFINITION
+.IP -a|--array-definition[=]DEFINITION
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
@@ -64,12 +65,15 @@ If array parsing fails (invalid input data), try to parse again after skipping o
 Don't print statistics upon exit.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
-.IP -D|--debuglevel_on_exit[=]FLAGS
+.IP -D|--debuglevel-on-exit[=]FLAGS
 Debuglevel to use when program exits.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
-
+.IP -e|--environment-file
+See
+.Xr rrr(1)
+for usage.
 .PP
 .SH SIGNALS
 .IP SIGURS1

@@ -69,8 +69,7 @@ struct rrr_mqtt_broker_data {
 	pthread_mutex_unlock(&data->client_serial_stats_lock)
 
 int rrr_mqtt_broker_accept_connections (
-		struct rrr_mqtt_broker_data *data,
-		int listen_handle
+		struct rrr_mqtt_broker_data *data
 );
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
 static inline void rrr_mqtt_broker_destroy_void (void *broker) {
@@ -93,7 +92,6 @@ int rrr_mqtt_broker_new (
 		void *session_initializer_arg
 );
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-		int *listen_handle,
 		struct rrr_mqtt_broker_data *broker,
 		const struct rrr_net_transport_config *net_transport_config,
 		int port
@@ -102,8 +100,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 /* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
 int rrr_mqtt_broker_synchronized_tick (
 		int *something_happened,
-		struct rrr_mqtt_broker_data *data,
-		int listen_handle
+		struct rrr_mqtt_broker_data *data
 );
 
 void rrr_mqtt_broker_get_stats (

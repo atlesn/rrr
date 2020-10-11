@@ -22,11 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_STRING_BUILDER_H
 #define RRR_STRING_BUILDER_H
 
-#include <stdio.h>
+#include "type.h"
 
 struct rrr_string_builder {
-	ssize_t size;
-	ssize_t wpos;
+	rrr_biglength size;
+	rrr_biglength wpos;
 	char *buf;
 };
 
@@ -48,14 +48,15 @@ struct rrr_string_builder {
 	rrr_string_builder_unchecked_append(string_builder,str)
 
 void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str);
-void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, size_t buf_size);
+void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size);
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder);
 void rrr_string_builder_clear (struct rrr_string_builder *string_builder);
-ssize_t rrr_string_builder_length (struct rrr_string_builder *string_builder);
+rrr_biglength rrr_string_builder_length (struct rrr_string_builder *string_builder);
+rrr_biglength rrr_string_builder_size (struct rrr_string_builder *string_builder);
 int rrr_string_builder_new (struct rrr_string_builder **result);
 void rrr_string_builder_destroy (struct rrr_string_builder *string_builder);
 void rrr_string_builder_destroy_void (void *ptr);
-int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes);
+int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_biglength bytes);
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str);
 int rrr_string_builder_append_format (struct rrr_string_builder *string_builder, const char *format, ...);
 

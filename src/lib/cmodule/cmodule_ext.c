@@ -24,12 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defines.h"
 #include "cmodule_ext.h"
 #include "cmodule_channel.h"
-#include "cmodule_main.h"
+#include "cmodule_worker.h"
 
-// Will always free the message also upon errors
 int rrr_cmodule_ext_send_message_to_parent (
 		struct rrr_cmodule_worker *worker,
-		struct rrr_msg_msg *message,
+		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 ) {
 	return rrr_cmodule_worker_send_message_and_address_to_parent(worker, message, message_addr);
