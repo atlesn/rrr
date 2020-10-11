@@ -442,9 +442,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
@@ -618,7 +616,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = RRR_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {

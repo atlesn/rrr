@@ -105,9 +105,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(data_cleanup, data);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;

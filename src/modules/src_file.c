@@ -387,7 +387,7 @@ static int file_probe_callback (
 		}
 
 		if ((fd = rrr_socket_open(orig_path, flags, 0, INSTANCE_D_NAME(data->thread_data), data->do_unlink_on_close)) <= 0) {
-			RRR_MSG_0("Warning: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
+			RRR_DBG_1("Note: Failed to open '%s'=>'%s' for reading in file instance %s: %s\n",
 					orig_path, resolved_path, INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
 			goto out;
 		}
@@ -872,9 +872,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(file_data_cleanup, data);
 
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	rrr_thread_start_condition_helper_nofork(thread);
 
 	if (file_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));

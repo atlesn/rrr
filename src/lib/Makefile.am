@@ -57,7 +57,7 @@ http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 websocket = websocket/websocket.c
 
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
-			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
+			cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 

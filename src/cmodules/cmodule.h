@@ -58,9 +58,11 @@ static inline int rrr_send_and_free (
 		struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 ) {
-	return rrr_cmodule_ext_send_message_to_parent (
+	int ret = rrr_cmodule_ext_send_message_to_parent (
 			ctx->worker, message, message_addr
 	);
+	free(message);
+	return ret;
 }
 
 static inline void rrr_free (
