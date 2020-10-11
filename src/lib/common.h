@@ -21,15 +21,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "settings.h"
 #include "util/linked_list.h"
+#include "signal_defines.h"
 
 #ifndef RRR_COMMON_H
 #define RRR_COMMON_H
-
-#define RRR_SIGNAL_HANDLED 0
-#define RRR_SIGNAL_NOT_HANDLED 1
-
-#define RRR_SIGNALS_ACTIVE 1
-#define RRR_SIGNALS_NOT_ACTIVE 0
 
 struct rrr_signal_handler {
 	RRR_LL_NODE(struct rrr_signal_handler);

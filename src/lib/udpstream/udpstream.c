@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 #include "util/crc32.h"
 #include "util/posix.h"
+#include "ip/ip_util.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -591,6 +592,7 @@ static int __rrr_udpstream_read_get_target_size (
 	out:
 	return ret;
 }
+
 static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handle (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
@@ -1901,25 +1903,78 @@ void rrr_udpstream_close (
 	pthread_mutex_unlock(&data->lock);
 }
 
-int rrr_udpstream_bind (
+static int __rrr_udpstream_bind (
+		struct rrr_ip_data *ip_data,
+		unsigned int local_port,
+		int do_ipv6
+) {
+
+	ip_data->port = local_port;
+
+	if (rrr_ip_network_start_udp (ip_data, do_ipv6) != 0) {
+		return 1;
+	}
+
+	return 0;
+}
+
+int rrr_udpstream_bind_v6_priority (
 		struct rrr_udpstream *data,
 		unsigned int local_port
 ) {
 	int ret = 0;
 
+	if (data->ip.fd != 0) {
+		RRR_BUG("rrr_udpstream_bind called with non-zero fd, bind already complete\n");
+	}
+
 	pthread_mutex_lock(&data->lock);
+
+	int ret_4, ret_6 = 0;
+
+	ret_6 = __rrr_udpstream_bind(&data->ip, local_port, 1);
+	if (ret_6 != 0) {
+		data->ip.fd = 0;
+		ret_4 = __rrr_udpstream_bind(&data->ip, local_port, 0);
+	}
+
+	if (ret_4 != 0 && ret_6 != 0) {
+		RRR_MSG_0("Listening failed on both IPv4 and IPv6 in udpstream on port %u\n", local_port);
+		ret = 1;
+		goto out;
+	}
+
+	if (ret_6 == 0) {
+		RRR_DBG_1("udpstream bind on port %u IPv6 (possibly dual-stack)\n", local_port);
+	}
+	else {
+		RRR_DBG_1("udpstream bind on port %u IPv4\n", local_port);
+	}
+
+	out:
+	pthread_mutex_unlock(&data->lock);
+	return ret;
+}
+
+int rrr_udpstream_bind_v4_only (
+		struct rrr_udpstream *data,
+		unsigned int local_port
+) {
+	int ret = 0;
 
 	if (data->ip.fd != 0) {
 		RRR_BUG("rrr_udpstream_bind called with non-zero fd, bind already complete\n");
 	}
 
-	data->ip.port = local_port;
+	pthread_mutex_lock(&data->lock);
 
-	if (rrr_ip_network_start_udp_ipv4 (&data->ip) != 0) {
-		RRR_MSG_0("Could not start IP in rrr_udpstream_bind\n");
+	if (__rrr_udpstream_bind(&data->ip, local_port, 0) != 0) {
+		RRR_MSG_0("Listening failed on IPv4 in udpstream on port %u\n", local_port);
 		ret = 1;
 		goto out;
 	}
+
+	RRR_DBG_1("udpstream bind on port %u IPv4 only\n", local_port);
 
 	out:
 	pthread_mutex_unlock(&data->lock);
@@ -1957,36 +2012,52 @@ int rrr_udpstream_connect (
 		const char *remote_port
 ) {
 	int ret = 0;
-	struct addrinfo *res = NULL;
 
 	if (data->ip.fd == 0) {
 		RRR_BUG("FD was 0 in rrr_udpstream_connect, must bind first\n");
 	}
 
 	struct addrinfo hints;
-	memset(&hints,0,sizeof(hints));
-	hints.ai_family = AF_INET;
+	struct addrinfo *result;
+
+	memset (&hints, '\0', sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
 
-	ret = getaddrinfo(remote_host, remote_port, &hints, &res);
-	if (ret != 0) {
-		RRR_MSG_0 ("Could not get address info of server %s port %s in rrr_udpstream_connect: %s\n",
-				remote_host, remote_port, gai_strerror(ret));
+	int s = getaddrinfo(remote_host, remote_port, &hints, &result);
+	if (s != 0) {
+		RRR_MSG_0("Failed to get address of '%s' in udpstream: %s\n", remote_host, gai_strerror(s));
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_udpstream_connect_raw(connect_handle, data, res->ai_addr, res->ai_addrlen)) != 0) {
-		RRR_MSG_0("Could not send connect packet in rrr_udpstream_connect\n");
-		goto out;
+	struct addrinfo *rp;
+	for (rp = result; rp != NULL; rp = rp->ai_next) {
+		if (RRR_DEBUGLEVEL_1) {
+			char buf[128];
+			rrr_ip_to_str(buf, sizeof(buf), result->ai_addr, result->ai_addrlen);
+			RRR_MSG_1("udpstream connection attempt to %s\n", buf);
+		}
+		if ((ret = rrr_udpstream_connect_raw(connect_handle, data, result->ai_addr, result->ai_addrlen)) != 0) {
+			RRR_DBG_1("Note: Could not send connect packet in rrr_udpstream_connect\n");
+		}
+		else {
+			RRR_DBG_1("Connection packet sucessfully sent in udpstream\n");
+			break;
+		}
 	}
 
-	out:
-	if (res != NULL) {
-		freeaddrinfo(res);
+	// Let last return value propagate
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not send connect packet in udpstream, all address suggestions failed\n");
 	}
+
+	freeaddrinfo(result);
+
+	out:
 	pthread_mutex_unlock(&data->lock);
 	return ret;
 }

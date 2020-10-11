@@ -427,7 +427,7 @@ int rrr_socket_bind_and_listen (
 		}
 	}
 	if (bind(fd, addr, addr_len) != 0) {
-		RRR_MSG_0("Could not bind to socket: %s\n",rrr_strerror(errno));
+		RRR_DBG_1("Note: Could not bind to socket: %s\n",rrr_strerror(errno));
 		return 1;
 	}
 	if (listen(fd, num_clients) != 0) {

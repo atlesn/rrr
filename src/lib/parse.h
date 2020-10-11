@@ -100,7 +100,7 @@ void rrr_parse_non_newline (
 		int *start,
 		int *end
 );
-int rrr_parse_extract_string (
+int rrr_parse_str_extract (
 		char **target,
 		struct rrr_parse_pos *pos,
 		const int begin,
@@ -120,6 +120,9 @@ int rrr_parse_str_extract_until (
 		char end_char
 );
 void rrr_parse_str_strip_newlines (
+		char *str
+);
+void rrr_parse_str_trim (
 		char *str
 );
 

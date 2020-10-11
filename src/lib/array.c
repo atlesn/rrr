@@ -125,7 +125,12 @@ static int __rrr_array_push_value_64_with_tag (
 	}
 
 	rrr_length parsed_bytes = 0;
-	if ((ret = new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value)))) != 0) {
+	if ((ret = new_value->definition->import (
+			new_value,
+			&parsed_bytes,
+			(const char *) &value,
+			((const char *) &value + sizeof(value))
+	)) != 0) {
 		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag return was %i\n", ret);
 		ret = 1;
 		goto out;

@@ -284,7 +284,7 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 		goto out;
 	}
 
-	if ((ret = rrr_parse_extract_string(&username_tmp, pos, username_start, (username_end - username_start) + 1)) != 0) {
+	if ((ret = rrr_parse_str_extract(&username_tmp, pos, username_start, (username_end - username_start) + 1)) != 0) {
 		RRR_MSG_0("Could not extract username in __rrr_mqtt_acl_parse_keyword_user\n");
 		goto out;
 	}
@@ -403,7 +403,7 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 		}
 
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
-		if (rrr_parse_extract_string(&topic_tmp, pos, topic_start, (topic_end - topic_start) + 1) != 0) {
+		if (rrr_parse_str_extract(&topic_tmp, pos, topic_start, (topic_end - topic_start) + 1) != 0) {
 			RRR_MSG_0("Parsing failed at line %i\n", pos->line);
 			ret = 1;
 			goto out;
