@@ -41,18 +41,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "read.h"
 #include "log.h"
-#include "messages/msg_msg.h"
 #include "array.h"
 #include "rrr_strerror.h"
 #include "read_constants.h"
-#include "ip/ip.h"
+
+/*
+#include "messages/msg_msg.h"
+#include "messages/msg.h"
 #include "message_holder/message_holder.h"
 #include "message_holder/message_holder_struct.h"
+*/
+#include "ip/ip.h"
 #include "ip/ip_accept_data.h"
 #include "ip/ip_util.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_common.h"
-#include "messages/msg.h"
 #include "socket/rrr_socket_read.h"
 #include "socket/rrr_socket_constants.h"
 #include "util/rrr_time.h"
@@ -157,14 +160,15 @@ void rrr_ip_network_cleanup (
 	}
 }
 
-int rrr_ip_network_start_udp_ipv4_nobind (
-		struct rrr_ip_data *data
+int rrr_ip_network_start_udp_nobind (
+		struct rrr_ip_data *data,
+		int do_ipv6
 ) {
 	int fd = rrr_socket (
-			AF_INET,
+			(do_ipv6 ? AF_INET6 : AF_INET),
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
-			"ip_network_start_udp_ipv4_nobind",
+			"ip_network_start_udp_nobind",
 			NULL
 	);
 	if (fd == -1) {
@@ -177,11 +181,12 @@ int rrr_ip_network_start_udp_ipv4_nobind (
 	return 0;
 }
 
-int rrr_ip_network_start_udp_ipv4 (
-		struct rrr_ip_data *data
+int rrr_ip_network_start_udp (
+		struct rrr_ip_data *data,
+		int do_ipv6
 ) {
 	int fd = rrr_socket (
-			AF_INET,
+			(do_ipv6 ? AF_INET6 : AF_INET),
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
 			"ip_network_start_udp_ipv4",
@@ -197,14 +202,28 @@ int rrr_ip_network_start_udp_ipv4 (
 		goto out_close_socket;
 	}
 
-	struct sockaddr_in si;
-	memset(&si, '\0', sizeof(si));
-	si.sin_family = AF_INET;
-	si.sin_port = htons(data->port);
-	si.sin_addr.s_addr = htonl(INADDR_ANY);
+	struct sockaddr_storage s;
+	memset(&s, '\0', sizeof(s));
 
-	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		RRR_MSG_0 ("Could not bind to port %d: %s", data->port, rrr_strerror(errno));
+	size_t size = 0;
+	if (do_ipv6) {
+		struct sockaddr_in6 *si = (struct sockaddr_in6 *) &s;
+		si->sin6_family = AF_INET6;
+		si->sin6_port = htons(data->port);
+		memset (&si->sin6_addr, 0, sizeof(si->sin6_addr));
+		size = sizeof(*si);
+	}
+	else {
+		struct sockaddr_in *si = (struct sockaddr_in *) &s;
+		si->sin_family = AF_INET;
+		si->sin_port = htons(data->port);
+		si->sin_addr.s_addr = INADDR_ANY;
+		size = sizeof(*si);
+	}
+
+	if (bind (fd, (struct sockaddr *) &s, size) == -1) {
+		RRR_DBG_1 ("Note: Could not bind to port %d %s: %s\n",
+				data->port, (do_ipv6 ? "IPv6" : "IPv4"), rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -471,12 +490,13 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		return 1;
 }
 
-int rrr_ip_network_start_tcp_ipv4_and_ipv6 (
+int rrr_ip_network_start_tcp (
 		struct rrr_ip_data *data,
-		int max_connections
+		int max_connections,
+		int do_ipv6
 ) {
 	int fd = rrr_socket (
-			AF_INET6,
+			(do_ipv6 ? AF_INET6 : AF_INET),
 			SOCK_NONBLOCK|SOCK_STREAM,
 			0,
 			"ip_network_start",
@@ -494,12 +514,12 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (
 
 	struct sockaddr_in6 si;
 	memset(&si, '\0', sizeof(si));
-	si.sin6_family = AF_INET6;
+	si.sin6_family = (do_ipv6 ? AF_INET6 : AF_INET);
 	si.sin6_port = htons(data->port);
 	si.sin6_addr = in6addr_any;
 
 	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
-		RRR_MSG_0 ("Could not listen on port %d: %s\n", data->port, rrr_strerror(errno));
+		RRR_DBG_1 ("Note: Could not listen on port %d %s: %s\n", data->port, (do_ipv6 ? "IPv6" : "IPv4"), rrr_strerror(errno));
 		goto out_close_socket;
 	}
 

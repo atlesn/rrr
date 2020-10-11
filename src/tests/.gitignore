@@ -1,3 +1,5 @@
+sha1/sha
+sha1/shatest
 tests/
 *.log
 test

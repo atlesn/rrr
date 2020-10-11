@@ -117,7 +117,8 @@ int main (int argc, char **argv) {
 		goto out;
 	}
 
-	if (write(fd, &data, sizeof(data)) != sizeof(data)) {
+	// -1 due to last element of msg_msg struct
+	if (write(fd, &data, sizeof(data) - 1) != sizeof(data) - 1) {
 		fprintf (stderr, "Could not write to output file '%s': %s\n",
 				argv[1], strerror(errno));
 		ret = 1;

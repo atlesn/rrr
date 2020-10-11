@@ -147,7 +147,8 @@ int rrr_udpstream_asd_new (
 		const char *remote_port,
 		uint32_t client_id,
 		int accept_connections,
-		int disallow_ip_swap
+		int disallow_ip_swap,
+		int v4_only
 );
 int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,

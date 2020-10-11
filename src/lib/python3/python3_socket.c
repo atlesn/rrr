@@ -226,8 +226,7 @@ int rrr_python3_socket_send (
 
 	pthread_mutex_lock(&socket_data->send_lock);
 
-	// Always frees message
-	if ((ret = rrr_cmodule_ext_send_message_to_parent(
+	if ((ret = rrr_cmodule_ext_send_message_to_parent (
 			socket_data->worker,
 			message,
 			message_addr
@@ -237,5 +236,6 @@ int rrr_python3_socket_send (
 	}
 
 	pthread_mutex_unlock(&socket_data->send_lock);
+	free(message);
 	return ret;
 }

@@ -80,19 +80,11 @@ static volatile int rrr_stats_abort = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"socket",				"[RRR SOCKET (PREFIX)] ..."},
-		{0,							'e',	"exact_path",			"[-e|--exact_path]"},
+		{0,							'e',	"exact-path",			"[-e|--exact-path]"},
 		{0,							'j',	"journal",				"[-j|--journal]"},
-/*		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
-		{0,							's',	"sync",					"[-s|--sync]"},
-		{0,							'q',	"quiet",				"[-q|--quiet]"},*/
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -221,7 +213,7 @@ static int __rrr_stats_read_message (
 }
 
 static int __rrr_stats_parse_config (struct rrr_stats_data *data, struct cmd_data *cmd) {
-	if (cmd_exists(cmd, "exact_path", 0)) {
+	if (cmd_exists(cmd, "exact-path", 0)) {
 		data->socket_path_exact = 1;
 	}
 

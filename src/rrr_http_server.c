@@ -54,8 +54,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -306,6 +307,10 @@ int main (int argc, const char **argv, const char **env) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 	int accept_count_total = 0;
 
+	struct rrr_http_server_callbacks callbacks = {
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	};
+
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	while (main_running) {
 		// We must do this here, the HTTP server library does not do this
@@ -314,7 +319,7 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_thread_postponed_cleanup_run(&count);
 
 		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, 5, NULL, NULL, NULL, NULL, NULL, NULL) != 0) {
+		if (rrr_http_server_tick(&accept_count, http_server, 5, &callbacks) != 0) {
 			ret = EXIT_FAILURE;
 			break;
 		}

@@ -39,7 +39,7 @@ struct rrr_perl5_ctx {
 	PerlInterpreter *interpreter;
 	void *private_data;
 
-	int (*send_message)(struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data);
+	int (*send_message)(const struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data);
 	char *(*get_setting)(const char *key, void *private_data);
 	int (*set_setting)(const char *key, const char *value, void *private_data);
 };
@@ -66,7 +66,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data),
+		int (*send_message) (const struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 );
