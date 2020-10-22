@@ -150,6 +150,9 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 
 		struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
 
+		RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " to worker fork '%s'\n",
+				message->timestamp, worker->name);
+
 		// Insert PING in between to make the child fork send PONGs back
 		// while it processes messages
 		if (i % 10 == 0) {
@@ -223,6 +226,11 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
+
+	struct rrr_msg_msg *msg = entry->message;
+
+	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", queing for transmission to worker fork\n",
+			INSTANCE_D_NAME(thread_data), msg->timestamp);
 
 	if ((ret = __rrr_cmodule_helper_queue_entry_to_fork_nolock (
 			thread_data,
