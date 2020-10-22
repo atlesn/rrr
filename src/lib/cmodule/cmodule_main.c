@@ -130,9 +130,9 @@ int rrr_cmodule_main_worker_fork_start (
 			settings,
 			cmodule->fork_handler,
 			cmodule->mmap,
-			cmodule->config_data.spawn_interval_us,
-			cmodule->config_data.sleep_time_us,
-			cmodule->config_data.nothing_happened_limit,
+			cmodule->config_data.worker_spawn_interval_us,
+			cmodule->config_data.worker_sleep_time_us,
+			cmodule->config_data.worker_nothing_happened_limit,
 			cmodule->config_data.do_spawning,
 			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error

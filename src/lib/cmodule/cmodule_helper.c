@@ -729,11 +729,19 @@ void rrr_cmodule_helper_loop (
 
 	int from_senders_counter = 0;
 
-//	int current_poll_wait_ms = 0;
 	int tick = 0;
 
 	// Let it overflow, DO NOT use signed
 	unsigned int consecutive_nothing_happened = 0;
+
+	// Use at maximum the sleep interval set for the worker, but a minimum of 1 ms
+	uint64_t long_sleep_time_us = RRR_CMODULE_DEFAULT_SLEEP_TIME_MS * 1000;
+	if (long_sleep_time_us > INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us) {
+		long_sleep_time_us = INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us;
+	}
+	if (long_sleep_time_us < 1000) {
+		long_sleep_time_us = 1000;
+	}
 
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
@@ -775,8 +783,8 @@ void rrr_cmodule_helper_loop (
 			consecutive_nothing_happened = 0;
 		}
 
-		if (consecutive_nothing_happened > 250) {
-			rrr_posix_usleep(100000); // 100 ms
+		if (consecutive_nothing_happened > RRR_CMODULE_DEFAULT_NOTHING_HAPPENED_LIMIT) {
+			rrr_posix_usleep(long_sleep_time_us);
 		}
 		else if (consecutive_nothing_happened > 100) {
 			rrr_posix_usleep(100); // 100 us
@@ -902,17 +910,17 @@ int rrr_cmodule_helper_parse_config (
 
 	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_source_interval_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
-	data->spawn_interval_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
+	data->worker_spawn_interval_us *= 1000;
 
 	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_sleep_time_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
-	data->sleep_time_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
+	data->worker_sleep_time_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_nothing_happened_limit");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
-	if (data->nothing_happened_limit < 1) {
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
+	if (data->worker_nothing_happened_limit < 1) {
 		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
 				config->name);
 		ret = 1;
