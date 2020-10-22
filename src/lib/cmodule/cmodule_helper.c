@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_cmodule_helper_read_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
+	struct rrr_instance_runtime_data *parent_thread_data;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
@@ -62,7 +62,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
 		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+				INSTANCE_D_NAME(callback_data->parent_thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -94,8 +94,11 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
 
+	RRR_DBG_3("Received a message with timestamp %" PRIu64 " from worker fork in instance %s reader thread\n",
+			msg->timestamp, INSTANCE_D_NAME(callback_data->parent_thread_data));
+
 	if (rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(callback_data->thread_data),
+			INSTANCE_D_BROKER_ARGS(callback_data->parent_thread_data),
 			NULL,
 			0,
 			0,
@@ -103,7 +106,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			callback_data
 	) != 0) {
 		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+				INSTANCE_D_NAME(callback_data->parent_thread_data));
 		return 1;
 	}
 
@@ -287,6 +290,8 @@ struct rrr_cmodule_helper_reader_thread_data {
 
 	struct rrr_instance_runtime_data *parent_thread_data;
 	struct rrr_stats_instance *stats;
+
+	uint64_t long_sleep_time_us;
 };
 
 
@@ -481,7 +486,7 @@ static int __rrr_cmodule_helper_read_thread_read_from_forks (
 
 	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 
-	callback_data.thread_data = parent_thread_data;
+	callback_data.parent_thread_data = parent_thread_data;
 
 	ret = __rrr_cmodule_helper_read_from_forks (
 			config_complete,
@@ -572,7 +577,7 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 
 		if (consecutive_nothing_happened > 250) {
 			usleep_count_long += 1;
-			rrr_posix_usleep(100000); // 100 ms
+			rrr_posix_usleep(data->long_sleep_time_us);
 		}
 		else if (consecutive_nothing_happened > 100) {
 			usleep_count_short++;
@@ -618,7 +623,8 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 static int __rrr_cmodule_helper_threads_start (
 		struct rrr_cmodule_helper_reader_thread_data *data,
 		struct rrr_instance_runtime_data *parent_thread_data,
-		struct rrr_stats_instance *stats
+		struct rrr_stats_instance *stats,
+		uint64_t long_sleep_time_us
 ) {
 	int ret = 0;
 
@@ -646,6 +652,7 @@ static int __rrr_cmodule_helper_threads_start (
 	data->thread_collection = thread_collection;
 	data->parent_thread_data = parent_thread_data;
 	data->stats = stats;
+	data->long_sleep_time_us = long_sleep_time_us;
 
 	if ((thread = rrr_thread_allocate_preload_and_register (
 			thread_collection,
@@ -723,7 +730,16 @@ void rrr_cmodule_helper_loop (
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
 
-	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats) != 0) {
+	// Use at maximum the sleep interval set for the worker, but a minimum of 1 ms
+	uint64_t long_sleep_time_us = RRR_CMODULE_DEFAULT_SLEEP_TIME_MS * 1000;
+	if (long_sleep_time_us > INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us) {
+		long_sleep_time_us = INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us;
+	}
+	if (long_sleep_time_us < 1000) {
+		long_sleep_time_us = 1000;
+	}
+
+	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats, long_sleep_time_us) != 0) {
 		goto cleanup;
 	}
 
@@ -733,15 +749,6 @@ void rrr_cmodule_helper_loop (
 
 	// Let it overflow, DO NOT use signed
 	unsigned int consecutive_nothing_happened = 0;
-
-	// Use at maximum the sleep interval set for the worker, but a minimum of 1 ms
-	uint64_t long_sleep_time_us = RRR_CMODULE_DEFAULT_SLEEP_TIME_MS * 1000;
-	if (long_sleep_time_us > INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us) {
-		long_sleep_time_us = INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us;
-	}
-	if (long_sleep_time_us < 1000) {
-		long_sleep_time_us = 1000;
-	}
 
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
