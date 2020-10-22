@@ -748,9 +748,6 @@ void rrr_cmodule_helper_loop (
 		int send_queue_total = 0;
 		RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
 			send_queue_total += RRR_LL_COUNT(&node->queue_to_fork);
-			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
-				goto cleanup;
-			}
 			rrr_posix_usleep(1); // Schedule
 			if (RRR_LL_COUNT(&node->queue_to_fork) < 250 && no_polling == 0) {
 				if (__rrr_cmodule_helper_poll_delete (
@@ -763,6 +760,9 @@ void rrr_cmodule_helper_loop (
 				) != 0) {
 					goto cleanup;
 				}
+			}
+			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
+				goto cleanup;
 			}
 		RRR_LL_ITERATE_END();
 

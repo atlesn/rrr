@@ -295,9 +295,6 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 
 	const struct rrr_msg_msg *msg = data;
 
-	RRR_DBG_3("Received a message with timestamp %" PRIu64 " in worker fork '%s'\n",
-			msg->timestamp, callback_data->worker->name);
-
 	if (RRR_MSG_IS_CTRL(msg)) {
 		RRR_DBG_5("cmodule worker %s received control message\n", callback_data->worker->name);
 		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING)) {
@@ -324,6 +321,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 
 		callback_data->worker->total_msg_mmap_to_fork++;
 
+		RRR_DBG_3("Received a message with timestamp %" PRIu64 " in worker fork '%s'\n",
+				msg->timestamp, callback_data->worker->name);
 		RRR_DBG_5("cmodule worker %s received message of size %" PRIrrrl ", calling processor function\n",
 				callback_data->worker->name, MSG_TOTAL_SIZE(msg_msg));
 
