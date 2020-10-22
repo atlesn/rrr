@@ -755,7 +755,7 @@ void rrr_cmodule_helper_loop (
 						thread_data,
 						poll,
 						fork_pid,
-						50, // 50 ms
+						0,
 						250
 				) != 0) {
 					goto cleanup;
