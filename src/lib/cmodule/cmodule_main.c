@@ -151,7 +151,7 @@ int rrr_cmodule_main_worker_fork_start (
 
 	if (pid < 0) {
 		// Don't use rrr_strerror() due to use of global lock
-		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n");
+		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n", errno);
 		ret = 1;
 		goto out_parent;
 	}
