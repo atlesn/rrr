@@ -135,6 +135,10 @@ int rrr_cmodule_worker_new (
 		goto out_free_name;
 	}
 
+	if (sleep_time_us > spawn_interval_us) {
+		sleep_time_us = spawn_interval_us;
+	}
+
 	worker->settings = settings;
 	worker->fork_handler = fork_handler;
 	worker->spawn_interval_us = spawn_interval_us;
@@ -143,10 +147,6 @@ int rrr_cmodule_worker_new (
 	worker->do_spawning = do_spawning;
 	worker->do_processing = do_processing;
 	worker->do_drop_on_error = do_drop_on_error;
-
-	if (sleep_time_us > spawn_interval_us) {
-		sleep_time_us = spawn_interval_us;
-	}
 
 	pthread_mutex_lock(&worker->pid_lock);
 	worker->pid = 0;
