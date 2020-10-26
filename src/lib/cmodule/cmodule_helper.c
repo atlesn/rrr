@@ -118,7 +118,10 @@ static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *wo
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
 	// Don't set retry-timer, we have many opportunities to send pings anyway
-	if (rrr_cmodule_channel_send_message_simple(worker->channel_to_fork, &msg, 0) != 0) {
+	if (rrr_cmodule_channel_send_message_simple (
+			worker->channel_to_fork,
+			&msg
+	) != 0) {
 		// Don't trigger error here. The reader thread will exit causing restart
 		// if the fork fails (does not send any PONG back)
 	}
@@ -165,8 +168,7 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 		if ((ret = rrr_cmodule_channel_send_message_and_address (
 				worker->channel_to_fork,
 				message,
-				&addr_msg,
-				RRR_CMODULE_CHANNEL_WAIT_TIME_US
+				&addr_msg
 		)) != 0) {
 			if (ret == RRR_CMODULE_CHANNEL_FULL) {
 				worker->to_fork_write_retry_counter += 1;

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_CHANNEL_SIZE (1024*1024*2)
 #define RRR_CMODULE_CHANNEL_WAIT_TIME_US 100
+#define RRR_CMODULE_CHANNEL_WAIT_RETRIES 500
 
 #define RRR_CMODULE_DEFERRED_QUEUE_MAX 1000
 

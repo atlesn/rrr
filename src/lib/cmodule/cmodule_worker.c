@@ -38,12 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 
-// PONG sends sometimes fail if the reader is holding the block lock
-// while we try to send and there are no messages on the channel. Make
-// sure we retry the send faster than the read function sleeps
-#define RRR_CMODULE_WORKER_PONG_SEND_FULL_WAIT_TIME_US \
-	(RRR_CMODULE_CHANNEL_WAIT_TIME_US/5)
-
 #define ALLOCATE_TMP_NAME(target, name1, name2)							\
 	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {			\
 		RRR_MSG_0("Could not allocate temporary string for name\n");	\
@@ -65,8 +59,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
 			message,
-			message_addr,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US
+			message_addr
 	);
 
 	if (ret == 0) {
@@ -244,7 +237,8 @@ static void __rrr_cmodule_worker_log_hook (
 			worker->channel_to_parent,
 			message_log,
 			message_log->msg_size,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
@@ -273,7 +267,8 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			worker->channel_to_parent,
 			setting,
 			sizeof(*setting),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES
 	) != 0) {
 		RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
 		return 1;
@@ -397,11 +392,12 @@ int __rrr_cmodule_worker_send_pong (
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, &msg, RRR_CMODULE_WORKER_PONG_SEND_FULL_WAIT_TIME_US);
+	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, &msg);
 
 	if (ret == 0) {
 		worker->total_msg_mmap_to_parent++;
 	}
+	// Let errors propagate
 
 	return ret;
 }
@@ -555,7 +551,8 @@ int rrr_cmodule_worker_loop_start (
 			worker->channel_to_parent,
 			&control_msg,
 			sizeof(control_msg),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES
 	) != 0) {
 		RRR_MSG_0("Error while writing config complete control message to mmap channel in rrr_cmodule_worker_loop_start\n");
 		return 1;
