@@ -10,7 +10,7 @@ depends=('python3' 'perl' 'mariadb-clients')
 optdepends=('systemd: systemd daemon support')
 makedepends=('git')
 provides=('rrr')
-source=("git+https://github.com/atlesn/$pkgname.git#tag=v1.15-0")
+source=("git+https://github.com/atlesn/$pkgname.git#tag=v1.15-1")
 md5sums=('SKIP')
 
 pkgver() {
