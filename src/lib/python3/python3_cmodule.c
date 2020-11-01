@@ -88,10 +88,6 @@ static int __rrr_py_initialize_increment_users(void) {
 		Py_InitializeEx(0); // 0 = no signal registering
 		//Py_NoSiteFlag = 0;
 
-#ifdef RRR_PYTHON_VERSION_LT_3_7
-		PyEval_InitThreads();
-#endif
-
 		main_python_tstate = PyEval_SaveThread();
 	}
 
