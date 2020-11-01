@@ -454,7 +454,9 @@ PyTypeObject rrr_python3_array_value_type = {
 	    .tp_basicsize	= sizeof(struct rrr_python3_array_value_data),
 		.tp_itemsize	= 0,
 	    .tp_dealloc		= (destructor) rrr_python3_array_value_f_dealloc,
+#ifdef RRR_PYTHON3_HAS_PTYPEOBJECT_TP_PRINT
 	    .tp_print		= NULL,
+#endif
 	    .tp_getattr		= NULL,
 	    .tp_setattr		= NULL,
 	    .tp_as_async	= NULL,
@@ -833,7 +835,9 @@ PyTypeObject rrr_python3_array_type = {
 	    .tp_basicsize	= sizeof(struct rrr_python3_array_data),
 		.tp_itemsize	= 0,
 	    .tp_dealloc		= (destructor) rrr_python3_array_f_dealloc,
+#ifdef RRR_PYTHON3_HAS_PTYPEOBJECT_TP_PRINT
 	    .tp_print		= NULL,
+#endif
 	    .tp_getattr		= NULL,
 	    .tp_setattr		= NULL,
 	    .tp_as_async	= NULL,
