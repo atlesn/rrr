@@ -966,10 +966,6 @@ static int __rrr_http_session_response_receive_callback (
 			goto out;
 		}
 
-		if (read_session->rx_overshoot_size != 0) {
-
-		}
-
 		int do_websocket = 0;
 		if ((ret = receive_data->websocket_callback (
 				&do_websocket,
