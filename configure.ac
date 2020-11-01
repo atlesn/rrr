@@ -320,7 +320,7 @@ AS_IF([test "x$enable_python3" = xno], [
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for version_tmp in 3.8 3.7; do
+		for version_tmp in 3.9 3.8 3.7; do
 			python3_tmp="python$version_tmp"
 			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
@@ -387,6 +387,27 @@ AS_IF([test "x$enable_python3" = xno], [
 		$python3_config_bin --includes
 		AC_MSG_ERROR("Python3 test failed")
 	fi
+	
+	AC_MSG_CHECKING([PyTypeObject tp_print member])
+	cflags_orig="$CFLAGS"
+	CFLAGS="$PYTHON3_CFLAGS"
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <Python.h>
+			
+			int main (int argc, char *argv[]) {
+				PyTypeObject o;
+	    		o.tp_print = NULL;
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_PYTHON3_HAS_PTYPEOBJECT_TP_PRINT], [1], [Python3 PyTypeObject has .tp_print member (version <= 3.8)])
+	], [
+		AC_MSG_RESULT([no])
+	])
+	CFLAGS="$cflags_orig"
 ])
 
 AC_MSG_CHECKING([for USB enabled])

@@ -3,7 +3,7 @@
 ![Build master](http://www.goliathdns.no/rrr/build-master.svg?a "Build status master")
 ![Build development](http://www.goliathdns.no/rrr/build-development.svg?a "Build status master")
 
-RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP,
+RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, WebSocket,
 MQTT, TCP, UDP and other I/O devices. RRR has a variety of different modules which can be chained
 together to retrieve, transmit, modify and save messages.
 
@@ -26,7 +26,7 @@ passing messages to each other, and message passing is the only way for the modu
 Among other things, RRR can be used to:
 
 - Acquire/capture messages, telegrams and data using piping, UNIX sockets, UDP/TCP-packets, HTTP or MQTT
-- Transfer messages using HTTP, MQTT, UDP or TCP
+- Transfer messages using HTTP, WebSocket, MQTT, UDP or TCP
 - Modify messages using Perl or Python
 - Save messages using InfluxDB, MySQL or a customized save method
 
