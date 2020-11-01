@@ -174,6 +174,7 @@ static int __rrr_mmap_channel_allocate (
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,
+		int wait_attempts_max,
 		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg
@@ -181,7 +182,6 @@ int rrr_mmap_channel_write_using_callback (
 	int ret = RRR_MMAP_CHANNEL_OK;
 
 	int do_unlock_block = 0;
-	int wait_attempts_max = 4;
 
 	struct rrr_mmap_channel_block *block = NULL;
 
@@ -275,7 +275,8 @@ int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		const void *data,
 		size_t data_size,
-		unsigned int full_wait_time_us
+		unsigned int full_wait_time_us,
+		int retries_max
 ) {
 	struct rrr_mmap_channel_write_callback_arg callback_data = {
 			data,
@@ -285,6 +286,7 @@ int rrr_mmap_channel_write (
 			target,
 			data_size,
 			full_wait_time_us,
+			retries_max,
 			__rrr_mmap_channel_write_callback,
 			&callback_data
 	);

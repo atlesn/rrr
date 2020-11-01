@@ -1,3 +1,10 @@
+rrr (1.15-1) buster; urgency=medium
+
+  * Throughput improvements in cmodules (perl, python, cmodule) by
+    adjusting timer behaviours
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 01 Nov 2020 17:02:15 +0100
+
 rrr (1.15-0) buster; urgency=medium
 
   * New WebSocket functionallity in httpserver and httpclient modules
