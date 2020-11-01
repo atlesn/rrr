@@ -24,6 +24,9 @@ make check
 %install
 rm -rf $RPM_BUILD_ROOT
 %make_install
+# Fix permission denied during /usr/bin/strip: unable to copy file
+# Ref: https://bugzilla.redhat.com/show_bug.cgi?id=127025
+chmod -R u+w $RPM_BUILD_ROOT/*
 %post
 groupadd -r rrr || true
 useradd -r rrr -g rrr || true
