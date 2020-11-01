@@ -362,11 +362,9 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
-		RRR_DBG_3("Perl5 spawning, sub is %s\n", cmodule_config_data->source_function);
 		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->source_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 	else {
-		RRR_DBG_3("Perl5 processing, sub is %s\n", cmodule_config_data->process_function);
 		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->process_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 

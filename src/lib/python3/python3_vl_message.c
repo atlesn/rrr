@@ -413,7 +413,9 @@ PyTypeObject rrr_python3_rrr_msg_msg_type = {
 	    .tp_basicsize	= sizeof(struct rrr_python3_rrr_msg_msg_data),
 		.tp_itemsize	= 0,
 	    .tp_dealloc		= (destructor) rrr_python3_rrr_msg_msg_f_dealloc,
+#ifdef RRR_PYTHON3_HAS_PTYPEOBJECT_TP_PRINT
 	    .tp_print		= NULL,
+#endif
 	    .tp_getattr		= NULL,
 	    .tp_setattr		= NULL,
 	    .tp_as_async	= NULL,

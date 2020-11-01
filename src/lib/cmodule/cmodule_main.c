@@ -130,9 +130,9 @@ int rrr_cmodule_main_worker_fork_start (
 			settings,
 			cmodule->fork_handler,
 			cmodule->mmap,
-			cmodule->config_data.spawn_interval_us,
-			cmodule->config_data.sleep_time_us,
-			cmodule->config_data.nothing_happened_limit,
+			cmodule->config_data.worker_spawn_interval_us,
+			cmodule->config_data.worker_sleep_time_us,
+			cmodule->config_data.worker_nothing_happened_limit,
 			cmodule->config_data.do_spawning,
 			cmodule->config_data.do_processing,
 			cmodule->config_data.do_drop_on_error
@@ -151,7 +151,7 @@ int rrr_cmodule_main_worker_fork_start (
 
 	if (pid < 0) {
 		// Don't use rrr_strerror() due to use of global lock
-		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n");
+		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n", errno);
 		ret = 1;
 		goto out_parent;
 	}

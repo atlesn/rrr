@@ -66,6 +66,7 @@ void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *t
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,
+		int wait_attempts_max,
 		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg
@@ -74,7 +75,8 @@ int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		const void *data,
 		size_t data_size,
-		unsigned int full_wait_time_us
+		unsigned int full_wait_time_us,
+		int retries_max
 );
 int rrr_mmap_channel_read_with_callback (
 		struct rrr_mmap_channel *source,
