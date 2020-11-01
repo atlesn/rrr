@@ -1930,7 +1930,7 @@ int rrr_udpstream_bind_v6_priority (
 
 	pthread_mutex_lock(&data->lock);
 
-	int ret_4, ret_6 = 0;
+	int ret_4 = 0, ret_6 = 0;
 
 	ret_6 = __rrr_udpstream_bind(&data->ip, local_port, 1);
 	if (ret_6 != 0) {

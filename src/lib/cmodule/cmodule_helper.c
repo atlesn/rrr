@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_cmodule_helper_read_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
+	struct rrr_instance_runtime_data *parent_thread_data;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
@@ -62,7 +62,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
 		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+				INSTANCE_D_NAME(callback_data->parent_thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -94,8 +94,11 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
 
+	RRR_DBG_3("Received a message with timestamp %" PRIu64 " from worker fork in instance %s reader thread\n",
+			msg->timestamp, INSTANCE_D_NAME(callback_data->parent_thread_data));
+
 	if (rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(callback_data->thread_data),
+			INSTANCE_D_BROKER_ARGS(callback_data->parent_thread_data),
 			NULL,
 			0,
 			0,
@@ -103,7 +106,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			callback_data
 	) != 0) {
 		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+				INSTANCE_D_NAME(callback_data->parent_thread_data));
 		return 1;
 	}
 
@@ -115,7 +118,10 @@ static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *wo
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
 	// Don't set retry-timer, we have many opportunities to send pings anyway
-	if (rrr_cmodule_channel_send_message_simple(worker->channel_to_fork, &msg, 0) != 0) {
+	if (rrr_cmodule_channel_send_message_simple (
+			worker->channel_to_fork,
+			&msg
+	) != 0) {
 		// Don't trigger error here. The reader thread will exit causing restart
 		// if the fork fails (does not send any PONG back)
 	}
@@ -150,6 +156,9 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 
 		struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
 
+		RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " to worker fork '%s'\n",
+				message->timestamp, worker->name);
+
 		// Insert PING in between to make the child fork send PONGs back
 		// while it processes messages
 		if (i % 10 == 0) {
@@ -159,8 +168,7 @@ static int __rrr_cmodule_helper_send_messages_to_fork (
 		if ((ret = rrr_cmodule_channel_send_message_and_address (
 				worker->channel_to_fork,
 				message,
-				&addr_msg,
-				RRR_CMODULE_CHANNEL_WAIT_TIME_US
+				&addr_msg
 		)) != 0) {
 			if (ret == RRR_CMODULE_CHANNEL_FULL) {
 				worker->to_fork_write_retry_counter += 1;
@@ -224,6 +232,11 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
+	struct rrr_msg_msg *msg = entry->message;
+
+	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", queing for transmission to worker fork\n",
+			INSTANCE_D_NAME(thread_data), msg->timestamp);
+
 	if ((ret = __rrr_cmodule_helper_queue_entry_to_fork_nolock (
 			thread_data,
 			callback_data->pid,
@@ -279,6 +292,8 @@ struct rrr_cmodule_helper_reader_thread_data {
 
 	struct rrr_instance_runtime_data *parent_thread_data;
 	struct rrr_stats_instance *stats;
+
+	uint64_t long_sleep_time_us;
 };
 
 
@@ -473,7 +488,7 @@ static int __rrr_cmodule_helper_read_thread_read_from_forks (
 
 	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 
-	callback_data.thread_data = parent_thread_data;
+	callback_data.parent_thread_data = parent_thread_data;
 
 	ret = __rrr_cmodule_helper_read_from_forks (
 			config_complete,
@@ -564,7 +579,7 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 
 		if (consecutive_nothing_happened > 250) {
 			usleep_count_long += 1;
-			rrr_posix_usleep(100000); // 100 ms
+			rrr_posix_usleep(data->long_sleep_time_us);
 		}
 		else if (consecutive_nothing_happened > 100) {
 			usleep_count_short++;
@@ -610,7 +625,8 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 static int __rrr_cmodule_helper_threads_start (
 		struct rrr_cmodule_helper_reader_thread_data *data,
 		struct rrr_instance_runtime_data *parent_thread_data,
-		struct rrr_stats_instance *stats
+		struct rrr_stats_instance *stats,
+		uint64_t long_sleep_time_us
 ) {
 	int ret = 0;
 
@@ -638,6 +654,7 @@ static int __rrr_cmodule_helper_threads_start (
 	data->thread_collection = thread_collection;
 	data->parent_thread_data = parent_thread_data;
 	data->stats = stats;
+	data->long_sleep_time_us = long_sleep_time_us;
 
 	if ((thread = rrr_thread_allocate_preload_and_register (
 			thread_collection,
@@ -715,13 +732,21 @@ void rrr_cmodule_helper_loop (
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
 
-	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats) != 0) {
+	// Use at maximum the sleep interval set for the worker, but a minimum of 1 ms
+	uint64_t long_sleep_time_us = RRR_CMODULE_DEFAULT_SLEEP_TIME_MS * 1000;
+	if (long_sleep_time_us > INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us) {
+		long_sleep_time_us = INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us;
+	}
+	if (long_sleep_time_us < 1000) {
+		long_sleep_time_us = 1000;
+	}
+
+	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats, long_sleep_time_us) != 0) {
 		goto cleanup;
 	}
 
 	int from_senders_counter = 0;
 
-//	int current_poll_wait_ms = 0;
 	int tick = 0;
 
 	// Let it overflow, DO NOT use signed
@@ -740,9 +765,6 @@ void rrr_cmodule_helper_loop (
 		int send_queue_total = 0;
 		RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
 			send_queue_total += RRR_LL_COUNT(&node->queue_to_fork);
-			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
-				goto cleanup;
-			}
 			rrr_posix_usleep(1); // Schedule
 			if (RRR_LL_COUNT(&node->queue_to_fork) < 250 && no_polling == 0) {
 				if (__rrr_cmodule_helper_poll_delete (
@@ -750,11 +772,14 @@ void rrr_cmodule_helper_loop (
 						thread_data,
 						poll,
 						fork_pid,
-						50, // 50 ms
+						0,
 						250
 				) != 0) {
 					goto cleanup;
 				}
+			}
+			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
+				goto cleanup;
 			}
 		RRR_LL_ITERATE_END();
 
@@ -767,8 +792,8 @@ void rrr_cmodule_helper_loop (
 			consecutive_nothing_happened = 0;
 		}
 
-		if (consecutive_nothing_happened > 250) {
-			rrr_posix_usleep(100000); // 100 ms
+		if (consecutive_nothing_happened > RRR_CMODULE_DEFAULT_NOTHING_HAPPENED_LIMIT) {
+			rrr_posix_usleep(long_sleep_time_us);
 		}
 		else if (consecutive_nothing_happened > 100) {
 			rrr_posix_usleep(100); // 100 us
@@ -894,17 +919,17 @@ int rrr_cmodule_helper_parse_config (
 
 	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_source_interval_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
-	data->spawn_interval_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
+	data->worker_spawn_interval_us *= 1000;
 
 	// Input in ms, multiply by 1000
 	RRR_INSTANCE_CONFIG_STRING_SET("_sleep_time_ms");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
-	data->sleep_time_us *= 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
+	data->worker_sleep_time_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_nothing_happened_limit");
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
-	if (data->nothing_happened_limit < 1) {
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
+	if (data->worker_nothing_happened_limit < 1) {
 		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
 				config->name);
 		ret = 1;
