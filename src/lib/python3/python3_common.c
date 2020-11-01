@@ -56,7 +56,7 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
 
 PyObject *rrr_py_call_function_no_args(PyObject *function) {
 	PyObject *args = PyTuple_New(0);
-	PyObject *result = PyEval_CallObject(function, args);
+	PyObject *result = PyObject_CallObject(function, args);
 	RRR_Py_XDECREF(args);
 	if (result == NULL) {
 		PyErr_Print();
@@ -73,7 +73,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 	}
 
 	PyObject *args = PyTuple_New(0);
-	result = PyEval_CallObject(function, args);
+	result = PyObject_CallObject(function, args);
 	RRR_Py_XDECREF(args);
 	if (result == NULL) {
 		RRR_MSG_0("NULL result from function %s\n", symbol);
