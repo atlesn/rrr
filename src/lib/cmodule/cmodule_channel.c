@@ -45,8 +45,7 @@ static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void 
 
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
-		const struct rrr_msg *message,
-		unsigned int full_wait_time_us
+		const struct rrr_msg *message
 ) {
 	int ret = 0;
 
@@ -57,7 +56,8 @@ int rrr_cmodule_channel_send_message_simple (
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
 			sizeof(*message),
-			full_wait_time_us,
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
 			&callback_data
 	)) != 0) {
@@ -88,8 +88,7 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr,
-		unsigned int wait_time_us
+		const struct rrr_msg_addr *message_addr
 ) {
 	int ret = 0;
 
@@ -105,7 +104,8 @@ int rrr_cmodule_channel_send_message_and_address (
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
 			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-			wait_time_us,
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_callback,
 			&callback_data
 	)) != 0) {

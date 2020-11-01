@@ -48,9 +48,9 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 
 struct rrr_cmodule_config_data {
-	rrr_setting_uint spawn_interval_us;
-	rrr_setting_uint sleep_time_us;
-	rrr_setting_uint nothing_happened_limit;
+	rrr_setting_uint worker_spawn_interval_us;
+	rrr_setting_uint worker_sleep_time_us;
+	rrr_setting_uint worker_nothing_happened_limit;
 
 	int do_spawning;
 	int do_processing;
