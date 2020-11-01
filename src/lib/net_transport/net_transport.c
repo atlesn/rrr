@@ -205,19 +205,13 @@ int rrr_net_transport_handle_allocate_and_add (
 	}
 
 	if (new_handle_id == 0) {
-		RRR_MSG_0("Max attempts reached while allocating handle in rrr_net_transport_handle_allocate_and_add\n");
-		ret = 1;
-		goto out;
-	}
-
-	collection->next_handle_position = new_handle_id + 1;
-
-	if (new_handle_id == 0) {
 		RRR_MSG_0("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = 1;
 		goto out;
 	}
+
+	collection->next_handle_position = new_handle_id + 1;
 
 	if ((ret = __rrr_net_transport_handle_create_and_push (
 			transport,

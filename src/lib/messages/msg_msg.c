@@ -178,32 +178,6 @@ int rrr_msg_msg_to_string (
 	return ret;
 }
 
-void flip_endianess_64(rrr_u64 *value) {
-	rrr_u64 result = 0;
-
-	result |= (*value & 0x00000000000000ff) << 56;
-	result |= (*value & 0x000000000000ff00) << 40;
-	result |= (*value & 0x0000000000ff0000) << 24;
-	result |= (*value & 0x00000000ff000000) << 8;
-	result |= (*value & 0x000000ff00000000) >> 8;
-	result |= (*value & 0x0000ff0000000000) >> 24;
-	result |= (*value & 0x00ff000000000000) >> 40;
-	result |= (*value & 0xff00000000000000) >> 56;
-
-	*value = result;
-}
-
-void flip_endianess_32(rrr_u32 *value) {
-	rrr_u32 result = 0;
-
-	result |= (*value & 0x000000ff) << 24;
-	result |= (*value & 0x0000ff00) << 8;
-	result |= (*value & 0x00ff0000) >> 8;
-	result |= (*value & 0xff000000) >> 24;
-
-	*value = result;
-}
-
 static int __message_validate (const struct rrr_msg_msg *message){
 	int ret = 0;
 

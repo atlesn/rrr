@@ -266,17 +266,12 @@ static int __rrr_http_client_final_callback (
 	(void)(part_data_size);
 	(void)(arg);
 
-	if (chunk_data_start != NULL && chunk_data_size > 0) {
-//		const char *separator_line = "=============================";
-//		size_t separator_line_length = strlen(separator_line);
+	if (chunk_data_start == NULL) {
+		goto out;
+	}
 
+	while (chunk_data_size > 0) {
 		ssize_t bytes;
-
-//		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
-
-		retry:
-
-//		printf("data start: %p size %li\n", data_start, data_size);
 
 		bytes = write (STDOUT_FILENO, chunk_data_start, chunk_data_size);
 		if (bytes < 0) {
@@ -287,10 +282,7 @@ static int __rrr_http_client_final_callback (
 		else {
 			chunk_data_start += bytes;
 			chunk_data_size -= bytes;
-			goto retry;
 		}
-
-		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
 	}
 
 	out:
