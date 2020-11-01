@@ -1,8 +1,15 @@
-rrr (1.15-0ubuntu1) buster; urgency=medium
+rrr (1.15-1ubuntu1) buster; urgency=medium
 
   * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Sun, 11 Oct 2020 15:31:05 +0200
+ -- Atle Solbakken <atle@goliathdns.no> Sun, 01 Nov 2020 17:43:28 +0100
+
+rrr (1.15-1) buster; urgency=medium
+
+  * Throughput improvements in cmodules (perl, python, cmodule) by
+    adjusting timer behaviours
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 01 Nov 2020 17:02:15 +0100
 
 rrr (1.15-0) buster; urgency=medium
 
