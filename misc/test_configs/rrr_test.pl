@@ -162,7 +162,10 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	if (length $message->{'ip_addr'} == 28) {
+	if (length $message->{'ip_addr'} == 0) {
+		# No IP-data
+	}
+	elsif (length $message->{'ip_addr'} == 28) {
 		my ($port, $ip_address) = unpack_sockaddr_in6 $message->{'ip_addr'};
 		my $ip_str = inet_ntop AF_INET6, $ip_address; 
 		print "Source: $ip_str:$port type " . $message->{'ip_so_type'} . "\n";
@@ -179,7 +182,7 @@ sub process {
 	#push_tag_blob($message, "value_blob", "abcd");
 
 	# This can be used to duplicate a message if called multiple times
-	# $message->send();
+	$message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;
