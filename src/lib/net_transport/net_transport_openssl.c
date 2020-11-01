@@ -307,7 +307,7 @@ int __rrr_net_transport_openssl_connect_callback (
 		goto out_destroy_ssl_data;
 	}
 
-	if ((ret = SSL_set_max_proto_version(ssl, TLS1_3_VERSION)) != 1) {
+	if (SSL_set_max_proto_version(ssl, TLS1_3_VERSION) != 1) {
 		RRR_SSL_ERR("Could set SSL protocol version");
 		ret = 1;
 		goto out_destroy_ssl_data;
