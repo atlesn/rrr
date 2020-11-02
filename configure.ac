@@ -529,6 +529,11 @@ AC_DEFUN([REQUIRE_CONFDIR], [
 	fi
 ])
 
+AC_MSG_CHECKING([for RRR environment file directory])
+RRR_ENVIRONMENT_FILE_DIR="${sysconfdir}"
+AC_MSG_RESULT([${sysconfdir}])
+AC_SUBST(RRR_ENVIRONMENT_FILE_DIR)
+
 AC_MSG_CHECKING([for RRR config file directory])
 RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
 AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
