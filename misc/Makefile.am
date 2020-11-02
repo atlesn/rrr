@@ -15,4 +15,8 @@ if RRR_WITH_RUNIT
 runit_subdir = runit
 endif
 
-SUBDIRS = ${systemd_subdir} ${confdir_subdir} ${runit_subdir}
+if RRR_WITH_OPENRC
+openrc_subdir = openrc
+endif
+
+SUBDIRS = ${systemd_subdir} ${confdir_subdir} ${runit_subdir} ${openrc_subdir}
