@@ -127,6 +127,24 @@ AS_IF([test "x$have_freebsd_input" = xno], [
 	AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
 ])
 
+AC_MSG_CHECKING([location of limits.h with PATH_MAX])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <linux/limits.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			printf("path_max: %i\n", PATH_MAX);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([linux/limits.h])
+	AC_DEFINE([RRR_HAS_PATH_MAX_IN_LINUX_LIMITS_H], [1], [Use linux/limits.h to find PATH_MAX])
+], [
+	AC_MSG_RESULT([limits.h])
+])
+
 CHECK_LIBRESSL_LIBTLS
 
 AC_MSG_CHECKING([for automatic LibreSSL/OpenSSL selection])
