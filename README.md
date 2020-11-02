@@ -63,7 +63,7 @@ The `.md` files contain the examples, and the source scripts and configuration f
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu, Fedora and ArchLinux packages. In addition, RRR
-may be compiled and run on FreeBSD or other Linuxes including Raspbian, Void and SUSE. Other systems might work but
+may be compiled and run on FreeBSD or other Linuxes including Raspbian, Void, Alpine and SUSE. Other systems might work but
 are not supported.
 
 Among distributions known *not* to work out of the box, are  OpenBSD and NetBSD. These do not work
@@ -138,7 +138,7 @@ When asked to install the GPG key for the GoliathDNS repository, answer 'yes'.
 
 The latest RRR release will be downloaded and built. When prompted after compilation, enter your password to complete the installation.
 	
-#### Packages available on the APT mirrors
+#### Packages available on the APT and Yum mirrors
 
 - rrr
 - rrr-mod-python3
@@ -167,19 +167,19 @@ On SUSE, the following packages should be installed to build RRR:
 On Debian, Ubuntu and derived systems, the following should be installed:
 	
 	$ sudo apt install libperl-dev git libmariadb-dev-compat python3-dev libssl-dev autoconf automake gcc libtool
+	
+On Alpine Linux, the following should be installed:
+
+	$ sudo apk add git automake autoconf libtool libressl gcc musl-dev perl-dev python3-dev mariadb-dev pkgconfig make linux-headers
 
 On other systems, packages with similar names also exist.
 
-See `./configure --help` for flags to use for disabling modules with dependencies (perl, mysql etc.).
+See `./configure --help` for flags to use for disabling features with dependencies (Python, MariaDB/MySQL, SystemD, LibreSSL/OpenSSL etc.).
 
 	$ autoreconf -i
 	$ ./configure
 	$ make
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
-
-You may turn off Python3 and MySQL support when configuring, look at `./configure --help`. This will remove the
-need for development packages being installed for these. Perl bindings can also be disabled, but usually it needs to be 
-installed to run the tools which build RRR. OpenSSL bindings may be disabled.
 
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
 on detailed information about this and on which packages you need to build `.deb` packages.
