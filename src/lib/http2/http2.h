@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,23 +19,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_BASE64_H
-#define RRR_BASE64_H
+#ifndef RRR_HTTP2_H
 
-unsigned char *rrr_base64_encode (
-		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+struct rrr_http2_session {
+	char dummy;
+};
+
+int rrr_http2_session_new_or_reset (
+		struct rrr_http2_session **target
 );
-unsigned char * rrr_base64url_encode (
-		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+void rrr_http2_session_destroy_if_not_null (
+		struct rrr_http2_session **target
 );
-unsigned char *rrr_base64_decode (
-		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+int rrr_http2_pack_upgrade_request_settings(
+		char **target
 );
 
-#endif /* RRR_BASE64_H */
+#endif /* RRR_HTTP2_H */

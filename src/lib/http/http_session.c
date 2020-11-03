@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
+#ifdef RRR_WITH_NGHTTP2
+#include "../http2/http2.h"
+#endif
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
@@ -55,6 +58,9 @@ static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 		rrr_http_part_destroy(session->response_part);
 	}
 	rrr_websocket_state_clear_all(&session->ws_state);
+#ifdef RRR_WITH_NGHTTP2
+	rrr_http2_session_destroy_if_not_null(&session->http2_session);
+#endif
 	free(session);
 }
 
@@ -346,38 +352,6 @@ static int __rrr_http_session_websocket_make_accept_string (
 	return ret;
 }
 
-static int __rrr_http_session_websocket_request_push_headers (
-		struct rrr_http_session *session
-) {
-	int ret = 0;
-
-	char *key = NULL;
-
-	if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "upgrade")) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push(session->request_part, "upgrade", "websocket")) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_websocket_state_get_key_base64 (&key, &session->ws_state)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-key", key)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-version", "13")) != 0) {
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(key);
-	return ret;
-}
-
 static int __rrr_http_session_websocket_response_check_headers (
 		struct rrr_http_session *session
 ) {
@@ -386,18 +360,11 @@ static int __rrr_http_session_websocket_response_check_headers (
 	char *sec_websocket_key_tmp = NULL;
 	char *accept_str_tmp = NULL;
 
-	const struct rrr_http_header_field *field_connection = rrr_http_part_header_field_get_with_value(session->response_part, "connection", "upgrade");
-	const struct rrr_http_header_field *field_upgrade = rrr_http_part_header_field_get_with_value(session->response_part, "upgrade", "websocket");
+	const struct rrr_http_header_field *field_connection = rrr_http_part_header_field_get_with_value_case(session->response_part, "connection", "upgrade");
 	const struct rrr_http_header_field *field_accept = rrr_http_part_header_field_get(session->response_part, "sec-websocket-accept");
 
 	if (field_connection == NULL) {
 		RRR_MSG_0("Missing 'Connection: upgrade' field in HTTP server WebSocket upgrade response\n");
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
-
-	if (field_upgrade == NULL) {
-		RRR_MSG_0("Missing 'Upgrade: websocket' field in HTTP server WebSocket upgrade response\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
@@ -719,12 +686,16 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	char *user_agent_buf = NULL;
 	char *uri_tmp = NULL;
 	char *extra_uri_tmp = NULL;
+	char *websocket_key_tmp = NULL;
+	char *http2_upgrade_settings_tmp = NULL;
 
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &request_buf);
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &host_buf);
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &user_agent_buf);
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &uri_tmp);
 	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &extra_uri_tmp);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &websocket_key_tmp);
+	pthread_cleanup_push(__rrr_http_session_free_dbl_ptr, &http2_upgrade_settings_tmp);
 
 	rrr_length extra_uri_size = 0;
 	const char *extra_uri_separator = "";
@@ -756,7 +727,8 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	}
 
 	if (	(session->method == RRR_HTTP_METHOD_GET ||
-			session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) &&
+			session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ||
+			session->method == RRR_HTTP_METHOD_GET_HTTP2) &&
 			RRR_LL_COUNT(&session->request_part->fields) > 0
 	) {
 		extra_uri_tmp  = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &session->request_part->fields);
@@ -794,13 +766,52 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 		uri_to_use = uri_tmp;
 	}
 
+	if (session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) {
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "Upgrade")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "upgrade", "websocket")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_websocket_state_get_key_base64 (&websocket_key_tmp, &session->ws_state)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-key", websocket_key_tmp)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "sec-websocket-version", "13")) != 0) {
+			goto out;
+		}
+	}
+	else if (session->method == RRR_HTTP_METHOD_GET_HTTP2) {
+#ifdef RRR_WITH_NGHTTP2
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "upgrade", "h2c")) != 0) {
+			goto out;
+		}
+		if (rrr_http2_pack_upgrade_request_settings(&http2_upgrade_settings_tmp) != 0) {
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(session->request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
+			goto out;
+		}
+#else
+		RRR_MSG_0("Warning: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
+#endif /* RRR_WITH_NGHTTP2 */
+	}
+
 	if ((ret = rrr_asprintf (
 			&request_buf,
 			"%s %s HTTP/1.1\r\n"
 			"Host: %s\r\n"
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
-			(session->method == RRR_HTTP_METHOD_GET || session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ? "GET" : "POST"),
+			(	session->method == RRR_HTTP_METHOD_GET ||
+				session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ||
+				session->method == RRR_HTTP_METHOD_GET_HTTP2 ? "GET" : "POST"),
 			uri_to_use,
 			host_buf,
 			user_agent_buf
@@ -813,13 +824,6 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
 		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_session_send_request\n");
 		goto out;
-	}
-
-	if (session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) {
-		if ((ret =__rrr_http_session_websocket_request_push_headers(session)) != 0) {
-			RRR_MSG_0("Failed to prepare websocket connection in __rrr_http_session_request_send\n");
-			goto out;
-		}
 	}
 
 	rrr_string_builder_clear(header_builder);
@@ -881,6 +885,8 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	out:
 		pthread_cleanup_pop(1);
 	out_final:
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
@@ -955,6 +961,8 @@ static int __rrr_http_session_response_receive_callback (
 		}
 	}
 
+	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+
 	if (session->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
 		if (receive_data->websocket_callback == NULL) {
 			RRR_MSG_0("Unexpected HTTP 101 Switching Protocols response from server, websocket upgrade was not requested\n");
@@ -962,28 +970,63 @@ static int __rrr_http_session_response_receive_callback (
 			goto out;
 		}
 
-		if ((ret = __rrr_http_session_websocket_response_check_headers(session)) != 0) {
-			goto out;
-		}
+		const struct rrr_http_header_field *field_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(session->response_part, "upgrade", "websocket");
+		const struct rrr_http_header_field *field_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(session->response_part, "upgrade", "h2c");
 
-		int do_websocket = 0;
-		if ((ret = receive_data->websocket_callback (
-				&do_websocket,
-				receive_data->handle,
-				session->request_part,
-				session->response_part,
-				read_session->rx_buf_ptr,
-				(const struct sockaddr *) &read_session->src_addr,
-				read_session->src_addr_len,
-				read_session->rx_overshoot_size,
-				0,
-				receive_data->websocket_callback_arg
-		))) {
-			goto out;
-		}
+		if (field_upgrade_websocket != NULL) {
+			if (rrr_http_part_header_field_get_with_value_case(session->request_part, "upgrade", "websocket") == NULL) {
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set\n");
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
 
-		if (do_websocket != 1) {
-			// Application regrets websocket upgrade, close connection
+			if ((ret = __rrr_http_session_websocket_response_check_headers(session)) != 0) {
+				goto out;
+			}
+
+			int do_websocket = 0;
+			if ((ret = receive_data->websocket_callback (
+					&do_websocket,
+					receive_data->handle,
+					session->request_part,
+					session->response_part,
+					read_session->rx_buf_ptr,
+					(const struct sockaddr *) &read_session->src_addr,
+					read_session->src_addr_len,
+					read_session->rx_overshoot_size,
+					0,
+					receive_data->websocket_callback_arg
+			))) {
+				goto out;
+			}
+
+			if (do_websocket != 1) {
+				// Application regrets websocket upgrade, close connection
+				goto out;
+			}
+
+			upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+		}
+		else if (field_upgrade_h2c != NULL) {
+			if (rrr_http_part_header_field_get_with_value_case(session->request_part, "upgrade", "h2c") == NULL) {
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: h2c set\n");
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+#ifdef RRR_WITH_NGHTTP2
+			if (rrr_http2_session_new_or_reset(&session->http2_session) != 0) {
+				RRR_MSG_0("Failed to initialize HTTP2 session in __rrr_http_session_response_receive_callback\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+			upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+#else
+			RRR_BUG("HTTP Client sent a Upgrade: h2c request which the server responded correctly to, but NGHTTP2 support is not built in __rrr_http_session_response_receive_callback\n");
+#endif /* RRR_WITH_NGHTTP2 */
+		}
+		else {
+			RRR_MSG_0("Missing Upgrade: field in HTTP server 101 Switcing Protocols response or value was not h2c or websocket\n");
+			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 	}
@@ -997,7 +1040,8 @@ static int __rrr_http_session_response_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			0,
-			0,
+			upgrade_mode,
+			0, // dummy
 			receive_data->callback_arg
 	)) != 0) {
 		goto out;
@@ -1168,7 +1212,7 @@ static int __rrr_http_session_websocket_request_check_version (
 	return 0;
 }
 
-static int __rrr_http_session_websocket_request_try (
+static int __rrr_http_session_request_upgrade_try_websocket (
 		int *do_websocket,
 		struct rrr_http_session_receive_data *receive_data,
 		struct rrr_http_session *session,
@@ -1180,13 +1224,6 @@ static int __rrr_http_session_websocket_request_try (
 	int ret = 0;
 
 	char *accept_base64_tmp = NULL;
-
-	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get_with_value(session->request_part, "connection", "upgrade");
-	const struct rrr_http_header_field *upgrade = rrr_http_part_header_field_get_with_value(session->request_part, "upgrade", "websocket");
-
-	if (connection == NULL || upgrade == NULL) {
-		goto out;
-	}
 
 	*do_websocket = 1;
 
@@ -1263,6 +1300,105 @@ static int __rrr_http_session_websocket_request_try (
 		RRR_FREE_IF_NOT_NULL(accept_base64_tmp);
 		return ret;
 }
+static int __rrr_http_session_request_upgrade_try_http2 (
+		int *do_http2,
+		struct rrr_http_session *session
+) {
+	*do_http2 = 0;
+
+	int ret = 0;
+
+	const struct rrr_http_header_field *connection_http2_settings = rrr_http_part_header_field_get_with_value_case(session->request_part, "connection", "http2-settings");
+	const struct rrr_http_header_field *http2_settings = rrr_http_part_header_field_get(session->request_part, "sec-websocket-version");
+
+	if (connection_http2_settings == NULL) {
+		RRR_DBG_1("Value HTTP2-Settings was missing in Connection: header field while upgrade was requested\n");
+		goto out_bad_request;
+	}
+
+	if (http2_settings == NULL) {
+		RRR_DBG_1("Field HTTP2-Settings: was missing in header while upgrade was requested\n");
+		goto out_bad_request;
+	}
+
+	if (session->request_part->request_method != RRR_HTTP_METHOD_GET && session->request_part->request_method != RRR_HTTP_METHOD_OPTIONS) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_name,session->request_part->request_method_str_nullsafe);
+		RRR_DBG_1("Received HTTP2 upgrade request which was not a GET or OPTION request but '%s'\n", method_name);
+		goto out_bad_request;
+	}
+
+#ifdef RRR_WITH_NGHTTP2
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "connection", "upgrade")) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(session->response_part, "upgrade", "h2c")) != 0) {
+		goto out;
+	}
+
+	*do_http2 = 1;
+#else
+	RRR_DBG_3("Upgrade to HTTP2 was requested by client, but this RRR is not built with NGHTTP2 bindings. Proceeding with HTTP/1.1\n");
+#endif /* RRR_WITH_NGHTTP2 */
+
+	goto out;
+	out_bad_request:
+		session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+	out:
+		return ret;
+}
+
+static int __rrr_http_session_request_upgrade_try (
+		enum rrr_http_upgrade_mode *upgrade_mode,
+		struct rrr_http_session_receive_data *receive_data,
+		struct rrr_http_session *session,
+		struct rrr_read_session *read_session,
+		const char *data_to_use
+) {
+	*upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+
+	int ret = 0;
+
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get_with_value_case(session->request_part, "connection", "upgrade");
+	const struct rrr_http_header_field *upgrade_websocket = rrr_http_part_header_field_get_with_value_case(session->request_part, "upgrade", "websocket");
+	const struct rrr_http_header_field *upgrade_h2c = rrr_http_part_header_field_get_with_value_case(session->request_part, "upgrade", "h2c");
+
+	if (connection == NULL) {
+		goto out;
+	}
+
+	if (upgrade_websocket != NULL && upgrade_h2c != NULL) {
+		goto out_bad_request;
+	}
+
+	if (upgrade_websocket != NULL) {
+		int do_websocket = 0;
+		if ((ret = __rrr_http_session_request_upgrade_try_websocket (
+				&do_websocket,
+				receive_data,
+				session,
+				read_session,
+				data_to_use
+		)) == 0 && do_websocket) {
+			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+		}
+	}
+	else if (upgrade_h2c != NULL) {
+		int do_http2 = 0;
+		if ((ret = __rrr_http_session_request_upgrade_try_http2 (
+				&do_http2,
+				session
+		)) == 0 && do_http2) {
+			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+		}
+	}
+
+	goto out;
+	out_bad_request:
+		session->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+	out:
+		return ret;
+}
 
 static int __rrr_http_session_request_receive_callback (
 		struct rrr_read_session *read_session,
@@ -1322,9 +1458,9 @@ static int __rrr_http_session_request_receive_callback (
 		goto out;
 	}
 
-	int do_websocket = 0;
-	if (receive_data->websocket_callback != NULL && (ret = __rrr_http_session_websocket_request_try (
-			&do_websocket,
+	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+	if (receive_data->websocket_callback != NULL && (ret = __rrr_http_session_request_upgrade_try (
+			&upgrade_mode,
 			receive_data,
 			session,
 			read_session,
@@ -1333,12 +1469,12 @@ static int __rrr_http_session_request_receive_callback (
 		goto out;
 	}
 
-	if (do_websocket != 0) {
+	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (session->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-			RRR_DBG_3("Upgrading HTTP connection to WebSocket\n");
+			RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
 		}
 		else {
-			RRR_DBG_1("Upgrade HTTP connection to WebSocket failed\n");
+			RRR_DBG_1("Upgrade HTTP connection to %s failed\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
 		}
 	}
 
@@ -1351,7 +1487,8 @@ static int __rrr_http_session_request_receive_callback (
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
-			do_websocket,
+			upgrade_mode,
+			0, // dummy
 			receive_data->callback_arg
 	)) != RRR_HTTP_OK) {
 		goto out;

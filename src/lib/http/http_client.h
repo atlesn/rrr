@@ -159,6 +159,15 @@ int rrr_http_client_send_request_simple (
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 );
+int rrr_http_client_send_request_keepalive_simple (
+		struct rrr_http_client_request_data *data,
+		enum rrr_http_method method,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+);
 int rrr_http_client_start_websocket_simple (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
@@ -177,6 +186,11 @@ int rrr_http_client_websocket_tick (
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
+);
+int rrr_http_client_http2_tick (
+		struct rrr_http_client_request_data *data,
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle
 );
 
 #endif /* RRR_HTTP_CLIENT_H */

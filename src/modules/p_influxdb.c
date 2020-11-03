@@ -123,7 +123,7 @@ static int influxdb_receive_http_response (
 	(void)(overshoot_bytes);
 	(void)(request_part);
 	(void)(unique_id);
-	(void)(websocket_upgrade_in_progress);
+	(void)(upgrade_mode);
 
 	int ret = 0;
 

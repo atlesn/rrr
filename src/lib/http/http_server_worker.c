@@ -196,7 +196,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		}
 	}
 
-	if (overshoot_bytes == 0 && !websocket_upgrade_in_progress) {
+	if (overshoot_bytes == 0 && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
 		worker_data->request_complete = 1;
 	}
 
@@ -216,7 +216,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				worker_data->config_data.addr_len,
 				overshoot_bytes,
 				unique_id,
-				websocket_upgrade_in_progress,
+				upgrade_mode,
+				1, // Dummy
 				worker_data->config_data.callbacks.final_callback_arg
 		);
 	}

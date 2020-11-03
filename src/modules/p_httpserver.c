@@ -718,7 +718,7 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (data->do_get_raw_response_from_senders && !websocket_upgrade_in_progress) {
+	if (data->do_get_raw_response_from_senders && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if ((ret = httpserver_receive_get_raw_response (
 				handle,
 				thread,

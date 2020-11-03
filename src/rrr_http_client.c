@@ -56,6 +56,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
 		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade]"},
+		{0,							'u',	"http2-upgrade",		"[-u|--http2-upgrade]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
@@ -73,7 +74,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
-	int websocket_upgrade;
+	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
@@ -110,9 +111,20 @@ static int __rrr_http_client_parse_config (
 
 	// HTTP CLIENT EXECUTABLE SPECIFIC PARAMETERS
 
-	// Websocket upgrade
+	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
-		data->websocket_upgrade = 1;
+		if (cmd_exists(cmd, "http2-upgrade", 0)) {
+			RRR_MSG_0("Both upgrade to websocket and http2 was set\n");
+			ret = 1;
+			goto out;
+		}
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+	}
+	else if (cmd_exists(cmd, "http2-upgrade", 0)) {
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+	}
+	else {
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
@@ -136,7 +148,7 @@ static int __rrr_http_client_parse_config (
 		}
 	}
 	else {
-		if (data->websocket_upgrade != 1) {
+		if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 			RRR_MSG_0("Array-definition specified while websocket mode was not active\n");
 			ret = 1;
 			goto out;
@@ -466,7 +478,7 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if (data.websocket_upgrade) {
+	if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 		if (rrr_http_client_start_websocket_simple (
 				&data.request_data,
 				&net_transport_keepalive,
@@ -513,6 +525,28 @@ int main (int argc, const char **argv, const char **env) {
 				rrr_posix_usleep(5000); // 5 ms
 			}
 			prev_bytes_total = bytes_total;
+		}
+	}
+	else if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+		if (rrr_http_client_send_request_keepalive_simple (
+				&data.request_data,
+				RRR_HTTP_METHOD_GET_HTTP2,
+				&net_transport_keepalive,
+				&net_transport_keepalive_handle,
+				&net_transport_config,
+				__rrr_http_client_final_callback,
+				NULL
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		while (1) {
+			rrr_http_client_http2_tick (
+					&data.request_data,
+					net_transport_keepalive,
+					net_transport_keepalive_handle
+			);
 		}
 	}
 	else {

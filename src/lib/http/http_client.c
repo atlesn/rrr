@@ -122,7 +122,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(overshoot_bytes);
 	(void)(request_part);
 	(void)(unique_id);
-	(void)(websocket_upgrade_in_progress);
+	(void)(upgrade_mode);
 
 	int ret = RRR_HTTP_OK;
 
@@ -155,7 +155,7 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 	else if (response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-		if (callback_data->method != RRR_HTTP_METHOD_GET_WEBSOCKET) {
+		if (callback_data->method != RRR_HTTP_METHOD_GET_WEBSOCKET && callback_data->method != RRR_HTTP_METHOD_GET_HTTP2) {
 			RRR_MSG_0("Unexpected response 101 '%s' from server\n",
 					response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -806,6 +806,34 @@ int rrr_http_client_send_request_simple (
 	);
 }
 
+int rrr_http_client_send_request_keepalive_simple (
+		struct rrr_http_client_request_data *data,
+		enum rrr_http_method method,
+		struct rrr_net_transport **transport_keepalive,
+		int *transport_keepalive_handle,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	return __rrr_http_client_send_request (
+			data,
+			method,
+			transport_keepalive,
+			transport_keepalive_handle,
+			net_transport_config,
+			NULL,
+			0,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			final_callback,
+			final_callback_arg
+	);
+}
+
 int rrr_http_client_start_websocket_simple (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
@@ -909,4 +937,13 @@ int rrr_http_client_websocket_tick (
 	*bytes_total = callback_data.bytes_total;
 
 	return ret;
+}
+
+int rrr_http_client_http2_tick (
+		struct rrr_http_client_request_data *data,
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle
+) {
+	rrr_posix_usleep(100000);
+	return 0;
 }

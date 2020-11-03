@@ -520,7 +520,7 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 	return NULL;
 }
 
-const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value (
+const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_case (
 		const struct rrr_http_part *part,
 		const char *name_lowercase,
 		const char *value_anycase

@@ -47,7 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS		\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS,	\
-	int websocket_upgrade_in_progress,				\
+	enum rrr_http_upgrade_mode upgrade_mode,		\
+	int dummy_delete_me,							\
 	void *arg
 
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
@@ -63,6 +64,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS			\
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
+#ifdef RRR_WITH_NGHTTP2
+struct rrr_http2_session;
+#endif
+
 struct rrr_http_session {
 	int is_client;
 	enum rrr_http_method method;
@@ -71,6 +76,9 @@ struct rrr_http_session {
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
 	struct rrr_websocket_state ws_state;
+#ifdef RRR_WITH_NGHTTP2
+	struct rrr_http2_session *http2_session;
+#endif
 };
 
 struct rrr_net_transport;
