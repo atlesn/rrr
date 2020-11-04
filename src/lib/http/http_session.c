@@ -1014,7 +1014,7 @@ static int __rrr_http_session_response_receive_callback (
 				goto out;
 			}
 #ifdef RRR_WITH_NGHTTP2
-			if (rrr_http2_session_new_or_reset(&session->http2_session) != 0) {
+			if (rrr_http2_session_new_or_reset(&session->http2_session, receive_data->handle->transport, receive_data->handle->handle) != 0) {
 				RRR_MSG_0("Failed to initialize HTTP2 session in __rrr_http_session_response_receive_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
@@ -1840,3 +1840,15 @@ int rrr_http_session_transport_ctx_websocket_tick (
 	out:
 	return ret;
 }
+
+#ifdef RRR_WITH_NGHTTP2
+int rrr_http_session_transport_ctx_http2_tick (
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		rrr_http_unique_id unique_id,
+		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
+		void *get_response_callback_arg
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+}
+#endif /* RRR_WITH_NGHTTP2 */

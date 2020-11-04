@@ -21,12 +21,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_HTTP2_H
 
+#include <nghttp2/nghttp2.h>
+
+struct rrr_net_transport;
+
 struct rrr_http2_session {
-	char dummy;
+	nghttp2_session *session;
+	struct rrr_net_transport *transport;
+	int transport_handle;
 };
 
 int rrr_http2_session_new_or_reset (
-		struct rrr_http2_session **target
+		struct rrr_http2_session **target,
+		struct rrr_net_transport *transport,
+		int transport_handle
 );
 void rrr_http2_session_destroy_if_not_null (
 		struct rrr_http2_session **target

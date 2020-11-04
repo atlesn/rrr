@@ -939,11 +939,62 @@ int rrr_http_client_websocket_tick (
 	return ret;
 }
 
+#ifdef RRR_WITH_NGHTTP2
+struct rrr_http_client_http2_tick_callback_data {
+	struct rrr_http_client_request_data *request_data;
+	int (*get_response_callback)(RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS);
+	void *get_response_callback_arg;
+};
+
+static int __rrr_http_client_transport_ctx_http2_tick (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_client_http2_tick_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_http_session_transport_ctx_http2_tick (
+			handle,
+			4 * 1024 * 1024 * 1024, // 4 GB
+			0,
+			callback_data->get_response_callback,
+			callback_data->get_response_callback_arg
+	)) != 0) {
+		if (ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP client: Error %i while processing websocket data\n", ret);
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_client_http2_tick (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle
+		int transport_keepalive_handle,
+		int (*get_response_callback)(RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS),
+		void *get_response_callback_arg
 ) {
-	rrr_posix_usleep(100000);
-	return 0;
+	if (transport_keepalive == NULL) {
+		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_http2_tick\n");
+	}
+
+	struct rrr_http_client_http2_tick_callback_data callback_data = {
+			data,
+			get_response_callback,
+			get_response_callback_arg
+	};
+
+	int ret = rrr_net_transport_handle_with_transport_ctx_do (
+			transport_keepalive,
+			transport_keepalive_handle,
+			__rrr_http_client_transport_ctx_http2_tick,
+			&callback_data
+	);
+
+	return ret;
 }
+#endif /* RRR_WITH_NGHTTP2 */

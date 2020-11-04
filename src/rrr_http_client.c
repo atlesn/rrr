@@ -56,7 +56,9 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
 		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade]"},
+#ifdef RRR_WITH_NGHTTP2
 		{0,							'u',	"http2-upgrade",		"[-u|--http2-upgrade]"},
+#endif
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
@@ -113,16 +115,20 @@ static int __rrr_http_client_parse_config (
 
 	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+#ifdef RRR_WITH_NGHTTP2
 		if (cmd_exists(cmd, "http2-upgrade", 0)) {
 			RRR_MSG_0("Both upgrade to websocket and http2 was set\n");
 			ret = 1;
 			goto out;
 		}
+#endif
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 	}
+#ifdef RRR_WITH_NGHTTP2
 	else if (cmd_exists(cmd, "http2-upgrade", 0)) {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 	}
+#endif
 	else {
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
@@ -419,6 +425,12 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
+static int __rrr_http_client_http2_receive_callback (RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS) {
+	struct rrr_http_client_data *http_client_data = arg;
+	printf("rrr_http_client http2 receive\n");
+	return 0;
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -527,6 +539,7 @@ int main (int argc, const char **argv, const char **env) {
 			prev_bytes_total = bytes_total;
 		}
 	}
+#ifdef RRR_WITH_NGHTTP2
 	else if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 		if (rrr_http_client_send_request_keepalive_simple (
 				&data.request_data,
@@ -545,10 +558,13 @@ int main (int argc, const char **argv, const char **env) {
 			rrr_http_client_http2_tick (
 					&data.request_data,
 					net_transport_keepalive,
-					net_transport_keepalive_handle
+					net_transport_keepalive_handle,
+					__rrr_http_client_http2_receive_callback,
+					&data
 			);
 		}
 	}
+#endif
 	else {
 		if (rrr_http_client_send_request_simple (
 				&data.request_data,

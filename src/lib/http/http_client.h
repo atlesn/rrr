@@ -59,6 +59,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
+#define RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS \
+	RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
+
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
@@ -187,10 +190,15 @@ int rrr_http_client_websocket_tick (
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 );
+
+#ifdef RRR_WITH_NGHTTP2
 int rrr_http_client_http2_tick (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle
+		int transport_keepalive_handle,
+		int (*get_response_callback)(RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS),
+		void *get_response_callback_arg
 );
+#endif /* RRR_WITH_NGHTTP2 */
 
 #endif /* RRR_HTTP_CLIENT_H */

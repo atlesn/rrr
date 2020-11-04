@@ -24,34 +24,87 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <nghttp2/nghttp2.h>
 
-#include "../log.h"
-#include "../util/base64.h"
 #include "http2.h"
+#include "../log.h"
+#include "../net_transport/net_transport.h"
+#include "../util/base64.h"
+
+static ssize_t rrr_http2_send_callback (
+		nghttp2_session *nghttp2_session,
+		const uint8_t *data,
+		size_t length,
+		int flags,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+	return NGHTTP2_ERR_WOULDBLOCK;
+}
+
+static ssize_t rrr_http2_recv_callback (
+		nghttp2_session *nghttp2_session,
+		uint8_t *buf,
+		size_t length,
+		int flags,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+	return NGHTTP2_ERR_WOULDBLOCK;
+}
 
 int rrr_http2_session_new_or_reset (
-		struct rrr_http2_session **target
+		struct rrr_http2_session **target,
+		struct rrr_net_transport *transport,
+		int transport_handle
 ) {
 	int ret = 0;
 
 	struct rrr_http2_session *result = NULL;
+	nghttp2_session_callbacks *callbacks = NULL;
 
-	if (*target != NULL) {
-		result = *target;
-		goto reset;
-	}
+	result = *target;
+	*target = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http2_session_new_or_reset\n");
+	if (nghttp2_session_callbacks_new(&callbacks) != 0) {
+		RRR_MSG_0("Could not create callbacks object in rrr_http2_session_new_or_reset\n");
+		ret = 1;
 		goto out;
 	}
 
-	reset:
-	memset(result, '\0', sizeof(*result));
+	nghttp2_session_callbacks_set_send_callback(callbacks, rrr_http2_send_callback);
+	nghttp2_session_callbacks_set_recv_callback(callbacks, rrr_http2_recv_callback);
+
+	if (result == NULL) {
+		if ((result = malloc(sizeof(*result))) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http2_session_new_or_reset\n");
+			goto out;
+		}
+		memset(result, '\0', sizeof(*result));
+	}
+
+	if (result->session != NULL) {
+		nghttp2_session_del(result->session);
+		result->session = NULL;
+	}
+
+	if (nghttp2_session_client_new(&result->session, callbacks, result) != 0) {
+		RRR_MSG_0("Could not allocate nghttp2 session in rrr_http2_session_new_or_reset\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	result->transport = transport;
+	result->transport_handle = transport_handle;
 
 	*target = result;
 
+	goto out;
+	out_free:
+		free(result);
 	out:
-	return ret;
+		if (callbacks != NULL) {
+			nghttp2_session_callbacks_del(callbacks);
+		}
+		return ret;
 }
 
 void rrr_http2_session_destroy_if_not_null (
@@ -60,7 +113,9 @@ void rrr_http2_session_destroy_if_not_null (
 	if (*target == NULL) {
 		return;
 	}
-
+	if ((*target)->session != NULL) {
+		nghttp2_session_del((*target)->session);
+	}
 	free(*target);
 	*target = NULL;
 }
