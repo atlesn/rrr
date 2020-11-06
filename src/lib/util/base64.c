@@ -9,6 +9,8 @@
  *   - Small changes to fit RRR build (function names, headers)
  *  2020-11-04 Atle Solbakken <atle@goliathdns.no>
  *   - Added rrr_base64url_encode function
+ *  2020-11-06 Atle Solbakken <atle@goliathdns.no>
+ *   - Added rrr_base64url_decode function
  */
 
 #include <stdlib.h>
@@ -165,7 +167,7 @@ static const unsigned char base64url_table[65] =
 /*
  * Same as above function but base64url scheme is used (no newlines, no =, and +/ becomes -_)
  */
-unsigned char * rrr_base64url_encode(const unsigned char *src, size_t len,
+unsigned char *rrr_base64url_encode(const unsigned char *src, size_t len,
 			      size_t *out_len)
 {
 	unsigned char *out, *pos;
@@ -206,5 +208,49 @@ unsigned char * rrr_base64url_encode(const unsigned char *src, size_t len,
 	*pos = '\0';
 	if (out_len)
 		*out_len = pos - out;
+	return out;
+}
+
+unsigned char *rrr_base64url_decode(const unsigned char *src, size_t len,
+			      size_t *out_len)
+{
+	unsigned char dtable[256], *out, *pos, block[4], tmp;
+	size_t i, count, olen;
+
+	memset(dtable, 0x80, 256);
+	for (i = 0; i < sizeof(base64url_table) - 1; i++)
+		dtable[base64url_table[i]] = (unsigned char) i;
+
+	count = 0;
+	for (i = 0; i < len; i++) {
+		if (dtable[src[i]] != 0x80)
+			count++;
+	}
+
+	if (count == 0 || count % 4)
+		return NULL;
+
+	olen = count / 4 * 3;
+	pos = out = malloc(olen);
+	if (out == NULL)
+		return NULL;
+
+	count = 0;
+	for (i = 0; i < len; i++) {
+		tmp = dtable[src[i]];
+		if (tmp == 0x80)
+			continue;
+
+		block[count] = tmp;
+		count++;
+		if (count == 4) {
+			*pos++ = (block[0] << 2) | (block[1] >> 4);
+			*pos++ = (block[1] << 4) | (block[2] >> 2);
+			*pos++ = (block[2] << 6) | block[3];
+			count = 0;
+		}
+	}
+
+	*out_len = pos - out;
 	return out;
 }
