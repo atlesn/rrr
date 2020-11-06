@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -428,15 +429,12 @@ static int __rrr_net_transport_libressl_close (struct rrr_net_transport_handle *
 	return 0;
 }
 
-static int __rrr_net_transport_libressl_read_read (
+static int __rrr_net_transport_libressl_read_raw (
 		char *buf,
 		ssize_t *read_bytes,
-		ssize_t read_step_max_size,
-		void *private_arg
+		struct rrr_net_transport_tls_data *tls_data,
+		ssize_t read_step_max_size
 ) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_tls_data *tls_data = callback_data->handle->submodule_private_ptr;
-
 	int ret = RRR_READ_OK;
 
 	ssize_t result = tls_read(tls_data->ctx, buf, read_step_max_size);
@@ -445,7 +443,7 @@ static int __rrr_net_transport_libressl_read_read (
 			goto out;
 		}
 
-		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_read: %s\n", tls_error(tls_data->ctx));
+		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_raw: %s\n", tls_error(tls_data->ctx));
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -455,8 +453,20 @@ static int __rrr_net_transport_libressl_read_read (
 	return ret;
 }
 
+static int __rrr_net_transport_libressl_read_read (
+		char *buf,
+		ssize_t *read_bytes,
+		ssize_t read_step_max_size,
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	struct rrr_net_transport_tls_data *tls_data = callback_data->handle->submodule_private_ptr;
+
+	return rrr_net_transport_libressl_read_raw(buf, read_bytes, tls_data, read_step_max_size);
+}
+
 static int __rrr_net_transport_libressl_read_message (
-		RRR_NET_TRANSPORT_READ_ARGS
+		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
 	int ret = 0;
 
@@ -499,6 +509,31 @@ static int __rrr_net_transport_libressl_read_message (
 			goto out;
 		}
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_libressl_read (
+		RRR_NET_TRANSPORT_READ_ARGS
+) {
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (buf_size > SSIZE_MAX) {
+		RRR_MSG_0("Buffer size too large in __rrr_net_transport_libressl_read\n");
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	ssize_t bytes_read_s = 0;
+
+	ret = __rrr_net_transport_libressl_read_raw(buf, &bytes_read_s, handle->submodule_private_ptr, buf_size);
+
+	if (bytes_read_s < 0) {
+		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
+	}
+
+	*bytes_read = bytes_read_s;
 
 	out:
 	return ret;
@@ -580,6 +615,7 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_accept,
 	__rrr_net_transport_libressl_close,
 	__rrr_net_transport_libressl_read_message,
+	__rrr_net_transport_libressl_read,
 	__rrr_net_transport_libressl_send,
 	__rrr_net_transport_libressl_poll
 };

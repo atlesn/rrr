@@ -65,8 +65,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
 #define RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS		\
-	RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS,			\
-	void *arg
+	struct rrr_net_transport_handle *handle,				\
+	const struct rrr_http_part *request_part,				\
+	struct rrr_http_part *response_part,					\
+	const char *data_ptr,									\
+	size_t data_size,										\
+	void *arg,												\
+	rrr_http_unique_id unique_id
 
 #ifdef RRR_WITH_NGHTTP2
 struct rrr_http2_session;
@@ -158,8 +163,8 @@ int rrr_http_session_transport_ctx_websocket_tick (
 #ifdef RRR_WITH_NGHTTP2
 int rrr_http_session_transport_ctx_http2_tick (
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
+		int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *get_raw_response_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
 		void *get_response_callback_arg
 );

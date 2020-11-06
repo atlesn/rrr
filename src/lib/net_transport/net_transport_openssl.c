@@ -670,29 +670,26 @@ int __rrr_net_transport_openssl_accept (
 		return ret;
 }
 
-static int __rrr_net_transport_tls_read_read (
+static int __rrr_net_transport_openssl_read_raw (
 		char *buf,
 		ssize_t *read_bytes,
-		ssize_t read_step_max_size,
-		void *private_arg
+		struct rrr_net_transport_tls_data *ssl_data,
+		ssize_t read_step_max_size
 ) {
-	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
-
 	int ret = RRR_READ_OK;
 
 	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
 	if (result < 0) {
 		if (BIO_should_retry(ssl_data->web) == 0) {
 //			int reason = BIO_get_retry_reason(ssl_data->web);
-			RRR_SSL_ERR("Error while reading from TLS connection");
+			RRR_SSL_DBG_3("Error while reading from TLS connection");
 			// Possible close of connection
-			ret = RRR_READ_SOFT_ERROR;
+			ret = RRR_READ_EOF;
 			goto out;
 		}
 	}
 	else if (ERR_peek_error() != 0) {
-		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_read");
+		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_raw");
 		return RRR_READ_SOFT_ERROR;
 	}
 
@@ -702,8 +699,20 @@ static int __rrr_net_transport_tls_read_read (
 	return ret;
 }
 
+static int __rrr_net_transport_openssl_read_read (
+		char *buf,
+		ssize_t *read_bytes,
+		ssize_t read_step_max_size,
+		void *private_arg
+) {
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
+
+	return __rrr_net_transport_openssl_read_raw (buf, read_bytes, ssl_data, read_step_max_size);
+}
+
 static int __rrr_net_transport_openssl_read_message (
-		RRR_NET_TRANSPORT_READ_ARGS
+		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
 	int ret = 0;
 
@@ -726,7 +735,7 @@ static int __rrr_net_transport_openssl_read_message (
 				read_max_size,
 				rrr_net_transport_tls_common_read_get_target_size,
 				rrr_net_transport_tls_common_read_complete_callback,
-				__rrr_net_transport_tls_read_read,
+				__rrr_net_transport_openssl_read_read,
 				rrr_net_transport_tls_common_read_get_read_session_with_overshoot,
 				rrr_net_transport_tls_common_read_get_read_session,
 				rrr_net_transport_tls_common_read_remove_read_session,
@@ -746,6 +755,31 @@ static int __rrr_net_transport_openssl_read_message (
 			goto out;
 		}
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_openssl_read (
+		RRR_NET_TRANSPORT_READ_ARGS
+) {
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (buf_size > SSIZE_MAX) {
+		RRR_MSG_0("Buffer size too large in __rrr_net_transport_openssl_read\n");
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	ssize_t bytes_read_s = 0;
+
+	ret = __rrr_net_transport_openssl_read_raw(buf, &bytes_read_s, handle->submodule_private_ptr, buf_size);
+
+	if (bytes_read_s < 0) {
+		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
+	}
+
+	*bytes_read = bytes_read_s;
 
 	out:
 	return ret;
@@ -795,6 +829,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_accept,
 	__rrr_net_transport_openssl_ssl_data_close,
 	__rrr_net_transport_openssl_read_message,
+	__rrr_net_transport_openssl_read,
 	__rrr_net_transport_openssl_send,
 	__rrr_net_transport_openssl_poll
 };

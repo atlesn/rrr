@@ -26,15 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_fields.h"
 #include "http_common.h"
+#include "http_header_fields.h"
 
 #include "../read_constants.h"
 #include "../util/linked_list.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_HTTP_PARSE_OK			RRR_READ_OK
-#define RRR_HTTP_PARSE_HARD_ERR 	RRR_READ_HARD_ERROR
-#define RRR_HTTP_PARSE_SOFT_ERR		RRR_READ_SOFT_ERROR
-#define RRR_HTTP_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
 //#define RRR_HTTP_PARSE_UNTIL_CLOSE	RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
 //#define RRR_HTTP_PARSE_CHUNKED		RRR_SOCKET_READ_COMPLETE_METHOD_CHUNKED
 
@@ -45,9 +42,6 @@ enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_RESPONSE,
 	RRR_HTTP_PARSE_MULTIPART
 };
-
-#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE	(1<<0)
-#define RRR_HTTP_HEADER_FIELD_NO_PAIRS			(1<<1)
 
 #define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
 		int chunk_idx,								\
@@ -69,39 +63,6 @@ enum rrr_http_parse_type {
 #define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
 	((data_ptr) + RRR_HTTP_PART_TOP_LENGTH(part))
 
-struct rrr_http_header_field_definition;
-
-struct rrr_http_header_field {
-	RRR_LL_NODE(struct rrr_http_header_field);
-
-	// This list is filled while parsing the header field
-	struct rrr_http_field_collection fields;
-
-	const struct rrr_http_header_field_definition *definition;
-
-	struct rrr_nullsafe_str *name;
-
-	// This is filled by known header field parsers. Pointer
-	// must always be checked for NULL before usage, they are
-	// only set for certain header field types.
-	long long int value_signed;
-	long long unsigned int value_unsigned;
-	struct rrr_nullsafe_str *binary_value_nullsafe;
-	struct rrr_nullsafe_str *value;
-};
-
-struct rrr_http_header_field_collection {
-	RRR_LL_HEAD(struct rrr_http_header_field);
-};
-
-#define RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION \
-		struct rrr_http_header_field *field
-
-struct rrr_http_header_field_definition {
-	const char *name_lowercase;
-	int flags;
-	int (*parse)(RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION);
-};
 
 struct rrr_http_chunk {
 	RRR_LL_NODE(struct rrr_http_chunk);
@@ -166,6 +127,10 @@ void rrr_http_part_set_raw_request_ptr (
 		size_t raw_data_size
 );
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
+		const struct rrr_http_part *part,
+		const char *name
+);
+const struct rrr_http_header_field *rrr_http_part_header_field_get_raw (
 		const struct rrr_http_part *part,
 		const char *name
 );

@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <poll.h>
-
+#include <limits.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -165,7 +165,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
-		RRR_NET_TRANSPORT_READ_ARGS
+		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
 	int ret = 0;
 
@@ -211,6 +211,41 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_plain_read (
+		RRR_NET_TRANSPORT_READ_ARGS
+) {
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (buf_size > SSIZE_MAX) {
+		RRR_MSG_0("Buffer size too large in __rrr_net_transport_plain_read\n");
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	ssize_t bytes_read_s = 0;
+
+	ret = rrr_socket_read (
+			buf,
+			&bytes_read_s,
+			handle->submodule_private_fd,
+			buf_size,
+			NULL,
+			NULL,
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF
+	);
+
+	ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
+
+	if (bytes_read_s < 0) {
+		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
+	}
+
+	*bytes_read = bytes_read_s;
 
 	out:
 	return ret;
@@ -357,6 +392,7 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
+	__rrr_net_transport_plain_read,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll
 };

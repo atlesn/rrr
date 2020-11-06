@@ -942,9 +942,33 @@ int rrr_http_client_websocket_tick (
 #ifdef RRR_WITH_NGHTTP2
 struct rrr_http_client_http2_tick_callback_data {
 	struct rrr_http_client_request_data *request_data;
-	int (*get_response_callback)(RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS);
+	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
+	void *raw_callback_args;
+	int (*get_response_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *get_response_callback_arg;
 };
+
+static int __rrr_http_client_http2_get_response_callback (
+		RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
+) {
+	struct rrr_http_client_http2_tick_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	ret = callback_data->get_response_callback (
+			callback_data->request_data,
+			response_part->response_code,
+			response_part->response_raw_data_nullsafe,
+			0,
+			1,
+			data_ptr,
+			data_size,
+			data_size,
+			callback_data->get_response_callback_arg
+	);
+
+	return ret;
+}
 
 static int __rrr_http_client_transport_ctx_http2_tick (
 		struct rrr_net_transport_handle *handle,
@@ -956,13 +980,13 @@ static int __rrr_http_client_transport_ctx_http2_tick (
 
 	if ((ret = rrr_http_session_transport_ctx_http2_tick (
 			handle,
-			4 * 1024 * 1024 * 1024, // 4 GB
-			0,
-			callback_data->get_response_callback,
-			callback_data->get_response_callback_arg
+			callback_data->raw_callback,
+			callback_data->raw_callback_args,
+			__rrr_http_client_http2_get_response_callback,
+			callback_data
 	)) != 0) {
 		if (ret != RRR_READ_EOF) {
-			RRR_MSG_0("HTTP client: Error %i while processing websocket data\n", ret);
+			RRR_MSG_0("HTTP client: Error %i while processing http2 data\n", ret);
 		}
 		goto out;
 	}
@@ -975,7 +999,9 @@ int rrr_http_client_http2_tick (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS),
+		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *get_response_callback_arg
 ) {
 	if (transport_keepalive == NULL) {
@@ -984,6 +1010,8 @@ int rrr_http_client_http2_tick (
 
 	struct rrr_http_client_http2_tick_callback_data callback_data = {
 			data,
+			raw_callback,
+			raw_callback_arg,
 			get_response_callback,
 			get_response_callback_arg
 	};

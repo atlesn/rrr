@@ -276,6 +276,8 @@ static int __rrr_http_client_final_callback (
 ) {
 	int ret = 0;
 
+	printf ("Httpclient final callback\n");
+
 	(void)(response_code);
 	(void)(response_arg);
 	(void)(data);
@@ -425,7 +427,7 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
-static int __rrr_http_client_http2_receive_callback (RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS) {
+static int __rrr_http_client_http2_receive_callback (RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 	printf("rrr_http_client http2 receive\n");
 	return 0;
@@ -554,15 +556,19 @@ int main (int argc, const char **argv, const char **env) {
 			goto out;
 		}
 
-		while (1) {
-			rrr_http_client_http2_tick (
+		printf("HTTP2 begin\n");
+
+		do {} while (
+			(ret =rrr_http_client_http2_tick (
 					&data.request_data,
 					net_transport_keepalive,
 					net_transport_keepalive_handle,
+					NULL,
+					NULL,
 					__rrr_http_client_http2_receive_callback,
 					&data
-			);
-		}
+			)) == 0);
+		printf("HTTP 2 end: %i\n", ret);
 	}
 #endif
 	else {

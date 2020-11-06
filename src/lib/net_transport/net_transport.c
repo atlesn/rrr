@@ -573,6 +573,7 @@ int rrr_net_transport_ctx_read_message (
 }
 
 int rrr_net_transport_ctx_send_nonblock (
+		uint64_t *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
@@ -587,10 +588,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		RRR_BUG("BUG: Handle to rrr_net_transport_ctx_send_nonblock was not of CONNECTION type\n");
 	}
 
-	uint64_t written_bytes = 0;
-
 	if ((ret = handle->transport->methods->send (
-			&written_bytes,
+			written_bytes,
 			handle,
 			data,
 			size
@@ -602,12 +601,11 @@ int rrr_net_transport_ctx_send_nonblock (
 	}
 
 	uint64_t size_tmp_u = size;
-	if (written_bytes != size_tmp_u) {
-		RRR_MSG_1("Not all bytes were sent %li < %li in rrr_net_transport_ctx_send_nonblock\n", written_bytes, size);
+	if (*written_bytes != size_tmp_u) {
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
 
-	handle->bytes_written_total += written_bytes;
+	handle->bytes_written_total += *written_bytes;
 
 	out:
 	return ret;
@@ -643,6 +641,19 @@ int rrr_net_transport_ctx_send_blocking (
 		written_bytes_total += written_bytes;
 		pthread_testcancel();
 	} while (ret != RRR_NET_TRANSPORT_SEND_OK);
+
+	return ret;
+}
+
+int rrr_net_transport_ctx_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		char *buf,
+		size_t buf_size
+) {
+	int ret = handle->transport->methods->read(bytes_read, handle, buf, buf_size);
+
+	handle->bytes_read_total += *bytes_read;
 
 	return ret;
 }
@@ -856,6 +867,42 @@ int rrr_net_transport_send_blocking (
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
 
 	ret = rrr_net_transport_ctx_send_blocking(handle, data, size);
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+
+	return ret;
+}
+
+int rrr_net_transport_send_nonblock (
+		uint64_t *written_bytes,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const void *data,
+		ssize_t size
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
+
+	ret = rrr_net_transport_ctx_send_nonblock(written_bytes, handle, data, size);
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+
+	return ret;
+}
+
+int rrr_net_transport_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		char *buf,
+		size_t buf_size
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
+
+	ret = rrr_net_transport_ctx_read(bytes_read, handle, buf, buf_size);
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
 

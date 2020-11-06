@@ -153,7 +153,7 @@ struct rrr_net_transport_collection {
 	void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),		\
 	void *final_callback_arg
 
-#define RRR_NET_TRANSPORT_READ_ARGS												\
+#define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS												\
 	uint64_t *bytes_read,														\
 	struct rrr_net_transport_handle *handle,									\
 	int read_attempts,															\
@@ -164,6 +164,12 @@ struct rrr_net_transport_collection {
 	void *get_target_size_arg,													\
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),	\
 	void *complete_callback_arg
+
+#define RRR_NET_TRANSPORT_READ_ARGS											\
+	uint64_t *bytes_read,														\
+	struct rrr_net_transport_handle *handle,									\
+	char *buf,																	\
+	size_t buf_size
 
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
@@ -180,7 +186,8 @@ struct rrr_net_transport_methods {
 	int (*close)(
 			struct rrr_net_transport_handle *handle
 	);
-	int (*read_message)(RRR_NET_TRANSPORT_READ_ARGS);
+	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
+	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
 	int (*send)(
 			uint64_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
@@ -254,6 +261,7 @@ int rrr_net_transport_ctx_read_message (
 		void *complete_callback_arg
 );
 int rrr_net_transport_ctx_send_nonblock (
+		uint64_t *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
@@ -262,6 +270,12 @@ int rrr_net_transport_ctx_send_blocking (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_ctx_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		char *buf,
+		size_t buf_size
 );
 int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
@@ -294,6 +308,20 @@ int rrr_net_transport_send_blocking (
 		int transport_handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_send_nonblock (
+		uint64_t *written_bytes,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const void *data,
+		ssize_t size
+);
+int rrr_net_transport_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		char *buf,
+		size_t buf_size
 );
 int rrr_net_transport_bind_and_listen (
 		struct rrr_net_transport *transport,

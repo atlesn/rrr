@@ -937,6 +937,8 @@ static int __rrr_http_session_response_receive_callback (
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_session *session = receive_data->handle->application_private_ptr;
 
+	char *orig_http2_settings_tmp = NULL;
+
 	int ret = 0;
 
 	if (RRR_DEBUGLEVEL_3) {
@@ -1014,14 +1016,48 @@ static int __rrr_http_session_response_receive_callback (
 				goto out;
 			}
 #ifdef RRR_WITH_NGHTTP2
-			if (rrr_http2_session_new_or_reset(&session->http2_session, receive_data->handle->transport, receive_data->handle->handle) != 0) {
+			printf("new http2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+			// Pass any extra data received to http2 session for processing there. Overshoot pointer will
+			// be set to NULL if http2_session takes control of the pointer.
+			ret = rrr_http2_session_client_new_or_reset (
+					&session->http2_session,
+					(void **) &read_session->rx_overshoot,
+					read_session->rx_overshoot_size
+			);
+
+			// Make sure these to variables are always both either 0 or set
+			RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+			read_session->rx_overshoot_size = 0;
+
+			if (ret != 0) {
 				RRR_MSG_0("Failed to initialize HTTP2 session in __rrr_http_session_response_receive_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
+
+			const struct rrr_http_header_field *orig_http2_settings = rrr_http_part_header_field_get_raw(session->request_part, "http2-settings");
+			if (orig_http2_settings == NULL) {
+				RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_http_session_response_receive_callback\n");
+			}
+
+			size_t orig_http2_settings_length = 0;
+			orig_http2_settings_tmp = (char *) rrr_base64url_decode(orig_http2_settings->value->str, orig_http2_settings->value->len, &orig_http2_settings_length);
+
+			if ((ret = rrr_http2_session_client_upgrade_postprocess(session->http2_session, orig_http2_settings_tmp, orig_http2_settings_length)) != 0) {
+				goto out;
+			}
+
+			if ((ret = rrr_http2_session_stream_application_data_set(session->http2_session, 1, (void **) &session->request_part, rrr_http_part_destroy_void)) != 0) {
+				goto out;
+			}
+
+			if ((ret = rrr_http2_session_stream_application_id_set(session->http2_session, 1, receive_data->unique_id)) != 0) {
+				goto out;
+			}
+
 			upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 #else
-			RRR_BUG("HTTP Client sent a Upgrade: h2c request which the server responded correctly to, but NGHTTP2 support is not built in __rrr_http_session_response_receive_callback\n");
+			RRR_BUG("HTTP Client sent a Upgrade: h2c request to which the server responded correctly, but NGHTTP2 support is not built in __rrr_http_session_response_receive_callback\n");
 #endif /* RRR_WITH_NGHTTP2 */
 		}
 		else {
@@ -1051,7 +1087,7 @@ static int __rrr_http_session_response_receive_callback (
 	out:
 	__rrr_http_session_destroy_part_if_not_null(&session->response_part);
 	__rrr_http_session_destroy_part_if_not_null(&session->request_part);
-
+	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	return ret;
 }
 
@@ -1603,6 +1639,7 @@ static int __rrr_http_session_receive_get_target_size (
 
 	if (ret == RRR_HTTP_PARSE_OK) {
 		read_session->target_size = target_size;
+		printf("http target size: %li\n", target_size);
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
 		if ((*part_to_use)->data_length_unknown) {
@@ -1842,13 +1879,84 @@ int rrr_http_session_transport_ctx_websocket_tick (
 }
 
 #ifdef RRR_WITH_NGHTTP2
+struct rrr_http_session_http2_get_response_callback_data {
+	struct rrr_net_transport_handle *handle;
+	int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
+	void *get_raw_response_callback_arg;
+	int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS);
+	void *get_response_callback_arg;
+};
+
+static int __rrr_http_session_http2_get_response (RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS) {
+	struct rrr_http_session_http2_get_response_callback_data *callback_data = callback_arg;
+
+	int ret = 0;
+
+	struct rrr_http_part *response_part = NULL;
+
+	if (callback_data->get_raw_response_callback != NULL) {
+		if ((ret = callback_data->get_raw_response_callback (
+				data,
+				data_size,
+				stream_application_id,
+				callback_data->get_raw_response_callback_arg
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	if (callback_data->get_response_callback != NULL) {
+		if ((ret = rrr_http_part_new(&response_part)) != 0) {
+			goto out;
+		}
+
+
+		if ((ret = callback_data->get_response_callback (
+				callback_data->handle,
+				stream_application_data,
+				response_part,
+				data,
+				data_size,
+				callback_data->get_response_callback_arg,
+				stream_application_id
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	if (response_part != NULL) {
+		rrr_http_part_destroy(response_part);
+	}
+	return ret;
+}
+
 int rrr_http_session_transport_ctx_http2_tick (
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
+		int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *get_raw_response_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
 		void *get_response_callback_arg
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
+
+	if (session->http2_session == NULL) {
+		return RRR_HTTP_SOFT_ERROR;
+	}
+
+	struct rrr_http_session_http2_get_response_callback_data callback_data = {
+			handle,
+			get_raw_response_callback,
+			get_raw_response_callback_arg,
+			get_response_callback,
+			get_response_callback_arg
+	};
+
+	return rrr_http2_tick (
+			session->http2_session,
+			handle,
+			__rrr_http_session_http2_get_response,
+			&callback_data
+	);
 }
 #endif /* RRR_WITH_NGHTTP2 */

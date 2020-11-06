@@ -27,12 +27,17 @@ unsigned char *rrr_base64_encode (
 		size_t len,
 		size_t *out_len
 );
-unsigned char * rrr_base64url_encode (
+unsigned char *rrr_base64_decode (
 		const unsigned char *src,
 		size_t len,
 		size_t *out_len
 );
-unsigned char *rrr_base64_decode (
+unsigned char *rrr_base64url_encode (
+		const unsigned char *src,
+		size_t len,
+		size_t *out_len
+);
+unsigned char *rrr_base64url_decode (
 		const unsigned char *src,
 		size_t len,
 		size_t *out_len
