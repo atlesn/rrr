@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_util.h"
 #include "http_part.h"
+#include "http_part_parse.h"
+#include "http_part_multipart.h"
 
 #include "../net_transport/net_transport.h"
 #include "../random.h"
@@ -942,7 +944,7 @@ static int __rrr_http_session_response_receive_callback (
 	int ret = 0;
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_part_dump_header(session->response_part);
+		rrr_http_part_header_dump(session->response_part);
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
@@ -1450,7 +1452,7 @@ static int __rrr_http_session_request_receive_callback (
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_part_dump_header(session->request_part);
+		rrr_http_part_header_dump(session->request_part);
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
@@ -1471,17 +1473,17 @@ static int __rrr_http_session_request_receive_callback (
 		}
 	}
 
-	if ((ret = rrr_http_part_merge_chunks(&merged_chunks, session->request_part, read_session->rx_buf_ptr)) != 0) {
+	if ((ret = rrr_http_part_chunks_merge(&merged_chunks, session->request_part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
 	}
 
 	const char *data_to_use = (merged_chunks != NULL ? merged_chunks : read_session->rx_buf_ptr);
 
-	if ((ret = rrr_http_part_process_multipart(session->request_part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_multipart_process(session->request_part, data_to_use)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_extract_post_and_query_fields(session->request_part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_post_and_query_fields_extract(session->request_part, data_to_use)) != 0) {
 		goto out;
 	}
 

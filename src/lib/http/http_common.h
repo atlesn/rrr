@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_PARSE_SOFT_ERR			RRR_READ_SOFT_ERROR
 #define RRR_HTTP_PARSE_INCOMPLETE		RRR_READ_INCOMPLETE
 
+#define RRR_HTTP_PROTOCOL_VERSION_1_1	1
+#define RRR_HTTP_PROTOCOL_VERSION_2		2
+
 #define RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS		101
 #define RRR_HTTP_RESPONSE_CODE_OK						200
 #define RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT			204
@@ -79,6 +82,12 @@ enum rrr_http_upgrade_mode {
 	RRR_HTTP_UPGRADE_MODE_NONE,
 	RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
 	RRR_HTTP_UPGRADE_MODE_HTTP2
+};
+
+enum rrr_http_parse_type {
+	RRR_HTTP_PARSE_REQUEST,
+	RRR_HTTP_PARSE_RESPONSE,
+	RRR_HTTP_PARSE_MULTIPART
 };
 
 extern const char *rrr_http_transport_str_any;

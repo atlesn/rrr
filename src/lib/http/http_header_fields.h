@@ -75,6 +75,11 @@ int rrr_http_header_field_new (
 		const char *field_name,
 		ssize_t field_name_len
 );
+int rrr_http_header_field_new_with_value (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const char *value
+);
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,
 		ssize_t *parsed_bytes,

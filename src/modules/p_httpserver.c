@@ -580,7 +580,7 @@ static int httpserver_receive_get_raw_response (
 			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
 
 	// Will set our pointer to NULL
-	if (rrr_http_part_set_allocated_raw_response (
+	if (rrr_http_part_raw_response_set_allocated (
 			response_part,
 			&callback_data.response,
 			callback_data.response_size

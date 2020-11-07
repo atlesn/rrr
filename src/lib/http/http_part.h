@@ -35,14 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_HTTP_PARSE_UNTIL_CLOSE	RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
 //#define RRR_HTTP_PARSE_CHUNKED		RRR_SOCKET_READ_COMPLETE_METHOD_CHUNKED
 
-#define RRR_HTTP_PART_PROTOCOL_VERSION_1_1 1
-
-enum rrr_http_parse_type {
-	RRR_HTTP_PARSE_REQUEST,
-	RRR_HTTP_PARSE_RESPONSE,
-	RRR_HTTP_PARSE_MULTIPART
-};
-
 #define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
 		int chunk_idx,								\
 		int chunk_total,							\
@@ -63,6 +55,15 @@ enum rrr_http_parse_type {
 #define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
 	((data_ptr) + RRR_HTTP_PART_TOP_LENGTH(part))
 
+#define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
+		const char *data_start =								\
+				data_ptr +										\
+				part->headroom_length +							\
+				part->header_length								\
+		;														\
+		const char *data_end =									\
+				data_start +									\
+				part->data_length
 
 struct rrr_http_chunk {
 	RRR_LL_NODE(struct rrr_http_chunk);
@@ -111,19 +112,22 @@ struct rrr_http_part {
 	size_t data_length;
 	int data_length_unknown;
 };
-
+int __rrr_http_part_content_type_equals (
+		struct rrr_http_part *part,
+		const char *content_type_test
+);
+const struct rrr_http_field *__rrr_http_part_header_field_subvalue_get (
+		const struct rrr_http_part *part,
+		const char *field_name,
+		const char *subvalue_name
+);
 void rrr_http_part_destroy (struct rrr_http_part *part);
 void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
-int rrr_http_part_set_allocated_raw_response (
+int rrr_http_part_raw_response_set_allocated (
 		struct rrr_http_part *part,
 		char **raw_data_source,
-		size_t raw_data_size
-);
-void rrr_http_part_set_raw_request_ptr (
-		struct rrr_http_part *part,
-		const char *raw_data,
 		size_t raw_data_size
 );
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
@@ -138,6 +142,10 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 		const struct rrr_http_part *part,
 		const char *name_lowercase,
 		const char *value_anycase
+);
+struct rrr_http_chunk *rrr_http_part_chunk_new (
+		rrr_length chunk_start,
+		rrr_length chunk_length
 );
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part
@@ -167,29 +175,16 @@ int rrr_http_part_chunks_iterate (
 		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
-int rrr_http_part_process_multipart (
-		struct rrr_http_part *part,
-		const char *data_ptr
-);
-int rrr_http_part_parse (
-		struct rrr_http_part *result,
-		size_t *target_size,
-		size_t *parsed_bytes,
-		const char *data_ptr,
-		size_t start_pos,
-		const char *end,
-		enum rrr_http_parse_type parse_type
-);
-int rrr_http_part_extract_post_and_query_fields (
+int rrr_http_part_post_and_query_fields_extract (
 		struct rrr_http_part *target,
 		const char *data_ptr
 );
-int rrr_http_part_merge_chunks (
+int rrr_http_part_chunks_merge (
 		char **result_data,
 		struct rrr_http_part *part,
 		const char *data_ptr
 );
-void rrr_http_part_dump_header (
+void rrr_http_part_header_dump (
 		struct rrr_http_part *part
 );
 

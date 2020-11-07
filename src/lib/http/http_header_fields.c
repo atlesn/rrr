@@ -369,20 +369,44 @@ int rrr_http_header_field_new (
 	if ((rrr_nullsafe_str_new(&field->name, field_name, field_name_len)) != 0) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_header_field_new\n");
 		ret = 1;
-		goto out;
+		goto out_destroy;
 	}
 
 	rrr_nullsafe_str_tolower(field->name);
 
 	*result = field;
-	field = NULL;
 
-	out:
-	if (field != NULL) {
+	goto out;
+	out_destroy:
 		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
+}
+
+int rrr_http_header_field_new_with_value (
+		struct rrr_http_header_field **result,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = rrr_http_header_field_new(&field, name, strlen(name))) != 0) {
+		RRR_MSG_0("Could not create header field in rrr_http_header_field_new\n");
+		goto out;
 	}
 
-	return ret;
+	if (rrr_nullsafe_str_new(&field->value, value, strlen(value)) != 0) {
+		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
+		goto out_destroy;
+	}
+
+	goto out;
+	out_destroy:
+		rrr_http_header_field_destroy(field);
+	out:
+		return ret;
 }
 
 static const char *__rrr_http_header_field_parse_get_first_position (
