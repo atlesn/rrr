@@ -155,7 +155,7 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 	else if (response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-		if (callback_data->method != RRR_HTTP_METHOD_GET_WEBSOCKET && callback_data->method != RRR_HTTP_METHOD_GET_HTTP2) {
+		if (callback_data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET && callback_data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_HTTP2) {
 			RRR_MSG_0("Unexpected response 101 '%s' from server\n",
 					response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -494,6 +494,7 @@ void __rrr_http_client_send_request_connect_callback (
 static int __rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -526,6 +527,7 @@ static int __rrr_http_client_send_request (
 
 	callback_data.data = data;
 	callback_data.method = method;
+	callback_data.upgrade_mode = upgrade_mode;
 	callback_data.raw_request_data = raw_request_data;
 	callback_data.raw_request_data_size = raw_request_data_size;
 	callback_data.raw_callback = raw_callback;
@@ -593,11 +595,12 @@ static int __rrr_http_client_send_request (
 
 	callback_data.request_header_host = server_to_use;
 
-	RRR_DBG_3("Using server %s port %u transport %s method '%s'\n",
+	RRR_DBG_3("Using server %s port %u transport %s method '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
-			RRR_HTTP_METHOD_TO_STR(method)
+			RRR_HTTP_METHOD_TO_STR(method),
+			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
 	);
 
 	if (transport == NULL) {
@@ -611,10 +614,24 @@ static int __rrr_http_client_send_request (
 				tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
 			}
 
+			const char *alpn_protos = NULL;
+			unsigned int alpn_protos_length = 0;
+
+#ifdef RRR_WITH_NGHTTP2
+			if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+				RRR_DBG_3("Selecting ALPN/NPN HTTP/2 selection method\n");
+				rrr_http_session_get_http2_alpn_protos(&alpn_protos, &alpn_protos_length);
+				// Upgrade using ALPN/NPN instead of upgrading from HTTP/1.1
+				callback_data.upgrade_mode = 0;
+			}
+#endif
+
 			ret = rrr_net_transport_new (
 					&transport,
 					&net_transport_config_tmp,
-					tls_flags
+					tls_flags,
+					alpn_protos,
+					alpn_protos_length
 			);
 		}
 		else if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
@@ -635,9 +652,14 @@ static int __rrr_http_client_send_request (
 			ret = rrr_net_transport_new (
 					&transport,
 					&net_transport_config_tmp,
+					0,
+					NULL,
 					0
 			);
 		}
+	}
+	else {
+		RRR_DBG_3("Using exisiting HTTP connection\n");
 	}
 
 	if (ret != 0) {
@@ -731,6 +753,7 @@ void rrr_http_client_terminate_if_open (
 int rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -746,6 +769,7 @@ int rrr_http_client_send_request (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -765,6 +789,7 @@ int rrr_http_client_send_request (
 int rrr_http_client_send_raw_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -780,6 +805,7 @@ int rrr_http_client_send_raw_request (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -799,6 +825,7 @@ int rrr_http_client_send_raw_request (
 int rrr_http_client_send_request_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
@@ -806,6 +833,7 @@ int rrr_http_client_send_request_simple (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			upgrade_mode,
 			NULL,
 			NULL,
 			net_transport_config,
@@ -825,6 +853,7 @@ int rrr_http_client_send_request_simple (
 int rrr_http_client_send_request_keepalive_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -834,6 +863,7 @@ int rrr_http_client_send_request_keepalive_simple (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -860,7 +890,8 @@ int rrr_http_client_start_websocket_simple (
 ) {
 	return __rrr_http_client_send_request (
 			data,
-			RRR_HTTP_METHOD_GET_WEBSOCKET,
+			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,

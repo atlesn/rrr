@@ -464,6 +464,8 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	if (rrr_net_transport_new (
 			&transport,
 			&influxdb_data->net_transport_config,
+			0,
+			NULL,
 			0
 	) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");

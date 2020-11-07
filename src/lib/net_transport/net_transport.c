@@ -323,7 +323,9 @@ static void rrr_net_transport_maintenance (struct rrr_net_transport *transport) 
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
-		int flags
+		int flags,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 	int ret = 0;
 
@@ -339,6 +341,9 @@ int rrr_net_transport_new (
 			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
 				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
 			}
+			if (alpn_protos != NULL) {
+				RRR_BUG("BUG: Plain method does not support ALPN in rrr_net_transport_new but it was given\n");
+			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
@@ -349,7 +354,9 @@ int rrr_net_transport_new (
 					config->tls_certificate_file,
 					config->tls_key_file,
 					config->tls_ca_file,
-					config->tls_ca_path
+					config->tls_ca_path,
+					alpn_protos,
+					alpn_protos_length
 			);
 			break;
 #endif

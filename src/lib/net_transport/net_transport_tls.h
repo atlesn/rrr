@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_NET_TRANSPORT_TLS_H
 #define RRR_NET_TRANSPORT_TLS_H
 
+#include "net_transport_defines.h"
+
 #ifdef RRR_WITH_OPENSSL
 #	include "net_transport_openssl.h"
 #else
@@ -34,12 +36,14 @@ static inline int rrr_net_transport_tls_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 #ifdef RRR_WITH_OPENSSL
-	return rrr_net_transport_openssl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path);
+	return rrr_net_transport_openssl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length);
 #else
-	return rrr_net_transport_libressl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path);
+	return rrr_net_transport_libressl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length);
 #endif
 }
 

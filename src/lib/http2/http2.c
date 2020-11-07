@@ -613,3 +613,21 @@ int rrr_http2_pack_upgrade_request_settings (
 
 	return 0;
 }
+
+int rrr_http2_select_next_protocol (
+		const unsigned char **out,
+		unsigned char *outlen,
+		const unsigned char *in,
+		unsigned int inlen
+) {
+	int ret = nghttp2_select_next_protocol((unsigned char **) out, outlen, in, inlen);
+	if (ret == 0) {
+		RRR_DBG_3("Note: HTTP2 not available, HTTP/1.1 selected\n");
+	}
+	else if (ret < 0) {
+		RRR_DBG_3("Note: Neither HTTP/1.1 nor HTTP/2 advertised in TLS protocol list from remote\n");
+		return RRR_HTTP2_SOFT_ERROR;
+	}
+	RRR_DBG_3("HTTP/2 selected by NPN/ALPN\n");
+	return RRR_HTTP2_OK;
+}

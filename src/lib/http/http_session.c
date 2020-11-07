@@ -49,6 +49,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../http2/http2.h"
 #endif
 
+#ifdef RRR_WITH_NGHTTP2
+const char rrr_http_session_alpn_protos_http2_priority[] = {
+	     6, 'h', 't', 't', 'p', '/', '2',
+	     8, 'h', 't', 't', 'p', '/', '1', '.', '1'
+};
+#endif /* RRR_WITH_NGHTTP2 */
+
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
 	RRR_FREE_IF_NOT_NULL(session->user_agent);
@@ -728,11 +735,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 		goto out;
 	}
 
-	if (	(session->method == RRR_HTTP_METHOD_GET ||
-			session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ||
-			session->method == RRR_HTTP_METHOD_GET_HTTP2) &&
-			RRR_LL_COUNT(&session->request_part->fields) > 0
-	) {
+	if (session->method == RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&session->request_part->fields) > 0) {
 		extra_uri_tmp  = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &session->request_part->fields);
 
 		if (strchr(session->uri_str, '?') != NULL) {
@@ -768,7 +771,10 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 		uri_to_use = uri_tmp;
 	}
 
-	if (session->method == RRR_HTTP_METHOD_GET_WEBSOCKET) {
+	if (session->upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
+		if (session->method != RRR_HTTP_METHOD_GET) {
+			RRR_BUG("BUG: HTTP method was not GET while upgrade mode was WebSocket\n");
+		}
 		if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "Upgrade")) != 0) {
 			goto out;
 		}
@@ -785,7 +791,10 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			goto out;
 		}
 	}
-	else if (session->method == RRR_HTTP_METHOD_GET_HTTP2) {
+	else if (session->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+		if (session->method != RRR_HTTP_METHOD_GET && session->method != RRR_HTTP_METHOD_HEAD) {
+			RRR_BUG("BUG: HTTP method was not GET or HEAD while upgrade mode was HTTP2\n");
+		}
 #ifdef RRR_WITH_NGHTTP2
 		if ((ret = rrr_http_part_header_field_push(session->request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
 			goto out;
@@ -811,9 +820,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			"Host: %s\r\n"
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
-			(	session->method == RRR_HTTP_METHOD_GET ||
-				session->method == RRR_HTTP_METHOD_GET_WEBSOCKET ||
-				session->method == RRR_HTTP_METHOD_GET_HTTP2 ? "GET" : "POST"),
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(session->method),
 			uri_to_use,
 			host_buf,
 			user_agent_buf
@@ -1959,6 +1966,14 @@ int rrr_http_session_transport_ctx_http2_tick (
 			__rrr_http_session_http2_get_response,
 			&callback_data
 	);
+}
+
+void rrr_http_session_get_http2_alpn_protos (
+		const char **target,
+		unsigned int *length
+) {
+	*target = rrr_http_session_alpn_protos_http2_priority;
+	*length = sizeof(rrr_http_session_alpn_protos_http2_priority);
 }
 #endif /* RRR_WITH_NGHTTP2 */
 

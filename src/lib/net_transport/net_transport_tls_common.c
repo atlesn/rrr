@@ -41,7 +41,9 @@ int rrr_net_transport_tls_common_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 	struct rrr_net_transport_tls *result = NULL;
 
@@ -97,12 +99,23 @@ int rrr_net_transport_tls_common_new (
 		}
 	}
 
+	if (alpn_protos != NULL && *alpn_protos != '\0') {
+		if ((result->alpn_protos = malloc(alpn_protos_length)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
+			ret = 1;
+			goto out_free;
+		}
+		memcpy(result->alpn_protos, alpn_protos, alpn_protos_length);
+		result->alpn_protos_length = alpn_protos_length;
+	}
+
 	result->flags = flags_checked;
 
 	*target = result;
 
 	goto out;
 	out_free:
+		RRR_FREE_IF_NOT_NULL(result->alpn_protos);
 		RRR_FREE_IF_NOT_NULL(result->ca_path);
 		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);

@@ -30,10 +30,12 @@ const char *rrr_http_transport_str_http = "HTTP";
 const char *rrr_http_transport_str_https = "HTTPS";
 
 const char *rrr_http_method_str_get = "GET";
-const char *rrr_http_method_str_get_websocket = "GET (WebSocket)";
-const char *rrr_http_method_str_get_http2 = "GET (with HTTP2 upgrade)";
+const char *rrr_http_method_str_head = "HEAD";
+const char *rrr_http_method_str_put = "PUT";
+const char *rrr_http_method_str_delete = "DELETE";
 const char *rrr_http_method_str_post_multipart_form_data = "POST_MULTIPART_FORM_DATA";
 const char *rrr_http_method_str_post_urlencoded = "POST_URLENCODED";
 const char *rrr_http_method_str_post_urlencoded_no_quoting = "POST_URLENCODED_NO_QUOTING";
 const char *rrr_http_method_str_post_application_octet_stream = "POST_APPLICATION_OCTET_STREAM";
 const char *rrr_http_method_str_post_application_text_plain = "POST_TEXT_PLAIN";
+const char *rrr_http_method_str_post = "POST";

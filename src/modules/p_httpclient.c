@@ -733,6 +733,7 @@ static int httpclient_send_request_raw_data_callback (
 	return rrr_http_client_send_raw_request (
 			&data->http_client_data,
 			data->http_client_config.method,
+			RRR_HTTP_UPGRADE_MODE_NONE,
 			(data->do_keepalive ? &data->keepalive_transport : NULL),
 			(data->do_keepalive ? &data->keepalive_handle : 0),
 			&data->net_transport_config,
@@ -772,6 +773,7 @@ static int httpclient_send_request_from_message_callback (
 	ret = rrr_http_client_send_request (
 			&data->http_client_data,
 			data->http_client_config.method,
+			RRR_HTTP_UPGRADE_MODE_NONE,
 			(data->do_keepalive ? &data->keepalive_transport : NULL),
 			(data->do_keepalive ? &data->keepalive_handle : 0),
 			&data->net_transport_config,

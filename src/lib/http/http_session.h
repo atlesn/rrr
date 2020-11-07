@@ -25,10 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <sys/socket.h>
 
-#include "../websocket/websocket.h"
 #include "http_common.h"
 #include "http_fields.h"
 #include "http_part.h"
+#include "../net_transport/net_transport_defines.h"
+#include "../websocket/websocket.h"
 
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS	\
 	struct rrr_net_transport_handle *handle,	\
@@ -79,6 +80,7 @@ struct rrr_http2_session;
 struct rrr_http_session {
 	int is_client;
 	enum rrr_http_method method;
+	enum rrr_http_upgrade_mode upgrade_mode;
 	char *uri_str;
 	char *user_agent;
 	struct rrr_http_part *request_part;
@@ -165,6 +167,10 @@ int rrr_http_session_transport_ctx_http2_tick (
 		void *get_raw_response_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
 		void *get_response_callback_arg
+);
+void rrr_http_session_get_http2_alpn_protos (
+		const char **target,
+		unsigned int *length
 );
 #endif
 int rrr_http_session_transport_ctx_close_if_open (

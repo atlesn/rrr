@@ -48,6 +48,8 @@ struct rrr_net_transport_tls {
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
+	char *alpn_protos;
+	unsigned int alpn_protos_length;
 };
 
 struct rrr_net_transport_tls_data {
@@ -72,7 +74,9 @@ int rrr_net_transport_tls_common_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 );
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *target

@@ -88,5 +88,11 @@ void rrr_http2_transport_ctx_terminate (
 int rrr_http2_pack_upgrade_request_settings (
 		char **target
 );
+int rrr_http2_select_next_protocol (
+		const unsigned char **out,
+		unsigned char *outlen,
+		const unsigned char *in,
+		unsigned int inlen
+);
 
 #endif /* RRR_HTTP2_H */

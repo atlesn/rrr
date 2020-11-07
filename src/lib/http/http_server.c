@@ -97,7 +97,7 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
-	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags)) != 0) {
+	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags, NULL, 0)) != 0) {
 		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
 		ret = 1;
 		goto out;

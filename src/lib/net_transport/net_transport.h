@@ -219,7 +219,9 @@ int rrr_net_transport_handle_close_tag_list_push (
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
-		int flags
+		int flags,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);

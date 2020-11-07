@@ -127,7 +127,9 @@ static int __rrr_net_transport_openssl_new_ctx (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 	int ret = 0;
 
@@ -195,6 +197,15 @@ static int __rrr_net_transport_openssl_new_ctx (
 
 		if (SSL_CTX_check_private_key(ctx) != 1) {
 			RRR_SSL_ERR("Error encoutered while checking private key while starting TLS");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+
+	if (alpn_protos != NULL) {
+		// Note: Returns 0 on success as opposed to other OpenSSL functions
+		if (SSL_CTX_set_alpn_protos(ctx, (unsigned const char *) alpn_protos, alpn_protos_length) != 0) {
+			RRR_SSL_ERR("SSL_CTX_set_alpn_protos failed");
 			ret = 1;
 			goto out_destroy;
 		}
@@ -279,7 +290,9 @@ int __rrr_net_transport_openssl_connect_callback (
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
-			tls->ca_path
+			tls->ca_path,
+			tls->alpn_protos,
+			tls->alpn_protos_length
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
 		ret = 1;
@@ -475,7 +488,9 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
-			tls->ca_path
+			tls->ca_path,
+			tls->alpn_protos,
+			tls->alpn_protos_length
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_bind_and_listen");
 		ret = 1;
@@ -572,7 +587,9 @@ static int __rrr_net_transport_openssl_accept_callback (
 			tls->certificate_file,
 			tls->private_key_file,
 			tls->ca_file,
-			tls->ca_path
+			tls->ca_path,
+			tls->alpn_protos,
+			tls->alpn_protos_length
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_accept\n");
 		ret = 1;
@@ -840,9 +857,11 @@ int rrr_net_transport_openssl_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
-	if ((rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path)) != 0) {
+	if ((rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
 		return 1;
 	}
 
