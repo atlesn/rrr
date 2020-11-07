@@ -1889,6 +1889,9 @@ struct rrr_http_session_http2_get_response_callback_data {
 static int __rrr_http_session_http2_get_response (RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS) {
 	struct rrr_http_session_http2_get_response_callback_data *callback_data = callback_arg;
 
+	(void)(session);
+	(void)(stream_id);
+
 	int ret = 0;
 
 	struct rrr_http_part *response_part = NULL;

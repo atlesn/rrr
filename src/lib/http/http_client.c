@@ -969,6 +969,10 @@ static int __rrr_http_client_http2_get_response_callback (
 ) {
 	struct rrr_http_client_http2_tick_callback_data *callback_data = arg;
 
+	(void)(handle);
+	(void)(request_part);
+	(void)(unique_id);
+
 	int ret = 0;
 
 	ret = callback_data->get_response_callback (
