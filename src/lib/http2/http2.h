@@ -75,11 +75,15 @@ int rrr_http2_session_client_upgrade_postprocess (
 		const void *http1_upgrade_settings,
 		size_t http1_upgrade_settings_len
 );
-int rrr_http2_tick (
+int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*get_response_callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
 		void *get_response_callback_arg
+);
+void rrr_http2_transport_ctx_terminate (
+		struct rrr_http2_session *session,
+		struct rrr_net_transport_handle *handle
 );
 int rrr_http2_pack_upgrade_request_settings (
 		char **target

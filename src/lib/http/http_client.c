@@ -712,6 +712,22 @@ static int __rrr_http_client_send_request (
 	return ret;
 }
 
+void rrr_http_client_terminate_if_open (
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle
+) {
+	if (transport_keepalive == NULL || transport_keepalive_handle == 0) {
+		return;
+	}
+
+	rrr_net_transport_handle_with_transport_ctx_do (
+			transport_keepalive,
+			transport_keepalive_handle,
+			rrr_http_session_transport_ctx_close_if_open,
+			NULL
+	);
+}
+
 int rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,

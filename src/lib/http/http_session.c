@@ -1018,7 +1018,7 @@ static int __rrr_http_session_response_receive_callback (
 				goto out;
 			}
 #ifdef RRR_WITH_NGHTTP2
-			printf("new http2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+			RRR_DBG_3("Upgrade to HTTP2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 			// Pass any extra data received to http2 session for processing there. Overshoot pointer will
 			// be set to NULL if http2_session takes control of the pointer.
 			ret = rrr_http2_session_client_new_or_reset (
@@ -1641,7 +1641,6 @@ static int __rrr_http_session_receive_get_target_size (
 
 	if (ret == RRR_HTTP_PARSE_OK) {
 		read_session->target_size = target_size;
-		printf("http target size: %li\n", target_size);
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
 		if ((*part_to_use)->data_length_unknown) {
@@ -1912,7 +1911,6 @@ static int __rrr_http_session_http2_get_response (RRR_HTTP2_GET_RESPONSE_CALLBAC
 			goto out;
 		}
 
-
 		if ((ret = callback_data->get_response_callback (
 				callback_data->handle,
 				stream_application_data,
@@ -1954,7 +1952,7 @@ int rrr_http_session_transport_ctx_http2_tick (
 			get_response_callback_arg
 	};
 
-	return rrr_http2_tick (
+	return rrr_http2_transport_ctx_tick (
 			session->http2_session,
 			handle,
 			__rrr_http_session_http2_get_response,
@@ -1962,3 +1960,21 @@ int rrr_http_session_transport_ctx_http2_tick (
 	);
 }
 #endif /* RRR_WITH_NGHTTP2 */
+
+int rrr_http_session_transport_ctx_close_if_open (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	(void)(arg);
+
+#ifdef RRR_WITH_NGHTTP2
+	if (session != NULL && session->http2_session != NULL) {
+		rrr_http2_transport_ctx_terminate(session->http2_session, handle);
+	}
+#else
+	(void)(session);
+#endif /* RRR_WITH_NGHTTP2 */
+	return 0; // Always return 0
+}

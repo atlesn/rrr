@@ -80,6 +80,7 @@ struct rrr_http_client_data {
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
+	int final_callback_count;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -274,9 +275,11 @@ static int __rrr_http_client_parse_config (
 static int __rrr_http_client_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
-	int ret = 0;
+	struct rrr_http_client_data *http_client_data = arg;
 
-	printf ("Httpclient final callback\n");
+	http_client_data->final_callback_count++;
+
+	int ret = 0;
 
 	(void)(response_code);
 	(void)(response_arg);
@@ -284,7 +287,6 @@ static int __rrr_http_client_final_callback (
 	(void)(chunk_idx);
 	(void)(chunk_total);
 	(void)(part_data_size);
-	(void)(arg);
 
 	if (chunk_data_start == NULL) {
 		goto out;
@@ -427,12 +429,6 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
-static int __rrr_http_client_http2_receive_callback (RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS) {
-	struct rrr_http_client_data *http_client_data = arg;
-	printf("rrr_http_client http2 receive\n");
-	return 0;
-}
-
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -499,7 +495,7 @@ int main (int argc, const char **argv, const char **env) {
 				&net_transport_keepalive_handle,
 				&net_transport_config,
 				__rrr_http_client_final_callback,
-				NULL
+				&data
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -550,25 +546,30 @@ int main (int argc, const char **argv, const char **env) {
 				&net_transport_keepalive_handle,
 				&net_transport_config,
 				__rrr_http_client_final_callback,
-				NULL
+				&data
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
-		printf("HTTP2 begin\n");
-
-		do {} while (
-			(ret =rrr_http_client_http2_tick (
+		uint64_t close_start_time = 0;
+		do {
+			// Final callback is called first when upgrade response is received
+			// and then when the response is received over HTTP2
+			if (data.final_callback_count >= 2 && close_start_time == 0) {
+				rrr_http_client_terminate_if_open(net_transport_keepalive, net_transport_keepalive_handle);
+				close_start_time = rrr_time_get_64();
+			}
+		} while (
+			(ret = rrr_http_client_http2_tick (
 					&data.request_data,
 					net_transport_keepalive,
 					net_transport_keepalive_handle,
 					NULL,
 					NULL,
-					__rrr_http_client_http2_receive_callback,
+					__rrr_http_client_final_callback,
 					&data
-			)) == 0);
-		printf("HTTP 2 end: %i\n", ret);
+		)) == 0);
 	}
 #endif
 	else {
@@ -577,7 +578,7 @@ int main (int argc, const char **argv, const char **env) {
 				RRR_HTTP_METHOD_GET,
 				&net_transport_config,
 				__rrr_http_client_final_callback,
-				NULL
+				&data
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;

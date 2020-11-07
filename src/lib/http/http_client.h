@@ -123,7 +123,10 @@ int rrr_http_client_data_reset (
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );
-
+void rrr_http_client_terminate_if_open (
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle
+);
 // Note that data in the struct may change if there are any redirects
 int rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,

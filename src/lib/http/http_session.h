@@ -159,7 +159,6 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 );
-
 #ifdef RRR_WITH_NGHTTP2
 int rrr_http_session_transport_ctx_http2_tick (
 		struct rrr_net_transport_handle *handle,
@@ -169,5 +168,9 @@ int rrr_http_session_transport_ctx_http2_tick (
 		void *get_response_callback_arg
 );
 #endif
+int rrr_http_session_transport_ctx_close_if_open (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+);
 
 #endif /* RRR_HTTP_SESSION_H */
