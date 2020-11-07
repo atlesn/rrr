@@ -155,7 +155,7 @@ static int __rrr_http_client_parse_config (
 		}
 	}
 	else {
-		if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
+		if (data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 			RRR_MSG_0("Array-definition specified while websocket mode was not active\n");
 			ret = 1;
 			goto out;
