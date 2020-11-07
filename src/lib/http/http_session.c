@@ -1079,7 +1079,6 @@ static int __rrr_http_session_response_receive_callback (
 			read_session->rx_overshoot_size,
 			0,
 			upgrade_mode,
-			0, // dummy
 			receive_data->callback_arg
 	)) != 0) {
 		goto out;
@@ -1526,7 +1525,6 @@ static int __rrr_http_session_request_receive_callback (
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
 			upgrade_mode,
-			0, // dummy
 			receive_data->callback_arg
 	)) != RRR_HTTP_OK) {
 		goto out;

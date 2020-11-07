@@ -217,7 +217,6 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				overshoot_bytes,
 				unique_id,
 				upgrade_mode,
-				1, // Dummy
 				worker_data->config_data.callbacks.final_callback_arg
 		);
 	}

@@ -48,7 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS		\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_COMMON_ARGS,	\
 	enum rrr_http_upgrade_mode upgrade_mode,		\
-	int dummy_delete_me,							\
 	void *arg
 
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
