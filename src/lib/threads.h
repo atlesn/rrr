@@ -69,21 +69,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_THREAD_NAME_MAX_LENGTH 64
 
-struct rrr_thread_double_pointer {
-	void **ptr;
-};
-
-#define RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER_CUSTOM(name,free_function,pointer) \
-	struct rrr_thread_double_pointer __##name##_double_pointer = {(void**) &(pointer)}; \
-	pthread_cleanup_push(free_function, &__##name##_double_pointer)
-
-#define RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(name,pointer) \
-	struct rrr_thread_double_pointer __##name##_double_pointer = {(void**) &(pointer)}; \
-	pthread_cleanup_push(rrr_thread_free_double_pointer, &__##name##_double_pointer)
-
-#define RRR_THREAD_CLEANUP_PUSH_FREE_SINGLE_POINTER(name) \
-	pthread_cleanup_push(rrr_thread_free_single_pointer, name)
-
 struct rrr_thread_ghost_data {
 	struct rrr_thread_ghost_data *next;
 	struct rrr_thread *thread;
@@ -300,8 +285,5 @@ int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),
 		void *callback_data
 );
-void rrr_thread_free_double_pointer(void *arg);
-
-//void thread_destroy (struct rrr_thread_collection *collection, struct rrr_thread *thread);
 
 #endif /* RRR_THREADS_H */

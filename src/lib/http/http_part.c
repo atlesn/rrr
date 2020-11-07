@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_header_fields.h"
 
-#include "../threads.h"
+#include "../util/threads.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../helpers/nullsafe_str.h"
@@ -92,7 +92,6 @@ void rrr_http_part_destroy_void (void *part) {
 
 void rrr_http_part_destroy_void_double_ptr (void *arg) {
 	struct rrr_thread_double_pointer *ptr = arg;
-//	printf ("Free double ptr: %p\n", *(ptr->ptr));
 	if (*(ptr->ptr) != NULL) {
 		rrr_http_part_destroy(*(ptr->ptr));
 	}

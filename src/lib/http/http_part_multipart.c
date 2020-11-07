@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_util.h"
 
-#include "../threads.h"
+#include "../util/threads.h"
 
 static int __rrr_http_part_boundary_locate (
 		const char **result,
