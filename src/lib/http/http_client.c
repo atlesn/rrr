@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-int rrr_http_client_data_init (
+int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
 		const char *user_agent
 ) {
@@ -57,40 +57,14 @@ int rrr_http_client_data_init (
 	return ret;
 }
 
-int rrr_http_client_data_reset (
-		struct rrr_http_client_request_data *data,
-		const struct rrr_http_client_config *config,
-		enum rrr_http_transport transport_force
-) {
-	int ret = 0;
-
-	RRR_FREE_IF_NOT_NULL(data->server);
-	RRR_FREE_IF_NOT_NULL(data->endpoint);
-
-	if (config->server != NULL && (data->server = strdup(config->server)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for server in rrr_http_client_data_reset\n");
-		ret = 1;
-		goto out;
-	}
-	if (config->endpoint != NULL && (data->endpoint = strdup(config->endpoint)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_client_data_reset\n");
-		ret = 1;
-		goto out;
-	}
-
-	data->transport_force = transport_force;
-	data->http_port = config->server_port;
-
-	out:
-	return ret;
-}
-
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 ) {
-	RRR_FREE_IF_NOT_NULL(data->server);
-	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->user_agent);
+	RRR_FREE_IF_NOT_NULL(data->endpoint);
+	RRR_FREE_IF_NOT_NULL(data->redirect_server);
+	RRR_FREE_IF_NOT_NULL(data->redirect_endpoint);
+	rrr_nullsafe_str_destroy_if_not_null(data->response_argument);
 }
 
 static int __rrr_http_client_receive_chunk_callback (
@@ -469,13 +443,6 @@ static int __rrr_http_client_send_keepalive_request_callback (
 	return 0;
 }
 
-static void __rrr_http_client_receive_callback_data_cleanup (
-		struct rrr_http_client_request_callback_data *callback_data
-) {
-	rrr_nullsafe_str_destroy_if_not_null(callback_data->response_argument);
-	memset(callback_data, '\0', sizeof(*callback_data));
-}
-
 void __rrr_http_client_send_request_connect_callback (
 		struct rrr_net_transport_handle *handle,
 		const struct sockaddr *sockaddr,
@@ -489,19 +456,163 @@ void __rrr_http_client_send_request_connect_callback (
 	*result = handle->handle;
 }
 
-// Note that data in the struct may change if there are any redirects
+void rrr_http_client_connection_data_cleanup (
+		struct rrr_http_client_connection_data *data
+) {
+	RRR_FREE_IF_NOT_NULL(data->server_name);
+	if (data->transport != NULL) {
+		rrr_net_transport_destroy(data->transport);
+	}
+	memset(data, '\0', sizeof(*data));
+}
+
+static int __rrr_http_client_connection_setup (
+		struct rrr_http_client_connection_data *data,
+		enum rrr_http_transport transport_force,
+		const struct rrr_net_transport_config *net_transport_config,
+		const char *server,
+		uint16_t port,
+		int ssl_no_cert_verify,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		ssize_t read_max_size,
+		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
+		void *connection_prepare_callback_arg
+) {
+	int ret = 0;
+
+	rrr_http_client_connection_data_cleanup(data);
+
+	enum rrr_http_transport transport_code = transport_force;
+
+	if (port == 0) {
+		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+			port = 443;
+		}
+		else {
+			port = 80;
+		}
+	}
+
+	if (connection_prepare_callback != NULL) {
+		if ((ret = connection_prepare_callback(&data->server_name, &port, connection_prepare_callback_arg)) != 0) {
+			if (ret == RRR_HTTP_SOFT_ERROR) {
+				RRR_DBG_3("Note: HTTP query aborted by soft error from connection prepare callback\n");
+				ret = 0;
+				goto out;
+			}
+			RRR_MSG_0("Error %i from HTTP client connection prepare callback\n", ret);
+			goto out;
+		}
+	}
+
+	if (port == 0) {
+		RRR_BUG("BUG: Port was 0 in __rrr_http_client_connection_setup\n");
+	}
+
+	if (data->server_name == NULL) {
+		if ((data->server_name = strdup(server)) == NULL) {
+			RRR_MSG_0("Failed to allocate memory for server name in __rrr_http_client_connection_setup\n");
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+	}
+
+	RRR_DBG_3("Using server %s port %u transport %s upgrade mode '%s'\n",
+			data->server_name,
+			port,
+			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
+//			RRR_HTTP_METHOD_TO_STR(method),
+			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
+	);
+
+	if (data->transport == NULL) {
+		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+			struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
+
+			net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
+
+			int tls_flags = 0;
+			if (ssl_no_cert_verify != 0) {
+				tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+			}
+
+			const char *alpn_protos = NULL;
+			unsigned int alpn_protos_length = 0;
+
+#ifdef RRR_WITH_NGHTTP2
+			if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+				RRR_DBG_3("Selecting ALPN/NPN HTTP/2 selection method\n");
+				rrr_http_session_get_http2_alpn_protos(&alpn_protos, &alpn_protos_length);
+				// Upgrade using ALPN/NPN instead of upgrading from HTTP/1.1
+			}
+#endif
+
+			ret = rrr_net_transport_new (
+					&data->transport,
+					&net_transport_config_tmp,
+					tls_flags,
+					alpn_protos,
+					alpn_protos_length
+			);
+		}
+		else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
+			RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+		else {
+			struct rrr_net_transport_config net_transport_config_tmp = {
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					RRR_NET_TRANSPORT_PLAIN
+			};
+
+			ret = rrr_net_transport_new (
+					&data->transport,
+					&net_transport_config_tmp,
+					0,
+					NULL,
+					0
+			);
+		}
+	}
+	else {
+		RRR_DBG_3("Using exisiting HTTP connection\n");
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_connect (
+			data->transport,
+			port,
+			data->server_name,
+			__rrr_http_client_send_request_connect_callback,
+			&data->transport_handle
+	)) != 0) {
+		RRR_MSG_0("Connection failed to server %s port %u transport %s in http client return was %i\n",
+				data->server_name, port, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return 0;
+}
+
 // Note that query prepare callback is not called if raw request data is set
-static int __rrr_http_client_send_request (
+static int __rrr_http_client_request_setup (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
-		const struct rrr_net_transport_config *net_transport_config,
+		struct rrr_http_client_connection_data *connection_data,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
-		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
-		void *connection_prepare_callback_arg,
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_args,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
@@ -513,31 +624,15 @@ static int __rrr_http_client_send_request (
 
 	char *server_to_free = NULL;
 
-	struct rrr_http_client_request_callback_data callback_data = {0};
-
-	struct rrr_net_transport *transport = NULL;
-	if (transport_keepalive != NULL) {
-		transport = *transport_keepalive;
-	}
-
-	int transport_handle = 0;
-	if (transport_keepalive_handle != NULL) {
-		transport_handle = *transport_keepalive_handle;
-	}
-
-	callback_data.data = data;
-	callback_data.method = method;
-	callback_data.upgrade_mode = upgrade_mode;
-	callback_data.raw_request_data = raw_request_data;
-	callback_data.raw_request_data_size = raw_request_data_size;
-	callback_data.raw_callback = raw_callback;
-	callback_data.raw_callback_arg = raw_callback_args;
-	callback_data.final_callback = final_callback;
-	callback_data.final_callback_arg = final_callback_arg;
-	callback_data.query_prepare_callback = query_prepare_callback;
-	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
-
-	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
+	data->method = method;
+	data->raw_request_data = raw_request_data;
+	data->raw_request_data_size = raw_request_data_size;
+	data->raw_callback = raw_callback;
+	data->raw_callback_arg = raw_callback_args;
+	data->final_callback = final_callback;
+	data->final_callback_arg = final_callback_arg;
+	data->query_prepare_callback = query_prepare_callback;
+	data->query_prepare_callback_arg = query_prepare_callback_arg;
 
 	if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 		RRR_DBG_3("Forcing SSL/TLS\n");
@@ -558,167 +653,25 @@ static int __rrr_http_client_send_request (
 		transport_code = RRR_HTTP_TRANSPORT_HTTP;
 	}
 
-	uint16_t port_to_use = data->http_port;
-	if (port_to_use == 0) {
-		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-			port_to_use = 443;
-		}
-		else {
-			port_to_use = 80;
-		}
-	}
-
-	const char *server_to_use = data->server;
-
-	if (connection_prepare_callback != NULL) {
-		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, connection_prepare_callback_arg)) != 0) {
-			if (ret == RRR_HTTP_SOFT_ERROR) {
-				RRR_DBG_3("Note: HTTP query aborted by soft error from connection prepare callback\n");
-				ret = 0;
-				goto out;
-			}
-			RRR_MSG_0("Error %i from HTTP client connection prepare callback\n", ret);
-			goto out;
-		}
-		if (server_to_free != NULL) {
-			server_to_use = server_to_free;
-		}
-	}
-
-	if (server_to_use == NULL) {
-		RRR_BUG("BUG: No server set in __rrr_http_client_send_request\n");
-	}
-
-	if (port_to_use == 0) {
-		RRR_BUG("BUG: Port was 0 in __rrr_http_client_send_request\n");
-	}
-
-	callback_data.request_header_host = server_to_use;
-
-	RRR_DBG_3("Using server %s port %u transport %s method '%s' upgrade mode '%s'\n",
-			server_to_use,
-			port_to_use,
-			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
-			RRR_HTTP_METHOD_TO_STR(method),
-			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
-	);
-
-	if (transport == NULL) {
-		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-			struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
-
-			net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
-
-			int tls_flags = 0;
-			if (data->ssl_no_cert_verify != 0) {
-				tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
-			}
-
-			const char *alpn_protos = NULL;
-			unsigned int alpn_protos_length = 0;
-
-#ifdef RRR_WITH_NGHTTP2
-			if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
-				RRR_DBG_3("Selecting ALPN/NPN HTTP/2 selection method\n");
-				rrr_http_session_get_http2_alpn_protos(&alpn_protos, &alpn_protos_length);
-				// Upgrade using ALPN/NPN instead of upgrading from HTTP/1.1
-				callback_data.upgrade_mode = 0;
-			}
-#endif
-
-			ret = rrr_net_transport_new (
-					&transport,
-					&net_transport_config_tmp,
-					tls_flags,
-					alpn_protos,
-					alpn_protos_length
-			);
-		}
-		else if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-			RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-		else {
-			struct rrr_net_transport_config net_transport_config_tmp = {
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					RRR_NET_TRANSPORT_PLAIN
-			};
-
-			ret = rrr_net_transport_new (
-					&transport,
-					&net_transport_config_tmp,
-					0,
-					NULL,
-					0
-			);
-		}
-	}
-	else {
-		RRR_DBG_3("Using exisiting HTTP connection\n");
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
-	}
-
-	// The callback is a void and return values from it do not propagate
-	// through the net transport framework.
-
-	if (transport_keepalive != NULL) {
-		if (transport_handle == 0) {
-			if ((ret = rrr_net_transport_connect (
+	/*
+			callback_data.transport_handle = transport_handle;
+			if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
 					transport,
-					port_to_use,
-					server_to_use,
-					__rrr_http_client_send_request_connect_callback,
-					&transport_handle
-			))) {
-				RRR_MSG_0("Keepalive connection failed to server %s port %u transport %s in http client return was %i\n",
-						server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
-				ret = RRR_HTTP_SOFT_ERROR;
+					transport_handle,
+					__rrr_http_client_send_keepalive_request_callback,
+					&callback_data
+			)) != 0) {
 				goto out;
 			}
-		}
 
-		callback_data.transport_handle = transport_handle;
-		if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
-				transport,
-				transport_handle,
-				__rrr_http_client_send_keepalive_request_callback,
-				&callback_data
-		)) != 0) {
+
+		if ((ret = callback_data.http_receive_ret) != RRR_HTTP_OK) {
 			goto out;
 		}
-	}
-	else {
-		if ((ret = rrr_net_transport_connect_and_close_after_callback (
-				transport,
-				port_to_use,
-				server_to_use,
-				__rrr_http_client_send_request_callback,
-				&callback_data
-		)) != 0) {
-			RRR_MSG_0("Connection failed to server %s port %u transport %s in http client return was %i\n",
-					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-	}
-
-	if ((ret = callback_data.http_receive_ret) != RRR_HTTP_OK) {
-		goto out;
-	}
+	*/
 
 	out:
 	RRR_FREE_IF_NOT_NULL(server_to_free);
-	__rrr_http_client_receive_callback_data_cleanup(&callback_data);
 	if (transport_keepalive != NULL) {
 		*transport_keepalive = transport;
 	}
