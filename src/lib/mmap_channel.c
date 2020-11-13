@@ -116,7 +116,7 @@ static int __rrr_mmap_channel_allocate (
 	// To reduce the chance of hitting the operating system limit on the total number of
 	// shared memory blocks, free the allocation if shm is not needed for this write.
 	if (block->shmid != 0 && block->ptr_shm_or_mmap != NULL) {
-		if (data_size >= RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE) {
+		if (data_size >= RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE && data_size <= block->size_capacity) {
 			goto out;
 		}
 	}
