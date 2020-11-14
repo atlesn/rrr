@@ -57,4 +57,23 @@ AC_DEFUN([INET_CHECKS], [
 	], [
 		AC_MSG_RESULT([no])
 	])
+
+	AC_MSG_CHECKING([for musl struct sockaddr_in6])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <netinet/in.h>
+			#include <arpa/inet.h>
+			#include <stdio.h>
+			int main (int argc, char *argv[]) {
+				struct sockaddr_in6 source_in6 = { 0 };
+				source_in6.sin6_addr.__in6_union.__s6_addr32[0] = 0;
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([HAVE_INET_IN6_MUSL], [1], [Musl-style struct sockaddr_in6 present])
+	], [
+		AC_MSG_RESULT([no])
+	])
 ])
