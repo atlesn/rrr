@@ -101,8 +101,14 @@ void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 	uint32_t zero_c = source_in6->sin6_addr.__in6_u.__u6_addr16[4];
 	uint32_t ffff = source_in6->sin6_addr.__in6_u.__u6_addr16[5];
 	uint32_t ipv4 = source_in6->sin6_addr.__in6_u.__u6_addr32[3];
+#elif defined HAVE_INET_IN6_MUSL
+	uint32_t zero_a = source_in6->sin6_addr.__in6_union.__s6_addr32[0];
+	uint32_t zero_b = source_in6->sin6_addr.__in6_union.__s6_addr32[1];
+	uint32_t zero_c = source_in6->sin6_addr.__in6_union.__s6_addr16[4];
+	uint32_t ffff = source_in6->sin6_addr.__in6_union.__s6_addr16[5];
+	uint32_t ipv4 = source_in6->sin6_addr.__in6_union.__s6_addr32[3];
 #else
-#	error "Neither HAVE_INET_IN6_BSD nor HAVE_INET_IN6_LINUX was defined"
+#	error "Neither HAVE_INET_IN6_BSD, HAVE_INET_IN6_LINUX nor HAVE_INET_IN6_MUSL was defined"
 #endif
 
 //	printf ("ipv4: %08x, ffff: %04x zeros: %u,%u,%u\n", ipv4, ffff, zero_a, zero_b, zero_c);
