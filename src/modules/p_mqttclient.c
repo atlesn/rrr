@@ -125,6 +125,7 @@ struct mqtt_client_data {
 	int do_force_publish_topic;
 	int do_publish_rrr_message;
 	int do_receive_rrr_message;
+	int do_receive_publish_topic;
 	int do_debug_unsubscribe_cycle;
 	int do_recycle_assigned_client_identifier;
 	int do_discard_on_connect_retry;
@@ -322,6 +323,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_message", do_receive_rrr_message, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_receive_publish_topic", do_receive_publish_topic, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
@@ -1205,6 +1207,18 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 			goto out;
 		}
 		else if (message_final != NULL) {
+			if (data->do_receive_publish_topic) {
+				if (rrr_msg_msg_topic_set (
+					&message_final,
+					publish->topic,
+					strlen(publish->topic) + 1
+				)) {
+					RRR_MSG_0("Could not set new topic of received RRR message in mqttclient instance %s\n",
+							INSTANCE_D_NAME(data->thread_data));
+					ret = 1;
+					goto out;
+				}
+			}
 			goto out_write_to_buffer;
 		}
 	}

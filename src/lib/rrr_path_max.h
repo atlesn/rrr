@@ -22,15 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PATH_MAX_H
 #define RRR_PATH_MAX_H
 
-#if defined(__linux__) 
+#ifdef RRR_HAS_PATH_MAX_IN_LINUX_LIMITS_H 
 #include <linux/limits.h>
 #elif defined(__OpenBSD__) || defined(__FreeBSD__)
 #	undef __POSIX_VISIBLE
 #	define __POSIX_VISIBLE 1
 #	include <limits.h>
-//#	include <sys/cdefs.h>
-//#	include <sys/syslimits.h>
 #	undef __POSIX_VISIBLE
+#else
+#	include <limits.h>
 #endif
 
 #endif /* RRR_PATH_MAX_H */
