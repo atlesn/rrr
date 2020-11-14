@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.15-1)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.15-1", [Full version])
+AC_INIT([Read Route Record], 1.15-3)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.15-3", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 15, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 3, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -57,6 +57,7 @@ AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enab
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sytemd bindings])],[enable_systemd=no],[enable_systemd=yes])
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
+AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
@@ -97,6 +98,7 @@ SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
 
+AM_CONDITIONAL([RRR_WITH_OPENRC], [test "x$enable_openrc" != xno])
 AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
 AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
@@ -125,6 +127,24 @@ AS_IF([test "x$have_freebsd_input" = xno], [
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_FREEBSD_INPUT], [1], [Enable FreeBSD-style input device control])
+])
+
+AC_MSG_CHECKING([location of limits.h with PATH_MAX])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <linux/limits.h>
+		#include <stdio.h>
+		
+		int main (int argc, char *argv[]) {
+			printf("path_max: %i\n", PATH_MAX);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([linux/limits.h])
+	AC_DEFINE([RRR_HAS_PATH_MAX_IN_LINUX_LIMITS_H], [1], [Use linux/limits.h to find PATH_MAX])
+], [
+	AC_MSG_RESULT([limits.h])
 ])
 
 CHECK_LIBRESSL_LIBTLS
@@ -510,6 +530,11 @@ AC_DEFUN([REQUIRE_CONFDIR], [
 	fi
 ])
 
+AC_MSG_CHECKING([for RRR environment file directory])
+RRR_ENVIRONMENT_FILE_DIR="${sysconfdir}"
+AC_MSG_RESULT([${sysconfdir}])
+AC_SUBST(RRR_ENVIRONMENT_FILE_DIR)
+
 AC_MSG_CHECKING([for RRR config file directory])
 RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
 AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
@@ -572,6 +597,16 @@ AS_IF([test "x$enable_runit" = xyes], [
 	AC_CONFIG_FILES([misc/runit/Makefile])
 	AC_CONFIG_FILES([misc/runit/make-runit.sh])
 	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for openrc usage])
+AS_IF([test "x$enable_openrc" = xyes], [
+	REQUIRE_CONFDIR
+	AC_CONFIG_FILES([misc/openrc/Makefile])
+	AC_CONFIG_FILES([misc/openrc/make-service.sh])
+	AC_MSG_RESULT([yes])
 ],[
 	AC_MSG_RESULT([no])
 ])
