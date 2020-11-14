@@ -108,7 +108,7 @@ The RRR source tree contains packages for Debian-based systems, RedHat-based sys
 
 See the *COMPILE* section below for further information.
 
-#### Pre-compiled package for Debian Buster amd64/i386 using APT
+#### Pre-compiled package for Debian Buster amd64/i386/armhf using APT
 
 	$ su -
 	# apt install curl gnupg
