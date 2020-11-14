@@ -1,10 +1,18 @@
-rrr (1.15-1ubuntu1) focal; urgency=medium
+rrr (1.15-3ubuntu1) focal; urgency=medium
 
-  * Ubuntu release
+  * Ubuntu release 
 
- -- Atle Solbakken <atle@goliathdns.no>  Sun, 01 Nov 2020 17:43:28 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Nov 2020 12:48:18 +0100
 
-rrr (1.15-1) buster; urgency=medium
+rrr (1.15-3) buster; urgency=medium
+
+  * Moderate SHM block usage in mmap channel to avoid hitting OS limits
+  * Option in MQTT client to choose which topic to use when receiving
+    PUBLISH with RRR message inside
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Nov 2020 12:33:39 +0100
+
+rrr (1.15-2) buster; urgency=medium
 
   * Throughput improvements in cmodules (perl, python, cmodule) by
     adjusting timer behaviours
