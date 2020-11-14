@@ -1,0 +1,19 @@
+#!/bin/sh
+
+OUTPUT=$1
+BINDIR=$2
+CONFDIR=$3
+SYSCONFDIR=$4
+
+rm -f $OUTPUT
+
+echo "#!/sbin/openrc-run" >> $OUTPUT
+echo >> $OUTPUT
+echo "description=\"@PACKAGE_STRING@\"" >> $OUTPUT
+echo "command=\"${BINDIR}/rrr\"" >> $OUTPUT
+echo "command_args=\"-s -e ${SYSCONFDIR}/rrr.conf ${CONFDIR}/\"" >> $OUTPUT
+echo "command_user=\"@RRR_DAEMON_USERNAME@\"" >> $OUTPUT
+echo "output_log=\"/var/log/rrr.log\"" >> $OUTPUT
+echo "error_log=\"/var/log/rrr.err\"" >> $OUTPUT
+echo "pidfile=\"/var/run/rrr.pid\"" >> $OUTPUT
+echo "supervisor=\"supervise-daemon\"" >> $OUTPUT
