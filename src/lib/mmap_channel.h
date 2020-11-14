@@ -57,12 +57,8 @@ struct rrr_mmap_channel {
 
 	unsigned long long int read_starvation_counter;
 	unsigned long long int write_full_counter;
-
-//	char *tmpfile;
-//	int tmp_fd;
 };
 
-void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *target);
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,

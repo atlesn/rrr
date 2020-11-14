@@ -1548,6 +1548,11 @@ If set to no and protocol version is V3.1.1, any data in messages received are p
 If set to no and protocol version is V5, type of the received message is auto-detected.
 Defaults to no.
 
+.It mqtt_receive_publish_topic={yes|no}
+When an RRR message is found inside a received PUBLISH and this parameter is set to 'yes',
+modify the RRR message and replace its topic with the topic from the PUBLISH message.
+If set to 'no' or left unset, the RRR message will retain is original topic, if any.
+
 .It mqtt_receive_array=ARRAY DEFINITION
 If set, expect to receive data arrays of specific formats in publish messages.
 This option cannot be used with mqtt_receive_rrr_message=yes, however if protocol version is V5,

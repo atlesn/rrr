@@ -1,0 +1,10 @@
+#!/sbin/openrc-run
+
+description="Read Route Record 1.15-1"
+command="/usr/local/bin/rrr"
+command_args="-s -e /usr/local/etc/rrr.conf /usr/local/etc/rrr.conf.d/"
+command_user="daemon"
+output_log="/var/log/rrr.log"
+error_log="/var/log/rrr.err"
+pidfile="/var/run/rrr.pid"
+supervisor="supervise-daemon"
