@@ -39,22 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
-/* Currently not used
-int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target) {
-	int possible = 1;
 
-	pthread_mutex_lock(&target->index_lock);
-
-	struct rrr_mmap_channel_block *block = &(target->blocks[target->wpos]);
-	if (block->size_data != 0) {
-		possible = 0;
-	}
-
-	pthread_mutex_unlock(&target->index_lock);
-
-	return possible;
-}
-*/
 static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel *target,
 		struct rrr_mmap_channel_block *block
@@ -92,18 +77,6 @@ static int __rrr_mmap_channel_block_free (
 	block->shmid = 0;
 
 	return 0;
-}
-
-void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *target) {
-	pthread_mutex_lock(&target->index_lock);
-
-	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
-		if (target->blocks[i].size_data == 0 && target->blocks[i].shmid == 0 && target->blocks[i].ptr_shm_or_mmap != NULL) {
-			__rrr_mmap_channel_block_free(target, &target->blocks[i]);
-		}
-	}
-
-	pthread_mutex_unlock(&target->index_lock);
 }
 
 static int __rrr_mmap_channel_allocate (
@@ -408,62 +381,6 @@ int rrr_mmap_channel_read_with_callback (
 	return ret;
 }
 
-/*
- * Not currently used
-struct rrr_mmap_channel_read_callback_data {
-	void *data;
-	size_t data_size;
-};
-
-static int __rrr_mmap_channel_read_callback (const void *data, size_t data_size, void *arg) {
-	struct rrr_mmap_channel_read_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if ((callback_data->data = malloc(data_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mmap_channel_read_callback\n");
-		ret = 1;
-		goto out;
-	}
-
-	memcpy(callback_data->data, data, data_size);
-	callback_data->data_size = data_size;
-
-	out:
-	return ret;
-}
-*/
-/*
- * Not currently used
-int rrr_mmap_channel_read (
-		void **target,
-		size_t *target_size,
-		unsigned int empty_wait_time_us,
-		struct rrr_mmap_channel *source
-) {
-	struct rrr_mmap_channel_read_callback_data callback_data = {0};
-
-	int ret = 0;
-
-	*target = NULL;
-	*target_size = 0;
-
-	if ((ret = __rrr_mmap_channel_read_with_callback (
-			source,
-			empty_wait_time_us,
-			__rrr_mmap_channel_read_callback,
-			&callback_data
-	)) != 0) {
-		return ret;
-	}
-
-	*target = callback_data.data;
-	*target_size = callback_data.data_size;
-
-	return ret;
-}
-*/
-
 void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted) {
 	*was_sorted = 1;
 
@@ -600,7 +517,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	*target = result;
 	result = NULL;
 
-	// Remember to destroy mutex attributes
 	goto out;
 
 	out_destroy_mutexes:
