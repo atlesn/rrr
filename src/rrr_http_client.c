@@ -542,6 +542,7 @@ int main (int argc, const char **argv, const char **env) {
 		if (rrr_http_client_send_request_keepalive_simple (
 				&data.request_data,
 				RRR_HTTP_METHOD_GET,
+				RRR_HTTP_APPLICATION_HTTP1,
 				RRR_HTTP_UPGRADE_MODE_HTTP2,
 				&net_transport_keepalive,
 				&net_transport_keepalive_handle,
@@ -577,6 +578,7 @@ int main (int argc, const char **argv, const char **env) {
 		if (rrr_http_client_send_request_simple (
 				&data.request_data,
 				RRR_HTTP_METHOD_GET,
+				RRR_HTTP_APPLICATION_HTTP1,
 				RRR_HTTP_UPGRADE_MODE_NONE,
 				&net_transport_config,
 				__rrr_http_client_final_callback,

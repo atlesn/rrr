@@ -125,6 +125,7 @@ void rrr_http_part_destroy (struct rrr_http_part *part);
 void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
+int rrr_http_part_prepare (struct rrr_http_part **part);
 int rrr_http_part_raw_response_set_allocated (
 		struct rrr_http_part *part,
 		char **raw_data_source,

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read_constants.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/http/http_application.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_client_config.h"
@@ -164,8 +165,13 @@ static void influxdb_send_data_callback (
 
 	int ret = INFLUXDB_OK;
 
+	struct rrr_http_application *application = NULL;
 	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
+
+	if ((ret = rrr_http_application_new(&application, RRR_HTTP_APPLICATION_HTTP1)) == 0) {
+		goto out;
+	}
 
 	if (rrr_http_query_builder_init(&query_builder) != 0) {
 		RRR_MSG_0("Could not initialize query builder in influxdb_send_data_callback\n");
@@ -181,6 +187,7 @@ static void influxdb_send_data_callback (
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
+			&application,
 			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			RRR_HTTP_CLIENT_USER_AGENT
@@ -273,7 +280,7 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_receive (
+	if (rrr_http_session_transport_ctx_tick (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
@@ -300,6 +307,7 @@ static void influxdb_send_data_callback (
 	}
 
 	out:
+	rrr_http_application_destroy_if_not_null(&application);
 	rrr_http_query_builder_cleanup(&query_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
 	callback_data->ret = ret;

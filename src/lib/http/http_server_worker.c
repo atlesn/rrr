@@ -383,7 +383,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			}
 		}
 
-		if ((ret = rrr_http_session_transport_ctx_receive (
+		if ((ret = rrr_http_session_transport_ctx_tick (
 				handle,
 				RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 				RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,

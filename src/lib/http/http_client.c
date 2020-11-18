@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_session.h"
 #include "http_client_config.h"
+#include "http_application.h"
 
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
@@ -270,6 +271,7 @@ static void __rrr_http_client_send_request_callback_final (
 	callback_data->transport_handle = handle->handle;
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
+			callback_data->application,
 			handle,
 			callback_data->method,
 			data->user_agent
@@ -376,7 +378,7 @@ static void __rrr_http_client_send_request_callback_final (
 
 	uint64_t request_start_time = rrr_time_get_64();
 
-	if ((ret = rrr_http_session_transport_ctx_receive (
+	if ((ret = rrr_http_session_transport_ctx_tick (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
@@ -494,6 +496,7 @@ void __rrr_http_client_send_request_connect_callback (
 static int __rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -515,6 +518,11 @@ static int __rrr_http_client_send_request (
 
 	struct rrr_http_client_request_callback_data callback_data = {0};
 
+	struct rrr_http_application *application = NULL;
+	if ((ret = rrr_http_application_new(&application, application_type)) != 0) {
+		goto out;
+	}
+
 	struct rrr_net_transport *transport = NULL;
 	if (transport_keepalive != NULL) {
 		transport = *transport_keepalive;
@@ -527,6 +535,7 @@ static int __rrr_http_client_send_request (
 
 	callback_data.data = data;
 	callback_data.method = method;
+	callback_data.application = &application;
 	callback_data.upgrade_mode = upgrade_mode;
 	callback_data.raw_request_data = raw_request_data;
 	callback_data.raw_request_data_size = raw_request_data_size;
@@ -719,6 +728,9 @@ static int __rrr_http_client_send_request (
 	out:
 	RRR_FREE_IF_NOT_NULL(server_to_free);
 	__rrr_http_client_receive_callback_data_cleanup(&callback_data);
+	if (application != NULL) {
+		rrr_http_application_destroy_if_not_null(&application);
+	}
 	if (transport_keepalive != NULL) {
 		*transport_keepalive = transport;
 	}
@@ -753,6 +765,7 @@ void rrr_http_client_terminate_if_open (
 int rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -769,6 +782,7 @@ int rrr_http_client_send_request (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			application_type,
 			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
@@ -789,6 +803,7 @@ int rrr_http_client_send_request (
 int rrr_http_client_send_raw_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -805,6 +820,7 @@ int rrr_http_client_send_raw_request (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			application_type,
 			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
@@ -825,6 +841,7 @@ int rrr_http_client_send_raw_request (
 int rrr_http_client_send_request_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
@@ -833,6 +850,7 @@ int rrr_http_client_send_request_simple (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			application_type,
 			upgrade_mode,
 			NULL,
 			NULL,
@@ -853,6 +871,7 @@ int rrr_http_client_send_request_simple (
 int rrr_http_client_send_request_keepalive_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -863,6 +882,7 @@ int rrr_http_client_send_request_keepalive_simple (
 	return __rrr_http_client_send_request (
 			data,
 			method,
+			application_type,
 			upgrade_mode,
 			transport_keepalive,
 			transport_keepalive_handle,
@@ -891,6 +911,7 @@ int rrr_http_client_start_websocket_simple (
 	return __rrr_http_client_send_request (
 			data,
 			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
 			transport_keepalive,
 			transport_keepalive_handle,

@@ -24,16 +24,51 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
+struct rrr_http_part;
+enum rrr_http_method;
+
+// TODO : Move ws state to http1 application state
 
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS	\
 	struct rrr_http_application *application,	\
 	struct rrr_net_transport_handle *handle,	\
-	const char *host
+	const char *user_agent,						\
+	const char *host,							\
+	const char *uri_str,						\
+	enum rrr_http_method method,				\
+	enum rrr_http_upgrade_mode upgrade_mode,	\
+	struct rrr_websocket_state *ws_state,		\
+	struct rrr_http_part *request_part
+
+#define RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS	\
+	struct rrr_http_application *application,	\
+	struct rrr_net_transport_handle *handle,	\
+	struct rrr_http_part *response_part
+
+#define RRR_HTTP_APPLICATION_TICK_ARGS								\
+	ssize_t *parse_complete_pos,									\
+	ssize_t *received_bytes,										\
+	struct rrr_http_application *app,								\
+	struct rrr_net_transport_handle *handle,						\
+	struct rrr_websocket_state *ws_state,							\
+	struct rrr_http_part *request_part,								\
+	struct rrr_http_part *response_part,							\
+	ssize_t read_max_size,											\
+	rrr_http_unique_id unique_id,									\
+	int is_client,													\
+	int (*websocket_callback)(_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),	\
+	void *websocket_callback_arg,									\
+	int (*callback)(_RECEIVE_CALLBACK_ARGS),						\
+	void *callback_arg,												\
+	int (*raw_callback)(_RAW_RECEIVE_CALLBACK_ARGS),				\
+	void *raw_callback_arg
 
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
-	void (*destroy)(struct rrr_http_application);
+	void (*destroy)(struct rrr_http_application *);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
+	int (*response_send)(RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS);
+	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
 };
 
 #define RRR_HTTP_APPLICATION_HEAD \

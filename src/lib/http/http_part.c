@@ -117,6 +117,22 @@ int rrr_http_part_new (struct rrr_http_part **result) {
 	return ret;
 }
 
+int rrr_http_part_prepare (struct rrr_http_part **part) {
+	int ret = 0;
+
+	if (*part != NULL) {
+		rrr_http_part_destroy(*part);
+		*part = NULL;
+	}
+	if ((ret = rrr_http_part_new(part)) != 0) {
+		RRR_MSG_0("Could not create HTTP part in rrr_http_part_prepare\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_raw_response_set_allocated (
 		struct rrr_http_part *part,
 		char **raw_data_source,

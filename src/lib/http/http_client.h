@@ -96,7 +96,7 @@ struct rrr_http_client_request_callback_data {
 
 	struct rrr_http_client_request_data *data;
 
-	struct rr_net_transport *transport;
+	struct rrr_http_application **application;
 	int transport_handle;
 
 	const char *raw_request_data;
@@ -132,6 +132,7 @@ void rrr_http_client_terminate_if_open (
 int rrr_http_client_send_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -148,6 +149,7 @@ int rrr_http_client_send_request (
 int rrr_http_client_send_raw_request (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
@@ -164,6 +166,7 @@ int rrr_http_client_send_raw_request (
 int rrr_http_client_send_request_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
@@ -172,6 +175,7 @@ int rrr_http_client_send_request_simple (
 int rrr_http_client_send_request_keepalive_simple (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
+		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,

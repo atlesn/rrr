@@ -82,6 +82,12 @@ enum rrr_http_upgrade_mode {
 	RRR_HTTP_UPGRADE_MODE_HTTP2
 };
 
+enum rrr_http_application_type {
+	RRR_HTTP_APPLICATION_HTTP1,
+	RRR_HTTP_APPLICATION_WEBSOCKET,
+	RRR_HTTP_APPLICATION_HTTP2
+};
+
 enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_REQUEST,
 	RRR_HTTP_PARSE_RESPONSE,

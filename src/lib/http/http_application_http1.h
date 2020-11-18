@@ -22,4 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_APPLICATION_HTTP1_H
 #define RRR_HTTP_APPLICATION_HTTP1_H
 
+int rrr_http_application_http1_new (struct rrr_http_application **target);
+
 #endif /* RRR_HTTP_APPLICATION_HTTP1_H */
