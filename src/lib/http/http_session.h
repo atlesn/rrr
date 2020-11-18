@@ -73,18 +73,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void *arg,												\
 	rrr_http_unique_id unique_id
 
+#ifdef RRR_WITH_NGHTTP2
+struct rrr_http2_session;
+#endif
+
 struct rrr_http_session {
 	int is_client;
 	enum rrr_http_method method;
+	enum rrr_http_upgrade_mode upgrade_mode;
 	char *uri_str;
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
+	struct rrr_websocket_state ws_state;
+#ifdef RRR_WITH_NGHTTP2
+	struct rrr_http2_session *http2_session;
+#endif
 };
 
 struct rrr_net_transport;
 struct rrr_net_transport_handle;
-struct rrr_http_application;
 
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_net_transport_handle *handle
@@ -121,7 +129,6 @@ int rrr_http_session_set_keepalive (
 );
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
-		struct rrr_http_application *appplication,
 		const char *host
 );
 int rrr_http_session_transport_ctx_raw_request_send (
@@ -153,6 +160,19 @@ int rrr_http_session_transport_ctx_websocket_tick (
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 );
+#ifdef RRR_WITH_NGHTTP2
+int rrr_http_session_transport_ctx_http2_tick (
+		struct rrr_net_transport_handle *handle,
+		int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *get_raw_response_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
+		void *get_response_callback_arg
+);
+void rrr_http_session_get_http2_alpn_protos (
+		const char **target,
+		unsigned int *length
+);
+#endif
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
