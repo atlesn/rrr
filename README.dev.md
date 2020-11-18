@@ -433,28 +433,27 @@ Read Route Record creates one thread for every instance when it starts. All thre
 which other modules might use, and then wait for a START signal which RRR sends when all threads are initialized and
 may read from each other. 
 
-The threads should follow a strict pattern on how to initialize and close correctly. This has to be done to prevent readers to use
-functions in other modules which are not ready when we start the program.
+The threads should follow a strict pattern on how to initialize and close correctly. It is unsafe to use any global
+frameworks like the socket framework while some thread is forking. We must therefore ensure that all threads are
+waiting on a signal before the forking occurs (they can't do anything else while waiting). 
 
-Threads which create forks should be started prior to network modules. Module priorities are:
+1.	Wait for all threads to set state `RRR_THREAD_STATE_INITIALIZED`
+2.	Send signal `RRR_THREAD_SIGNAL_START_BEFOREFORK` to all threads
+3.	Modules which fork child processes do this now, other modules simply continue
+4.	Wait for all modules to set `RRR_THREAD_STATE_RUNNING_FORKED`
+5.  Send signal `RRR_THREAD_SIGNAL_START_AFTERFORK` to all threads
 
-0. `RRR_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
-1. `RRR_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
-2. `RRR_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
-
-The basic state flow of a module/thread is like this (see `threads.h` for internal names):
-
-0. `FREE` - Thread is new
-1. `STOPPED` - Thread has stopped
-2. `INIT` - Thread is currently initializing its data and we have to wait for it to finish before we proceed
-3. `INITIALIZED` - Thread has initialized its data and is waiting for start signal. When all threads reach
-   this state, we tell them to start in a calculated order.
-4. `RUNNING` - Thread sets this state after receiving start signal. If an instance is told to wait for another thread before starting, it will be started when the other thread sets `RUNNING`.
-5. `RUNNING FORKED` - Thread sets this state after being started and any process forks are done (used by python and perl).
-
-It is very important that a thread does not read from other threads before it has received the start signal.
+Two helper functions are used by the modules to make sure waiting is done correctly,
+`rrr_thread_start_condition_helper_fork` and `rrr_thread_start_condition_helper_nofork`. The first one
+has a callback which is called when it's time for forking, the latter function has no callback.
 
 A thread has to update a timer constantly using `update_watchdog_time()`, or else it will be killed by the watchdog after five seconds.
 
-If one or more threads exit, all threads are stopped and restarted automatically.
+If one or more threads exit for any reason, all instances from the same configuration file are stopped and restarted automatically.
 
+If there are any dramatic crashes like segmentation faults, the whole RRR main process and all running configurations will terminate. Any
+restart must then be handled by `SystemD`, `runit` etc.
+
+If a thread does not set state `RRR_THREAD_STATE_STOPPED` within some reasonable timespan after it has been instructed to shut down, the
+thread will become ghost. If it wakes up again at some later time, resources will be freed. There is potential for a memory leak to occur if
+an instance repeatedly becomes ghost and the ghost never wakes up again. If this happens, the reason for why the thread hangs must be investigated.

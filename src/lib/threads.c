@@ -361,10 +361,10 @@ int rrr_thread_start_all_after_initialized (
 	pthread_mutex_lock(&collection->threads_mutex);
 
 	/* Wait for all threads to initialize */
-	if (__rrr_thread_start_all_wait_for_state (
+	if ((ret = __rrr_thread_start_all_wait_for_state (
 			collection,
 			RRR_THREAD_START_ALL_WAIT_FOR_STATE_INITIALIZED
-	)) {
+	)) != 0) {
 		goto out_unlock;
 	}
 
@@ -380,10 +380,10 @@ int rrr_thread_start_all_after_initialized (
 	RRR_DBG_8 ("Waiting for threads to set RUNNNIG_FORKED\n");
 
 	/* Wait for forking threads to finish off their forking-business */
-	if (__rrr_thread_start_all_wait_for_state (
+	if ((ret = __rrr_thread_start_all_wait_for_state (
 			collection,
 			RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED
-	)) {
+	)) != 0) {
 		goto out_unlock;
 	}
 
