@@ -943,7 +943,7 @@ static int httpclient_data_init (
 
 	data->thread_data = thread_data;
 
-	if ((ret = rrr_http_client_request_data_init(&data->http_client_data, RRR_HTTP_CLIENT_USER_AGENT)) != 0) {
+	if ((ret = rrr_http_client_data_init(&data->http_client_data, RRR_HTTP_CLIENT_USER_AGENT)) != 0) {
 		RRR_MSG_0("Could not initialize httpclient httpclient_data in httpclient_data_init\n");
 		ret = 1;
 		goto out;

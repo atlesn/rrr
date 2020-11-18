@@ -68,24 +68,24 @@ struct rrr_http_client_config;
 struct rrr_http_session;
 struct rrr_net_transport;
 
-struct rrr_http_client_connection_data {
-	struct rrr_net_transport *transport;
-	int transport_handle;
-	char *server_name;
-};
-
 struct rrr_http_client_request_data {
-	enum rrr_http_method method;
+	enum rrr_http_transport transport_force;
 
-	char *user_agent;
+	char *server;
+	uint16_t http_port;
 	char *endpoint;
+	char *user_agent;
 
-	char *redirect_server;
-	char *redirect_endpoint;
-	uint16_t redirect_http_port;
-	enum rrr_http_transport redirect_transport_force;
+	int ssl_no_cert_verify;
+
+	ssize_t read_max_size;
 
 	int do_retry;
+};
+
+struct rrr_http_client_request_callback_data {
+	enum rrr_http_method method;
+	enum rrr_http_upgrade_mode upgrade_mode;
 
 	int response_code;
 	struct rrr_nullsafe_str *response_argument;
@@ -93,6 +93,11 @@ struct rrr_http_client_request_data {
 	// Errors do not propagate through net transport framework. Return
 	// value of http callbacks is saved here.
 	int http_receive_ret;
+
+	struct rrr_http_client_request_data *data;
+
+	struct rr_net_transport *transport;
+	int transport_handle;
 
 	const char *raw_request_data;
 	size_t raw_request_data_size;
@@ -107,12 +112,14 @@ struct rrr_http_client_request_data {
 	void *final_callback_arg;
 };
 
-int rrr_http_client_request_data_init (
+int rrr_http_client_data_init (
 		struct rrr_http_client_request_data *data,
 		const char *user_agent
 );
-void rrr_http_client_connection_data_cleanup (
-		struct rrr_http_client_connection_data *data
+int rrr_http_client_data_reset (
+		struct rrr_http_client_request_data *data,
+		const struct rrr_http_client_config *config,
+		enum rrr_http_transport transport_force
 );
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data

@@ -449,7 +449,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	if (rrr_http_client_request_data_init(&data.request_data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
+	if (rrr_http_client_data_init(&data.request_data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
