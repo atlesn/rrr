@@ -363,14 +363,14 @@ int __rrr_http_application_http1_request_send (
 
 	host_buf = rrr_http_util_quote_header_value(host, strlen(host), '"', '"');
 	if (host_buf == NULL) {
-		RRR_MSG_0("Invalid host '%s' in __rrr_http_application_http1_send_request\n", host);
+		RRR_MSG_0("Invalid host '%s' in __rrr_http_application_http1_request_send\n", host);
 		ret = 1;
 		goto out;
 	}
 
 	user_agent_buf = rrr_http_util_quote_header_value(user_agent, strlen(user_agent), '"', '"');
 	if (user_agent_buf == NULL) {
-		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_application_http1_send_request\n", user_agent);
+		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_application_http1_request_send\n", user_agent);
 		ret = 1;
 		goto out;
 	}
@@ -387,7 +387,7 @@ int __rrr_http_application_http1_request_send (
 		}
 
 		rrr_biglength uri_orig_len = strlen(uri_to_use);
-		RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_send_request");
+		RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_request_send");
 
 		if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
 			RRR_MSG_0("Could not allocate memory for new URI in __rrr_http_application_http1_request_send\n");
@@ -465,13 +465,13 @@ int __rrr_http_application_http1_request_send (
 			host_buf,
 			user_agent_buf
 	)) < 0) {
-		RRR_MSG_0("Error while making request string in rrr_http_application_http1_send_request return was %i\n", ret);
+		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
-		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_application_http1_send_request\n");
+		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
 
@@ -482,7 +482,7 @@ int __rrr_http_application_http1_request_send (
 			__rrr_http_application_http1_request_send_make_headers_callback,
 			header_builder
 	) != 0) {
-		RRR_MSG_0("Failed to make header fields in __rrr_http_application_http1_send_request\n");
+		RRR_MSG_0("Failed to make header fields in __rrr_http_application_http1_request_send\n");
 		ret = 1;
 		goto out;
 	}
@@ -492,7 +492,7 @@ int __rrr_http_application_http1_request_send (
 		RRR_FREE_IF_NOT_NULL(request_buf);
 		request_buf = rrr_string_builder_buffer_takeover(header_builder);
 		if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, header_builder_length)) != 0) {
-			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_send_request\n");
+			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
 	}
@@ -500,20 +500,20 @@ int __rrr_http_application_http1_request_send (
 	if (method != RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&request_part->fields) > 0) {
 		if (method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
 			if ((ret = __rrr_http_application_http1_multipart_form_data_body_send (handle, request_part)) != 0) {
-				RRR_MSG_0("Could not send POST multipart body in __rrr_http_application_http1_send_request\n");
+				RRR_MSG_0("Could not send POST multipart body in __rrr_http_application_http1_request_send\n");
 				goto out;
 			}
 		}
 		else if (method == RRR_HTTP_METHOD_POST_URLENCODED) {
 			if ((ret = __rrr_http_application_http1_post_x_www_form_body_send (handle, request_part, 0)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_send_request\n");
+				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_request_send\n");
 				goto out;
 			}
 		}
 		else if (method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
 			// Application may choose to quote itself (influxdb has special quoting)
 			if ((ret = __rrr_http_application_http1_post_x_www_form_body_send (handle, request_part, 1)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_send_request\n");
+				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_request_send\n");
 				goto out;
 			}
 		}
@@ -527,7 +527,7 @@ int __rrr_http_application_http1_request_send (
 		}
 	}
 	else if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
-		RRR_MSG_0("Could not send last \\r\\n in __rrr_http_application_http1_send_request\n");
+		RRR_MSG_0("Could not send last \\r\\n in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
 
