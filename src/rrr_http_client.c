@@ -281,8 +281,6 @@ static int __rrr_http_client_final_callback (
 
 	int ret = 0;
 
-	(void)(response_code);
-	(void)(response_arg);
 	(void)(data);
 	(void)(chunk_idx);
 	(void)(chunk_total);
@@ -416,7 +414,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(opcode);
+	(void)(is_binary);
 	(void)(payload);
 	(void)(payload_size);
 	(void)(unique_id);
@@ -477,7 +475,13 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	data.request_data.do_retry = 0;
+	// In case of redirect between HTTPS and HTTP, destroy the transport
+	if (net_transport_keepalive != NULL) {
+		rrr_http_client_terminate_if_open(net_transport_keepalive, net_transport_keepalive_handle);
+		rrr_net_transport_destroy(net_transport_keepalive);
+		net_transport_keepalive = NULL;
+		net_transport_keepalive_handle = 0;
+	}
 
 	struct rrr_net_transport_config net_transport_config = {
 			NULL,
@@ -493,9 +497,7 @@ int main (int argc, const char **argv, const char **env) {
 				&data.request_data,
 				&net_transport_keepalive,
 				&net_transport_keepalive_handle,
-				&net_transport_config,
-				__rrr_http_client_final_callback,
-				&data
+				&net_transport_config
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -511,31 +513,6 @@ int main (int argc, const char **argv, const char **env) {
 			}
 		}*/
 
-		uint64_t prev_bytes_total = 0;
-		while (1) {
-			uint64_t bytes_total = 0;
-			if ((ret = rrr_http_client_websocket_tick (
-					&bytes_total,
-					RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S,
-					&data.request_data,
-					net_transport_keepalive,
-					net_transport_keepalive_handle,
-					__rrr_http_client_send_websocket_frame_callback,
-					&data,
-					__rrr_http_client_receive_websocket_frame_callback,
-					&data
-			)) != 0) {
-				if (ret != RRR_READ_EOF) {
-					ret = EXIT_FAILURE;
-				}
-				goto out;
-			}
-//			printf("tick %" PRIu64 "\n", bytes_total);
-			if (prev_bytes_total == bytes_total) {
-				rrr_posix_usleep(5000); // 5 ms
-			}
-			prev_bytes_total = bytes_total;
-		}
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
@@ -575,21 +552,53 @@ int main (int argc, const char **argv, const char **env) {
 	}
 #endif
 	else {
-		if (rrr_http_client_send_request_simple (
+		if (rrr_http_client_send_request_keepalive_simple (
 				&data.request_data,
 				RRR_HTTP_METHOD_GET,
 				RRR_HTTP_APPLICATION_HTTP1,
 				RRR_HTTP_UPGRADE_MODE_NONE,
-				&net_transport_config,
-				__rrr_http_client_final_callback,
-				&data
+				&net_transport_keepalive,
+				&net_transport_keepalive_handle,
+				&net_transport_config
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 	}
 
-	if (data.request_data.do_retry) {
+	int got_redirect = 0;
+	uint64_t prev_bytes_total = 0;
+
+	do {
+		uint64_t bytes_total = 0;
+		if ((ret = rrr_http_client_tick (
+				&got_redirect,
+				&bytes_total,
+				&data.request_data,
+				net_transport_keepalive,
+				net_transport_keepalive_handle,
+				1 * 1024 * 1024 * 1024, // 1 GB
+				__rrr_http_client_final_callback,
+				&data,
+				__rrr_http_client_send_websocket_frame_callback,
+				&data,
+				__rrr_http_client_receive_websocket_frame_callback,
+				&data,
+				NULL,
+				NULL
+		)) != 0 && ret != RRR_READ_EOF && ret != RRR_READ_INCOMPLETE) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		if (prev_bytes_total == bytes_total) {
+			rrr_posix_usleep(5000); // 5 ms
+		}
+
+		prev_bytes_total = bytes_total;
+	} while (ret != 0);
+
+	if (got_redirect) {
 		goto retry;
 	}
 

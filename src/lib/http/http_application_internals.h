@@ -27,8 +27,6 @@ struct rrr_net_transport_handle;
 struct rrr_http_part;
 enum rrr_http_method;
 
-// TODO : Move ws state to http1 application state
-
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS	\
 	struct rrr_http_application *application,	\
 	struct rrr_net_transport_handle *handle,	\
@@ -37,7 +35,6 @@ enum rrr_http_method;
 	const char *uri_str,						\
 	enum rrr_http_method method,				\
 	enum rrr_http_upgrade_mode upgrade_mode,	\
-	struct rrr_websocket_state *ws_state,		\
 	struct rrr_http_part *request_part
 
 #define RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS	\
@@ -50,17 +47,20 @@ enum rrr_http_method;
 	ssize_t *received_bytes,										\
 	struct rrr_http_application *app,								\
 	struct rrr_net_transport_handle *handle,						\
-	struct rrr_websocket_state *ws_state,							\
 	struct rrr_http_part *request_part,								\
 	struct rrr_http_part *response_part,							\
 	ssize_t read_max_size,											\
 	rrr_http_unique_id unique_id,									\
 	int is_client,													\
-	int (*websocket_callback)(_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),	\
-	void *websocket_callback_arg,									\
-	int (*callback)(_RECEIVE_CALLBACK_ARGS),						\
-	void *callback_arg,												\
-	int (*raw_callback)(_RAW_RECEIVE_CALLBACK_ARGS),				\
+	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),			\
+	void *websocket_callback_arg,																\
+	int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),	\
+	void *get_response_callback_arg,															\
+	int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),					\
+	void *frame_callback_arg,																	\
+	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),								\
+	void *callback_arg,																			\
+	int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),						\
 	void *raw_callback_arg
 
 struct rrr_http_application_constants {

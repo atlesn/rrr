@@ -59,10 +59,9 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *uri_str,
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_websocket_state *ws_state,
 		struct rrr_http_part *request_part
 ) {
-	return app->constants->request_send(app, handle, user_agent, host, uri_str, method, upgrade_mode, ws_state, request_part);
+	return app->constants->request_send(app, handle, user_agent, host, uri_str, method, upgrade_mode, request_part);
 }
 
 int rrr_http_application_transport_ctx_response_send (
@@ -78,7 +77,6 @@ int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_websocket_state *ws_state,
 		struct rrr_http_part *request_part,
 		struct rrr_http_part *response_part,
 		ssize_t read_max_size,
@@ -86,6 +84,10 @@ int rrr_http_application_transport_ctx_tick (
 		int is_client,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),
@@ -96,7 +98,6 @@ int rrr_http_application_transport_ctx_tick (
 			received_bytes,
 			app,
 			handle,
-			ws_state,
 			request_part,
 			response_part,
 			read_max_size,
@@ -104,6 +105,10 @@ int rrr_http_application_transport_ctx_tick (
 			is_client,
 			websocket_callback,
 			websocket_callback_arg,
+			get_response_callback,
+			get_response_callback_arg,
+			frame_callback,
+			frame_callback_arg,
 			callback,
 			callback_arg,
 			raw_callback,

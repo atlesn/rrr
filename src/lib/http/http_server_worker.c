@@ -286,10 +286,6 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 		goto out;
 	}
 
-	if (*do_websocket) {
-		worker_data->websocket_unique_id = unique_id;
-	}
-
 	out:
 	if (ret != 0 || response_part->response_code != 0) {
 		worker_data->request_complete = 1;
@@ -309,7 +305,7 @@ static int __rrr_http_server_worker_websocket_get_response_callback (
 	if (worker_data->config_data.callbacks.websocket_get_response_callback) {
 		return worker_data->config_data.callbacks.websocket_get_response_callback (
 				&worker_data->websocket_application_data,
-				worker_data->websocket_unique_id,
+				worker_data->unique_id,
 				data,
 				data_len,
 				is_binary,
@@ -330,9 +326,9 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 				&worker_data->websocket_application_data,
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
-				opcode,
 				payload,
 				payload_size,
+				is_binary,
 				unique_id,
 				worker_data->config_data.callbacks.websocket_handshake_callback_arg
 		);
@@ -351,57 +347,31 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 
 	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &worker_data->bytes_total, handle);
 
-	if (worker_data->websocket_unique_id != 0) {
-		if ((ret = rrr_http_session_transport_ctx_websocket_tick (
-				handle,
-				worker_data->config_data.read_max_size,
-				worker_data->websocket_unique_id,
-				RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S,
-				RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S,
-				__rrr_http_server_worker_websocket_get_response_callback,
-				worker_data,
-				__rrr_http_server_worker_websocket_frame_callback,
-				worker_data
-		)) != 0) {
-			if (ret != RRR_READ_EOF) {
-				RRR_MSG_0("HTTP worker %i: Error %i while processing websocket data\n",
-						worker_data->config_data.transport_handle, ret);
-			}
-			goto out;
-		}
-	}
-	else {
-		rrr_http_unique_id unique_id = 0;
+	ssize_t parse_complete_pos = 0;
+	ssize_t received_bytes = 0;
 
-		if (worker_data->config_data.callbacks.unique_id_generator_callback != NULL) {
-			if ((ret = worker_data->config_data.callbacks.unique_id_generator_callback(
-					&unique_id,
-					worker_data->config_data.callbacks.unique_id_generator_callback_arg
-			)) != 0) {
-				RRR_MSG_0("Failed to generate unique id in __rrr_http_server_worker_net_transport_ctx_do_work\n");
-				goto out;
-			}
+	if ((ret = rrr_http_session_transport_ctx_tick (
+			&parse_complete_pos,
+			&received_bytes,
+			handle,
+			worker_data->config_data.read_max_size,
+			worker_data->unique_id,
+			__rrr_http_server_worker_websocket_handshake_callback,
+			worker_data,
+			__rrr_http_server_worker_http_session_receive_callback,
+			worker_data,
+			__rrr_http_server_worker_websocket_get_response_callback,
+			worker_data,
+			__rrr_http_server_worker_websocket_frame_callback,
+			worker_data,
+			__rrr_http_server_worker_http_session_receive_raw_callback,
+			worker_data
+	)) != 0) {
+		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE) {
+			RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
+					worker_data->config_data.transport_handle);
 		}
-
-		if ((ret = rrr_http_session_transport_ctx_tick (
-				handle,
-				RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
-				RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
-				worker_data->config_data.read_max_size,
-				unique_id,
-				__rrr_http_server_worker_websocket_handshake_callback,
-				worker_data,
-				__rrr_http_server_worker_http_session_receive_callback,
-				worker_data,
-				__rrr_http_server_worker_http_session_receive_raw_callback,
-				worker_data
-		)) != 0) {
-			if (ret != RRR_HTTP_SOFT_ERROR) {
-				RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
-						worker_data->config_data.transport_handle);
-			}
-			goto out;
-		}
+		goto out;
 	}
 
 	out:
@@ -472,6 +442,16 @@ static void __rrr_http_server_worker_thread_entry (
 
 	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.config_data.transport_handle);
 
+	if (worker_data.config_data.callbacks.unique_id_generator_callback != NULL) {
+		if (worker_data.config_data.callbacks.unique_id_generator_callback (
+				&worker_data.unique_id,
+				worker_data.config_data.callbacks.unique_id_generator_callback_arg
+		) != 0) {
+			RRR_MSG_0("Failed to generate unique id in HTTP server worker thread\n");
+			goto out;
+		}
+	}
+
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
 	uint64_t prev_bytes_total = 0;
 	while (rrr_thread_check_encourage_stop(thread) == 0) {
@@ -491,11 +471,14 @@ static void __rrr_http_server_worker_thread_entry (
 			else if (ret_tmp == RRR_READ_EOF) {
 				break;
 			}
+			else if (ret_tmp == RRR_READ_INCOMPLETE) {
+				// OK, more work to be done
+			}
 			else {
 				RRR_MSG_0("HTTP worker %i: Failed while working with client, hard error\n",
 						worker_data.config_data.transport_handle);
+				break;
 			}
-			break;
 		}
 
 		if (worker_data.request_complete) {

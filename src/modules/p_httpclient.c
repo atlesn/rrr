@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
 #define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX	5
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
+#define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -153,8 +154,6 @@ struct httpclient_final_callback_data {
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
-	(void)(data);
-	(void)(response_code);
 	(void)(chunk_data_start);
 
 	// Note : Don't mix up rrr_http_client_data and httpclient_data
@@ -166,14 +165,14 @@ static int httpclient_final_callback (
 
 	char *data_to_free = NULL;
 
-	if (response_code < 200 || response_code > 299) {
-		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", response_code);
+	if (data->response_code < 200 || data->response_code > 299) {
+		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", data->response_code);
 	}
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,response_arg);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,data->response_argument);
 	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s' data size %" PRIrrrbl " of ~%" PRIrrrbl " chunk %i of %i\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
-			response_code,
+			data->response_code,
 			response_arg_str,
 			chunk_data_size,
 			part_data_size,
@@ -717,9 +716,7 @@ static int httpclient_raw_callback (
 #define HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS 					\
 		struct httpclient_data *data,							\
 		int is_redirect,										\
-		const struct rrr_msg_msg *message,						\
-		struct httpclient_raw_callback_data *raw_callback_data,	\
-		struct httpclient_final_callback_data *final_callback_data
+		const struct rrr_msg_msg *message
 
 static int httpclient_send_request_raw_data_callback (
 		HTTPCLIENT_SEND_REQUEST_CALLBACK_ARGS
@@ -735,17 +732,13 @@ static int httpclient_send_request_raw_data_callback (
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_NONE,
-			(data->do_keepalive ? &data->keepalive_transport : NULL),
-			(data->do_keepalive ? &data->keepalive_handle : 0),
+			&data->keepalive_transport,
+			&data->keepalive_handle,
 			&data->net_transport_config,
 			MSG_DATA_PTR(message),
 			MSG_DATA_LENGTH(message),
 			NULL,
-			NULL,
-			httpclient_raw_callback,
-			raw_callback_data,
-			httpclient_final_callback,
-			final_callback_data
+			NULL
 	);
 }
 
@@ -776,17 +769,13 @@ static int httpclient_send_request_from_message_callback (
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_NONE,
-			(data->do_keepalive ? &data->keepalive_transport : NULL),
-			(data->do_keepalive ? &data->keepalive_handle : 0),
+			&data->keepalive_transport,
+			&data->keepalive_handle,
 			&data->net_transport_config,
 			(is_redirect == 0 ? httpclient_connection_prepare_callback : NULL),
 			(is_redirect == 0 ? &prepare_callback_data : NULL),
-			httpclient_raw_callback,
-			raw_callback_data,
 			httpclient_session_query_prepare_callback,
-			&prepare_callback_data,
-			httpclient_final_callback,
-			final_callback_data
+			&prepare_callback_data
 	);
 
 	out:
@@ -822,8 +811,53 @@ static int httpclient_send_request_intermediate_retry_handling (
 			message
 	};
 
-	ret = callback(data, is_redirect, message, &raw_callback_data, &final_callback_data);
+	if ((ret = callback(data, is_redirect, message)) != 0) {
+		goto out;
+	}
 
+	int got_redirect = 0;
+	uint64_t bytes_total = 0;
+
+	do {
+		ret = rrr_http_client_tick (
+				&got_redirect,
+				&bytes_total,
+				&data->http_client_data,
+				data->keepalive_transport,
+				data->keepalive_handle,
+				RRR_HTTPCLIENT_READ_MAX_SIZE,
+				httpclient_final_callback,
+				&final_callback_data,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				httpclient_raw_callback,
+				&raw_callback_data
+		);
+		if (ret != 0 && ret != RRR_READ_INCOMPLETE) {
+			goto out;
+		}
+	} while (ret != 0);
+
+	if (got_redirect) {
+		if (--redirect_retry_max >= 0) {
+			is_redirect = 1;
+			goto retry;
+		}
+		else {
+			RRR_MSG_0("Maximum numbers of redirects reached in httpclient instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out_silent;
+		}
+	}
+
+	if (!data->do_keepalive) {
+		rrr_http_client_terminate_if_open(data->keepalive_transport, data->keepalive_handle);
+	}
+
+	out:
 	if (ret != RRR_HTTP_OK) {
 		if (ret == RRR_HTTP_SOFT_ERROR) {
 			RRR_DBG_2("HTTP request failed in httpclient instance %s, return was %i\n",
@@ -845,21 +879,7 @@ static int httpclient_send_request_intermediate_retry_handling (
 
 		goto out;
 	}
-
-	if (data->http_client_data.do_retry != 0) {
-		if (--redirect_retry_max >= 0) {
-			is_redirect = 1;
-			goto retry;
-		}
-		else {
-			RRR_MSG_0("Maximum numbers of redirects reached in httpclient instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-	}
-
-	out:
+	out_silent:
 	if (response_data_joined_tmp != NULL) {
 		rrr_string_builder_destroy(response_data_joined_tmp);
 	}

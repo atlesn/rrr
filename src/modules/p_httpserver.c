@@ -1025,13 +1025,13 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 	};
 
 	if (payload_size > SSIZE_MAX) {
-		RRR_MSG_0("Payload too long for frame with opcode %u in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
-				opcode, payload_size, (long int) SSIZE_MAX);
+		RRR_MSG_0("Payload too long for frame in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
+				payload_size, (long int) SSIZE_MAX);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
-	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY) {
+	if (is_binary) {
 		if (!data->do_accept_websocket_binary) {
 			RRR_DBG_3("httpserver instance %s dropping received binary websocket frame per configuration\n",
 					INSTANCE_D_NAME(data->thread_data));
@@ -1049,7 +1049,7 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 
 		goto out_write_entry;
 	}
-	else if (opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
+	else {
 		write_callback_data.data = payload;
 		write_callback_data.data_size = payload_size;
 

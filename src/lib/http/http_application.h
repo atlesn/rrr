@@ -42,6 +42,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,			\
 	void *arg
 
+#define RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
+	void **data, ssize_t *data_len, int *is_binary, void *arg
+
+#define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS \
+	const char *payload, uint64_t payload_size, int is_binary, rrr_http_unique_id unique_id, void *arg
+
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS		\
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
 	enum rrr_http_upgrade_mode upgrade_mode,			\
@@ -52,7 +58,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
-struct rrr_websocket_state;
 struct rrr_http_part;
 
 void rrr_http_application_destroy_if_not_null (
@@ -70,7 +75,6 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *uri_str,
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_websocket_state *ws_state,
 		struct rrr_http_part *request_part
 );
 int rrr_http_application_transport_ctx_response_send (
@@ -83,7 +87,6 @@ int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_websocket_state *ws_state,
 		struct rrr_http_part *request_part,
 		struct rrr_http_part *response_part,
 		ssize_t read_max_size,
@@ -91,6 +94,10 @@ int rrr_http_application_transport_ctx_tick (
 		int is_client,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),

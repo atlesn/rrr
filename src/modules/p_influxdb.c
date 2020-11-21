@@ -280,24 +280,33 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_tick (
-			handle,
-			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
-			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
-			0, // No max read size
-			0, // No unique id
-			NULL,
-			NULL,
-			influxdb_receive_http_response,
-			&response_callback_data,
-			NULL,
-			NULL
-	) != 0) {
-		RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = INFLUXDB_HARD_ERR;
-		goto out;
-	}
+	ssize_t parse_complete_pos = 0;
+	ssize_t received_bytes = 0;
+
+	do {
+		if ((ret = rrr_http_session_transport_ctx_tick (
+				&parse_complete_pos,
+				&received_bytes,
+				handle,
+				0, // No max read size
+				0, // No unique id
+				NULL,
+				NULL,
+				influxdb_receive_http_response,
+				&response_callback_data,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL
+		)) != 0 && ret != RRR_READ_INCOMPLETE) {
+			RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = INFLUXDB_HARD_ERR;
+			goto out;
+		}
+	} while (ret != 0);
 
 	if (response_callback_data.save_ok != 1) {
 		RRR_MSG_0("Warning: Error in HTTP response in influxdb instance %s\n",

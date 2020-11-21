@@ -30,13 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_application.h"
 #include "../net_transport/net_transport_defines.h"
-#include "../websocket/websocket.h"
 
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
-	uint8_t opcode, const char *payload, uint64_t payload_size, rrr_http_unique_id unique_id, void *arg
+	RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
 #define RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
-	void **data, ssize_t *data_len, int *is_binary, void *arg
+	RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
 
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
 	rrr_http_unique_id *result,								\
@@ -72,10 +71,11 @@ struct rrr_http_session {
 	enum rrr_http_upgrade_mode upgrade_mode;
 	char *uri_str;
 	char *user_agent;
+
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
 	struct rrr_http_application *application;
-	struct rrr_websocket_state ws_state;
+
 #ifdef RRR_WITH_NGHTTP2
 	struct rrr_http2_session *http2_session;
 #endif
@@ -128,28 +128,21 @@ int rrr_http_session_transport_ctx_raw_request_send (
 		size_t raw_request_size
 );
 int rrr_http_session_transport_ctx_tick (
+		ssize_t *parse_complete_pos,
+		ssize_t *received_bytes,
 		struct rrr_net_transport_handle *handle,
-		uint64_t timeout_stall_us,
-		uint64_t timeout_total_us,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
-		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_arg
-);
-int rrr_http_session_transport_ctx_websocket_tick (
-		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
-		int ping_interval_s,
-		int timeout_s,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *frame_callback_arg,
+		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_arg
 );
 #ifdef RRR_WITH_NGHTTP2
 int rrr_http_session_transport_ctx_http2_tick (
