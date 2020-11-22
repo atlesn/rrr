@@ -21,32 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <unistd.h>
-#include <limits.h>
 
 #include "../log.h"
-
-#include "http_fields.h"
 #include "http_session.h"
-#include "http_util.h"
-#include "http_part.h"
-#include "http_part_parse.h"
-#include "http_part_multipart.h"
-#include "http_application.h"
 #include "http_transaction.h"
+#include "http_application.h"
 
 #include "../net_transport/net_transport.h"
-#include "../random.h"
-#include "../read.h"
-#include "../string_builder.h"
-#include "../sha1/sha1.h"
-#include "../util/posix.h"
-#include "../util/gnu.h"
-#include "../util/base64.h"
-#include "../util/linked_list.h"
-#include "../util/rrr_time.h"
-#include "../util/macro_utils.h"
+
 #ifdef RRR_WITH_NGHTTP2
 #include "../http2/http2.h"
 #endif
