@@ -317,11 +317,20 @@ static int __rrr_http_client_request_send_callback (
 	else {
 		const char *endpoint_to_use = NULL;
 
+		if ((ret = rrr_http_session_transport_ctx_transaction_allocate (
+				&transaction,
+				callback_data->data->method,
+				handle
+		)) != 0) {
+			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_send_request_callback\n");
+			goto out;
+		}
+
 		if (callback_data->query_prepare_callback != NULL) {
 			if	((ret = callback_data->query_prepare_callback (
 					&endpoint_to_free,
 					&query_to_free,
-					handle->application_private_ptr,
+					transaction,
 					callback_data->query_prepare_callback_arg)
 			) != RRR_HTTP_OK) {
 				if (ret == RRR_HTTP_SOFT_ERROR) {
@@ -379,15 +388,6 @@ static int __rrr_http_client_request_send_callback (
 		}
 
 		RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
-
-		if ((ret = rrr_http_session_transport_ctx_transaction_allocate (
-				&transaction,
-				callback_data->data->method,
-				handle
-		)) != 0) {
-			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_send_request_callback\n");
-			goto out;
-		}
 
 		if ((ret = rrr_http_transaction_endpoint_set (
 				transaction,
