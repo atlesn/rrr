@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_transaction.h"
 #include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
@@ -250,9 +251,9 @@ static int httpclient_final_callback (
 	return ret;
 }
 
-static int httpclient_session_add_field (
+static int httpclient_transaction_field_add (
 		struct httpclient_data *data,
-		struct rrr_http_session *session,
+		struct rrr_http_transaction *transaction,
 		const struct rrr_type_value *value,
 		const char *tag_to_use
 ) {
@@ -280,8 +281,8 @@ static int httpclient_session_add_field (
 			goto out_cleanup_query_builder;
 		}
 
-		ret = rrr_http_session_query_field_add (
-				session,
+		ret = rrr_http_transaction_query_field_add (
+				transaction,
 				tag_to_use,
 				buf_tmp,
 				buf_size,
@@ -300,8 +301,8 @@ static int httpclient_session_add_field (
 		}
 
 		if (buf_size > 0) {
-			ret = rrr_http_session_query_field_add (
-					session,
+			ret = rrr_http_transaction_query_field_add (
+					transaction,
 					tag_to_use,
 					buf,
 					buf_size,
@@ -310,8 +311,8 @@ static int httpclient_session_add_field (
 		}
 	}
 	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
-		ret = rrr_http_session_query_field_add (
-				session,
+		ret = rrr_http_transaction_query_field_add (
+				transaction,
 				tag_to_use,
 				value->data,
 				value->total_stored_length,
@@ -330,8 +331,8 @@ static int httpclient_session_add_field (
 			goto out_cleanup_query_builder;
 		}
 
-		ret = rrr_http_session_query_field_add (
-				session,
+		ret = rrr_http_transaction_query_field_add (
+				transaction,
 				tag_to_use,
 				rrr_http_query_builder_buf_get(&query_builder),
 				rrr_http_query_builder_wpos_get(&query_builder),
@@ -552,14 +553,14 @@ static int httpclient_session_query_prepare_callback (
 	}
 
 	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(&array_to_send_tmp) > 0)) {
-		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_add_fields_callback\n");
+		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_query_prepare_callback\n");
 	}
 
-	if ((ret = rrr_http_session_set_keepalive (
-			session,
+	if ((ret = rrr_http_transaction_keepalive_set (
+			transaction,
 			data->do_keepalive
 	)) != 0) {
-		RRR_MSG_0("Failed to set keep-alive in httpclient_session_add_fields_callback\n");
+		RRR_MSG_0("Failed to set keep-alive in httpclient_session_query_prepare_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -567,9 +568,9 @@ static int httpclient_session_query_prepare_callback (
 	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
 		// Add all array fields
 		RRR_LL_ITERATE_BEGIN(&array_to_send_tmp, const struct rrr_type_value);
-			if ((ret = httpclient_session_add_field (
+			if ((ret = httpclient_transaction_field_add (
 					data,
-					session,
+					transaction,
 					node,
 					node->tag // NULL allowed
 			)) != RRR_HTTP_OK) {
@@ -590,9 +591,9 @@ static int httpclient_session_query_prepare_callback (
 			// If value is set in map, tag is to be translated
 			const char *tag_to_use = (node_value != NULL && *node_value != '\0') ? node_value : node_tag;
 
-			if ((ret = httpclient_session_add_field (
+			if ((ret = httpclient_transaction_field_add (
 					data,
-					session,
+					transaction,
 					value,
 					tag_to_use
 			)) != RRR_HTTP_OK) {
@@ -604,8 +605,8 @@ static int httpclient_session_query_prepare_callback (
 	RRR_MAP_ITERATE_BEGIN(&data->http_client_config.fields);
 		RRR_DBG_3("HTTP add field value with tag '%s' value '%s'\n",
 				node_tag, node_value != NULL ? node_value : "(no value)");
-		if ((ret = rrr_http_session_query_field_add (
-				session,
+		if ((ret = rrr_http_transaction_query_field_add (
+				transaction,
 				node_tag,
 				node_value,
 				strlen(node_value),
@@ -616,8 +617,8 @@ static int httpclient_session_query_prepare_callback (
 	RRR_MAP_ITERATE_END();
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(session->method));
-		rrr_http_session_query_fields_dump(session);
+		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(transaction->method));
+		rrr_http_transaction_query_fields_dump(transaction);
 	}
 
 	{
@@ -727,7 +728,7 @@ static int httpclient_send_request_raw_data_callback (
 			(is_redirect ? " (redirection)" : "")
 	);
 
-	return rrr_http_client_send_raw_request (
+	return rrr_http_client_request_raw_send (
 			&data->http_client_data,
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,
@@ -764,7 +765,7 @@ static int httpclient_send_request_from_message_callback (
 			is_redirect
 	};
 
-	ret = rrr_http_client_send_request (
+	ret = rrr_http_client_request_send (
 			&data->http_client_data,
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,

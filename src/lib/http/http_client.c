@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_client_config.h"
 #include "http_application.h"
+#include "http_transaction.h"
 
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
@@ -140,10 +141,11 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(overshoot_bytes);
-	(void)(request_part);
 	(void)(unique_id);
 
 	int ret = RRR_HTTP_OK;
+
+	struct rrr_http_part *response_part = transaction->response_part;
 
 	callback_data->data->response_code = response_part->response_code;
 
@@ -252,8 +254,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	struct rrr_http_client_request_callback_data *callback_data = arg;
 
 	(void)(handle);
-	(void)(request_part);
-	(void)(response_part);
+	(void)(transaction);
 	(void)(data_ptr);
 	(void)(sockaddr);
 	(void)(socklen);
@@ -270,7 +271,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	return ret;
 }
 
-static int __rrr_http_client_send_request_callback (
+static int __rrr_http_client_request_send_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -282,13 +283,14 @@ static int __rrr_http_client_send_request_callback (
 	char *endpoint_to_free = NULL;
 	char *endpoint_and_query_to_free = NULL;
 
+	struct rrr_http_transaction *transaction = NULL;
+
 	// Allow caller to update references
 	callback_data->transport_handle = handle->handle;
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application,
 			handle,
-			callback_data->data->method,
 			callback_data->data->upgrade_mode,
 			callback_data->data->user_agent
 	)) != 0) {
@@ -378,15 +380,28 @@ static int __rrr_http_client_send_request_callback (
 
 		RRR_DBG_3("HTTP using endpoint: '%s'\n", endpoint_and_query_to_free);
 
-		if ((ret = rrr_http_session_transport_ctx_set_endpoint (
-				handle,
+		if ((ret = rrr_http_session_transport_ctx_transaction_allocate (
+				&transaction,
+				callback_data->data->method,
+				handle
+		)) != 0) {
+			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_send_request_callback\n");
+			goto out;
+		}
+
+		if ((ret = rrr_http_transaction_endpoint_set (
+				transaction,
 				endpoint_and_query_to_free
 		)) != 0) {
 			RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_send_request_callback\n");
 			goto out;
 		}
 
-		if ((ret = rrr_http_session_transport_ctx_request_send(handle, callback_data->request_header_host)) != 0) {
+		if ((ret = rrr_http_session_transport_ctx_request_send (
+				handle,
+				callback_data->request_header_host,
+				transaction
+		)) != 0) {
 			RRR_MSG_0("Could not send request in __rrr_http_client_send_request_callback\n");
 			goto out;
 		}
@@ -394,13 +409,14 @@ static int __rrr_http_client_send_request_callback (
 
 	goto out;
 	out:
+		rrr_http_transaction_decref_if_not_null(transaction);
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(endpoint_and_query_to_free);
 		RRR_FREE_IF_NOT_NULL(query_to_free);
 		return ret;
 }
 
-void __rrr_http_client_send_request_connect_callback (
+void __rrr_http_client_request_send_connect_callback (
 		struct rrr_net_transport_handle *handle,
 		const struct sockaddr *sockaddr,
 		socklen_t socklen,
@@ -415,7 +431,7 @@ void __rrr_http_client_send_request_connect_callback (
 
 // Note that data in the struct may change if there are any redirects
 // Note that query prepare callback is not called if raw request data is set
-static int __rrr_http_client_send_request (
+static int __rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
@@ -599,7 +615,7 @@ static int __rrr_http_client_send_request (
 				transport,
 				port_to_use,
 				server_to_use,
-				__rrr_http_client_send_request_connect_callback,
+				__rrr_http_client_request_send_connect_callback,
 				&transport_handle
 		))) {
 			RRR_MSG_0("Keepalive connection failed to server %s port %u transport %s in http client return was %i\n",
@@ -613,7 +629,7 @@ static int __rrr_http_client_send_request (
 	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
 			transport,
 			transport_handle,
-			__rrr_http_client_send_request_callback,
+			__rrr_http_client_request_send_callback,
 			&callback_data
 	)) != 0) {
 		goto out;
@@ -655,7 +671,7 @@ void rrr_http_client_terminate_if_open (
 	);
 }
 
-int rrr_http_client_send_request (
+int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
@@ -668,7 +684,7 @@ int rrr_http_client_send_request (
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
 		void *query_prepare_callback_arg
 ) {
-	return __rrr_http_client_send_request (
+	return __rrr_http_client_request_send (
 			data,
 			method,
 			application_type,
@@ -685,7 +701,7 @@ int rrr_http_client_send_request (
 	);
 }
 
-int rrr_http_client_send_raw_request (
+int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
@@ -698,7 +714,7 @@ int rrr_http_client_send_raw_request (
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg
 ) {
-	return __rrr_http_client_send_request (
+	return __rrr_http_client_request_send (
 			data,
 			method,
 			application_type,
@@ -715,39 +731,13 @@ int rrr_http_client_send_raw_request (
 	);
 }
 
-int rrr_http_client_send_request_keepalive_simple (
-		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
-		const struct rrr_net_transport_config *net_transport_config
-) {
-	return __rrr_http_client_send_request (
-			data,
-			method,
-			application_type,
-			upgrade_mode,
-			transport_keepalive,
-			transport_keepalive_handle,
-			net_transport_config,
-			NULL,
-			0,
-			NULL,
-			NULL,
-			NULL,
-			NULL
-	);
-}
-
-int rrr_http_client_start_websocket_simple (
+int rrr_http_client_request_websocket_upgrade_send (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config
 ) {
-	return __rrr_http_client_send_request (
+	return __rrr_http_client_request_send (
 			data,
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_APPLICATION_HTTP1,
@@ -770,11 +760,9 @@ static int __rrr_http_client_transport_ctx_tick (
 ) {
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
-	ssize_t parse_complete_pos = 0;
 	ssize_t received_bytes = 0;
 
 	int ret = rrr_http_session_transport_ctx_tick (
-			&parse_complete_pos,
 			&received_bytes,
 			handle,
 			callback_data->read_max_size,

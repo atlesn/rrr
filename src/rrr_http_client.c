@@ -493,7 +493,7 @@ int main (int argc, const char **argv, const char **env) {
 	};
 
 	if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
-		if (rrr_http_client_start_websocket_simple (
+		if (rrr_http_client_request_websocket_upgrade_send (
 				&data.request_data,
 				&net_transport_keepalive,
 				&net_transport_keepalive_handle,
@@ -516,7 +516,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
-		if (rrr_http_client_send_request_keepalive_simple (
+		if (rrr_http_client_request_keepalive_simple_send (
 				&data.request_data,
 				RRR_HTTP_METHOD_GET,
 				RRR_HTTP_APPLICATION_HTTP1,
@@ -552,14 +552,18 @@ int main (int argc, const char **argv, const char **env) {
 	}
 #endif
 	else {
-		if (rrr_http_client_send_request_keepalive_simple (
+		if (rrr_http_client_request_send (
 				&data.request_data,
 				RRR_HTTP_METHOD_GET,
 				RRR_HTTP_APPLICATION_HTTP1,
 				RRR_HTTP_UPGRADE_MODE_NONE,
 				&net_transport_keepalive,
 				&net_transport_keepalive_handle,
-				&net_transport_config
+				&net_transport_config,
+				NULL,
+				NULL,
+				NULL,
+				NULL
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;

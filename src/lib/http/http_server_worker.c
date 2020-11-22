@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_server_worker.h"
 #include "http_common.h"
 #include "http_session.h"
+#include "http_transaction.h"
 #include "http_part.h"
 #include "http_server_common.h"
 
@@ -182,8 +183,8 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		char method_buf[40];
 		char uri_buf[256];
 
-		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
-		rrr_nullsafe_str_output_strip_null_append_null_trim(request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
+		rrr_nullsafe_str_output_strip_null_append_null_trim(transaction->request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
+		rrr_nullsafe_str_output_strip_null_append_null_trim(transaction->request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
 
 		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->config_data.addr, worker_data->config_data.addr_len);
 
@@ -200,7 +201,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		worker_data->request_complete = 1;
 	}
 
-	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, response_part)) != RRR_HTTP_OK) {
+	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, transaction->response_part)) != RRR_HTTP_OK) {
 		goto out;
 	}
 
@@ -208,8 +209,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		ret = worker_data->config_data.callbacks.final_callback (
 				worker_data->thread,
 				handle,
-				request_part,
-				response_part,
+				transaction,
 				data_ptr,
 				// Address was cached when accepting
 				(const struct sockaddr *) &worker_data->config_data.addr,
@@ -221,16 +221,16 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		);
 	}
 
-	if (response_part->response_code == 0) {
+	if (transaction->response_part->response_code == 0) {
 		switch (ret) {
 			case RRR_HTTP_OK:
-				response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
 				break;
 			case RRR_HTTP_SOFT_ERROR:
-				response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 				break;
 			default:
-				response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
 				break;
 		};
 	}
@@ -277,8 +277,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			&worker_data->websocket_application_data,
 			do_websocket,
 			handle,
-			request_part,
-			response_part,
+			transaction,
 			data_ptr,
 			// Address was cached when accepting
 			(const struct sockaddr *) &worker_data->config_data.addr,
@@ -291,7 +290,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 	}
 
 	out:
-	if (ret != 0 || response_part->response_code != 0) {
+	if (ret != 0 || transaction->response_part->response_code != 0) {
 		worker_data->request_complete = 1;
 	}
 	return ret;
@@ -351,11 +350,9 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 
 	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &worker_data->bytes_total, handle);
 
-	ssize_t parse_complete_pos = 0;
 	ssize_t received_bytes = 0;
 
 	if ((ret = rrr_http_session_transport_ctx_tick (
-			&parse_complete_pos,
 			&received_bytes,
 			handle,
 			worker_data->config_data.read_max_size,

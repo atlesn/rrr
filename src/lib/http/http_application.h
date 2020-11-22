@@ -29,8 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS	\
 	struct rrr_net_transport_handle *handle,				\
-	const struct rrr_http_part *request_part,				\
-	struct rrr_http_part *response_part,					\
+	struct rrr_http_transaction *transaction,				\
 	const char *data_ptr,									\
 	const struct sockaddr *sockaddr,						\
 	socklen_t socklen,										\
@@ -58,7 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
-struct rrr_http_part;
+struct rrr_http_transaction;
 
 void rrr_http_application_destroy_if_not_null (
 		struct rrr_http_application **app
@@ -72,23 +71,18 @@ int rrr_http_application_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
 		const char *host,
-		const char *uri_str,
-		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_http_part *request_part
+		struct rrr_http_transaction *transaction
 );
 int rrr_http_application_transport_ctx_response_send (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *response_part
+		struct rrr_http_transaction *transaction
 );
 int rrr_http_application_transport_ctx_tick (
-		ssize_t *parse_complete_pos,
 		ssize_t *received_bytes,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *request_part,
-		struct rrr_http_part *response_part,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,

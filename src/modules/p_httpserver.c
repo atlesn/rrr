@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
 #include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
@@ -675,26 +676,26 @@ static int httpserver_receive_callback (
 	};
 
 	if (data->do_receive_full_request) {
-		if ((RRR_HTTP_PART_BODY_LENGTH(request_part) == 0 && !data->do_allow_empty_messages)) {
+		if ((RRR_HTTP_PART_BODY_LENGTH(transaction->request_part) == 0 && !data->do_allow_empty_messages)) {
 			RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
 		}
 		else if ((ret = httpserver_receive_callback_full_request (
 				&array_tmp,
-				request_part,
+				transaction->request_part,
 				data_ptr
 		)) != 0) {
 			goto out;
 		}
 	}
 
-	if (request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request\n");
 	}
 	else if ((ret = httpserver_receive_callback_get_fields (
 			&array_tmp,
 			data,
-			request_part
+			transaction->request_part
 	)) != 0) {
 		goto out;
 	}
@@ -723,11 +724,11 @@ static int httpserver_receive_callback (
 				handle,
 				thread,
 				data,
-				response_part,
+				transaction->response_part,
 				unique_id
 		)) != 0) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
-				response_part->response_code = RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT;
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT;
 				ret = RRR_HTTP_OK;
 			}
 			goto out;
@@ -874,11 +875,11 @@ static int httpserver_websocket_handshake_callback (
 
 	void *new_application_data = NULL;
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, request_part->request_uri_nullsafe);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, transaction->request_part->request_uri_nullsafe);
 
-	if (rrr_nullsafe_str_len(request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
+	if (rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
 		RRR_MSG_0("Received request URI for websocket request was too long (%" PRIrrrl " > %ld)",
-				request_part->request_uri_nullsafe->len, (unsigned long) sizeof(request_uri) - 1);
+				transaction->request_part->request_uri_nullsafe->len, (unsigned long) sizeof(request_uri) - 1);
 		goto out_bad_request;
 	}
 
@@ -937,10 +938,10 @@ static int httpserver_websocket_handshake_callback (
 
 	goto out;
 	out_not_found:
-		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
 		goto out;
 	out_bad_request:
-		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		goto out;
 	out:
 		RRR_FREE_IF_NOT_NULL(new_application_data);

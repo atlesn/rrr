@@ -56,29 +56,24 @@ int rrr_http_application_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,
 		const char *host,
-		const char *uri_str,
-		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		struct rrr_http_part *request_part
+		struct rrr_http_transaction *transaction
 ) {
-	return app->constants->request_send(app, handle, user_agent, host, uri_str, method, upgrade_mode, request_part);
+	return app->constants->request_send(app, handle, user_agent, host, upgrade_mode, transaction);
 }
 
 int rrr_http_application_transport_ctx_response_send (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *response_part
+		struct rrr_http_transaction *transaction
 ) {
-	return app->constants->response_send(app, handle, response_part);
+	return app->constants->response_send(app, handle, transaction);
 }
 
 int rrr_http_application_transport_ctx_tick (
-		ssize_t *parse_complete_pos,
 		ssize_t *received_bytes,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *request_part,
-		struct rrr_http_part *response_part,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
@@ -94,12 +89,9 @@ int rrr_http_application_transport_ctx_tick (
 		void *raw_callback_arg
 ) {
 	return app->constants->tick (
-			parse_complete_pos,
 			received_bytes,
 			app,
 			handle,
-			request_part,
-			response_part,
 			read_max_size,
 			unique_id,
 			is_client,

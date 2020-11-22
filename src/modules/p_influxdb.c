@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_client_config.h"
+#include "../lib/http/http_transaction.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -122,7 +123,6 @@ static int influxdb_receive_http_response (
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(overshoot_bytes);
-	(void)(request_part);
 	(void)(unique_id);
 	(void)(upgrade_mode);
 
@@ -130,9 +130,9 @@ static int influxdb_receive_http_response (
 
 	// TODO : Read error message from JSON
 
-	if (response_part->response_code < 200 || response_part->response_code > 299) {
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
-				INSTANCE_D_NAME(data->data->thread_data), response_part->response_code, response_part->response_str);
+				INSTANCE_D_NAME(data->data->thread_data), transaction->response_part->response_code, transaction->response_part->response_str);
 		ret = 1;
 		goto out;
 	}
@@ -166,6 +166,7 @@ static void influxdb_send_data_callback (
 	int ret = INFLUXDB_OK;
 
 	struct rrr_http_application *application = NULL;
+	struct rrr_http_transaction *transaction = NULL;
 	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
 
@@ -189,7 +190,6 @@ static void influxdb_send_data_callback (
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			&application,
 			handle,
-			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			RRR_HTTP_UPGRADE_MODE_NONE,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
@@ -197,8 +197,13 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_set_endpoint (
-			handle,
+	if ((ret = rrr_http_session_transport_ctx_transaction_allocate(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, handle)) != 0) {
+		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_endpoint_set (
+			transaction,
 			uri
 	)) != 0) {
 		RRR_MSG_0("Could set endpoint in HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
@@ -261,8 +266,8 @@ static void influxdb_send_data_callback (
 
 	// TODO : Better distinguishing of soft/hard errors from HTTP layer
 
-	if ((ret = rrr_http_session_transport_ctx_add_query_field (
-			handle,
+	if ((ret = rrr_http_transaction_query_field_add (
+			transaction,
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
 			rrr_http_query_builder_wpos_get(&query_builder),
@@ -272,7 +277,7 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->http_client_config.server)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->http_client_config.server, transaction)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -281,12 +286,10 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	ssize_t parse_complete_pos = 0;
 	ssize_t received_bytes = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick (
-				&parse_complete_pos,
 				&received_bytes,
 				handle,
 				0, // No max read size
@@ -318,6 +321,7 @@ static void influxdb_send_data_callback (
 	}
 
 	out:
+	rrr_http_transaction_decref_if_not_null(transaction);
 	rrr_http_application_destroy_if_not_null(&application);
 	rrr_http_query_builder_cleanup(&query_builder);
 	RRR_FREE_IF_NOT_NULL(uri);

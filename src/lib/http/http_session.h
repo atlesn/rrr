@@ -66,14 +66,11 @@ struct rrr_http2_session;
 struct rrr_http_application;
 
 struct rrr_http_session {
-	enum rrr_http_method method;
-	enum rrr_http_upgrade_mode upgrade_mode;
-	char *uri_str;
-	char *user_agent;
-
-	struct rrr_http_part *request_part;
-	struct rrr_http_part *response_part;
+	uint64_t transaction_id_counter;
 	struct rrr_http_application *application;
+
+	enum rrr_http_upgrade_mode upgrade_mode;
+	char *user_agent;
 
 #ifdef RRR_WITH_NGHTTP2
 	struct rrr_http2_session *http2_session;
@@ -82,46 +79,27 @@ struct rrr_http_session {
 
 struct rrr_net_transport;
 struct rrr_net_transport_handle;
+struct rrr_http_transaction;
 
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
 );
-int rrr_http_session_transport_ctx_set_endpoint (
-		struct rrr_net_transport_handle *handle,
-		const char *endpoint
-);
 int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle,
-		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		const char *user_agent
 );
-int rrr_http_session_transport_ctx_add_query_field (
-		struct rrr_net_transport_handle *handle,
-		const char *name,
-		const char *value,
-		ssize_t value_size,
-		const char *content_type
-);
-int rrr_http_session_query_field_add (
-		struct rrr_http_session *session,
-		const char *name,
-		const char *value,
-		ssize_t value_size,
-		const char *content_type
-);
-void rrr_http_session_query_fields_dump (
-		struct rrr_http_session *session
-);
-int rrr_http_session_set_keepalive (
-		struct rrr_http_session *session,
-		int set
+int rrr_http_session_transport_ctx_transaction_allocate (
+		struct rrr_http_transaction **target,
+		enum rrr_http_method method,
+		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
-		const char *host
+		const char *host,
+		struct rrr_http_transaction *transaction
 );
 int rrr_http_session_transport_ctx_raw_request_send (
 		struct rrr_net_transport_handle *handle,
@@ -129,7 +107,6 @@ int rrr_http_session_transport_ctx_raw_request_send (
 		size_t raw_request_size
 );
 int rrr_http_session_transport_ctx_tick (
-		ssize_t *parse_complete_pos,
 		ssize_t *received_bytes,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
