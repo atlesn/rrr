@@ -29,16 +29,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 
 void rrr_nullsafe_str_destroy_if_not_null (
-		struct rrr_nullsafe_str *str
+		struct rrr_nullsafe_str **str
 ) {
 	if (str == NULL) {
+		RRR_BUG("BUG: Double pointer to rrr_nullsafe_str_destroy_if_not_null was NULL\n");
+	}
+	if (*str == NULL) {
 		return;
 	}
-	RRR_FREE_IF_NOT_NULL(str->str);
-	free(str);
+	RRR_FREE_IF_NOT_NULL((*str)->str);
+	free(*str);
+	*str = NULL;
 }
 
-int rrr_nullsafe_str_new (
+int rrr_nullsafe_str_new_or_replace (
 	struct rrr_nullsafe_str **result,
 	const void *str,
 	rrr_length len
@@ -54,11 +58,16 @@ int rrr_nullsafe_str_new (
 		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
 
-	struct rrr_nullsafe_str *new_str = NULL;
-	if ((new_str = malloc(sizeof(*new_str))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http_nullsafe_str_new\n");
-		ret = 1;
-		goto out;
+	struct rrr_nullsafe_str *new_str = *result;
+	if (new_str == NULL) {
+		if ((new_str = malloc(sizeof(*new_str))) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_nullsafe_str_new\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		RRR_FREE_IF_NOT_NULL(new_str->str);
 	}
 
 	memset(new_str, '\0', sizeof(*new_str));
@@ -142,7 +151,7 @@ int rrr_nullsafe_str_dup (
 	if (source == NULL) {
 		return 1;
 	}
-	if ((rrr_nullsafe_str_new(target, source->str, source->len)) != 0) {
+	if ((rrr_nullsafe_str_new_or_replace(target, source->str, source->len)) != 0) {
 		return 1;
 	}
 	return 0;

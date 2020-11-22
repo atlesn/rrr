@@ -137,7 +137,6 @@ int rrr_http_session_transport_ctx_server_new (
 	}
 
 	// DO NOT STORE HANDLE POINTER
-	session->is_client = 0;
 
 	// Transport framework responsible for cleaning up
 	rrr_net_transport_ctx_handle_application_data_bind (
@@ -197,7 +196,6 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		}
 
 		session->method = method;
-		session->is_client = 1;
 		session->uri_str = strdup("/");
 
 		if (session->uri_str == NULL) {
@@ -350,6 +348,7 @@ int rrr_http_session_transport_ctx_tick (
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int is_client,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
@@ -363,8 +362,8 @@ int rrr_http_session_transport_ctx_tick (
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 
-	if (session->is_client && session->response_part->response_code != 0) {
-		return RRR_HTTP_OK;
+	if  (session->application == NULL) {
+		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");
 	}
 
 	return rrr_http_application_transport_ctx_tick (
@@ -376,7 +375,7 @@ int rrr_http_session_transport_ctx_tick (
 			session->response_part,
 			read_max_size,
 			unique_id,
-			session->is_client,
+			is_client,
 			websocket_callback,
 			websocket_callback_arg,
 			get_response_callback,

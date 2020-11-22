@@ -66,7 +66,6 @@ struct rrr_http2_session;
 struct rrr_http_application;
 
 struct rrr_http_session {
-	int is_client;
 	enum rrr_http_method method;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	char *uri_str;
@@ -133,6 +132,7 @@ int rrr_http_session_transport_ctx_tick (
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
+		int is_client,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),

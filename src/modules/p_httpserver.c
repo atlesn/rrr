@@ -333,7 +333,7 @@ static int httpserver_worker_process_field_callback (
 	}
 
 	out:
-	rrr_nullsafe_str_destroy_if_not_null(name_to_use);
+	rrr_nullsafe_str_destroy_if_not_null(&name_to_use);
 	if (value_tmp != NULL) {
 		rrr_type_value_destroy(value_tmp);
 	}

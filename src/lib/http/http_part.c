@@ -80,9 +80,9 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
 	rrr_http_field_collection_clear(&part->fields);
 	RRR_FREE_IF_NOT_NULL(part->response_str);
-	rrr_nullsafe_str_destroy_if_not_null(part->response_raw_data_nullsafe);
-	rrr_nullsafe_str_destroy_if_not_null(part->request_uri_nullsafe);
-	rrr_nullsafe_str_destroy_if_not_null(part->request_method_str_nullsafe);
+	rrr_nullsafe_str_destroy_if_not_null(&part->response_raw_data_nullsafe);
+	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
+	rrr_nullsafe_str_destroy_if_not_null(&part->request_method_str_nullsafe);
 	free (part);
 }
 
@@ -143,7 +143,7 @@ int rrr_http_part_raw_response_set_allocated (
 	if (part->response_raw_data_nullsafe != NULL) {
 		RRR_BUG("BUG: rrr_http_part_set_allocated_raw_response called while raw data was already set\n");
 	}
-	if ((ret = rrr_nullsafe_str_new(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
 		goto out;
 	}
 	rrr_nullsafe_str_set_allocated(part->response_raw_data_nullsafe, (void **) raw_data_source, raw_data_size);

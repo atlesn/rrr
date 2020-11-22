@@ -127,7 +127,7 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_new(&field->binary_value_nullsafe, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace(&field->binary_value_nullsafe, NULL, 0)) != 0) {
 		RRR_MSG_0("Failed to allocate memory in __rrr_http_header_parse_base64_value\n");
 		goto out;
 	}
@@ -333,9 +333,9 @@ void rrr_http_header_field_destroy (
 		struct rrr_http_header_field *field
 ) {
 	rrr_http_field_collection_clear(&field->fields);
-	rrr_nullsafe_str_destroy_if_not_null(field->name);
-	rrr_nullsafe_str_destroy_if_not_null(field->binary_value_nullsafe);
-	rrr_nullsafe_str_destroy_if_not_null(field->value);
+	rrr_nullsafe_str_destroy_if_not_null(&field->name);
+	rrr_nullsafe_str_destroy_if_not_null(&field->binary_value_nullsafe);
+	rrr_nullsafe_str_destroy_if_not_null(&field->value);
 	free (field);
 }
 
@@ -366,7 +366,7 @@ int rrr_http_header_field_new (
 	// Might return NULL, which is OK
 	field->definition = __rrr_http_header_field_get_definition(field_name, field_name_len);
 
-	if ((rrr_nullsafe_str_new(&field->name, field_name, field_name_len)) != 0) {
+	if ((rrr_nullsafe_str_new_or_replace(&field->name, field_name, field_name_len)) != 0) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_header_field_new\n");
 		ret = 1;
 		goto out_destroy;
@@ -397,7 +397,7 @@ int rrr_http_header_field_new_with_value (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new(&field->value, value, strlen(value)) != 0) {
+	if (rrr_nullsafe_str_new_or_replace(&field->value, value, strlen(value)) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
 		goto out_destroy;
 	}
@@ -525,10 +525,10 @@ static int __rrr_http_header_field_subvalue_parse (
 		goto out;
 	}
 
-	{
+/*	{
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,subvalue->name);
 		RRR_DBG_3("\tsubvalue name: %s\n", name);
-	}
+	}*/
 
 	if (name_end == line_end) {
 		start = name_end + (line_end_mode == RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_CRLF ? 2 : 1);
@@ -561,7 +561,7 @@ static int __rrr_http_header_field_subvalue_parse (
 
 	{
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,subvalue->value);
-		RRR_DBG_3("\tsubvalue value: %s (%" PRIrrrl ")\n", value, subvalue->value->len);
+//		RRR_DBG_3("\tsubvalue value: %s (%" PRIrrrl ")\n", value, subvalue->value->len);
 	}
 
 	start += value_length;
@@ -602,7 +602,7 @@ static int __rrr_http_header_field_parse_subvalues (
 		prev_subvalue_count = RRR_LL_COUNT(&field->fields);
 
 		ssize_t parsed_bytes_tmp = 0;
-		RRR_DBG_3("subvalue start: %c bad client: %i\n", *start, bad_client_missing_space_after_comma);
+		//RRR_DBG_3("subvalue start: %c bad client: %i\n", *start, bad_client_missing_space_after_comma);
 		if ((ret = __rrr_http_header_field_subvalue_parse (
 				&field->fields,
 				&parsed_bytes_tmp,

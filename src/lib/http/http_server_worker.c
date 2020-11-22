@@ -356,6 +356,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			handle,
 			worker_data->config_data.read_max_size,
 			worker_data->unique_id,
+			0, // Is not client
 			__rrr_http_server_worker_websocket_handshake_callback,
 			worker_data,
 			__rrr_http_server_worker_http_session_receive_callback,

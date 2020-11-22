@@ -1290,6 +1290,7 @@ static int __rrr_application_http1_receive_get_target_size (
 		else {
 			rnrn_counter = 4;
 
+			// TODO : Why do this? We should be OK with non-ASCII
 			if (*pos > 0x7f) {
 				RRR_MSG_0("Received non-ASCII character %02x in HTTP request\n", *pos);
 				ret = RRR_READ_SOFT_ERROR;

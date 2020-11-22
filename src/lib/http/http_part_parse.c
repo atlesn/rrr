@@ -126,8 +126,7 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
-	rrr_nullsafe_str_destroy_if_not_null(result->request_method_str_nullsafe);
-	if (rrr_nullsafe_str_new(&result->request_method_str_nullsafe, start, space - start) != 0) {
+	if (rrr_nullsafe_str_new_or_replace(&result->request_method_str_nullsafe, start, space - start) != 0) {
 		RRR_MSG_0("Could not allocate string for request method in __rrr_http_parse_request \n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
@@ -150,8 +149,7 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
-	rrr_nullsafe_str_destroy_if_not_null(result->request_uri_nullsafe);
-	if (rrr_nullsafe_str_new(&result->request_uri_nullsafe, start, space - start) != 0) {
+	if (rrr_nullsafe_str_new_or_replace(&result->request_uri_nullsafe, start, space - start) != 0) {
 		RRR_MSG_0("Could not allocate string for uri in __rrr_http_parse_request \n");
 		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_HARD_ERR;

@@ -34,9 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 
 void rrr_http_field_destroy(struct rrr_http_field *field) {
-	rrr_nullsafe_str_destroy_if_not_null(field->name);
-	rrr_nullsafe_str_destroy_if_not_null(field->content_type);
-	rrr_nullsafe_str_destroy_if_not_null(field->value);
+	rrr_nullsafe_str_destroy_if_not_null(&field->name);
+	rrr_nullsafe_str_destroy_if_not_null(&field->content_type);
+	rrr_nullsafe_str_destroy_if_not_null(&field->value);
 	free(field);
 }
 
@@ -57,7 +57,7 @@ int rrr_http_field_new_no_value (
 	}
 	memset (field, '\0', sizeof(*field));
 
-	if (rrr_nullsafe_str_new(&field->name, name, name_length) != 0) {
+	if (rrr_nullsafe_str_new_or_replace(&field->name, name, name_length) != 0) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
 		goto out_free;
@@ -80,9 +80,8 @@ int rrr_http_field_set_content_type (
 ) {
 	int ret = 0;
 
-	rrr_nullsafe_str_destroy_if_not_null(target->content_type);
 	if (content_type != NULL && *content_type != '\0') {
-		if (rrr_nullsafe_str_new(&target->content_type, content_type, content_type_length) != 0) {
+		if (rrr_nullsafe_str_new_or_replace(&target->content_type, content_type, content_type_length) != 0) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_field_set_content_type\n");
 			ret = 1;
 			goto out;
@@ -101,9 +100,8 @@ int rrr_http_field_set_value (
 ) {
 	int ret = 0;
 
-	rrr_nullsafe_str_destroy_if_not_null(target->value);
 	if (value != NULL && *value != '\0' && value_length != 0) {
-		if (rrr_nullsafe_str_new(&target->value, value, value_length) != 0) {
+		if (rrr_nullsafe_str_new_or_replace(&target->value, value, value_length) != 0) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_field_set_value\n");
 			ret = 1;
 			goto out;
@@ -190,7 +188,7 @@ int rrr_http_field_collection_add (
 	memset (field, '\0', sizeof(*field));
 
 	if (name != NULL && name_length != 0) {
-		if (rrr_nullsafe_str_new(&field->name, name, name_length) != 0) {
+		if (rrr_nullsafe_str_new_or_replace(&field->name, name, name_length) != 0) {
 			RRR_MSG_0("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
@@ -198,7 +196,7 @@ int rrr_http_field_collection_add (
 	}
 
 	if (content_type != NULL && content_type_length != 0) {
-		if (rrr_nullsafe_str_new(&field->content_type, content_type, content_type_length) != 0) {
+		if (rrr_nullsafe_str_new_or_replace(&field->content_type, content_type, content_type_length) != 0) {
 			RRR_MSG_0("Could not allocate memory for content_type in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
@@ -206,7 +204,7 @@ int rrr_http_field_collection_add (
 	}
 
 	if (value != NULL && value_length != 0) {
-		if (rrr_nullsafe_str_new(&field->value, value, value_length) != 0) {
+		if (rrr_nullsafe_str_new_or_replace(&field->value, value, value_length) != 0) {
 			RRR_MSG_0("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;

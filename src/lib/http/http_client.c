@@ -92,7 +92,7 @@ void rrr_http_client_request_data_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->user_agent);
-	rrr_nullsafe_str_destroy_if_not_null(data->response_argument);
+	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
 }
 
 
@@ -163,7 +163,7 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_DBG_2("HTTP Redirect to '%s'\n", value);
 		}
 
-		rrr_nullsafe_str_destroy_if_not_null(callback_data->data->response_argument);
+		rrr_nullsafe_str_destroy_if_not_null(&callback_data->data->response_argument);
 		if (rrr_nullsafe_str_dup(&callback_data->data->response_argument, location->value) != 0) {
 			RRR_MSG_0("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
@@ -271,7 +271,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	return ret;
 }
 
-static int __rrr_http_client_send_request_callback_final (
+static int __rrr_http_client_send_request_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -400,13 +400,6 @@ static int __rrr_http_client_send_request_callback_final (
 		return ret;
 }
 
-static int __rrr_http_client_send_keepalive_request_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	return __rrr_http_client_send_request_callback_final(handle, arg);
-}
-
 void __rrr_http_client_send_request_connect_callback (
 		struct rrr_net_transport_handle *handle,
 		const struct sockaddr *sockaddr,
@@ -447,6 +440,9 @@ static int __rrr_http_client_send_request (
 	if ((ret = rrr_http_application_new(&application, application_type)) != 0) {
 		goto out;
 	}
+
+	data->response_code = 0;
+	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
 
 	if (transport_keepalive == NULL) {
 		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_send_request\n");
@@ -617,7 +613,7 @@ static int __rrr_http_client_send_request (
 	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
 			transport,
 			transport_handle,
-			__rrr_http_client_send_keepalive_request_callback,
+			__rrr_http_client_send_request_callback,
 			&callback_data
 	)) != 0) {
 		goto out;
@@ -774,19 +770,16 @@ static int __rrr_http_client_transport_ctx_tick (
 ) {
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
-	int ret = 0;
-
-	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
-
 	ssize_t parse_complete_pos = 0;
 	ssize_t received_bytes = 0;
 
-	if ((ret = rrr_http_session_transport_ctx_tick (
+	int ret = rrr_http_session_transport_ctx_tick (
 			&parse_complete_pos,
 			&received_bytes,
 			handle,
 			callback_data->read_max_size,
-			0,
+			0, // No unique ID
+			1, // Is client
 			__rrr_http_client_websocket_handshake_callback,
 			callback_data,
 			__rrr_http_client_receive_http_part_callback,
@@ -797,11 +790,10 @@ static int __rrr_http_client_transport_ctx_tick (
 			callback_data->frame_callback_arg,
 			callback_data->raw_callback,
 			callback_data->raw_callback_arg
-	)) != 0) {
-		goto out;
-	}
+	);
 
-	out:
+	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
+
 	return ret;
 }
 
@@ -846,21 +838,18 @@ int rrr_http_client_tick (
 			raw_callback_arg
 	};
 
-	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
+	ret = rrr_net_transport_handle_with_transport_ctx_do (
 			transport_keepalive,
 			transport_keepalive_handle,
 			__rrr_http_client_transport_ctx_tick,
 			&callback_data
-	)) != 0) {
-		goto out;
-	}
+	);
 
 	*bytes_total = callback_data.bytes_total;
 
-	//uint64_t request_end_time = rrr_time_get_64();
-	//RRR_DBG_3("HTTP total request time: %" PRIu64 "ms\n", (request_end_time - callback_data->data->) / 1000);
-
-	printf ("response code: %i\n", request_data->response_code);
+	if (ret != 0) {
+		goto out;
+	}
 
 	if (request_data->response_code >= 300 && request_data->response_code <= 399) {
 		if (!rrr_nullsafe_str_isset(request_data->response_argument)) {

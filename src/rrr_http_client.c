@@ -571,6 +571,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	do {
 		uint64_t bytes_total = 0;
+
 		if ((ret = rrr_http_client_tick (
 				&got_redirect,
 				&bytes_total,

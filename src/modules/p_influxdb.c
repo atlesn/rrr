@@ -290,6 +290,7 @@ static void influxdb_send_data_callback (
 				handle,
 				0, // No max read size
 				0, // No unique id
+				1, // Is client
 				NULL,
 				NULL,
 				influxdb_receive_http_response,
