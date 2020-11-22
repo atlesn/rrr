@@ -84,6 +84,7 @@ struct rrr_net_transport;
 struct rrr_net_transport_handle;
 
 int rrr_http_session_transport_ctx_server_new (
+		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_set_endpoint (
@@ -94,6 +95,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		const char *user_agent
 );
 int rrr_http_session_transport_ctx_add_query_field (

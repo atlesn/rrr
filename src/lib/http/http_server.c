@@ -164,29 +164,39 @@ static void __rrr_http_server_accept_create_http_session_callback (
 
 	worker_data_preliminary->error = 0;
 
-	if (rrr_http_session_transport_ctx_server_new (
-			handle
-	) != 0) {
-		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
+	struct rrr_http_application *application = NULL;
+
+	if (rrr_http_application_new(&application, RRR_HTTP_APPLICATION_HTTP1) != 0) {
+		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_accept_create_http_session_callback\n");
 		worker_data_preliminary->error = 1;
+		goto out;
 	}
-	else {
-/*		char buf[256];
-		rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
-		printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
 
-		// DO NOT STORE HANDLE POINTER
-		
-		worker_data_preliminary->config_data.transport = handle->transport;
-		worker_data_preliminary->config_data.transport_handle = handle->handle;
-
-		if (socklen > sizeof(worker_data_preliminary->config_data.addr)) {
-			RRR_BUG("BUG: Socklen too long in __rrr_http_Server_accept_create_http_session_callback\n");
-		}
-
-		memcpy(&worker_data_preliminary->config_data.addr, sockaddr, socklen);
-		worker_data_preliminary->config_data.addr_len = socklen;
+	if (rrr_http_session_transport_ctx_server_new (&application, handle) != 0) {
+		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_create_http_session_callback\n");
+		worker_data_preliminary->error = 1;
+		goto out;
 	}
+
+/*	char buf[256];
+	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
+	printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
+
+	// DO NOT STORE HANDLE POINTER
+
+	worker_data_preliminary->config_data.transport = handle->transport;
+	worker_data_preliminary->config_data.transport_handle = handle->handle;
+
+	if (socklen > sizeof(worker_data_preliminary->config_data.addr)) {
+		RRR_BUG("BUG: Socklen too long in __rrr_http_server_accept_create_http_session_callback\n");
+	}
+
+	memcpy(&worker_data_preliminary->config_data.addr, sockaddr, socklen);
+	worker_data_preliminary->config_data.addr_len = socklen;
+
+	out:
+	rrr_http_application_destroy_if_not_null(&application);
+	return;
 }
 
 static int __rrr_http_server_accept (

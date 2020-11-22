@@ -572,7 +572,7 @@ int main (int argc, const char **argv, const char **env) {
 	do {
 		uint64_t bytes_total = 0;
 
-		if ((ret = rrr_http_client_tick (
+		ret = rrr_http_client_tick (
 				&got_redirect,
 				&bytes_total,
 				&data.request_data,
@@ -587,7 +587,13 @@ int main (int argc, const char **argv, const char **env) {
 				&data,
 				NULL,
 				NULL
-		)) != 0 && ret != RRR_READ_EOF && ret != RRR_READ_INCOMPLETE) {
+		);
+
+		if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && ret == 0) {
+			ret = RRR_READ_INCOMPLETE;
+		}
+
+		if (ret != 0 && ret != RRR_READ_EOF && ret != RRR_READ_INCOMPLETE) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}

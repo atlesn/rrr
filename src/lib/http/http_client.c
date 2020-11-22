@@ -142,7 +142,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(overshoot_bytes);
 	(void)(request_part);
 	(void)(unique_id);
-	(void)(upgrade_mode);
 
 	int ret = RRR_HTTP_OK;
 
@@ -173,7 +172,7 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 	else if (response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-		if (callback_data->data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET && callback_data->data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_HTTP2) {
+		if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET && upgrade_mode != RRR_HTTP_UPGRADE_MODE_HTTP2) {
 			RRR_MSG_0("Unexpected response 101 '%s' from server\n",
 					response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -290,6 +289,7 @@ static int __rrr_http_client_send_request_callback (
 			callback_data->application,
 			handle,
 			callback_data->data->method,
+			callback_data->data->upgrade_mode,
 			callback_data->data->user_agent
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_send_request_callback\n");

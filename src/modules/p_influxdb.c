@@ -190,6 +190,7 @@ static void influxdb_send_data_callback (
 			&application,
 			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
+			RRR_HTTP_UPGRADE_MODE_NONE,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));

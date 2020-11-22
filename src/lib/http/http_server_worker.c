@@ -269,7 +269,11 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 
 	int ret = 0;
 
-	if ((ret = worker_data->config_data.callbacks.websocket_handshake_callback (
+	if (worker_data->config_data.callbacks.websocket_handshake_callback == NULL) {
+		RRR_DBG_1("HTTP server received a HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
+		*do_websocket = 0;
+	}
+	else if ((ret = worker_data->config_data.callbacks.websocket_handshake_callback (
 			&worker_data->websocket_application_data,
 			do_websocket,
 			handle,
@@ -468,6 +472,7 @@ static void __rrr_http_server_worker_thread_entry (
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				RRR_DBG_2("HTTP worker %i: Failed while working with client, soft error\n",
 						worker_data.config_data.transport_handle);
+				break;
 			}
 			else if (ret_tmp == RRR_READ_EOF) {
 				break;

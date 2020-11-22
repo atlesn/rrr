@@ -119,7 +119,23 @@ static int __rrr_http_session_reset (
 	return ret;
 }
 
+static void __rrr_http_session_application_set (
+		struct rrr_http_application **application,
+		struct rrr_http_session *session
+) {
+	if (application != NULL && *application != NULL) {
+		rrr_http_application_destroy_if_not_null(&session->application);
+		session->application = *application;
+		*application = NULL;
+	}
+
+	if (session->application == NULL) {
+		RRR_BUG("BUG: Application pointer was NULL at end of __rrr_http_session_set_application, maybe caller forgot to create it for us\n");
+	}
+}
+
 int rrr_http_session_transport_ctx_server_new (
+		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
@@ -145,6 +161,7 @@ int rrr_http_session_transport_ctx_server_new (
 			__rrr_http_session_destroy_void
 	);
 
+	__rrr_http_session_application_set(application, session);
 	session = NULL;
 
 	out:
@@ -181,6 +198,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle,
 		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
 		const char *user_agent
 ) {
 	int ret = 0;
@@ -228,15 +246,10 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		goto out;
 	}
 
-	if (application != NULL && *application != NULL) {
-		rrr_http_application_destroy_if_not_null(&session->application);
-		session->application = *application;
-		*application = NULL;
-	}
+	__rrr_http_session_application_set(application, session);
 
-	if (session->application == NULL) {
-		RRR_BUG("BUG: Application pointer was NULL at end of rrr_http_session_transport_ctx_client_new_or_clean, maybe caller forgot to create it for us\n");
-	}
+	session->method = method;
+	session->upgrade_mode = upgrade_mode;
 
 	session = NULL;
 

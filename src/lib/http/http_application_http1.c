@@ -1041,6 +1041,11 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 		goto out;
 	}
 
+	if (*do_websocket != 1) {
+		// Application refuses websocket
+		goto out_bad_request;
+	}
+
 	if ((ret = rrr_http_part_header_field_push(receive_data->response_part, "connection", "upgrade")) != 0) {
 		goto out;
 	}
