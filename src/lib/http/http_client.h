@@ -166,16 +166,4 @@ int rrr_http_client_tick (
 		void *raw_callback_arg
 );
 
-#ifdef RRR_WITH_NGHTTP2
-int rrr_http_client_http2_tick (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *get_response_callback_arg
-);
-#endif /* RRR_WITH_NGHTTP2 */
-
 #endif /* RRR_HTTP_CLIENT_H */

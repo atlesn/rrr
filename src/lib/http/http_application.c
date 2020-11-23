@@ -24,7 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "http_application.h"
 #include "http_application_internals.h"
-#include "http_application_http2.h"
+#ifdef RRR_WITH_NGHTTP2
+#	include "http_application_http2.h"
+#endif
 #include "http_application_http1.h"
 
 void rrr_http_application_destroy_if_not_null (
@@ -47,6 +49,11 @@ int rrr_http_application_new (
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
 		return rrr_http_application_http1_new(target);
 	}
+#ifdef RRR_WITH_NGHTTP2
+	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
+		return rrr_http_application_http2_new(target);
+	}
+#endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);
 	return 1;
 }
@@ -72,6 +79,7 @@ int rrr_http_application_transport_ctx_response_send (
 
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
@@ -90,6 +98,7 @@ int rrr_http_application_transport_ctx_tick (
 ) {
 	return app->constants->tick (
 			received_bytes,
+			upgraded_app,
 			app,
 			handle,
 			read_max_size,
@@ -106,4 +115,25 @@ int rrr_http_application_transport_ctx_tick (
 			raw_callback,
 			raw_callback_arg
 	);
+}
+
+void rrr_http_application_alpn_protos_get (
+		const char **target,
+		unsigned int *length,
+		struct rrr_http_application *app
+) {
+	app->constants->alpn_protos_get(target, length);
+}
+
+void rrr_http_application_polite_close (
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle
+) {
+	app->constants->polite_close(app, handle);
+}
+
+enum rrr_http_application_type rrr_http_application_type_get (
+		struct rrr_http_application *app
+) {
+	return app->constants->type;
 }

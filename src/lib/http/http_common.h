@@ -84,7 +84,6 @@ enum rrr_http_upgrade_mode {
 
 enum rrr_http_application_type {
 	RRR_HTTP_APPLICATION_HTTP1,
-	RRR_HTTP_APPLICATION_WEBSOCKET,
 	RRR_HTTP_APPLICATION_HTTP2
 };
 
@@ -144,6 +143,14 @@ extern const char *rrr_http_upgrade_mode_str_http2;
 	(transport == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket :		\
 	(transport == RRR_HTTP_UPGRADE_MODE_HTTP2 ? rrr_http_upgrade_mode_str_http2 : ("unknown")	\
 	)))
+
+extern const char *rrr_http_application_str_http1;
+extern const char *rrr_http_application_str_http2;
+
+#define RRR_HTTP_APPLICATION_TO_STR(transport)												\
+	(transport == RRR_HTTP_APPLICATION_HTTP1 ? rrr_http_application_str_http1 :				\
+	(transport == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 : ("unknown")	\
+	))
 
 typedef uint64_t rrr_http_unique_id;
 

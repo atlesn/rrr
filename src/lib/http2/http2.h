@@ -36,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void *data,									\
 	size_t data_size,							\
 	void *stream_application_data,				\
-	uint64_t stream_application_id,				\
 	void *callback_arg
 
 struct rrr_net_transport_handle;
@@ -53,20 +52,10 @@ void rrr_http2_session_destroy_if_not_null (
 int rrr_http2_session_stream_application_data_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id,
-		void **application_data,
+		void *application_data,
 		void (*application_data_destroy_function)(void *)
 );
 void *rrr_http2_session_stream_application_data_get (
-		struct rrr_http2_session *session,
-		int32_t stream_id
-);
-int rrr_http2_session_stream_application_id_set (
-		struct rrr_http2_session *session,
-		int32_t stream_id,
-		uint64_t id
-);
-int rrr_http2_session_stream_application_id_get (
-		uint64_t *result,
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );

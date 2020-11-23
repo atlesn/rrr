@@ -42,7 +42,6 @@ struct rrr_http2_stream {
 	void *data;
 	size_t data_size;
 	size_t data_wpos;
-	uint64_t application_id;
 	void *application_data;
 	void (*application_data_destroy_function)(void *);
 };
@@ -56,8 +55,8 @@ struct rrr_http2_session;
 struct rrr_http2_callback_data {
 	struct rrr_net_transport_handle *handle;
 	// Callback may be NULL
-	int (*get_response_callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS);
-	void *get_response_callback_arg;
+	int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS);
+	void *callback_arg;
 };
 
 struct rrr_http2_session {
@@ -261,15 +260,14 @@ static int __rrr_http2_on_stream_close_callback (
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
 	if (stream->data != NULL) {
 		if (error_code == 0) {
-			if (session->callback_data.get_response_callback != NULL) {
-				if (session->callback_data.get_response_callback (
+			if (session->callback_data.callback != NULL) {
+				if (session->callback_data.callback (
 						session,
 						stream_id,
 						stream->data,
 						stream->data_wpos,
 						stream->application_data,
-						stream->application_id,
-						session->callback_data.get_response_callback_arg
+						session->callback_data.callback_arg
 				) != 0) {
 					return NGHTTP2_ERR_CALLBACK_FAILURE;
 				}
@@ -420,7 +418,7 @@ void rrr_http2_session_destroy_if_not_null (
 int rrr_http2_session_stream_application_data_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id,
-		void **application_data,
+		void *application_data,
 		void (*application_data_destroy_function)(void *)
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
@@ -432,9 +430,8 @@ int rrr_http2_session_stream_application_data_set (
 		stream->application_data_destroy_function(stream->application_data);
 	}
 
-	stream->application_data = *application_data;
+	stream->application_data = application_data;
 	stream->application_data_destroy_function = application_data_destroy_function;
-	*application_data = NULL;
 
 	return RRR_HTTP2_OK;
 }
@@ -449,36 +446,6 @@ void *rrr_http2_session_stream_application_data_get (
 	}
 
 	return stream->application_data;
-}
-
-int rrr_http2_session_stream_application_id_set (
-		struct rrr_http2_session *session,
-		int32_t stream_id,
-		uint64_t id
-) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
-	if (stream == NULL) {
-		return RRR_HTTP2_HARD_ERROR;
-	}
-
-	stream->application_id = id;
-
-	return RRR_HTTP2_OK;
-}
-
-int rrr_http2_session_stream_application_id_get (
-		uint64_t *result,
-		struct rrr_http2_session *session,
-		int32_t stream_id
-) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
-	if (stream == NULL) {
-		return RRR_HTTP2_HARD_ERROR;
-	}
-
-	*result = stream->application_id;
-
-	return RRR_HTTP2_OK;
 }
 
 int rrr_http2_session_client_upgrade_postprocess (
@@ -507,8 +474,8 @@ int rrr_http2_session_client_upgrade_postprocess (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*get_response_callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
-		void *get_response_callback_arg
+		int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = RRR_HTTP2_OK;
 
@@ -516,8 +483,8 @@ int rrr_http2_transport_ctx_tick (
 	// new() function
 	struct rrr_http2_callback_data callback_data = {
 			handle,
-			get_response_callback,
-			get_response_callback_arg
+			callback,
+			callback_arg
 	};
 	session->callback_data = callback_data;
 

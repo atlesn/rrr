@@ -24,6 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application;
 
-int rrr_http_application_http2_new (struct rrr_http_application **target);
+int rrr_http_application_http2_new (
+		struct rrr_http_application **target
+);
+int rrr_http_application_http2_new_from_upgrade (
+		struct rrr_http_application **target,
+		void **initial_receive_data,
+		size_t initial_receive_data_len,
+		struct rrr_http_transaction *transaction
+);
 
 #endif /* RRR_HTTP_APPLICATION_HTTP2_H */

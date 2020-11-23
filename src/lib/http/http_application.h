@@ -81,6 +81,7 @@ int rrr_http_application_transport_ctx_response_send (
 );
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
@@ -96,6 +97,18 @@ int rrr_http_application_transport_ctx_tick (
 		void *callback_arg,
 		int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
+);
+void rrr_http_application_alpn_protos_get (
+		const char **target,
+		unsigned int *length,
+		struct rrr_http_application *app
+);
+void rrr_http_application_polite_close (
+		struct rrr_http_application *app,
+		struct rrr_net_transport_handle *handle
+);
+enum rrr_http_application_type rrr_http_application_type_get (
+		struct rrr_http_application *app
 );
 
 #endif /* RRR_HTTP_APPLICATION_H */

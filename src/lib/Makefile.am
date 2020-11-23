@@ -43,7 +43,7 @@ endif
 
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
-librrrnghttp2_la_SOURCES = http2/http2.c
+librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
 librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 endif

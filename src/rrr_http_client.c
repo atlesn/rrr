@@ -492,82 +492,21 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_NET_TRANSPORT_BOTH
 	};
 
-	if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
-		if (rrr_http_client_request_websocket_upgrade_send (
-				&data.request_data,
-				&net_transport_keepalive,
-				&net_transport_keepalive_handle,
-				&net_transport_config
-		) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-
-/*		if (data.tree != NULL) {
-			int flags = fcntl(0, F_GETFL, 0);
-			flags |= O_NONBLOCK;
-			if (fcntl(STDIN_FILENO, F_SETFL) != 0) {
-				RRR_MSG_0("Failed to set non-block mode on STDIN: %s\n", rrr_strerror(errno));
-				ret = EXIT_FAILURE;
-				goto out;
-			}
-		}*/
-
-	}
-#ifdef RRR_WITH_NGHTTP2
-	else if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
-		if (rrr_http_client_request_keepalive_simple_send (
-				&data.request_data,
-				RRR_HTTP_METHOD_GET,
-				RRR_HTTP_APPLICATION_HTTP1,
-				RRR_HTTP_UPGRADE_MODE_HTTP2,
-				&net_transport_keepalive,
-				&net_transport_keepalive_handle,
-				&net_transport_config,
-				__rrr_http_client_final_callback,
-				&data
-		) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-
-		uint64_t close_start_time = 0;
-		do {
-			// Final callback is called first when upgrade response is received
-			// and then when the response is received over HTTP2
-			if (data.final_callback_count >= 2 && close_start_time == 0) {
-				rrr_http_client_terminate_if_open(net_transport_keepalive, net_transport_keepalive_handle);
-				close_start_time = rrr_time_get_64();
-			}
-		} while (
-			(ret = rrr_http_client_http2_tick (
-					&data.request_data,
-					net_transport_keepalive,
-					net_transport_keepalive_handle,
-					NULL,
-					NULL,
-					__rrr_http_client_final_callback,
-					&data
-		)) == 0);
-	}
-#endif
-	else {
-		if (rrr_http_client_request_send (
-				&data.request_data,
-				RRR_HTTP_METHOD_GET,
-				RRR_HTTP_APPLICATION_HTTP1,
-				RRR_HTTP_UPGRADE_MODE_NONE,
-				&net_transport_keepalive,
-				&net_transport_keepalive_handle,
-				&net_transport_config,
-				NULL,
-				NULL,
-				NULL,
-				NULL
-		) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
+	if (rrr_http_client_request_send (
+			&data.request_data,
+			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_APPLICATION_HTTP1,
+			data.upgrade_mode,
+			&net_transport_keepalive,
+			&net_transport_keepalive_handle,
+			&net_transport_config,
+			NULL,
+			NULL,
+			NULL,
+			NULL
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	int got_redirect = 0;

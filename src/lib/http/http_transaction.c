@@ -99,6 +99,12 @@ void rrr_http_transaction_decref_if_not_null (
 	free(transaction);
 }
 
+void rrr_http_transaction_decref_if_not_null_void (
+		void *transaction
+) {
+	rrr_http_transaction_decref_if_not_null(transaction);
+}
+
 void rrr_http_transaction_incref (
 		struct rrr_http_transaction *transaction
 ) {

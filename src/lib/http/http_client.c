@@ -559,14 +559,7 @@ static int __rrr_http_client_request_send (
 			const char *alpn_protos = NULL;
 			unsigned int alpn_protos_length = 0;
 
-#ifdef RRR_WITH_NGHTTP2
-			if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
-				RRR_DBG_3("Selecting ALPN/NPN HTTP/2 selection method\n");
-				rrr_http_session_get_http2_alpn_protos(&alpn_protos, &alpn_protos_length);
-				// Upgrade using ALPN/NPN instead of upgrading from HTTP/1.1
-				callback_data.upgrade_mode = 0;
-			}
-#endif
+			rrr_http_application_alpn_protos_get(&alpn_protos, &alpn_protos_length, application);
 
 			ret = rrr_net_transport_new (
 					&transport,
@@ -882,94 +875,3 @@ int rrr_http_client_tick (
 	return ret;
 }
 
-#ifdef RRR_WITH_NGHTTP2
-struct rrr_http_client_http2_tick_callback_data {
-	struct rrr_http_client_request_data *request_data;
-	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
-	void *raw_callback_args;
-	int (*get_response_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
-	void *get_response_callback_arg;
-};
-
-static int __rrr_http_client_http2_get_response_callback (
-		RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
-) {
-	struct rrr_http_client_http2_tick_callback_data *callback_data = arg;
-
-	(void)(handle);
-	(void)(request_part);
-	(void)(unique_id);
-
-	int ret = 0;
-
-	ret = callback_data->get_response_callback (
-			callback_data->request_data,
-			response_part->response_code,
-			response_part->response_raw_data_nullsafe,
-			0,
-			1,
-			data_ptr,
-			data_size,
-			data_size,
-			callback_data->get_response_callback_arg
-	);
-
-	return ret;
-}
-
-static int __rrr_http_client_transport_ctx_http2_tick (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	struct rrr_http_client_http2_tick_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if ((ret = rrr_http_session_transport_ctx_http2_tick (
-			handle,
-			callback_data->raw_callback,
-			callback_data->raw_callback_args,
-			__rrr_http_client_http2_get_response_callback,
-			callback_data
-	)) != 0) {
-		if (ret != RRR_READ_EOF) {
-			RRR_MSG_0("HTTP client: Error %i while processing http2 data\n", ret);
-		}
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_http_client_http2_tick (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *get_response_callback_arg
-) {
-	if (transport_keepalive == NULL) {
-		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_http2_tick\n");
-	}
-
-	struct rrr_http_client_http2_tick_callback_data callback_data = {
-			data,
-			raw_callback,
-			raw_callback_arg,
-			get_response_callback,
-			get_response_callback_arg
-	};
-
-	int ret = rrr_net_transport_handle_with_transport_ctx_do (
-			transport_keepalive,
-			transport_keepalive_handle,
-			__rrr_http_client_transport_ctx_http2_tick,
-			&callback_data
-	);
-
-	return ret;
-}
-#endif /* RRR_WITH_NGHTTP2 */

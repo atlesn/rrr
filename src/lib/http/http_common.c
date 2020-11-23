@@ -25,6 +25,9 @@ const char *rrr_http_upgrade_mode_str_none = "none";
 const char *rrr_http_upgrade_mode_str_websocket = "WebSocket";
 const char *rrr_http_upgrade_mode_str_http2 = "HTTP2";
 
+const char *rrr_http_application_str_http1 = "HTTP1";
+const char *rrr_http_application_str_http2 = "HTTP2";
+
 const char *rrr_http_transport_str_any = "ANY";
 const char *rrr_http_transport_str_http = "HTTP";
 const char *rrr_http_transport_str_https = "HTTPS";

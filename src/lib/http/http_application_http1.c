@@ -27,6 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_application.h"
 #include "http_application_http1.h"
+#ifdef RRR_WITH_NGHTTP2
+#	include "http_application_http2.h"
+#endif
 #include "http_application_internals.h"
 
 #include "http_transaction.h"
@@ -702,12 +705,13 @@ int __rrr_http_application_http1_response_send (
 
 }
 
-struct rrr_application_http1_receive_data {
+struct rrr_http_application_http1_receive_data {
 	struct rrr_net_transport_handle *handle;
 	struct rrr_http_application_http1 *http1;
 	ssize_t received_bytes; // Used only for stall timeout and sleeping
 	rrr_http_unique_id unique_id;
 	int is_client;
+	struct rrr_http_application *upgraded_application;
 	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
@@ -821,7 +825,7 @@ static int __rrr_application_http1_response_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_application_http1_receive_data *receive_data = arg;
+	struct rrr_http_application_http1_receive_data *receive_data = arg;
 	struct rrr_http_transaction *transaction = receive_data->http1->active_transaction;
 
 	char *orig_http2_settings_tmp = NULL;
@@ -905,10 +909,11 @@ static int __rrr_application_http1_response_receive_callback (
 			RRR_DBG_3("Upgrade to HTTP2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 			// Pass any extra data received to http2 session for processing there. Overshoot pointer will
 			// be set to NULL if http2_session takes control of the pointer.
-			ret = rrr_http2_session_client_new_or_reset (
-					&session->http2_session,
+			ret = rrr_http_application_http2_new_from_upgrade (
+					&receive_data->upgraded_application,
 					(void **) &read_session->rx_overshoot,
-					read_session->rx_overshoot_size
+					read_session->rx_overshoot_size,
+					transaction
 			);
 
 			// Make sure these to variables are always both either 0 or set
@@ -916,28 +921,8 @@ static int __rrr_application_http1_response_receive_callback (
 			read_session->rx_overshoot_size = 0;
 
 			if (ret != 0) {
-				RRR_MSG_0("Failed to initialize HTTP2 session in __rrr_application_http1_response_receive_callback\n");
+				RRR_MSG_0("Failed to initialize HTTP2 application in __rrr_application_http1_response_receive_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
-				goto out;
-			}
-
-			const struct rrr_http_header_field *orig_http2_settings = rrr_http_part_header_field_get_raw(receive_data->request_part, "http2-settings");
-			if (orig_http2_settings == NULL) {
-				RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_application_http1_response_receive_callback\n");
-			}
-
-			size_t orig_http2_settings_length = 0;
-			orig_http2_settings_tmp = (char *) rrr_base64url_decode(orig_http2_settings->value->str, orig_http2_settings->value->len, &orig_http2_settings_length);
-
-			if ((ret = rrr_http2_session_client_upgrade_postprocess(session->http2_session, orig_http2_settings_tmp, orig_http2_settings_length)) != 0) {
-				goto out;
-			}
-
-			if ((ret = rrr_http2_session_stream_application_data_set(session->http2_session, 1, (void **) &receive_data->request_part, rrr_http_part_destroy_void)) != 0) {
-				goto out;
-			}
-
-			if ((ret = rrr_http2_session_stream_application_id_set(session->http2_session, 1, receive_data->unique_id)) != 0) {
 				goto out;
 			}
 
@@ -994,7 +979,7 @@ static int __rrr_application_http1_websocket_request_check_version (
 
 static int __rrr_application_http1_request_upgrade_try_websocket (
 		int *do_websocket,
-		struct rrr_application_http1_receive_data *receive_data,
+		struct rrr_http_application_http1_receive_data *receive_data,
 		struct rrr_read_session *read_session,
 		const char *data_to_use
 ) {
@@ -1137,7 +1122,7 @@ static int __rrr_application_http1_request_upgrade_try_http2 (
 
 static int __rrr_application_http1_request_upgrade_try (
 		enum rrr_http_upgrade_mode *upgrade_mode,
-		struct rrr_application_http1_receive_data *receive_data,
+		struct rrr_http_application_http1_receive_data *receive_data,
 		struct rrr_read_session *read_session,
 		const char *data_to_use
 ) {
@@ -1192,7 +1177,7 @@ static int __rrr_application_http1_request_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_application_http1_receive_data *receive_data = arg;
+	struct rrr_http_application_http1_receive_data *receive_data = arg;
 	struct rrr_http_transaction *transaction = receive_data->http1->active_transaction;
 
 	int ret = 0;
@@ -1288,7 +1273,7 @@ static int __rrr_application_http1_receive_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_application_http1_receive_data *receive_data = arg;
+	struct rrr_http_application_http1_receive_data *receive_data = arg;
 
 	int ret = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH;
 
@@ -1529,6 +1514,8 @@ int __rrr_http_application_http1_tick (
 
 	int ret = RRR_HTTP_OK;
 
+	*upgraded_app = NULL;
+
 	if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 		ret = __rrr_http_application_http1_transport_ctx_websocket_tick (
 				http1,
@@ -1544,12 +1531,13 @@ int __rrr_http_application_http1_tick (
 		);
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
-		struct rrr_application_http1_receive_data callback_data = {
+		struct rrr_http_application_http1_receive_data callback_data = {
 				handle,
 				http1,
 				*received_bytes,
 				unique_id,
 				is_client,
+				NULL,
 				websocket_callback,
 				websocket_callback_arg,
 				callback,
@@ -1573,6 +1561,7 @@ int __rrr_http_application_http1_tick (
 		);
 
 		*received_bytes = callback_data.received_bytes;
+		*upgraded_app = callback_data.upgraded_application;
 	}
 	else {
 		RRR_BUG("__rrr_http_application_http1_tick called while active upgrade was not NONE or WEBSOCKET but %i, maybe caller forgot to switch to HTTP2?\n", http1->upgrade_active);
@@ -1581,12 +1570,29 @@ int __rrr_http_application_http1_tick (
 	return ret;
 }
 
+static void __rrr_http_application_http1_alpn_protos_get (
+		RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS
+) {
+	*target = NULL;
+	*length = 0;
+}
+
+static void __rrr_http_application_http1_polite_close (
+		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
+) {
+	(void)(app);
+	(void)(handle);
+	return;
+}
+
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_response_send,
-	__rrr_http_application_http1_tick
+	__rrr_http_application_http1_tick,
+	__rrr_http_application_http1_alpn_protos_get,
+	__rrr_http_application_http1_polite_close
 };
 
 int rrr_http_application_http1_new (struct rrr_http_application **target) {

@@ -229,12 +229,17 @@ int rrr_http_session_transport_ctx_tick (
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 
+	int ret = 0;
+
+	struct rrr_http_application *upgraded_app = NULL;
+
 	if  (session->application == NULL) {
 		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");
 	}
 
-	return rrr_http_application_transport_ctx_tick (
+	if ((ret = rrr_http_application_transport_ctx_tick (
 			received_bytes,
+			&upgraded_app,
 			session->application,
 			handle,
 			read_max_size,
@@ -250,116 +255,42 @@ int rrr_http_session_transport_ctx_tick (
 			callback_arg,
 			raw_callback,
 			raw_callback_arg
-	);
-}
-
-#ifdef RRR_WITH_NGHTTP2
-struct rrr_http_session_http2_get_response_callback_data {
-	struct rrr_net_transport_handle *handle;
-	int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS);
-	void *get_raw_response_callback_arg;
-	int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS);
-	void *get_response_callback_arg;
-};
-
-static int __rrr_http_session_http2_get_response (RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS) {
-	struct rrr_http_session_http2_get_response_callback_data *callback_data = callback_arg;
-
-	(void)(session);
-	(void)(stream_id);
-
-	int ret = 0;
-
-	struct rrr_http_part *response_part = NULL;
-
-	if (callback_data->get_raw_response_callback != NULL) {
-		if ((ret = callback_data->get_raw_response_callback (
-				data,
-				data_size,
-				stream_application_id,
-				callback_data->get_raw_response_callback_arg
-		)) != 0) {
-			goto out;
-		}
+	)) != 0) {
+		goto out;
 	}
 
-	if (callback_data->get_response_callback != NULL) {
-		if ((ret = rrr_http_part_new(&response_part)) != 0) {
-			goto out;
-		}
-
-		if ((ret = callback_data->get_response_callback (
-				callback_data->handle,
-				stream_application_data,
-				response_part,
-				data,
-				data_size,
-				callback_data->get_response_callback_arg,
-				stream_application_id
-		)) != 0) {
-			goto out;
-		}
+	if (upgraded_app) {
+		// Returning INCOMPLETE makes caller to call tick() again, now
+		// with the new application being active.
+		RRR_DBG_3("HTTP upgrade transition from %s to %s\n",
+				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
+				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
+		);
+		__rrr_http_session_application_set(&upgraded_app, session);
+		ret = RRR_READ_INCOMPLETE;
 	}
 
 	out:
-	if (response_part != NULL) {
-		rrr_http_part_destroy(response_part);
-	}
+	rrr_http_application_destroy_if_not_null(&upgraded_app);
 	return ret;
 }
 
-int rrr_http_session_transport_ctx_http2_tick (
-		struct rrr_net_transport_handle *handle,
-		int (*get_raw_response_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
-		void *get_raw_response_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS),
-		void *get_response_callback_arg
+void rrr_http_session_transport_ctx_alpn_protos_get (
+		const char **target,
+		unsigned int *length,
+		struct rrr_net_transport_handle *handle
+
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
-
-	if (session->http2_session == NULL) {
-		return RRR_HTTP_SOFT_ERROR;
-	}
-
-	struct rrr_http_session_http2_get_response_callback_data callback_data = {
-			handle,
-			get_raw_response_callback,
-			get_raw_response_callback_arg,
-			get_response_callback,
-			get_response_callback_arg
-	};
-
-	return rrr_http2_transport_ctx_tick (
-			session->http2_session,
-			handle,
-			__rrr_http_session_http2_get_response,
-			&callback_data
-	);
+	rrr_http_application_alpn_protos_get(target, length, session->application);
 }
-
-void rrr_http_session_get_http2_alpn_protos (
-		const char **target,
-		unsigned int *length
-) {
-	*target = rrr_http_session_alpn_protos_http2_priority;
-	*length = sizeof(rrr_http_session_alpn_protos_http2_priority);
-}
-#endif /* RRR_WITH_NGHTTP2 */
 
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-
 	(void)(arg);
-
-#ifdef RRR_WITH_NGHTTP2
-	if (session != NULL && session->http2_session != NULL) {
-		rrr_http2_transport_ctx_terminate(session->http2_session, handle);
-	}
-#else
-	(void)(session);
-#endif /* RRR_WITH_NGHTTP2 */
+	struct rrr_http_session *session = handle->application_private_ptr;
+	rrr_http_application_polite_close(session->application, handle);
 	return 0; // Always return 0
 }

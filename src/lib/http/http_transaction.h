@@ -23,26 +23,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_TRANSACTION_H
 
 #include <stdint.h>
+#include <stdio.h>
 
-#include "../util/linked_list.h"
+#include "http_common.h"
+
+struct rrr_http_part;
 
 struct rrr_http_transaction {
-	RRR_LL_NODE(struct rrr_http_transaction);
-
 	int usercount;
 	uint64_t id;
 
 	enum rrr_http_method method;
 	char *uri_str;
 
-	ssize_t parse_complete_pos;
-
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
-};
-
-struct rrr_http_transaction_collection {
-	RRR_LL_HEAD(struct rrr_http_transaction);
 };
 
 int rrr_http_transaction_new (
@@ -52,6 +47,9 @@ int rrr_http_transaction_new (
 );
 void rrr_http_transaction_decref_if_not_null (
 		struct rrr_http_transaction *transaction
+);
+void rrr_http_transaction_decref_if_not_null_void (
+		void *transaction
 );
 void rrr_http_transaction_incref (
 		struct rrr_http_transaction *transaction
