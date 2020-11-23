@@ -719,7 +719,7 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (data->do_get_raw_response_from_senders && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
+	if (data->do_get_raw_response_from_senders) {
 		if ((ret = httpserver_receive_get_raw_response (
 				handle,
 				thread,
@@ -867,8 +867,6 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(unique_id);
 
 	int ret = 0;

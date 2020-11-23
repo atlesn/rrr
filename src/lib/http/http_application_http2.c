@@ -59,9 +59,13 @@ static int __rrr_http_application_http2_request_send (
 static int __rrr_http_application_http2_response_send (
 		RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS
 ) {
+
 }
 
 struct rrr_http_application_http2_callback_data {
+	struct rrr_net_transport_handle *handle;
+	uint64_t unique_id;
+	int is_client;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -69,11 +73,43 @@ struct rrr_http_application_http2_callback_data {
 static int __rrr_http_application_http2_callback (
 		RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS
 ) {
+	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
+
 	int ret = 0;
 
 	struct rrr_http_transaction *transaction = stream_application_data;
 
-	return ret;
+	if (callback_data->is_client) {
+		if (RRR_LL_COUNT(&transaction->response_part->headers) != 0) {
+			RRR_BUG("BUG: Header field list in response part not empty in __rrr_http_application_http2_callback\n");
+		}
+
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
+
+		const struct rrr_http_header_field *status = rrr_http_part_header_field_get(transaction->response_part, ":status");
+		if (status == NULL) {
+			RRR_MSG_0("Field :status missing in HTTP2 response header\n");
+			return RRR_HTTP2_SOFT_ERROR;
+		}
+
+		transaction->response_part->response_code = status->value_unsigned;
+		transaction->response_part->data_length = data_size;
+		transaction->response_part->parse_complete = 1;
+		transaction->response_part->header_complete = 1;
+		transaction->response_part->parsed_protocol_version = 1;
+	}
+	else {
+		RRR_BUG("BUG: Server mode not implemented in __rrr_http_application_http2_callback\n");
+	}
+
+	return callback_data->callback (
+			callback_data->handle,
+			transaction,
+			data,
+			0,
+			callback_data->unique_id,
+			callback_data->callback_arg
+	);
 }
 
 static int __rrr_http_application_http2_tick (
@@ -83,7 +119,10 @@ static int __rrr_http_application_http2_tick (
 
 	int ret = 0;
 
-	struct rrr_http_application_http2_callback_data callback_data ={
+	struct rrr_http_application_http2_callback_data callback_data = {
+			handle,
+			unique_id,
+			is_client,
 			callback,
 			callback_arg
 	};
@@ -155,6 +194,10 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	int ret = 0;
 
 	char *orig_http2_settings_tmp = NULL;
+
+	if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
+		goto out;
+	}
 
 	const struct rrr_http_header_field *orig_http2_settings = rrr_http_part_header_field_get_raw(transaction->request_part, "http2-settings");
 	if (orig_http2_settings == NULL) {

@@ -120,11 +120,8 @@ static int influxdb_receive_http_response (
 
 	(void)(handle);
 	(void)(data_ptr);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
-	(void)(upgrade_mode);
 
 	int ret = 0;
 
@@ -197,7 +194,7 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_transaction_allocate(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, handle)) != 0) {
+	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING)) != 0) {
 		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}

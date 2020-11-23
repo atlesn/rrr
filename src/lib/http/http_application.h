@@ -31,8 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_net_transport_handle *handle,				\
 	struct rrr_http_transaction *transaction,				\
 	const char *data_ptr,									\
-	const struct sockaddr *sockaddr,						\
-	socklen_t socklen,										\
 	ssize_t overshoot_bytes,								\
 	rrr_http_unique_id unique_id
 
@@ -49,10 +47,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS		\
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
-	enum rrr_http_upgrade_mode upgrade_mode,			\
 	void *arg
 
-#define RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS			\
+#define RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS	\
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
 struct rrr_http_application;

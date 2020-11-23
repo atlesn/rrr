@@ -66,7 +66,6 @@ struct rrr_http2_session;
 struct rrr_http_application;
 
 struct rrr_http_session {
-	uint64_t transaction_id_counter;
 	struct rrr_http_application *application;
 
 	enum rrr_http_upgrade_mode upgrade_mode;
@@ -90,11 +89,6 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_net_transport_handle *handle,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		const char *user_agent
-);
-int rrr_http_session_transport_ctx_transaction_allocate (
-		struct rrr_http_transaction **target,
-		enum rrr_http_method method,
-		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,

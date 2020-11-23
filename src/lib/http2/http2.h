@@ -30,14 +30,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_HARD_ERROR	RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE			RRR_READ_EOF
 
-#define RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS	\
-	struct rrr_http2_session *session,			\
-	int32_t stream_id,							\
-	void *data,									\
-	size_t data_size,							\
-	void *stream_application_data,				\
+#define RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS			\
+	struct rrr_http2_session *session,					\
+	struct rrr_http_header_field_collection *headers,	\
+	int32_t stream_id,									\
+	void *data,											\
+	size_t data_size,									\
+	void *stream_application_data,						\
 	void *callback_arg
 
+struct rrr_http_header_field_collection;
 struct rrr_net_transport_handle;
 struct rrr_http2_session;
 
@@ -67,8 +69,8 @@ int rrr_http2_session_client_upgrade_postprocess (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*get_response_callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
-		void *get_response_callback_arg
+		int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
+		void *callback_arg
 );
 void rrr_http2_transport_ctx_terminate (
 		struct rrr_http2_session *session,

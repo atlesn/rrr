@@ -274,6 +274,7 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 }
 
 static const struct rrr_http_header_field_definition definitions[] = {
+		{":status",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_unsigned_value},
 		{"accept",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"accept-language",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"accept-encoding",		RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},

@@ -227,23 +227,22 @@ static int __rrr_http2_on_data_chunk_recv_callback (
 		void *user_data
 ) {
 	struct rrr_http2_session *session = user_data;
-	struct Request *req;
 	(void)(flags);
 
-	RRR_DBG_7 ("http2 recv chunk stream %" PRIi32 "\n", stream_id);
+	RRR_DBG_7 ("http2 recv chunk stream %" PRIi32 " size %llu\n", stream_id, (unsigned long long) len);
 
-	if (__rrr_http2_stream_collection_data_push(&session->streams, stream_id,  (const char *) data, len) != 0) {
+	if (__rrr_http2_stream_collection_data_push(&session->streams, stream_id, (const char *) data, len) != 0) {
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
-
+/*
+	struct Request *req;
 	if ((req = nghttp2_session_get_stream_user_data(nghttp2_session, stream_id))) {
 		RRR_DBG_7("[INFO] C <---------------------------- S (DATA chunk)\n%lu bytes\n",
 				(unsigned long int) len);
 		fwrite(data, 1, len, stdout);
 		RRR_DBG_7("\n");
 	}
-
-//	ret = session->callback_data.get_response_callback();
+*/
 	return 0;
 }
 
@@ -263,6 +262,7 @@ static int __rrr_http2_on_stream_close_callback (
 			if (session->callback_data.callback != NULL) {
 				if (session->callback_data.callback (
 						session,
+						&stream->headers,
 						stream_id,
 						stream->data,
 						stream->data_wpos,
@@ -477,7 +477,7 @@ int rrr_http2_transport_ctx_tick (
 		int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
-	int ret = RRR_HTTP2_OK;
+	int ret = RRR_HTTP2_DONE;
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function

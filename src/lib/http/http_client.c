@@ -138,8 +138,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
 	(void)(handle);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
 
@@ -172,14 +170,6 @@ static int __rrr_http_client_receive_http_part_callback (
 		}
 
 		goto out;
-	}
-	else if (response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-		if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET && upgrade_mode != RRR_HTTP_UPGRADE_MODE_HTTP2) {
-			RRR_MSG_0("Unexpected response 101 '%s' from server\n",
-					response_part->response_str);
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
 	}
 	else if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
@@ -256,8 +246,6 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(handle);
 	(void)(transaction);
 	(void)(data_ptr);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
 	(void)(callback_data);
@@ -317,10 +305,9 @@ static int __rrr_http_client_request_send_callback (
 	else {
 		const char *endpoint_to_use = NULL;
 
-		if ((ret = rrr_http_session_transport_ctx_transaction_allocate (
+		if ((ret = rrr_http_transaction_new (
 				&transaction,
-				callback_data->data->method,
-				handle
+				callback_data->data->method
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_send_request_callback\n");
 			goto out;

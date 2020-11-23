@@ -174,15 +174,6 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 	return ret;
 }
 
-int rrr_http_session_transport_ctx_transaction_allocate (
-		struct rrr_http_transaction **target,
-		enum rrr_http_method method,
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-	return rrr_http_transaction_new(target, method, ++(session->transaction_id_counter));
-}
-
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host,

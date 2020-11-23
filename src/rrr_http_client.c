@@ -532,7 +532,17 @@ int main (int argc, const char **argv, const char **env) {
 				NULL
 		);
 
-		if (data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && ret == 0) {
+		if (ret == RRR_READ_EOF) {
+			ret = EXIT_SUCCESS;
+			goto out;
+		}
+
+		// HTTP2 and WebSocket return EOF when complete, OK when not complete
+		if (	(	data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ||
+					data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 /* Add or application == HTTP2 */
+				)
+				&& ret == RRR_HTTP_OK
+		) {
 			ret = RRR_READ_INCOMPLETE;
 		}
 
@@ -546,7 +556,7 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 		prev_bytes_total = bytes_total;
-	} while (ret != 0);
+	} while (ret != 0 && data.final_callback_count == 0);
 
 	if (got_redirect) {
 		goto retry;

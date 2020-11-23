@@ -883,8 +883,6 @@ static int __rrr_application_http1_response_receive_callback (
 					receive_data->handle,
 					transaction,
 					read_session->rx_buf_ptr,
-					(const struct sockaddr *) &read_session->src_addr,
-					read_session->src_addr_len,
 					read_session->rx_overshoot_size,
 					0,
 					receive_data->websocket_callback_arg
@@ -938,18 +936,17 @@ static int __rrr_application_http1_response_receive_callback (
 		}
 	}
 
-	if ((ret = receive_data->callback (
-			receive_data->handle,
-			transaction,
-			read_session->rx_buf_ptr,
-			(const struct sockaddr *) &read_session->src_addr,
-			read_session->src_addr_len,
-			read_session->rx_overshoot_size,
-			0,
-			upgrade_mode,
-			receive_data->callback_arg
-	)) != 0) {
-		goto out;
+	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
+		if ((ret = receive_data->callback (
+				receive_data->handle,
+				transaction,
+				read_session->rx_buf_ptr,
+				read_session->rx_overshoot_size,
+				0,
+				receive_data->callback_arg
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	receive_data->http1->upgrade_active = upgrade_mode;
@@ -1029,8 +1026,6 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 			receive_data->handle,
 			transaction,
 			data_to_use,
-			(const struct sockaddr *) &read_session->src_addr,
-			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
 			receive_data->websocket_callback_arg
@@ -1250,11 +1245,8 @@ static int __rrr_application_http1_request_receive_callback (
 			receive_data->handle,
 			transaction,
 			data_to_use,
-			(const struct sockaddr *) &read_session->src_addr,
-			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
-			upgrade_mode,
 			receive_data->callback_arg
 	)) != RRR_HTTP_OK) {
 		goto out;
@@ -1324,7 +1316,7 @@ static int __rrr_application_http1_receive_get_target_size (
 
 			// HTTP1 only supports one active transaction. Make a new and delete any old one. Method
 			// does not matter.
-			if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_GET, 1)) != 0) {
+			if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_GET)) != 0) {
 				RRR_MSG_0("Could not create transaction for request in __rrr_application_http1_receive_get_target_size\n");
 				goto out;
 			}

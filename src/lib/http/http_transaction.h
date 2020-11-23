@@ -31,7 +31,6 @@ struct rrr_http_part;
 
 struct rrr_http_transaction {
 	int usercount;
-	uint64_t id;
 
 	enum rrr_http_method method;
 	char *uri_str;
@@ -42,8 +41,10 @@ struct rrr_http_transaction {
 
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
-		enum rrr_http_method method,
-		uint64_t id
+		enum rrr_http_method method
+);
+int rrr_http_transaction_response_reset (
+		struct rrr_http_transaction *transaction
 );
 void rrr_http_transaction_decref_if_not_null (
 		struct rrr_http_transaction *transaction

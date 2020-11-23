@@ -30,8 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
-		enum rrr_http_method method,
-		uint64_t id
+		enum rrr_http_method method
 ) {
 	int ret = 0;
 
@@ -61,7 +60,6 @@ int rrr_http_transaction_new (
 		goto out_free_response;
 	}
 
-	result->id = id;
 	result->method = method;
 	result->usercount = 1;
 
@@ -78,6 +76,12 @@ int rrr_http_transaction_new (
 		free(result);
 	out:
 		return ret;
+}
+
+int rrr_http_transaction_response_reset (
+		struct rrr_http_transaction *transaction
+) {
+	return rrr_http_part_prepare(&transaction->response_part);
 }
 
 void rrr_http_transaction_decref_if_not_null (

@@ -170,12 +170,6 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	(void)(data_ptr);
 
-	// These are always 0, we read using the recv() function. recvfrom() would
-	// not return anything as well. The remote address is instead cached right
-	// after we accept the connection.
-	(void)(sockaddr);
-	(void)(socklen);
-
 	int ret = 0;
 
 	if (RRR_DEBUGLEVEL_2) {
@@ -197,10 +191,6 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		}
 	}
 
-	if (overshoot_bytes == 0 && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
-		worker_data->request_complete = 1;
-	}
-
 	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, transaction->response_part)) != RRR_HTTP_OK) {
 		goto out;
 	}
@@ -208,15 +198,13 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	if (worker_data->config_data.callbacks.final_callback != NULL) {
 		ret = worker_data->config_data.callbacks.final_callback (
 				worker_data->thread,
+				(const struct sockaddr *) &worker_data->config_data.addr,
+				worker_data->config_data.addr_len,
 				handle,
 				transaction,
 				data_ptr,
-				// Address was cached when accepting
-				(const struct sockaddr *) &worker_data->config_data.addr,
-				worker_data->config_data.addr_len,
 				overshoot_bytes,
 				unique_id,
-				upgrade_mode,
 				worker_data->config_data.callbacks.final_callback_arg
 		);
 	}
@@ -264,9 +252,6 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
-	(void)(sockaddr);
-	(void)(socklen);
-
 	int ret = 0;
 
 	if (worker_data->config_data.callbacks.websocket_handshake_callback == NULL) {
@@ -279,9 +264,6 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			handle,
 			transaction,
 			data_ptr,
-			// Address was cached when accepting
-			(const struct sockaddr *) &worker_data->config_data.addr,
-			worker_data->config_data.addr_len,
 			overshoot_bytes,
 			unique_id,
 			worker_data->config_data.callbacks.final_callback_arg
