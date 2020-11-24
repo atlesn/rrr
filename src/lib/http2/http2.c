@@ -382,9 +382,11 @@ int rrr_http2_session_client_new_or_reset (
 		goto out_free;
 	}
 
-	result->initial_receive_data = *initial_receive_data;
-	result->initial_receive_data_len = initial_receive_data_len;
-	*initial_receive_data = NULL;
+	if (initial_receive_data != NULL && *initial_receive_data != NULL) {
+		result->initial_receive_data = *initial_receive_data;
+		result->initial_receive_data_len = initial_receive_data_len;
+		*initial_receive_data = NULL;
+	}
 
 	*target = result;
 

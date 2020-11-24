@@ -54,6 +54,7 @@ static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
 	printf("HTTP2 request send\n");
+	return 0;
 }
 
 static int __rrr_http_application_http2_response_send (
@@ -164,8 +165,10 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 	__rrr_http_application_http2_polite_close
 };
 
-int rrr_http_application_http2_new (
-		struct rrr_http_application **target
+static int __rrr_http_application_http2_new (
+		struct rrr_http_application_http2 **target,
+		void **initial_receive_data,
+		size_t initial_receive_data_len
 ) {
 	struct rrr_http_application_http2 *result = NULL;
 
@@ -179,12 +182,29 @@ int rrr_http_application_http2_new (
 
 	memset(result, '\0', sizeof(*result));
 
+	if ((ret = rrr_http2_session_client_new_or_reset (
+			&result->http2_session,
+			initial_receive_data,
+			initial_receive_data_len
+	)) != 0) {
+		goto out_destroy;
+	}
+
 	result->constants = &rrr_http_application_http2_constants;
 
-	*target = (struct rrr_http_application *) result;
+	*target = result;
 
+	goto out;
+	out_destroy:
+		__rrr_http_application_http2_destroy((struct rrr_http_application *) result);
 	out:
-	return ret;
+		return ret;
+}
+
+int rrr_http_application_http2_new (
+		struct rrr_http_application **target
+) {
+	return __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0);
 }
 
 static int __rrr_http_application_http2_upgrade_postprocess (
@@ -233,16 +253,8 @@ int rrr_http_application_http2_new_from_upgrade (
 
 	*target = NULL;
 
-	if ((ret = rrr_http_application_http2_new((struct rrr_http_application **) &result)) != 0) {
+	if ((ret = __rrr_http_application_http2_new (&result, initial_receive_data, initial_receive_data_len)) != 0) {
 		goto out;
-	}
-
-	if ((ret = rrr_http2_session_client_new_or_reset (
-			&result->http2_session,
-			initial_receive_data,
-			initial_receive_data_len
-	)) != 0) {
-		goto out_destroy;
 	}
 
 	if ((ret = __rrr_http_application_http2_upgrade_postprocess (
