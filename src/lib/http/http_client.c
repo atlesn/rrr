@@ -282,13 +282,13 @@ static int __rrr_http_client_request_send_callback (
 			callback_data->data->upgrade_mode,
 			callback_data->data->user_agent
 	)) != 0) {
-		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_send_request_callback\n");
+		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
 		goto out;
 	}
 
 	if (callback_data->raw_request_data != NULL) {
 		if (callback_data->raw_request_data_size == 0) {
-			RRR_DBG_1("Raw request data was set in __rrr_http_client_send_request_callback_final but size was 0, nothing to send.\n");
+			RRR_DBG_1("Raw request data was set in __rrr_http_client_request_send_callback_final but size was 0, nothing to send.\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
@@ -298,7 +298,7 @@ static int __rrr_http_client_request_send_callback (
 				callback_data->raw_request_data,
 				callback_data->raw_request_data_size
 		)) != 0) {
-			RRR_MSG_0("Could not send raw request in __rrr_http_client_send_request_callback\n");
+			RRR_MSG_0("Could not send raw request in __rrr_http_client_request_send_callback\n");
 			goto out;
 		}
 	}
@@ -309,7 +309,7 @@ static int __rrr_http_client_request_send_callback (
 				&transaction,
 				callback_data->data->method
 		)) != 0) {
-			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_send_request_callback\n");
+			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_request_send_callback\n");
 			goto out;
 		}
 
@@ -321,11 +321,11 @@ static int __rrr_http_client_request_send_callback (
 					callback_data->query_prepare_callback_arg)
 			) != RRR_HTTP_OK) {
 				if (ret == RRR_HTTP_SOFT_ERROR) {
-					RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_send_request_callback_final\n");
+					RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_request_send_callback_final\n");
 					ret = 0;
 					goto out;
 				}
-				RRR_MSG_0("Error %i from query prepare callback in __rrr_http_client_send_request_callback\n", ret);
+				RRR_MSG_0("Error %i from query prepare callback in __rrr_http_client_request_send_callback\n", ret);
 				goto out;
 			}
 		}
@@ -342,7 +342,7 @@ static int __rrr_http_client_request_send_callback (
 			else {
 				RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 				if ((endpoint_to_free = strdup("/")) == NULL) {
-					RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request_callback\n");
+					RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_send_callback\n");
 					ret = RRR_HTTP_HARD_ERROR;
 					goto out;
 				}
@@ -361,14 +361,14 @@ static int __rrr_http_client_request_send_callback (
 				goto out;
 			}
 			if ((ret = rrr_asprintf(&endpoint_and_query_to_free, "%s?%s", endpoint_to_use, query_to_free)) <= 0) {
-				RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request_callback return was %i\n", ret);
+				RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_request_send_callback return was %i\n", ret);
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
 		}
 		else {
 			if ((endpoint_and_query_to_free = strdup(endpoint_to_use)) == NULL) {
-				RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_send_request_callback\n");
+				RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_request_send_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
@@ -380,7 +380,7 @@ static int __rrr_http_client_request_send_callback (
 				transaction,
 				endpoint_and_query_to_free
 		)) != 0) {
-			RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_send_request_callback\n");
+			RRR_MSG_0("Could not set HTTP endpoint in __rrr_http_client_request_send_callback\n");
 			goto out;
 		}
 
@@ -389,7 +389,7 @@ static int __rrr_http_client_request_send_callback (
 				callback_data->request_header_host,
 				transaction
 		)) != 0) {
-			RRR_MSG_0("Could not send request in __rrr_http_client_send_request_callback\n");
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback\n");
 			goto out;
 		}
 	}
@@ -440,10 +440,6 @@ static int __rrr_http_client_request_send (
 	struct rrr_http_client_request_callback_data callback_data = {0};
 	struct rrr_http_application *application = NULL;
 
-	if ((ret = rrr_http_application_new(&application, application_type)) != 0) {
-		goto out;
-	}
-
 	data->response_code = 0;
 	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
 
@@ -455,6 +451,7 @@ static int __rrr_http_client_request_send (
 	if (transport_keepalive_handle != NULL) {
 		transport_handle = *transport_keepalive_handle;
 	}
+	transport = *transport_keepalive;
 
 	data->method = method;
 	data->upgrade_mode = upgrade_mode;
@@ -531,6 +528,15 @@ static int __rrr_http_client_request_send (
 			RRR_HTTP_METHOD_TO_STR(method),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
 	);
+
+	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
+	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		application_type = RRR_HTTP_APPLICATION_HTTP2;
+	}
+
+	if (transport == NULL || transport_handle == 0 || (ret = rrr_http_application_new(&application, application_type)) != 0) {
+		goto out;
+	}
 
 	if (transport == NULL) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {

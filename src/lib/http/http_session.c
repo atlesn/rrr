@@ -86,7 +86,7 @@ static void __rrr_http_session_application_set (
 	}
 
 	if (session->application == NULL) {
-		RRR_BUG("BUG: Application pointer was NULL at end of __rrr_http_session_set_application, maybe caller forgot to create it for us\n");
+		RRR_BUG("BUG: Application pointer was NULL at end of __rrr_http_session_application_set, maybe caller forgot to create it for us\n");
 	}
 }
 

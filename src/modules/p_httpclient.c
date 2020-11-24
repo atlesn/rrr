@@ -769,7 +769,7 @@ static int httpclient_send_request_from_message_callback (
 			&data->http_client_data,
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,
-			RRR_HTTP_UPGRADE_MODE_NONE,
+			RRR_HTTP_UPGRADE_MODE_HTTP2,
 			&data->keepalive_transport,
 			&data->keepalive_handle,
 			&data->net_transport_config,
@@ -796,6 +796,8 @@ static int httpclient_send_request_intermediate_retry_handling (
 
 	int is_redirect = 0;
 	retry:
+
+	// NOTE : Redirect to different transport e.g. HTTP->HTTPS does not work
 
 	if (redirect_retry_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX || redirect_retry_max < 0) {
 		RRR_BUG("Redirect counter error in httpclient_send_request_locked, value is now %lli\n", redirect_retry_max);
