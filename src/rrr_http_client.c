@@ -532,6 +532,10 @@ int main (int argc, const char **argv, const char **env) {
 				NULL
 		);
 
+		if (got_redirect) {
+			goto retry;
+		}
+
 		if (ret == RRR_READ_EOF) {
 			ret = EXIT_SUCCESS;
 			goto out;
@@ -557,10 +561,6 @@ int main (int argc, const char **argv, const char **env) {
 
 		prev_bytes_total = bytes_total;
 	} while (ret != 0 && data.final_callback_count == 0);
-
-	if (got_redirect) {
-		goto retry;
-	}
 
 	out:
 		rrr_config_set_debuglevel_on_exit();

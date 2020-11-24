@@ -128,6 +128,7 @@ int rrr_net_transport_tls_common_new (
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *tls
 ) {
+	RRR_FREE_IF_NOT_NULL(tls->alpn_protos);
 	RRR_FREE_IF_NOT_NULL(tls->ca_path);
 	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);

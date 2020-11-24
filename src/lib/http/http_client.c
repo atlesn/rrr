@@ -435,7 +435,6 @@ static int __rrr_http_client_request_send (
 ) {
 	int ret = 0;
 
-	struct rrr_net_transport *transport = NULL;
 	char *server_to_free = NULL;
 	struct rrr_http_client_request_callback_data callback_data = {0};
 	struct rrr_http_application *application = NULL;
@@ -446,12 +445,6 @@ static int __rrr_http_client_request_send (
 	if (transport_keepalive == NULL) {
 		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_send_request\n");
 	}
-
-	int transport_handle = 0;
-	if (transport_keepalive_handle != NULL) {
-		transport_handle = *transport_keepalive_handle;
-	}
-	transport = *transport_keepalive;
 
 	data->method = method;
 	data->upgrade_mode = upgrade_mode;
@@ -534,11 +527,13 @@ static int __rrr_http_client_request_send (
 		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
-	if (transport == NULL || transport_handle == 0 || (ret = rrr_http_application_new(&application, application_type)) != 0) {
-		goto out;
+	if (*transport_keepalive == NULL || *transport_keepalive_handle == 0) {
+		if ((ret = rrr_http_application_new(&application, application_type)) != 0) {
+			goto out;
+		}
 	}
 
-	if (transport == NULL) {
+	if (*transport_keepalive == NULL) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
 			struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
 
@@ -555,7 +550,7 @@ static int __rrr_http_client_request_send (
 			rrr_http_application_alpn_protos_get(&alpn_protos, &alpn_protos_length, application);
 
 			ret = rrr_net_transport_new (
-					&transport,
+					transport_keepalive,
 					&net_transport_config_tmp,
 					tls_flags,
 					alpn_protos,
@@ -578,7 +573,7 @@ static int __rrr_http_client_request_send (
 			};
 
 			ret = rrr_net_transport_new (
-					&transport,
+					transport_keepalive,
 					&net_transport_config_tmp,
 					0,
 					NULL,
@@ -596,13 +591,13 @@ static int __rrr_http_client_request_send (
 		goto out;
 	}
 
-	if (transport_handle == 0) {
+	if (*transport_keepalive_handle == 0) {
 		if ((ret = rrr_net_transport_connect (
-				transport,
+				*transport_keepalive,
 				port_to_use,
 				server_to_use,
 				__rrr_http_client_request_send_connect_callback,
-				&transport_handle
+				transport_keepalive_handle
 		))) {
 			RRR_MSG_0("Keepalive connection failed to server %s port %u transport %s in http client return was %i\n",
 					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
@@ -611,10 +606,10 @@ static int __rrr_http_client_request_send (
 		}
 	}
 
-	callback_data.transport_handle = transport_handle;
+	callback_data.transport_handle = *transport_keepalive_handle;
 	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
-			transport,
-			transport_handle,
+			*transport_keepalive,
+			*transport_keepalive_handle,
 			__rrr_http_client_request_send_callback,
 			&callback_data
 	)) != 0) {
@@ -625,18 +620,6 @@ static int __rrr_http_client_request_send (
 	RRR_FREE_IF_NOT_NULL(server_to_free);
 	if (application != NULL) {
 		rrr_http_application_destroy_if_not_null(&application);
-	}
-	if (transport_keepalive != NULL) {
-		*transport_keepalive = transport;
-	}
-	if (transport_keepalive_handle != NULL) {
-		*transport_keepalive_handle = transport_handle;
-	}
-	else if (transport != NULL) {
-		rrr_net_transport_destroy(transport);
-		if (transport_keepalive != NULL) {
-			*transport_keepalive = NULL;
-		}
 	}
 	return ret;
 }
@@ -788,7 +771,7 @@ int rrr_http_client_tick (
 		void *raw_callback_arg
 ) {
 	if (transport_keepalive == NULL) {
-		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_websocket_tick\n");
+		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_tick\n");
 	}
 
 	int ret = 0;

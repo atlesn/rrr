@@ -53,7 +53,7 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
-
+	printf("HTTP2 request send\n");
 }
 
 static int __rrr_http_application_http2_response_send (
