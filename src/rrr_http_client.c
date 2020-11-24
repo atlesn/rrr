@@ -30,10 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/log.h"
+#include "lib/common.h"
 #include "lib/rrr_config.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/log.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
 #include "lib/messages/msg_msg.h"
@@ -439,6 +440,8 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_final;
 	}
 	rrr_strerror_init();
+	rrr_signal_default_signal_actions_register();
+	rrr_signal_handler_set_active (RRR_SIGNALS_ACTIVE);
 
 	struct cmd_data cmd;
 	struct rrr_http_client_data data = {0};

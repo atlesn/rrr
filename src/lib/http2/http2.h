@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void *stream_application_data,						\
 	void *callback_arg
 
+enum rrr_http_method;
 struct rrr_http_header_field_collection;
 struct rrr_net_transport_handle;
 struct rrr_http2_session;
@@ -65,6 +66,16 @@ int rrr_http2_session_client_upgrade_postprocess (
 		struct rrr_http2_session *session,
 		const void *http1_upgrade_settings,
 		size_t http1_upgrade_settings_len
+);
+int rrr_http2_session_client_native_start (
+		struct rrr_http2_session *session
+);
+int rrr_http2_request_submit (
+		struct rrr_http2_session *session,
+		int is_https,
+		enum rrr_http_method method,
+		const char *host,
+		const char *endpoint
 );
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,

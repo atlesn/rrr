@@ -608,6 +608,10 @@ static int __rrr_net_transport_libressl_poll (
 	return rrr_socket_check_alive (handle->submodule_private_fd);
 }
 
+static int __rrr_net_transport_libressl_is_tls (void) {
+	return 1;
+}
+
 static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_destroy,
 	__rrr_net_transport_libressl_connect,
@@ -617,7 +621,8 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_read_message,
 	__rrr_net_transport_libressl_read,
 	__rrr_net_transport_libressl_send,
-	__rrr_net_transport_libressl_poll
+	__rrr_net_transport_libressl_poll,
+	__rrr_net_transport_libressl_is_tls
 };
 
 int rrr_net_transport_libressl_new (

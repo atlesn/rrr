@@ -197,6 +197,7 @@ struct rrr_net_transport_methods {
 	int (*poll)(
 			struct rrr_net_transport_handle *handle
 	);
+	int (*is_tls)(void);
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -291,6 +292,9 @@ void rrr_net_transport_ctx_get_socket_stats (
 		uint64_t *bytes_read_total,
 		uint64_t *bytes_written_total,
 		uint64_t *bytes_total,
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_is_tls (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_with_transport_ctx_do (

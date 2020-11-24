@@ -32,7 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../http/http_common.h"
 #include "../http/http_header_fields.h"
+
+#define RRR_HTTP2_PING_INTERVAL_S 1
 
 struct rrr_http2_stream {
 	RRR_LL_NODE(struct rrr_http2_stream);
@@ -66,6 +70,7 @@ struct rrr_http2_session {
 	struct rrr_http2_stream_collection streams;
 	// Must be updated on every tick
 	struct rrr_http2_callback_data callback_data;
+	uint64_t last_ping_time;
 };
 
 void __rrr_http2_stream_destroy (
@@ -162,6 +167,8 @@ static ssize_t __rrr_http2_send_callback (
 		length = SSIZE_MAX;
 	}
 
+	printf("send %u\n", length);
+
 	uint64_t bytes_written = 0;
 	int ret = 0;
 	if ((ret = rrr_net_transport_ctx_send_nonblock(&bytes_written, session->callback_data.handle, data, length)) != 0) {
@@ -192,6 +199,11 @@ static ssize_t __rrr_http2_recv_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+//	This does not handle situations where the server stops replying and we have nothing to send
+//	if (rrr_net_transport_ctx_check_alive(session->callback_data.handle) != RRR_NET_TRANSPORT_READ_OK) {
+//		return NGHTTP2_ERR_EOF;
+//	}
+
 	if (length > SSIZE_MAX) {
 		// Truncate to fit in function return value
 		length = SSIZE_MAX;
@@ -214,6 +226,8 @@ static ssize_t __rrr_http2_recv_callback (
 	if (bytes_read > SSIZE_MAX) {
 		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_recv_callback, this should not be possible\n");
 	}
+
+	printf("recv %u\n", bytes_read);
 
 	return (bytes_read > 0 ? bytes_read : NGHTTP2_ERR_WOULDBLOCK);
 }
@@ -336,6 +350,35 @@ static int __rrr_http2_on_header_callback (
 	return 0;
 }
 
+static int __rrr_http2_on_begin_headers_callback(
+		nghttp2_session *nghttp2_session,
+		const nghttp2_frame *frame,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	(void)(session);
+
+	printf("header begin: %i\n", frame->hd.type);
+
+	return 0;
+}
+
+static int __rrr_http2_error_callback(
+		nghttp2_session *session,
+		const char *msg,
+        size_t len,
+		void *user_data
+) {
+	(void)(session);
+	(void)(len);
+	(void)(user_data);
+
+	printf("nghttp2 error: %s\n", msg);
+
+	return 0;
+}
+
 int rrr_http2_session_client_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
@@ -362,6 +405,8 @@ int rrr_http2_session_client_new_or_reset (
 	nghttp2_session_callbacks_set_on_frame_recv_callback		(callbacks, __rrr_http2_on_frame_recv_callback);
 	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(callbacks, __rrr_http2_on_invalid_frame_recv_callback);
 	nghttp2_session_callbacks_set_on_header_callback			(callbacks, __rrr_http2_on_header_callback);
+	nghttp2_session_callbacks_set_on_begin_headers_callback		(callbacks, __rrr_http2_on_begin_headers_callback);
+	nghttp2_session_callbacks_set_error_callback 				(callbacks, __rrr_http2_error_callback);
 
 	if (result == NULL) {
 		if ((result = malloc(sizeof(*result))) == NULL) {
@@ -387,6 +432,8 @@ int rrr_http2_session_client_new_or_reset (
 		result->initial_receive_data_len = initial_receive_data_len;
 		*initial_receive_data = NULL;
 	}
+
+	result->last_ping_time = rrr_time_get_64();
 
 	*target = result;
 
@@ -473,6 +520,77 @@ int rrr_http2_session_client_upgrade_postprocess (
 	return ret;
 }
 
+int rrr_http2_session_client_native_start (
+		struct rrr_http2_session *session
+) {
+	int ret = 0;
+
+	nghttp2_settings_entry vector[] = {
+			{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}
+	};
+
+	/* client 24 bytes magic string will be sent by nghttp2 library */
+	if ((ret = nghttp2_submit_settings (
+			session->session,
+			NGHTTP2_FLAG_NONE,
+			vector,
+			sizeof(vector) / sizeof(*vector)
+	)) != 0) {
+		RRR_MSG_0("Failed to submit HTTP2 settings when starting native client: %s", nghttp2_strerror(ret));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+#define MAKE_NV(name, value)			\
+{										\
+    (uint8_t *) name,					\
+	(uint8_t *) value,					\
+	sizeof(name) - 1,					\
+	strlen(value),						\
+    NGHTTP2_NV_FLAG_NONE                \
+}
+
+int rrr_http2_request_submit (
+		struct rrr_http2_session *session,
+		int is_https,
+		enum rrr_http_method method,
+		const char *host,
+		const char *endpoint
+) {
+	int ret = 0;
+
+	const char *scheme = (is_https ? "https" : "http");
+
+	nghttp2_nv headers[] = {
+		MAKE_NV(":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(method)),
+		MAKE_NV(":scheme", scheme),
+		MAKE_NV(":authority", host),
+		MAKE_NV(":path", endpoint)
+	};
+
+	uint32_t stream_id = nghttp2_submit_request (
+			session->session,
+			NULL,
+			headers,
+			sizeof(headers) / sizeof(*headers),
+			NULL,
+			NULL
+	);
+
+	if (stream_id < 0) {
+		RRR_MSG_0 ("HTTP2 request submission failed: %s", nghttp2_strerror(stream_id));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
@@ -512,6 +630,19 @@ int rrr_http2_transport_ctx_tick (
 		RRR_FREE_IF_NOT_NULL(session->initial_receive_data);
 		session->initial_receive_data_len = 0;
 	}
+
+	// Send PINGs to get feedbacks should the socket break down
+	// while we have nothing else to send
+	if (rrr_time_get_64() - session->last_ping_time > RRR_HTTP2_PING_INTERVAL_S * 1000 * 1000) {
+		session->last_ping_time = rrr_time_get_64();
+		if ((ret = nghttp2_submit_ping(session->session, NGHTTP2_FLAG_NONE, NULL)) != 0) {
+			RRR_MSG_0("Error from nghttp2_submit_ping in rrr_http2_tick: %s\n", nghttp2_strerror(ret));
+			ret = RRR_HTTP2_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	printf ("WR: %i, WW %i\n", nghttp2_session_want_read(session->session), nghttp2_session_want_write(session->session));
 
 	if (nghttp2_session_want_read(session->session) == 0 && nghttp2_session_want_write(session->session) == 0) {
 		RRR_DBG_7("http2 done\n");

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_part.h"
 #include "http_header_fields.h"
+#include "../net_transport/net_transport.h"
 #include "../http2/http2.h"
 #include "../helpers/nullsafe_str.h"
 #include "../util/base64.h"
@@ -53,8 +54,16 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
+
 	printf("HTTP2 request send\n");
-	return 0;
+	return rrr_http2_request_submit (
+			http2->http2_session,
+			rrr_net_transport_ctx_is_tls(handle),
+			transaction->method,
+			host,
+			transaction->uri_str
+	);
 }
 
 static int __rrr_http_application_http2_response_send (
@@ -204,7 +213,21 @@ static int __rrr_http_application_http2_new (
 int rrr_http_application_http2_new (
 		struct rrr_http_application **target
 ) {
-	return __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0);
+	int ret = 0;
+
+	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_session_client_native_start(((struct rrr_http_application_http2 *) *target)->http2_session)) != 0) {
+		goto out_destroy;
+	}
+
+	goto out;
+	out_destroy:
+		__rrr_http_application_http2_destroy(*target);
+	out:
+		return ret;
 }
 
 static int __rrr_http_application_http2_upgrade_postprocess (

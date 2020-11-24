@@ -839,6 +839,10 @@ static int __rrr_net_transport_openssl_poll (
 	return rrr_socket_check_alive (fd);
 }
 
+static int __rrr_net_transport_openssl_is_tls (void) {
+	return 1;
+}
+
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_destroy,
 	__rrr_net_transport_openssl_connect,
@@ -848,7 +852,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_read_message,
 	__rrr_net_transport_openssl_read,
 	__rrr_net_transport_openssl_send,
-	__rrr_net_transport_openssl_poll
+	__rrr_net_transport_openssl_poll,
+	__rrr_net_transport_openssl_is_tls
 };
 
 int rrr_net_transport_openssl_new (

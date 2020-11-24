@@ -702,6 +702,12 @@ void rrr_net_transport_ctx_get_socket_stats (
 	}
 }
 
+int rrr_net_transport_ctx_is_tls (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->transport->methods->is_tls();
+}
+
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		int transport_handle,
