@@ -41,6 +41,7 @@ struct rrr_http_application_http2 {
 };
 
 static const char rrr_http_application_http2_alpn_protos[] = {
+	     2, 'h', '2',
 	     6, 'h', 't', 't', 'p', '/', '2',
 	     8, 'h', 't', 't', 'p', '/', '1', '.', '1'
 };
@@ -56,14 +57,34 @@ static int __rrr_http_application_http2_request_send (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
-	printf("HTTP2 request send\n");
-	return rrr_http2_request_submit (
+	int ret = 0;
+
+	int32_t stream_id = 0;
+
+	if  ((ret = rrr_http2_request_submit (
+			&stream_id,
 			http2->http2_session,
 			rrr_net_transport_ctx_is_tls(handle),
 			transaction->method,
 			host,
 			transaction->uri_str
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_session_stream_application_data_set (
+			http2->http2_session,
+			stream_id,
+			transaction,
+			rrr_http_transaction_decref_if_not_null_void
+	)) != 0) {
+		goto out;
+	}
+
+	rrr_http_transaction_incref(transaction);
+
+	out:
+	return ret;
 }
 
 static int __rrr_http_application_http2_response_send (

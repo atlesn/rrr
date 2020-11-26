@@ -553,6 +553,7 @@ int rrr_http2_session_client_native_start (
 }
 
 int rrr_http2_request_submit (
+		int32_t *stream_id,
 		struct rrr_http2_session *session,
 		int is_https,
 		enum rrr_http_method method,
@@ -561,7 +562,11 @@ int rrr_http2_request_submit (
 ) {
 	int ret = 0;
 
+	*stream_id = 0;
+
 	const char *scheme = (is_https ? "https" : "http");
+
+//	printf("%i %s %s %s\n", is_https, host, RRR_HTTP_METHOD_TO_STR_CONFORMING(method), endpoint);
 
 	nghttp2_nv headers[] = {
 		MAKE_NV(":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(method)),
@@ -570,7 +575,7 @@ int rrr_http2_request_submit (
 		MAKE_NV(":path", endpoint)
 	};
 
-	uint32_t stream_id = nghttp2_submit_request (
+	int32_t stream_id_tmp = nghttp2_submit_request (
 			session->session,
 			NULL,
 			headers,
@@ -579,11 +584,13 @@ int rrr_http2_request_submit (
 			NULL
 	);
 
-	if (stream_id < 0) {
-		RRR_MSG_0 ("HTTP2 request submission failed: %s", nghttp2_strerror(stream_id));
+	if (stream_id_tmp < 0) {
+		RRR_MSG_0 ("HTTP2 request submission failed: %s", nghttp2_strerror(stream_id_tmp));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
 	}
+
+	*stream_id = stream_id_tmp;
 
 	out:
 	return ret;

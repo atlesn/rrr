@@ -71,6 +71,7 @@ int rrr_http2_session_client_native_start (
 		struct rrr_http2_session *session
 );
 int rrr_http2_request_submit (
+		int32_t *stream_id,
 		struct rrr_http2_session *session,
 		int is_https,
 		enum rrr_http_method method,
