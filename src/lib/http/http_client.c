@@ -173,7 +173,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	}
 	else if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
-				response_part->response_code, response_part->response_str);
+				response_part->response_code, (response_part->response_str != NULL ? response_part->response_str : "-"));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}

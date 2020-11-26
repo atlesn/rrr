@@ -688,7 +688,6 @@ static int __rrr_http_header_field_parse (
 	int missing_space_after_comma = 0;
 	int more_fields = 1;
 	while (more_fields) {
-		printf("Loop\n");
 		CALL_CALLBACK(create_field);
 
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);

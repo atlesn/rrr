@@ -167,7 +167,7 @@ static ssize_t __rrr_http2_send_callback (
 		length = SSIZE_MAX;
 	}
 
-	printf("send %u\n", length);
+//	printf("send %u\n", length);
 
 	uint64_t bytes_written = 0;
 	int ret = 0;
@@ -227,7 +227,7 @@ static ssize_t __rrr_http2_recv_callback (
 		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_recv_callback, this should not be possible\n");
 	}
 
-	printf("recv %u\n", bytes_read);
+//	printf("recv %u\n", bytes_read);
 
 	return (bytes_read > 0 ? bytes_read : NGHTTP2_ERR_WOULDBLOCK);
 }
@@ -358,8 +358,6 @@ static int __rrr_http2_on_begin_headers_callback(
 	struct rrr_http2_session *session = user_data;
 
 	(void)(session);
-
-	printf("header begin: %i\n", frame->hd.type);
 
 	return 0;
 }
@@ -642,7 +640,7 @@ int rrr_http2_transport_ctx_tick (
 		}
 	}
 
-	printf ("WR: %i, WW %i\n", nghttp2_session_want_read(session->session), nghttp2_session_want_write(session->session));
+//	printf ("WR: %i, WW %i\n", nghttp2_session_want_read(session->session), nghttp2_session_want_write(session->session));
 
 	if (nghttp2_session_want_read(session->session) == 0 && nghttp2_session_want_write(session->session) == 0) {
 		RRR_DBG_7("http2 done\n");
