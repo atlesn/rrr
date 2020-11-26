@@ -688,6 +688,7 @@ static int __rrr_http_header_field_parse (
 	int missing_space_after_comma = 0;
 	int more_fields = 1;
 	while (more_fields) {
+		printf("Loop\n");
 		CALL_CALLBACK(create_field);
 
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
@@ -752,7 +753,6 @@ static int __rrr_http_header_field_parse_value_create_field_callback (CALLBACK_A
 
 	(void)(start);
 	(void)(end);
-	(void)(fields_tmp);
 	(void)(parsed_bytes);
 	(void)(missing_space_after_comma);
 
@@ -763,6 +763,19 @@ static int __rrr_http_header_field_parse_value_create_field_callback (CALLBACK_A
 	}
 	else {
 		// Duplicate field (after comma) or name from caller
+		const struct rrr_nullsafe_str *last_field_name = RRR_LL_LAST(fields_tmp)->name;
+
+		if (rrr_http_header_field_new(field, last_field_name->str, last_field_name->len) != 0) {
+			return RRR_HTTP_PARSE_HARD_ERR;
+		}
+
+		if (*start == ',') {
+			start++;
+		}
+
+		if (start >= end) {
+			return RRR_HTTP_PARSE_INCOMPLETE;
+		}
 	}
 
 	return RRR_HTTP_PARSE_OK;
