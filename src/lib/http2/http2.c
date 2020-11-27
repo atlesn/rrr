@@ -162,6 +162,9 @@ static ssize_t __rrr_http2_send_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+	(void)(nghttp2_session);
+	(void)(flags);
+
 	if (length > SSIZE_MAX) {
 		// Truncate
 		length = SSIZE_MAX;
@@ -198,6 +201,9 @@ static ssize_t __rrr_http2_recv_callback (
 		void *user_data
 ) {
 	struct rrr_http2_session *session = user_data;
+
+	(void)(nghttp2_session);
+	(void)(flags);
 
 //	This does not handle situations where the server stops replying and we have nothing to send
 //	if (rrr_net_transport_ctx_check_alive(session->callback_data.handle) != RRR_NET_TRANSPORT_READ_OK) {
@@ -241,6 +247,8 @@ static int __rrr_http2_on_data_chunk_recv_callback (
 		void *user_data
 ) {
 	struct rrr_http2_session *session = user_data;
+
+	(void)(nghttp2_session);
 	(void)(flags);
 
 	RRR_DBG_7 ("http2 recv chunk stream %" PRIi32 " size %llu\n", stream_id, (unsigned long long) len);
@@ -267,6 +275,8 @@ static int __rrr_http2_on_stream_close_callback (
 		void *user_data
 ) {
 	struct rrr_http2_session *session = user_data;
+
+	(void)(nghttp2_session);
 
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
@@ -300,19 +310,25 @@ static int __rrr_http2_on_frame_recv_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
-	RRR_DBG_7 ("http2 read frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
-
 	(void)(session);
+	(void)(nghttp2_session);
+
+	RRR_DBG_7 ("http2 read frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
 
 	return 0;
 }
 
 static int __rrr_http2_on_invalid_frame_recv_callback (
-		nghttp2_session *session,
+		nghttp2_session *nghttp2_session,
 		const nghttp2_frame *frame,
 		int lib_error_code,
 		void *user_data
 ) {
+	struct rrr_http2_session *session = user_data;
+
+	(void)(session);
+	(void)(nghttp2_session);
+
 	RRR_DBG_7 ("http2 read invalid frame type %" PRIu8 " stream %" PRIi32 " length %lu lib error %s\n",
 			frame->hd.type, frame->hd.stream_id, frame->hd.length, nghttp2_strerror(lib_error_code));
 
@@ -331,7 +347,9 @@ static int __rrr_http2_on_header_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+	(void)(nghttp2_session);
 	(void)(namelen);
+	(void)(flags);
 
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, frame->hd.stream_id);
 	if (stream == NULL) {
@@ -358,6 +376,8 @@ static int __rrr_http2_on_begin_headers_callback(
 	struct rrr_http2_session *session = user_data;
 
 	(void)(session);
+	(void)(frame);
+	(void)(user_data);
 
 	return 0;
 }
@@ -371,8 +391,10 @@ static int __rrr_http2_error_callback(
 	(void)(session);
 	(void)(len);
 	(void)(user_data);
+	(void)(msg);
 
-	printf("nghttp2 error: %s\n", msg);
+	// Noisy debugging
+	// printf("nghttp2 error: %s\n", msg);
 
 	return 0;
 }
@@ -495,10 +517,11 @@ void *rrr_http2_session_stream_application_data_get (
 	return stream->application_data;
 }
 
-int rrr_http2_session_client_upgrade_postprocess (
+int rrr_http2_session_upgrade_postprocess (
 		struct rrr_http2_session *session,
 		const void *upgrade_settings,
-		size_t upgrade_settings_len
+		size_t upgrade_settings_len,
+		enum rrr_http_method method
 ) {
 	int ret = 0;
 
@@ -506,10 +529,10 @@ int rrr_http2_session_client_upgrade_postprocess (
 			session->session,
 			upgrade_settings,
 			upgrade_settings_len,
-			0,   // Not head request
+			method == RRR_HTTP_METHOD_HEAD ? 1 : 0,
 			NULL // No stream user data
 	)) != 0) {
-		RRR_MSG_0("Could not perform http2 upgrade postprocessing inrrr_http2_client_upgrade_postprocess ");
+		RRR_MSG_0("Could not perform http2 upgrade postprocessing in rrr_http2_session_upgrade_postprocess\n");
 		ret = RRR_HTTP2_HARD_ERROR;
 		goto out;
 	}
@@ -685,7 +708,7 @@ void rrr_http2_transport_ctx_terminate (
 	nghttp2_session_terminate_session(session->session, 0);
 }
 
-int rrr_http2_pack_upgrade_request_settings (
+int rrr_http2_upgrade_request_settings_pack (
 		char **target
 ) {
 	*target = NULL;
