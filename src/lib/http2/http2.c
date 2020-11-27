@@ -59,7 +59,7 @@ struct rrr_http2_session;
 struct rrr_http2_callback_data {
 	struct rrr_net_transport_handle *handle;
 	// Callback may be NULL
-	int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS);
+	int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS);
 	void *callback_arg;
 };
 
@@ -399,10 +399,11 @@ static int __rrr_http2_error_callback(
 	return 0;
 }
 
-int rrr_http2_session_client_new_or_reset (
+int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len
+		size_t initial_receive_data_len,
+		int is_server
 ) {
 	int ret = 0;
 
@@ -441,10 +442,19 @@ int rrr_http2_session_client_new_or_reset (
 		result->session = NULL;
 	}
 
-	if (nghttp2_session_client_new(&result->session, callbacks, result) != 0) {
-		RRR_MSG_0("Could not allocate nghttp2 session in rrr_http2_session_new_or_reset\n");
-		ret = 1;
-		goto out_free;
+	if (is_server) {
+		if (nghttp2_session_client_new(&result->session, callbacks, result) != 0) {
+			RRR_MSG_0("Could not allocate nghttp2 client session in rrr_http2_session_new_or_reset\n");
+			ret = 1;
+			goto out_free;
+		}
+	}
+	else {
+		if (nghttp2_session_server_new(&result->session, callbacks, result) != 0) {
+			RRR_MSG_0("Could not allocate nghttp2 server session in rrr_http2_session_new_or_reset\n");
+			ret = 1;
+			goto out_free;
+		}
 	}
 
 	if (initial_receive_data != NULL && *initial_receive_data != NULL) {
@@ -622,7 +632,7 @@ int rrr_http2_request_submit (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
+		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = RRR_HTTP2_DONE;

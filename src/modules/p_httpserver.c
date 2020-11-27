@@ -1176,7 +1176,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	}
 
 	// TODO : There are occasional (?) reports from valgrind that http_server is
-	//        not being freed upon program exit.
+	//        not being freed upon program exit. This happens if a worker thread
+	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
 
 	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
 

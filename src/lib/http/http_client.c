@@ -528,7 +528,11 @@ static int __rrr_http_client_request_send (
 	}
 
 	if (*transport_keepalive == NULL || *transport_keepalive_handle == 0) {
-		if ((ret = rrr_http_application_new(&application, application_type)) != 0) {
+		if ((ret = rrr_http_application_new (
+				&application,
+				application_type,
+				0 // Not server
+		)) != 0) {
 			goto out;
 		}
 	}

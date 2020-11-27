@@ -42,16 +42,23 @@ void rrr_http_application_destroy_if_not_null (
 	*app = NULL;
 }
 
+void rrr_http_application_destroy_if_not_null_void (
+		void *app_double_ptr
+) {
+	rrr_http_application_destroy_if_not_null((struct rrr_http_application **) app_double_ptr);
+}
+
 int rrr_http_application_new (
 		struct rrr_http_application **target,
-		enum rrr_http_application_type type
+		enum rrr_http_application_type type,
+		int is_server
 ) {
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
 		return rrr_http_application_http1_new(target);
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
-		return rrr_http_application_http2_new(target);
+		return rrr_http_application_http2_new(target, is_server);
 	}
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);

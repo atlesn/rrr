@@ -102,7 +102,7 @@ struct rrr_http_application_http2_callback_data {
 };
 
 static int __rrr_http_application_http2_callback (
-		RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS
+		RRR_HTTP2_DATA_CALLBACK_ARGS
 ) {
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
 
@@ -198,7 +198,8 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 static int __rrr_http_application_http2_new (
 		struct rrr_http_application_http2 **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len
+		size_t initial_receive_data_len,
+		int is_server
 ) {
 	struct rrr_http_application_http2 *result = NULL;
 
@@ -212,10 +213,11 @@ static int __rrr_http_application_http2_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((ret = rrr_http2_session_client_new_or_reset (
+	if ((ret = rrr_http2_session_new_or_reset (
 			&result->http2_session,
 			initial_receive_data,
-			initial_receive_data_len
+			initial_receive_data_len,
+			is_server
 	)) != 0) {
 		goto out_destroy;
 	}
@@ -232,11 +234,12 @@ static int __rrr_http_application_http2_new (
 }
 
 int rrr_http_application_http2_new (
-		struct rrr_http_application **target
+		struct rrr_http_application **target,
+		int is_server
 ) {
 	int ret = 0;
 
-	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0)) != 0) {
+	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0, is_server)) != 0) {
 		goto out;
 	}
 
@@ -259,10 +262,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 
 	char *orig_http2_settings_tmp = NULL;
 
-	if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
-		goto out;
-	}
-
+	// The HTTP2-Settings field will always be in the request part regardless of whether we are server or client
 	const struct rrr_http_header_field *orig_http2_settings = rrr_http_part_header_field_get_raw(transaction->request_part, "http2-settings");
 	if (orig_http2_settings == NULL) {
 		RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_application_http1_response_receive_callback\n");
@@ -271,7 +271,12 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	size_t orig_http2_settings_length = 0;
 	orig_http2_settings_tmp = (char *) rrr_base64url_decode(orig_http2_settings->value->str, orig_http2_settings->value->len, &orig_http2_settings_length);
 
-	if ((ret = rrr_http2_session_client_upgrade_postprocess(app->http2_session, orig_http2_settings_tmp, orig_http2_settings_length)) != 0) {
+	if ((ret = rrr_http2_session_upgrade_postprocess (
+			app->http2_session,
+			orig_http2_settings_tmp,
+			orig_http2_settings_length,
+			transaction->request_part->request_method
+	)) != 0) {
 		goto out;
 	}
 
@@ -289,7 +294,8 @@ int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_application **target,
 		void **initial_receive_data,
 		size_t initial_receive_data_len,
-		struct rrr_http_transaction *transaction
+		struct rrr_http_transaction *transaction,
+		int is_server
 ) {
 	struct rrr_http_application_http2 *result = NULL;
 
@@ -297,7 +303,12 @@ int rrr_http_application_http2_new_from_upgrade (
 
 	*target = NULL;
 
-	if ((ret = __rrr_http_application_http2_new (&result, initial_receive_data, initial_receive_data_len)) != 0) {
+	if ((ret = __rrr_http_application_http2_new (
+			&result,
+			initial_receive_data,
+			initial_receive_data_len,
+			is_server
+	)) != 0) {
 		goto out;
 	}
 

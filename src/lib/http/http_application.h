@@ -59,9 +59,13 @@ struct rrr_http_transaction;
 void rrr_http_application_destroy_if_not_null (
 		struct rrr_http_application **app
 );
+void rrr_http_application_destroy_if_not_null_void (
+		void *app_double_ptr
+);
 int rrr_http_application_new (
 		struct rrr_http_application **target,
-		enum rrr_http_application_type type
+		enum rrr_http_application_type type,
+		int is_server
 );
 int rrr_http_application_transport_ctx_request_send (
 		struct rrr_http_application *app,

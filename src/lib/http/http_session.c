@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "../log.h"
 #include "http_session.h"
@@ -224,6 +225,8 @@ int rrr_http_session_transport_ctx_tick (
 
 	struct rrr_http_application *upgraded_app = NULL;
 
+	pthread_cleanup_push(rrr_http_application_destroy_if_not_null_void, &upgraded_app);
+
 	if  (session->application == NULL) {
 		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");
 	}
@@ -262,7 +265,7 @@ int rrr_http_session_transport_ctx_tick (
 	}
 
 	out:
-	rrr_http_application_destroy_if_not_null(&upgraded_app);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 

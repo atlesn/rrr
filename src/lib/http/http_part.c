@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <strings.h>
 #include <pthread.h>
+#include <util/threads.hfdsf>
 
 #include "../log.h"
 
@@ -31,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_header_fields.h"
 
-#include "../util/threads.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../helpers/nullsafe_str.h"
@@ -198,7 +198,7 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
 			if (node->definition == NULL || node->definition->parse == NULL) {
 				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-				RRR_BUG("Attempted to retrieve field %s which was not parsed in rrr_http_part_header_field_get_with_value_case, definition must be added\n",
+				RRR_BUG("BUG: Attempted to retrieve field %s which was not parsed in rrr_http_part_header_field_get_with_value_case, definition must be added\n",
 						name);
 			}
 			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {

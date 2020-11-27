@@ -167,7 +167,11 @@ static void influxdb_send_data_callback (
 	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
 
-	if ((ret = rrr_http_application_new(&application, RRR_HTTP_APPLICATION_HTTP1)) == 0) {
+	if ((ret = rrr_http_application_new(
+			&application,
+			RRR_HTTP_APPLICATION_HTTP1,
+			0 // Is not server
+	)) == 0) {
 		goto out;
 	}
 

@@ -639,9 +639,7 @@ int rrr_net_transport_ctx_send_blocking (
 				data + written_bytes_total,
 				size - written_bytes_total
 		)) != 0) {
-			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				// Hard error means connection closed, not that serious
-				ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+			if (ret != RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
 				break;
 			}
 		}

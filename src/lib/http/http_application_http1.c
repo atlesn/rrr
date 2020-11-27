@@ -466,7 +466,7 @@ int __rrr_http_application_http1_request_send (
 		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "h2c")) != 0) {
 			goto out;
 		}
-		if (rrr_http2_pack_upgrade_request_settings(&http2_upgrade_settings_tmp) != 0) {
+		if (rrr_http2_upgrade_request_settings_pack(&http2_upgrade_settings_tmp) != 0) {
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
@@ -711,7 +711,7 @@ struct rrr_http_application_http1_receive_data {
 	ssize_t received_bytes; // Used only for stall timeout and sleeping
 	rrr_http_unique_id unique_id;
 	int is_client;
-	struct rrr_http_application *upgraded_application;
+	struct rrr_http_application **upgraded_application;
 	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
@@ -857,18 +857,21 @@ static int __rrr_application_http1_response_receive_callback (
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 
 	if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-		if (receive_data->websocket_callback == NULL) {
-			RRR_MSG_0("Unexpected HTTP 101 Switching Protocols response from server, websocket upgrade was not requested\n");
+		if (rrr_http_part_header_field_get_raw(transaction->request_part, "upgrade") == 0) {
+			RRR_MSG_0("Unexpected HTTP 101 Switching Protocols response from server, no upgrade was requested\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 
-		const struct rrr_http_header_field *field_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
-		const struct rrr_http_header_field *field_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
+		const struct rrr_http_header_field *field_response_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
+		const struct rrr_http_header_field *field_response_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
 
-		if (field_upgrade_websocket != NULL) {
-			if (rrr_http_part_header_field_get_with_value_case(transaction->request_part, "upgrade", "websocket") == NULL) {
-				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set\n");
+		const struct rrr_http_header_field *field_request_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
+		const struct rrr_http_header_field *field_request_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
+
+		if (field_response_upgrade_websocket != NULL) {
+			if (field_request_upgrade_websocket == NULL) {
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not WebSocket upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
@@ -897,24 +900,31 @@ static int __rrr_application_http1_response_receive_callback (
 
 			upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
-		else if (field_upgrade_h2c != NULL) {
-			if (rrr_http_part_header_field_get_with_value_case(transaction->request_part, "upgrade", "h2c") == NULL) {
-				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: h2c set\n");
+		else if (field_response_upgrade_h2c != NULL) {
+			if (field_request_upgrade_h2c == NULL) {
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not HTTP2 upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
+
 #ifdef RRR_WITH_NGHTTP2
 			RRR_DBG_3("Upgrade to HTTP2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+
+			if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
+				goto out;
+			}
+
 			// Pass any extra data received to http2 session for processing there. Overshoot pointer will
 			// be set to NULL if http2_session takes control of the pointer.
 			ret = rrr_http_application_http2_new_from_upgrade (
-					&receive_data->upgraded_application,
+					receive_data->upgraded_application,
 					(void **) &read_session->rx_overshoot,
 					read_session->rx_overshoot_size,
-					transaction
+					transaction,
+					0 // Is not server
 			);
 
-			// Make sure these to variables are always both either 0 or set
+			// Make sure these two variables are always both either 0 or set
 			RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
 			read_session->rx_overshoot_size = 0;
 
@@ -997,7 +1007,7 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 	}
 
 	if (read_session->rx_overshoot_size) {
-		RRR_DBG_1("Extra data received from client after websocket HTTP request\n");
+		RRR_DBG_1("Error: Extra data received from client after websocket HTTP request\n");
 		goto out_bad_request;
 	}
 
@@ -1067,16 +1077,21 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 }
 
 static int __rrr_application_http1_request_upgrade_try_http2 (
-		int *do_http2,
-		struct rrr_http_part *request_part,
-		struct rrr_http_part *response_part
+		struct rrr_http_application **upgraded_application,
+		struct rrr_http_transaction *transaction,
+		struct rrr_read_session *read_session
 ) {
-	*do_http2 = 0;
+	struct rrr_http_part *request_part = transaction->request_part;
+	struct rrr_http_part *response_part = transaction->response_part;
+
+	*upgraded_application = NULL;
 
 	int ret = 0;
 
+	struct rrr_http_application *http2 = NULL;
+
 	const struct rrr_http_header_field *connection_http2_settings = rrr_http_part_header_field_get_with_value_case(request_part, "connection", "http2-settings");
-	const struct rrr_http_header_field *http2_settings = rrr_http_part_header_field_get(request_part, "sec-websocket-version");
+	const struct rrr_http_header_field *http2_settings = rrr_http_part_header_field_get(request_part, "http2-settings");
 
 	if (connection_http2_settings == NULL) {
 		RRR_DBG_1("Value HTTP2-Settings was missing in Connection: header field while upgrade was requested\n");
@@ -1103,7 +1118,26 @@ static int __rrr_application_http1_request_upgrade_try_http2 (
 		goto out;
 	}
 
-	*do_http2 = 1;
+	ret = rrr_http_application_http2_new_from_upgrade (
+			&http2,
+			(void **) &read_session->rx_overshoot,
+			read_session->rx_overshoot_size,
+			transaction,
+			1 // Is server
+	);
+
+	// Make sure these two variables are always both either 0 or set
+	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+	read_session->rx_overshoot_size = 0;
+
+	if (ret != 0) {
+		goto out;
+	}
+
+	*upgraded_application = http2;
+	http2 = NULL;
+	response_part->response_code = RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS;
+
 #else
 	RRR_DBG_3("Upgrade to HTTP2 was requested by client, but this RRR is not built with NGHTTP2 bindings. Proceeding with HTTP/1.1\n");
 #endif /* RRR_WITH_NGHTTP2 */
@@ -1112,6 +1146,7 @@ static int __rrr_application_http1_request_upgrade_try_http2 (
 	out_bad_request:
 		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out:
+		rrr_http_application_destroy_if_not_null(&http2);
 		return ret;
 }
 
@@ -1151,12 +1186,11 @@ static int __rrr_application_http1_request_upgrade_try (
 		}
 	}
 	else if (upgrade_h2c != NULL) {
-		int do_http2 = 0;
 		if ((ret = __rrr_application_http1_request_upgrade_try_http2 (
-				&do_http2,
-				transaction->request_part,
-				transaction->response_part
-		)) == 0 && do_http2) {
+				receive_data->upgraded_application,
+				transaction,
+				read_session
+		)) == 0 && receive_data->upgraded_application != NULL) {
 			*upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 		}
 	}
@@ -1222,7 +1256,7 @@ static int __rrr_application_http1_request_receive_callback (
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-	if (receive_data->websocket_callback != NULL && (ret = __rrr_application_http1_request_upgrade_try (
+	if ((ret = __rrr_application_http1_request_upgrade_try (
 			&upgrade_mode,
 			receive_data,
 			read_session,
@@ -1231,27 +1265,62 @@ static int __rrr_application_http1_request_receive_callback (
 		goto out;
 	}
 
+	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
+		RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		goto out_send_response;
+	}
+
 	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
 			RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
 			receive_data->http1->upgrade_active = upgrade_mode;
 		}
 		else {
-			RRR_DBG_1("Upgrade HTTP connection to %s failed\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
+			RRR_DBG_1("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
 		}
 	}
 
-	if ((ret = receive_data->callback (
-			receive_data->handle,
-			transaction,
-			data_to_use,
-			read_session->rx_overshoot_size,
-			receive_data->unique_id,
-			receive_data->callback_arg
-	)) != RRR_HTTP_OK) {
-		goto out;
+	// If upgrade is HTTP2
+	// - The HTTP2 upgrade function has already stored this transaction and bound it to stream ID 1
+	// - Send HTTP1 response with 101 switching protocols
+	// - Reset the response part.
+	// - Let callback do something if it wishes
+	// - Jump out of ticking, caller will tick again and then HTTP2 will send the actual response
+
+	if (receive_data->http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+		if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
+			goto out;
+		}
+		if ((ret = receive_data->callback (
+				receive_data->handle,
+				transaction,
+				data_to_use,
+				read_session->rx_overshoot_size,
+				receive_data->unique_id,
+				receive_data->callback_arg
+		)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	}
+	else {
+		if ((ret = receive_data->callback (
+				receive_data->handle,
+				transaction,
+				data_to_use,
+				read_session->rx_overshoot_size,
+				receive_data->unique_id,
+				receive_data->callback_arg
+		)) != RRR_HTTP_OK) {
+			goto out;
+		}
 	}
 
+	out_send_response:
 	if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
 		goto out;
 	}
@@ -1529,7 +1598,7 @@ int __rrr_http_application_http1_tick (
 				*received_bytes,
 				unique_id,
 				is_client,
-				NULL,
+				upgraded_app,
 				websocket_callback,
 				websocket_callback_arg,
 				callback,
@@ -1553,7 +1622,6 @@ int __rrr_http_application_http1_tick (
 		);
 
 		*received_bytes = callback_data.received_bytes;
-		*upgraded_app = callback_data.upgraded_application;
 	}
 	else {
 		RRR_BUG("__rrr_http_application_http1_tick called while active upgrade was not NONE or WEBSOCKET but %i, maybe caller forgot to switch to HTTP2?\n", http1->upgrade_active);

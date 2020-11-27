@@ -166,7 +166,11 @@ static void __rrr_http_server_accept_create_http_session_callback (
 
 	struct rrr_http_application *application = NULL;
 
-	if (rrr_http_application_new(&application, RRR_HTTP_APPLICATION_HTTP1) != 0) {
+	if (rrr_http_application_new(
+			&application,
+			RRR_HTTP_APPLICATION_HTTP1,
+			1 // Is server
+	) != 0) {
 		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_accept_create_http_session_callback\n");
 		worker_data_preliminary->error = 1;
 		goto out;

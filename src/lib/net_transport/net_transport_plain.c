@@ -263,8 +263,10 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_send_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
-		goto out;
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
+		if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
+			goto out;
+		}
 	}
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);

@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_HARD_ERROR	RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE			RRR_READ_EOF
 
-#define RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS			\
+#define RRR_HTTP2_DATA_CALLBACK_ARGS			\
 	struct rrr_http2_session *session,					\
 	struct rrr_http_header_field_collection *headers,	\
 	int32_t stream_id,									\
@@ -44,10 +44,11 @@ struct rrr_http_header_field_collection;
 struct rrr_net_transport_handle;
 struct rrr_http2_session;
 
-int rrr_http2_session_client_new_or_reset (
+int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len
+		size_t initial_receive_data_len,
+		int is_server
 );
 void rrr_http2_session_destroy_if_not_null (
 		struct rrr_http2_session **target
@@ -62,10 +63,11 @@ void *rrr_http2_session_stream_application_data_get (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );
-int rrr_http2_session_client_upgrade_postprocess (
+int rrr_http2_session_upgrade_postprocess (
 		struct rrr_http2_session *session,
 		const void *http1_upgrade_settings,
-		size_t http1_upgrade_settings_len
+		size_t http1_upgrade_settings_len,
+		enum rrr_http_method method
 );
 int rrr_http2_session_client_native_start (
 		struct rrr_http2_session *session
@@ -81,14 +83,14 @@ int rrr_http2_request_submit (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(RRR_HTTP2_GET_RESPONSE_CALLBACK_ARGS),
+		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_http2_transport_ctx_terminate (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle
 );
-int rrr_http2_pack_upgrade_request_settings (
+int rrr_http2_upgrade_request_settings_pack (
 		char **target
 );
 int rrr_http2_select_next_protocol (
