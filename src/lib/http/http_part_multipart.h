@@ -28,5 +28,10 @@ int rrr_http_part_multipart_process (
 		struct rrr_http_part *part,
 		const char *data_ptr
 );
+int rrr_http_part_multipart_form_data_make (
+		struct rrr_http_part *request_part,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+);
 
 #endif /* HTTP_PART_MULTIPART_H */

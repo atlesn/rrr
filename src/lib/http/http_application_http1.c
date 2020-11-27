@@ -96,249 +96,20 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 	return ret;
 }
 
-static void __rrr_http_application_http1_free_dbl_ptr (void *ptr) {
-	void *to_free = *((void **) ptr);
-	RRR_FREE_IF_NOT_NULL(to_free);
-}
-
-static int __rrr_http_application_http1_multipart_form_data_body_send_wrap_chunk (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
+static int __rrr_http_application_http1_form_data_chunk_send_callback (
+		RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS
 ) {
-	if (size < 0) {
-		RRR_BUG("Size was < 0 in __rrr_http_application_http1_multipart_form_data_body_send_wrap_chunk\n");
-	}
-	if (size == 0) {
-		return RRR_HTTP_OK;
-	}
+	struct rrr_net_transport_handle *handle = arg;
 
 	int ret = 0;
 
-	char buf[128];
-	sprintf(buf, "%x\r\n", (unsigned int) size);
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, buf, strlen(buf))) != RRR_NET_TRANSPORT_SEND_OK) {
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, data, size)) != RRR_NET_TRANSPORT_SEND_OK) {
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != RRR_NET_TRANSPORT_SEND_OK) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-static int __rrr_http_application_http1_multipart_field_send (
-		struct rrr_net_transport_handle *handle,
-		const char *boundary,
-		struct rrr_http_field *node,
-		int is_first
-) {
-	int ret = 0;
-
-	char *name_buf = NULL;
-	char *name_buf_full = NULL;
-	char *content_type_buf = NULL;
-	char *body_buf = NULL;
-
-	if (rrr_nullsafe_str_isset(node->name)) {
-		if ((name_buf = rrr_http_util_quote_header_value_nullsafe(node->name, '"', '"')) == NULL) {
-			RRR_MSG_0("Could not quote field name_buf in __rrr_http_application_http1_multipart_field_send\n");
-			ret = 1;
-			goto out;
-		}
-
-		if ((ret = rrr_asprintf (&name_buf_full, "; name=%s", name_buf)) <= 0) {
-			RRR_MSG_0("Could not create name_buf_full in __rrr_http_application_http1_multipart_field_send return was %i\n", ret);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if (rrr_nullsafe_str_isset(node->content_type)) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->content_type);
-		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", value)) <= 0) {
-			RRR_MSG_0("Could not create content_type_buf in __rrr_http_application_http1_multipart_field_send return was %i\n", ret);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	RRR_FREE_IF_NOT_NULL(body_buf);
-	if ((ret = rrr_asprintf (
-			&body_buf,
-			"%s--%s\r\n"
-			"Content-Disposition: form-data%s\r\n"
-			"%s\r\n",
-			(is_first ? "" : "\r\n"),
-			boundary,
-			(name_buf_full != NULL ? name_buf_full : ""),
-			(content_type_buf != NULL ? content_type_buf : "")
-	)) < 0) {
-		RRR_MSG_0("Could not create content type string and body  in __rrr_http_application_http1_multipart_field_send return was %i\n", ret);
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, data, data_size)) != 0) {
+		RRR_DBG_1("Could not send chunk of HTTP request in __rrr_http_application_http1_form_data_chunk_send_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = __rrr_http_application_http1_multipart_form_data_body_send_wrap_chunk(handle, body_buf, strlen(body_buf))) != 0) {
-		RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_application_http1_multipart_field_send A\n");
-		goto out;
-	}
-
-	if (rrr_nullsafe_str_isset(node->value)) {
-		if ((ret = __rrr_http_application_http1_multipart_form_data_body_send_wrap_chunk(
-				handle,
-				node->value->str,
-				node->value->len
-		)) != 0) {
-			RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_application_http1_multipart_field_send B\n");
-			goto out;
-		}
-	}
-
 	out:
-	RRR_FREE_IF_NOT_NULL(name_buf);
-	RRR_FREE_IF_NOT_NULL(name_buf_full);
-	RRR_FREE_IF_NOT_NULL(content_type_buf);
-	RRR_FREE_IF_NOT_NULL(body_buf);
-	return ret;
-}
-
-static int __rrr_http_application_http1_multipart_form_data_body_send (
-		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *request_part
-) {
-	int ret = 0;
-
-	char *body_buf = NULL;
-	char *boundary_buf = NULL;
-
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &body_buf);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &boundary_buf);
-
-	// RFC7578
-
-	if ((ret = rrr_asprintf (&boundary_buf, "RRR%u", (unsigned int) rrr_rand())) < 0) {
-		RRR_MSG_0("Could not create boundary_buf string in __rrr_http_application_http1_multipart_form_data_body_send return was %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	{
-		RRR_FREE_IF_NOT_NULL(body_buf);
-		if ((ret = rrr_asprintf (
-				&body_buf,
-				"Content-Type: multipart/form-data; boundary=%s\r\n"
-				"Transfer-Encoding: chunked\r\n\r\n",
-				boundary_buf
-		)) < 0) {
-			RRR_MSG_0("Could not create content type string in __rrr_http_application_http1_multipart_form_data_body_send return was %i\n", ret);
-			ret = 1;
-			goto out;
-		}
-
-		if ((ret = rrr_net_transport_ctx_send_blocking(handle, body_buf, strlen(body_buf))) != 0) {
-			RRR_DBG_1("Could not send first part of HTTP request in __rrr_http_application_http1_multipart_form_data_body_send\n");
-			goto out;
-		}
-	}
-
-	// All sends below this point must be wrapped inside chunk sender
-
-	int is_first = 1;
-	RRR_LL_ITERATE_BEGIN(&request_part->fields, struct rrr_http_field);
-		if ((ret = __rrr_http_application_http1_multipart_field_send(handle, boundary_buf, node, is_first)) != 0) {
-			goto out;
-		}
-		is_first = 0;
-	RRR_LL_ITERATE_END();
-
-	{
-		RRR_FREE_IF_NOT_NULL(body_buf);
-		if ((ret = rrr_asprintf (
-				&body_buf,
-				"\r\n--%s--\r\n",  // <-- ONE CRLF AFTER BODY AND ONE AT THE VERY END
-				boundary_buf
-		)) < 0) {
-			RRR_MSG_0("Could not create last boundary in __rrr_http_application_http1_multipart_form_data_body_send return was %i\n", ret);
-			ret = 1;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_application_http1_multipart_form_data_body_send_wrap_chunk(handle, body_buf, strlen(body_buf))) != 0) {
-			RRR_MSG_0("Could not send last part of HTTP request in __rrr_http_application_http1_multipart_form_data_body_send\n");
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "0\r\n\r\n", 5)) != 0) {
-		RRR_DBG_1("Could not send terminating chunk of HTTP request in __rrr_http_application_http1_multipart_form_data_body_send\n");
-		goto out;
-	}
-
-	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-
-	return ret;
-}
-
-static int __rrr_http_application_http1_post_x_www_form_body_send (
-		struct rrr_net_transport_handle *handle,
-		struct rrr_http_part *request_part,
-		int no_urlencoding
-) {
-	int ret = 0;
-	char *body_buf = NULL;
-	char *header_buf = NULL;
-
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &body_buf);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &header_buf);
-
-	rrr_length body_size = 0;
-	if (no_urlencoding == 0) {
-		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&body_size, &request_part->fields);
-	}
-	else {
-		body_buf = rrr_http_field_collection_to_raw_form_data(&body_size, &request_part->fields);
-	}
-
-	if (body_buf == NULL) {
-		RRR_MSG_0("Could not create body in __rrr_http_application_http1_send_post_urlencoded_body\n");
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_asprintf (
-			&header_buf,
-			"Content-Type: application/x-www-form-urlencoded\r\n"
-			"Content-Length: %" PRIrrrl "\r\n\r\n",
-			body_size
-	)) < 0) {
-		RRR_MSG_0("Could not create content type string in __rrr_http_application_http1_send_get_body return was %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, header_buf, strlen(header_buf))) != 0) {
-		RRR_DBG_1("Could not send GET body header in __rrr_http_application_http1_send_get_body\n");
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, body_buf, body_size)) != 0) {
-		RRR_DBG_1("Could not send GET body in __rrr_http_application_http1_send_get_body\n");
-		goto out;
-	}
-
-	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	return ret;
 }
 
@@ -354,22 +125,15 @@ int __rrr_http_application_http1_request_send (
 	char *host_buf = NULL;
 	char *user_agent_buf = NULL;
 	char *uri_tmp = NULL;
-	char *extra_uri_tmp = NULL;
 	char *websocket_key_tmp = NULL;
 	char *http2_upgrade_settings_tmp = NULL;
 
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &request_buf);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &host_buf);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &user_agent_buf);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &uri_tmp);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &extra_uri_tmp);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &websocket_key_tmp);
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &http2_upgrade_settings_tmp);
-
-	rrr_length extra_uri_size = 0;
-	const char *extra_uri_separator = "";
-
-	const char *uri_to_use = transaction->uri_str;
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &request_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &host_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &user_agent_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &uri_tmp);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &websocket_key_tmp);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &http2_upgrade_settings_tmp);
 
 	struct rrr_string_builder *header_builder = NULL;
 
@@ -397,40 +161,8 @@ int __rrr_http_application_http1_request_send (
 		goto out;
 	}
 
-	if (transaction->method == RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&request_part->fields) > 0) {
-		extra_uri_tmp  = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &request_part->fields);
-
-		if (strchr(transaction->uri_str, '?') != NULL) {
-			// Append to existing ?-query string in GET URI
-			extra_uri_separator = "&";
-		}
-		else {
-			extra_uri_separator = "?";
-		}
-
-		rrr_biglength uri_orig_len = strlen(uri_to_use);
-		RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_request_send");
-
-		if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
-			RRR_MSG_0("Could not allocate memory for new URI in __rrr_http_application_http1_request_send\n");
-			ret = 1;
-			goto out;
-		}
-
-		char *wpos = uri_tmp;
-
-		memcpy(wpos, uri_to_use, uri_orig_len);
-		wpos += uri_orig_len;
-
-		*wpos = *extra_uri_separator;
-		wpos++;
-
-		memcpy(wpos, extra_uri_tmp, extra_uri_size);
-		wpos += extra_uri_size;
-
-		*wpos = '\0';
-
-		uri_to_use = uri_tmp;
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&uri_tmp, transaction)) != 0) {
+		goto out;
 	}
 
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
@@ -485,7 +217,7 @@ int __rrr_http_application_http1_request_send (
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-			uri_to_use,
+			uri_tmp,
 			host_buf,
 			user_agent_buf
 	)) < 0) {
@@ -521,44 +253,21 @@ int __rrr_http_application_http1_request_send (
 		}
 	}
 
-	if (transaction->method != RRR_HTTP_METHOD_GET && RRR_LL_COUNT(&request_part->fields) > 0) {
-		if (transaction->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
-			if ((ret = __rrr_http_application_http1_multipart_form_data_body_send (handle, request_part)) != 0) {
-				RRR_MSG_0("Could not send POST multipart body in __rrr_http_application_http1_request_send\n");
-				goto out;
-			}
-		}
-		else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED) {
-			if ((ret = __rrr_http_application_http1_post_x_www_form_body_send (handle, request_part, 0)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_request_send\n");
-				goto out;
-			}
-		}
-		else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
-			// Application may choose to quote itself (influxdb has special quoting)
-			if ((ret = __rrr_http_application_http1_post_x_www_form_body_send (handle, request_part, 1)) != 0) {
-				RRR_MSG_0("Could not send POST urlencoded body in __rrr_http_application_http1_request_send\n");
-				goto out;
-			}
-		}
+	int form_data_was_made = 0;
+	if ((ret = rrr_http_transaction_form_data_make_if_needed(&form_data_was_made, transaction, __rrr_http_application_http1_form_data_chunk_send_callback, handle)) != 0) {
+		goto out;
+	}
 
-		// TODO : If we use plain text or octet stream method, simply concatenate and encode all fields
-
-		else {
-			RRR_MSG_0("Unknown request method %s for request with fields set\n", RRR_HTTP_METHOD_TO_STR(transaction->method));
-			ret = 1;
+	if (!form_data_was_made) {
+		if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
+			RRR_MSG_0("Could not send last \\r\\n in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
-	}
-	else if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
-		RRR_MSG_0("Could not send last \\r\\n in __rrr_http_application_http1_request_send\n");
-		goto out;
 	}
 
 	out:
 		pthread_cleanup_pop(1);
 	out_final:
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
@@ -587,7 +296,7 @@ static int __rrr_http_application_http1_send_header_field_callback (struct rrr_h
 		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http1_send_header_field_callback, this is not supported\n");
 	}
 
-	pthread_cleanup_push(__rrr_http_application_http1_free_dbl_ptr, &send_data);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &send_data);
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
@@ -821,7 +530,7 @@ static int __rrr_http_application_http1_websocket_response_check_headers (
 	return ret;
 }
 
-static int __rrr_application_http1_response_receive_callback (
+static int __rrr_http_application_http1_response_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
@@ -966,7 +675,7 @@ static int __rrr_application_http1_response_receive_callback (
 	return ret;
 }
 
-static int __rrr_application_http1_websocket_request_check_version (
+static int __rrr_http_application_http1_websocket_request_check_version (
 		struct rrr_http_part *request_part
 ) {
 	const struct rrr_http_header_field *sec_websocket_version = rrr_http_part_header_field_get(request_part, "sec-websocket-version");
@@ -984,7 +693,7 @@ static int __rrr_application_http1_websocket_request_check_version (
 	return 0;
 }
 
-static int __rrr_application_http1_request_upgrade_try_websocket (
+static int __rrr_http_application_http1_request_upgrade_try_websocket (
 		int *do_websocket,
 		struct rrr_http_application_http1_receive_data *receive_data,
 		struct rrr_read_session *read_session,
@@ -1011,7 +720,7 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 		goto out_bad_request;
 	}
 
-	if (__rrr_application_http1_websocket_request_check_version(transaction->request_part) != 0) {
+	if (__rrr_http_application_http1_websocket_request_check_version(transaction->request_part) != 0) {
 		goto out_bad_request;
 	}
 
@@ -1076,7 +785,7 @@ static int __rrr_application_http1_request_upgrade_try_websocket (
 		return ret;
 }
 
-static int __rrr_application_http1_request_upgrade_try_http2 (
+static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		struct rrr_http_application **upgraded_application,
 		struct rrr_http_transaction *transaction,
 		struct rrr_read_session *read_session
@@ -1150,7 +859,7 @@ static int __rrr_application_http1_request_upgrade_try_http2 (
 		return ret;
 }
 
-static int __rrr_application_http1_request_upgrade_try (
+static int __rrr_http_application_http1_request_upgrade_try (
 		enum rrr_http_upgrade_mode *upgrade_mode,
 		struct rrr_http_application_http1_receive_data *receive_data,
 		struct rrr_read_session *read_session,
@@ -1176,7 +885,7 @@ static int __rrr_application_http1_request_upgrade_try (
 
 	if (upgrade_websocket != NULL) {
 		int do_websocket = 0;
-		if ((ret = __rrr_application_http1_request_upgrade_try_websocket (
+		if ((ret = __rrr_http_application_http1_request_upgrade_try_websocket (
 				&do_websocket,
 				receive_data,
 				read_session,
@@ -1186,7 +895,7 @@ static int __rrr_application_http1_request_upgrade_try (
 		}
 	}
 	else if (upgrade_h2c != NULL) {
-		if ((ret = __rrr_application_http1_request_upgrade_try_http2 (
+		if ((ret = __rrr_http_application_http1_request_upgrade_try_http2 (
 				receive_data->upgraded_application,
 				transaction,
 				read_session
@@ -1202,7 +911,7 @@ static int __rrr_application_http1_request_upgrade_try (
 		return ret;
 }
 
-static int __rrr_application_http1_request_receive_callback (
+static int __rrr_http_application_http1_request_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
@@ -1256,7 +965,7 @@ static int __rrr_application_http1_request_receive_callback (
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-	if ((ret = __rrr_application_http1_request_upgrade_try (
+	if ((ret = __rrr_http_application_http1_request_upgrade_try (
 			&upgrade_mode,
 			receive_data,
 			read_session,
@@ -1306,6 +1015,9 @@ static int __rrr_application_http1_request_receive_callback (
 		)) != RRR_HTTP_OK) {
 			goto out;
 		}
+
+		// HTTP2 application will send the actual response
+		goto out_no_response;
 	}
 	else {
 		if ((ret = receive_data->callback (
@@ -1325,12 +1037,13 @@ static int __rrr_application_http1_request_receive_callback (
 		goto out;
 	}
 
+	out_no_response:
 	out:
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
 
-static int __rrr_application_http1_receive_get_target_size (
+static int __rrr_http_application_http1_receive_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
@@ -1613,11 +1326,11 @@ int __rrr_http_application_http1_tick (
 					4096,
 					65535,
 					read_max_size,
-					__rrr_application_http1_receive_get_target_size,
+					__rrr_http_application_http1_receive_get_target_size,
 					&callback_data,
 					is_client
-						? __rrr_application_http1_response_receive_callback
-						: __rrr_application_http1_request_receive_callback,
+						? __rrr_http_application_http1_response_receive_callback
+						: __rrr_http_application_http1_request_receive_callback,
 					&callback_data
 		);
 

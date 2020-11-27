@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_transaction.h"
 #include "http_part.h"
+#include "http_part_multipart.h"
 #include "http_fields.h"
 
 int rrr_http_transaction_new (
@@ -100,6 +101,7 @@ void rrr_http_transaction_decref_if_not_null (
 	RRR_FREE_IF_NOT_NULL(transaction->uri_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
+	rrr_string_builder_clear(&transaction->send_data_tmp);
 	free(transaction);
 }
 
@@ -177,4 +179,114 @@ int rrr_http_transaction_endpoint_set (
 	}
 
 	return 0;
+}
+
+int rrr_http_transaction_endpoint_with_query_string_create (
+		char **new_endpoint,
+		struct rrr_http_transaction *transaction
+) {
+	*new_endpoint = NULL;
+
+	int ret = 0;
+
+	char *uri_tmp = NULL;
+
+	rrr_length extra_uri_size = 0;
+	char *extra_uri_tmp = NULL;
+
+	if (transaction->method != RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) > 0) {
+		if ((uri_tmp = strdup(transaction->uri_str)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for new URI in rrr_http_transaction_endpoint_with_query_string_create\n");
+			ret = 1;
+			goto out;
+		}
+		goto out_save;
+	}
+
+	extra_uri_tmp = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &transaction->request_part->fields);
+
+	const char *extra_uri_separator;
+	if (strchr(transaction->uri_str, '?') != NULL) {
+		// Append to existing ?-query string in GET URI
+		extra_uri_separator = "&";
+	}
+	else {
+		extra_uri_separator = "?";
+	}
+
+	rrr_biglength uri_orig_len = strlen(transaction->uri_str);
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_request_send");
+
+	if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
+		RRR_MSG_0("Could not allocate memory for new URI in rrr_http_transaction_endpoint_with_query_string_create\n");
+		ret = 1;
+		goto out;
+	}
+
+	char *wpos = uri_tmp;
+
+	memcpy(wpos, transaction->uri_str, uri_orig_len);
+	wpos += uri_orig_len;
+
+	*wpos = *extra_uri_separator;
+	wpos++;
+
+	memcpy(wpos, extra_uri_tmp, extra_uri_size);
+	wpos += extra_uri_size;
+
+	*wpos = '\0';
+
+	out_save:
+	*new_endpoint = uri_tmp;
+	uri_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(uri_tmp);
+	RRR_FREE_IF_NOT_NULL(extra_uri_tmp);
+	return ret;
+}
+
+int rrr_http_transaction_form_data_make_if_needed (
+		int *form_data_was_made,
+		struct rrr_http_transaction *transaction,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	int ret = 0;
+
+	*form_data_was_made = 0;
+
+	if (transaction->method == RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) == 0) {
+		goto out;
+	}
+
+	if (transaction->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
+		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, chunk_callback, chunk_callback_arg)) != 0) {
+			goto out;
+		}
+	}
+	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED) {
+		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 0, chunk_callback, chunk_callback_arg)) != 0) {
+			goto out;
+		}
+	}
+	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
+		// Application may choose to quote itself (influxdb has special quoting)
+		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, chunk_callback, chunk_callback_arg)) != 0) {
+			goto out;
+		}
+	}
+
+	// TODO : If we use plain text or octet stream method, simply concatenate and encode all fields
+
+	else {
+		RRR_MSG_0("Unknown HTTP request method %s for request with fields set\n", RRR_HTTP_METHOD_TO_STR(transaction->method));
+		ret = 1;
+		goto out;
+	}
+
+	*form_data_was_made = 1;
+
+	out:
+	return ret;
 }

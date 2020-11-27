@@ -926,3 +926,8 @@ void rrr_http_util_nprintf (
 
 	RRR_FREE_IF_NOT_NULL(tmp);
 }
+
+void rrr_http_util_dbl_ptr_free (void *ptr) {
+	void *to_free = *((void **) ptr);
+	RRR_FREE_IF_NOT_NULL(to_free);
+}

@@ -389,7 +389,7 @@ static int __rrr_http_client_request_send_callback (
 				callback_data->request_header_host,
 				transaction
 		)) != 0) {
-			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback\n");
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
 			goto out;
 		}
 	}

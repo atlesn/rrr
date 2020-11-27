@@ -23,18 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <strings.h>
 #include <pthread.h>
-#include <util/threads.hfdsf>
 
 #include "../log.h"
-
 #include "http_part.h"
 #include "http_fields.h"
 #include "http_util.h"
 #include "http_header_fields.h"
-
+#include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
-#include "../helpers/nullsafe_str.h"
+#include "../util/gnu.h"
 
 int __rrr_http_part_content_type_equals (
 		struct rrr_http_part *part,
@@ -88,13 +86,6 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 
 void rrr_http_part_destroy_void (void *part) {
 	rrr_http_part_destroy(part);
-}
-
-void rrr_http_part_destroy_void_double_ptr (void *arg) {
-	struct rrr_thread_double_pointer *ptr = arg;
-	if (*(ptr->ptr) != NULL) {
-		rrr_http_part_destroy(*(ptr->ptr));
-	}
 }
 
 int rrr_http_part_new (struct rrr_http_part **result) {
@@ -616,6 +607,58 @@ int rrr_http_part_chunks_merge (
 	// goto out; out_free:
 	// RRR_FREE_IF_NOT_NULL(data_new); -- Enable if needed
 	out:
+	return ret;
+}
+
+int rrr_http_part_post_x_www_form_body_make (
+		struct rrr_http_part *part,
+		int no_urlencoding,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	int ret = 0;
+	char *body_buf = NULL;
+	char *header_buf = NULL;
+
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &header_buf);
+
+	rrr_length body_size = 0;
+	if (no_urlencoding == 0) {
+		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&body_size, &part->fields);
+	}
+	else {
+		body_buf = rrr_http_field_collection_to_raw_form_data(&body_size, &part->fields);
+	}
+
+	if (body_buf == NULL) {
+		RRR_MSG_0("Could not create body in rrr_http_part_post_x_www_form_body_make \n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_asprintf (
+			&header_buf,
+			"Content-Type: application/x-www-form-urlencoded\r\n"
+			"Content-Length: %" PRIrrrl "\r\n\r\n",
+			body_size
+	)) < 0) {
+		RRR_MSG_0("Could not create content type string in rrr_http_part_post_x_www_form_body_make  return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = chunk_callback(header_buf, strlen(header_buf), chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = chunk_callback(body_buf, body_size, chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 

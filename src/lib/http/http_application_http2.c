@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_part.h"
 #include "http_header_fields.h"
+#include "http_util.h"
 #include "../net_transport/net_transport.h"
 #include "../http2/http2.h"
 #include "../helpers/nullsafe_str.h"
@@ -94,6 +95,7 @@ static int __rrr_http_application_http2_response_send (
 }
 
 struct rrr_http_application_http2_callback_data {
+	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
 	uint64_t unique_id;
 	int is_client;
@@ -143,6 +145,24 @@ static int __rrr_http_application_http2_callback (
 	);
 }
 
+
+static int __rrr_http_application_http2_data_source_callback (
+		RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS
+) {
+	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
+
+	int ret = 0;
+
+	struct rrr_http_transaction *transaction = rrr_http2_session_stream_application_data_get(callback_data->http2->http2_session, stream_id);
+	if (transaction == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http2_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
@@ -151,6 +171,7 @@ static int __rrr_http_application_http2_tick (
 	int ret = 0;
 
 	struct rrr_http_application_http2_callback_data callback_data = {
+			http2,
 			handle,
 			unique_id,
 			is_client,
@@ -162,6 +183,7 @@ static int __rrr_http_application_http2_tick (
 			http2->http2_session,
 			handle,
 			__rrr_http_application_http2_callback,
+			__rrr_http_application_http2_data_source_callback,
 			&callback_data
 	)) != 0) {
 		goto out;
@@ -326,4 +348,60 @@ int rrr_http_application_http2_new_from_upgrade (
 		__rrr_http_application_http2_destroy((struct rrr_http_application *) result);
 	out:
 		return ret;
+}
+
+struct rrr_http_application_http2_header_fields_submit_callback_data {
+	struct rrr_http_application_http2 *app;
+	int32_t stream_id;
+};
+
+static int __rrr_http_application_http2_header_fields_submit_callback (
+		struct rrr_http_header_field *field,
+		void *arg
+) {
+	struct rrr_http_application_http2_header_fields_submit_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
+		RRR_BUG("BUG: Name or value was NULL in __rrr_http_application_http2_header_fields_submit_callbacks\n");
+	}
+	if (RRR_LL_COUNT(&field->fields) > 0) {
+		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http2_header_fields_submit_callback, this is not supported\n");
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
+
+	if ((ret = rrr_http2_header_submit(callback_data->app->http2_session, 1, name, value)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_application_http2_submit_response_to_upgrade (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	int ret = 0;
+
+	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
+			http2,
+			1    // Stream ID is always 1 in this case
+	};
+
+	if ((ret = rrr_http_part_header_fields_iterate (
+			transaction->response_part,
+			__rrr_http_application_http2_header_fields_submit_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }

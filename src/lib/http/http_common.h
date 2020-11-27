@@ -160,4 +160,7 @@ typedef uint64_t rrr_http_unique_id;
 	rrr_http_unique_id unique_id,					\
 	void *arg
 
+#define RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS \
+	const void *data, ssize_t data_size, void *arg
+
 #endif /* RRR_HTTP_COMMON_H */

@@ -30,13 +30,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_HARD_ERROR	RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE			RRR_READ_EOF
 
-#define RRR_HTTP2_DATA_CALLBACK_ARGS			\
+#define RRR_HTTP2_DATA_CALLBACK_ARGS					\
 	struct rrr_http2_session *session,					\
 	struct rrr_http_header_field_collection *headers,	\
 	int32_t stream_id,									\
 	void *data,											\
 	size_t data_size,									\
 	void *stream_application_data,						\
+	void *callback_arg
+
+#define RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS				\
+	int *done,											\
+	uint8_t *buf,										\
+	size_t buf_size,									\
+	int32_t stream_id,									\
 	void *callback_arg
 
 enum rrr_http_method;
@@ -80,10 +87,28 @@ int rrr_http2_request_submit (
 		const char *host,
 		const char *endpoint
 );
+int rrr_http2_header_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		const char *name,
+		const char *value
+);
+int rrr_http2_response_status_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		unsigned int response_code
+);
+int rrr_http2_response_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		void *data,
+		size_t data_len
+);
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
+		int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS),
 		void *callback_arg
 );
 void rrr_http2_transport_ctx_terminate (

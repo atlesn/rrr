@@ -60,6 +60,7 @@ struct rrr_http2_callback_data {
 	struct rrr_net_transport_handle *handle;
 	// Callback may be NULL
 	int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS);
+	int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS);
 	void *callback_arg;
 };
 
@@ -629,10 +630,117 @@ int rrr_http2_request_submit (
 	return ret;
 }
 
+int rrr_http2_header_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	nghttp2_nv headers[] = {
+		MAKE_NV(name, value)
+	};
+
+	if ((ret = nghttp2_submit_headers(session->session, 0, stream_id, NULL, headers, sizeof(*headers), NULL)) != 0) {
+		RRR_MSG_0 ("HTTP2 header field submission failed: %s", nghttp2_strerror(ret));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http2_response_status_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		unsigned int response_code
+) {
+	int ret = 0;
+
+	if (response_code > 999) {
+		RRR_BUG("BUG: Invalid response code %u to rrr_http2_response_status_submit\n", response_code);
+	}
+
+	char tmp[8];
+	sprintf(tmp, "%u", response_code);
+
+	if ((rrr_http2_header_submit (session, stream_id, ":status", tmp)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static ssize_t __rrr_http2_data_source_read_callback (
+		nghttp2_session *nghttp2_session,
+		int32_t stream_id,
+		uint8_t *buf,
+		size_t length,
+		uint32_t *data_flags,
+		nghttp2_data_source *source,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	int ret = 0;
+
+	*data_flags = 0;
+
+	int done = 0;
+	if ((ret = session->callback_data.data_source_callback (
+			&done,
+			buf,
+			length,
+			stream_id,
+			session->callback_data.callback_arg
+	)) != 0) {
+		ret = NGHTTP2_ERR_CALLBACK_FAILURE;
+		goto out;
+	}
+
+	if (done) {
+		*data_flags = NGHTTP2_DATA_FLAG_EOF;
+	}
+
+	out:
+	return ret;
+
+}
+
+int rrr_http2_response_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id,
+		void *data,
+		size_t data_len
+) {
+	int ret = 0;
+
+	nghttp2_data_provider data_provider = {
+			{ 0 },
+			__rrr_http2_data_source_read_callback
+	};
+
+	// Note that the final soruce read callback is set in the tick() function
+
+	if ((ret = nghttp2_submit_response(session->session, stream_id, NULL, 0, &data_provider)) != 0) {
+		RRR_MSG_0 ("HTTP2 response submission failed: %s", nghttp2_strerror(ret));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
+		int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = RRR_HTTP2_DONE;
@@ -642,6 +750,7 @@ int rrr_http2_transport_ctx_tick (
 	struct rrr_http2_callback_data callback_data = {
 			handle,
 			callback,
+			data_source_callback,
 			callback_arg
 	};
 	session->callback_data = callback_data;

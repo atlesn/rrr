@@ -108,5 +108,8 @@ void rrr_http_util_nprintf (
 		const char *format,
 		...
 );
+void rrr_http_util_dbl_ptr_free (
+		void *ptr
+);
 
 #endif /* RRR_HTTP_UTIL_H */

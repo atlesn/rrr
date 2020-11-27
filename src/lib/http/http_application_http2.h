@@ -35,5 +35,9 @@ int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_transaction *transaction,
 		int is_server
 );
+int rrr_http_application_http2_submit_response_to_upgrade (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+);
 
 #endif /* RRR_HTTP_APPLICATION_HTTP2_H */

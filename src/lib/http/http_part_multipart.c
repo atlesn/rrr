@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
-#include <util/threads.hfdsf>
+#include <pthread.h>
 
 #include "../log.h"
 #include "http_part_parse.h"
@@ -29,7 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_common.h"
 #include "http_util.h"
-
+#include "../random.h"
+#include "../util/gnu.h"
 
 static int __rrr_http_part_boundary_locate (
 		const char **result,
@@ -76,11 +77,6 @@ static int __rrr_http_part_multipart_process_part (
 	*end_found = 0;
 
 	struct rrr_http_part *new_part = NULL;
-	struct rrr_thread_double_pointer new_part_cleanup_ptr = { (void**) &new_part };
-
-	// We do this here due to our recursive nature and to avoid
-	// leaking memory upon a potential pthread_cancel
-	pthread_cleanup_push(rrr_http_part_destroy_void_double_ptr, &new_part_cleanup_ptr);
 
 	const char *start = start_orig;
 	const char *crlf = NULL;
@@ -207,7 +203,9 @@ static int __rrr_http_part_multipart_process_part (
 	*parsed_bytes = boundary_pos - start_orig;
 
 	out:
-		pthread_cleanup_pop(1);
+		if (new_part != NULL) {
+			rrr_http_part_destroy(new_part);
+		}
 		return ret;
 }
 
@@ -282,5 +280,194 @@ int rrr_http_part_multipart_process (
 	}
 
 	out:
+	return ret;
+}
+
+static int __rrr_http_part_multipart_form_data_make_wrap_chunk (
+		const void *data,
+		ssize_t size,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	if (size < 0) {
+		RRR_BUG("Size was < 0 in __rrr_http_part_multipart_form_data_make_wrap_chunk\n");
+	}
+	if (size == 0) {
+		return RRR_HTTP_OK;
+	}
+
+	int ret = 0;
+
+	char buf[128];
+	sprintf(buf, "%x\r\n", (unsigned int) size);
+
+	if ((ret = chunk_callback(buf, strlen(buf), chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = chunk_callback(data, size, chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = chunk_callback("\r\n", 2, chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_part_multipart_field_make (
+		const char *boundary,
+		struct rrr_http_field *node,
+		int is_first,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	int ret = 0;
+
+	char *name_buf = NULL;
+	char *name_buf_full = NULL;
+	char *content_type_buf = NULL;
+	char *body_buf = NULL;
+
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf_full);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &content_type_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
+
+	if (rrr_nullsafe_str_isset(node->name)) {
+		if ((name_buf = rrr_http_util_quote_header_value_nullsafe(node->name, '"', '"')) == NULL) {
+			RRR_MSG_0("Could not quote field name_buf in __rrr_http_part_multipart_field_make\n");
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_asprintf (&name_buf_full, "; name=%s", name_buf)) <= 0) {
+			RRR_MSG_0("Could not create name_buf_full in __rrr_http_part_multipart_field_make return was %i\n", ret);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (rrr_nullsafe_str_isset(node->content_type)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->content_type);
+		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", value)) <= 0) {
+			RRR_MSG_0("Could not create content_type_buf in __rrr_http_part_multipart_field_make return was %i\n", ret);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	RRR_FREE_IF_NOT_NULL(body_buf);
+	if ((ret = rrr_asprintf (
+			&body_buf,
+			"%s--%s\r\n"
+			"Content-Disposition: form-data%s\r\n"
+			"%s\r\n",
+			(is_first ? "" : "\r\n"),
+			boundary,
+			(name_buf_full != NULL ? name_buf_full : ""),
+			(content_type_buf != NULL ? content_type_buf : "")
+	)) < 0) {
+		RRR_MSG_0("Could not create content type string and body  in __rrr_http_part_multipart_field_make return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk (body_buf, strlen(body_buf), chunk_callback, chunk_callback_arg)) != 0) {
+		RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make A\n");
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_isset(node->value)) {
+		if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk (node->value->str, node->value->len, chunk_callback, chunk_callback_arg)) != 0) {
+			RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make B\n");
+			goto out;
+		}
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
+int rrr_http_part_multipart_form_data_make (
+		struct rrr_http_part *part,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	int ret = 0;
+
+	char *body_buf = NULL;
+	char *boundary_buf = NULL;
+
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &boundary_buf);
+
+	// RFC7578
+
+	if ((ret = rrr_asprintf (&boundary_buf, "RRR%u", (unsigned int) rrr_rand())) < 0) {
+		RRR_MSG_0("Could not create boundary_buf string in rrr_http_part_multipart_form_data_make return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	{
+		RRR_FREE_IF_NOT_NULL(body_buf);
+		if ((ret = rrr_asprintf (
+				&body_buf,
+				"Content-Type: multipart/form-data; boundary=%s\r\n"
+				"Transfer-Encoding: chunked\r\n\r\n",
+				boundary_buf
+		)) < 0) {
+			RRR_MSG_0("Could not create content type string in rrr_http_part_multipart_form_data_make return was %i\n", ret);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = chunk_callback(body_buf, strlen(body_buf), chunk_callback_arg)) != 0) {
+			goto out;
+		}
+	}
+
+	// All sends below this point must be wrapped inside chunk sender
+
+	int is_first = 1;
+	RRR_LL_ITERATE_BEGIN(&part->fields, struct rrr_http_field);
+		if ((ret = __rrr_http_part_multipart_field_make(boundary_buf, node, is_first, chunk_callback, chunk_callback_arg)) != 0) {
+			goto out;
+		}
+		is_first = 0;
+	RRR_LL_ITERATE_END();
+
+	{
+		RRR_FREE_IF_NOT_NULL(body_buf);
+		if ((ret = rrr_asprintf (
+				&body_buf,
+				"\r\n--%s--\r\n",  // <-- ONE CRLF AFTER BODY AND ONE AT THE VERY END
+				boundary_buf
+		)) < 0) {
+			RRR_MSG_0("Could not create last boundary in rrr_http_part_multipart_form_data_make return was %i\n", ret);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk(body_buf, strlen(body_buf), chunk_callback, chunk_callback_arg)) != 0) {
+			goto out;
+		}
+	}
+
+	if ((ret = chunk_callback("0\r\n\r\n", 5, chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+
 	return ret;
 }

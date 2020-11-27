@@ -185,6 +185,12 @@ int rrr_http_part_chunks_merge (
 		struct rrr_http_part *part,
 		const char *data_ptr
 );
+int rrr_http_part_post_x_www_form_body_make (
+		struct rrr_http_part *part,
+		int no_urlencoding,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+);
 void rrr_http_part_header_dump (
 		struct rrr_http_part *part
 );

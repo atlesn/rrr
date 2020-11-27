@@ -765,11 +765,13 @@ static int httpclient_send_request_from_message_callback (
 			is_redirect
 	};
 
+	// TODO : Send real HTTP2 when using TLS
+
 	ret = rrr_http_client_request_send (
 			&data->http_client_data,
 			data->http_client_config.method,
 			RRR_HTTP_APPLICATION_HTTP1,
-			RRR_HTTP_UPGRADE_MODE_HTTP2,
+			(data->http_client_config.method == RRR_HTTP_METHOD_GET ? RRR_HTTP_UPGRADE_MODE_HTTP2 : RRR_HTTP_UPGRADE_MODE_NONE),
 			&data->keepalive_transport,
 			&data->keepalive_handle,
 			&data->net_transport_config,
