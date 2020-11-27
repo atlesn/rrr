@@ -168,7 +168,7 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get (
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		if (rrr_nullsafe_str_cmpto_case(node->name, name) == 0) {
 			if (node->definition == NULL || node->definition->parse == NULL) {
-				RRR_BUG("Attempted to retrieve field %s which was not parsed in __rrr_http_header_field_collection_get_field, definition must be added\n",
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in rrr_http_part_header_field_get, definition must be added\n",
 						name);
 			}
 			return node;
@@ -198,7 +198,7 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 		if (rrr_nullsafe_str_cmpto(node->name, name_lowercase) == 0) {
 			if (node->definition == NULL || node->definition->parse == NULL) {
 				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-				RRR_BUG("Attempted to retrieve field %s which was not parsed in __rrr_http_header_field_collection_get_field, definition must be added\n",
+				RRR_BUG("Attempted to retrieve field %s which was not parsed in rrr_http_part_header_field_get_with_value_case, definition must be added\n",
 						name);
 			}
 			if (rrr_nullsafe_str_cmpto_case(node->value, value_anycase) == 0) {
@@ -215,7 +215,7 @@ struct rrr_http_chunk *rrr_http_part_chunk_new (
 ) {
 	struct rrr_http_chunk *new_chunk = malloc(sizeof(*new_chunk));
 	if (new_chunk == NULL) {
-		RRR_MSG_0("Could not allocate memory for chunk in __rrr_http_part_append_chunk\n");
+		RRR_MSG_0("Could not allocate memory for chunk in rrr_http_part_chunk_new\n");
 		return NULL;
 	}
 
@@ -307,7 +307,7 @@ int rrr_http_part_chunks_iterate (
 		const char *data_start = data_ptr + node->start;
 
 		if (data_start + node->length > data_end) {
-			RRR_BUG("Chunk end overrun in __rrr_http_session_receive_callback\n");
+			RRR_BUG("Chunk end overrun in rrr_http_part_chunks_iterate\n");
 		}
 
 		// NOTE : Length might be 0
@@ -344,7 +344,7 @@ static int __rrr_http_part_query_string_parse (
 	}
 
 	if ((buf = malloc((end - start) + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for buffer in rrr_http_part_parse_query_string\n");
+		RRR_MSG_0("Could not allocate memory for buffer in __rrr_http_part_query_string_parse\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -380,7 +380,7 @@ static int __rrr_http_part_query_string_parse (
 			}
 
 			if (result > 0xff) {
-				RRR_BUG("Result after converting %%-sequence too big in rrr_http_part_parse_query_string\n");
+				RRR_BUG("Result after converting %%-sequence too big in __rrr_http_part_query_string_parse\n");
 			}
 
 			c = result;
@@ -428,7 +428,7 @@ static int __rrr_http_part_query_string_parse (
 
 		store_value:
 			if (rrr_http_field_set_value(value_target, buf, buf_pos) != 0) {
-				RRR_MSG_0("Could not set value in rrr_http_part_parse_query_string\n");
+				RRR_MSG_0("Could not set value in __rrr_http_part_query_string_parse\n");
 				ret = RRR_HTTP_PARSE_HARD_ERR;
 				goto out;
 			}
@@ -441,7 +441,7 @@ static int __rrr_http_part_query_string_parse (
 		push_new_field:
 			if (buf_pos > 0) {
 				if (rrr_http_field_new_no_value(&field_tmp, buf, buf_pos) != 0) {
-					RRR_MSG_0("Could not allocate new field in rrr_http_part_parse_query_string\n");
+					RRR_MSG_0("Could not allocate new field in __rrr_http_part_query_string_parse\n");
 					ret = RRR_HTTP_PARSE_HARD_ERR;
 					goto out;
 				}
@@ -494,7 +494,7 @@ static int __rrr_http_part_query_fields_from_uri_extract (
 	}
 
 	if ((ret = __rrr_http_part_query_string_parse (&target->fields, query_start, query_end)) != 0) {
-		RRR_MSG_0("Error while parsing query string in __rrr_http_part_extract_query_fields_from_uri\n");
+		RRR_MSG_0("Error while parsing query string in __rrr_http_part_query_fields_from_uri_extract\n");
 		goto out;
 	}
 
@@ -514,7 +514,7 @@ int rrr_http_part_post_and_query_fields_extract (
 		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
 
 		if ((ret = __rrr_http_part_query_string_parse (&target->fields, data_start, data_end)) != 0) {
-			RRR_MSG_0("Error while parsing query string in rrr_http_part_extract_post_and_query_fields\n");
+			RRR_MSG_0("Error while parsing query string in rrr_http_part_post_and_query_fields_extract\n");
 			goto out;
 		}
 	}
@@ -529,13 +529,13 @@ int rrr_http_part_post_and_query_fields_extract (
 			}
 
 			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value->str, field_name->value->len)) != 0) {
-				RRR_MSG_0("Could not create new field in rrr_http_part_extract_post_and_query_fields\n");
+				RRR_MSG_0("Could not create new field in rrr_http_part_post_and_query_fields_extract\n");
 				goto out;
 			}
 
 			if (data_end - data_start > 0) {
 				if ((ret = rrr_http_field_set_value(field_tmp, data_start, data_end - data_start)) != 0) {
-					RRR_MSG_0("Could not set value of field in rrr_http_part_extract_post_and_query_fields\n");
+					RRR_MSG_0("Could not set value of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
 				}
 			}
@@ -547,7 +547,7 @@ int rrr_http_part_post_and_query_fields_extract (
 						field_content_type->value->str,
 						field_content_type->value->len
 				)) != 0) {
-					RRR_MSG_0("Could not set content type of field in rrr_http_part_extract_post_and_query_fields\n");
+					RRR_MSG_0("Could not set content type of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
 				}
 			}
@@ -592,7 +592,7 @@ int rrr_http_part_chunks_merge (
 	RRR_LL_ITERATE_END();
 
 	if ((data_new = malloc(new_buf_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http_part_merge_chunks\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_part_chunks_merge\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
 	}
