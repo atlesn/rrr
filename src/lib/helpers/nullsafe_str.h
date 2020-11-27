@@ -39,6 +39,11 @@ int rrr_nullsafe_str_new_or_replace (
 	const void *str,
 	rrr_length len
 );
+int rrr_nullsafe_str_append (
+		struct rrr_nullsafe_str *nullsafe,
+		const void *str,
+		rrr_length len
+);
 void rrr_nullsafe_str_set_allocated (
 	struct rrr_nullsafe_str *str,
 	void **ptr,

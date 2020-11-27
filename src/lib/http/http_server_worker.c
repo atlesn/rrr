@@ -351,8 +351,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			__rrr_http_server_worker_http_session_receive_raw_callback,
 			worker_data
 	)) != 0) {
-		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE) {
-			RRR_MSG_0("HTTP worker %i: Error while reading from client\n",
+		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP worker %i: Error while working with client\n",
 					worker_data->config_data.transport_handle);
 		}
 		goto out;

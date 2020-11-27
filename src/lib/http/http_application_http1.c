@@ -96,23 +96,6 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 	return ret;
 }
 
-static int __rrr_http_application_http1_form_data_chunk_send_callback (
-		RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	int ret = 0;
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, data, data_size)) != 0) {
-		RRR_DBG_1("Could not send chunk of HTTP request in __rrr_http_application_http1_form_data_chunk_send_callback\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 int __rrr_http_application_http1_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -254,15 +237,20 @@ int __rrr_http_application_http1_request_send (
 	}
 
 	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_make_if_needed(&form_data_was_made, transaction, __rrr_http_application_http1_form_data_chunk_send_callback, handle)) != 0) {
+	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
 		goto out;
 	}
 
-	if (!form_data_was_made) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
-			RRR_MSG_0("Could not send last \\r\\n in __rrr_http_application_http1_request_send\n");
-			goto out;
-		}
+	if (form_data_was_made) {
+		ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len);
+	}
+	else {
+		ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"));
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not send data in __rrr_http_application_http1_request_send\n");
+		goto out;
 	}
 
 	out:
@@ -996,7 +984,9 @@ static int __rrr_http_application_http1_request_receive_callback (
 	// - Send HTTP1 response with 101 switching protocols
 	// - Reset the response part.
 	// - Let callback do something if it wishes
-	// - Jump out of ticking, caller will tick again and then HTTP2 will send the actual response
+	// - Queue the response for sending upon next tick
+	// - Jump out of HTTP1 ticking, caller will tick again with HTTP2 which sends the actual response
+	//   based on the response part
 
 	if (receive_data->http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 		if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
@@ -1016,7 +1006,14 @@ static int __rrr_http_application_http1_request_receive_callback (
 			goto out;
 		}
 
-		// HTTP2 application will send the actual response
+		if ((ret = rrr_http_application_http2_response_to_upgrade_submit (
+				*(receive_data->upgraded_application),
+				transaction
+		)) != 0) {
+			goto out;
+		}
+
+		// HTTP2 application will send the actual response during the next tick
 		goto out_no_response;
 	}
 	else {

@@ -91,6 +91,24 @@ int rrr_nullsafe_str_new_or_replace (
 		return ret;
 }
 
+int rrr_nullsafe_str_append (
+		struct rrr_nullsafe_str *nullsafe,
+		const void *str,
+		rrr_length len
+) {
+	void *new_str = realloc(nullsafe->str, nullsafe->len + len);
+	if (new_str == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append\n");
+		return 1;
+	}
+	nullsafe->str = new_str;
+
+	memcpy(nullsafe->str + nullsafe->len, str, len);
+	nullsafe->len += len;
+
+	return 0;
+}
+
 void rrr_nullsafe_str_set_allocated (
 	struct rrr_nullsafe_str *nullsafe,
 	void **ptr,

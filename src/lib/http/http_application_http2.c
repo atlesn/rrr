@@ -60,7 +60,18 @@ static int __rrr_http_application_http2_request_send (
 
 	int ret = 0;
 
+	char *endpoint_tmp = NULL;
+
 	int32_t stream_id = 0;
+
+	int form_data_was_made = 0;
+	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_tmp, transaction)) != 0) {
+		goto out;
+	}
 
 	if  ((ret = rrr_http2_request_submit (
 			&stream_id,
@@ -68,7 +79,7 @@ static int __rrr_http_application_http2_request_send (
 			rrr_net_transport_ctx_is_tls(handle),
 			transaction->method,
 			host,
-			transaction->uri_str
+			endpoint_tmp
 	)) != 0) {
 		goto out;
 	}
@@ -85,6 +96,7 @@ static int __rrr_http_application_http2_request_send (
 	rrr_http_transaction_incref(transaction);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(endpoint_tmp);
 	return ret;
 }
 
@@ -145,7 +157,6 @@ static int __rrr_http_application_http2_callback (
 	);
 }
 
-
 static int __rrr_http_application_http2_data_source_callback (
 		RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS
 ) {
@@ -153,10 +164,31 @@ static int __rrr_http_application_http2_data_source_callback (
 
 	int ret = 0;
 
+	*done = 0;
+	*written_bytes = 0;
+
 	struct rrr_http_transaction *transaction = rrr_http2_session_stream_application_data_get(callback_data->http2->http2_session, stream_id);
 	if (transaction == NULL) {
 		ret = 1;
 		goto out;
+	}
+
+	if (transaction->send_data_tmp == NULL || transaction->send_data_pos >= transaction->send_data_tmp->len) {
+		*done = 1;
+		goto out;
+	}
+
+	rrr_length bytes_to_send = transaction->send_data_tmp->len;
+	if (transaction->send_data_tmp->len > buf_size) {
+		transaction->send_data_tmp->len = buf_size;
+	}
+
+	memcpy(buf, transaction->send_data_tmp->str, bytes_to_send);
+	transaction->send_data_pos += bytes_to_send;
+
+	// Saves an extra call to this function
+	if (transaction->send_data_pos >= transaction->send_data_tmp->len) {
+		*done = 1;
 	}
 
 	out:
@@ -265,7 +297,7 @@ int rrr_http_application_http2_new (
 		goto out;
 	}
 
-	if ((ret = rrr_http2_session_client_native_start(((struct rrr_http_application_http2 *) *target)->http2_session)) != 0) {
+	if ((ret = rrr_http2_session_settings_submit(((struct rrr_http_application_http2 *) *target)->http2_session)) != 0) {
 		goto out_destroy;
 	}
 
@@ -341,6 +373,10 @@ int rrr_http_application_http2_new_from_upgrade (
 		goto out_destroy;
 	}
 
+	if (is_server && (ret = rrr_http2_session_settings_submit(result->http2_session)) != 0) {
+		goto out_destroy;
+	}
+
 	*target = (struct rrr_http_application *) result;
 
 	goto out;
@@ -381,7 +417,7 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 	return ret;
 }
 
-int rrr_http_application_http2_submit_response_to_upgrade (
+int rrr_http_application_http2_response_to_upgrade_submit (
 		struct rrr_http_application *app,
 		struct rrr_http_transaction *transaction
 ) {
@@ -394,11 +430,31 @@ int rrr_http_application_http2_submit_response_to_upgrade (
 			1    // Stream ID is always 1 in this case
 	};
 
+	int response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+
+	// Predict that we are going to send data later on stream 1 (during ticking)?
+	if ((transaction->send_data_tmp != NULL && transaction->send_data_tmp->len > 0)) {
+		response_code = RRR_HTTP_RESPONSE_CODE_OK;
+	}
+
+	if ((ret = rrr_http2_header_status_submit(http2->http2_session, 1, response_code)) != 0) {
+		goto out;
+	}
+
 	if ((ret = rrr_http_part_header_fields_iterate (
 			transaction->response_part,
 			__rrr_http_application_http2_header_fields_submit_callback,
 			&callback_data
 	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_headers_end(http2->http2_session, 1)) != 0) {
+		goto out;
+	}
+
+	// Misc. callbacks will product the actual response during ticking, if any
+	if ((ret = rrr_http2_data_submit(http2->http2_session, 1)) != 0) {
 		goto out;
 	}
 

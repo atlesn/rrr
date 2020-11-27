@@ -39,7 +39,8 @@ struct rrr_http_transaction {
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
 
-	struct rrr_string_builder send_data_tmp;
+	rrr_length send_data_pos;
+	struct rrr_nullsafe_str *send_data_tmp;
 };
 
 int rrr_http_transaction_new (
@@ -80,11 +81,9 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 		char **new_endpoint,
 		struct rrr_http_transaction *transaction
 );
-int rrr_http_transaction_form_data_make_if_needed (
+int rrr_http_transaction_form_data_generate_if_needed (
 		int *form_data_was_made,
-		struct rrr_http_transaction *transaction,
-		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
-		void *chunk_callback_arg
+		struct rrr_http_transaction *transaction
 );
 
 #endif /* RRR_HTTP_TRANSACTION_H */

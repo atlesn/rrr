@@ -101,7 +101,7 @@ void rrr_http_transaction_decref_if_not_null (
 	RRR_FREE_IF_NOT_NULL(transaction->uri_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
-	rrr_string_builder_clear(&transaction->send_data_tmp);
+	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_data_tmp);
 	free(transaction);
 }
 
@@ -246,11 +246,16 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 	return ret;
 }
 
-int rrr_http_transaction_form_data_make_if_needed (
+int __rrr_http_transaction_form_data_make_if_needed_chunk_callback (
+		RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS
+) {
+	struct rrr_http_transaction *transaction = arg;
+	return rrr_nullsafe_str_append(transaction->send_data_tmp, data, data_size);
+}
+
+int rrr_http_transaction_form_data_generate_if_needed (
 		int *form_data_was_made,
-		struct rrr_http_transaction *transaction,
-		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
-		void *chunk_callback_arg
+		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
 
@@ -260,19 +265,24 @@ int rrr_http_transaction_form_data_make_if_needed (
 		goto out;
 	}
 
+	transaction->send_data_pos = 0;
+	if ((ret = rrr_nullsafe_str_new_or_replace(&transaction->send_data_tmp, NULL, 0)) != 0) {
+		goto out;
+	}
+
 	if (transaction->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
-		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, chunk_callback, chunk_callback_arg)) != 0) {
+		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}
 	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED) {
-		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 0, chunk_callback, chunk_callback_arg)) != 0) {
+		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 0, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}
 	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
 		// Application may choose to quote itself (influxdb has special quoting)
-		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, chunk_callback, chunk_callback_arg)) != 0) {
+		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}

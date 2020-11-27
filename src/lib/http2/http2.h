@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <nghttp2/nghttp2.h>
 
 #include "../read_constants.h"
+#include "../rrr_types.h"
 
 #define RRR_HTTP2_OK			RRR_READ_OK
 #define RRR_HTTP2_SOFT_ERROR	RRR_READ_SOFT_ERROR
@@ -41,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS				\
 	int *done,											\
+	rrr_length *written_bytes,							\
 	uint8_t *buf,										\
 	size_t buf_size,									\
 	int32_t stream_id,									\
@@ -76,7 +78,7 @@ int rrr_http2_session_upgrade_postprocess (
 		size_t http1_upgrade_settings_len,
 		enum rrr_http_method method
 );
-int rrr_http2_session_client_native_start (
+int rrr_http2_session_settings_submit (
 		struct rrr_http2_session *session
 );
 int rrr_http2_request_submit (
@@ -93,16 +95,22 @@ int rrr_http2_header_submit (
 		const char *name,
 		const char *value
 );
-int rrr_http2_response_status_submit (
+int rrr_http2_header_status_submit (
 		struct rrr_http2_session *session,
 		int32_t stream_id,
 		unsigned int response_code
 );
+int rrr_http2_headers_end (
+		struct rrr_http2_session *session,
+		int32_t stream_id
+);
 int rrr_http2_response_submit (
 		struct rrr_http2_session *session,
-		int32_t stream_id,
-		void *data,
-		size_t data_len
+		int32_t stream_id
+);
+int rrr_http2_data_submit (
+		struct rrr_http2_session *session,
+		int32_t stream_id
 );
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
