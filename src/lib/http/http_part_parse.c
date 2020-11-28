@@ -693,3 +693,15 @@ int rrr_http_part_parse_request_data_set (
 
 	return 0;
 }
+
+// Set all required response data without parsing
+int rrr_http_part_parse_response_data_set (
+		struct rrr_http_part *part,
+		size_t data_length
+) {
+	part->data_length = data_length;
+	part->header_complete = 1;
+	part->parse_complete = 1;
+
+	return 0;
+}

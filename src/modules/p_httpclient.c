@@ -1024,6 +1024,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			}
 		}
 
+		// TODO : Implement nothing happened-stuff
+
 		if (rrr_poll_do_poll_search(thread_data, &thread_data->poll, httpclient_poll_callback, thread_data, RRR_LL_COUNT(&data->defer_queue) > 0 ? 0 : 30) != 0) {
 			RRR_MSG_0("Error while polling in httpclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));

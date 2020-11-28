@@ -134,7 +134,7 @@ static int __rrr_http_application_http2_callback (
 		}
 
 		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
-		if (content_length != NULL && content_length->value_unsigned != 0) {
+		if (content_length != NULL && content_length->value_unsigned != 0 && data_size < content_length->value_unsigned) {
 			// Wait for DATA frames and END DATA
 			goto out;
 		}
@@ -145,6 +145,11 @@ static int __rrr_http_application_http2_callback (
 		}
 
 		transaction->response_part->response_code = status->value_unsigned;
+
+
+		if ((ret = rrr_http_part_parse_response_data_set (transaction->response_part, data_size)) != 0) {
+			goto out;
+		}
 	}
 	else {
 		if (transaction == NULL) {

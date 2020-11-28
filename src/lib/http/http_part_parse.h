@@ -36,7 +36,6 @@ int rrr_http_part_parse (
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
-// Set all required request data without parsing
 int rrr_http_part_parse_request_data_set (
 		struct rrr_http_part *part,
 		size_t data_length,
@@ -44,6 +43,10 @@ int rrr_http_part_parse_request_data_set (
 		const struct rrr_nullsafe_str *request_method,
 		const struct rrr_nullsafe_str *uri,
 		const struct rrr_nullsafe_str *content_type_or_null
+);
+int rrr_http_part_parse_response_data_set (
+		struct rrr_http_part *part,
+		size_t data_length
 );
 
 #endif /* RRR_HTTP_PART_PARSE_H */
