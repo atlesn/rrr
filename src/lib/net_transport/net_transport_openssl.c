@@ -689,9 +689,25 @@ static int __rrr_net_transport_openssl_accept_callback (
 
 	// Must complete handshake to get the selected ALPN protocol
 	SSL_set_accept_state(ssl);
+
+	// TODO : It is possible when using the HTTP-server to DDOS us by having the main thread
+	//        hanging around in the handshake-area constantly. Move accept-stuff to the worker
+	//        threads.
+
+	int handshake_retry_max = 250;
+	handshake_retry:
 	if ((ret = SSL_do_handshake(ssl)) != 1) {
 		if (ret < 0) {
-			RRR_SSL_ERR("Could not perform handshake in __rrr_net_transport_tls_accept");
+			if (--handshake_retry_max > 0 && (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl))) {
+				rrr_posix_usleep(1); // Schedule
+				goto handshake_retry;
+			}
+			if (handshake_retry_max == 0) {
+				RRR_MSG_0("TLS handshake timeout in __rrr_net_transport_tls_accept\n");
+			}
+			else {
+				RRR_SSL_ERR("Could not perform handshake in __rrr_net_transport_tls_accept");
+			}
 		}
 		else {
 			RRR_MSG_3("TLS handshake aborted\n");
