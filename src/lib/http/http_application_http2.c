@@ -102,25 +102,6 @@ static int __rrr_http_application_http2_request_send (
 	return ret;
 }
 
-// TODO : Unclear when this function is useful, response is implicitly sent when request is received
-//        and callback is done
-static int __rrr_http_application_http2_response_send (
-		RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS
-) {
-	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
-
-	int ret = 0;
-
-	printf("Response submit\n");
-
-	if ((ret = rrr_http2_response_submit(http2->http2_session, -1)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 struct rrr_http_application_http2_callback_data {
 	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
@@ -263,7 +244,9 @@ static int __rrr_http_application_http2_callback (
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out_send_response:
 		if (transaction->response_part->response_code != 0) {
-			if ((ret = rrr_http2_response_submit(callback_data->http2->http2_session, stream_id)) != 0) {
+			RRR_DBG_3("HTTP2 submit response %u\n", transaction->response_part->response_code);
+
+			if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
 				goto out;
 			}
 		}
@@ -294,15 +277,20 @@ static int __rrr_http_application_http2_data_source_callback (
 	}
 
 	rrr_length bytes_to_send = transaction->send_data_tmp->len;
-	if (transaction->send_data_tmp->len > buf_size) {
-		transaction->send_data_tmp->len = buf_size;
+	if (bytes_to_send > buf_size) {
+		bytes_to_send = buf_size;
 	}
+
+	RRR_DBG_3("http2 source %" PRIrrrl "/%" PRIrrrl " bytes to send\n",
+			transaction->send_data_tmp->len - transaction->send_data_pos, transaction->send_data_tmp->len);
 
 	memcpy(buf, transaction->send_data_tmp->str, bytes_to_send);
 	transaction->send_data_pos += bytes_to_send;
+	*written_bytes = bytes_to_send;
 
 	// Saves an extra call to this function
 	if (transaction->send_data_pos >= transaction->send_data_tmp->len) {
+		RRR_DBG_3("http2 source complete\n", bytes_to_send);
 		*done = 1;
 	}
 
@@ -365,7 +353,6 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 	RRR_HTTP_APPLICATION_HTTP2,
 	__rrr_http_application_http2_destroy,
 	__rrr_http_application_http2_request_send,
-	__rrr_http_application_http2_response_send,
 	__rrr_http_application_http2_tick,
 	__rrr_http_application_http2_alpn_protos_get,
 	__rrr_http_application_http2_polite_close
@@ -541,29 +528,49 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 	return ret;
 }
 
-int rrr_http_application_http2_response_to_upgrade_submit (
+int rrr_http_application_http2_response_submit (
 		struct rrr_http_application *app,
-		struct rrr_http_transaction *transaction
+		struct rrr_http_transaction *transaction,
+		int32_t stream_id
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
 	int ret = 0;
 
-	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
-			http2,
-			1    // Stream ID is always 1 in this case
-	};
+	if (rrr_nullsafe_str_len(transaction->response_part->response_raw_data_nullsafe) > 0) {
+		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->response_part->response_raw_data_nullsafe);
+	}
 
-	int response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+	int response_code = transaction->response_part->response_code;
+
+	if (response_code == 0) {
+		response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+	}
 
 	// Predict that we are going to send data later on stream 1 (during ticking)?
-	if ((transaction->send_data_tmp != NULL && transaction->send_data_tmp->len > 0)) {
+	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(transaction->send_data_tmp) > 0) {
 		response_code = RRR_HTTP_RESPONSE_CODE_OK;
 	}
 
-	if ((ret = rrr_http2_header_status_submit(http2->http2_session, 1, response_code)) != 0) {
+	if ((ret = rrr_http2_header_status_submit(http2->http2_session, stream_id, response_code)) != 0) {
 		goto out;
 	}
+
+	if (rrr_nullsafe_str_len(transaction->send_data_tmp) > 0) {
+		char content_length_str[64];
+		sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_data_tmp));
+		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-length", content_length_str)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-type", "text/plain")) != 0) {
+			goto out;
+		}
+	}
+
+	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
+			http2,
+			stream_id
+	};
 
 	if ((ret = rrr_http_part_header_fields_iterate (
 			transaction->response_part,
@@ -573,12 +580,32 @@ int rrr_http_application_http2_response_to_upgrade_submit (
 		goto out;
 	}
 
-	if ((ret = rrr_http2_headers_end(http2->http2_session, 1)) != 0) {
+	if ((ret = rrr_http2_headers_end(http2->http2_session, stream_id)) != 0) {
 		goto out;
 	}
 
 	// Misc. callbacks will product the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submit(http2->http2_session, 1)) != 0) {
+	if ((ret = rrr_http2_data_submit(http2->http2_session, stream_id)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_application_http2_response_to_upgrade_submit (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	int ret = 0;
+
+	if ((ret = rrr_http_application_http2_response_submit (
+			app,
+			transaction,
+			1 // Stream-ID is always one when we upgrade
+	)) != 0) {
 		goto out;
 	}
 

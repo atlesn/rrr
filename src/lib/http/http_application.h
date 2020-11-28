@@ -75,11 +75,6 @@ int rrr_http_application_transport_ctx_request_send (
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_http_transaction *transaction
 );
-int rrr_http_application_transport_ctx_response_send (
-		struct rrr_http_application *app,
-		struct rrr_net_transport_handle *handle,
-		struct rrr_http_transaction *transaction
-);
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
 		struct rrr_http_application **upgraded_app,

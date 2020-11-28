@@ -42,6 +42,15 @@ void rrr_nullsafe_str_destroy_if_not_null (
 	*str = NULL;
 }
 
+void rrr_nullsafe_str_move (
+		struct rrr_nullsafe_str **target,
+		struct rrr_nullsafe_str **source
+) {
+	rrr_nullsafe_str_destroy_if_not_null(target);
+	*target = *source;
+	*source = NULL;
+}
+
 int rrr_nullsafe_str_new_or_replace (
 	struct rrr_nullsafe_str **result,
 	const void *str,

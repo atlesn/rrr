@@ -322,7 +322,9 @@ static int __rrr_http_application_http1_send_header_field_callback (struct rrr_h
 }
 
 int __rrr_http_application_http1_response_send (
-		RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS
+		struct rrr_http_application *application,
+		struct rrr_net_transport_handle *handle,
+		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
 
@@ -1385,7 +1387,6 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
 	__rrr_http_application_http1_request_send,
-	__rrr_http_application_http1_response_send,
 	__rrr_http_application_http1_tick,
 	__rrr_http_application_http1_alpn_protos_get,
 	__rrr_http_application_http1_polite_close

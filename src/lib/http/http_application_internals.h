@@ -35,11 +35,6 @@ enum rrr_http_method;
 	enum rrr_http_upgrade_mode upgrade_mode,	\
 	struct rrr_http_transaction *transaction
 
-#define RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS	\
-	struct rrr_http_application *application,	\
-	struct rrr_net_transport_handle *handle,	\
-	struct rrr_http_transaction *transaction
-
 #define RRR_HTTP_APPLICATION_TICK_ARGS								\
 	ssize_t *received_bytes,										\
 	struct rrr_http_application **upgraded_app,						\
@@ -72,7 +67,6 @@ struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
 	void (*destroy)(struct rrr_http_application *);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
-	int (*response_send)(RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
 	void (*alpn_protos_get)(RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS);
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);

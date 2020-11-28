@@ -848,7 +848,7 @@ int rrr_http2_response_submit (
 			__rrr_http2_data_source_read_callback
 	};
 
-	// Note that the final soruce read callback is set in the tick() function
+	// Note that the final source read callback is set in the tick() function
 
 	if ((ret = nghttp2_submit_response(session->session, stream_id, NULL, 0, &data_provider)) != 0) {
 		RRR_MSG_0 ("HTTP2 response submission failed: %s", nghttp2_strerror(ret));

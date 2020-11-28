@@ -611,6 +611,7 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
+	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", part->parsed_protocol_version);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
