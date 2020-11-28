@@ -282,26 +282,21 @@ static int __rrr_http_client_final_callback (
 
 	int ret = 0;
 
-	(void)(chunk_idx);
-	(void)(chunk_total);
-	(void)(part_data_size);
+	rrr_length data_size = response_data->len;
+	rrr_length data_start = 0;
 
-	if (chunk_data_start == NULL) {
-		goto out;
-	}
-
-	while (chunk_data_size > 0) {
+	while (data_size > 0) {
 		ssize_t bytes;
 
-		bytes = write (STDOUT_FILENO, chunk_data_start, chunk_data_size);
+		bytes = write (STDOUT_FILENO, response_data->str + data_start, data_size);
 		if (bytes < 0) {
 			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 		else {
-			chunk_data_start += bytes;
-			chunk_data_size -= bytes;
+			data_start += bytes;
+			data_size -= bytes;
 		}
 	}
 
@@ -449,7 +444,12 @@ int main (int argc, const char **argv, const char **env) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	if (rrr_http_client_data_init(&data.request_data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
+	if (rrr_http_client_request_data_init (
+			&data.request_data,
+			RRR_HTTP_CLIENT_USER_AGENT,
+			NULL,
+			NULL
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -518,7 +518,6 @@ int main (int argc, const char **argv, const char **env) {
 		uint64_t bytes_total = 0;
 
 		ret = rrr_http_client_tick (
-				&got_redirect,
 				&bytes_total,
 				net_transport_keepalive,
 				net_transport_keepalive_handle,

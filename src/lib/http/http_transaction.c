@@ -31,7 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
-		enum rrr_http_method method
+		enum rrr_http_method method,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 ) {
 	int ret = 0;
 
@@ -60,6 +62,10 @@ int rrr_http_transaction_new (
 		ret = 1;
 		goto out_free_response;
 	}
+
+	result->application_data = *application_data;
+	result->application_data_destroy = application_data_destroy;
+	*application_data = NULL;
 
 	result->method = method;
 	result->usercount = 1;
@@ -102,6 +108,9 @@ void rrr_http_transaction_decref_if_not_null (
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
 	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_data_tmp);
+	if (transaction->application_data != NULL) {
+		transaction->application_data_destroy(transaction->application_data);
+	}
 	free(transaction);
 }
 

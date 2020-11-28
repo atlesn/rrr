@@ -41,11 +41,16 @@ struct rrr_http_transaction {
 
 	rrr_length send_data_pos;
 	struct rrr_nullsafe_str *send_data_tmp;
+
+	void *application_data;
+	void (*application_data_destroy)(void *arg);
 };
 
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
-		enum rrr_http_method method
+		enum rrr_http_method method,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 );
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction

@@ -200,7 +200,7 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING)) != 0) {
+	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, NULL, NULL)) != 0) {
 		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}

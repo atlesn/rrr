@@ -41,9 +41,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-int rrr_http_client_data_init (
+int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
-		const char *user_agent
+		const char *user_agent,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 ) {
 	int ret = 0;
 
@@ -53,6 +55,12 @@ int rrr_http_client_data_init (
 		RRR_MSG_0("Could not allocate memory for user agent in rrr_http_client_data_init\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (application_data != NULL && *application_data != NULL) {
+		data->application_data = *application_data;
+		data->application_data_destroy = application_data_destroy;
+		*application_data = NULL;
 	}
 
 	out:
@@ -94,6 +102,9 @@ void rrr_http_client_request_data_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->user_agent);
 	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
+	if (data->application_data != NULL) {
+		data->application_data_destroy(data->application_data);
+	}
 }
 
 
@@ -114,19 +125,16 @@ struct rrr_http_client_tick_callback_data {
 	void *raw_callback_arg;
 };
 
-static int __rrr_http_client_receive_chunk_callback (
+static int __rrr_http_client_chunks_iterate_callback (
 		RRR_HTTP_PART_ITERATE_CALLBACK_ARGS
 ) {
-	struct rrr_http_client_tick_callback_data *callback_data = arg;
+	struct rrr_nullsafe_str *chunks_merged = arg;
 
-	return callback_data->final_callback (
-			chunk_idx,
-			chunk_total,
-			data_start,
-			chunk_data_size,
-			part_data_size,
-			callback_data->final_callback_arg
-	);
+	(void)(part_data_size);
+	(void)(chunk_total);
+	(void)(chunk_idx);
+
+	return rrr_nullsafe_str_append(chunks_merged, data_start, chunk_data_size);
 }
 
 static int __rrr_http_client_receive_http_part_callback (
@@ -143,6 +151,12 @@ static int __rrr_http_client_receive_http_part_callback (
 	int ret = RRR_HTTP_OK;
 
 	struct rrr_http_part *response_part = transaction->response_part;
+	struct rrr_nullsafe_str *chunks_merged = NULL;
+
+	if ((ret = rrr_nullsafe_str_new_or_replace(&chunks_merged, NULL, 0)) != 0) {
+		goto out;
+	}
+
 /*
 	callback_data->data->response_code = response_part->response_code;
 
@@ -180,14 +194,21 @@ static int __rrr_http_client_receive_http_part_callback (
 	if ((ret = rrr_http_part_chunks_iterate (
 			response_part,
 			data_ptr,
-			__rrr_http_client_receive_chunk_callback,
-			callback_data
+			__rrr_http_client_chunks_iterate_callback,
+			chunks_merged
 	) != 0)) {
 		RRR_MSG_0("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
 		goto out;
 	}
 
+	ret = callback_data->final_callback (
+			transaction,
+			chunks_merged,
+			callback_data->final_callback_arg
+	);
+
 	out:
+	rrr_nullsafe_str_destroy_if_not_null(&chunks_merged);
 	return ret;
 }
 
@@ -307,7 +328,9 @@ static int __rrr_http_client_request_send_callback (
 
 		if ((ret = rrr_http_transaction_new (
 				&transaction,
-				callback_data->data->method
+				callback_data->data->method,
+				&callback_data->data->application_data,
+				callback_data->data->application_data_destroy
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_request_send_callback\n");
 			goto out;
@@ -759,7 +782,6 @@ static int __rrr_http_client_transport_ctx_tick (
 }
 
 int rrr_http_client_tick (
-		int *got_redirect,
 		uint64_t *bytes_total,
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle,
@@ -779,7 +801,6 @@ int rrr_http_client_tick (
 
 	int ret = 0;
 
-	*got_redirect = 0;
 	*bytes_total = 0;
 
 	struct rrr_http_client_tick_callback_data callback_data = {

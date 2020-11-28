@@ -32,11 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
-	int chunk_idx,									\
-	int chunk_total,								\
-	const char *chunk_data_start,					\
-	size_t chunk_data_size,							\
-	size_t part_data_size,							\
+	const struct rrr_http_transaction *transaction,	\
+	const struct rrr_nullsafe_str *response_data,	\
 	void *arg
 
 #define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\
@@ -82,6 +79,9 @@ struct rrr_http_client_request_data {
 
 	int response_code;
 	struct rrr_nullsafe_str *response_argument;
+
+	void *application_data;
+	void (*application_data_destroy)(void *arg);
 };
 
 struct rrr_http_client_request_callback_data {
@@ -99,9 +99,11 @@ struct rrr_http_client_request_callback_data {
 	void *query_prepare_callback_arg;
 };
 
-int rrr_http_client_data_init (
+int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
-		const char *user_agent
+		const char *user_agent,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 );
 int rrr_http_client_data_reset (
 		struct rrr_http_client_request_data *data,
@@ -149,7 +151,6 @@ int rrr_http_client_request_websocket_upgrade_send (
 		const struct rrr_net_transport_config *net_transport_config
 );
 int rrr_http_client_tick (
-		int *got_redirect,
 		uint64_t *bytes_total,
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle,

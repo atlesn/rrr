@@ -148,7 +148,7 @@ static int __rrr_http_application_http2_callback (
 	}
 	else {
 		if (transaction == NULL) {
-			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0)) != 0) {
+			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
 				goto out;
 			}

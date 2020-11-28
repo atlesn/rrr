@@ -213,6 +213,7 @@ static int __rrr_http_server_worker_receive_raw_callback (
 				worker_data->config_data.addr_len,
 				data,
 				data_size,
+				transaction,
 				unique_id,
 				next_protocol_version,
 				worker_data->config_data.callbacks.final_callback_raw_arg

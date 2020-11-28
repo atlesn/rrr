@@ -1082,6 +1082,7 @@ static int httpserver_receive_raw_callback (
 	struct httpserver_callback_data *receive_callback_data = arg;
 
 	(void)(next_protocol_version);
+	(void)(transaction);
 
 	int ret = 0;
 

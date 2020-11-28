@@ -545,6 +545,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 		if ((ret = receive_data->raw_callback (
 				read_session->rx_buf_ptr,
 				read_session->rx_buf_wpos,
+				transaction,
 				0,
 				transaction->response_part->parsed_protocol_version,
 				receive_data->raw_callback_arg
@@ -937,6 +938,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		if ((ret = receive_data->raw_callback (
 				read_session->rx_buf_ptr,
 				read_session->rx_buf_wpos,
+				transaction,
 				receive_data->unique_id,
 				transaction->response_part->parsed_protocol_version,
 				receive_data->raw_callback_arg
@@ -1109,7 +1111,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 			// HTTP1 only supports one active transaction. Make a new and delete any old one. Method
 			// does not matter.
-			if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_GET)) != 0) {
+			if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_GET, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction for request in __rrr_application_http1_receive_get_target_size\n");
 				goto out;
 			}
