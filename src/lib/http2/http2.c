@@ -94,7 +94,7 @@ void __rrr_http2_stream_collection_destroy (
 	RRR_LL_DESTROY(collection, struct rrr_http2_stream, __rrr_http2_stream_destroy(node));
 }
 
-struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find_or_create (
+struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find (
 		struct rrr_http2_stream_collection *collection,
 		int32_t stream_id
 ) {
@@ -106,6 +106,17 @@ struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find_or_crea
 			return node;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; __rrr_http2_stream_destroy(node));
+	return NULL;
+}
+
+struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find_or_create (
+		struct rrr_http2_stream_collection *collection,
+		int32_t stream_id
+) {
+	struct rrr_http2_stream *old_stream = __rrr_http2_stream_collection_maintain_and_find (collection, stream_id);
+	if (old_stream != NULL) {
+		return old_stream;
+	}
 
 	struct rrr_http2_stream *new_stream = malloc(sizeof(*new_stream));
 	if (new_stream == NULL) {
@@ -120,19 +131,12 @@ struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find_or_crea
 	return new_stream;
 }
 
-int __rrr_http2_stream_collection_data_push (
-		struct rrr_http2_stream_collection *collection,
-		int32_t stream_id,
+int __rrr_http2_stream_data_push (
+		struct rrr_http2_stream *target,
 		const char *data,
 		size_t data_size
 ) {
 	int ret = 0;
-
-	struct rrr_http2_stream *target = __rrr_http2_stream_collection_maintain_and_find_or_create(collection, stream_id);
-	if (target == NULL) {
-		ret = RRR_HTTP2_HARD_ERROR;
-		goto out;
-	}
 
 	if (data_size == 0) {
 		goto out;
@@ -257,8 +261,28 @@ static int __rrr_http2_on_data_chunk_recv_callback (
 
 	RRR_DBG_7 ("http2 recv chunk stream %" PRIi32 " size %llu\n", stream_id, (unsigned long long) len);
 
-	if (__rrr_http2_stream_collection_data_push(&session->streams, stream_id, (const char *) data, len) != 0) {
+	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, stream_id);
+	if (stream == NULL) {
+		RRR_DBG_7("http2 unknown stream %u in data frame\n", stream_id);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	if (__rrr_http2_stream_data_push(stream, (const char *) data, len) != 0) {
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	if ((flags & NGHTTP2_FLAG_END_STREAM) && session->callback_data.callback != NULL) {
+		if (session->callback_data.callback (
+				session,
+				&stream->headers,
+				stream_id,
+				stream->data,
+				stream->data_wpos,
+				stream->application_data,
+				session->callback_data.callback_arg
+		) != 0) {
+			return NGHTTP2_ERR_CALLBACK_FAILURE;
+		}
 	}
 /*
 	struct Request *req;
@@ -284,23 +308,8 @@ static int __rrr_http2_on_stream_close_callback (
 
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, stream_id);
 	if (stream->data != NULL) {
-		if (error_code == 0) {
-			if (session->callback_data.callback != NULL) {
-				if (session->callback_data.callback (
-						session,
-						&stream->headers,
-						stream_id,
-						stream->data,
-						stream->data_wpos,
-						stream->application_data,
-						session->callback_data.callback_arg
-				) != 0) {
-					return NGHTTP2_ERR_CALLBACK_FAILURE;
-				}
-			}
-		}
 		stream->please_delete_me = 1;
 	}
 
@@ -318,6 +327,30 @@ static int __rrr_http2_on_frame_recv_callback (
 	(void)(nghttp2_session);
 
 	RRR_DBG_7 ("http2 read frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
+
+	if (frame->hd.type != NGHTTP2_HEADERS && frame->hd.type != NGHTTP2_DATA) {
+		return 0;
+	}
+
+	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, frame->hd.stream_id);
+	if (stream == NULL) {
+		RRR_DBG_7("http2 unknown stream %u in frame\n", frame->hd.stream_id);
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) && session->callback_data.callback != NULL) {
+		if (session->callback_data.callback (
+				session,
+				&stream->headers,
+				frame->hd.stream_id,
+				NULL,
+				0,
+				stream->application_data,
+				session->callback_data.callback_arg
+		) != 0) {
+			return NGHTTP2_ERR_CALLBACK_FAILURE;
+		}
+	}
 
 	return 0;
 }
@@ -539,7 +572,8 @@ static int __rrr_http2_session_stream_header_push (
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
 	if (stream == NULL) {
-		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_header_value_push\n");
+		RRR_MSG_0("Could not create stream id %u in __rrr_http2_session_stream_header_push\n", stream_id);
+		return 1;
 	}
 	return rrr_map_item_add_new(&stream->headers_to_send, name, value);
 }

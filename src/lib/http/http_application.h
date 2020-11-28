@@ -99,6 +99,10 @@ int rrr_http_application_transport_ctx_tick (
 		int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
+int rrr_http_application_alpn_protos_with_all_do (
+		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
+		void *callback_arg
+);
 void rrr_http_application_alpn_protos_get (
 		const char **target,
 		unsigned int *length,

@@ -916,6 +916,11 @@ static int __rrr_http_application_http1_request_receive_callback (
 		rrr_http_part_header_dump(transaction->request_part);
 	}
 
+	// Upgrade was performed in get target size function, nothing to do
+	if (*(receive_data->upgraded_application) != 0) {
+		goto out;
+	}
+
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
 			transaction->request_part->data_length,
 			transaction->request_part->headroom_length,
@@ -1105,6 +1110,27 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		}
 		part_to_use = receive_data->http1->active_transaction->request_part;
 		parse_type = RRR_HTTP_PARSE_REQUEST;
+	}
+
+	if (read_session->parse_pos == 0 && !receive_data->is_client) {
+		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
+				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1
+		) == 0) {
+			RRR_DBG_3("HTTP2 magic found, upgrading to native HTTP2 with %llu bytes read so far\n", (long long int) read_session->rx_buf_wpos);
+			if ((ret = rrr_http_application_http2_new (
+					receive_data->upgraded_application,
+					1, // Is server
+					(void **) &read_session->rx_buf_ptr,
+					read_session->rx_buf_wpos
+			)) != 0) {
+				goto out;
+			}
+
+			read_session->target_size = read_session->rx_buf_wpos;
+			ret = RRR_HTTP_OK;
+			goto out;
+		}
 	}
 
 	// There might be more than one chunk in each read cycle, we have to

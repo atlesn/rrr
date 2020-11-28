@@ -142,6 +142,7 @@ int rrr_http_part_raw_response_set_allocated (
 	out:
 	return ret;
 }
+
 /*
 void rrr_http_part_raw_request_set_ptr (
 		struct rrr_http_part *part,

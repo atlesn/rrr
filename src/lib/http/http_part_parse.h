@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 
 struct rrr_http_part;
+struct rrr_nullsafe_str;
 
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
@@ -34,6 +35,15 @@ int rrr_http_part_parse (
 		size_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
+);
+// Set all required request data without parsing
+int rrr_http_part_parse_request_data_set (
+		struct rrr_http_part *part,
+		size_t data_length,
+		enum rrr_http_application_type protocol_version,
+		const struct rrr_nullsafe_str *request_method,
+		const struct rrr_nullsafe_str *uri,
+		const struct rrr_nullsafe_str *content_type_or_null
 );
 
 #endif /* RRR_HTTP_PART_PARSE_H */

@@ -90,7 +90,7 @@ static int __rrr_http_part_parse_response_code (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_PROTOCOL_VERSION_1_1;
+	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
 
 	*parsed_bytes = (crlf - (buf + start_pos) + 2);
 
@@ -185,7 +185,7 @@ static int __rrr_http_part_parse_request (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_PROTOCOL_VERSION_1_1;
+	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
 
 	start += protocol_length;
 	// We are generous, allow spaces after protocol version
@@ -412,6 +412,54 @@ static int __rrr_http_part_parse_chunk (
 	return ret;
 }
 
+static int __rrr_http_part_request_method_str_to_enum (
+		struct rrr_http_part *part,
+		const struct rrr_nullsafe_str *content_type_or_null
+) {
+	int ret = 0;
+
+	if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "GET") == 0) {
+		part->request_method = RRR_HTTP_METHOD_GET;
+	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "OPTIONS") == 0) {
+		part->request_method = RRR_HTTP_METHOD_OPTIONS;
+	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "POST") == 0) {
+		part->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
+
+		if (content_type_or_null != NULL) {
+			if (rrr_nullsafe_str_cmpto_case(content_type_or_null, "multipart/form-data") == 0) {
+				part->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
+			}
+			else if (rrr_nullsafe_str_cmpto_case(content_type_or_null, "application/x-www-form-urlencoded") == 0) {
+				part->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
+			}
+			else if (rrr_nullsafe_str_cmpto_case(content_type_or_null, "text/plain") == 0) {
+				part->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
+			}
+		}
+	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PUT") == 0) {
+		part->request_method = RRR_HTTP_METHOD_PUT;
+	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "HEAD") == 0) {
+		part->request_method = RRR_HTTP_METHOD_HEAD;
+	}
+	else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "DELETE") == 0) {
+		part->request_method = RRR_HTTP_METHOD_DELETE;
+	}
+	else {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,part->request_method_str_nullsafe);
+		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/HEAD/DELETE)\n", value);
+		part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_parse (
 		struct rrr_http_part *part,
 		size_t *target_size,
@@ -512,40 +560,7 @@ int rrr_http_part_parse (
 				RRR_BUG("Numeric request method was non zero in rrr_http_part_parse\n");
 			}
 
-			if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "GET") == 0) {
-				part->request_method = RRR_HTTP_METHOD_GET;
-			}
-			else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "OPTIONS") == 0) {
-				part->request_method = RRR_HTTP_METHOD_OPTIONS;
-			}
-			else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "POST") == 0) {
-				part->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
-
-				if (content_type != NULL) {
-					if (rrr_nullsafe_str_cmpto_case(content_type->value, "multipart/form-data") == 0) {
-						part->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
-					}
-					else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/x-www-form-urlencoded") == 0) {
-						part->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
-					}
-					else if (rrr_nullsafe_str_cmpto_case(content_type->value, "text/plain") == 0) {
-						part->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
-					}
-				}
-			}
-			else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "PUT") == 0) {
-				part->request_method = RRR_HTTP_METHOD_PUT;
-			}
-			else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "HEAD") == 0) {
-				part->request_method = RRR_HTTP_METHOD_HEAD;
-			}
-			else if (rrr_nullsafe_str_cmpto(part->request_method_str_nullsafe, "DELETE") == 0) {
-				part->request_method = RRR_HTTP_METHOD_DELETE;
-			}
-			else {
-				RRR_MSG_0("Unknown request method in HTTP request (not GET/OPTIONS/POST/PUT/HEAD/DELETE)\n");
-				part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-				ret = RRR_HTTP_PARSE_SOFT_ERR;
+			if ((ret = __rrr_http_part_request_method_str_to_enum (part, (content_type != NULL ? content_type->value : NULL))) != 0) {
 				goto out;
 			}
 
@@ -650,4 +665,31 @@ int rrr_http_part_parse (
 	out:
 	*parsed_bytes = parsed_bytes_total;
 	return ret;
+}
+
+// Set all required request data without parsing
+int rrr_http_part_parse_request_data_set (
+		struct rrr_http_part *part,
+		size_t data_length,
+		enum rrr_http_application_type protocol_version,
+		const struct rrr_nullsafe_str *request_method,
+		const struct rrr_nullsafe_str *uri,
+		const struct rrr_nullsafe_str *content_type_or_null
+) {
+	if ((rrr_nullsafe_str_dup(&part->request_uri_nullsafe, uri)) != 0) {
+		return 1;
+	}
+	if ((rrr_nullsafe_str_dup(&part->request_method_str_nullsafe, request_method)) != 0) {
+		return 1;
+	}
+	if (__rrr_http_part_request_method_str_to_enum (part, content_type_or_null) != 0) {
+		return 1;
+	}
+
+	part->parsed_protocol_version = protocol_version;
+	part->data_length = data_length;
+	part->header_complete = 1;
+	part->parse_complete = 1;
+
+	return 0;
 }

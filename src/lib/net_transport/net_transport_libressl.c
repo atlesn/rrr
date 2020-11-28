@@ -46,7 +46,6 @@ static void __rrr_net_transport_libressl_destroy (
 	if (tls->config != NULL) {
 		tls_config_free(tls->config);
 	}
-
 	rrr_net_transport_tls_common_destroy(tls);
 }
 
@@ -65,6 +64,8 @@ static void __rrr_net_transport_libressl_data_destroy (
 	if (data->ip_data.fd > 0) {
 		rrr_ip_close(&data->ip_data);
 	}
+
+	RRR_FREE_IF_NOT_NULL(data->alpn_selected_proto);
 
 	free(data);
 }

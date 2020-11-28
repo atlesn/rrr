@@ -220,7 +220,6 @@ int rrr_net_transport_handle_allocate_and_add (
 			submodule_callback,
 			submodule_callback_arg
 	)) != 0) {
-		ret = 1;
 		goto out;
 	}
 
@@ -704,6 +703,13 @@ int rrr_net_transport_ctx_is_tls (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->transport->methods->is_tls();
+}
+
+void rrr_net_transport_ctx_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+	handle->transport->methods->selected_proto_get(proto, handle);
 }
 
 int rrr_net_transport_handle_with_transport_ctx_do (

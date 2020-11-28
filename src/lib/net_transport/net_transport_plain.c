@@ -391,6 +391,14 @@ static int __rrr_net_transport_plain_is_tls (void) {
 	return 0;
 }
 
+static void __rrr_net_transport_plain_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+	(void)(handle);
+	*proto = NULL;
+}
+
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
@@ -401,7 +409,8 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_read,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll,
-	__rrr_net_transport_plain_is_tls
+	__rrr_net_transport_plain_is_tls,
+	__rrr_net_transport_plain_selected_proto_get
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {

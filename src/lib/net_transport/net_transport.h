@@ -198,6 +198,10 @@ struct rrr_net_transport_methods {
 			struct rrr_net_transport_handle *handle
 	);
 	int (*is_tls)(void);
+	void (*selected_proto_get)(
+			const char **proto,
+			struct rrr_net_transport_handle *handle
+	);
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
@@ -295,6 +299,10 @@ void rrr_net_transport_ctx_get_socket_stats (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_is_tls (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_selected_proto_get (
+		const char **proto,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_with_transport_ctx_do (

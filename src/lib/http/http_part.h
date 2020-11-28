@@ -103,7 +103,7 @@ struct rrr_http_part {
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
-	int parsed_protocol_version;
+	enum rrr_http_application_type parsed_protocol_version;
 
 //	const void *data_ptr;
 

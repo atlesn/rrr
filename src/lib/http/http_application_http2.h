@@ -24,9 +24,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application;
 
+void rrr_http_application_http2_alpn_protos_get (
+		const char **target,
+		unsigned int *length
+);
 int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
-		int is_server
+		int is_server,
+		void **initial_receive_data,
+		size_t initial_receive_data_len
 );
 int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_application **target,

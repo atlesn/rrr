@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_application_internals.h"
 #include "http_transaction.h"
 #include "http_part.h"
+#include "http_part_parse.h"
+#include "http_part_multipart.h"
 #include "http_header_fields.h"
 #include "http_util.h"
 #include "../net_transport/net_transport.h"
@@ -100,10 +102,23 @@ static int __rrr_http_application_http2_request_send (
 	return ret;
 }
 
+// TODO : Unclear when this function is useful, response is implicitly sent when request is received
+//        and callback is done
 static int __rrr_http_application_http2_response_send (
 		RRR_HTTP_APPLICATION_RESPONSE_SEND_ARGS
 ) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
+	int ret = 0;
+
+	printf("Response submit\n");
+
+	if ((ret = rrr_http2_response_submit(http2->http2_session, -1)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 struct rrr_http_application_http2_callback_data {
@@ -122,6 +137,7 @@ static int __rrr_http_application_http2_callback (
 
 	int ret = 0;
 
+	struct rrr_http_transaction *transaction_to_destroy = NULL;
 	struct rrr_http_transaction *transaction = stream_application_data;
 
 	if (callback_data->is_client) {
@@ -134,27 +150,126 @@ static int __rrr_http_application_http2_callback (
 		const struct rrr_http_header_field *status = rrr_http_part_header_field_get(transaction->response_part, ":status");
 		if (status == NULL) {
 			RRR_MSG_0("Field :status missing in HTTP2 response header\n");
-			return RRR_HTTP2_SOFT_ERROR;
+			ret = RRR_HTTP2_SOFT_ERROR;
+			goto out;
+		}
+
+		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
+		if (content_length != NULL && content_length->value_unsigned != 0) {
+			// Wait for DATA frames and END DATA
+			goto out;
+		}
+
+		if (transaction->response_part->response_code != 0) {
+			// Looks like we received data on the stream when we did not expect it, ignore the data
+			goto out;
 		}
 
 		transaction->response_part->response_code = status->value_unsigned;
-		transaction->response_part->data_length = data_size;
-		transaction->response_part->parse_complete = 1;
-		transaction->response_part->header_complete = 1;
-		transaction->response_part->parsed_protocol_version = 1;
 	}
 	else {
-		RRR_BUG("BUG: Server mode not implemented in __rrr_http_application_http2_callback\n");
+		if (transaction == NULL) {
+			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0)) != 0) {
+				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
+				goto out;
+			}
+			if ((ret = rrr_http2_session_stream_application_data_set(callback_data->http2->http2_session, stream_id, transaction_to_destroy, rrr_http_transaction_decref_if_not_null_void)) != 0) {
+				goto out;
+			}
+			// Don't set to NULL, will be decrefed at function out
+			rrr_http_transaction_incref(transaction_to_destroy);
+			transaction = transaction_to_destroy;
+		}
+
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
+
+		const struct rrr_http_header_field *post = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "POST");
+		const struct rrr_http_header_field *put = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "PUT");
+
+		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
+		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
+		const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(transaction->request_part, "content-type");
+
+		if (method == NULL) {
+			RRR_DBG_3("http2 field :method missing in request\n");
+			goto out_send_response_bad_request;
+		}
+
+		if (path == NULL) {
+			RRR_DBG_3("http2 field :path missing in request\n");
+			goto out_send_response_bad_request;
+		}
+
+		if ((post || put) && (data == NULL || data_size == 0)) {
+			// Wait for DATA frames and END DATA
+			goto out;
+		}
+
+		if (transaction->request_part->parse_complete) {
+			// Looks like we received data on the stream when we did not expect it, ignore the data
+			goto out;
+		}
+
+		// Set data which is otherwise set by the parser in HTTP/1.1
+		if ((ret = rrr_http_part_parse_request_data_set (
+				transaction->request_part,
+				data_size,
+				RRR_HTTP_APPLICATION_HTTP2,
+				method->value,
+				path->value,
+				(content_type != NULL ? content_type->value : NULL)
+		)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
+
+		if ((ret = rrr_http_part_multipart_process(transaction->request_part, data)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
+
+		if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
 	}
 
-	return callback_data->callback (
+	if ((ret = callback_data->callback (
 			callback_data->handle,
 			transaction,
 			data,
 			0,
 			callback_data->unique_id,
 			callback_data->callback_arg
-	);
+	)) != 0) {
+		if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+			goto out_send_response_bad_request;
+		}
+		goto out;
+	}
+
+	if (!callback_data->is_client) {
+		goto out_send_response;
+	}
+
+	goto out;
+	out_send_response_bad_request:
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+	out_send_response:
+		if (transaction->response_part->response_code != 0) {
+			if ((ret = rrr_http2_response_submit(callback_data->http2->http2_session, stream_id)) != 0) {
+				goto out;
+			}
+		}
+	out:
+		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
+	return ret;
 }
 
 static int __rrr_http_application_http2_data_source_callback (
@@ -232,6 +347,13 @@ static void __rrr_http_application_http2_alpn_protos_get (
 	*length = sizeof(rrr_http_application_http2_alpn_protos);
 }
 
+void rrr_http_application_http2_alpn_protos_get (
+		const char **target,
+		unsigned int *length
+) {
+	return __rrr_http_application_http2_alpn_protos_get(target, length);
+}
+
 static void __rrr_http_application_http2_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
@@ -289,11 +411,13 @@ static int __rrr_http_application_http2_new (
 
 int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
-		int is_server
+		int is_server,
+		void **initial_receive_data,
+		size_t initial_receive_data_len
 ) {
 	int ret = 0;
 
-	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, NULL, 0, is_server)) != 0) {
+	if ((ret = __rrr_http_application_http2_new((struct rrr_http_application_http2 **) target, initial_receive_data, initial_receive_data_len, is_server)) != 0) {
 		goto out;
 	}
 

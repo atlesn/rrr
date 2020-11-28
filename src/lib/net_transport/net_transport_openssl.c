@@ -63,7 +63,7 @@ static void __rrr_net_transport_openssl_ssl_data_destroy (struct rrr_net_transpo
 		if (ssl_data->ip_data.fd != 0) {
 			rrr_ip_close(&ssl_data->ip_data);
 		}
-
+		RRR_FREE_IF_NOT_NULL(ssl_data->alpn_selected_proto);
 		free(ssl_data);
 	}
 }
@@ -120,6 +120,84 @@ struct rrr_net_transport_tls_data *__rrr_net_transport_openssl_ssl_data_new (voi
 	return ssl_data;
 }
 
+static int __rrr_net_transport_openssl_alpn_select_cb (
+		SSL *s,
+		const unsigned char **out,
+		unsigned char *outlen,
+		const unsigned char *in,
+		unsigned int inlen,
+		void *arg
+) {
+	struct rrr_net_transport_tls_alpn *alpn = arg;
+
+	(void)(s);
+
+	int ret = SSL_TLSEXT_ERR_NOACK;
+
+	*out = NULL;
+	*outlen = 0;
+
+	// -2 for comma and \0
+	if (alpn->length > 256 - 2|| inlen > 256 - 2) {
+		RRR_MSG_1("Error: Large ALPN proto vectors (%u and %u) in __rrr_net_transport_openssl_alpn_select_cb\n", alpn->length, inlen);
+		ret = SSL_TLSEXT_ERR_ALERT_FATAL;
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		unsigned char server_protocols_tmp[256];
+		unsigned char client_protocols_tmp[256];
+		rrr_net_transport_tls_common_alpn_protos_to_str(server_protocols_tmp, sizeof(server_protocols_tmp), (unsigned char *) alpn->protos, alpn->length);
+		rrr_net_transport_tls_common_alpn_protos_to_str(client_protocols_tmp, sizeof(client_protocols_tmp), in, inlen);
+		RRR_DBG_3("TLS ALPN server protocols: '%s' client protocols: '%s'\n", server_protocols_tmp, client_protocols_tmp);
+	}
+
+	if (alpn->length == 0 || inlen == 0) {
+		goto out;
+	}
+
+	// Strategy : Pick the first protocol from the server list which is also in the client list
+	int server_index = 0;
+	for (unsigned int i = 0; i < alpn->length;/* increment at loop end */) {
+		const char *i_text = alpn->protos + i + 1;
+		unsigned char i_text_length = alpn->protos[i];
+
+		if (i + i_text_length >= alpn->length) {
+			RRR_BUG("BUG: Invalid size in self-created ALPN vector in __rrr_net_transport_openssl_alpn_select_cb\n");
+		}
+
+		for (unsigned int j = 0; j < inlen;/* increment at loop end */) {
+			const unsigned char *j_text = in + j + 1;
+			unsigned char j_text_length = in[j];
+
+			if (j + j_text_length >= inlen) {
+				RRR_MSG_0("Error: Invalid size in vector from input in __rrr_net_transport_openssl_alpn_select_cb\n");
+				ret = SSL_TLSEXT_ERR_ALERT_FATAL;
+				goto out;
+			}
+
+			if (i_text_length == j_text_length && memcmp(i_text, j_text, i_text_length) == 0) {
+				*out = (const unsigned char *) alpn->protos + i + 1;
+				*outlen = i_text_length;
+				RRR_DBG_3("TLS ALPN selected protocol at server position %i\n", server_index);
+				ret = SSL_TLSEXT_ERR_OK;
+				goto out;
+			}
+
+			j += j_text_length + 1;
+		}
+
+		server_index++;
+		i += i_text_length + 1;
+	}
+
+	RRR_DBG_3("TLS ALPN no protocol selected\n");
+
+	out:
+	return ret;
+}
+
+// Memory in *alpn must be permanently available
 static int __rrr_net_transport_openssl_new_ctx (
 		SSL_CTX **target,
 		const SSL_METHOD *method,
@@ -128,8 +206,7 @@ static int __rrr_net_transport_openssl_new_ctx (
 		const char *private_key_file,
 		const char *ca_file,
 		const char *ca_path,
-		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		struct rrr_net_transport_tls_alpn *alpn
 ) {
 	int ret = 0;
 
@@ -202,13 +279,17 @@ static int __rrr_net_transport_openssl_new_ctx (
 		}
 	}
 
-	if (alpn_protos != NULL) {
+	if (alpn != NULL && alpn->protos != NULL) {
+		// For client
 		// Note: Returns 0 on success as opposed to other OpenSSL functions
-		if (SSL_CTX_set_alpn_protos(ctx, (unsigned const char *) alpn_protos, alpn_protos_length) != 0) {
+		if (SSL_CTX_set_alpn_protos(ctx, (unsigned const char *) alpn->protos, alpn->length) != 0) {
 			RRR_SSL_ERR("SSL_CTX_set_alpn_protos failed");
 			ret = 1;
 			goto out_destroy;
 		}
+
+		// For server
+		SSL_CTX_set_alpn_select_cb(ctx, __rrr_net_transport_openssl_alpn_select_cb, alpn);
 	}
 
 	*target = ctx;
@@ -291,8 +372,7 @@ int __rrr_net_transport_openssl_connect_callback (
 			tls->private_key_file,
 			tls->ca_file,
 			tls->ca_path,
-			tls->alpn_protos,
-			tls->alpn_protos_length
+			&tls->alpn
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
 		ret = 1;
@@ -489,8 +569,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 			tls->private_key_file,
 			tls->ca_file,
 			tls->ca_path,
-			tls->alpn_protos,
-			tls->alpn_protos_length
+			&tls->alpn
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_bind_and_listen");
 		ret = 1;
@@ -576,10 +655,6 @@ static int __rrr_net_transport_openssl_accept_callback (
 		goto out;
 	}
 
-	ssl_data->sockaddr = callback_data->accept_data->addr;
-	ssl_data->socklen = callback_data->accept_data->len;
-	ssl_data->ip_data = callback_data->accept_data->ip_data;
-
 	if (__rrr_net_transport_openssl_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_server_method,
@@ -588,16 +663,15 @@ static int __rrr_net_transport_openssl_accept_callback (
 			tls->private_key_file,
 			tls->ca_file,
 			tls->ca_path,
-			tls->alpn_protos,
-			tls->alpn_protos_length
+			&tls->alpn
 	) != 0) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_accept\n");
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_accept");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
 
 	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 0)) == NULL) {
-		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_tls_accept\n");
+		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_tls_accept");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -605,13 +679,52 @@ static int __rrr_net_transport_openssl_accept_callback (
 	SSL *ssl;
 	BIO_get_ssl(ssl_data->web, &ssl);
 
-	if (SSL_set_fd(ssl, ssl_data->ip_data.fd) != 1) {
-		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept\n");
+	if (SSL_set_fd(ssl, callback_data->accept_data->ip_data.fd) != 1) {
+		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
 
 	BIO_set_nbio(ssl_data->web, 1);
+
+	// Must complete handshake to get the selected ALPN protocol
+	SSL_set_accept_state(ssl);
+	if ((ret = SSL_do_handshake(ssl)) != 1) {
+		if (ret < 0) {
+			RRR_SSL_ERR("Could not perform handshake in __rrr_net_transport_tls_accept");
+		}
+		else {
+			RRR_MSG_3("TLS handshake aborted\n");
+		}
+		ret = RRR_READ_SOFT_ERROR;
+		goto out_destroy_ssl_data;
+	}
+	else {
+		ret = 0;
+	}
+
+	const unsigned char *alpn_proto = NULL;
+	unsigned int alpn_proto_length = 0;
+
+	SSL_get0_alpn_selected(ssl, &alpn_proto, &alpn_proto_length);
+
+	if (alpn_proto != NULL && alpn_proto_length > 0) {
+		unsigned int str_size = alpn_proto_length + 1;
+		if ((ssl_data->alpn_selected_proto = malloc(str_size)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for ALPN protocol name in __rrr_net_transport_openssl_accept_callback\n");
+			ret = 1;
+			goto out_destroy_ssl_data;
+		}
+		memcpy(ssl_data->alpn_selected_proto, alpn_proto, alpn_proto_length);
+		ssl_data->alpn_selected_proto[alpn_proto_length] = '\0';
+	}
+
+	// Set this data, including FD at the end. Caller will try to close the FD
+	// upon errors from this function, and we wish to avoid double close() as
+	// the FD will attempted to be closed by the destroy function below.
+	ssl_data->sockaddr = callback_data->accept_data->addr;
+	ssl_data->socklen = callback_data->accept_data->len;
+	ssl_data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = ssl_data;
 	*submodule_private_fd = 0;
@@ -657,7 +770,6 @@ int __rrr_net_transport_openssl_accept (
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
-		ret = 1;
 		goto out_destroy_ip;
 	}
 
@@ -668,7 +780,7 @@ int __rrr_net_transport_openssl_accept (
 				listen_ssl_data->ip_data.port, buf, listen_handle->transport, new_handle);
 	}
 
-	ret = callback(
+	ret = callback (
 			listen_handle->transport,
 			new_handle,
 			(struct sockaddr *) &accept_data->addr,
@@ -843,6 +955,14 @@ static int __rrr_net_transport_openssl_is_tls (void) {
 	return 1;
 }
 
+static void __rrr_net_transport_openssl_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
+	*proto = ssl_data->alpn_selected_proto;
+}
+
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_destroy,
 	__rrr_net_transport_openssl_connect,
@@ -853,7 +973,8 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_read,
 	__rrr_net_transport_openssl_send,
 	__rrr_net_transport_openssl_poll,
-	__rrr_net_transport_openssl_is_tls
+	__rrr_net_transport_openssl_is_tls,
+	__rrr_net_transport_openssl_selected_proto_get
 };
 
 int rrr_net_transport_openssl_new (

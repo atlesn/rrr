@@ -589,6 +589,8 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 	pthread_mutex_unlock(&socket_lock);
 
 	if (did_destroy != 1 && ignore_unregistered == 0) {
+		// NOTE ! If this warning appears, program must be fixed. In a possible race
+		//        condition, we might try to close an FD opened by somebody else.
 		RRR_MSG_0("Warning: Socket close of fd %i called but it was not registered. Attempting to close anyway.\n", fd);
 		int ret = close(fd);
 		if (ret != 0) {

@@ -31,6 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_read_session;
 
+struct rrr_net_transport_tls_alpn {
+	char *protos;
+	unsigned int length;
+};
+
 struct rrr_net_transport_tls {
 	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_tls);
 
@@ -48,14 +53,15 @@ struct rrr_net_transport_tls {
 	char *private_key_file;
 	char *ca_file;
 	char *ca_path;
-	char *alpn_protos;
-	unsigned int alpn_protos_length;
+	struct rrr_net_transport_tls_alpn alpn;
 };
 
 struct rrr_net_transport_tls_data {
 	struct rrr_ip_data ip_data;
 	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
+
+	char *alpn_selected_proto;
 
 #ifdef RRR_WITH_OPENSSL
 	SSL_CTX *ctx;
@@ -98,6 +104,12 @@ int rrr_net_transport_tls_common_read_get_target_size (
 int rrr_net_transport_tls_common_read_complete_callback (
 		struct rrr_read_session *read_session,
 		void *private_arg
+);
+void rrr_net_transport_tls_common_alpn_protos_to_str (
+		unsigned char *out_buf,
+		unsigned int out_size,
+		const unsigned char *in,
+		unsigned int in_size
 );
 
 #endif /* RRR_NET_TRANSPORT_TLS_COMMON_H */

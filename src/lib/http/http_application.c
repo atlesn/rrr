@@ -58,7 +58,7 @@ int rrr_http_application_new (
 	}
 #ifdef RRR_WITH_NGHTTP2
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
-		return rrr_http_application_http2_new(target, is_server);
+		return rrr_http_application_http2_new(target, is_server, NULL, 0);
 	}
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);
@@ -122,6 +122,20 @@ int rrr_http_application_transport_ctx_tick (
 			raw_callback,
 			raw_callback_arg
 	);
+}
+
+int rrr_http_application_alpn_protos_with_all_do (
+		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),
+		void *callback_arg
+) {
+	const char *alpn_protos = NULL;
+	unsigned int alpn_protos_length = 0;
+
+#ifdef RRR_WITH_NGHTTP2
+	rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+#endif
+
+	return callback(alpn_protos, alpn_protos_length, callback_arg);
 }
 
 void rrr_http_application_alpn_protos_get (

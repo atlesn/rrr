@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_util.h"
 #include "http_server_worker.h"
+#include "http_application.h"
 
 #include "../threads.h"
 #include "../net_transport/net_transport.h"
@@ -85,6 +86,27 @@ int rrr_http_server_new (struct rrr_http_server **target) {
 		return ret;
 }
 
+struct rrr_http_server_start_alpn_protos_callback_data {
+	struct rrr_net_transport **result_transport;
+	const struct rrr_net_transport_config *net_transport_config;
+	int net_transport_flags;
+};
+
+static int __rrr_http_server_start_alpn_protos_callback (
+		const char *alpn_protos,
+		unsigned int alpn_protos_length,
+		void *callback_arg
+) {
+	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
+	return rrr_net_transport_new (
+			callback_data->result_transport,
+			callback_data->net_transport_config,
+			callback_data->net_transport_flags,
+			alpn_protos,
+			alpn_protos_length
+	);
+}
+
 static int __rrr_http_server_start (
 		struct rrr_net_transport **result_transport,
 		uint16_t port,
@@ -97,7 +119,29 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
-	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags, NULL, 0)) != 0) {
+	if (net_transport_config->transport_type ==  RRR_NET_TRANSPORT_TLS) {
+		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				result_transport,
+				net_transport_config,
+				net_transport_flags
+		};
+
+		ret = rrr_http_application_alpn_protos_with_all_do (
+				__rrr_http_server_start_alpn_protos_callback,
+				&callback_data
+		);
+	}
+	else {
+		ret = rrr_net_transport_new (
+				result_transport,
+				net_transport_config,
+				net_transport_flags,
+				NULL,
+				0
+		);
+	}
+
+	if (ret != 0) {
 		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
 		ret = 1;
 		goto out;
@@ -166,9 +210,12 @@ static void __rrr_http_server_accept_create_http_session_callback (
 
 	struct rrr_http_application *application = NULL;
 
-	if (rrr_http_application_new(
+	const char *alpn_selected_proto = NULL;
+	rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle);
+
+	if (rrr_http_application_new (
 			&application,
-			RRR_HTTP_APPLICATION_HTTP1,
+			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
 			1 // Is server
 	) != 0) {
 		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_accept_create_http_session_callback\n");
@@ -212,13 +259,11 @@ static int __rrr_http_server_accept (
 
 	*did_accept = 0;
 
-	if ((ret = rrr_net_transport_accept_all_handles(
+	if ((ret = rrr_net_transport_accept_all_handles (
 			transport,
 			__rrr_http_server_accept_create_http_session_callback,
 			worker_data_preliminary
 	)) != 0) {
-		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_read_write\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -236,8 +281,8 @@ struct rrr_http_server_accept_if_free_thread_callback_data {
 };
 
 #define RRR_HTTP_SERVER_ACCEPT_OK			0
-#define RRR_HTTP_SERVER_ACCEPT_ERR			1
-#define RRR_HTTP_SERVER_ACCEPT_ACCEPTED		2
+#define RRR_HTTP_SERVER_ACCEPT_ERR			RRR_READ_HARD_ERROR
+#define RRR_HTTP_SERVER_ACCEPT_ACCEPTED		RRR_READ_EOF
 
 static int __rrr_http_server_accept_if_free_thread_callback (
 		struct rrr_thread *locked_thread,
@@ -260,8 +305,7 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 			callback_data->transport,
 			locked_thread->private_data
 	)) != 0) {
-		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_if_free_thread_callback\n");
-		ret = RRR_HTTP_SERVER_ACCEPT_ERR;
+		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_if_free_thread_callback return was %i\n", ret);
 		goto out;
 	}
 
@@ -308,9 +352,14 @@ static int __rrr_http_server_accept_if_free_thread (
 			(*accept_count)++;
 		}
 		else {
-			RRR_MSG_0("Error while accepting connections\n");
-			ret = 1;
-			goto out;
+			if (ret == RRR_NET_TRANSPORT_READ_SOFT_ERROR) {
+				ret = 0;
+			}
+			else {
+				RRR_MSG_0("Error while accepting connections, return was %i\n", ret);
+				ret = 1;
+				goto out;
+			}
 		}
 	}
 

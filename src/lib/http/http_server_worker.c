@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_transaction.h"
 #include "http_part.h"
+#include "http_util.h"
 #include "http_server_common.h"
 
 #include "../net_transport/net_transport.h"
@@ -174,16 +175,18 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	if (RRR_DEBUGLEVEL_2) {
 		char ip_buf[256];
-		char method_buf[40];
-		char uri_buf[256];
-
-		rrr_nullsafe_str_output_strip_null_append_null_trim(transaction->request_part->request_method_str_nullsafe, method_buf, sizeof(method_buf));
-		rrr_nullsafe_str_output_strip_null_append_null_trim(transaction->request_part->request_uri_nullsafe, uri_buf, sizeof(uri_buf));
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_buf, transaction->request_part->request_method_str_nullsafe);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(uri_buf, transaction->request_part->request_uri_nullsafe);
 
 		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->config_data.addr, worker_data->config_data.addr_len);
 
-		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
-				worker_data->config_data.transport_handle, ip_buf, method_buf, uri_buf);
+		RRR_MSG_2("HTTP worker %i %s %s %s %s\n",
+				worker_data->config_data.transport_handle,
+				ip_buf,
+				method_buf,
+				uri_buf,
+				(transaction->request_part->parsed_protocol_version == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
+		);
 
 		if (overshoot_bytes > 0) {
 			RRR_MSG_2("HTTP worker %i %s has %li bytes overshoot, expecting another request\n",
