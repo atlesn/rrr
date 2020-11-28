@@ -282,7 +282,6 @@ static int __rrr_http_client_final_callback (
 
 	int ret = 0;
 
-	(void)(data);
 	(void)(chunk_idx);
 	(void)(chunk_total);
 	(void)(part_data_size);
@@ -521,7 +520,6 @@ int main (int argc, const char **argv, const char **env) {
 		ret = rrr_http_client_tick (
 				&got_redirect,
 				&bytes_total,
-				&data.request_data,
 				net_transport_keepalive,
 				net_transport_keepalive_handle,
 				1 * 1024 * 1024 * 1024, // 1 GB

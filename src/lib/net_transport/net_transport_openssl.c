@@ -197,7 +197,7 @@ static int __rrr_net_transport_openssl_alpn_select_cb (
 	return ret;
 }
 
-// Memory in *alpn must be permanently available
+// Memory in *alpn must be permanently available during connection lifetime
 static int __rrr_net_transport_openssl_new_ctx (
 		SSL_CTX **target,
 		const SSL_METHOD *method,
@@ -360,10 +360,6 @@ int __rrr_net_transport_openssl_connect_callback (
 		goto out_final;
 	}
 
-	ssl_data->sockaddr = callback_data->accept_data->addr;
-	ssl_data->socklen = callback_data->accept_data->len;
-	ssl_data->ip_data = callback_data->accept_data->ip_data;
-
 	if (__rrr_net_transport_openssl_new_ctx (
 			&ssl_data->ctx,
 			tls->ssl_client_method,
@@ -388,7 +384,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	SSL *ssl = NULL;
 	BIO_get_ssl(ssl_data->web, &ssl);
 
-	if (SSL_set_fd(ssl, ssl_data->ip_data.fd) != 1) {
+	if (SSL_set_fd(ssl, callback_data->accept_data->ip_data.fd) != 1) {
 		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_destroy_ssl_data;
@@ -466,10 +462,16 @@ int __rrr_net_transport_openssl_connect_callback (
 	*submodule_private_ptr = ssl_data;
 	*submodule_private_fd = 0;
 
+	// Set this data, including FD at the end. Caller will try to close the FD
+	// upon errors from this function, and we wish to avoid double close() as
+	// the FD will attempted to be closed by the destroy function below.
+	ssl_data->sockaddr = callback_data->accept_data->addr;
+	ssl_data->socklen = callback_data->accept_data->len;
+	ssl_data->ip_data = callback_data->accept_data->ip_data;
+
 	goto out_final;
 	out_destroy_ssl_data:
 		__rrr_net_transport_openssl_ssl_data_destroy(ssl_data);
-		// ssl_data_destroy calls ip_close, skip doing it again
 	out_final:
 		return ret;
 }
@@ -493,7 +495,7 @@ static int __rrr_net_transport_openssl_connect (
 	int ret = 0;
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
-		RRR_DBG_1("Could not create TLS connection to %s:%u\n", host, port);
+		RRR_DBG_3("Could not create TCP connection to %s:%u for TLS usage\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}

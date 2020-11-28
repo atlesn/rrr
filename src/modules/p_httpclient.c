@@ -165,16 +165,13 @@ static int httpclient_final_callback (
 	int ret = RRR_HTTP_OK;
 
 	char *data_to_free = NULL;
-
+/*
 	if (data->response_code < 200 || data->response_code > 299) {
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", data->response_code);
 	}
-
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg_str,data->response_argument);
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: %i '%s' data size %" PRIrrrbl " of ~%" PRIrrrbl " chunk %i of %i\n",
+*/
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: data size %" PRIrrrbl " of ~%" PRIrrrbl " chunk %i of %i\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
-			data->response_code,
-			response_arg_str,
 			chunk_data_size,
 			part_data_size,
 			chunk_idx + 1,
@@ -436,13 +433,13 @@ static int httpclient_session_query_prepare_callback_process_override (
 			RRR_MSG_0("Warning: Received message in httpclient instance %s where the specified type of the %s tagged '%s' in the message was of type '%s' which cannot be used as a string\n",
 					INSTANCE_D_NAME(data->thread_data),
 					debug_name,
-					data->endpoint_tag,
+					tag,
 					value->definition->identifier
 			);
 		}
 		else if (value->definition->to_str(&data_to_free, value) != 0) {
 			RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as %s in httpserver instance %s\n",
-					data->endpoint_tag,
+					tag,
 					debug_name,
 					INSTANCE_D_NAME(data->thread_data)
 			);
@@ -453,7 +450,7 @@ static int httpclient_session_query_prepare_callback_process_override (
 		RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable %s tag '%s' (which is enforced in configuration), dropping it\n",
 				INSTANCE_D_NAME(data->thread_data),
 				debug_name,
-				data->endpoint_tag
+				tag
 		);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -585,6 +582,7 @@ static int httpclient_session_query_prepare_callback (
 			if (value == NULL) {
 				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s.\n",
 						node_tag, INSTANCE_D_NAME(data->thread_data));
+				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
 
@@ -828,7 +826,6 @@ static int httpclient_send_request_intermediate_retry_handling (
 		ret = rrr_http_client_tick (
 				&got_redirect,
 				&bytes_total,
-				&data->http_client_data,
 				data->keepalive_transport,
 				data->keepalive_handle,
 				RRR_HTTPCLIENT_READ_MAX_SIZE,
@@ -841,6 +838,11 @@ static int httpclient_send_request_intermediate_retry_handling (
 				httpclient_raw_callback,
 				&raw_callback_data
 		);
+		if (ret == RRR_READ_EOF) {
+			rrr_http_client_terminate_if_open(data->keepalive_transport, data->keepalive_handle);
+			ret = 0;
+			break;
+		}
 		if (ret != 0 && ret != RRR_READ_INCOMPLETE) {
 			goto out;
 		}
@@ -868,14 +870,14 @@ static int httpclient_send_request_intermediate_retry_handling (
 		if (ret == RRR_HTTP_SOFT_ERROR) {
 			RRR_DBG_2("HTTP request failed in httpclient instance %s, return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
-
-			// Make sure new connection is created
-			data->keepalive_handle = 0;
 		}
 		else {
 			RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
 		}
+
+		rrr_http_client_terminate_if_open(data->keepalive_transport, data->keepalive_handle);
+		data->keepalive_handle = 0;
 
 		if (data->do_drop_on_error) {
 			RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",

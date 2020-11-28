@@ -98,8 +98,6 @@ void rrr_http_client_request_data_cleanup (
 
 
 struct rrr_http_client_tick_callback_data {
-	struct rrr_http_client_request_data *data;
-
 	int timeout_s;
 	ssize_t read_max_size;
 	uint64_t bytes_total;
@@ -122,7 +120,6 @@ static int __rrr_http_client_receive_chunk_callback (
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
 	return callback_data->final_callback (
-			callback_data->data,
 			chunk_idx,
 			chunk_total,
 			data_start,
@@ -146,7 +143,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	int ret = RRR_HTTP_OK;
 
 	struct rrr_http_part *response_part = transaction->response_part;
-
+/*
 	callback_data->data->response_code = response_part->response_code;
 
 	// Moved-codes. Maybe this parsing is too persmissive.
@@ -173,7 +170,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 		goto out;
 	}
-	else if (response_part->response_code < 200 || response_part->response_code > 299) {
+	else */if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
 				response_part->response_code, (response_part->response_str != NULL ? response_part->response_str : "-"));
 		ret = RRR_HTTP_SOFT_ERROR;
@@ -459,28 +456,28 @@ static int __rrr_http_client_request_send (
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
 
+	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
-	if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-		RRR_DBG_3("Forcing SSL/TLS\n");
-		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
+	if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
+		RRR_DBG_3("Forcing TLS\n");
+/*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
-		}
+		}*/
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
-	if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
-		RRR_DBG_3("Forcing plaintext non-SSL/TLS\n");
-		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
+	else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
+		RRR_DBG_3("Forcing plaintext non-TLS\n");
+/*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
-		}
+		}*/
 		transport_code = RRR_HTTP_TRANSPORT_HTTP;
 	}
 
-	uint16_t port_to_use = data->http_port;
 	if (port_to_use == 0) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
 			port_to_use = 443;
@@ -496,7 +493,6 @@ static int __rrr_http_client_request_send (
 		if ((ret = connection_prepare_callback(&server_to_free, &port_to_use, connection_prepare_callback_arg)) != 0) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
 				RRR_DBG_3("Note: HTTP query aborted by soft error from connection prepare callback\n");
-				ret = 0;
 				goto out;
 			}
 			RRR_MSG_0("Error %i from HTTP client connection prepare callback\n", ret);
@@ -513,6 +509,10 @@ static int __rrr_http_client_request_send (
 
 	if (port_to_use == 0) {
 		RRR_BUG("BUG: Port was 0 in __rrr_http_client_send_request\n");
+	}
+
+	if (transport_code == RRR_HTTP_TRANSPORT_ANY && port_to_use == 443) {
+		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
 	callback_data.request_header_host = server_to_use;
@@ -564,7 +564,7 @@ static int __rrr_http_client_request_send (
 					alpn_protos_length
 			);
 		}
-		else if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
+		else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 			RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
@@ -587,15 +587,12 @@ static int __rrr_http_client_request_send (
 					0
 			);
 		}
-	}
-	else {
-		RRR_DBG_3("Using exisiting HTTP connection\n");
-	}
 
-	if (ret != 0) {
-		RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
+		if (ret != 0) {
+			RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
 	}
 
 	if (*transport_keepalive_handle == 0) {
@@ -605,8 +602,8 @@ static int __rrr_http_client_request_send (
 				server_to_use,
 				__rrr_http_client_request_send_connect_callback,
 				transport_keepalive_handle
-		))) {
-			RRR_MSG_0("Keepalive connection failed to server %s port %u transport %s in http client return was %i\n",
+		)) != 0) {
+			RRR_MSG_0("HTTP Connection failed to server %s port %u transport %s in http client return was %i\n",
 					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
@@ -764,7 +761,6 @@ static int __rrr_http_client_transport_ctx_tick (
 int rrr_http_client_tick (
 		int *got_redirect,
 		uint64_t *bytes_total,
-		struct rrr_http_client_request_data *request_data,
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle,
 		ssize_t read_max_size,
@@ -787,7 +783,6 @@ int rrr_http_client_tick (
 	*bytes_total = 0;
 
 	struct rrr_http_client_tick_callback_data callback_data = {
-			request_data,
 			0,
 			read_max_size,
 			0,
@@ -810,7 +805,7 @@ int rrr_http_client_tick (
 	);
 
 	*bytes_total = callback_data.bytes_total;
-
+/*
 	if (ret != 0) {
 		goto out;
 	}
@@ -853,8 +848,7 @@ int rrr_http_client_tick (
 
 		*got_redirect = 1;
 	}
-
-	out:
+*/
 	return ret;
 }
 

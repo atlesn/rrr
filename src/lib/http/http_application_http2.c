@@ -121,11 +121,9 @@ static int __rrr_http_application_http2_callback (
 	struct rrr_http_transaction *transaction_to_destroy = NULL;
 	struct rrr_http_transaction *transaction = stream_application_data;
 
-	if (callback_data->is_client) {
-		if (RRR_LL_COUNT(&transaction->response_part->headers) != 0) {
-			RRR_BUG("BUG: Header field list in response part not empty in __rrr_http_application_http2_callback\n");
-		}
+	// NOTE ! Callback can be reach two times (after headers and after data)
 
+	if (callback_data->is_client) {
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
 		const struct rrr_http_header_field *status = rrr_http_part_header_field_get(transaction->response_part, ":status");

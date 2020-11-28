@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
-	struct rrr_http_client_request_data *data, 		\
 	int chunk_idx,									\
 	int chunk_total,								\
 	const char *chunk_data_start,					\
@@ -152,7 +151,6 @@ int rrr_http_client_request_websocket_upgrade_send (
 int rrr_http_client_tick (
 		int *got_redirect,
 		uint64_t *bytes_total,
-		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle,
 		ssize_t read_max_size,
