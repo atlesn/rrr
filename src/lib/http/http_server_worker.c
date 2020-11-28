@@ -112,59 +112,30 @@ static void __rrr_http_server_worker_data_cleanup (
 	RRR_FREE_IF_NOT_NULL(worker_data->websocket_application_data);
 }
 
-static int __rrr_http_server_worker_push_response_headers (
+static int __rrr_http_server_worker_response_headers_push (
 		struct rrr_http_part *response_part
 ) {
 	int ret = RRR_HTTP_OK;
 
-	ret |= rrr_http_part_header_field_push(response_part, "connection", "close");
 	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST, PUT");
 
 	return ret;
 }
 
-static int __rrr_http_server_worker_initialize_response (
+static int __rrr_http_server_worker_response_initialize (
 		struct rrr_http_server_worker_data *worker_data,
 		struct rrr_http_part *response_part
 ) {
-	// We allow send_response to be called as long as transpoort handle is OK,
-	// but the response part must have been initialized for us to be able to
-	// send a response. If it is NULL, we cannot send a response.
-//	if (!rrr_http_session_transport_ctx_check_response_part_initialized(handle)) {
-//		RRR_DBG_3("HTTP worker %i: No HTTP parts initialized, not sending response\n", worker_data->transport_handle);
-//		return 0;
-//	}
-/*
-	if (rrr_http_session_transport_ctx_reset_response_part(handle) != RRR_HTTP_OK) {
-		RRR_MSG_0("Could not initialize response part in __rrr_http_server_worker_net_transport_ctx_initialize_response\n");
-		return RRR_HTTP_HARD_ERROR;
-	}
-
-	// If client has not sent any data, don't send a response
-	if (!rrr_http_session_transport_ctx_check_data_received(handle)) {
-		RRR_DBG_3("HTTP worker %i: No HTTP request from client, not sending response\n", worker_data->transport_handle);
-		return RRR_HTTP_OK;
-	}
-*/
-
-	if (__rrr_http_server_worker_push_response_headers(response_part) != 0) {
+	if (__rrr_http_server_worker_response_headers_push(response_part) != 0) {
 		RRR_MSG_0("HTTP worker %i: Could not push default response headers in __rrr_http_server_worker_net_transport_ctx_send_response\n",
 				worker_data->config_data.transport_handle);
 		return RRR_HTTP_HARD_ERROR;
 	}
 
-	/*
-	 * For now, no content is sent back to client
-		if (rrr_http_session_transport_ctx_push_response_header(handle, "Content-Type", "application/json; charset=utf-8") != 0) {
-			RRR_MSG_0("Could not push header field to response part in __rrr_net_http_server_worker_net_transport_ctx_send_response\n");
-			return 1;
-		}
-	*/
-
 	return RRR_HTTP_OK;
 }
 
-static int __rrr_http_server_worker_http_session_receive_callback (
+static int __rrr_http_server_worker_receive_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
@@ -194,7 +165,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 		}
 	}
 
-	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, transaction->response_part)) != RRR_HTTP_OK) {
+	if ((ret = __rrr_http_server_worker_response_initialize(worker_data, transaction->response_part)) != RRR_HTTP_OK) {
 		goto out;
 	}
 
@@ -208,6 +179,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 				data_ptr,
 				overshoot_bytes,
 				unique_id,
+				next_protocol_version,
 				worker_data->config_data.callbacks.final_callback_arg
 		);
 	}
@@ -230,7 +202,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	return ret;
 }
 
-static int __rrr_http_server_worker_http_session_receive_raw_callback (
+static int __rrr_http_server_worker_receive_raw_callback (
 		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
@@ -242,6 +214,7 @@ static int __rrr_http_server_worker_http_session_receive_raw_callback (
 				data,
 				data_size,
 				unique_id,
+				next_protocol_version,
 				worker_data->config_data.callbacks.final_callback_raw_arg
 		);
 	}
@@ -269,6 +242,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			data_ptr,
 			overshoot_bytes,
 			unique_id,
+			next_protocol_version,
 			worker_data->config_data.callbacks.final_callback_arg
 	)) != 0) {
 		goto out;
@@ -345,13 +319,13 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			0, // Is not client
 			__rrr_http_server_worker_websocket_handshake_callback,
 			worker_data,
-			__rrr_http_server_worker_http_session_receive_callback,
+			__rrr_http_server_worker_receive_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_get_response_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_frame_callback,
 			worker_data,
-			__rrr_http_server_worker_http_session_receive_raw_callback,
+			__rrr_http_server_worker_receive_raw_callback,
 			worker_data
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {

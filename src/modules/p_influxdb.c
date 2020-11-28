@@ -122,6 +122,8 @@ static int influxdb_receive_http_response (
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
+	(void)(next_protocol_version);
+
 
 	int ret = 0;
 

@@ -32,7 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_http_transaction *transaction,				\
 	const char *data_ptr,									\
 	ssize_t overshoot_bytes,								\
-	rrr_http_unique_id unique_id
+	rrr_http_unique_id unique_id,							\
+	enum rrr_http_application_type next_protocol_version	\
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
 	int *do_websocket,											\

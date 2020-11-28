@@ -227,6 +227,7 @@ static int __rrr_http_application_http2_callback (
 			data,
 			0,
 			callback_data->unique_id,
+			RRR_HTTP_APPLICATION_HTTP2,
 			callback_data->callback_arg
 	)) != 0) {
 		if (ret == RRR_HTTP_PARSE_SOFT_ERR) {

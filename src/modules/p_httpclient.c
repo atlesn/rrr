@@ -684,6 +684,7 @@ static int httpclient_raw_callback (
 	struct httpclient_data *httpclient_data = callback_data->httpclient_data;
 
 	(void)(unique_id);
+	(void)(next_protocol_version);
 
 	int ret = 0;
 

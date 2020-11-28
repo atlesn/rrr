@@ -546,6 +546,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 				read_session->rx_buf_ptr,
 				read_session->rx_buf_wpos,
 				0,
+				transaction->response_part->parsed_protocol_version,
 				receive_data->raw_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error %i from raw callback in __rrr_application_http1_response_receive_callback\n", ret);
@@ -587,6 +588,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
 					0,
+					transaction->response_part->parsed_protocol_version,
 					receive_data->websocket_callback_arg
 			))) {
 				goto out;
@@ -652,6 +654,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 				read_session->rx_buf_ptr,
 				read_session->rx_overshoot_size,
 				0,
+				transaction->response_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != 0) {
 			goto out;
@@ -737,6 +740,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			data_to_use,
 			read_session->rx_overshoot_size,
 			receive_data->unique_id,
+			transaction->response_part->parsed_protocol_version,
 			receive_data->websocket_callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
 		goto out;
@@ -934,6 +938,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				read_session->rx_buf_ptr,
 				read_session->rx_buf_wpos,
 				receive_data->unique_id,
+				transaction->response_part->parsed_protocol_version,
 				receive_data->raw_callback_arg
 		)) != 0) {
 			RRR_MSG_0("Error %i from raw callback in __rrr_application_http1_request_receive_callback\n", ret);
@@ -1008,6 +1013,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				data_to_use,
 				read_session->rx_overshoot_size,
 				receive_data->unique_id,
+				RRR_HTTP_APPLICATION_HTTP2, // Note, next protocol is HTTP2
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			goto out;
@@ -1030,6 +1036,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				data_to_use,
 				read_session->rx_overshoot_size,
 				receive_data->unique_id,
+				transaction->response_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			goto out;

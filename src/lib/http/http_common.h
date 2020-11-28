@@ -152,10 +152,11 @@ extern const char *rrr_http_application_str_http2;
 
 typedef uint64_t rrr_http_unique_id;
 
-#define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS	\
-	const char *data,								\
-	size_t data_size,								\
-	rrr_http_unique_id unique_id,					\
+#define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS			\
+	const char *data,										\
+	size_t data_size,										\
+	rrr_http_unique_id unique_id,							\
+	enum rrr_http_application_type next_protocol_version,	\
 	void *arg
 
 #define RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS \

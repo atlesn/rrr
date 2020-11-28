@@ -599,7 +599,8 @@ static int httpserver_receive_get_raw_response (
 static int httpserver_receive_callback_full_request (
 		struct rrr_array *target_array,
 		const struct rrr_http_part *part,
-		const char *data_ptr
+		const char *data_ptr,
+		enum rrr_http_application_type next_protocol_version
 ) {
 	int ret = 0;
 
@@ -611,7 +612,7 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
-	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", part->parsed_protocol_version);
+	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
@@ -683,7 +684,8 @@ static int httpserver_receive_callback (
 		else if ((ret = httpserver_receive_callback_full_request (
 				&array_tmp,
 				transaction->request_part,
-				data_ptr
+				data_ptr,
+				next_protocol_version
 		)) != 0) {
 			goto out;
 		}
@@ -869,6 +871,8 @@ static int httpserver_websocket_handshake_callback (
 	(void)(handle);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
+	(void)(next_protocol_version);
+
 
 	int ret = 0;
 
@@ -947,7 +951,7 @@ static int httpserver_websocket_handshake_callback (
 		return ret;
 }
 
-int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct httpserver_callback_data *httpserver_callback_data = arg;
 
 	(void)(websocket_application_data);
@@ -999,7 +1003,7 @@ int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 	return ret;
 }
 
-int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
+static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
 	struct httpserver_data *data = callback_data->httpserver_data;
 
@@ -1077,6 +1081,8 @@ static int httpserver_receive_raw_callback (
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
 
+	(void)(next_protocol_version);
+
 	int ret = 0;
 
 	char *topic = NULL;
@@ -1112,7 +1118,7 @@ static int httpserver_receive_raw_callback (
 	return ret;
 }
 
-int httpserver_unique_id_generator_callback (
+static int httpserver_unique_id_generator_callback (
 		RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *data = arg;

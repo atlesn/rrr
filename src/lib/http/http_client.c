@@ -140,6 +140,8 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(handle);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
+	(void)(next_protocol_version);
+
 
 	int ret = RRR_HTTP_OK;
 
@@ -248,6 +250,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
 	(void)(unique_id);
+	(void)(next_protocol_version);
 	(void)(callback_data);
 
 	int ret = 0;
