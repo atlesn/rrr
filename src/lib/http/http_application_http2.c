@@ -326,7 +326,7 @@ static int __rrr_http_application_http2_callback (
 			RRR_HTTP_APPLICATION_HTTP2,
 			callback_data->callback_arg
 	)) != 0) {
-		if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+		if (ret == RRR_HTTP_PARSE_SOFT_ERR && !callback_data->is_client) {
 			goto out_send_response_bad_request;
 		}
 		goto out;
