@@ -82,6 +82,12 @@ void rrr_msg_holder_unlock (
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 }
 
+void rrr_msg_holder_unlock_void (
+		void *entry
+) {
+	rrr_msg_holder_unlock(entry);
+}
+
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {

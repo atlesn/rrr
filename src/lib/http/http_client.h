@@ -72,20 +72,15 @@ struct rrr_http_client_request_data {
 
 	enum rrr_http_method method;
 	enum rrr_http_upgrade_mode upgrade_mode;
+	int do_plain_http2;
 
 	int ssl_no_cert_verify;
 
 	ssize_t read_max_size;
-
-	int response_code;
-	struct rrr_nullsafe_str *response_argument;
-
-	void *application_data;
-	void (*application_data_destroy)(void *arg);
 };
 
 struct rrr_http_client_request_callback_data {
-	struct rrr_http_client_request_data *data;
+	const struct rrr_http_client_request_data *data;
 
 	struct rrr_http_application **application;
 	int transport_handle;
@@ -97,21 +92,28 @@ struct rrr_http_client_request_callback_data {
 
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;
+
+	void *application_data;
+	void (*application_data_destroy)(void *arg);
 };
 
 int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
-		const char *user_agent,
-		void **application_data,
-		void (*application_data_destroy)(void *arg)
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
+		const char *user_agent
 );
-int rrr_http_client_data_reset (
+int rrr_http_client_request_data_config_parameters_reset (
 		struct rrr_http_client_request_data *data,
 		const struct rrr_http_client_config *config,
 		enum rrr_http_transport transport_force
 );
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
+);
+void rrr_http_client_request_data_cleanup_void (
+		void *data
 );
 void rrr_http_client_terminate_if_open (
 		struct rrr_net_transport *transport_keepalive,
@@ -120,23 +122,18 @@ void rrr_http_client_terminate_if_open (
 // Note that data in the struct may change if there are any redirects
 int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		int do_plain_http2,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
 		int (*query_perpare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg
+		void *query_prepare_callback_arg,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 );
 int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -144,12 +141,6 @@ int rrr_http_client_request_raw_send (
 		size_t raw_request_data_size,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg
-);
-int rrr_http_client_request_websocket_upgrade_send (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
-		const struct rrr_net_transport_config *net_transport_config
 );
 int rrr_http_client_tick (
 		uint64_t *bytes_total,

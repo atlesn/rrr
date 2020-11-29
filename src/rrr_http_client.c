@@ -448,9 +448,10 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_client_request_data_init (
 			&data.request_data,
-			RRR_HTTP_CLIENT_USER_AGENT,
-			NULL,
-			NULL
+			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_UPGRADE_MODE_HTTP2,
+			0, // No plain HTTP2
+			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -498,13 +499,11 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_client_request_send (
 			&data.request_data,
-			RRR_HTTP_METHOD_GET,
-			RRR_HTTP_APPLICATION_HTTP1,
-			data.upgrade_mode,
-			0, // No plain HTTP2
 			&net_transport_keepalive,
 			&net_transport_keepalive_handle,
 			&net_transport_config,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

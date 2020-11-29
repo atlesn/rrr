@@ -35,6 +35,9 @@ void rrr_msg_holder_lock (
 void rrr_msg_holder_unlock (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_unlock_void (
+		void *entry
+);
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
 );

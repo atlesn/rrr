@@ -65,7 +65,6 @@ struct httpclient_data {
 	int do_receive_raw_data;
 	int do_receive_part_data;
 	int do_send_raw_data;
-	int do_plain_http2;
 
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
@@ -343,7 +342,7 @@ static int httpclient_transaction_field_add (
 		return ret;
 }
 
-static int httpclient_get_values_from_message (
+static int httpclient_message_values_get (
 		struct rrr_array *target_array,
 		const struct rrr_msg_msg *message
 ) {
@@ -673,13 +672,13 @@ static int httpclient_raw_callback (
 
 static int httpclient_request_send (
 		struct httpclient_data *data,
+		struct rrr_http_client_request_data *request_data,
 		struct rrr_msg_holder *entry
 ) {
 	struct rrr_msg_msg *message = entry->message;
 
 	int ret = RRR_HTTP_OK;
 
-	struct rrr_http_client_request_data request_data = {0};
 	struct rrr_array array_from_msg_tmp = {0};
 	struct httpclient_transaction_data *transaction_data = NULL;
 
@@ -690,17 +689,6 @@ static int httpclient_request_send (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_LENGTH(message)
 	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_client_request_data_init (
-			&request_data,
-			RRR_HTTP_CLIENT_USER_AGENT,
-			(void**) &transaction_data,
-			httpclient_transaction_destroy_void
-	)) != 0) {
-		RRR_MSG_0("Could not initialize httpclient httpclient_data in httpclient_data_init\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -718,8 +706,8 @@ static int httpclient_request_send (
 			break;
 	};
 
-	if (rrr_http_client_data_reset (
-			&request_data,
+	if (rrr_http_client_request_data_config_parameters_reset (
+			request_data,
 			&data->http_client_config,
 			http_transport_force
 	) != 0) {
@@ -741,11 +729,10 @@ static int httpclient_request_send (
 			goto out;
 		}
 
+		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+
 		ret = rrr_http_client_request_raw_send (
-				&request_data,
-				data->http_client_config.method,
-				RRR_HTTP_APPLICATION_HTTP1,
-				RRR_HTTP_UPGRADE_MODE_NONE,
+				request_data,
 				&data->keepalive_transport,
 				&data->keepalive_handle,
 				&data->net_transport_config,
@@ -757,7 +744,7 @@ static int httpclient_request_send (
 	}
 	else {
 		if (MSG_IS_ARRAY(message)) {
-			if ((ret = httpclient_get_values_from_message(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
+			if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
 				goto out;
 			}
 		}
@@ -768,26 +755,19 @@ static int httpclient_request_send (
 				&array_from_msg_tmp
 		};
 
-		enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
-
-		// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
-		if (data->http_client_config.method != RRR_HTTP_METHOD_GET && data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS) {
-			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-		}
+		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 
 		ret = rrr_http_client_request_send (
-				&request_data,
-				data->http_client_config.method,
-				RRR_HTTP_APPLICATION_HTTP1,
-				upgrade_mode,
-				data->do_plain_http2,
+				request_data,
 				&data->keepalive_transport,
 				&data->keepalive_handle,
 				&data->net_transport_config,
 				httpclient_connection_prepare_callback,
 				&prepare_callback_data,
 				httpclient_session_query_prepare_callback,
-				&prepare_callback_data
+				&prepare_callback_data,
+				(void **) &transaction_data,
+				httpclient_transaction_destroy_void
 		);
 	}
 
@@ -798,7 +778,6 @@ static int httpclient_request_send (
 		httpclient_transaction_destroy(transaction_data);
 	}
 	rrr_array_clear(&array_from_msg_tmp);
-	rrr_http_client_request_data_cleanup(&request_data);
 	return ret;
 }
 
@@ -871,7 +850,6 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_plain_http2", do_plain_http2, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.
@@ -971,7 +949,10 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpclient thread thread_data is %p\n", thread_data);
 
+	struct rrr_http_client_request_data request_data = {0};
+
 	pthread_cleanup_push(httpclient_data_cleanup, data);
+	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -982,6 +963,17 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	RRR_DBG_1 ("httpclient started thread %p\n", thread_data);
+
+	if (rrr_http_client_request_data_init (
+			&request_data,
+			data->http_client_config.method,
+			RRR_HTTP_UPGRADE_MODE_NONE,
+			data->http_client_config.do_plain_http2,
+			RRR_HTTP_CLIENT_USER_AGENT
+	) != 0) {
+		RRR_MSG_0("Could not initialize http client request data in httpclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
 
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		rrr_thread_update_watchdog_time(thread);
@@ -999,12 +991,13 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				rrr_thread_update_watchdog_time(thread);
 
 				rrr_msg_holder_lock(node);
+				pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
 
 				if (data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) {
 						send_timeout_count++;
 						RRR_LL_ITERATE_SET_DESTROY();
 				}
-				else if ((ret_tmp = httpclient_request_send(data, node)) != RRR_HTTP_OK) {
+				else if ((ret_tmp = httpclient_request_send(data, &request_data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
 					}
@@ -1018,7 +1011,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
-				rrr_msg_holder_unlock(node);
+
+				pthread_cleanup_pop(1); // Unlock
 			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_holder_decref(node));
 
 			if (send_timeout_count > 0) {
@@ -1071,6 +1065,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread httpclient %p exiting\n", thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

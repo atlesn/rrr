@@ -43,9 +43,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
-		const char *user_agent,
-		void **application_data,
-		void (*application_data_destroy)(void *arg)
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
+		const char *user_agent
 ) {
 	int ret = 0;
 
@@ -57,17 +58,15 @@ int rrr_http_client_request_data_init (
 		goto out;
 	}
 
-	if (application_data != NULL && *application_data != NULL) {
-		data->application_data = *application_data;
-		data->application_data_destroy = application_data_destroy;
-		*application_data = NULL;
-	}
+	data->method = method;
+	data->upgrade_mode = upgrade_mode;
+	data->do_plain_http2 = do_plain_http2;
 
 	out:
 	return ret;
 }
 
-int rrr_http_client_data_reset (
+int rrr_http_client_request_data_config_parameters_reset (
 		struct rrr_http_client_request_data *data,
 		const struct rrr_http_client_config *config,
 		enum rrr_http_transport transport_force
@@ -101,12 +100,13 @@ void rrr_http_client_request_data_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->user_agent);
-	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
-	if (data->application_data != NULL) {
-		data->application_data_destroy(data->application_data);
-	}
 }
 
+void rrr_http_client_request_data_cleanup_void (
+		void *data
+) {
+	rrr_http_client_request_data_cleanup(data);
+}
 
 struct rrr_http_client_tick_callback_data {
 	int timeout_s;
@@ -298,10 +298,17 @@ static int __rrr_http_client_request_send_callback (
 	// Allow caller to update references
 	callback_data->transport_handle = handle->handle;
 
+	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
+
+	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
+	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
+		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+	}
+
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application,
 			handle,
-			callback_data->data->upgrade_mode,
+			upgrade_mode,
 			callback_data->data->user_agent
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
@@ -330,8 +337,8 @@ static int __rrr_http_client_request_send_callback (
 		if ((ret = rrr_http_transaction_new (
 				&transaction,
 				callback_data->data->method,
-				&callback_data->data->application_data,
-				callback_data->data->application_data_destroy
+				callback_data->application_data,
+				callback_data->application_data_destroy
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTP transaction in __rrr_http_client_request_send_callback\n");
 			goto out;
@@ -450,11 +457,7 @@ void __rrr_http_client_request_send_connect_callback (
 // Note that data in the struct may change if there are any redirects
 // Note that query prepare callback is not called if raw request data is set
 static int __rrr_http_client_request_send (
-		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		int do_plain_http2,
+		const struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -463,7 +466,9 @@ static int __rrr_http_client_request_send (
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg
+		void *query_prepare_callback_arg,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 ) {
 	int ret = 0;
 
@@ -471,15 +476,9 @@ static int __rrr_http_client_request_send (
 	struct rrr_http_client_request_callback_data callback_data = {0};
 	struct rrr_http_application *application = NULL;
 
-	data->response_code = 0;
-	rrr_nullsafe_str_destroy_if_not_null(&data->response_argument);
-
 	if (transport_keepalive == NULL) {
 		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_send_request\n");
 	}
-
-	data->method = method;
-	data->upgrade_mode = upgrade_mode;
 
 	callback_data.data = data;
 	callback_data.application = &application;
@@ -487,6 +486,8 @@ static int __rrr_http_client_request_send (
 	callback_data.raw_request_data_size = raw_request_data_size;
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
+	callback_data.application_data = application_data;
+	callback_data.application_data_destroy = application_data_destroy;
 
 	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
@@ -545,12 +546,14 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
+	enum rrr_http_application_type application_type = RRR_HTTP_APPLICATION_HTTP1;
+
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
 		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
-	if (do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
+	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
 		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
@@ -570,9 +573,9 @@ static int __rrr_http_client_request_send (
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
-			RRR_HTTP_METHOD_TO_STR(method),
+			RRR_HTTP_METHOD_TO_STR(data->method),
 			RRR_HTTP_APPLICATION_TO_STR(application_type),
-			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
+			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 
 	if (*transport_keepalive == NULL) {
@@ -681,24 +684,18 @@ void rrr_http_client_terminate_if_open (
 
 int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
-		int do_plain_http2,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg
+		void *query_prepare_callback_arg,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 ) {
 	return __rrr_http_client_request_send (
 			data,
-			method,
-			application_type,
-			upgrade_mode,
-			do_plain_http2,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -707,15 +704,14 @@ int rrr_http_client_request_send (
 			connection_prepare_callback,
 			connection_prepare_callback_arg,
 			query_prepare_callback,
-			query_prepare_callback_arg
+			query_prepare_callback_arg,
+			application_data,
+			application_data_destroy
 	);
 }
 
 int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		enum rrr_http_application_type application_type,
-		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -726,10 +722,6 @@ int rrr_http_client_request_raw_send (
 ) {
 	return __rrr_http_client_request_send (
 			data,
-			method,
-			application_type,
-			upgrade_mode,
-			0,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -737,28 +729,6 @@ int rrr_http_client_request_raw_send (
 			raw_request_data_size,
 			connection_prepare_callback,
 			connection_prepare_callback_arg,
-			NULL,
-			NULL
-	);
-}
-
-int rrr_http_client_request_websocket_upgrade_send (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
-		const struct rrr_net_transport_config *net_transport_config
-) {
-	return __rrr_http_client_request_send (
-			data,
-			RRR_HTTP_METHOD_GET,
-			RRR_HTTP_APPLICATION_HTTP1,
-			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
-			0,
-			transport_keepalive,
-			transport_keepalive_handle,
-			net_transport_config,
-			NULL,
-			0,
 			NULL,
 			NULL,
 			NULL,
