@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_client_config.h"
 #include "http_application.h"
 #include "http_transaction.h"
+#include "http_client_target_collection.h"
 
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
@@ -295,9 +296,6 @@ static int __rrr_http_client_request_send_callback (
 	struct rrr_http_transaction *transaction = NULL;
 	struct rrr_http_application *upgraded_app = NULL;
 
-	// Allow caller to update references
-	callback_data->transport_handle = handle->handle;
-
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
@@ -459,7 +457,7 @@ void __rrr_http_client_request_send_connect_callback (
 static int __rrr_http_client_request_send (
 		const struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
@@ -559,7 +557,7 @@ static int __rrr_http_client_request_send (
 
 	callback_data.request_header_host = server_to_use;
 
-	if (*transport_keepalive == NULL || *transport_keepalive_handle == 0) {
+	if (*transport_keepalive == NULL) {
 		if ((ret = rrr_http_application_new (
 				&application,
 				application_type,
@@ -633,13 +631,19 @@ static int __rrr_http_client_request_send (
 		}
 	}
 
-	if (*transport_keepalive_handle == 0) {
+	struct rrr_http_client_target *target = rrr_http_client_target_find_or_new(targets, server_to_use, port_to_use);
+	if (target == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	if (target->keepalive_handle == 0) {
 		if ((ret = rrr_net_transport_connect (
 				*transport_keepalive,
 				port_to_use,
 				server_to_use,
 				__rrr_http_client_request_send_connect_callback,
-				transport_keepalive_handle
+				&target->keepalive_handle
 		)) != 0) {
 			RRR_MSG_0("HTTP Connection failed to server %s port %u transport %s in http client return was %i\n",
 					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
@@ -648,10 +652,10 @@ static int __rrr_http_client_request_send (
 		}
 	}
 
-	callback_data.transport_handle = *transport_keepalive_handle;
+//	callback_data.transport_handle = *transport_keepalive_handle;
 	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
 			*transport_keepalive,
-			*transport_keepalive_handle,
+			target->keepalive_handle,
 			__rrr_http_client_request_send_callback,
 			&callback_data
 	)) != 0) {
@@ -685,7 +689,7 @@ void rrr_http_client_terminate_if_open (
 int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
@@ -697,7 +701,7 @@ int rrr_http_client_request_send (
 	return __rrr_http_client_request_send (
 			data,
 			transport_keepalive,
-			transport_keepalive_handle,
+			targets,
 			net_transport_config,
 			NULL,
 			0,
@@ -713,7 +717,7 @@ int rrr_http_client_request_send (
 int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
@@ -723,7 +727,7 @@ int rrr_http_client_request_raw_send (
 	return __rrr_http_client_request_send (
 			data,
 			transport_keepalive,
-			transport_keepalive_handle,
+			targets,
 			net_transport_config,
 			raw_request_data,
 			raw_request_data_size,
@@ -742,10 +746,10 @@ static int __rrr_http_client_transport_ctx_tick (
 ) {
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
-	ssize_t received_bytes = 0;
+	ssize_t received_bytes_dummy = 0;
 
 	int ret = rrr_http_session_transport_ctx_tick (
-			&received_bytes,
+			&received_bytes_dummy,
 			handle,
 			callback_data->read_max_size,
 			0, // No unique ID

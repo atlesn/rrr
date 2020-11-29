@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
+struct rrr_http_client_target_collection;
 struct rrr_http_session;
 struct rrr_net_transport;
 
@@ -83,7 +84,7 @@ struct rrr_http_client_request_callback_data {
 	const struct rrr_http_client_request_data *data;
 
 	struct rrr_http_application **application;
-	int transport_handle;
+//	int transport_handle;
 
 	const char *raw_request_data;
 	size_t raw_request_data_size;
@@ -123,7 +124,7 @@ void rrr_http_client_terminate_if_open (
 int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
@@ -135,7 +136,7 @@ int rrr_http_client_request_send (
 int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
 		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
 		const char *raw_request_data,
 		size_t raw_request_data_size,

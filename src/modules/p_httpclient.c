@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_util.h"
+#include "../lib/http/http_client_target_collection.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
@@ -53,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX	5
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
+#define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S	5
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -61,7 +63,6 @@ struct httpclient_data {
 	int do_no_data;
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
-	int do_keepalive;
 	int do_receive_raw_data;
 	int do_receive_part_data;
 	int do_send_raw_data;
@@ -78,11 +79,12 @@ struct httpclient_data {
 	rrr_setting_uint message_timeout_us;
 
 	rrr_setting_uint redirects_max;
+	rrr_setting_uint keepalive_s_max;
 
 	struct rrr_net_transport_config net_transport_config;
 
 	struct rrr_net_transport *keepalive_transport;
-	int keepalive_handle;
+	struct rrr_http_client_target_collection targets;
 
 	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
@@ -90,6 +92,9 @@ struct httpclient_data {
 
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
+
+	rrr_http_client_target_collection_clear(&data->targets, data->keepalive_transport);
+
 	if (data->keepalive_transport != NULL) {
 		rrr_net_transport_destroy(data->keepalive_transport);
 	}
@@ -151,6 +156,13 @@ static void httpclient_transaction_destroy (struct httpclient_transaction_data *
 
 static void httpclient_transaction_destroy_void (void *target) {
 	httpclient_transaction_destroy(target);
+}
+
+static void httpclient_transaction_destroy_void_dbl_ptr (void *target) {
+	struct httpclient_transaction_data **transaction_data = target;
+	if (*transaction_data != NULL) {
+		httpclient_transaction_destroy(*transaction_data);
+	}
 }
 
 struct httpclient_create_message_callback_data {
@@ -547,7 +559,7 @@ static int httpclient_session_query_prepare_callback (
 
 	if ((ret = rrr_http_transaction_keepalive_set (
 			transaction,
-			data->do_keepalive
+			1
 	)) != 0) {
 		RRR_MSG_0("Failed to set keep-alive in httpclient_session_query_prepare_callback\n");
 		ret = 1;
@@ -689,8 +701,10 @@ static int httpclient_request_send (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_LENGTH(message)
 	)) != 0) {
-		goto out;
+		goto out_cleanup_array;
 	}
+
+	pthread_cleanup_push(httpclient_transaction_destroy_void_dbl_ptr, &transaction_data);
 
 	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
 
@@ -714,19 +728,19 @@ static int httpclient_request_send (
 		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret =  RRR_HTTP_HARD_ERROR;
-		goto out;
+		goto out_cleanup_transaction_data;
 	}
 
 	if (data->do_send_raw_data) {
 		if (MSG_DATA_LENGTH(message) == 0) {
 			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had 0 length data. Dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data));
-			goto out;
+			goto out_cleanup_transaction_data;
 		}
 		if (MSG_CLASS(message) != MSG_CLASS_DATA) {
 			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had wrong class (%u). Note that only raw data messages can be sent, not arrays.\n",
 					INSTANCE_D_NAME(data->thread_data), MSG_CLASS(message));
-			goto out;
+			goto out_cleanup_transaction_data;
 		}
 
 		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
@@ -734,7 +748,7 @@ static int httpclient_request_send (
 		ret = rrr_http_client_request_raw_send (
 				request_data,
 				&data->keepalive_transport,
-				&data->keepalive_handle,
+				&data->targets,
 				&data->net_transport_config,
 				MSG_DATA_PTR(message),
 				MSG_DATA_LENGTH(message),
@@ -745,7 +759,7 @@ static int httpclient_request_send (
 	else {
 		if (MSG_IS_ARRAY(message)) {
 			if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
-				goto out;
+				goto out_cleanup_transaction_data;
 			}
 		}
 
@@ -760,7 +774,7 @@ static int httpclient_request_send (
 		ret = rrr_http_client_request_send (
 				request_data,
 				&data->keepalive_transport,
-				&data->keepalive_handle,
+				&data->targets,
 				&data->net_transport_config,
 				httpclient_connection_prepare_callback,
 				&prepare_callback_data,
@@ -773,12 +787,11 @@ static int httpclient_request_send (
 
 	// Do not add anything here, let return value from last function call propagate
 
-	out:
-	if (transaction_data != NULL) {
-		httpclient_transaction_destroy(transaction_data);
-	}
-	rrr_array_clear(&array_from_msg_tmp);
-	return ret;
+	out_cleanup_transaction_data:
+		pthread_cleanup_pop(1);
+	out_cleanup_array:
+		rrr_array_clear(&array_from_msg_tmp);
+		return ret;
 }
 
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -846,16 +859,20 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_keepalive", do_keepalive, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
+
+	// Deprecated option http_keepalive
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_keepalive",
+			RRR_MSG_0("Warning: Parameter http_keepalive is deprecated and has no effect. Use http_max_keepalive_s to control connection lifetime.\n"));
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.
 	data->message_timeout_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
@@ -975,6 +992,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	unsigned int consecutive_nothing_happened = 0; // NO NOT use signed
+	uint64_t prev_bytes_total = 0;
 	while (rrr_thread_check_encourage_stop(thread) != 1) {
 		rrr_thread_update_watchdog_time(thread);
 
@@ -1026,38 +1045,75 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			}
 		}
 
-		// TODO : Implement nothing happened-stuff
+//		printf("TICK %p %i\n", data->keepalive_transport, RRR_LL_COUNT(&data->targets));
 
-		if (rrr_poll_do_poll_search(thread_data, &thread_data->poll, httpclient_poll_callback, thread_data, RRR_LL_COUNT(&data->defer_queue) > 0 ? 0 : 30) != 0) {
-			RRR_MSG_0("Error while polling in httpclient instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
+		uint64_t bytes_total = 0;
+		if (data->keepalive_transport != NULL) {
+			uint64_t timeout_limit = rrr_time_get_64() - (data->keepalive_s_max * 1000 * 1000);
+			RRR_LL_ITERATE_BEGIN(&data->targets, struct rrr_http_client_target);
+				uint64_t bytes_total_tmp = 0;
+				int ret_tmp = rrr_http_client_tick (
+						&bytes_total_tmp,
+						data->keepalive_transport,
+						node->keepalive_handle,
+						RRR_HTTPCLIENT_READ_MAX_SIZE,
+						httpclient_final_callback,
+						data,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						httpclient_raw_callback,
+						data
+				);
+				bytes_total += bytes_total_tmp;
+
+				// Run all IF's, no else if
+				if (ret_tmp != 0 && ret_tmp != RRR_HTTP_OK && ret_tmp != RRR_READ_INCOMPLETE) {
+					RRR_DBG_3("httpclient instance %s connection %s:%u complete\n",
+							INSTANCE_D_NAME(data->thread_data), node->server, node->port);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE && ret_tmp != RRR_READ_EOF) {
+					RRR_MSG_0("HTTP error during ticking in httpclient instance %s with server %s:%u, return was %i\n",
+							node->server,
+							node->port,
+							INSTANCE_D_NAME(data->thread_data),
+							ret_tmp);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				if (node->last_used < timeout_limit) {
+					RRR_DBG_3("httpclient instance %s keepalive timeout for connection %s:%u after %" PRIrrrbl " seconds\n",
+							INSTANCE_D_NAME(data->thread_data), node->server, node->port, data->keepalive_s_max);
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY (
+					&data->targets,
+					0;
+					rrr_http_client_terminate_if_open(data->keepalive_transport, node->keepalive_handle);
+					rrr_http_client_target_destroy_and_close(node, data->keepalive_transport)
+			);
 		}
 
-		if (data->keepalive_transport != NULL && data->keepalive_handle != 0) {
-			uint64_t bytes_total = 0;
-			int ret_tmp = rrr_http_client_tick (
-					&bytes_total,
-					data->keepalive_transport,
-					data->keepalive_handle,
-					RRR_HTTPCLIENT_READ_MAX_SIZE,
-					httpclient_final_callback,
-					data,
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					httpclient_raw_callback,
-					data
-			);
-
-			if ((ret_tmp != 0 && ret_tmp != RRR_HTTP_OK && ret_tmp != RRR_READ_INCOMPLETE) || !(data->do_keepalive)) {
-				rrr_http_client_terminate_if_open(data->keepalive_transport, data->keepalive_handle);
-				data->keepalive_handle = 0;
+		if (prev_bytes_total == bytes_total) {
+			consecutive_nothing_happened++;
+			if (consecutive_nothing_happened > 100) {
+				rrr_posix_usleep(30000); // 30 ms
 			}
-			if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
-				RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
-						INSTANCE_D_NAME(data->thread_data), ret_tmp);
+			else if (consecutive_nothing_happened > 20) {
+				rrr_posix_usleep(100); // 0.1 ms
+			}
+		}
+		else {
+			consecutive_nothing_happened = 0;
+		}
+		prev_bytes_total = bytes_total;
+
+		if (RRR_LL_COUNT(&data->defer_queue) < 100) {
+			if (rrr_poll_do_poll_search(thread_data, &thread_data->poll, httpclient_poll_callback, thread_data, 0) != 0) {
+				RRR_MSG_0("Error while polling in httpclient instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
 			}
 		}
 	}

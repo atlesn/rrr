@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
 #include "lib/http/http_client.h"
+#include "lib/http/http_client_target_collection.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -441,8 +442,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct cmd_data cmd;
 	struct rrr_http_client_data data = {0};
+	struct rrr_http_client_target_collection targets = {0};
 	struct rrr_net_transport *net_transport_keepalive = NULL;
-	int net_transport_keepalive_handle = 0;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
@@ -471,23 +472,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	int retry_max = 10;
-
-	retry:
-	if (--retry_max == 0) {
-		RRR_MSG_0("Maximum number of retries reached\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	// In case of redirect between HTTPS and HTTP, destroy the transport
-	if (net_transport_keepalive != NULL) {
-		rrr_http_client_terminate_if_open(net_transport_keepalive, net_transport_keepalive_handle);
-		rrr_net_transport_destroy(net_transport_keepalive);
-		net_transport_keepalive = NULL;
-		net_transport_keepalive_handle = 0;
-	}
-
 	struct rrr_net_transport_config net_transport_config = {
 			NULL,
 			NULL,
@@ -500,7 +484,7 @@ int main (int argc, const char **argv, const char **env) {
 	if (rrr_http_client_request_send (
 			&data.request_data,
 			&net_transport_keepalive,
-			&net_transport_keepalive_handle,
+			&targets,
 			&net_transport_config,
 			NULL,
 			NULL,
@@ -513,7 +497,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	int got_redirect = 0;
 	uint64_t prev_bytes_total = 0;
 
 	do {
@@ -522,7 +505,7 @@ int main (int argc, const char **argv, const char **env) {
 		ret = rrr_http_client_tick (
 				&bytes_total,
 				net_transport_keepalive,
-				net_transport_keepalive_handle,
+				RRR_LL_FIRST(&targets)->keepalive_handle,
 				1 * 1024 * 1024 * 1024, // 1 GB
 				__rrr_http_client_final_callback,
 				&data,
@@ -533,10 +516,6 @@ int main (int argc, const char **argv, const char **env) {
 				NULL,
 				NULL
 		);
-
-		if (got_redirect) {
-			goto retry;
-		}
 
 		if (ret == RRR_READ_EOF) {
 			ret = EXIT_SUCCESS;
@@ -566,6 +545,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	out:
 		rrr_config_set_debuglevel_on_exit();
+		rrr_http_client_target_collection_clear(&targets, net_transport_keepalive);
 		if (net_transport_keepalive != NULL) {
 			rrr_net_transport_destroy(net_transport_keepalive);
 		}
