@@ -164,6 +164,7 @@ static void influxdb_send_data_callback (
 
 	int ret = INFLUXDB_OK;
 
+	struct rrr_http_application *upgraded_app = NULL;
 	struct rrr_http_application *application = NULL;
 	struct rrr_http_transaction *transaction = NULL;
 	char *uri = NULL;
@@ -280,9 +281,18 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->http_client_config.server, transaction)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_request_send (
+			&upgraded_app,
+			handle,
+			data->http_client_config.server,
+			transaction
+	)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
+	}
+
+	if (upgraded_app != NULL) {
+		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
 	struct response_callback_data response_callback_data = {
@@ -325,6 +335,7 @@ static void influxdb_send_data_callback (
 
 	out:
 	rrr_http_transaction_decref_if_not_null(transaction);
+	rrr_http_application_destroy_if_not_null(&upgraded_app);
 	rrr_http_application_destroy_if_not_null(&application);
 	rrr_http_query_builder_cleanup(&query_builder);
 	RRR_FREE_IF_NOT_NULL(uri);

@@ -283,40 +283,6 @@ int rrr_http_part_multipart_process (
 	return ret;
 }
 
-static int __rrr_http_part_multipart_form_data_make_wrap_chunk (
-		const void *data,
-		ssize_t size,
-		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
-		void *chunk_callback_arg
-) {
-	if (size < 0) {
-		RRR_BUG("Size was < 0 in __rrr_http_part_multipart_form_data_make_wrap_chunk\n");
-	}
-	if (size == 0) {
-		return RRR_HTTP_OK;
-	}
-
-	int ret = 0;
-
-	char buf[128];
-	sprintf(buf, "%x\r\n", (unsigned int) size);
-
-	if ((ret = chunk_callback(buf, strlen(buf), chunk_callback_arg)) != 0) {
-		goto out;
-	}
-
-	if ((ret = chunk_callback(data, size, chunk_callback_arg)) != 0) {
-		goto out;
-	}
-
-	if ((ret = chunk_callback("\r\n", 2, chunk_callback_arg)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_http_part_multipart_field_make (
 		const char *boundary,
 		struct rrr_http_field *node,
@@ -375,13 +341,13 @@ static int __rrr_http_part_multipart_field_make (
 		goto out;
 	}
 
-	if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk (body_buf, strlen(body_buf), chunk_callback, chunk_callback_arg)) != 0) {
+	if ((ret = chunk_callback (body_buf, strlen(body_buf), chunk_callback_arg)) != 0) {
 		RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make A\n");
 		goto out;
 	}
 
 	if (rrr_nullsafe_str_isset(node->value)) {
-		if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk (node->value->str, node->value->len, chunk_callback, chunk_callback_arg)) != 0) {
+		if ((ret = chunk_callback (node->value->str, node->value->len, chunk_callback_arg)) != 0) {
 			RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make B\n");
 			goto out;
 		}
@@ -428,7 +394,13 @@ int rrr_http_part_multipart_form_data_make (
 			goto out;
 		}
 
-		rrr_http_part_header_field_push(part, "content-type", body_buf);
+		if ((ret = rrr_http_part_header_field_push(part, "content-type", body_buf)) != 0) {
+			goto out;
+		}
+	}
+
+	if ((ret = chunk_callback("\r\n", 2, chunk_callback_arg)) != 0) {
+		goto out;
 	}
 
 	int is_first = 1;
@@ -451,15 +423,10 @@ int rrr_http_part_multipart_form_data_make (
 			goto out;
 		}
 
-		if ((ret = __rrr_http_part_multipart_form_data_make_wrap_chunk(body_buf, strlen(body_buf), chunk_callback, chunk_callback_arg)) != 0) {
+		if ((ret = chunk_callback (body_buf, strlen(body_buf), chunk_callback_arg)) != 0) {
 			goto out;
 		}
 	}
-
-	if ((ret = chunk_callback("\r\n", 2, chunk_callback_arg)) != 0) {
-		goto out;
-	}
-
 	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

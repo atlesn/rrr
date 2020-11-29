@@ -501,6 +501,7 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_APPLICATION_HTTP1,
 			data.upgrade_mode,
+			0, // No plain HTTP2
 			&net_transport_keepalive,
 			&net_transport_keepalive_handle,
 			&net_transport_config,

@@ -65,6 +65,7 @@ struct httpclient_data {
 	int do_receive_raw_data;
 	int do_receive_part_data;
 	int do_send_raw_data;
+	int do_plain_http2;
 
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
@@ -779,6 +780,7 @@ static int httpclient_request_send (
 				data->http_client_config.method,
 				RRR_HTTP_APPLICATION_HTTP1,
 				upgrade_mode,
+				data->do_plain_http2,
 				&data->keepalive_transport,
 				&data->keepalive_handle,
 				&data->net_transport_config,
@@ -869,6 +871,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_plain_http2", do_plain_http2, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.

@@ -76,10 +76,12 @@ static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 		return ret;
 }
 
-static void __rrr_http_session_application_set (
+void rrr_http_session_transport_ctx_application_set (
 		struct rrr_http_application **application,
-		struct rrr_http_session *session
+		struct rrr_net_transport_handle *handle
 ) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	if (application != NULL && *application != NULL) {
 		rrr_http_application_destroy_if_not_null(&session->application);
 		session->application = *application;
@@ -113,9 +115,9 @@ int rrr_http_session_transport_ctx_server_new (
 			session,
 			__rrr_http_session_destroy_void
 	);
-
-	__rrr_http_session_application_set(application, session);
 	session = NULL;
+
+	rrr_http_session_transport_ctx_application_set(application, handle);
 
 	out:
 	if (session != NULL) {
@@ -162,7 +164,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		session = handle->application_private_ptr;
 	}
 
-	__rrr_http_session_application_set(application, session);
+	rrr_http_session_transport_ctx_application_set(application, handle);
 
 	session->upgrade_mode = upgrade_mode;
 
@@ -176,12 +178,14 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 }
 
 int rrr_http_session_transport_ctx_request_send (
+		struct rrr_http_application **upgraded_app,
 		struct rrr_net_transport_handle *handle,
 		const char *host,
 		struct rrr_http_transaction *transaction
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 	return rrr_http_application_transport_ctx_request_send (
+			upgraded_app,
 			session->application,
 			handle,
 			session->user_agent,
@@ -260,7 +264,7 @@ int rrr_http_session_transport_ctx_tick (
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
 		);
-		__rrr_http_session_application_set(&upgraded_app, session);
+		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 		ret = RRR_READ_INCOMPLETE;
 	}
 

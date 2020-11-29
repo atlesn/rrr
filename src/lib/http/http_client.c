@@ -293,6 +293,7 @@ static int __rrr_http_client_request_send_callback (
 	char *endpoint_and_query_to_free = NULL;
 
 	struct rrr_http_transaction *transaction = NULL;
+	struct rrr_http_application *upgraded_app = NULL;
 
 	// Allow caller to update references
 	callback_data->transport_handle = handle->handle;
@@ -408,6 +409,7 @@ static int __rrr_http_client_request_send_callback (
 		}
 
 		if ((ret = rrr_http_session_transport_ctx_request_send (
+				&upgraded_app,
 				handle,
 				callback_data->request_header_host,
 				transaction
@@ -417,8 +419,14 @@ static int __rrr_http_client_request_send_callback (
 		}
 	}
 
+	// Happens during TLS downgrade from HTTP2 to HTTP1 when ALPN negotiation fails
+	if (upgraded_app != NULL) {
+		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
+	}
+
 	goto out;
 	out:
+		rrr_http_application_destroy_if_not_null(&upgraded_app);
 		rrr_http_transaction_decref_if_not_null(transaction);
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(endpoint_and_query_to_free);
@@ -446,6 +454,7 @@ static int __rrr_http_client_request_send (
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -481,8 +490,6 @@ static int __rrr_http_client_request_send (
 
 	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
-
-
 
 	if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 /*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
@@ -540,6 +547,10 @@ static int __rrr_http_client_request_send (
 
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		application_type = RRR_HTTP_APPLICATION_HTTP2;
+	}
+
+	if (do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
 		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
@@ -673,6 +684,7 @@ int rrr_http_client_request_send (
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -686,6 +698,7 @@ int rrr_http_client_request_send (
 			method,
 			application_type,
 			upgrade_mode,
+			do_plain_http2,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -716,6 +729,7 @@ int rrr_http_client_request_raw_send (
 			method,
 			application_type,
 			upgrade_mode,
+			0,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,
@@ -739,6 +753,7 @@ int rrr_http_client_request_websocket_upgrade_send (
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_APPLICATION_HTTP1,
 			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
+			0,
 			transport_keepalive,
 			transport_keepalive_handle,
 			net_transport_config,

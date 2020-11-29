@@ -345,6 +345,67 @@ const char *__rrr_net_transport_openssl_ssl_version_to_str (
 	return result;
 }
 
+static int __rrr_net_transport_openssl_handshake_perform (
+		struct rrr_net_transport_tls_data *ssl_data,
+		SSL *ssl
+) {
+	int ret = 0;
+
+	int handshake_retry_max = 500;
+	handshake_retry:
+	if ((ret = SSL_do_handshake(ssl)) != 1) {
+		if (ret < 0) {
+			if (--handshake_retry_max > 0 && (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl))) {
+				rrr_posix_usleep(1); // Schedule
+				goto handshake_retry;
+			}
+			if (handshake_retry_max == 0) {
+				RRR_MSG_0("TLS handshake timeout in __rrr_net_transport_openssl_handshake_perform\n");
+			}
+			else {
+				RRR_SSL_ERR("Could not perform handshake in __rrr_net_transport_openssl_handshake_perform");
+			}
+		}
+		else {
+			RRR_MSG_3("TLS handshake aborted\n");
+		}
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+	else {
+		ret = 0;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_openssl_alpn_selected_proto_save (
+		struct rrr_net_transport_tls_data *ssl_data,
+		SSL *ssl
+) {
+	int ret = 0;
+
+	const unsigned char *alpn_proto = NULL;
+	unsigned int alpn_proto_length = 0;
+
+	SSL_get0_alpn_selected(ssl, &alpn_proto, &alpn_proto_length);
+
+	if (alpn_proto != NULL && alpn_proto_length > 0) {
+		unsigned int str_size = alpn_proto_length + 1;
+		if ((ssl_data->alpn_selected_proto = malloc(str_size)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for ALPN protocol name in __rrr_net_transport_openssl_alpn_selected_proto_save\n");
+			ret = 1;
+			goto out;
+		}
+		memcpy(ssl_data->alpn_selected_proto, alpn_proto, alpn_proto_length);
+		ssl_data->alpn_selected_proto[alpn_proto_length] = '\0';
+	}
+
+	out:
+	return ret;
+}
+
 int __rrr_net_transport_openssl_connect_callback (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
@@ -427,14 +488,14 @@ int __rrr_net_transport_openssl_connect_callback (
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
-	retry_handshake:
-	if (BIO_do_handshake(ssl_data->web) != 1) {
-		if (BIO_should_retry(ssl_data->web)) {
-			rrr_posix_usleep(1000);
-			goto retry_handshake;
-		}
-		RRR_SSL_ERR("Could not do TLS handshake");
-		ret = 1;
+	// Must complete handshake to get the selected ALPN protocol
+	SSL_set_connect_state(ssl);
+
+	if ((ret = __rrr_net_transport_openssl_handshake_perform (ssl_data, ssl)) != 0) {
+		goto out_destroy_ssl_data;
+	}
+
+	if ((ret = __rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) != 0) {
 		goto out_destroy_ssl_data;
 	}
 
@@ -696,45 +757,12 @@ static int __rrr_net_transport_openssl_accept_callback (
 	//        hanging around in the handshake-area constantly. Move accept-stuff to the worker
 	//        threads.
 
-	int handshake_retry_max = 250;
-	handshake_retry:
-	if ((ret = SSL_do_handshake(ssl)) != 1) {
-		if (ret < 0) {
-			if (--handshake_retry_max > 0 && (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl))) {
-				rrr_posix_usleep(1); // Schedule
-				goto handshake_retry;
-			}
-			if (handshake_retry_max == 0) {
-				RRR_MSG_0("TLS handshake timeout in __rrr_net_transport_tls_accept\n");
-			}
-			else {
-				RRR_SSL_ERR("Could not perform handshake in __rrr_net_transport_tls_accept");
-			}
-		}
-		else {
-			RRR_MSG_3("TLS handshake aborted\n");
-		}
-		ret = RRR_READ_SOFT_ERROR;
+	if ((ret = __rrr_net_transport_openssl_handshake_perform (ssl_data, ssl)) != 0) {
 		goto out_destroy_ssl_data;
 	}
-	else {
-		ret = 0;
-	}
 
-	const unsigned char *alpn_proto = NULL;
-	unsigned int alpn_proto_length = 0;
-
-	SSL_get0_alpn_selected(ssl, &alpn_proto, &alpn_proto_length);
-
-	if (alpn_proto != NULL && alpn_proto_length > 0) {
-		unsigned int str_size = alpn_proto_length + 1;
-		if ((ssl_data->alpn_selected_proto = malloc(str_size)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for ALPN protocol name in __rrr_net_transport_openssl_accept_callback\n");
-			ret = 1;
-			goto out_destroy_ssl_data;
-		}
-		memcpy(ssl_data->alpn_selected_proto, alpn_proto, alpn_proto_length);
-		ssl_data->alpn_selected_proto[alpn_proto_length] = '\0';
+	if ((ret = __rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) != 0) {
+		goto out_destroy_ssl_data;
 	}
 
 	// Set this data, including FD at the end. Caller will try to close the FD

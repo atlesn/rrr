@@ -1151,6 +1151,10 @@ static int __rrr_http_application_http1_request_send (
 ) {
 	int ret = 0;
 
+	// DO NOT do any upgrades here, HTTP1 may do this during ticking only.
+	// Upgrades here may cause infinite recursion as HTTP2 upgrades in its request_send function.
+	*upgraded_app = NULL;
+
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
 	struct rrr_http_part *request_part = transaction->request_part;
 
@@ -1222,25 +1226,28 @@ static int __rrr_http_application_http1_request_send (
 	}
 	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
-			RRR_BUG("BUG: HTTP method was not GET or HEAD while upgrade mode was HTTP2\n");
+			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
+			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 		}
 #ifdef RRR_WITH_NGHTTP2
-		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "h2c")) != 0) {
-			goto out;
-		}
-		if (rrr_http2_upgrade_request_settings_pack(&http2_upgrade_settings_tmp) != 0) {
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
-			goto out;
-		}
+		else {
+			if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
+				goto out;
+			}
+			if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "h2c")) != 0) {
+				goto out;
+			}
+			if (rrr_http2_upgrade_request_settings_pack(&http2_upgrade_settings_tmp) != 0) {
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+			if ((ret = rrr_http_part_header_field_push(request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
+				goto out;
+			}
 #else
-		RRR_MSG_0("Warning: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
+			RRR_MSG_3("Note: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
 #endif /* RRR_WITH_NGHTTP2 */
+		}
 	}
 
 	if ((ret = rrr_asprintf (
@@ -1266,6 +1273,20 @@ static int __rrr_http_application_http1_request_send (
 
 	rrr_string_builder_clear(header_builder);
 
+	// Note : Might add more headers to request part
+	int form_data_was_made = 0;
+	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+		char content_length[64];
+		sprintf(content_length, "%" PRIrrrl, rrr_nullsafe_str_len(transaction->send_data_tmp));
+		if ((ret = rrr_http_part_header_field_push(request_part, "content-length", content_length)) != 0) {
+				goto out;
+		}
+	}
+
 	if (rrr_http_part_header_fields_iterate (
 			request_part,
 			__rrr_http_application_http1_request_send_make_headers_callback,
@@ -1276,30 +1297,20 @@ static int __rrr_http_application_http1_request_send (
 		goto out;
 	}
 
-	ssize_t header_builder_length = rrr_string_builder_length(header_builder);
-	if (header_builder_length > 0) {
-		RRR_FREE_IF_NOT_NULL(request_buf);
-		request_buf = rrr_string_builder_buffer_takeover(header_builder);
-		if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, header_builder_length)) != 0) {
+	if (rrr_string_builder_length(header_builder) > 0) {
+		if ((ret = rrr_net_transport_ctx_send_blocking (handle, header_builder->buf, header_builder->wpos)) != 0) {
 			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
 	}
 
-	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
-		goto out;
+	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+		if ((ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len)) != 0) {
+			goto out;
+		}
 	}
 
-	if (form_data_was_made) {
-		ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len);
-	}
-	else {
-		ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"));
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not send data in __rrr_http_application_http1_request_send\n");
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != 0) {
 		goto out;
 	}
 

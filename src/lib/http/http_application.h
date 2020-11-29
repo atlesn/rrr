@@ -69,6 +69,7 @@ int rrr_http_application_new (
 		int is_server
 );
 int rrr_http_application_transport_ctx_request_send (
+		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent,

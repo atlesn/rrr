@@ -638,14 +638,7 @@ int rrr_http_part_post_x_www_form_body_make (
 		goto out;
 	}
 
-	if ((ret = rrr_asprintf (
-			&header_buf,
-			"Content-Type: application/x-www-form-urlencoded\r\n"
-			"Content-Length: %" PRIrrrl "\r\n\r\n",
-			body_size
-	)) < 0) {
-		RRR_MSG_0("Could not create content type string in rrr_http_part_post_x_www_form_body_make  return was %i\n", ret);
-		ret = 1;
+	if ((ret = rrr_http_part_header_field_push(part, "content-type", "application/x-www-form-urlencoded")) != 0) {
 		goto out;
 	}
 

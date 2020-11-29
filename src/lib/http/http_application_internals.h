@@ -28,6 +28,7 @@ struct rrr_http_transaction;
 enum rrr_http_method;
 
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS	\
+	struct rrr_http_application **upgraded_app,	\
 	struct rrr_http_application *application,	\
 	struct rrr_net_transport_handle *handle,	\
 	const char *user_agent,						\

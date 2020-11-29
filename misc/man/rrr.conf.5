@@ -1333,6 +1333,9 @@ Assume that received messages contains raw HTTP data (including headers), and se
 May be used in conjunction with raw functionallity in
 .B httpserver.
 
+.It http_plain_http2={yes|no}
+In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
+
 .It http_tls_*
 Refer to the
 .B TLS

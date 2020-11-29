@@ -123,6 +123,7 @@ int rrr_http_client_request_send (
 		enum rrr_http_method method,
 		enum rrr_http_application_type application_type,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
 		struct rrr_net_transport **transport_keepalive,
 		int *transport_keepalive_handle,
 		const struct rrr_net_transport_config *net_transport_config,

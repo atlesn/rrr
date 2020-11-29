@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "http_application.h"
+#include "http_application_http1.h"
 #include "http_application_http2.h"
 #include "http_application_internals.h"
 #include "http_transaction.h"
@@ -91,9 +92,44 @@ static int __rrr_http_application_http2_request_send (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
+	*upgraded_app = NULL;
+
 	int ret = 0;
 
 	char *endpoint_tmp = NULL;
+
+	if (rrr_net_transport_ctx_is_tls(handle)) {
+		const char *selected_proto = NULL;
+		rrr_net_transport_ctx_selected_proto_get(&selected_proto, handle);
+
+		RRR_DBG_3("HTTP2 ALPN selected protocol: %s\n", selected_proto);
+
+		if (selected_proto == NULL || strcmp("h2", selected_proto) != 0) {
+			RRR_DBG_3("HTTP2 downgrading to HTTP1 as TLS ALPN negotiation failed\n");
+			struct rrr_http_application *http1 = NULL;
+			if ((ret = rrr_http_application_http1_new(&http1)) != 0) {
+				goto out;
+			}
+			*upgraded_app = http1;
+
+			struct rrr_http_application *upgraded_app_dummy = NULL;
+			ret = rrr_http_application_transport_ctx_request_send (
+					&upgraded_app_dummy,
+					http1,
+					handle,
+					user_agent,
+					host,
+					upgrade_mode,
+					transaction
+			);
+
+			if (upgraded_app_dummy != NULL) {
+				RRR_BUG("BUG: Recursive upgrades in __rrr_http_application_http2_request_send\n");
+			}
+
+			goto out;
+		}
+	}
 
 	int32_t stream_id_preliminary = 0;
 

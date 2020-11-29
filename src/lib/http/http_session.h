@@ -80,6 +80,10 @@ struct rrr_net_transport;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
 
+void rrr_http_session_transport_ctx_application_set (
+		struct rrr_http_application **application,
+		struct rrr_net_transport_handle *handle
+);
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
@@ -91,6 +95,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		const char *user_agent
 );
 int rrr_http_session_transport_ctx_request_send (
+		struct rrr_http_application **upgraded_app,
 		struct rrr_net_transport_handle *handle,
 		const char *host,
 		struct rrr_http_transaction *transaction
