@@ -459,7 +459,6 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 	__rrr_http_application_http2_destroy,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
-	__rrr_http_application_http2_alpn_protos_get,
 	__rrr_http_application_http2_polite_close
 };
 

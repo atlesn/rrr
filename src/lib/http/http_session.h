@@ -121,11 +121,6 @@ int rrr_http_session_transport_ctx_tick (
 		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
-void rrr_http_session_transport_ctx_alpn_protos_get (
-		const char **target,
-		unsigned int *length,
-		struct rrr_net_transport_handle *handle
-);
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,
 		void *arg

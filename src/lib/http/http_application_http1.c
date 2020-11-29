@@ -1388,13 +1388,6 @@ int __rrr_http_application_http1_tick (
 	return ret;
 }
 
-static void __rrr_http_application_http1_alpn_protos_get (
-		RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS
-) {
-	*target = NULL;
-	*length = 0;
-}
-
 static void __rrr_http_application_http1_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
@@ -1408,7 +1401,6 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 	__rrr_http_application_http1_destroy,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
-	__rrr_http_application_http1_alpn_protos_get,
 	__rrr_http_application_http1_polite_close
 };
 

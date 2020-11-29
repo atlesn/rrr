@@ -131,14 +131,6 @@ int rrr_http_application_alpn_protos_with_all_do (
 	return callback(alpn_protos, alpn_protos_length, callback_arg);
 }
 
-void rrr_http_application_alpn_protos_get (
-		const char **target,
-		unsigned int *length,
-		struct rrr_http_application *app
-) {
-	app->constants->alpn_protos_get(target, length);
-}
-
 void rrr_http_application_polite_close (
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle

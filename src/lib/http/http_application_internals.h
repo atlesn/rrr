@@ -69,7 +69,6 @@ struct rrr_http_application_constants {
 	void (*destroy)(struct rrr_http_application *);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
-	void (*alpn_protos_get)(RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS);
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);
 };
 
