@@ -89,7 +89,7 @@ void rrr_http_session_transport_ctx_application_set (
 	}
 
 	if (session->application == NULL) {
-		RRR_BUG("BUG: Application pointer was NULL at end of __rrr_http_session_application_set, maybe caller forgot to create it for us\n");
+		RRR_BUG("BUG: Application pointer was NULL at end of rrr_http_session_transport_ctx_application_set, maybe caller forgot to create it for us\n");
 	}
 }
 
@@ -127,7 +127,7 @@ int rrr_http_session_transport_ctx_server_new (
 }
 
 int rrr_http_session_transport_ctx_client_new_or_clean (
-		struct rrr_http_application **application,
+		enum rrr_http_application_type application_type,
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent
 ) {
@@ -137,9 +137,16 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 
 	// With keepalive connections, structures are already present in transport handle
 	if (!rrr_net_transport_ctx_handle_has_application_data(handle)) {
-		if ((__rrr_http_session_allocate(&session)) != 0) {
+		if ((ret = __rrr_http_session_allocate(&session)) != 0) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_session_transport_ctx_client_new\n");
-			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_http_application_new (
+				&session->application,
+				application_type,
+				0 // Not server
+		)) != 0) {
 			goto out;
 		}
 
@@ -162,8 +169,6 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 	else {
 		session = handle->application_private_ptr;
 	}
-
-	rrr_http_session_transport_ctx_application_set(application, handle);
 
 	session = NULL;
 

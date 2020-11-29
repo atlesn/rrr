@@ -88,7 +88,7 @@ int rrr_http_session_transport_ctx_server_new (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_client_new_or_clean (
-		struct rrr_http_application **application,
+		enum rrr_http_application_type application_type,
 		struct rrr_net_transport_handle *handle,
 		const char *user_agent
 );

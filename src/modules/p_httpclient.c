@@ -1051,6 +1051,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		if (data->keepalive_transport != NULL) {
 			uint64_t timeout_limit = rrr_time_get_64() - (data->keepalive_s_max * 1000 * 1000);
 			RRR_LL_ITERATE_BEGIN(&data->targets, struct rrr_http_client_target);
+				if (node->keepalive_handle == 0) {
+					RRR_LL_ITERATE_SET_DESTROY();
+					RRR_LL_ITERATE_NEXT();
+				}
+
 				uint64_t bytes_total_tmp = 0;
 				int ret_tmp = rrr_http_client_tick (
 						&bytes_total_tmp,
@@ -1076,9 +1081,9 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				}
 				if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE && ret_tmp != RRR_READ_EOF) {
 					RRR_MSG_0("HTTP error during ticking in httpclient instance %s with server %s:%u, return was %i\n",
+							INSTANCE_D_NAME(data->thread_data),
 							node->server,
 							node->port,
-							INSTANCE_D_NAME(data->thread_data),
 							ret_tmp);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}

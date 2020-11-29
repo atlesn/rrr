@@ -351,7 +351,7 @@ static int __rrr_net_transport_openssl_handshake_perform (
 ) {
 	int ret = 0;
 
-	int handshake_retry_max = 500;
+	int handshake_retry_max = 1000;
 	handshake_retry:
 	if ((ret = SSL_do_handshake(ssl)) != 1) {
 		if (ret < 0) {

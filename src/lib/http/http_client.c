@@ -31,6 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_client_config.h"
 #include "http_application.h"
+#ifdef RRR_WITH_NGHTTP2
+#	include "http_application_http2.h"
+#endif /* RRR_WITH_NGHTTP2 */
 #include "http_transaction.h"
 #include "http_client_target_collection.h"
 
@@ -147,7 +150,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(overshoot_bytes);
 	(void)(unique_id);
 	(void)(next_protocol_version);
-
 
 	int ret = RRR_HTTP_OK;
 
@@ -298,15 +300,15 @@ static int __rrr_http_client_request_send_callback (
 
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
-	printf("Upgrade mode: %i\n", upgrade_mode);
-
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
+
+
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
-			callback_data->application,
+			callback_data->application_type,
 			handle,
 			callback_data->data->user_agent
 	)) != 0) {
@@ -474,18 +476,17 @@ static int __rrr_http_client_request_send (
 
 	char *server_to_free = NULL;
 	struct rrr_http_client_request_callback_data callback_data = {0};
-	struct rrr_http_application *application = NULL;
 
 	if (transport_keepalive == NULL) {
 		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_send_request\n");
 	}
 
 	callback_data.data = data;
-	callback_data.application = &application;
 	callback_data.raw_request_data = raw_request_data;
 	callback_data.raw_request_data_size = raw_request_data_size;
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
+	callback_data.application_type = RRR_HTTP_APPLICATION_HTTP1;
 	callback_data.application_data = application_data;
 	callback_data.application_data_destroy = application_data_destroy;
 
@@ -546,35 +547,25 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
-	enum rrr_http_application_type application_type = RRR_HTTP_APPLICATION_HTTP1;
-
+#ifdef RRR_WITH_NGHTTP2
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-		application_type = RRR_HTTP_APPLICATION_HTTP2;
+		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 
 	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
-		application_type = RRR_HTTP_APPLICATION_HTTP2;
+		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+#endif /* RRR_WITH_NGHTTP2 */
 
 	callback_data.request_header_host = server_to_use;
-
-	if (*transport_keepalive == NULL) {
-		if ((ret = rrr_http_application_new (
-				&application,
-				application_type,
-				0 // Not server
-		)) != 0) {
-			goto out;
-		}
-	}
 
 	RRR_DBG_3("Using server %s port %u transport %s method '%s' application '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(data->method),
-			RRR_HTTP_APPLICATION_TO_STR(application_type),
+			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 
@@ -592,7 +583,9 @@ static int __rrr_http_client_request_send (
 			const char *alpn_protos = NULL;
 			unsigned alpn_protos_length = 0;
 
-			rrr_http_application_alpn_protos_get(&alpn_protos, &alpn_protos_length, application);
+#if RRR_WITH_NGHTTP2
+			rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+#endif /* RRR_WITH_NGHTTP2 */
 
 			ret = rrr_net_transport_new (
 					transport_keepalive,
@@ -666,9 +659,6 @@ static int __rrr_http_client_request_send (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(server_to_free);
-	if (application != NULL) {
-		rrr_http_application_destroy_if_not_null(&application);
-	}
 	return ret;
 }
 

@@ -83,13 +83,12 @@ struct rrr_http_client_request_data {
 struct rrr_http_client_request_callback_data {
 	const struct rrr_http_client_request_data *data;
 
-	struct rrr_http_application **application;
-//	int transport_handle;
-
 	const char *raw_request_data;
 	size_t raw_request_data_size;
 
 	const char *request_header_host;
+
+	enum rrr_http_application_type application_type;
 
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;

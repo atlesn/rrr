@@ -219,16 +219,15 @@ static int __rrr_http_application_http2_callback (
 	if (callback_data->is_client) {
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
+		if (!is_stream_close) {
+			// Wait for any data
+			goto out;
+		}
+
 		const struct rrr_http_header_field *status = rrr_http_part_header_field_get(transaction->response_part, ":status");
 		if (status == NULL) {
 			RRR_MSG_0("Field :status missing in HTTP2 response header\n");
 			ret = RRR_HTTP2_SOFT_ERROR;
-			goto out;
-		}
-
-		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
-		if (content_length != NULL && content_length->value_unsigned != 0 && data_size < content_length->value_unsigned) {
-			// Wait for DATA frames and END DATA
 			goto out;
 		}
 
@@ -239,6 +238,13 @@ static int __rrr_http_application_http2_callback (
 
 		transaction->response_part->response_code = status->value_unsigned;
 
+		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
+		if (content_length != NULL && content_length->value_unsigned != data_size) {
+			RRR_MSG_0("Malformed HTTP2 response. Reported content-length was %llu while actual data length was %llu\n",
+					(unsigned long long) content_length->value_unsigned, (unsigned long long) data_size);
+			ret = RRR_HTTP2_SOFT_ERROR;
+			goto out;
+		}
 
 		if ((ret = rrr_http_part_parse_response_data_set (transaction->response_part, data_size)) != 0) {
 			goto out;
@@ -277,7 +283,7 @@ static int __rrr_http_application_http2_callback (
 			goto out_send_response_bad_request;
 		}
 
-		if ((post || put) && (data == NULL || data_size == 0)) {
+		if ((post || put) && (!is_data_end)) {
 			// Wait for DATA frames and END DATA
 			goto out;
 		}
@@ -302,18 +308,20 @@ static int __rrr_http_application_http2_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_http_part_multipart_process(transaction->request_part, data)) != 0) {
-			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-				goto out_send_response_bad_request;
+		if (data != NULL) {
+			if ((ret = rrr_http_part_multipart_process(transaction->request_part, data)) != 0) {
+				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+					goto out_send_response_bad_request;
+				}
+				goto out;
 			}
-			goto out;
-		}
 
-		if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
-			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
-				goto out_send_response_bad_request;
+			if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
+				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+					goto out_send_response_bad_request;
+				}
+				goto out;
 			}
-			goto out;
 		}
 	}
 

@@ -279,7 +279,9 @@ static int __rrr_http_client_final_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	http_client_data->final_callback_count++;
+	if (response_data->len > 0) {
+		http_client_data->final_callback_count++;
+	}
 
 	(void)(transaction);
 
@@ -508,7 +510,6 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	uint64_t prev_bytes_total = 0;
-
 	do {
 		uint64_t bytes_total = 0;
 
@@ -527,6 +528,8 @@ int main (int argc, const char **argv, const char **env) {
 				NULL
 		);
 
+//		printf("ret: %i\n", ret);
+
 		if (ret == RRR_READ_EOF) {
 			ret = EXIT_SUCCESS;
 			goto out;
@@ -541,13 +544,15 @@ int main (int argc, const char **argv, const char **env) {
 			ret = RRR_READ_INCOMPLETE;
 		}
 
+//		printf("ret: %i %i %i\n", ret, main_running, data.final_callback_count);
+
 		if (ret != 0 && ret != RRR_READ_EOF && ret != RRR_READ_INCOMPLETE) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
 		if (prev_bytes_total == bytes_total) {
-			rrr_posix_usleep(5000); // 5 ms
+			rrr_posix_usleep(0); // Schedule
 		}
 
 		prev_bytes_total = bytes_total;

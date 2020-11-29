@@ -165,18 +165,9 @@ static void influxdb_send_data_callback (
 	int ret = INFLUXDB_OK;
 
 	struct rrr_http_application *upgraded_app = NULL;
-	struct rrr_http_application *application = NULL;
 	struct rrr_http_transaction *transaction = NULL;
 	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
-
-	if ((ret = rrr_http_application_new(
-			&application,
-			RRR_HTTP_APPLICATION_HTTP1,
-			0 // Is not server
-	)) == 0) {
-		goto out;
-	}
 
 	if (rrr_http_query_builder_init(&query_builder) != 0) {
 		RRR_MSG_0("Could not initialize query builder in influxdb_send_data_callback\n");
@@ -192,7 +183,7 @@ static void influxdb_send_data_callback (
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
-			&application,
+			RRR_HTTP_APPLICATION_HTTP1,
 			handle,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
@@ -336,7 +327,6 @@ static void influxdb_send_data_callback (
 	out:
 	rrr_http_transaction_decref_if_not_null(transaction);
 	rrr_http_application_destroy_if_not_null(&upgraded_app);
-	rrr_http_application_destroy_if_not_null(&application);
 	rrr_http_query_builder_cleanup(&query_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
 	callback_data->ret = ret;

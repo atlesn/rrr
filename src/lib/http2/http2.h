@@ -35,6 +35,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	struct rrr_http2_session *session,					\
 	struct rrr_http_header_field_collection *headers,	\
 	int32_t stream_id,									\
+	int is_header_end,									\
+	int is_data_end,									\
+	int is_stream_close,								\
 	void *data,											\
 	size_t data_size,									\
 	void *stream_application_data,						\
