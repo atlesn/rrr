@@ -420,8 +420,7 @@ int rrr_http_part_multipart_form_data_make (
 		RRR_FREE_IF_NOT_NULL(body_buf);
 		if ((ret = rrr_asprintf (
 				&body_buf,
-				"Content-Type: multipart/form-data; boundary=%s\r\n"
-				"Transfer-Encoding: chunked\r\n\r\n",
+				"multipart/form-data; boundary=%s",
 				boundary_buf
 		)) < 0) {
 			RRR_MSG_0("Could not create content type string in rrr_http_part_multipart_form_data_make return was %i\n", ret);
@@ -429,12 +428,8 @@ int rrr_http_part_multipart_form_data_make (
 			goto out;
 		}
 
-		if ((ret = chunk_callback(body_buf, strlen(body_buf), chunk_callback_arg)) != 0) {
-			goto out;
-		}
+		rrr_http_part_header_field_push(part, "content-type", body_buf);
 	}
-
-	// All sends below this point must be wrapped inside chunk sender
 
 	int is_first = 1;
 	RRR_LL_ITERATE_BEGIN(&part->fields, struct rrr_http_field);
@@ -461,7 +456,7 @@ int rrr_http_part_multipart_form_data_make (
 		}
 	}
 
-	if ((ret = chunk_callback("0\r\n\r\n", 5, chunk_callback_arg)) != 0) {
+	if ((ret = chunk_callback("\r\n", 2, chunk_callback_arg)) != 0) {
 		goto out;
 	}
 

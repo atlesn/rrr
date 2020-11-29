@@ -670,7 +670,7 @@ static int httpclient_raw_callback (
 	return ret;
 }
 
-static int httpclient_send_request_locked (
+static int httpclient_request_send (
 		struct httpclient_data *data,
 		struct rrr_msg_holder *entry
 ) {
@@ -767,13 +767,18 @@ static int httpclient_send_request_locked (
 				&array_from_msg_tmp
 		};
 
-		// TODO : Send real HTTP2 when using TLS
+		enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+
+		// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
+		if (data->http_client_config.method != RRR_HTTP_METHOD_GET && data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS) {
+			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+		}
 
 		ret = rrr_http_client_request_send (
 				&request_data,
 				data->http_client_config.method,
 				RRR_HTTP_APPLICATION_HTTP1,
-				(data->http_client_config.method == RRR_HTTP_METHOD_GET ? RRR_HTTP_UPGRADE_MODE_HTTP2 : RRR_HTTP_UPGRADE_MODE_NONE),
+				upgrade_mode,
 				&data->keepalive_transport,
 				&data->keepalive_handle,
 				&data->net_transport_config,
@@ -996,7 +1001,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						send_timeout_count++;
 						RRR_LL_ITERATE_SET_DESTROY();
 				}
-				else if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
+				else if ((ret_tmp = httpclient_request_send(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
 					}
@@ -1049,10 +1054,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 					data
 			);
 
-			if (ret_tmp == RRR_READ_EOF) {
+			if ((ret_tmp != 0 && ret_tmp != RRR_HTTP_OK && ret_tmp != RRR_READ_INCOMPLETE) || !(data->do_keepalive)) {
 				rrr_http_client_terminate_if_open(data->keepalive_transport, data->keepalive_handle);
+				data->keepalive_handle = 0;
 			}
-			else if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
+			if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE) {
 				RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
 						INSTANCE_D_NAME(data->thread_data), ret_tmp);
 			}

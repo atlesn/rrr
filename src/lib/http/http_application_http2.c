@@ -55,6 +55,37 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	free(http2);
 }
 
+struct rrr_http_application_http2_header_fields_submit_callback_data {
+	struct rrr_http_application_http2 *app;
+	int32_t stream_id;
+};
+
+static int __rrr_http_application_http2_header_fields_submit_callback (
+		struct rrr_http_header_field *field,
+		void *arg
+) {
+	struct rrr_http_application_http2_header_fields_submit_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
+		RRR_BUG("BUG: Name or value was NULL in __rrr_http_application_http2_header_fields_submit_callbacks\n");
+	}
+	if (RRR_LL_COUNT(&field->fields) > 0) {
+		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http2_header_fields_submit_callback, this is not supported\n");
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
+
+	if ((ret = rrr_http2_header_submit(callback_data->app->http2_session, 1, name, value)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -64,7 +95,7 @@ static int __rrr_http_application_http2_request_send (
 
 	char *endpoint_tmp = NULL;
 
-	int32_t stream_id = 0;
+	int32_t stream_id_preliminary = 0;
 
 	int form_data_was_made = 0;
 	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
@@ -75,20 +106,37 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	if  ((ret = rrr_http2_request_submit (
-			&stream_id,
-			http2->http2_session,
-			rrr_net_transport_ctx_is_tls(handle),
-			transaction->method,
-			host,
-			endpoint_tmp
+	RRR_DBG_7("http2 request submit send data length %" PRIrrrl "\n",
+			rrr_nullsafe_str_len(transaction->send_data_tmp));
+
+	if  ((ret = rrr_http2_request_start (
+			&stream_id_preliminary,
+			http2->http2_session
+	)) != 0) {
+		goto out;
+	}
+
+	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
+	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
+	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
+	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":path", transaction->uri_str);
+
+	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
+			http2,
+			stream_id_preliminary
+	};
+
+	if ((ret = rrr_http_part_header_fields_iterate (
+			transaction->request_part,
+			__rrr_http_application_http2_header_fields_submit_callback,
+			&callback_data
 	)) != 0) {
 		goto out;
 	}
 
 	if ((ret = rrr_http2_session_stream_application_data_set (
 			http2->http2_session,
-			stream_id,
+			stream_id_preliminary,
 			transaction,
 			rrr_http_transaction_decref_if_not_null_void
 	)) != 0) {
@@ -96,6 +144,15 @@ static int __rrr_http_application_http2_request_send (
 	}
 
 	rrr_http_transaction_incref(transaction);
+
+	// Will detect that the stream ID is not allocated yet and pass ID -1 to library to trigger allocation
+	if ((ret = rrr_http2_headers_end(http2->http2_session, stream_id_preliminary)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id_preliminary)) != 0) {
+		goto out;
+	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(endpoint_tmp);
@@ -501,37 +558,6 @@ int rrr_http_application_http2_new_from_upgrade (
 		return ret;
 }
 
-struct rrr_http_application_http2_header_fields_submit_callback_data {
-	struct rrr_http_application_http2 *app;
-	int32_t stream_id;
-};
-
-static int __rrr_http_application_http2_header_fields_submit_callback (
-		struct rrr_http_header_field *field,
-		void *arg
-) {
-	struct rrr_http_application_http2_header_fields_submit_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
-		RRR_BUG("BUG: Name or value was NULL in __rrr_http_application_http2_header_fields_submit_callbacks\n");
-	}
-	if (RRR_LL_COUNT(&field->fields) > 0) {
-		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http2_header_fields_submit_callback, this is not supported\n");
-	}
-
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
-
-	if ((ret = rrr_http2_header_submit(callback_data->app->http2_session, 1, name, value)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 int rrr_http_application_http2_response_submit (
 		struct rrr_http_application *app,
 		struct rrr_http_transaction *transaction,
@@ -555,6 +581,9 @@ int rrr_http_application_http2_response_submit (
 	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(transaction->send_data_tmp) > 0) {
 		response_code = RRR_HTTP_RESPONSE_CODE_OK;
 	}
+
+	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrrl "\n",
+			response_code, rrr_nullsafe_str_len(transaction->send_data_tmp));
 
 	if ((ret = rrr_http2_header_status_submit(http2->http2_session, stream_id, response_code)) != 0) {
 		goto out;
@@ -589,7 +618,7 @@ int rrr_http_application_http2_response_submit (
 	}
 
 	// Misc. callbacks will product the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submit(http2->http2_session, stream_id)) != 0) {
+	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id)) != 0) {
 		goto out;
 	}
 

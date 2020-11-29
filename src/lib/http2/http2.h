@@ -81,13 +81,9 @@ int rrr_http2_session_upgrade_postprocess (
 int rrr_http2_session_settings_submit (
 		struct rrr_http2_session *session
 );
-int rrr_http2_request_submit (
+int rrr_http2_request_start (
 		int32_t *stream_id,
-		struct rrr_http2_session *session,
-		int is_https,
-		enum rrr_http_method method,
-		const char *host,
-		const char *endpoint
+		struct rrr_http2_session *session
 );
 int rrr_http2_header_submit (
 		struct rrr_http2_session *session,
@@ -108,7 +104,7 @@ int rrr_http2_response_submit (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );
-int rrr_http2_data_submit (
+int rrr_http2_data_submit_request (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );

@@ -482,8 +482,9 @@ static int __rrr_http_client_request_send (
 	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
+
+
 	if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-		RRR_DBG_3("Forcing TLS\n");
 /*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -492,7 +493,6 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 	else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
-		RRR_DBG_3("Forcing plaintext non-TLS\n");
 /*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -538,20 +538,12 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
-	callback_data.request_header_host = server_to_use;
-
-	RRR_DBG_3("Using server %s port %u transport %s method '%s' upgrade mode '%s'\n",
-			server_to_use,
-			port_to_use,
-			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
-			RRR_HTTP_METHOD_TO_STR(method),
-			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
-	);
-
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
 		application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+
+	callback_data.request_header_host = server_to_use;
 
 	if (*transport_keepalive == NULL || *transport_keepalive_handle == 0) {
 		if ((ret = rrr_http_application_new (
@@ -562,6 +554,15 @@ static int __rrr_http_client_request_send (
 			goto out;
 		}
 	}
+
+	RRR_DBG_3("Using server %s port %u transport %s method '%s' application '%s' upgrade mode '%s'\n",
+			server_to_use,
+			port_to_use,
+			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
+			RRR_HTTP_METHOD_TO_STR(method),
+			RRR_HTTP_APPLICATION_TO_STR(application_type),
+			RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode)
+	);
 
 	if (*transport_keepalive == NULL) {
 		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
@@ -575,7 +576,7 @@ static int __rrr_http_client_request_send (
 			}
 
 			const char *alpn_protos = NULL;
-			unsigned int alpn_protos_length = 0;
+			unsigned alpn_protos_length = 0;
 
 			rrr_http_application_alpn_protos_get(&alpn_protos, &alpn_protos_length, application);
 

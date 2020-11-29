@@ -63,9 +63,11 @@ int rrr_http_transaction_new (
 		goto out_free_response;
 	}
 
-	result->application_data = *application_data;
-	result->application_data_destroy = application_data_destroy;
-	*application_data = NULL;
+	if (application_data != NULL) {
+		result->application_data = *application_data;
+		result->application_data_destroy = application_data_destroy;
+		*application_data = NULL;
+	}
 
 	result->method = method;
 	result->usercount = 1;

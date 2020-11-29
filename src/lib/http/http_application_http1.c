@@ -96,175 +96,6 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 	return ret;
 }
 
-int __rrr_http_application_http1_request_send (
-		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
-) {
-	int ret = 0;
-
-	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
-	struct rrr_http_part *request_part = transaction->request_part;
-
-	char *request_buf = NULL;
-	char *host_buf = NULL;
-	char *user_agent_buf = NULL;
-	char *uri_tmp = NULL;
-	char *websocket_key_tmp = NULL;
-	char *http2_upgrade_settings_tmp = NULL;
-
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &request_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &host_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &user_agent_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &uri_tmp);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &websocket_key_tmp);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &http2_upgrade_settings_tmp);
-
-	struct rrr_string_builder *header_builder = NULL;
-
-	__rrr_http_application_http1_transaction_set(http1, transaction);
-
-	if (rrr_string_builder_new(&header_builder) != 0) {
-		RRR_MSG_0("Failed to create string builder in __rrr_http_application_http1_request_send\n");
-		ret = 1;
-		goto out_final;
-	}
-
-	pthread_cleanup_push(rrr_string_builder_destroy_void, header_builder);
-
-	host_buf = rrr_http_util_quote_header_value(host, strlen(host), '"', '"');
-	if (host_buf == NULL) {
-		RRR_MSG_0("Invalid host '%s' in __rrr_http_application_http1_request_send\n", host);
-		ret = 1;
-		goto out;
-	}
-
-	user_agent_buf = rrr_http_util_quote_header_value(user_agent, strlen(user_agent), '"', '"');
-	if (user_agent_buf == NULL) {
-		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_application_http1_request_send\n", user_agent);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&uri_tmp, transaction)) != 0) {
-		goto out;
-	}
-
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
-		if (transaction->method != RRR_HTTP_METHOD_GET) {
-			RRR_BUG("BUG: HTTP method was not GET while upgrade mode was WebSocket\n");
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade")) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "websocket")) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_websocket_state_get_key_base64 (&websocket_key_tmp, &http1->ws_state)) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "sec-websocket-key", websocket_key_tmp)) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "sec-websocket-version", "13")) != 0) {
-			goto out;
-		}
-
-		rrr_websocket_state_set_client_mode(&http1->ws_state);
-	}
-	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
-		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
-			RRR_BUG("BUG: HTTP method was not GET or HEAD while upgrade mode was HTTP2\n");
-		}
-#ifdef RRR_WITH_NGHTTP2
-		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "h2c")) != 0) {
-			goto out;
-		}
-		if (rrr_http2_upgrade_request_settings_pack(&http2_upgrade_settings_tmp) != 0) {
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-		if ((ret = rrr_http_part_header_field_push(request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
-			goto out;
-		}
-#else
-		RRR_MSG_0("Warning: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
-#endif /* RRR_WITH_NGHTTP2 */
-	}
-
-	if ((ret = rrr_asprintf (
-			&request_buf,
-			"%s %s HTTP/1.1\r\n"
-			"Host: %s\r\n"
-			"User-Agent: %s\r\n"
-			"Accept-Charset: UTF-8\r\n",
-			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-			uri_tmp,
-			host_buf,
-			user_agent_buf
-	)) < 0) {
-		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
-		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
-		goto out;
-	}
-
-	rrr_string_builder_clear(header_builder);
-
-	if (rrr_http_part_header_fields_iterate (
-			request_part,
-			__rrr_http_application_http1_request_send_make_headers_callback,
-			header_builder
-	) != 0) {
-		RRR_MSG_0("Failed to make header fields in __rrr_http_application_http1_request_send\n");
-		ret = 1;
-		goto out;
-	}
-
-	ssize_t header_builder_length = rrr_string_builder_length(header_builder);
-	if (header_builder_length > 0) {
-		RRR_FREE_IF_NOT_NULL(request_buf);
-		request_buf = rrr_string_builder_buffer_takeover(header_builder);
-		if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, header_builder_length)) != 0) {
-			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send\n");
-			goto out;
-		}
-	}
-
-	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
-		goto out;
-	}
-
-	if (form_data_was_made) {
-		ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len);
-	}
-	else {
-		ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"));
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not send data in __rrr_http_application_http1_request_send\n");
-		goto out;
-	}
-
-	out:
-		pthread_cleanup_pop(1);
-	out_final:
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		return ret;
-}
-
 struct rrr_http_application_http1_send_header_field_callback_data {
 	struct rrr_net_transport_handle *handle;
 };
@@ -321,7 +152,7 @@ static int __rrr_http_application_http1_send_header_field_callback (struct rrr_h
 	return ret;
 }
 
-int __rrr_http_application_http1_response_send (
+static int __rrr_http_application_http1_response_send (
 		struct rrr_http_application *application,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_http_transaction *transaction
@@ -1315,6 +1146,175 @@ static int __rrr_http_application_http1_transport_ctx_websocket_tick (
 	return ret;
 }
 
+static int __rrr_http_application_http1_request_send (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
+) {
+	int ret = 0;
+
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+	struct rrr_http_part *request_part = transaction->request_part;
+
+	char *request_buf = NULL;
+	char *host_buf = NULL;
+	char *user_agent_buf = NULL;
+	char *uri_tmp = NULL;
+	char *websocket_key_tmp = NULL;
+	char *http2_upgrade_settings_tmp = NULL;
+
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &request_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &host_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &user_agent_buf);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &uri_tmp);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &websocket_key_tmp);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &http2_upgrade_settings_tmp);
+
+	struct rrr_string_builder *header_builder = NULL;
+
+	__rrr_http_application_http1_transaction_set(http1, transaction);
+
+	if (rrr_string_builder_new(&header_builder) != 0) {
+		RRR_MSG_0("Failed to create string builder in __rrr_http_application_http1_request_send\n");
+		ret = 1;
+		goto out_final;
+	}
+
+	pthread_cleanup_push(rrr_string_builder_destroy_void, header_builder);
+
+	host_buf = rrr_http_util_quote_header_value(host, strlen(host), '"', '"');
+	if (host_buf == NULL) {
+		RRR_MSG_0("Invalid host '%s' in __rrr_http_application_http1_request_send\n", host);
+		ret = 1;
+		goto out;
+	}
+
+	user_agent_buf = rrr_http_util_quote_header_value(user_agent, strlen(user_agent), '"', '"');
+	if (user_agent_buf == NULL) {
+		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_application_http1_request_send\n", user_agent);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&uri_tmp, transaction)) != 0) {
+		goto out;
+	}
+
+	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
+		if (transaction->method != RRR_HTTP_METHOD_GET) {
+			RRR_BUG("BUG: HTTP method was not GET while upgrade mode was WebSocket\n");
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "websocket")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_websocket_state_get_key_base64 (&websocket_key_tmp, &http1->ws_state)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "sec-websocket-key", websocket_key_tmp)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "sec-websocket-version", "13")) != 0) {
+			goto out;
+		}
+
+		rrr_websocket_state_set_client_mode(&http1->ws_state);
+	}
+	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
+			RRR_BUG("BUG: HTTP method was not GET or HEAD while upgrade mode was HTTP2\n");
+		}
+#ifdef RRR_WITH_NGHTTP2
+		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "h2c")) != 0) {
+			goto out;
+		}
+		if (rrr_http2_upgrade_request_settings_pack(&http2_upgrade_settings_tmp) != 0) {
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+		if ((ret = rrr_http_part_header_field_push(request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
+			goto out;
+		}
+#else
+		RRR_MSG_0("Warning: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
+#endif /* RRR_WITH_NGHTTP2 */
+	}
+
+	if ((ret = rrr_asprintf (
+			&request_buf,
+			"%s %s HTTP/1.1\r\n"
+			"Host: %s\r\n"
+			"User-Agent: %s\r\n"
+			"Accept-Charset: UTF-8\r\n",
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+			uri_tmp,
+			host_buf,
+			user_agent_buf
+	)) < 0) {
+		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
+		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
+		goto out;
+	}
+
+	rrr_string_builder_clear(header_builder);
+
+	if (rrr_http_part_header_fields_iterate (
+			request_part,
+			__rrr_http_application_http1_request_send_make_headers_callback,
+			header_builder
+	) != 0) {
+		RRR_MSG_0("Failed to make header fields in __rrr_http_application_http1_request_send\n");
+		ret = 1;
+		goto out;
+	}
+
+	ssize_t header_builder_length = rrr_string_builder_length(header_builder);
+	if (header_builder_length > 0) {
+		RRR_FREE_IF_NOT_NULL(request_buf);
+		request_buf = rrr_string_builder_buffer_takeover(header_builder);
+		if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, header_builder_length)) != 0) {
+			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send\n");
+			goto out;
+		}
+	}
+
+	int form_data_was_made = 0;
+	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
+		goto out;
+	}
+
+	if (form_data_was_made) {
+		ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len);
+	}
+	else {
+		ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"));
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not send data in __rrr_http_application_http1_request_send\n");
+		goto out;
+	}
+
+	out:
+		pthread_cleanup_pop(1);
+	out_final:
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		return ret;
+}
+
 int __rrr_http_application_http1_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
@@ -1421,3 +1421,5 @@ int rrr_http_application_http1_new (struct rrr_http_application **target) {
 	out:
 	return ret;
 }
+
+

@@ -48,6 +48,10 @@ struct rrr_http2_stream {
 	size_t data_size;
 	size_t data_wpos;
 	void *application_data;
+
+	// Submit data frame on next before_frame_send_callback
+	int data_submission_requested;
+
 	void (*application_data_destroy_function)(void *);
 	struct rrr_map headers_to_send;
 };
@@ -436,6 +440,100 @@ static int __rrr_http2_error_callback (
 	return 0;
 }
 
+// Library documents that length is no more than 16KiB
+static ssize_t __rrr_http2_data_source_read_callback (
+		nghttp2_session *nghttp2_session,
+		int32_t stream_id,
+		uint8_t *buf,
+		size_t length,
+		uint32_t *data_flags,
+		nghttp2_data_source *source,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	(void)(nghttp2_session);
+	(void)(source);
+
+	rrr_length bytes_written = 0;
+	*data_flags = 0;
+
+	int done = 0;
+	if (session->callback_data.data_source_callback (
+			&done,
+			&bytes_written,
+			buf,
+			length,
+			stream_id,
+			session->callback_data.callback_arg
+	) != 0) {
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	if (done) {
+		*data_flags = NGHTTP2_DATA_FLAG_EOF;
+	}
+
+	out:
+	return bytes_written;
+}
+
+static int __rrr_http2_data_submit_if_needed (
+		struct rrr_http2_session *session,
+		struct rrr_http2_stream *stream
+) {
+	int ret = 0;
+
+	if (!stream->data_submission_requested) {
+		goto out;
+	}
+	stream->data_submission_requested = 0;
+
+	nghttp2_data_provider data_provider = {
+			{ 0 },
+			__rrr_http2_data_source_read_callback
+	};
+
+	// Note that the final source read callback is set in the tick() function
+
+	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream->stream_id, &data_provider)) != 0) {
+		RRR_MSG_0 ("HTTP2 data submission failed: %s\n", nghttp2_strerror(ret));
+		ret = RRR_HTTP2_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http2_before_frame_send_callback (
+		nghttp2_session *nghttp2_session,
+		const nghttp2_frame *frame,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	int ret = 0;
+
+	if (frame->hd.type != NGHTTP2_HEADERS) {
+		goto out;
+	}
+
+	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, frame->hd.stream_id);
+	if (stream == NULL) {
+		RRR_DBG_7("http2 unknown stream %u in before_frame_send_callback\n", frame->hd.stream_id);
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
+	}
+
+	if ((ret = __rrr_http2_data_submit_if_needed(session, stream)) != 0) {
+		ret = NGHTTP2_ERR_CALLBACK_FAILURE;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
@@ -465,6 +563,7 @@ int rrr_http2_session_new_or_reset (
 	nghttp2_session_callbacks_set_on_header_callback			(callbacks, __rrr_http2_on_header_callback);
 	nghttp2_session_callbacks_set_on_begin_headers_callback		(callbacks, __rrr_http2_on_begin_headers_callback);
 	nghttp2_session_callbacks_set_error_callback 				(callbacks, __rrr_http2_error_callback);
+	nghttp2_session_callbacks_set_before_frame_send_callback	(callbacks, __rrr_http2_before_frame_send_callback);
 
 	if (result == NULL) {
 		if ((result = malloc(sizeof(*result))) == NULL) {
@@ -597,7 +696,8 @@ static int __rrr_http2_session_stream_headers_submit (
 		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_headers_submit\n");
 	}
 
-	int ret = 0;
+	// Must hold stream ID
+	int32_t ret = 0;
 
 	nghttp2_nv *headers = NULL;
 
@@ -625,17 +725,19 @@ static int __rrr_http2_session_stream_headers_submit (
 	if ((ret = nghttp2_submit_headers (
 			session->session,
 			0,
-			stream_id,
+			(stream_id == nghttp2_session_get_next_stream_id(session->session) ? -1 : stream_id), // Not allocated yet if equal to next stream ID
 			NULL,
 			headers,
 			header_count,
 			NULL
-	)) != 0) {
+	)) != 0 && ret != stream_id) {
 		RRR_MSG_0 ("HTTP2 header field submission failed: %s", nghttp2_strerror(ret));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
-
 	}
+
+	// Set to 0 in case it contains stream ID
+	ret = 0;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(headers);
@@ -692,83 +794,18 @@ int rrr_http2_session_settings_submit (
 	return ret;
 }
 
-// Library documents that length is no more than 16KiB
-static ssize_t __rrr_http2_data_source_read_callback (
-		nghttp2_session *nghttp2_session,
-		int32_t stream_id,
-		uint8_t *buf,
-		size_t length,
-		uint32_t *data_flags,
-		nghttp2_data_source *source,
-		void *user_data
-) {
-	struct rrr_http2_session *session = user_data;
-
-	(void)(nghttp2_session);
-	(void)(source);
-
-	rrr_length bytes_written = 0;
-	*data_flags = 0;
-
-	int done = 0;
-	if (session->callback_data.data_source_callback (
-			&done,
-			&bytes_written,
-			buf,
-			length,
-			stream_id,
-			session->callback_data.callback_arg
-	) != 0) {
-		return NGHTTP2_ERR_CALLBACK_FAILURE;
-	}
-
-	if (done) {
-		*data_flags = NGHTTP2_DATA_FLAG_EOF;
-	}
-
-	out:
-	return bytes_written;
-}
-
-int rrr_http2_request_submit (
+int rrr_http2_request_start (
 		int32_t *stream_id,
-		struct rrr_http2_session *session,
-		int is_https,
-		enum rrr_http_method method,
-		const char *host,
-		const char *endpoint
+		struct rrr_http2_session *session
 ) {
 	int ret = 0;
 
 	*stream_id = 0;
 
-	const char *scheme = (is_https ? "https" : "http");
-
-	nghttp2_data_provider data_provider = {
-			{ 0 },
-			__rrr_http2_data_source_read_callback
-	};
-
-//	printf("%i %s %s %s\n", is_https, host, RRR_HTTP_METHOD_TO_STR_CONFORMING(method), endpoint);
-
-	nghttp2_nv headers[] = {
-		MAKE_NV(":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(method)),
-		MAKE_NV(":scheme", scheme),
-		MAKE_NV(":authority", host),
-		MAKE_NV(":path", endpoint)
-	};
-
-	int32_t stream_id_tmp = nghttp2_submit_request (
-			session->session,
-			NULL,
-			headers,
-			sizeof(headers) / sizeof(*headers),
-			NULL,
-			NULL
-	);
-
-	if (stream_id_tmp < 0) {
-		RRR_MSG_0 ("HTTP2 request submission failed: %s", nghttp2_strerror(stream_id_tmp));
+	// Note that stream ID will not be incremented in the library until we send headers
+	uint32_t stream_id_tmp = nghttp2_session_get_next_stream_id(session->session);
+	if (stream_id_tmp >= 1 << 31) {
+		RRR_MSG_0 ("HTTP2 request submission failed, IDs exhausted: %s", nghttp2_strerror(stream_id_tmp));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
 	}
@@ -789,7 +826,8 @@ int rrr_http2_header_submit (
 
 	const char *disallowed_names[] = {
 			"connection",
-			"keep-alive"
+			"keep-alive",
+			"transfer-encoding"
 	};
 
 	for (int i = 0; i < sizeof(disallowed_names) / sizeof(*disallowed_names); i++) {
@@ -860,24 +898,15 @@ int rrr_http2_response_submit (
 	return ret;
 }
 
-int rrr_http2_data_submit (
+int rrr_http2_data_submit_request (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
 	int ret = 0;
 
-	nghttp2_data_provider data_provider = {
-			{ 0 },
-			__rrr_http2_data_source_read_callback
-	};
+	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find_or_create(&session->streams, stream_id);
 
-	// Note that the final soruce read callback is set in the tick() function
-
-	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
-		RRR_MSG_0 ("HTTP2 data submission failed: %s", nghttp2_strerror(ret));
-		ret = RRR_HTTP2_SOFT_ERROR;
-		goto out;
-	}
+	stream->data_submission_requested = 1;
 
 	out:
 	return ret;
