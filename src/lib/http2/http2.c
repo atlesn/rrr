@@ -48,6 +48,7 @@ struct rrr_http2_stream {
 	size_t data_size;
 	size_t data_wpos;
 	void *application_data;
+	int callback_complete;
 
 	// Submit data frame on next before_frame_send_callback
 	int data_submission_requested;
@@ -250,6 +251,27 @@ static ssize_t __rrr_http2_recv_callback (
 	return (bytes_read > 0 ? bytes_read : NGHTTP2_ERR_WOULDBLOCK);
 }
 
+static int __rrr_http2_end_stream_call_callback_if_needed (
+		struct rrr_http2_session *session,
+		struct rrr_http2_stream *stream
+) {
+	if (stream->callback_complete) {
+		return 0;
+	}
+
+	stream->callback_complete = 1;
+
+	return session->callback_data.callback (
+			session,
+			&stream->headers,
+			stream->stream_id,
+			stream->data,
+			stream->data_wpos,
+			stream->application_data,
+			session->callback_data.callback_arg
+	);
+}
+
 static int __rrr_http2_on_data_chunk_recv_callback (
 		nghttp2_session *nghttp2_session,
 		uint8_t flags,
@@ -276,15 +298,8 @@ static int __rrr_http2_on_data_chunk_recv_callback (
 	}
 
 	if ((flags & NGHTTP2_FLAG_END_STREAM) && session->callback_data.callback != NULL) {
-		if (session->callback_data.callback (
-				session,
-				&stream->headers,
-				stream_id,
-				stream->data,
-				stream->data_wpos,
-				stream->application_data,
-				session->callback_data.callback_arg
-		) != 0) {
+		RRR_DBG_7 ("http2 end data stream %" PRIi32 "\n", stream_id);
+		if (__rrr_http2_end_stream_call_callback_if_needed(session, stream) != 0) {
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	}
@@ -315,6 +330,10 @@ static int __rrr_http2_on_stream_close_callback (
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, stream_id);
 	if (stream->data != NULL) {
 		stream->please_delete_me = 1;
+	}
+
+	if (__rrr_http2_end_stream_call_callback_if_needed(session, stream) != 0) {
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
 	return 0;

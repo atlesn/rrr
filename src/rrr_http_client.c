@@ -425,6 +425,11 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
+static int main_running = 1;
+int rrr_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -433,11 +438,14 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
+	struct rrr_signal_handler *signal_handler = NULL;
+
 	if (rrr_log_init() != 0) {
 		goto out_final;
 	}
 	rrr_strerror_init();
 	rrr_signal_default_signal_actions_register();
+	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 	rrr_signal_handler_set_active (RRR_SIGNALS_ACTIVE);
 
 	struct cmd_data cmd;
@@ -543,9 +551,11 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 		prev_bytes_total = bytes_total;
-	} while (ret != 0 && data.final_callback_count == 0);
+	} while (main_running && ret != 0 && data.final_callback_count == 0);
 
 	out:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_remove(signal_handler);
 		rrr_config_set_debuglevel_on_exit();
 		rrr_http_client_target_collection_clear(&targets, net_transport_keepalive);
 		if (net_transport_keepalive != NULL) {
