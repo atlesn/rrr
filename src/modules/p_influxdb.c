@@ -194,7 +194,6 @@ static void influxdb_send_data_callback (
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			&application,
 			handle,
-			RRR_HTTP_UPGRADE_MODE_NONE,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
@@ -285,7 +284,8 @@ static void influxdb_send_data_callback (
 			&upgraded_app,
 			handle,
 			data->http_client_config.server,
-			transaction
+			transaction,
+			RRR_HTTP_UPGRADE_MODE_NONE
 	)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

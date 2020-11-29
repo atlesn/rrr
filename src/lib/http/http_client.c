@@ -298,6 +298,8 @@ static int __rrr_http_client_request_send_callback (
 
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
+	printf("Upgrade mode: %i\n", upgrade_mode);
+
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
@@ -306,7 +308,6 @@ static int __rrr_http_client_request_send_callback (
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application,
 			handle,
-			upgrade_mode,
 			callback_data->data->user_agent
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in __rrr_http_client_request_send_callback\n");
@@ -417,7 +418,8 @@ static int __rrr_http_client_request_send_callback (
 				&upgraded_app,
 				handle,
 				callback_data->request_header_host,
-				transaction
+				transaction,
+				upgrade_mode
 		)) != 0) {
 			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
 			goto out;

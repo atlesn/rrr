@@ -447,17 +447,6 @@ int main (int argc, const char **argv, const char **env) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	if (rrr_http_client_request_data_init (
-			&data.request_data,
-			RRR_HTTP_METHOD_GET,
-			RRR_HTTP_UPGRADE_MODE_HTTP2,
-			0, // No plain HTTP2
-			RRR_HTTP_CLIENT_USER_AGENT
-	) != 0) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
 	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -467,10 +456,23 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
+	if (rrr_http_client_request_data_init (
+			&data.request_data,
+			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_UPGRADE_MODE_NONE,
+			0, // No plain HTTP2
+			RRR_HTTP_CLIENT_USER_AGENT
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
 	if (__rrr_http_client_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+
+	data.request_data.upgrade_mode = data.upgrade_mode;
 
 	struct rrr_net_transport_config net_transport_config = {
 			NULL,
@@ -524,7 +526,7 @@ int main (int argc, const char **argv, const char **env) {
 
 		// HTTP2 and WebSocket return EOF when complete, OK when not complete
 		if (	(	data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ||
-					data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 /* Add or application == HTTP2 */
+					data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2
 				)
 				&& ret == RRR_HTTP_OK
 		) {

@@ -129,7 +129,6 @@ int rrr_http_session_transport_ctx_server_new (
 int rrr_http_session_transport_ctx_client_new_or_clean (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle,
-		enum rrr_http_upgrade_mode upgrade_mode,
 		const char *user_agent
 ) {
 	int ret = 0;
@@ -166,8 +165,6 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 
 	rrr_http_session_transport_ctx_application_set(application, handle);
 
-	session->upgrade_mode = upgrade_mode;
-
 	session = NULL;
 
 	out:
@@ -181,7 +178,8 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_application **upgraded_app,
 		struct rrr_net_transport_handle *handle,
 		const char *host,
-		struct rrr_http_transaction *transaction
+		struct rrr_http_transaction *transaction,
+		enum rrr_http_upgrade_mode upgrade_mode
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 	return rrr_http_application_transport_ctx_request_send (
@@ -190,7 +188,7 @@ int rrr_http_session_transport_ctx_request_send (
 			handle,
 			session->user_agent,
 			host,
-			session->upgrade_mode,
+			upgrade_mode,
 			transaction
 	);
 }
