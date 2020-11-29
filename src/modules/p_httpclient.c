@@ -209,7 +209,7 @@ static int httpclient_final_callback (
 		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", data->response_code);
 	}
 */
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: data size %" PRIrrrbl "\n",
+	RRR_DBG_3("HTTP response from server in httpclient instance %s: data size %" PRIrrrl "\n",
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data)
 	);
@@ -695,7 +695,7 @@ static int httpclient_send_request_locked (
 	if ((ret = rrr_http_client_request_data_init (
 			&request_data,
 			RRR_HTTP_CLIENT_USER_AGENT,
-			&transaction_data,
+			(void**) &transaction_data,
 			httpclient_transaction_destroy_void
 	)) != 0) {
 		RRR_MSG_0("Could not initialize httpclient httpclient_data in httpclient_data_init\n");

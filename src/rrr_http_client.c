@@ -280,6 +280,8 @@ static int __rrr_http_client_final_callback (
 
 	http_client_data->final_callback_count++;
 
+	(void)(transaction);
+
 	int ret = 0;
 
 	rrr_length data_size = response_data->len;
