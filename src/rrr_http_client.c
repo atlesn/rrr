@@ -513,12 +513,12 @@ int main (int argc, const char **argv, const char **env) {
 	do {
 		uint64_t bytes_total = 0;
 
-		ret = rrr_http_client_tick (
+		if ((ret = rrr_http_client_tick (
 				&bytes_total,
 				net_transport_keepalive,
 				&targets,
-				5, // Keepalive timeout 5 sec
 				1 * 1024 * 1024 * 1024, // 1 GB
+				5, // Keepalive timeout 5 sec
 				__rrr_http_client_final_callback,
 				&data,
 				__rrr_http_client_send_websocket_frame_callback,
@@ -527,29 +527,8 @@ int main (int argc, const char **argv, const char **env) {
 				&data,
 				NULL,
 				NULL
-		);
-
-//		printf("ret: %i\n", ret);
-
-		if (ret == RRR_READ_EOF) {
-			ret = EXIT_SUCCESS;
-			goto out;
-		}
-
-		// HTTP2 and WebSocket return EOF when complete, OK when not complete
-		if (	(	data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ||
-					data.upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2
-				)
-				&& ret == RRR_HTTP_OK
-		) {
-			ret = RRR_READ_INCOMPLETE;
-		}
-
-//		printf("ret: %i %i %i\n", ret, main_running, data.final_callback_count);
-
-		if (ret != 0 && ret != RRR_READ_EOF && ret != RRR_READ_INCOMPLETE) {
-			ret = EXIT_FAILURE;
-			goto out;
+		)) != 0) {
+			break;
 		}
 
 		if (prev_bytes_total == bytes_total) {
@@ -557,7 +536,7 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 		prev_bytes_total = bytes_total;
-	} while (main_running && ret != 0 && data.final_callback_count == 0);
+	} while (main_running && data.final_callback_count == 0 && RRR_LL_COUNT(&targets) > 0);
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

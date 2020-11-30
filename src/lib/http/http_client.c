@@ -879,7 +879,7 @@ int rrr_http_client_tick (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		if (node->last_used < timeout_limit) {
-			RRR_DBG_3("HTTP client keepalive timeout for connection %s:%u after %" PRIrrrbl " seconds\n",
+			RRR_DBG_3("HTTP client keepalive timeout for connection %s:%u after %i seconds\n",
 					node->server, node->port, keepalive_timeout_s);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}

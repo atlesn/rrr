@@ -714,6 +714,10 @@ int rrr_net_transport_libressl_new (
 
 	tls_config_insecure_noverifyname(tls->config);
 
+	if (flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) {
+		tls_config_insecure_noverifycert(tls->config);
+	}
+
 	if (certificate_file != NULL && *certificate_file != '\0' && tls_config_set_cert_file(tls->config, certificate_file) < 0) {
 		goto out_config_error;
 	}
