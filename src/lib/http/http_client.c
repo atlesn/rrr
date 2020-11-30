@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "http_application_http2.h"
 #endif /* RRR_WITH_NGHTTP2 */
 #include "http_transaction.h"
+#include "http_redirect.h"
 #include "http_client_target_collection.h"
 
 #include "../net_transport/net_transport.h"
@@ -47,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
+		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		int do_plain_http2,
@@ -64,6 +66,7 @@ int rrr_http_client_request_data_init (
 
 	data->method = method;
 	data->upgrade_mode = upgrade_mode;
+	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
 
 	out:
@@ -72,8 +75,7 @@ int rrr_http_client_request_data_init (
 
 int rrr_http_client_request_data_config_parameters_reset (
 		struct rrr_http_client_request_data *data,
-		const struct rrr_http_client_config *config,
-		enum rrr_http_transport transport_force
+		const struct rrr_http_client_config *config
 ) {
 	int ret = 0;
 
@@ -91,7 +93,6 @@ int rrr_http_client_request_data_config_parameters_reset (
 		goto out;
 	}
 
-	data->transport_force = transport_force;
 	data->http_port = config->server_port;
 
 	out:
@@ -116,6 +117,8 @@ struct rrr_http_client_tick_callback_data {
 	int timeout_s;
 	ssize_t read_max_size;
 	uint64_t bytes_total;
+
+	struct rrr_http_redirect_collection *redirects;
 
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
@@ -158,34 +161,29 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 
-/*
-	callback_data->data->response_code = response_part->response_code;
-
 	// Moved-codes. Maybe this parsing is too persmissive.
 	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
 		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
 		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
-			RRR_MSG_0("Could not find Location-field in HTTP response %i %s\n",
-					response_part->response_code, response_part->response_str);
+			RRR_MSG_0("Could not find Location-field in HTTP redirect response %i %s\n",
+					response_part->response_code, (response_part->response_str != NULL ? response_part->response_str : "-"));
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 
 		{
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, location->value);
-			RRR_DBG_2("HTTP Redirect to '%s'\n", value);
+			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
-		rrr_nullsafe_str_destroy_if_not_null(&callback_data->data->response_argument);
-		if (rrr_nullsafe_str_dup(&callback_data->data->response_argument, location->value) != 0) {
-			RRR_MSG_0("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
-			ret = RRR_HTTP_HARD_ERROR;
+		if ((ret = rrr_http_redirect_collection_push (callback_data->redirects, transaction, location->value)) != 0) {
 			goto out;
 		}
+		rrr_http_transaction_incref(transaction);
 
 		goto out;
 	}
-	else */if (response_part->response_code < 200 || response_part->response_code > 299) {
+	else if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
 				response_part->response_code, (response_part->response_str != NULL ? response_part->response_str : "-"));
 		ret = RRR_HTTP_SOFT_ERROR;
@@ -213,47 +211,48 @@ static int __rrr_http_client_receive_http_part_callback (
 	return ret;
 }
 
-static int __rrr_http_client_update_target_if_not_null (
+int rrr_http_client_request_data_target_update (
 		struct rrr_http_client_request_data *data,
-		const char *protocol,
-		const char *server,
-		const char *endpoint,
-		unsigned int port
+		const struct rrr_http_uri *uri
 ) {
-	if (protocol != NULL) {
-		if (*protocol == '\0' || rrr_posix_strcasecmp(protocol, "any") == 0) {
-			data->transport_force = RRR_HTTP_TRANSPORT_ANY;
-		}
-		else if (rrr_posix_strcasecmp(protocol, "http") == 0) {
-			data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
-		}
-		else if (rrr_posix_strcasecmp(protocol, "https") == 0) {
-			data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-		}
-		else {
-			RRR_MSG_0("Unknown transport protocol '%s' in __rrr_http_client_update_target_if_not_null, expected 'any', 'http' or 'https'\n", protocol);
-			return 1;
-		}
+	data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+
+	if (*(uri->protocol) == '\0' || rrr_posix_strcasecmp(uri->protocol, "any") == 0) {
+		data->transport_force = RRR_HTTP_TRANSPORT_ANY;
+	}
+	else if (rrr_posix_strcasecmp(uri->protocol, "http") == 0) {
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	}
+	else if (rrr_posix_strcasecmp(uri->protocol, "https") == 0) {
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+	}
+	else if (rrr_posix_strcasecmp(uri->protocol, "ws") == 0) {
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+	}
+	else if (rrr_posix_strcasecmp(uri->protocol, "wss") == 0) {
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+	}
+	else {
+		RRR_MSG_0("Unknown transport protocol '%s' in rrr_http_client_request_data_target_update, expected 'any', 'http' or 'https'\n", uri->protocol);
+		return RRR_HTTP_SOFT_ERROR;
 	}
 
-	if (server != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->server);
-		if ((data->server = strdup(server)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_client_update_target_if_not_null\n");
-			return RRR_HTTP_HARD_ERROR;
-		}
+	RRR_FREE_IF_NOT_NULL(data->server);
+	if ((data->server = strdup(uri->host)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for hostname in rrr_http_client_request_data_target_update\n");
+		return RRR_HTTP_HARD_ERROR;
 	}
 
-	if (endpoint != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->endpoint);
-		if ((data->endpoint = strdup(endpoint)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_update_target_if_not_null\n");
-			return RRR_HTTP_HARD_ERROR;
-		}
+	RRR_FREE_IF_NOT_NULL(data->endpoint);
+	if ((data->endpoint = strdup(uri->endpoint)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_client_request_data_target_update\n");
+		return RRR_HTTP_HARD_ERROR;
 	}
 
-	if (port > 0) {
-		data->http_port = port;
+	if (uri->port > 0) {
+		data->http_port = uri->port;
 	}
 
 	return 0;
@@ -281,7 +280,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	return ret;
 }
 
-static int __rrr_http_client_request_send_callback (
+static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -483,7 +482,7 @@ static int __rrr_http_client_request_send_final (
 	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
 			transport_keepalive,
 			target->keepalive_handle,
-			__rrr_http_client_request_send_callback,
+			__rrr_http_client_request_send_final_transport_ctx_callback,
 			callback_data
 	)) != 0) {
 		goto out_remove_target;
@@ -809,6 +808,53 @@ static int __rrr_http_client_transport_ctx_tick (
 	return ret;
 }
 
+struct rrr_http_client_redirect_callback_data {
+	struct rrr_http_client_target_collection *targets;
+	int (*callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
+	void *callback_arg;
+};
+
+static int __rrr_http_client_redirect_callback (
+		struct rrr_http_transaction *transaction,
+		const struct rrr_nullsafe_str *uri_nullsafe,
+		void *arg
+) {
+	struct rrr_http_client_redirect_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_http_uri *uri = NULL;
+
+	if (callback_data->callback == NULL) {
+		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_http_util_uri_parse(&uri, uri_nullsafe) != 0) {
+		RRR_MSG_0("Could not parse Location from redirect response header\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
+	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u)\n",
+			response_arg,
+			(uri->protocol != NULL ? uri->protocol : "-"),
+			(uri->host != NULL ? uri->host : "-"),
+			(uri->endpoint != NULL ? uri->endpoint : "-"),
+			uri->port
+	);
+
+	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
+
+	out:
+	if (uri != NULL) {
+		rrr_http_util_uri_destroy(uri);
+	}
+	return ret;
+}
+
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
 		struct rrr_net_transport *transport_keepalive,
@@ -817,6 +863,8 @@ int rrr_http_client_tick (
 		int keepalive_timeout_s,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
+		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
+		void *redirect_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
@@ -833,10 +881,13 @@ int rrr_http_client_tick (
 
 	*bytes_total = 0;
 
+	struct rrr_http_redirect_collection redirects = {0};
+
 	struct rrr_http_client_tick_callback_data callback_data = {
 			0,
 			read_max_size,
 			0,
+			&redirects,
 			final_callback,
 			final_callback_arg,
 			get_response_callback,
@@ -894,51 +945,26 @@ int rrr_http_client_tick (
 			rrr_http_client_target_destroy_and_close(node, transport_keepalive)
 	);
 
-	return ret;
-}
-
-/*
 	if (ret != 0) {
 		goto out;
 	}
 
-	if (request_data->response_code >= 300 && request_data->response_code <= 399) {
-		if (!rrr_nullsafe_str_isset(request_data->response_argument)) {
-			RRR_BUG("BUG: Argument was NULL with 300<=code<=399\n");
-		}
+	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
+			targets,
+			redirect_callback,
+			redirect_callback_arg
+	};
 
-		struct rrr_http_uri *uri = NULL;
-
-		if (rrr_http_util_uri_parse(&uri, request_data->response_argument) != 0) {
-			RRR_MSG_0("Could not parse Location from redirect response header\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, request_data->response_argument);
-		RRR_DBG_3("HTTP redirect from server '%s', to '%s' (%s, %s, %s, %u)\n",
-				request_data->server,
-				response_arg,
-				(uri->protocol != NULL ? uri->protocol : "-"),
-				(uri->host != NULL ? uri->host : "-"),
-				(uri->endpoint != NULL ? uri->endpoint : "-"),
-				uri->port
-		);
-
-		if ((ret = __rrr_http_client_update_target_if_not_null (
-				request_data,
-				uri->protocol,
-				uri->host,
-				uri->endpoint,
-				uri->port
-		)) != RRR_HTTP_OK) {
-			RRR_MSG_0("Could not update target after redirect\n");
-			goto out;
-		}
-
-		rrr_http_util_uri_destroy(uri);
-
-		*got_redirect = 1;
+	if ((ret = rrr_http_redirect_collection_iterate (
+			&redirects,
+			__rrr_http_client_redirect_callback,
+			&redirect_callback_data
+	)) != 0) {
+		goto out;
 	}
-*/
+
+	out:
+	rrr_http_redirect_collection_clear(&redirects);
+	return ret;
+}
 

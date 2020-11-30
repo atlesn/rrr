@@ -101,7 +101,7 @@ void rrr_http_util_uri_destroy (
 );
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
-		struct rrr_nullsafe_str *str
+		const struct rrr_nullsafe_str *str
 );
 void rrr_http_util_nprintf (
 		rrr_length length,

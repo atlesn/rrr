@@ -86,6 +86,8 @@ struct httpclient_data {
 	struct rrr_net_transport *keepalive_transport;
 	struct rrr_http_client_target_collection targets;
 
+	struct rrr_http_client_request_data request_data;
+
 	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
 };
@@ -98,7 +100,7 @@ static void httpclient_data_cleanup(void *arg) {
 	if (data->keepalive_transport != NULL) {
 		rrr_net_transport_destroy(data->keepalive_transport);
 	}
-
+	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	rrr_msg_holder_collection_clear(&data->defer_queue);
@@ -109,12 +111,14 @@ static void httpclient_data_cleanup(void *arg) {
 
 struct httpclient_transaction_data {
 	char *msg_topic;
+	struct rrr_msg_holder *entry;
 };
 
 static int httpclient_transaction_data_new (
 		struct httpclient_transaction_data **target,
 		const char *topic,
-		size_t topic_len
+		size_t topic_len,
+		struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
@@ -139,6 +143,7 @@ static int httpclient_transaction_data_new (
 		memcpy(result->msg_topic, topic, topic_len);
 	}
 	result->msg_topic[topic_len] = '\0';
+	result->entry = entry;
 
 	*target = result;
 
@@ -151,6 +156,7 @@ static int httpclient_transaction_data_new (
 
 static void httpclient_transaction_destroy (struct httpclient_transaction_data *target) {
 	RRR_FREE_IF_NOT_NULL(target->msg_topic);
+	rrr_msg_holder_decref(target->entry);
 	free(target);
 }
 
@@ -473,6 +479,7 @@ struct httpclient_prepare_callback_data {
 	struct httpclient_data *data;
 	const struct rrr_msg_msg *message;
 	const struct rrr_array *array_from_msg;
+	int no_destination_override;
 };
 
 #define HTTPCLIENT_PREPARE_OVERRIDE(name)												\
@@ -499,6 +506,10 @@ static int httpclient_connection_prepare_callback (
 
 	char *server_to_free = NULL;
 	char *port_to_free = NULL;
+
+	if (callback_data->no_destination_override) {
+		goto out;
+	}
 
 	HTTPCLIENT_PREPARE_OVERRIDE(server);
 	HTTPCLIENT_PREPARE_OVERRIDE(port);
@@ -541,7 +552,9 @@ static int httpclient_session_query_prepare_callback (
 
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
-	HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+	if (!callback_data->no_destination_override) {
+		HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+	}
 
 	if (data->do_no_data == 0) {
 		rrr_array_append_from(&array_to_send_tmp, callback_data->array_from_msg);
@@ -685,7 +698,8 @@ static int httpclient_raw_callback (
 static int httpclient_request_send (
 		struct httpclient_data *data,
 		struct rrr_http_client_request_data *request_data,
-		struct rrr_msg_holder *entry
+		struct rrr_msg_holder *entry,
+		int no_destination_override
 ) {
 	struct rrr_msg_msg *message = entry->message;
 
@@ -699,37 +713,15 @@ static int httpclient_request_send (
 	if ((ret = httpclient_transaction_data_new (
 			&transaction_data,
 			MSG_TOPIC_PTR(message),
-			MSG_TOPIC_LENGTH(message)
+			MSG_TOPIC_LENGTH(message),
+			entry
 	)) != 0) {
 		goto out_cleanup_array;
 	}
 
+	rrr_msg_holder_incref_while_locked(entry);
+
 	pthread_cleanup_push(httpclient_transaction_destroy_void_dbl_ptr, &transaction_data);
-
-	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
-
-	switch (data->net_transport_config.transport_type) {
-		case RRR_NET_TRANSPORT_TLS:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-			 break;
-		case RRR_NET_TRANSPORT_PLAIN:
-			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
-			 break;
-		default:
-			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
-			break;
-	};
-
-	if (rrr_http_client_request_data_config_parameters_reset (
-			request_data,
-			&data->http_client_config,
-			http_transport_force
-	) != 0) {
-		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret =  RRR_HTTP_HARD_ERROR;
-		goto out_cleanup_transaction_data;
-	}
 
 	if (data->do_send_raw_data) {
 		if (MSG_DATA_LENGTH(message) == 0) {
@@ -766,7 +758,8 @@ static int httpclient_request_send (
 		struct httpclient_prepare_callback_data prepare_callback_data = {
 				data,
 				message,
-				&array_from_msg_tmp
+				&array_from_msg_tmp,
+				no_destination_override
 		};
 
 		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
@@ -792,6 +785,53 @@ static int httpclient_request_send (
 	out_cleanup_array:
 		rrr_array_clear(&array_from_msg_tmp);
 		return ret;
+}
+
+static int httpclient_redirect_callback (
+		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
+) {
+	struct httpclient_data *data = arg;
+	struct httpclient_transaction_data *transaction_data = transaction->application_data;
+
+	int ret = 0;
+
+	struct rrr_http_client_request_data request_data = {0};
+
+	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
+
+	if ((ret = rrr_http_client_request_data_init (
+			&request_data,
+			data->request_data.transport_force,
+			data->request_data.method,
+			data->request_data.upgrade_mode,
+			data->request_data.do_plain_http2,
+			data->request_data.user_agent
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_client_request_data_target_update (&request_data, uri)) != 0) {
+		RRR_MSG_0("Error while processing URI from redirect response in httpclient instance %s, return was %i\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = httpclient_request_send (
+			data,
+			&request_data,
+			transaction_data->entry,
+			1 // No destination override (endpoint, server etc. from message)
+	)) != 0) {
+		RRR_MSG_0("Failed to send HTTP request following redirect response in httpclient instance %s, return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
+		goto out;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+
+	// Don't let soft error propagate (would cause the whole thread to shut down)
+	return (ret & ~(RRR_HTTP_SOFT_ERROR));
 }
 
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -966,10 +1006,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpclient thread thread_data is %p\n", thread_data);
 
-	struct rrr_http_client_request_data request_data = {0};
-
 	pthread_cleanup_push(httpclient_data_cleanup, data);
-	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -981,14 +1018,40 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpclient started thread %p\n", thread_data);
 
+
+	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+
+	switch (data->net_transport_config.transport_type) {
+		case RRR_NET_TRANSPORT_TLS:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+			 break;
+		case RRR_NET_TRANSPORT_PLAIN:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
+			 break;
+		default:
+			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+			break;
+	};
+
 	if (rrr_http_client_request_data_init (
-			&request_data,
+			&data->request_data,
+			http_transport_force,
 			data->http_client_config.method,
 			RRR_HTTP_UPGRADE_MODE_NONE,
 			data->http_client_config.do_plain_http2,
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
-		RRR_MSG_0("Could not initialize http client request data in httpclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize http client request data in httpclient instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	if (rrr_http_client_request_data_config_parameters_reset (
+			&data->request_data,
+			&data->http_client_config
+	) != 0) {
+		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}
 
@@ -1016,7 +1079,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						send_timeout_count++;
 						RRR_LL_ITERATE_SET_DESTROY();
 				}
-				else if ((ret_tmp = httpclient_request_send(data, &request_data, node)) != RRR_HTTP_OK) {
+				else if ((ret_tmp = httpclient_request_send(data, &data->request_data, node, 0)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
 					}
@@ -1057,6 +1120,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S,
 					httpclient_final_callback,
 					data,
+					httpclient_redirect_callback,
+					data,
 					NULL,
 					NULL,
 					NULL,
@@ -1095,7 +1160,6 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread httpclient %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

@@ -464,6 +464,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_client_request_data_init (
 			&data.request_data,
+			RRR_HTTP_TRANSPORT_ANY,
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_UPGRADE_MODE_NONE,
 			0, // No plain HTTP2
@@ -517,6 +518,8 @@ int main (int argc, const char **argv, const char **env) {
 				5, // Keepalive timeout 5 sec
 				__rrr_http_client_final_callback,
 				&data,
+				NULL,
+				NULL,
 				__rrr_http_client_send_websocket_frame_callback,
 				&data,
 				__rrr_http_client_receive_websocket_frame_callback,

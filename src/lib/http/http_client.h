@@ -36,6 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	const struct rrr_nullsafe_str *response_data,	\
 	void *arg
 
+#define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS		\
+	const struct rrr_http_transaction *transaction,	\
+	const struct rrr_http_uri *uri,					\
+	void *arg
+
 #define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\
 	char **endpoint_override,						\
 	char **query_string,							\
@@ -56,6 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS \
 	RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
 
+struct rrr_http_uri;
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
@@ -99,6 +105,7 @@ struct rrr_http_client_request_callback_data {
 
 int rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *data,
+		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		int do_plain_http2,
@@ -106,14 +113,17 @@ int rrr_http_client_request_data_init (
 );
 int rrr_http_client_request_data_config_parameters_reset (
 		struct rrr_http_client_request_data *data,
-		const struct rrr_http_client_config *config,
-		enum rrr_http_transport transport_force
+		const struct rrr_http_client_config *config
 );
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );
 void rrr_http_client_request_data_cleanup_void (
 		void *data
+);
+int rrr_http_client_request_data_target_update (
+		struct rrr_http_client_request_data *data,
+		const struct rrr_http_uri *uri
 );
 void rrr_http_client_terminate_if_open (
 		struct rrr_net_transport *transport_keepalive,
@@ -150,6 +160,8 @@ int rrr_http_client_tick (
 		int keepalive_timeout_s,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
+		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
+		void *redirect_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
@@ -157,4 +169,5 @@ int rrr_http_client_tick (
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
+
 #endif /* RRR_HTTP_CLIENT_H */

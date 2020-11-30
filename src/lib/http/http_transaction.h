@@ -33,6 +33,8 @@ struct rrr_http_part;
 struct rrr_http_transaction {
 	int usercount;
 
+	int redirect_count;
+
 	enum rrr_http_method method;
 	char *uri_str;
 

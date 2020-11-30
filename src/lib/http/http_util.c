@@ -711,7 +711,7 @@ static int __rrr_http_util_uri_validate_characters (
 
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
-		struct rrr_nullsafe_str *str
+		const struct rrr_nullsafe_str *str
 ) {
 	int ret = 0;
 	struct rrr_http_uri *uri_new = NULL;
@@ -760,6 +760,12 @@ int rrr_http_util_uri_parse (
 		}
 		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "http", 4) == 0) {
 			uri_new->protocol = strdup("http");
+		}
+		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "ws", 4) == 0) {
+			uri_new->protocol = strdup("ws");
+		}
+		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "wss", 4) == 0) {
+			uri_new->protocol = strdup("wss");
 		}
 		else {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
