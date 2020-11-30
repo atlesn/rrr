@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <pthread.h>
 
 #include "../log.h"
 
@@ -674,6 +675,7 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 	response_part->response_code = RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS;
 
 #else
+	(void)(read_session);
 	RRR_DBG_3("Upgrade to HTTP2 was requested by client, but this RRR is not built with NGHTTP2 bindings. Proceeding with HTTP/1.1\n");
 #endif /* RRR_WITH_NGHTTP2 */
 
@@ -833,6 +835,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 	// - Jump out of HTTP1 ticking, caller will tick again with HTTP2 which sends the actual response
 	//   based on the response part
 
+#ifdef RRR_WITH_NGHTTP2
 	if (receive_data->http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 		if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
 			goto out;
@@ -863,6 +866,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out_no_response;
 	}
 	else {
+#endif /* RRR_WITH_NGHTTP2 */
 		if ((ret = receive_data->callback (
 				receive_data->handle,
 				transaction,
@@ -874,7 +878,9 @@ static int __rrr_http_application_http1_request_receive_callback (
 		)) != RRR_HTTP_OK) {
 			goto out;
 		}
+#ifdef RRR_WITH_NGHTTP2
 	}
+#endif /* RRR_WITH_NGHTTP2 */
 
 	out_send_response:
 	if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
@@ -954,6 +960,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		parse_type = RRR_HTTP_PARSE_REQUEST;
 	}
 
+#ifdef RRR_WITH_NGHTTP2
 	if (read_session->parse_pos == 0 && !receive_data->is_client) {
 		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
@@ -974,6 +981,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 			goto out;
 		}
 	}
+#endif /* RRR_WITH_NGHTTP2 */
 
 	// There might be more than one chunk in each read cycle, we have to
 	// go through all of them in a loop here. The parser will always return
@@ -1225,11 +1233,11 @@ static int __rrr_http_application_http1_request_send (
 		rrr_websocket_state_set_client_mode(&http1->ws_state);
 	}
 	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
+#ifdef RRR_WITH_NGHTTP2
 		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
 			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
 			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 		}
-#ifdef RRR_WITH_NGHTTP2
 		else {
 			if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
 				goto out;
@@ -1244,10 +1252,10 @@ static int __rrr_http_application_http1_request_send (
 			if ((ret = rrr_http_part_header_field_push(request_part, "http2-settings", http2_upgrade_settings_tmp)) != 0) {
 				goto out;
 			}
-#else
-			RRR_MSG_3("Note: HTTP client attempted to send GET request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
-#endif /* RRR_WITH_NGHTTP2 */
 		}
+#else
+		RRR_MSG_3("Note: HTTP client attempted to send request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
+#endif /* RRR_WITH_NGHTTP2 */
 	}
 
 	if ((ret = rrr_asprintf (
