@@ -816,6 +816,7 @@ static int httpclient_redirect_callback (
 		goto out;
 	}
 
+	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects
 	if ((ret = httpclient_request_send (
 			data,
 			&request_data,
