@@ -58,9 +58,6 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
 		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade]"},
-#ifdef RRR_WITH_NGHTTP2
-		{0,							'u',	"http2-upgrade",		"[-u|--http2-upgrade]"},
-#endif
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
@@ -127,13 +124,12 @@ static int __rrr_http_client_parse_config (
 #endif
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 	}
-#ifdef RRR_WITH_NGHTTP2
-	else if (cmd_exists(cmd, "http2-upgrade", 0)) {
-		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
-	}
-#endif
 	else {
+#ifdef RRR_WITH_NGHTTP2
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+#else
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+#endif
 	}
 
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
