@@ -660,7 +660,8 @@ static void __rrr_net_transport_libressl_selected_proto_get (
 		const char **proto,
 		struct rrr_net_transport_handle *handle
 ) {
-
+	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
+	*proto = tls_conn_alpn_selected(tls_data->ctx);
 }
 
 static const struct rrr_net_transport_methods libressl_methods = {
@@ -690,6 +691,13 @@ int rrr_net_transport_libressl_new (
 	int ret = 0;
 
 	const char *err_str = NULL;
+	char alpn_protos_tmp[256];
+
+	alpn_protos_tmp[0] = '\0';
+
+	if (alpn_protos != NULL && alpn_protos_length > 0) {
+		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated((unsigned char *) alpn_protos_tmp, sizeof(alpn_protos_tmp), (unsigned const char *) alpn_protos, alpn_protos_length);
+	}
 
 	if ((ret = rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
 		goto out;
@@ -733,6 +741,10 @@ int rrr_net_transport_libressl_new (
 
 	const char *ciphers = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384";
 	if(tls_config_set_ciphers(tls->config, ciphers) < 0) {
+		goto out_config_error;
+	}
+
+	if (tls_config_set_alpn(tls->config, alpn_protos_tmp) < 0) {
 		goto out_config_error;
 	}
 

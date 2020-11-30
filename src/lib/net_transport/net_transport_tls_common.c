@@ -188,7 +188,7 @@ int rrr_net_transport_tls_common_read_complete_callback (
 // allocated, empty string is returned. No that even though a vector with
 // one element is the exact size of the resulting output string, we must
 // still allocate +1 to fit the comma temporarily.
-void rrr_net_transport_tls_common_alpn_protos_to_str (
+void rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated (
 		unsigned char *out_buf,
 		unsigned int out_size,
 		const unsigned char *in,

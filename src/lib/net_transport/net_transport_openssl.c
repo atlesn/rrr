@@ -147,8 +147,8 @@ static int __rrr_net_transport_openssl_alpn_select_cb (
 	if (RRR_DEBUGLEVEL_3) {
 		unsigned char server_protocols_tmp[256];
 		unsigned char client_protocols_tmp[256];
-		rrr_net_transport_tls_common_alpn_protos_to_str(server_protocols_tmp, sizeof(server_protocols_tmp), (unsigned char *) alpn->protos, alpn->length);
-		rrr_net_transport_tls_common_alpn_protos_to_str(client_protocols_tmp, sizeof(client_protocols_tmp), in, inlen);
+		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated(server_protocols_tmp, sizeof(server_protocols_tmp), (unsigned char *) alpn->protos, alpn->length);
+		rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated(client_protocols_tmp, sizeof(client_protocols_tmp), in, inlen);
 		RRR_DBG_3("TLS ALPN server protocols: '%s' client protocols: '%s'\n", server_protocols_tmp, client_protocols_tmp);
 	}
 

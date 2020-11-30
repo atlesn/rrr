@@ -105,7 +105,7 @@ int rrr_net_transport_tls_common_read_complete_callback (
 		struct rrr_read_session *read_session,
 		void *private_arg
 );
-void rrr_net_transport_tls_common_alpn_protos_to_str (
+void rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated (
 		unsigned char *out_buf,
 		unsigned int out_size,
 		const unsigned char *in,
