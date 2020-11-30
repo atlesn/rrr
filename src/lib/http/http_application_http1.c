@@ -964,8 +964,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	if (read_session->parse_pos == 0 && !receive_data->is_client) {
 		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
-				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1
-		) == 0) {
+				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1) == 0
+		) {
 			RRR_DBG_3("HTTP2 magic found, upgrading to native HTTP2 with %llu bytes read so far\n", (long long int) read_session->rx_buf_wpos);
 			if ((ret = rrr_http_application_http2_new (
 					receive_data->upgraded_application,
@@ -1275,7 +1275,7 @@ static int __rrr_http_application_http1_request_send (
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
-		RRR_DBG_1("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
+		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
 
@@ -1314,11 +1314,13 @@ static int __rrr_http_application_http1_request_send (
 
 	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
 		if ((ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len)) != 0) {
+			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
 	}
 
 	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != 0) {
+		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
 

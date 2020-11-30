@@ -1049,55 +1049,24 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 		uint64_t bytes_total = 0;
 		if (data->keepalive_transport != NULL) {
-			uint64_t timeout_limit = rrr_time_get_64() - (data->keepalive_s_max * 1000 * 1000);
-			RRR_LL_ITERATE_BEGIN(&data->targets, struct rrr_http_client_target);
-				if (node->keepalive_handle == 0) {
-					RRR_LL_ITERATE_SET_DESTROY();
-					RRR_LL_ITERATE_NEXT();
-				}
-
-				uint64_t bytes_total_tmp = 0;
-				int ret_tmp = rrr_http_client_tick (
-						&bytes_total_tmp,
-						data->keepalive_transport,
-						node->keepalive_handle,
-						RRR_HTTPCLIENT_READ_MAX_SIZE,
-						httpclient_final_callback,
-						data,
-						NULL,
-						NULL,
-						NULL,
-						NULL,
-						httpclient_raw_callback,
-						data
-				);
-				bytes_total += bytes_total_tmp;
-
-				// Run all IF's, no else if
-				if (ret_tmp != 0 && ret_tmp != RRR_HTTP_OK && ret_tmp != RRR_READ_INCOMPLETE) {
-					RRR_DBG_3("httpclient instance %s connection %s:%u complete\n",
-							INSTANCE_D_NAME(data->thread_data), node->server, node->port);
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-				if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE && ret_tmp != RRR_READ_EOF) {
-					RRR_MSG_0("HTTP error during ticking in httpclient instance %s with server %s:%u, return was %i\n",
-							INSTANCE_D_NAME(data->thread_data),
-							node->server,
-							node->port,
-							ret_tmp);
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-				if (node->last_used < timeout_limit) {
-					RRR_DBG_3("httpclient instance %s keepalive timeout for connection %s:%u after %" PRIrrrbl " seconds\n",
-							INSTANCE_D_NAME(data->thread_data), node->server, node->port, data->keepalive_s_max);
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-			RRR_LL_ITERATE_END_CHECK_DESTROY (
+			if (rrr_http_client_tick (
+					&bytes_total,
+					data->keepalive_transport,
 					&data->targets,
-					0;
-					rrr_http_client_terminate_if_open(data->keepalive_transport, node->keepalive_handle);
-					rrr_http_client_target_destroy_and_close(node, data->keepalive_transport)
-			);
+					RRR_HTTPCLIENT_READ_MAX_SIZE,
+					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S,
+					httpclient_final_callback,
+					data,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					httpclient_raw_callback,
+					data
+			) != 0) {
+				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
+				goto out_message;
+			}
 		}
 
 		if (prev_bytes_total == bytes_total) {

@@ -96,32 +96,37 @@ static int __rrr_http_application_http2_request_send (
 
 	int ret = 0;
 
+	struct rrr_http_application *http1 = NULL;
 	char *endpoint_tmp = NULL;
 
 	if (rrr_net_transport_ctx_is_tls(handle)) {
 		const char *selected_proto = NULL;
 		rrr_net_transport_ctx_selected_proto_get(&selected_proto, handle);
 
-		RRR_DBG_3("HTTP2 ALPN selected protocol: %s\n", selected_proto);
+		RRR_DBG_3("HTTP2 ALPN selected protocol: %s\n", (selected_proto != NULL ? selected_proto : "none"));
 
 		if (selected_proto == NULL || strcmp("h2", selected_proto) != 0) {
 			RRR_DBG_3("HTTP2 downgrading to HTTP1 as TLS ALPN negotiation failed\n");
-			struct rrr_http_application *http1 = NULL;
 			if ((ret = rrr_http_application_http1_new(&http1)) != 0) {
 				goto out;
 			}
-			*upgraded_app = http1;
 
 			struct rrr_http_application *upgraded_app_dummy = NULL;
-			ret = rrr_http_application_transport_ctx_request_send (
+			if ((ret = rrr_http_application_transport_ctx_request_send (
 					&upgraded_app_dummy,
 					http1,
 					handle,
 					user_agent,
 					host,
-					upgrade_mode,
+					RRR_HTTP_UPGRADE_MODE_NONE,
 					transaction
-			);
+			)) != 0) {
+				RRR_MSG_0("Failed to send HTTP1 request after downgrade from HTTP2, return was %i\n", ret);
+				goto out;
+			}
+
+			*upgraded_app = http1;
+			http1 = NULL;
 
 			if (upgraded_app_dummy != NULL) {
 				RRR_BUG("BUG: Recursive upgrades in __rrr_http_application_http2_request_send\n");
@@ -191,6 +196,7 @@ static int __rrr_http_application_http2_request_send (
 	}
 
 	out:
+	rrr_http_application_destroy_if_not_null(&http1);
 	RRR_FREE_IF_NOT_NULL(endpoint_tmp);
 	return ret;
 }

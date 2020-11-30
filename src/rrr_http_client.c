@@ -516,7 +516,8 @@ int main (int argc, const char **argv, const char **env) {
 		ret = rrr_http_client_tick (
 				&bytes_total,
 				net_transport_keepalive,
-				RRR_LL_FIRST(&targets)->keepalive_handle,
+				&targets,
+				5, // Keepalive timeout 5 sec
 				1 * 1024 * 1024 * 1024, // 1 GB
 				__rrr_http_client_final_callback,
 				&data,

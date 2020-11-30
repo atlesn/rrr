@@ -145,8 +145,9 @@ int rrr_http_client_request_raw_send (
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
 		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		ssize_t read_max_size,
+		int keepalive_timeout_s,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
@@ -156,5 +157,4 @@ int rrr_http_client_tick (
 		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
-
 #endif /* RRR_HTTP_CLIENT_H */

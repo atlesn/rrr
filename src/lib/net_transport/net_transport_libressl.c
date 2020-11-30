@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 #include "../ip/ip.h"
 #include "../ip/ip_util.h"
 #include "../ip/ip_accept_data.h"
@@ -92,13 +93,46 @@ static int __rrr_net_transport_libressl_data_new (
 	return ret;
 }
 
+static int __rrr_net_transport_libressl_handshake_perform (
+		struct tls *ctx
+) {
+	int ret = 0;
+
+	int handshake_max_retry = 1000;
+
+	while (--handshake_max_retry) {
+		ret = tls_handshake(ctx);
+		if (ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) {
+			// OK, retry
+		}
+		else if (ret != 0) {
+			RRR_MSG_0("Error during TLS handshake: %s\n", tls_error(ctx));
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+		}
+		else {
+			break;
+		}
+		rrr_posix_usleep(100);
+	}
+
+	if (handshake_max_retry == 0) {
+		RRR_MSG_0("TLS handshake timeout\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 struct rrr_net_transport_libressl_connect_callback_data {
 	struct rrr_net_transport_tls *tls;
 	struct rrr_ip_accept_data *accept_data;
 	const char *server_name;
 };
 
-int __rrr_net_transport_libressl_connect_callback (
+static int __rrr_net_transport_libressl_connect_callback (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS
 ) {
 	struct rrr_net_transport_libressl_connect_callback_data *callback_data = arg;
@@ -138,6 +172,10 @@ int __rrr_net_transport_libressl_connect_callback (
 	) < 0) {
 		RRR_MSG_0("Failed to connect fds in __rrr_net_transport_libressl_connect_callback: %s\n", tls_error(data->ctx));
 		ret = 1;
+		goto out_destroy_data;
+	}
+
+	if ((ret = __rrr_net_transport_libressl_handshake_perform(data->ctx)) != 0) {
 		goto out_destroy_data;
 	}
 
@@ -351,6 +389,10 @@ int __rrr_net_transport_libressl_accept_callback (
 		goto out_destroy_data;
 	}
 
+	if ((ret = __rrr_net_transport_libressl_handshake_perform(new_data->ctx)) != 0) {
+		goto out_destroy_data;
+	}
+
 	*submodule_private_ptr = new_data;
 	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
 
@@ -552,7 +594,7 @@ static int __rrr_net_transport_libressl_send (
 
 	int ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 
-	int retries = 10;
+	int retries = 1000;
 	ssize_t size_remaining = size;
 	struct pollfd pfd = {0};
 
@@ -597,6 +639,7 @@ static int __rrr_net_transport_libressl_send (
 			}
 		}
 		pthread_testcancel();
+		rrr_posix_usleep(1); // Schedule
 	}
 
 	out:

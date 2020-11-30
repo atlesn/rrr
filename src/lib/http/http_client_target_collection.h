@@ -58,7 +58,7 @@ struct rrr_http_client_target *rrr_http_client_target_find_or_new (
 		const char *server,
 		uint16_t port
 );
-void rrr_http_client_target_remove (
+void rrr_http_client_target_collection_remove (
 		struct rrr_http_client_target_collection *collection,
 		int keepalive_handle,
 		struct rrr_net_transport *transport_or_null

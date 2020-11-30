@@ -117,8 +117,6 @@ struct rrr_http_client_tick_callback_data {
 	ssize_t read_max_size;
 	uint64_t bytes_total;
 
-	int do_retry;
-
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
 	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS);
@@ -305,8 +303,6 @@ static int __rrr_http_client_request_send_callback (
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
-
-
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
 			callback_data->application_type,
 			handle,
@@ -353,7 +349,7 @@ static int __rrr_http_client_request_send_callback (
 					callback_data->query_prepare_callback_arg)
 			) != RRR_HTTP_OK) {
 				if (ret == RRR_HTTP_SOFT_ERROR) {
-					RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_request_send_callback_final\n");
+					RRR_MSG_3("Note: HTTP query aborted by soft error from query prepare callback in __rrr_http_client_request_send_callback\n");
 					ret = 0;
 					goto out;
 				}
@@ -454,6 +450,122 @@ void __rrr_http_client_request_send_connect_callback (
 
 	int *result = arg;
 	*result = handle->handle;
+}
+
+static int __rrr_http_client_request_send_final (
+		struct rrr_net_transport *transport_keepalive,
+		struct rrr_http_client_target_collection *targets,
+		struct rrr_http_client_request_callback_data *callback_data,
+		const char *server_to_use,
+		const uint16_t port_to_use
+) {
+	int ret = 0;
+
+	struct rrr_http_client_target *target = rrr_http_client_target_find_or_new(targets, server_to_use, port_to_use);
+	if (target == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	if (target->keepalive_handle == 0) {
+		if ((ret = rrr_net_transport_connect (
+				transport_keepalive,
+				port_to_use,
+				server_to_use,
+				__rrr_http_client_request_send_connect_callback,
+				&target->keepalive_handle
+		)) != 0) {
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out_remove_target;
+		}
+	}
+
+	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
+			transport_keepalive,
+			target->keepalive_handle,
+			__rrr_http_client_request_send_callback,
+			callback_data
+	)) != 0) {
+		goto out_remove_target;
+	}
+
+	goto out;
+	out_remove_target:
+		rrr_http_client_target_collection_remove(targets, target->keepalive_handle, transport_keepalive);
+	out:
+		return ret;
+}
+
+static int __rrr_http_client_request_send_transport_keepalive_ensure (
+		struct rrr_net_transport **transport_keepalive,
+		const struct rrr_net_transport_config *net_transport_config,
+		const enum rrr_http_transport transport_force,
+		const enum rrr_http_transport transport_code,
+		const int ssl_no_cert_verify
+) {
+	int ret = 0;
+
+	if (*transport_keepalive != NULL) {
+		goto out;
+	}
+
+	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
+
+		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
+
+		int tls_flags = 0;
+		if (ssl_no_cert_verify != 0) {
+			tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+		}
+
+		const char *alpn_protos = NULL;
+		unsigned alpn_protos_length = 0;
+
+#if RRR_WITH_NGHTTP2
+		rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
+#endif /* RRR_WITH_NGHTTP2 */
+
+		ret = rrr_net_transport_new (
+				transport_keepalive,
+				&net_transport_config_tmp,
+				tls_flags,
+				alpn_protos,
+				alpn_protos_length
+		);
+	}
+	else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
+		RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+	else {
+		struct rrr_net_transport_config net_transport_config_tmp = {
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				RRR_NET_TRANSPORT_PLAIN
+		};
+
+		ret = rrr_net_transport_new (
+				transport_keepalive,
+				&net_transport_config_tmp,
+				0,
+				NULL,
+				0
+		);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not create transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 // Note that data in the struct may change if there are any redirects
@@ -569,91 +681,25 @@ static int __rrr_http_client_request_send (
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 
-	if (*transport_keepalive == NULL) {
-		if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-			struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
-
-			net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
-
-			int tls_flags = 0;
-			if (data->ssl_no_cert_verify != 0) {
-				tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
-			}
-
-			const char *alpn_protos = NULL;
-			unsigned alpn_protos_length = 0;
-
-#if RRR_WITH_NGHTTP2
-			rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
-#endif /* RRR_WITH_NGHTTP2 */
-
-			ret = rrr_net_transport_new (
-					transport_keepalive,
-					&net_transport_config_tmp,
-					tls_flags,
-					alpn_protos,
-					alpn_protos_length
-			);
-		}
-		else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-			RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-		else {
-			struct rrr_net_transport_config net_transport_config_tmp = {
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					RRR_NET_TRANSPORT_PLAIN
-			};
-
-			ret = rrr_net_transport_new (
-					transport_keepalive,
-					&net_transport_config_tmp,
-					0,
-					NULL,
-					0
-			);
-		}
-
-		if (ret != 0) {
-			RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-	}
-
-	struct rrr_http_client_target *target = rrr_http_client_target_find_or_new(targets, server_to_use, port_to_use);
-	if (target == NULL) {
-		ret = 1;
+	if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure (
+			transport_keepalive,
+			net_transport_config,
+			data->transport_force,
+			transport_code,
+			data->ssl_no_cert_verify
+	)) != 0) {
 		goto out;
 	}
 
-	if (target->keepalive_handle == 0) {
-		if ((ret = rrr_net_transport_connect (
-				*transport_keepalive,
-				port_to_use,
-				server_to_use,
-				__rrr_http_client_request_send_connect_callback,
-				&target->keepalive_handle
-		)) != 0) {
-			RRR_MSG_0("HTTP Connection failed to server %s port %u transport %s in http client return was %i\n",
-					server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}
-	}
-
-//	callback_data.transport_handle = *transport_keepalive_handle;
-	if ((ret = rrr_net_transport_handle_with_transport_ctx_do (
+	if ((ret = __rrr_http_client_request_send_final (
 			*transport_keepalive,
-			target->keepalive_handle,
-			__rrr_http_client_request_send_callback,
-			&callback_data
+			targets,
+			&callback_data,
+			server_to_use,
+			port_to_use
 	)) != 0) {
+		RRR_MSG_0("HTTP Connection failed to server %s port %u transport %s in http client return was %i\n",
+				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 		goto out;
 	}
 
@@ -766,8 +812,9 @@ static int __rrr_http_client_transport_ctx_tick (
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
 		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle,
+		struct rrr_http_client_target_collection *targets,
 		ssize_t read_max_size,
+		int keepalive_timeout_s,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
@@ -781,6 +828,7 @@ int rrr_http_client_tick (
 		RRR_BUG("BUG: NULL transport keepalive to rrr_http_client_tick\n");
 	}
 
+	// Return is only set if there is a HARD error
 	int ret = 0;
 
 	*bytes_total = 0;
@@ -788,7 +836,6 @@ int rrr_http_client_tick (
 	struct rrr_http_client_tick_callback_data callback_data = {
 			0,
 			read_max_size,
-			0,
 			0,
 			final_callback,
 			final_callback_arg,
@@ -800,14 +847,56 @@ int rrr_http_client_tick (
 			raw_callback_arg
 	};
 
-	ret = rrr_net_transport_handle_with_transport_ctx_do (
-			transport_keepalive,
-			transport_keepalive_handle,
-			__rrr_http_client_transport_ctx_tick,
-			&callback_data
+	uint64_t timeout_limit = rrr_time_get_64() - (keepalive_timeout_s * 1000 * 1000);
+	RRR_LL_ITERATE_BEGIN(targets, struct rrr_http_client_target);
+		if (node->keepalive_handle == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		callback_data.bytes_total = 0;
+
+		int ret_tmp = rrr_net_transport_handle_with_transport_ctx_do (
+				transport_keepalive,
+				node->keepalive_handle,
+				__rrr_http_client_transport_ctx_tick,
+				&callback_data
+		);
+
+		*bytes_total += callback_data.bytes_total;
+
+		// Run all IF's, no else if
+		if (ret_tmp != 0 && ret_tmp != RRR_HTTP_OK && ret_tmp != RRR_READ_INCOMPLETE) {
+			RRR_DBG_3("HTTP client connection %s:%u complete\n",
+					node->server, node->port);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		if (ret_tmp != 0 && ret_tmp != RRR_READ_INCOMPLETE && ret_tmp != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP client error during ticking with server %s:%u, return was %i\n",
+					node->server,
+					node->port,
+					ret_tmp);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		if (node->last_used < timeout_limit) {
+			RRR_DBG_3("HTTP client keepalive timeout for connection %s:%u after %" PRIrrrbl " seconds\n",
+					node->server, node->port, keepalive_timeout_s);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		if (ret_tmp == RRR_HTTP_HARD_ERROR) {
+			ret = RRR_HTTP_HARD_ERROR;
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY (
+			targets,
+			0;
+			rrr_http_client_terminate_if_open(transport_keepalive, node->keepalive_handle);
+			rrr_http_client_target_destroy_and_close(node, transport_keepalive)
 	);
 
-	*bytes_total = callback_data.bytes_total;
+	return ret;
+}
+
 /*
 	if (ret != 0) {
 		goto out;
@@ -852,6 +941,4 @@ int rrr_http_client_tick (
 		*got_redirect = 1;
 	}
 */
-	return ret;
-}
 
