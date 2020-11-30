@@ -40,7 +40,7 @@ AC_DEFUN([CHECK_LIBRESSL_LIBTLS], [
 	if test "x$libressl_path" != "x"; then
 		HAVE_LIBRESSL_LIBTLS=yes
 		LIBRESSL_LIBTLS_LDFLAGS="-L$libressl_path -Wl,-rpath,$libressl_path"
-		LIBRESSL_LIBTLS_LIBADD="-ltls"
+		LIBRESSL_LIBTLS_LIBADD="-ltls -lcrypto -lssl"
 		AC_MSG_RESULT([found])
 	else
 		AC_MSG_RESULT([not found])

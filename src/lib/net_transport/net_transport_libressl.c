@@ -463,7 +463,7 @@ static int __rrr_net_transport_libressl_read_read (
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	struct rrr_net_transport_tls_data *tls_data = callback_data->handle->submodule_private_ptr;
 
-	return rrr_net_transport_libressl_read_raw(buf, read_bytes, tls_data, read_step_max_size);
+	return __rrr_net_transport_libressl_read_raw(buf, read_bytes, tls_data, read_step_max_size);
 }
 
 static int __rrr_net_transport_libressl_read_message (
@@ -613,6 +613,13 @@ static int __rrr_net_transport_libressl_is_tls (void) {
 	return 1;
 }
 
+static void __rrr_net_transport_libressl_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+
+}
+
 static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_destroy,
 	__rrr_net_transport_libressl_connect,
@@ -623,7 +630,8 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_read,
 	__rrr_net_transport_libressl_send,
 	__rrr_net_transport_libressl_poll,
-	__rrr_net_transport_libressl_is_tls
+	__rrr_net_transport_libressl_is_tls,
+	__rrr_net_transport_libressl_selected_proto_get
 };
 
 int rrr_net_transport_libressl_new (
@@ -632,13 +640,15 @@ int rrr_net_transport_libressl_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 	int ret = 0;
 
 	const char *err_str = NULL;
 
-	if ((ret = rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path)) != 0) {
+	if ((ret = rrr_net_transport_tls_common_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length)) != 0) {
 		goto out;
 	}
 
