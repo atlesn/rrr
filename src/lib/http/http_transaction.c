@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,
+		rrr_biglength remaining_redirects,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 ) {
@@ -71,6 +72,7 @@ int rrr_http_transaction_new (
 
 	result->method = method;
 	result->usercount = 1;
+	result->remaining_redirects = remaining_redirects;
 
 	*target = result;
 

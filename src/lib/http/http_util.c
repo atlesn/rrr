@@ -709,6 +709,31 @@ static int __rrr_http_util_uri_validate_characters (
 	return 0;
 }
 
+void rrr_http_util_uri_flags_get (
+		struct rrr_http_uri_flags *target,
+		const struct rrr_http_uri *uri
+) {
+	memset (target, '\0', sizeof(*target));
+
+	if (strcmp(uri->protocol, "http") == 0) {
+		target->is_http = 1;
+	}
+	else if (strcmp(uri->protocol, "https") == 0) {
+		target->is_http = 1;
+		target->is_tls = 1;
+	}
+	else if (strcmp(uri->protocol, "ws") == 0) {
+		target->is_websocket = 1;
+	}
+	else if (strcmp(uri->protocol, "wss") == 0) {
+		target->is_websocket = 1;
+		target->is_tls = 1;
+	}
+	else {
+		RRR_BUG("BUG: Unknown protocol '%s' in rrr_http_util_uri_get_protocol, only values made by rrr_http_util_uri_parse are valid\n", uri->protocol);
+	}
+}
+
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
 		const struct rrr_nullsafe_str *str
@@ -747,7 +772,7 @@ int rrr_http_util_uri_parse (
 
 	// Parse protocol if present
 	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") == 0 && new_pos == pos) {
-		if ((uri_new->protocol = strdup("")) == NULL) {
+		if ((uri_new->protocol = strdup("http")) == NULL) {
 			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
 			ret = 1;
 			goto out_destroy;
@@ -889,10 +914,10 @@ int rrr_http_util_uri_parse (
 	}
 
 	if (uri_new->port == 0 && uri_new->protocol != NULL) {
-		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0) {
+		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "wss")) {
 			uri_new->port = 443;
 		}
-		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0) {
+		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "ws")) {
 			uri_new->port = 80;
 		}
 	}

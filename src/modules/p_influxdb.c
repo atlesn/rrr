@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086
+#define INFLUXDB_MAX_REDIRECTS 5
 
 // Standardized return values, HTTP-framework compatible
 #define INFLUXDB_OK		 	RRR_READ_OK
@@ -191,7 +192,7 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, NULL, NULL)) != 0) {
+	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, INFLUXDB_MAX_REDIRECTS, NULL, NULL)) != 0) {
 		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}

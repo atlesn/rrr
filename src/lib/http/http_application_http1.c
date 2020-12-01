@@ -948,7 +948,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 			// HTTP1 only supports one active transaction. Make a new and delete any old one. Method
 			// does not matter.
-			if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_GET, NULL, NULL)) != 0) {
+			if ((ret = rrr_http_transaction_new (&transaction, RRR_HTTP_METHOD_GET, 0, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction for request in __rrr_application_http1_receive_get_target_size\n");
 				goto out;
 			}

@@ -95,6 +95,7 @@ struct rrr_http_client_request_callback_data {
 	const char *request_header_host;
 
 	enum rrr_http_application_type application_type;
+	rrr_biglength remaining_redirects;
 
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;
@@ -103,7 +104,14 @@ struct rrr_http_client_request_callback_data {
 	void (*application_data_destroy)(void *arg);
 };
 
-int rrr_http_client_request_data_init (
+void rrr_http_client_request_data_init (
+		struct rrr_http_client_request_data *target
+);
+int rrr_http_client_request_data_reset_from_request_data (
+		struct rrr_http_client_request_data *target,
+		const struct rrr_http_client_request_data *source
+);
+int rrr_http_client_request_data_reset (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
@@ -111,19 +119,19 @@ int rrr_http_client_request_data_init (
 		int do_plain_http2,
 		const char *user_agent
 );
-int rrr_http_client_request_data_config_parameters_reset (
+int rrr_http_client_request_data_reset_from_config (
 		struct rrr_http_client_request_data *data,
 		const struct rrr_http_client_config *config
+);
+int rrr_http_client_request_data_reset_from_uri (
+		struct rrr_http_client_request_data *data,
+		const struct rrr_http_uri *uri
 );
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );
 void rrr_http_client_request_data_cleanup_void (
 		void *data
-);
-int rrr_http_client_request_data_target_update (
-		struct rrr_http_client_request_data *data,
-		const struct rrr_http_uri *uri
 );
 void rrr_http_client_terminate_if_open (
 		struct rrr_net_transport *transport_keepalive,
@@ -135,6 +143,7 @@ int rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
 		int (*query_perpare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
@@ -147,6 +156,7 @@ int rrr_http_client_request_raw_send (
 		struct rrr_net_transport **transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),

@@ -33,8 +33,6 @@ struct rrr_http_part;
 struct rrr_http_transaction {
 	int usercount;
 
-	int redirect_count;
-
 	enum rrr_http_method method;
 	char *uri_str;
 
@@ -44,6 +42,8 @@ struct rrr_http_transaction {
 	rrr_length send_data_pos;
 	struct rrr_nullsafe_str *send_data_tmp;
 
+	rrr_biglength remaining_redirects;
+
 	void *application_data;
 	void (*application_data_destroy)(void *arg);
 };
@@ -51,6 +51,7 @@ struct rrr_http_transaction {
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,
+		rrr_biglength remaining_redirects,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 );

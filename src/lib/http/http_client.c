@@ -46,7 +46,73 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-int rrr_http_client_request_data_init (
+void rrr_http_client_request_data_init (
+		struct rrr_http_client_request_data *target
+) {
+	memset(target, '\0', sizeof(*target));
+}
+
+static int __rrr_http_client_request_data_strings_reset (
+		struct rrr_http_client_request_data *data,
+		const char *server,
+		const char *endpoint,
+		const char *user_agent
+) {
+	int ret = 0;
+
+	if (server != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->server);
+		if ((data->server = strdup(server)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for server in __rrr_http_client_request_data_strings_reset\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (endpoint != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->endpoint);
+		if ((data->endpoint = strdup(endpoint)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_data_strings_reset\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (user_agent != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->user_agent);
+		if ((data->user_agent = strdup(user_agent)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for user_agent in __rrr_http_client_request_data_strings_reset\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_client_request_data_reset_from_request_data (
+		struct rrr_http_client_request_data *target,
+		const struct rrr_http_client_request_data *source
+) {
+	int ret = 0;
+
+	memcpy(target, source, sizeof(*target));
+
+	// Make sure all string pointers are reset to avoid mayhem
+	target->server = NULL;
+	target->endpoint = NULL;
+	target->user_agent = NULL;
+
+	if ((ret = __rrr_http_client_request_data_strings_reset(target, source->server, source->endpoint, source->user_agent)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_client_request_data_reset (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
@@ -56,11 +122,7 @@ int rrr_http_client_request_data_init (
 ) {
 	int ret = 0;
 
-	memset (data, '\0', sizeof(*data));
-
-	if ((data->user_agent = strdup(user_agent)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for user agent in rrr_http_client_data_init\n");
-		ret = 1;
+	if ((ret = __rrr_http_client_request_data_strings_reset(data, NULL, NULL, user_agent)) != 0) {
 		goto out;
 	}
 
@@ -73,27 +135,41 @@ int rrr_http_client_request_data_init (
 	return ret;
 }
 
-int rrr_http_client_request_data_config_parameters_reset (
+int rrr_http_client_request_data_reset_from_config (
 		struct rrr_http_client_request_data *data,
 		const struct rrr_http_client_config *config
 ) {
 	int ret = 0;
 
-	RRR_FREE_IF_NOT_NULL(data->server);
-	RRR_FREE_IF_NOT_NULL(data->endpoint);
-
-	if (config->server != NULL && (data->server = strdup(config->server)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for server in rrr_http_client_data_reset\n");
-		ret = 1;
-		goto out;
-	}
-	if (config->endpoint != NULL && (data->endpoint = strdup(config->endpoint)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_client_data_reset\n");
-		ret = 1;
+	if ((ret = __rrr_http_client_request_data_strings_reset(data, config->server, config->endpoint, NULL)) != 0) {
 		goto out;
 	}
 
 	data->http_port = config->server_port;
+
+	out:
+	return ret;
+}
+
+int rrr_http_client_request_data_reset_from_uri (
+		struct rrr_http_client_request_data *data,
+		const struct rrr_http_uri *uri
+) {
+	int ret = 0;
+
+	struct rrr_http_uri_flags uri_flags = {0};
+	rrr_http_util_uri_flags_get(&uri_flags, uri);
+
+	data->transport_force = (uri_flags.is_tls ? RRR_HTTP_TRANSPORT_HTTPS : RRR_HTTP_TRANSPORT_HTTP);
+	data->upgrade_mode = (uri_flags.is_websocket ? RRR_HTTP_UPGRADE_MODE_WEBSOCKET : RRR_HTTP_UPGRADE_MODE_HTTP2);
+
+	if ((ret = __rrr_http_client_request_data_strings_reset(data, uri->host, uri->endpoint, NULL)) != 0) {
+		goto out;
+	}
+
+	if (uri->port > 0) {
+		data->http_port = uri->port;
+	}
 
 	out:
 	return ret;
@@ -171,8 +247,13 @@ static int __rrr_http_client_receive_http_part_callback (
 			goto out;
 		}
 
-		{
-			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, location->value);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, location->value);
+		if ((transaction->remaining_redirects)-- == 0) {
+			RRR_MSG_0("HTTP client maximum number of redirects reached after received redirect response with location '%s'\n", value);
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+		else {
 			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
@@ -209,53 +290,6 @@ static int __rrr_http_client_receive_http_part_callback (
 	out:
 	rrr_nullsafe_str_destroy_if_not_null(&chunks_merged);
 	return ret;
-}
-
-int rrr_http_client_request_data_target_update (
-		struct rrr_http_client_request_data *data,
-		const struct rrr_http_uri *uri
-) {
-	data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
-
-	if (*(uri->protocol) == '\0' || rrr_posix_strcasecmp(uri->protocol, "any") == 0) {
-		data->transport_force = RRR_HTTP_TRANSPORT_ANY;
-	}
-	else if (rrr_posix_strcasecmp(uri->protocol, "http") == 0) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
-	}
-	else if (rrr_posix_strcasecmp(uri->protocol, "https") == 0) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-	}
-	else if (rrr_posix_strcasecmp(uri->protocol, "ws") == 0) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
-		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
-	}
-	else if (rrr_posix_strcasecmp(uri->protocol, "wss") == 0) {
-		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
-		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
-	}
-	else {
-		RRR_MSG_0("Unknown transport protocol '%s' in rrr_http_client_request_data_target_update, expected 'any', 'http' or 'https'\n", uri->protocol);
-		return RRR_HTTP_SOFT_ERROR;
-	}
-
-	RRR_FREE_IF_NOT_NULL(data->server);
-	if ((data->server = strdup(uri->host)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for hostname in rrr_http_client_request_data_target_update\n");
-		return RRR_HTTP_HARD_ERROR;
-	}
-
-	RRR_FREE_IF_NOT_NULL(data->endpoint);
-	if ((data->endpoint = strdup(uri->endpoint)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_client_request_data_target_update\n");
-		return RRR_HTTP_HARD_ERROR;
-	}
-
-	if (uri->port > 0) {
-		data->http_port = uri->port;
-	}
-
-	return 0;
 }
 
 static int __rrr_http_client_websocket_handshake_callback (
@@ -333,6 +367,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		if ((ret = rrr_http_transaction_new (
 				&transaction,
 				callback_data->data->method,
+				callback_data->remaining_redirects,
 				callback_data->application_data,
 				callback_data->application_data_destroy
 		)) != 0) {
@@ -451,7 +486,7 @@ void __rrr_http_client_request_send_connect_callback (
 	*result = handle->handle;
 }
 
-static int __rrr_http_client_request_send_final (
+static int __rrr_http_client_request_send_intermediate_target_create (
 		struct rrr_net_transport *transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		struct rrr_http_client_request_callback_data *callback_data,
@@ -574,6 +609,7 @@ static int __rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -589,7 +625,7 @@ static int __rrr_http_client_request_send (
 	struct rrr_http_client_request_callback_data callback_data = {0};
 
 	if (transport_keepalive == NULL) {
-		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_send_request\n");
+		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_request_send\n");
 	}
 
 	callback_data.data = data;
@@ -600,6 +636,7 @@ static int __rrr_http_client_request_send (
 	callback_data.application_type = RRR_HTTP_APPLICATION_HTTP1;
 	callback_data.application_data = application_data;
 	callback_data.application_data_destroy = application_data_destroy;
+	callback_data.remaining_redirects = remaining_redirects;
 
 	uint16_t port_to_use = data->http_port;
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
@@ -647,11 +684,11 @@ static int __rrr_http_client_request_send (
 	}
 
 	if (server_to_use == NULL) {
-		RRR_BUG("BUG: No server set in __rrr_http_client_send_request\n");
+		RRR_BUG("BUG: No server set in __rrr_http_client_request_send\n");
 	}
 
 	if (port_to_use == 0) {
-		RRR_BUG("BUG: Port was 0 in __rrr_http_client_send_request\n");
+		RRR_BUG("BUG: Port was 0 in __rrr_http_client_request_send\n");
 	}
 
 	if (transport_code == RRR_HTTP_TRANSPORT_ANY && port_to_use == 443) {
@@ -690,7 +727,7 @@ static int __rrr_http_client_request_send (
 		goto out;
 	}
 
-	if ((ret = __rrr_http_client_request_send_final (
+	if ((ret = __rrr_http_client_request_send_intermediate_target_create (
 			*transport_keepalive,
 			targets,
 			&callback_data,
@@ -728,6 +765,7 @@ int rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
 		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
@@ -740,6 +778,7 @@ int rrr_http_client_request_send (
 			transport_keepalive,
 			targets,
 			net_transport_config,
+			remaining_redirects,
 			NULL,
 			0,
 			connection_prepare_callback,
@@ -756,6 +795,7 @@ int rrr_http_client_request_raw_send (
 		struct rrr_net_transport **transport_keepalive,
 		struct rrr_http_client_target_collection *targets,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -766,6 +806,7 @@ int rrr_http_client_request_raw_send (
 			transport_keepalive,
 			targets,
 			net_transport_config,
+			remaining_redirects,
 			raw_request_data,
 			raw_request_data_size,
 			connection_prepare_callback,

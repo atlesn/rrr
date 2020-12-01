@@ -699,6 +699,7 @@ static int httpclient_request_send (
 		struct httpclient_data *data,
 		struct rrr_http_client_request_data *request_data,
 		struct rrr_msg_holder *entry,
+		rrr_biglength remaining_redirects,
 		int no_destination_override
 ) {
 	struct rrr_msg_msg *message = entry->message;
@@ -742,6 +743,7 @@ static int httpclient_request_send (
 				&data->keepalive_transport,
 				&data->targets,
 				&data->net_transport_config,
+				remaining_redirects,
 				MSG_DATA_PTR(message),
 				MSG_DATA_LENGTH(message),
 				NULL,
@@ -769,6 +771,7 @@ static int httpclient_request_send (
 				&data->keepalive_transport,
 				&data->targets,
 				&data->net_transport_config,
+				remaining_redirects,
 				httpclient_connection_prepare_callback,
 				&prepare_callback_data,
 				httpclient_session_query_prepare_callback,
@@ -799,28 +802,24 @@ static int httpclient_redirect_callback (
 
 	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
 
-	if ((ret = rrr_http_client_request_data_init (
-			&request_data,
-			data->request_data.transport_force,
-			data->request_data.method,
-			data->request_data.upgrade_mode,
-			data->request_data.do_plain_http2,
-			data->request_data.user_agent
-	)) != 0) {
+	if ((ret = rrr_http_client_request_data_reset_from_request_data(&request_data, &data->request_data)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_client_request_data_target_update (&request_data, uri)) != 0) {
-		RRR_MSG_0("Error while processing URI from redirect response in httpclient instance %s, return was %i\n",
+	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
+		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects
+	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects.
+	// This function will incref the entry as needed.
+	// We assume that http client lib has already decref'd remaining redirects by 1,
 	if ((ret = httpclient_request_send (
 			data,
 			&request_data,
 			transaction_data->entry,
+			transaction->remaining_redirects,
 			1 // No destination override (endpoint, server etc. from message)
 	)) != 0) {
 		RRR_MSG_0("Failed to send HTTP request following redirect response in httpclient instance %s, return was %i\n",
@@ -865,6 +864,8 @@ static int httpclient_data_init (
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
+
+	rrr_http_client_request_data_init(&data->request_data);
 
 	goto out;
 //	out_cleanup_data:
@@ -1034,11 +1035,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			break;
 	};
 
-	if (rrr_http_client_request_data_init (
+	if (rrr_http_client_request_data_reset (
 			&data->request_data,
 			http_transport_force,
 			data->http_client_config.method,
-			RRR_HTTP_UPGRADE_MODE_NONE,
+			RRR_HTTP_UPGRADE_MODE_HTTP2,
 			data->http_client_config.do_plain_http2,
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
@@ -1047,7 +1048,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	if (rrr_http_client_request_data_config_parameters_reset (
+	if (rrr_http_client_request_data_reset_from_config (
 			&data->request_data,
 			&data->http_client_config
 	) != 0) {
@@ -1080,7 +1081,13 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						send_timeout_count++;
 						RRR_LL_ITERATE_SET_DESTROY();
 				}
-				else if ((ret_tmp = httpclient_request_send(data, &data->request_data, node, 0)) != RRR_HTTP_OK) {
+				else if ((ret_tmp = httpclient_request_send (
+						data,
+						&data->request_data,
+						node,
+						data->redirects_max,
+						0
+				)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
 					}

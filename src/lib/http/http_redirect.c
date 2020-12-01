@@ -91,8 +91,6 @@ int rrr_http_redirect_collection_push (
 		goto out;
 	}
 
-	transaction->redirect_count++;
-
 	RRR_LL_PUSH(collection, entry);
 
 	out:

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_UTIL_H
 #define RRR_HTTP_UTIL_H
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "../rrr_types.h"
@@ -30,6 +31,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	char name[256]; rrr_nullsafe_str_output_strip_null_append_null_trim(source, name, sizeof(name))
 
 struct rrr_nullsafe_str;
+
+struct rrr_http_uri_flags {
+	uint8_t is_http;
+	uint8_t is_websocket;
+	uint8_t is_tls;
+};
 
 struct rrr_http_uri {
 	char *protocol;
@@ -98,6 +105,10 @@ rrr_length rrr_http_util_count_whsp (
 );
 void rrr_http_util_uri_destroy (
 		struct rrr_http_uri *uri
+);
+void rrr_http_util_uri_flags_get (
+		struct rrr_http_uri_flags *target,
+		const struct rrr_http_uri *uri
 );
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
