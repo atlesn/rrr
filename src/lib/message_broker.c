@@ -766,9 +766,6 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 
 	rrr_msg_holder_lock(entry);
 
-	if (pthread_mutex_trylock(&entry->lock) == 0) {
-		RRR_BUG("Trylock was 0 in __rrr_message_broker_poll_delete_intermediate\n");
-	}
 	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock

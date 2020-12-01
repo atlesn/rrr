@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "../log.h"
 
@@ -45,6 +46,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
+
+static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
+	void *ptr = *((void **) arg);
+	RRR_FREE_IF_NOT_NULL(ptr);
+}
+
+static void __rrr_http_client_uri_dbl_ptr_destroy_if_not_null (void *arg) {
+	struct rrr_http_uri *uri = *((void **) arg);
+	if (uri != NULL) {
+		rrr_http_util_uri_destroy(uri);
+	}
+}
+
 
 void rrr_http_client_request_data_init (
 		struct rrr_http_client_request_data *target
@@ -160,8 +174,10 @@ int rrr_http_client_request_data_reset_from_uri (
 	struct rrr_http_uri_flags uri_flags = {0};
 	rrr_http_util_uri_flags_get(&uri_flags, uri);
 
-	data->transport_force = (uri_flags.is_tls ? RRR_HTTP_TRANSPORT_HTTPS : RRR_HTTP_TRANSPORT_HTTP);
-	data->upgrade_mode = (uri_flags.is_websocket ? RRR_HTTP_UPGRADE_MODE_WEBSOCKET : RRR_HTTP_UPGRADE_MODE_HTTP2);
+	if (uri_flags.is_http || uri_flags.is_websocket) {
+		data->transport_force = (uri_flags.is_tls ? RRR_HTTP_TRANSPORT_HTTPS : RRR_HTTP_TRANSPORT_HTTP);
+		data->upgrade_mode = (uri_flags.is_websocket ? RRR_HTTP_UPGRADE_MODE_WEBSOCKET : RRR_HTTP_UPGRADE_MODE_HTTP2);
+	}
 
 	if ((ret = __rrr_http_client_request_data_strings_reset(data, uri->host, uri->endpoint, NULL)) != 0) {
 		goto out;
@@ -170,6 +186,23 @@ int rrr_http_client_request_data_reset_from_uri (
 	if (uri->port > 0) {
 		data->http_port = uri->port;
 	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_client_request_data_reset_from_raw (
+		struct rrr_http_client_request_data *data,
+		const char *server,
+		uint16_t port
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_http_client_request_data_strings_reset(data, server, NULL, NULL)) != 0) {
+		goto out;
+	}
+
+	data->http_port = port;
 
 	out:
 	return ret;
@@ -865,6 +898,10 @@ static int __rrr_http_client_redirect_callback (
 	int ret = 0;
 
 	struct rrr_http_uri *uri = NULL;
+	char *endpoint_path_tmp = NULL;
+
+	pthread_cleanup_push(__rrr_http_client_uri_dbl_ptr_destroy_if_not_null, &uri);
+	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
 
 	if (callback_data->callback == NULL) {
 		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
@@ -878,21 +915,31 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
+
+	if (uri->endpoint == NULL || *(uri->endpoint) != '/') {
+		if ((ret = rrr_http_transaction_endpoint_path_get (&endpoint_path_tmp, transaction)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_util_uri_endpoint_prepend(uri, endpoint_path_tmp)) != 0) {
+			goto out;
+		}
+	}
+
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
-	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u)\n",
+	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s'\n",
 			response_arg,
 			(uri->protocol != NULL ? uri->protocol : "-"),
 			(uri->host != NULL ? uri->host : "-"),
 			(uri->endpoint != NULL ? uri->endpoint : "-"),
-			uri->port
+			uri->port,
+			transaction->endpoint_str
 	);
 
 	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
 
 	out:
-	if (uri != NULL) {
-		rrr_http_util_uri_destroy(uri);
-	}
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 
@@ -923,6 +970,8 @@ int rrr_http_client_tick (
 	*bytes_total = 0;
 
 	struct rrr_http_redirect_collection redirects = {0};
+
+	pthread_cleanup_push(rrr_http_redirect_collection_clear_void, &redirects);
 
 	struct rrr_http_client_tick_callback_data callback_data = {
 			0,
@@ -1005,7 +1054,7 @@ int rrr_http_client_tick (
 	}
 
 	out:
-	rrr_http_redirect_collection_clear(&redirects);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 

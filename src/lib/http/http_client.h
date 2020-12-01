@@ -127,6 +127,11 @@ int rrr_http_client_request_data_reset_from_uri (
 		struct rrr_http_client_request_data *data,
 		const struct rrr_http_uri *uri
 );
+int rrr_http_client_request_data_reset_from_raw (
+		struct rrr_http_client_request_data *data,
+		const char *server,
+		uint16_t port
+);
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );

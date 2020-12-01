@@ -31,8 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/linked_list.h"
 
-//#define RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
-
 // This lock protects the lock member of all ip buffer entries
 // and must be held when accessing the locks
 pthread_mutex_t rrr_msg_holder_master_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -42,7 +40,7 @@ static int __rrr_msg_holder_lock_init (
 ) {
 	int ret = 0;
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
-	ret = rrr_posix_mutex_init(&entry->lock, 0);
+	ret = rrr_posix_mutex_init(&entry->lock, RRR_POSIX_MUTEX_IS_RECURSIVE);
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 	return ret;
 }
@@ -59,7 +57,7 @@ void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("Bug: Entry was destroyed in rrr_msg_holder_lock_\n");
+		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_lock_\n");
 	}
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
@@ -69,16 +67,25 @@ void rrr_msg_holder_lock (
 		pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	}
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	entry->lock_recursion_count++;
+#endif
 }
 
 void rrr_msg_holder_unlock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("Bug: Entry was destroyed in rrr_msg_holder_unlock_\n");
+		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_unlock_\n");
 	}
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	pthread_mutex_unlock(&entry->lock);
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	entry->lock_recursion_count--;
+	if (entry->lock_recursion_count < 0) {
+		RRR_BUG("BUG: Double unlock in rrr_msg_holder_unlock\n");
+	}
+#endif
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 }
 
@@ -91,7 +98,7 @@ void rrr_msg_holder_unlock_void (
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {
-#ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry decref %p while locked from %i\n", entry, entry->usercount);
 #endif
 	if (entry->usercount <= 0) {
@@ -116,20 +123,30 @@ void rrr_msg_holder_incref_while_locked (
 	if (entry->usercount <= 0) {
 		RRR_BUG("BUG: ip buffer entry was destroyed while increfing\n");
 	}
-	if (pthread_mutex_trylock(&entry->lock) == 0) {
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	if (entry->lock_recursion_count == 0) {
 		RRR_BUG("Entry was not locked in rrr_msg_holder_incref_while_locked\n");
 	}
+#endif
 	(entry->usercount)++;
-#ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry incref %p to %i\n", entry, entry->usercount);
 #endif
+}
+
+void rrr_msg_holder_incref (
+		struct rrr_msg_holder *entry
+) {
+	rrr_msg_holder_lock(entry);
+	rrr_msg_holder_incref_while_locked (entry);
+	rrr_msg_holder_unlock(entry);
 }
 
 void rrr_msg_holder_decref (
 		struct rrr_msg_holder *entry
 ) {
 	rrr_msg_holder_lock(entry);
-#ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry decref %p from %i\n", entry, entry->usercount);
 #endif
 	rrr_msg_holder_decref_while_locked_and_unlock(entry);
@@ -138,7 +155,7 @@ void rrr_msg_holder_decref (
 void rrr_msg_holder_decref_void (
 		void *entry
 ) {
-#ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry decref %p void\n", entry);
 #endif
 	rrr_msg_holder_decref(entry);
@@ -201,7 +218,7 @@ int rrr_msg_holder_new (
 
 	rrr_msg_holder_unlock(entry);
 
-#ifdef RRR_MESSAGE_HOLDER_REFCOUNT_DEBUG
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 	printf ("ip buffer entry new %p usercount %i\n", entry, entry->usercount);
 #endif
 

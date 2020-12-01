@@ -160,7 +160,7 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
-	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":path", transaction->uri_str);
+	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":path", transaction->endpoint_str);
 
 	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
 			http2,

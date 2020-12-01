@@ -114,6 +114,13 @@ struct httpclient_transaction_data {
 	struct rrr_msg_holder *entry;
 };
 
+static void httpclient_dbl_ptr_free_if_not_null (
+		void *arg
+) {
+	void *ptr = *((void **) arg);
+	RRR_FREE_IF_NOT_NULL(ptr);
+}
+
 static int httpclient_transaction_data_new (
 		struct httpclient_transaction_data **target,
 		const char *topic,
@@ -156,7 +163,10 @@ static int httpclient_transaction_data_new (
 
 static void httpclient_transaction_destroy (struct httpclient_transaction_data *target) {
 	RRR_FREE_IF_NOT_NULL(target->msg_topic);
+
+	// Assuming that entry has recursive lock
 	rrr_msg_holder_decref(target->entry);
+
 	free(target);
 }
 
@@ -487,18 +497,18 @@ struct httpclient_prepare_callback_data {
 				(ret = httpclient_session_query_prepare_callback_process_override (		\
 						&RRR_PASTE(name,_to_free),										\
 						data,															\
-						callback_data->array_from_msg,									\
+						array_from_msg,													\
 						data->RRR_PASTE(name,_tag),										\
 						data->RRR_PASTE_3(do_,name,_tag_force),							\
 						RRR_QUOTE(name)													\
 				)) != 0) { goto out; }} while (0)
 
-static int httpclient_connection_prepare_callback (
-		RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS
+static int httpclient_overrides_server_and_port_get_from_message (
+		char **server_override,
+		uint16_t *port_override,
+		struct httpclient_data *data,
+		const struct rrr_array *array_from_msg
 ) {
-	struct httpclient_prepare_callback_data *callback_data = arg;
-	struct httpclient_data *data = callback_data->data;
-
 	int ret = 0;
 
 	*server_override = NULL;
@@ -506,10 +516,6 @@ static int httpclient_connection_prepare_callback (
 
 	char *server_to_free = NULL;
 	char *port_to_free = NULL;
-
-	if (callback_data->no_destination_override) {
-		goto out;
-	}
 
 	HTTPCLIENT_PREPARE_OVERRIDE(server);
 	HTTPCLIENT_PREPARE_OVERRIDE(port);
@@ -535,6 +541,20 @@ static int httpclient_connection_prepare_callback (
 	return ret;
 }
 
+static int httpclient_connection_prepare_callback (
+		RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS
+) {
+	struct httpclient_prepare_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+
+	return httpclient_overrides_server_and_port_get_from_message (
+			server_override,
+			port_override,
+			data,
+			callback_data->array_from_msg
+	);
+}
+
 static int httpclient_session_query_prepare_callback (
 		RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS
 ) {
@@ -553,6 +573,7 @@ static int httpclient_session_query_prepare_callback (
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
 	if (!callback_data->no_destination_override) {
+		const struct rrr_array *array_from_msg = callback_data->array_from_msg;
 		HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
 	}
 
@@ -709,6 +730,8 @@ static int httpclient_request_send (
 	struct rrr_array array_from_msg_tmp = {0};
 	struct httpclient_transaction_data *transaction_data = NULL;
 
+	pthread_cleanup_push(rrr_array_clear_void, &array_from_msg_tmp);
+
 	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
 
 	if ((ret = httpclient_transaction_data_new (
@@ -786,7 +809,7 @@ static int httpclient_request_send (
 	out_cleanup_transaction_data:
 		pthread_cleanup_pop(1);
 	out_cleanup_array:
-		rrr_array_clear(&array_from_msg_tmp);
+		pthread_cleanup_pop(1);
 		return ret;
 }
 
@@ -799,18 +822,56 @@ static int httpclient_redirect_callback (
 	int ret = 0;
 
 	struct rrr_http_client_request_data request_data = {0};
+	struct rrr_array array_from_msg_tmp = {0};
+	char *server_override = NULL;
+	uint16_t port_override = 0;
 
+	rrr_msg_holder_lock(transaction_data->entry);
+
+	pthread_cleanup_push(rrr_msg_holder_unlock_void, transaction_data->entry);
 	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
+	pthread_cleanup_push(rrr_array_clear_void, &array_from_msg_tmp);
+	pthread_cleanup_push(httpclient_dbl_ptr_free_if_not_null, &server_override);
 
-	if ((ret = rrr_http_client_request_data_reset_from_request_data(&request_data, &data->request_data)) != 0) {
+	struct rrr_msg_msg *message = transaction_data->entry->message;
+
+	if (MSG_IS_ARRAY(message)) {
+		if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	}
+
+	if ((ret =  httpclient_overrides_server_and_port_get_from_message (
+			&server_override,
+			&port_override,
+			data,
+			&array_from_msg_tmp
+	)) != 0) {
 		goto out;
 	}
 
+	// Default from config
+	if ((ret = rrr_http_client_request_data_reset_from_request_data (&request_data, &data->request_data)) != 0) {
+		goto out;
+	}
+
+	// Overrides from message excluding endpoint which is part ov the redirect
+	if ((ret = rrr_http_client_request_data_reset_from_raw (
+			&request_data,
+			server_override,
+			port_override
+	)) != 0) {
+		goto out;
+	}
+
+	// Overrides from redirect URI which may be multiple parameters
 	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
+
+	printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
 
 	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects.
 	// This function will incref the entry as needed.
@@ -828,6 +889,9 @@ static int httpclient_redirect_callback (
 	}
 
 	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	// Don't let soft error propagate (would cause the whole thread to shut down)

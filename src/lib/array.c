@@ -323,6 +323,10 @@ void rrr_array_clear (struct rrr_array *collection) {
 	RRR_LL_DESTROY(collection,struct rrr_type_value,rrr_type_value_destroy(node));
 }
 
+void rrr_array_clear_void (void *collection) {
+	rrr_array_clear(collection);
+}
+
 void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
 		if (node->tag == NULL) {

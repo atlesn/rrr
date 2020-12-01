@@ -110,6 +110,9 @@ int rrr_array_get_value_unsigned_64_by_tag (
 void rrr_array_clear (
 		struct rrr_array *collection
 );
+void rrr_array_clear_void (
+		void *collection
+);
 void rrr_array_clear_by_tag (
 		struct rrr_array *collection,
 		const char *tag

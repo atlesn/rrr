@@ -46,6 +46,8 @@ static int __rrr_http_redirect_collection_entry_new (
 
 	*target = NULL;
 
+	char *endpoint_path_tmp = NULL;
+
 	struct rrr_http_redirect_collection_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_redirect_collection_entry_new\n");
@@ -69,6 +71,7 @@ static int __rrr_http_redirect_collection_entry_new (
 	out_free:
 		free(entry);
 	out:
+		RRR_FREE_IF_NOT_NULL(endpoint_path_tmp);
 		return ret;
 }
 
@@ -76,6 +79,13 @@ void rrr_http_redirect_collection_clear (
 		struct rrr_http_redirect_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_http_redirect_collection_entry, __rrr_http_redirect_collection_entry_destroy(node));
+}
+
+
+void rrr_http_redirect_collection_clear_void (
+		void *arg
+) {
+	rrr_http_redirect_collection_clear(arg);
 }
 
 int rrr_http_redirect_collection_push (

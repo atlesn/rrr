@@ -715,7 +715,10 @@ void rrr_http_util_uri_flags_get (
 ) {
 	memset (target, '\0', sizeof(*target));
 
-	if (strcmp(uri->protocol, "http") == 0) {
+	if (uri->protocol == NULL) {
+		 // OK, do nothing
+	}
+	else if (strcmp(uri->protocol, "http") == 0) {
 		target->is_http = 1;
 	}
 	else if (strcmp(uri->protocol, "https") == 0) {
@@ -732,6 +735,54 @@ void rrr_http_util_uri_flags_get (
 	else {
 		RRR_BUG("BUG: Unknown protocol '%s' in rrr_http_util_uri_get_protocol, only values made by rrr_http_util_uri_parse are valid\n", uri->protocol);
 	}
+}
+
+int rrr_http_util_uri_endpoint_prepend (
+		struct rrr_http_uri *uri,
+		const char *prefix
+) {
+	int ret = 0;
+
+	char *endpoint_new = NULL;
+
+	if (uri->endpoint == NULL) {
+		if ((endpoint_new = strdup(prefix)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend A\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		// Allocate for extra / and the usual \0
+		if ((endpoint_new = malloc(strlen(prefix) + strlen(uri->endpoint) + 1 + 1)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend B\n");
+			ret = 1;
+			goto out;
+		}
+
+		strcpy(endpoint_new, prefix);
+
+		if (*(endpoint_new + strlen(endpoint_new) - 1) == '/') {
+			if (*(uri->endpoint) == '/') {
+				// Prefix ends with / and original begins with /, remove one
+				*(endpoint_new + strlen(endpoint_new) - 1) = '\0';
+			}
+		}
+		else if (*(uri->endpoint) != '/') {
+			// No / at end of prefix nor at beginning of original, add one
+			sprintf(endpoint_new + strlen(endpoint_new), "/");
+		}
+
+		sprintf(endpoint_new + strlen(endpoint_new), "%s", uri->endpoint);
+	}
+
+	RRR_FREE_IF_NOT_NULL(uri->endpoint);
+	uri->endpoint = endpoint_new;
+
+	out:
+	// Enable if more goto out are added after allocation failure gotos
+	// RRR_FREE_IF_NOT_NULL(endpoint_new);
+	return ret;
 }
 
 int rrr_http_util_uri_parse (
@@ -772,11 +823,7 @@ int rrr_http_util_uri_parse (
 
 	// Parse protocol if present
 	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") == 0 && new_pos == pos) {
-		if ((uri_new->protocol = strdup("http")) == NULL) {
-			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
-			ret = 1;
-			goto out_destroy;
-		}
+		// OK, empty protocol
 	}
 	else if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "://") == 0) {
 		ssize_t protocol_name_length = new_pos - pos;

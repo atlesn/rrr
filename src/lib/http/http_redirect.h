@@ -40,6 +40,9 @@ struct rrr_http_redirect_collection {
 void rrr_http_redirect_collection_clear (
 		struct rrr_http_redirect_collection *collection
 );
+void rrr_http_redirect_collection_clear_void (
+		void *arg
+);
 int rrr_http_redirect_collection_push (
 		struct rrr_http_redirect_collection *collection,
 		struct rrr_http_transaction *transaction,

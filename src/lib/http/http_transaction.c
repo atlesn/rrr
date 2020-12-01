@@ -58,7 +58,7 @@ int rrr_http_transaction_new (
 		goto out_free_request;
 	}
 
-	if ((result->uri_str = strdup("/")) == NULL) {
+	if ((result->endpoint_str = strdup("/")) == NULL) {
 		RRR_MSG_0("Could not allocate memory for URI in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out_free_response;
@@ -108,7 +108,7 @@ void rrr_http_transaction_decref_if_not_null (
 		return;
 	}
 
-	RRR_FREE_IF_NOT_NULL(transaction->uri_str);
+	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
 	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_data_tmp);
@@ -177,21 +177,48 @@ int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
 ) {
-	RRR_FREE_IF_NOT_NULL(transaction->uri_str);
+	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 
 	if (endpoint != NULL && *endpoint != '\0') {
-		transaction->uri_str = strdup(endpoint);
+		transaction->endpoint_str = strdup(endpoint);
 	}
 	else {
-		transaction->uri_str = strdup("/");
+		transaction->endpoint_str = strdup("/");
 	}
 
-	if (transaction->uri_str == NULL) {
+	if (transaction->endpoint_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_transaction_endpoint_set\n");
 		return 1;
 	}
 
 	return 0;
+}
+
+int rrr_http_transaction_endpoint_path_get (
+		char **result,
+		struct rrr_http_transaction *transaction
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	char *tmp = strdup(transaction->endpoint_str);
+	if (tmp == NULL) {
+		RRR_MSG_0("Could not allocate memory in  rrr_http_transaction_endpoint_path_get\n");
+		ret = 1;
+		goto out;
+	}
+
+	char *pos = tmp + strlen(tmp) - 1;
+	while (pos >= tmp && *pos != '/') {
+		*pos = '\0';
+		pos--;
+	}
+
+	*result = tmp;
+
+	out:
+	return ret;
 }
 
 int rrr_http_transaction_endpoint_with_query_string_create (
@@ -208,7 +235,7 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 	char *extra_uri_tmp = NULL;
 
 	if (transaction->method != RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) > 0) {
-		if ((uri_tmp = strdup(transaction->uri_str)) == NULL) {
+		if ((uri_tmp = strdup(transaction->endpoint_str)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for new URI in rrr_http_transaction_endpoint_with_query_string_create\n");
 			ret = 1;
 			goto out;
@@ -219,7 +246,7 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 	extra_uri_tmp = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &transaction->request_part->fields);
 
 	const char *extra_uri_separator;
-	if (strchr(transaction->uri_str, '?') != NULL) {
+	if (strchr(transaction->endpoint_str, '?') != NULL) {
 		// Append to existing ?-query string in GET URI
 		extra_uri_separator = "&";
 	}
@@ -227,7 +254,7 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 		extra_uri_separator = "?";
 	}
 
-	rrr_biglength uri_orig_len = strlen(transaction->uri_str);
+	rrr_biglength uri_orig_len = strlen(transaction->endpoint_str);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_request_send");
 
 	if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
@@ -238,7 +265,7 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 
 	char *wpos = uri_tmp;
 
-	memcpy(wpos, transaction->uri_str, uri_orig_len);
+	memcpy(wpos, transaction->endpoint_str, uri_orig_len);
 	wpos += uri_orig_len;
 
 	*wpos = *extra_uri_separator;

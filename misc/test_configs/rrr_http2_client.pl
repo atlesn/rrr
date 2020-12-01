@@ -18,7 +18,7 @@ sub source {
 	my $message = shift;
 
 	$message->push_tag("http_server", "localhost");
-	$message->push_tag("http_endpoint", "/");
+	$message->push_tag("http_endpoint", "/redirect.php");
 	$message->push_tag("http_port", "443");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");

@@ -110,6 +110,10 @@ void rrr_http_util_uri_flags_get (
 		struct rrr_http_uri_flags *target,
 		const struct rrr_http_uri *uri
 );
+int rrr_http_util_uri_endpoint_prepend (
+		struct rrr_http_uri *uri,
+		const char *prefix
+);
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
 		const struct rrr_nullsafe_str *str

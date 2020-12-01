@@ -34,7 +34,7 @@ struct rrr_http_transaction {
 	int usercount;
 
 	enum rrr_http_method method;
-	char *uri_str;
+	char *endpoint_str;
 
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
@@ -84,6 +84,10 @@ int rrr_http_transaction_keepalive_set (
 int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
+);
+int rrr_http_transaction_endpoint_path_get (
+		char **result,
+		struct rrr_http_transaction *transaction
 );
 int rrr_http_transaction_endpoint_with_query_string_create (
 		char **new_endpoint,
