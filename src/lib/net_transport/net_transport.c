@@ -126,6 +126,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	if (rrr_posix_mutex_init(&new_handle->lock_, RRR_POSIX_MUTEX_IS_RECURSIVE) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_create_and_push_return_locked\n");
+		ret = 1;
 		goto out_free;
 	}
 
@@ -180,7 +181,7 @@ int rrr_net_transport_handle_allocate_and_add (
 	if (RRR_LL_COUNT(collection) >= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX) {
 		RRR_MSG_0("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
-		ret = 1;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -207,7 +208,7 @@ int rrr_net_transport_handle_allocate_and_add (
 	if (new_handle_id == 0) {
 		RRR_MSG_0("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
-		ret = 1;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
 	}
 
