@@ -375,10 +375,6 @@ int __rrr_net_transport_libressl_accept_callback (
 		goto out;
 	}
 
-	new_data->sockaddr = callback_data->accept_data->addr;
-	new_data->socklen = callback_data->accept_data->len;
-	new_data->ip_data = callback_data->accept_data->ip_data;
-
 	if (tls_accept_socket (
 			callback_data->ctx,
 			&new_data->ctx,
@@ -392,6 +388,11 @@ int __rrr_net_transport_libressl_accept_callback (
 	if ((ret = __rrr_net_transport_libressl_handshake_perform(new_data->ctx)) != 0) {
 		goto out_destroy_data;
 	}
+
+	// Set after handshake to prevent double close of fd if there is any failure
+	new_data->sockaddr = callback_data->accept_data->addr;
+	new_data->socklen = callback_data->accept_data->len;
+	new_data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = new_data;
 	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
@@ -438,7 +439,6 @@ int __rrr_net_transport_libressl_accept (
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_accept return was %i\n", ret);
-		ret = 1;
 		goto out_destroy_ip;
 	}
 
