@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
-//#include "../ip_util.h"
 
 void rrr_http_server_destroy (struct rrr_http_server *server) {
 	rrr_thread_stop_and_join_all_no_unlock (
@@ -98,6 +97,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 		void *callback_arg
 ) {
 	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
+
 	return rrr_net_transport_new (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
@@ -119,7 +119,7 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
-	if (net_transport_config->transport_type ==  RRR_NET_TRANSPORT_TLS) {
+	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
 				result_transport,
 				net_transport_config,
@@ -367,7 +367,7 @@ static int __rrr_http_server_accept_if_free_thread (
 	return ret;
 }
 
-static int __rrr_http_server_allocate_threads (
+static int __rrr_http_server_threads_allocate (
 		struct rrr_thread_collection *threads,
 		int count,
 		const struct rrr_http_server_callbacks *callbacks
@@ -403,7 +403,8 @@ static int __rrr_http_server_allocate_threads (
 			goto out;
 		}
 
-		worker_data = NULL; // Now managed by worker thread
+		// Now managed by worker thread
+		worker_data = NULL;
 
 		if ((ret = rrr_thread_start(thread)) != 0) {
 			// Unsafe state of worker_data struct
@@ -428,7 +429,7 @@ int rrr_http_server_tick (
 
 	*accept_count_final = 0;
 
-	if ((ret = __rrr_http_server_allocate_threads (
+	if ((ret = __rrr_http_server_threads_allocate (
 			server->threads,
 			max_threads,
 			callbacks
@@ -463,8 +464,8 @@ int rrr_http_server_tick (
 		accept_count += accept_count_tmp;
 	}
 
-	int count;
-	rrr_thread_join_and_destroy_stopped_threads(&count, server->threads);
+	int count_dummy = 0;
+	rrr_thread_join_and_destroy_stopped_threads(&count_dummy, server->threads);
 
 	*accept_count_final = accept_count;
 
