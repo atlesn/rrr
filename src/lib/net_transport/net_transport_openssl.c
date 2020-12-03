@@ -235,7 +235,7 @@ static int __rrr_net_transport_openssl_new_ctx (
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_COMPRESSION);
 
 	unsigned int min_version = TLS1_2_VERSION;
-	if ((flags & RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1) != 0) {
+	if ((flags & RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1) != 0) {
 		min_version = TLS1_1_VERSION;
 	}
 

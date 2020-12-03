@@ -76,6 +76,7 @@ struct httpserver_data {
 	int do_receive_full_request;
 	int do_accept_websocket_binary;
 	int do_receive_websocket_rrr_message;
+	int do_disable_http2;
 
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
@@ -167,6 +168,12 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_raw_response_timeout_ms", raw_response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
+
+	if (data->do_receive_raw_data || data->do_get_raw_response_from_senders) {
+		RRR_DBG_1("httpserver instance %s disabling HTTP2 due to http_server_get_raw_response_from_senders and/or http_server_receive_raw_data being active\n",
+				config->name);
+		data->do_disable_http2 = 1;
+	}
 
 	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
 		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
@@ -1177,7 +1184,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	struct rrr_http_server *http_server = NULL;
 
-	if (rrr_http_server_new(&http_server) != 0) {
+	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;

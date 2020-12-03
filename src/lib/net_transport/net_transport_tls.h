@@ -40,6 +40,11 @@ static inline int rrr_net_transport_tls_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 ) {
+	if (flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN) {
+		alpn_protos = NULL;
+		alpn_protos_length = 0;
+	}
+
 #ifdef RRR_WITH_OPENSSL
 	return rrr_net_transport_openssl_new(target, flags, certificate_file, private_key_file, ca_file, ca_path, alpn_protos, alpn_protos_length);
 #else

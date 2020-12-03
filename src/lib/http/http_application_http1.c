@@ -243,6 +243,8 @@ struct rrr_http_application_http1_receive_data {
 	rrr_http_unique_id unique_id;
 	int is_client;
 	struct rrr_http_application **upgraded_application;
+	int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS);
+	void *upgrade_verify_callback_arg;
 	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
 	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
@@ -566,6 +568,20 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 		goto out_bad_request;
 	}
 
+	if (receive_data->upgrade_verify_callback && (ret = receive_data->upgrade_verify_callback (
+			do_websocket,
+			RRR_HTTP_APPLICATION_HTTP1,
+			RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
+			receive_data->upgrade_verify_callback_arg
+	) != 0)) {
+		goto out;
+	}
+
+	if (*do_websocket != 1) {
+		// Application refuses websocket
+		goto out_bad_request;
+	}
+
 	if ((ret = receive_data->websocket_callback (
 			do_websocket,
 			receive_data->handle,
@@ -614,6 +630,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 
 static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		struct rrr_http_application **upgraded_application,
+		struct rrr_http_application_http1_receive_data *receive_data,
 		struct rrr_http_transaction *transaction,
 		struct rrr_read_session *read_session
 ) {
@@ -643,6 +660,20 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_name,request_part->request_method_str_nullsafe);
 		RRR_DBG_1("Received HTTP2 upgrade request which was not a GET or OPTION request but '%s'\n", method_name);
 		goto out_bad_request;
+	}
+
+	int upgrade_ok = 1;
+	if (receive_data->upgrade_verify_callback && (ret = receive_data->upgrade_verify_callback (
+			&upgrade_ok,
+			RRR_HTTP_APPLICATION_HTTP1,
+			RRR_HTTP_UPGRADE_MODE_HTTP2,
+			receive_data->upgrade_verify_callback_arg
+	) != 0)) {
+		goto out;
+	}
+
+	if (!upgrade_ok) {
+		goto out;
 	}
 
 #ifdef RRR_WITH_NGHTTP2
@@ -725,6 +756,7 @@ static int __rrr_http_application_http1_request_upgrade_try (
 	else if (upgrade_h2c != NULL) {
 		if ((ret = __rrr_http_application_http1_request_upgrade_try_http2 (
 				receive_data->upgraded_application,
+				receive_data,
 				transaction,
 				read_session
 		)) == 0 && receive_data->upgraded_application != NULL) {
@@ -1367,6 +1399,8 @@ int __rrr_http_application_http1_tick (
 				unique_id,
 				is_client,
 				upgraded_app,
+				upgrade_verify_callback,
+				upgrade_verify_callback_arg,
 				websocket_callback,
 				websocket_callback_arg,
 				callback,

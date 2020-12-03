@@ -302,6 +302,8 @@ static void influxdb_send_data_callback (
 				1, // Is client
 				NULL,
 				NULL,
+				NULL,
+				NULL,
 				influxdb_receive_http_response,
 				&response_callback_data,
 				NULL,

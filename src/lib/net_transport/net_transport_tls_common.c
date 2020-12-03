@@ -53,7 +53,13 @@ int rrr_net_transport_tls_common_new (
 
 	int flags_checked = 0;
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
-	CHECK_FLAG(RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1);
+	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1);
+	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_ALPN);
+/*
+ *
+					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? NULL : alpn_protos),
+					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? 0 : alpn_protos_length)
+ */
 
 	if (flags != 0) {
 		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);

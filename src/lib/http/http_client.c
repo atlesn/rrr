@@ -865,6 +865,8 @@ static int __rrr_http_client_transport_ctx_tick (
 			callback_data->read_max_size,
 			0, // No unique ID
 			1, // Is client
+			NULL,
+			NULL,
 			__rrr_http_client_websocket_handshake_callback,
 			callback_data,
 			__rrr_http_client_receive_http_part_callback,

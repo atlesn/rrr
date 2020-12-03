@@ -92,7 +92,7 @@ int rrr_mqtt_transport_start (
 		if ((ret = rrr_net_transport_new (
 				&tmp,
 				net_transport_config,
-				RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1,
+				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
 				NULL,
 				0
 		)) != 0) {

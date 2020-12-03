@@ -50,6 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void *arg,												\
 	rrr_http_unique_id unique_id
 
+#define RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 
@@ -110,6 +113,8 @@ int rrr_http_session_transport_ctx_tick (
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
+		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
+		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),

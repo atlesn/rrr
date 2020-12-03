@@ -748,8 +748,10 @@ int rrr_net_transport_libressl_new (
 		goto out_config_error;
 	}
 
-	if (tls_config_set_alpn(tls->config, alpn_protos_tmp) < 0) {
-		goto out_config_error;
+	if (strlen(alpn_protos_tmp) > 0) {
+		if (tls_config_set_alpn(tls->config, alpn_protos_tmp) < 0) {
+			goto out_config_error;
+		}
 	}
 
 	goto out;

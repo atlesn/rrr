@@ -44,7 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		const struct rrr_http_server_callbacks *callbacks
+		const struct rrr_http_server_callbacks *callbacks,
+		int disable_http2
 ) {
 	int ret = 0;
 
@@ -59,6 +60,7 @@ int rrr_http_server_worker_preliminary_data_new (
 
 	memset (data, '\0', sizeof(*data));
 
+	data->config_data.disable_http2 = disable_http2;
 	data->config_data.callbacks = *callbacks;
 
 	*result = data;
@@ -232,7 +234,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 	int ret = 0;
 
 	if (worker_data->config_data.callbacks.websocket_handshake_callback == NULL) {
-		RRR_DBG_1("HTTP server received a HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
+		RRR_DBG_1("Note: HTTP server received an HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
 		*do_websocket = 0;
 	}
 	else if ((ret = worker_data->config_data.callbacks.websocket_handshake_callback (
@@ -300,6 +302,24 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 	return 0;
 }
 
+static int __rrr_http_server_worker_upgrade_verify_callback (
+	RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
+) {
+	struct rrr_http_server_worker_data *worker_data = arg;
+
+	*do_upgrade = 1;
+
+	(void)(from);
+
+	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && worker_data->config_data.disable_http2 != 0) {
+		RRR_MSG_2("HTTP worker %i received upgrade request to HTTP2, but HTTP2 is disabled. Using HTTP1.\n",
+				worker_data->config_data.transport_handle);
+		*do_upgrade = 0;
+	}
+
+	return 0;
+}
+
 static int __rrr_http_server_worker_net_transport_ctx_do_work (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -318,6 +338,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			worker_data->config_data.read_max_size,
 			worker_data->unique_id,
 			0, // Is not client
+			__rrr_http_server_worker_upgrade_verify_callback,
+			worker_data,
 			__rrr_http_server_worker_websocket_handshake_callback,
 			worker_data,
 			__rrr_http_server_worker_receive_callback,

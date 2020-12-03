@@ -416,6 +416,10 @@ static int __rrr_http_application_http2_tick (
 
 	int ret = 0;
 
+
+	(void)(upgrade_verify_callback);
+	(void)(upgrade_verify_callback_arg);
+
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
 			handle,

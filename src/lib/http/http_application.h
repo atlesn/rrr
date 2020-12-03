@@ -35,6 +35,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	rrr_http_unique_id unique_id,							\
 	enum rrr_http_application_type next_protocol_version	\
 
+#define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS	\
+	int *do_upgrade,										\
+	enum rrr_http_application_type from,					\
+	enum rrr_http_upgrade_mode to,							\
+	void *arg
+
 #define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
 	int *do_websocket,											\
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,			\
@@ -85,6 +91,8 @@ int rrr_http_application_transport_ctx_tick (
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
+		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
+		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),

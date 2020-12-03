@@ -55,7 +55,10 @@ void rrr_http_server_destroy_void (void *server) {
 	rrr_http_server_destroy(server);
 }
 
-int rrr_http_server_new (struct rrr_http_server **target) {
+int rrr_http_server_new (
+		struct rrr_http_server **target,
+		int disable_http2
+) {
 	int ret = 0;
 
 	*target = NULL;
@@ -74,6 +77,8 @@ int rrr_http_server_new (struct rrr_http_server **target) {
 		ret = 1;
 		goto out_free;
 	}
+
+	server->disable_http2 = disable_http2;
 
 	*target = server;
 	server = NULL;
@@ -192,6 +197,10 @@ int rrr_http_server_start_tls (
 	struct rrr_net_transport_config net_transport_config_tls = *net_transport_config_template;
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
+
+	if (server->disable_http2) {
+		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
+	}
 
 	ret = __rrr_http_server_start (&server->transport_https, port, &net_transport_config_tls, net_transport_flags);
 
@@ -370,7 +379,8 @@ static int __rrr_http_server_accept_if_free_thread (
 static int __rrr_http_server_threads_allocate (
 		struct rrr_thread_collection *threads,
 		int count,
-		const struct rrr_http_server_callbacks *callbacks
+		const struct rrr_http_server_callbacks *callbacks,
+		int disable_http2
 ) {
 	int ret = 0;
 
@@ -381,7 +391,8 @@ static int __rrr_http_server_threads_allocate (
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = rrr_http_server_worker_preliminary_data_new (
 				&worker_data,
-				callbacks
+				callbacks,
+				disable_http2
 		)) != 0) {
 			RRR_MSG_0("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
 			goto out;
@@ -432,7 +443,8 @@ int rrr_http_server_tick (
 	if ((ret = __rrr_http_server_threads_allocate (
 			server->threads,
 			max_threads,
-			callbacks
+			callbacks,
+			server->disable_http2
 	)) != 0) {
 		RRR_MSG_0("Could not allocate threads in rrr_http_server_tick\n");
 		goto out;
