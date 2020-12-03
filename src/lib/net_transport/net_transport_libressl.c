@@ -412,6 +412,8 @@ int __rrr_net_transport_libressl_accept (
 
 	int ret = 0;
 
+	*did_accept = 0;
+
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	if ((ret = rrr_ip_accept(&accept_data, &data->ip_data, "net_transport_tls", 0)) != 0) {
@@ -458,6 +460,8 @@ int __rrr_net_transport_libressl_accept (
 			final_callback_arg,
 			callback_arg
 	);
+
+	*did_accept = 1;
 
 	goto out;
 	out_destroy_ip:

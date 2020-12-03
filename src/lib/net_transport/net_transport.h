@@ -147,6 +147,7 @@ struct rrr_net_transport_collection {
 	void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_ARGS											\
+	int *did_accept,															\
 	struct rrr_net_transport_handle *listen_handle,								\
 	int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),		\
 	void *callback_arg,															\
@@ -350,14 +351,9 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
-int rrr_net_transport_accept (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
-		void *callback_arg
-);
 int rrr_net_transport_accept_all_handles (
 		struct rrr_net_transport *transport,
+		int at_most_one_accept,
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
 );

@@ -146,6 +146,7 @@ int rrr_mqtt_transport_accept (
 	RRR_LL_ITERATE_BEGIN(&transport->transports, struct rrr_net_transport);
 		if ((ret = rrr_net_transport_accept_all_handles (
 				node,
+				0, // Accept any number of connections
 				new_connection_callback,
 				&callback_data
 		)) != 0) {

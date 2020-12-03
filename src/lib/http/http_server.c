@@ -270,6 +270,7 @@ static int __rrr_http_server_accept (
 
 	if ((ret = rrr_net_transport_accept_all_handles (
 			transport,
+			1, // At most one accept
 			__rrr_http_server_accept_create_http_session_callback,
 			worker_data_preliminary
 	)) != 0) {

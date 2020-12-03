@@ -790,6 +790,8 @@ int __rrr_net_transport_openssl_accept (
 
 	int ret = 0;
 
+	*did_accept = 0;
+
 	struct rrr_net_transport_tls_data *listen_ssl_data = listen_handle->submodule_private_ptr;
 
 	if ((ret = rrr_ip_accept(&accept_data, &listen_ssl_data->ip_data, "net_transport_tls", 0)) != 0) {
@@ -835,6 +837,8 @@ int __rrr_net_transport_openssl_accept (
 			final_callback_arg,
 			callback_arg
 	);
+
+	*did_accept = 1;
 
 	goto out;
 

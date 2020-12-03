@@ -323,6 +323,8 @@ int __rrr_net_transport_plain_accept (
 
 	int ret = 0;
 
+	*did_accept = 0;
+
 	struct rrr_ip_data ip_data = {0};
 
 	ip_data.fd = listen_handle->submodule_private_fd;
@@ -372,6 +374,8 @@ int __rrr_net_transport_plain_accept (
 			final_callback_arg,
 			callback_arg
 	);
+
+	*did_accept = 1;
 
 	goto out;
 	out_destroy_ip:
