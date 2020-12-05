@@ -48,6 +48,7 @@ struct set_connection_settings_callback_data {
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	struct rrr_mqtt_session *session;
 	const char *username;
+	const char *client_name;
 };
 
 static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_transport_handle *handle, void *arg) {
@@ -65,6 +66,12 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 			callback_data->username
 	)) != 0) {
 		goto out;
+	}
+
+	if (callback_data->client_name != NULL) {
+		if ((ret = rrr_mqtt_conn_set_client_id (connection, callback_data->client_name)) != 0) {
+			goto out;
+		}
 	}
 
 	out:
@@ -489,7 +496,8 @@ int rrr_mqtt_client_connect (
 			connect->keep_alive,
 			connect->protocol_version,
 			*session,
-			username
+			username,
+			mqtt_data->client_name
 		};
 
 		if (rrr_mqtt_transport_with_iterator_ctx_do_custom (
@@ -533,6 +541,8 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	(void)(client_data);
 
+	char *client_id_tmp = NULL;
+
 	if (connack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		RRR_MSG_0("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
 		ret = RRR_MQTT_SOFT_ERROR;
@@ -547,6 +557,25 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				goto out,
 				" while cleaning session in __rrr_mqtt_client_handle_connack"
 		);
+	}
+
+	if (connection->client_id == NULL || *(connection->client_id) == '\0') {
+		struct rrr_mqtt_property *assigned_client_id_property = rrr_mqtt_property_collection_get_property (
+				&connack->properties,
+				RRR_MQTT_PROPERTY_ASSIGNED_CLIENT_ID,
+				0
+		);
+		if (assigned_client_id_property != NULL) {
+			if ((ret = rrr_mqtt_property_get_blob_as_str (
+					&client_id_tmp,
+					assigned_client_id_property
+			)) != 0) {
+				goto out;
+			}
+			if ((ret = rrr_mqtt_conn_set_client_id(connection, client_id_tmp)) != 0) {
+				goto out;
+			}
+		}
 	}
 
 	uint8_t reason_v5 = 0;
@@ -595,6 +624,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_DBG_1("Received CONNACK with keep-alive %u, now connected\n", session_properties_tmp.numbers.server_keep_alive);
 
 	out:
+		RRR_FREE_IF_NOT_NULL(client_id_tmp);
 		rrr_mqtt_session_properties_clear(&session_properties_tmp);
 		return ret;
 }

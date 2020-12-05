@@ -52,7 +52,7 @@ static const char *array_tree =
 
 static const char *array_tree_rpn = "be4#my_tag,IF({my_tag} 2 ==)be4#my_tag_two;ELSEbe4#my_tag_not_two;;";
 
-static const char *array_tree_misc_values = "ustr,sep1,istr,IF(1==1)blob1,REWIND1,str;;";
+static const char *array_tree_misc_values = "ustr,sep1,istr#istr,IF(1==1&&{istr}==-444)blob1,REWIND1,str;;";
 static const char *array_tree_misc_values_input = "444\r-444\"blablabla\"";
 
 #define TREE_CLEANUP				\
