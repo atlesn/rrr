@@ -69,6 +69,18 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
 #define CALL_EVENT_HANDLER_NO_REPEAT(event)	\
 		__rrr_mqtt_connection_call_event_handler(connection, event, 1, NULL)
 
+int rrr_mqtt_conn_set_client_id (
+		struct rrr_mqtt_conn *connection,
+		const char *id
+) {
+	RRR_FREE_IF_NOT_NULL(connection->client_id);
+	if ((connection->client_id = strdup(id)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_conn_update_client_id\n");
+		return 1;
+	}
+	return 0;
+}
+
 int rrr_mqtt_conn_update_state (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet,
