@@ -172,6 +172,10 @@ struct rrr_mqtt_conn {
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN		1
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_OUT	2
 
+int rrr_mqtt_conn_set_client_id (
+		struct rrr_mqtt_conn *connection,
+		const char *id
+);
 // No reference counting of packet performed
 int rrr_mqtt_conn_update_state (
 		struct rrr_mqtt_conn *connection,

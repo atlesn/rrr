@@ -409,7 +409,9 @@ int rrr_condition_interpret (
 
 		if (op == operator_sub && (prev_was_op || RRR_LL_COUNT(shunting_yard) == 0)) {
 			// Interpret - as start of negative value as opposed to subtraction operator
-			pos->pos -= strlen(op->op);
+			// Use length of operator_sub directly to avoid false positive from static code analysis
+			// strlen(operator_sub->op);
+			pos->pos -= 1; // Length of operator_sub "-" (1 byte)
 			op = NULL;
 		}
 
