@@ -231,7 +231,6 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 				}
 #endif
 
-
 //				printf ("block size %" PRIu64 " - %" PRIu64 "\n", j, index->block_sizes[j]);
 
 				if ((index->block_used_map & used_mask) != used_mask) {
@@ -261,10 +260,6 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 
 //						printf("merge ptr: %p\n", result);
 
-#ifdef RRR_MMAP_SENTINEL_DEBUG
-// Sentinel should be preserved from previous last block
-//				*((uint64_t*)(mmap->heap + merge_block_pos +  consecutive_unused_size - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
-#endif
 						goto out_unlock;
 					}
 				}

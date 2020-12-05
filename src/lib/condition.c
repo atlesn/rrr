@@ -352,7 +352,7 @@ static int __rrr_condition_shunting_yard_shunt_value (
 		goto out;
 	}
 
-//	printf("Shunting a value\n");
+//	printf("Shunting a value %.*s\n", (int) size, value);
 
 	RRR_LL_APPEND(shunting_yard, carrier_new);
 
@@ -409,6 +409,9 @@ int rrr_condition_interpret (
 
 		if (op == operator_sub && (prev_was_op || RRR_LL_COUNT(shunting_yard) == 0)) {
 			// Interpret - as start of negative value as opposed to subtraction operator
+			// Use length of operator_sub directly to avoid false positive from static code analysis
+			// strlen(operator_sub->op);
+			pos->pos -= 1; // Length of operator_sub "-" (1 byte)
 			op = NULL;
 		}
 
@@ -469,7 +472,6 @@ int rrr_condition_interpret (
 				}
 			}
 			else if (rrr_parse_match_word_case(pos, "-")) {
-				pos->pos++;
 				rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_NUMBERS);
 				if (end - start < 0) {
 					RRR_MSG_0("Value missing after negation -\n");
