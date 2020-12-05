@@ -1,8 +1,17 @@
-rrr (1.15-3bullseye1) bullseye; urgency=medium
+rrr (1.15-4bullseye1) bullseye; urgency=medium
 
   * Debian testing release
 
- -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Nov 2020 12:44:18 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 05 Dec 2020 11:19:54 +0100
+
+rrr (1.15-4) buster; urgency=medium
+
+  * Fix broken LibreSSL build on Arch
+  * Fix for negative values in array tree conditions
+  * Fix for mixed read sessions when receiving UDP data
+  * Fix for missing Client ID in MQTT client debug messages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 05 Dec 2020 10:22:44 +0100
 
 rrr (1.15-3) buster; urgency=medium
 
