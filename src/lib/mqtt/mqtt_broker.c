@@ -242,7 +242,6 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 	// current connection is locked since we come from packet handler context
 	// and it is not possible for others to read our unfinished client id, they
 	// will of course lock the connection before trying that.
-	//connection->client_id = result;
 
 	int retries = RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS;
 	while (--retries >= 0) {
@@ -375,6 +374,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	uint8_t reason_v5 = 0;
 	struct rrr_mqtt_session *session = NULL;
 	struct rrr_mqtt_p_connack *connack = NULL;
+	char *client_id_tmp = NULL;
 
 	if (connection->client_id != NULL) {
 		RRR_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
@@ -430,15 +430,21 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out_send_connack;
 		}
 		// Note: Write ID to connectION, not the connect packet
-		RRR_FREE_IF_NOT_NULL(connection->client_id);
-		if ((ret = __rrr_mqtt_broker_generate_unique_client_id (&connection->client_id, connection, data)) != 0) {
+
+		if ((ret = __rrr_mqtt_broker_generate_unique_client_id (&client_id_tmp, connection, data)) != 0) {
 			if (ret == RRR_MQTT_SOFT_ERROR) {
 				reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
 				goto out_send_connack;
 			}
-			RRR_MSG_0("Could not generate client identifier in rrr_mqtt_p_handler_connect");
+			RRR_MSG_0("Could not generate client identifier in rrr_mqtt_p_handler_connect\n");
 			goto out;
 		}
+
+		if ((ret = rrr_mqtt_conn_set_client_id(connection, client_id_tmp)) != 0) {
+			RRR_MSG_0("Could not set client identifier in rrr_mqtt_p_handler_connect\n");
+			goto out;
+		}
+
 		client_id_was_assigned = 1;
 	}
 	else {
@@ -489,7 +495,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			 goto out_send_connack;
 		}
 
-		if ((connection->client_id = strdup(connect->client_identifier)) == NULL) {
+		if (rrr_mqtt_conn_set_client_id (connection, connect->client_identifier) != 0) {
 			RRR_MSG_0("Could not allocate memory for client ID in __rrr_mqtt_broker_handle_connect\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
@@ -692,7 +698,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	out:
-
+	RRR_FREE_IF_NOT_NULL(client_id_tmp);
 	rrr_mqtt_session_properties_clear(&session_properties);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;

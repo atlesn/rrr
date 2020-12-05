@@ -40,6 +40,7 @@ input_data
 
 # http://www.gnu.org/software/automake
 
+confdefs.h
 /conftest
 /conftest.err
 /conftest.c
