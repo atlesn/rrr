@@ -1,6 +1,6 @@
 Name:           rrr
 Version:        1.15
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:	RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 Group:		rrr
 

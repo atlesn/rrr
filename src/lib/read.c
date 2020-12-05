@@ -113,7 +113,9 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 		if (node->last_read_time < time_limit) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (memcmp(src_addr, &node->src_addr, sizeof(*src_addr)) == 0) {
+		else if (	node->src_addr_len == src_addr_len &&
+				memcmp(src_addr, &node->src_addr, src_addr_len) == 0
+		) {
 			if (res != NULL) {
 				RRR_BUG("Two equal src_addr in rrr_socket_read_session_collection_maintain_and_find\n");
 			}
