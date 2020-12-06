@@ -36,6 +36,8 @@ struct rrr_http_server {
 	struct rrr_net_transport *transport_https;
 
 	struct rrr_thread_collection *threads;
+
+	int disable_http2;
 };
 
 void rrr_http_server_destroy (
@@ -45,7 +47,8 @@ void rrr_http_server_destroy_void (
 		void *server
 );
 int rrr_http_server_new (
-		struct rrr_http_server **target
+		struct rrr_http_server **target,
+		int disable_http2
 );
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,

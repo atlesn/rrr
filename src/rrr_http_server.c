@@ -249,7 +249,10 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_http_server_new(&http_server) != 0) {
+	if (rrr_http_server_new (
+			&http_server,
+			0 // Don't disable http2
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

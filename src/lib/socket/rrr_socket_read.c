@@ -54,7 +54,7 @@ struct rrr_socket_read_message_default_callback_data {
 	void *complete_callback_arg;
 };
 
-static int __rrr_socket_read_message_poll (
+static int __rrr_socket_read_poll (
 		int *got_pollhup_pollerr,
 		int fd
 ) {
@@ -255,7 +255,7 @@ int rrr_socket_read (
 	else if (bytes == 0) {
 		int got_pollhup_pollerr = 0;
 
-		ret = __rrr_socket_read_message_poll(&got_pollhup_pollerr, fd);
+		ret = __rrr_socket_read_poll(&got_pollhup_pollerr, fd);
 		if (ret & (RRR_READ_INCOMPLETE|RRR_READ_HARD_ERROR)) {
 			goto out;
 		}

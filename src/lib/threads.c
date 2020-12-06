@@ -915,7 +915,3 @@ int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 	return ret;
 }
 
-void rrr_thread_free_double_pointer(void *arg) {
-	struct rrr_thread_double_pointer *data = arg;
-	RRR_FREE_IF_NOT_NULL(*(data->ptr));
-}

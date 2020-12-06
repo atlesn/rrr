@@ -41,6 +41,13 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+if RRR_WITH_NGHTTP2
+libadd_nghttp2 = librrrnghttp2.la
+librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
+librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
+endif
+
 mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
 	mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
 	mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
@@ -52,7 +59,10 @@ socket =	socket/rrr_socket.c socket/rrr_socket_read.c \
 
 http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
-		http/http_server.c http/http_server_worker.c
+		http/http_server.c http/http_server_worker.c http/http_header_fields.c \
+		http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
+		http/http_application.c http/http_application_http1.c \
+		http/http_client_target_collection.c http/http_redirect.c
 
 websocket = websocket/websocket.c
 
@@ -137,6 +147,7 @@ libadd_rrr_sha1 = sha1/libsha1.la
 sha1_libsha1_la_SOURCES = sha1/sha1.c
 
 libadd_all =	${libadd_perl5}					\
+				${libadd_nghttp2}				\
 				${libadd_rrr_readdir}			\
 				${libadd_rrr_strerror}			\
 				${libadd_rrr_fork}				\

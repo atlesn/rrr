@@ -709,9 +709,85 @@ static int __rrr_http_util_uri_validate_characters (
 	return 0;
 }
 
+void rrr_http_util_uri_flags_get (
+		struct rrr_http_uri_flags *target,
+		const struct rrr_http_uri *uri
+) {
+	memset (target, '\0', sizeof(*target));
+
+	if (uri->protocol == NULL) {
+		 // OK, do nothing
+	}
+	else if (strcmp(uri->protocol, "http") == 0) {
+		target->is_http = 1;
+	}
+	else if (strcmp(uri->protocol, "https") == 0) {
+		target->is_http = 1;
+		target->is_tls = 1;
+	}
+	else if (strcmp(uri->protocol, "ws") == 0) {
+		target->is_websocket = 1;
+	}
+	else if (strcmp(uri->protocol, "wss") == 0) {
+		target->is_websocket = 1;
+		target->is_tls = 1;
+	}
+	else {
+		RRR_BUG("BUG: Unknown protocol '%s' in rrr_http_util_uri_get_protocol, only values made by rrr_http_util_uri_parse are valid\n", uri->protocol);
+	}
+}
+
+int rrr_http_util_uri_endpoint_prepend (
+		struct rrr_http_uri *uri,
+		const char *prefix
+) {
+	int ret = 0;
+
+	char *endpoint_new = NULL;
+
+	if (uri->endpoint == NULL) {
+		if ((endpoint_new = strdup(prefix)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend A\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		// Allocate for extra / and the usual \0
+		if ((endpoint_new = malloc(strlen(prefix) + strlen(uri->endpoint) + 1 + 1)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend B\n");
+			ret = 1;
+			goto out;
+		}
+
+		strcpy(endpoint_new, prefix);
+
+		if (*(endpoint_new + strlen(endpoint_new) - 1) == '/') {
+			if (*(uri->endpoint) == '/') {
+				// Prefix ends with / and original begins with /, remove one
+				*(endpoint_new + strlen(endpoint_new) - 1) = '\0';
+			}
+		}
+		else if (*(uri->endpoint) != '/') {
+			// No / at end of prefix nor at beginning of original, add one
+			sprintf(endpoint_new + strlen(endpoint_new), "/");
+		}
+
+		sprintf(endpoint_new + strlen(endpoint_new), "%s", uri->endpoint);
+	}
+
+	RRR_FREE_IF_NOT_NULL(uri->endpoint);
+	uri->endpoint = endpoint_new;
+
+	out:
+	// Enable if more goto out are added after allocation failure gotos
+	// RRR_FREE_IF_NOT_NULL(endpoint_new);
+	return ret;
+}
+
 int rrr_http_util_uri_parse (
 		struct rrr_http_uri **uri_result,
-		struct rrr_nullsafe_str *str
+		const struct rrr_nullsafe_str *str
 ) {
 	int ret = 0;
 	struct rrr_http_uri *uri_new = NULL;
@@ -747,11 +823,7 @@ int rrr_http_util_uri_parse (
 
 	// Parse protocol if present
 	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") == 0 && new_pos == pos) {
-		if ((uri_new->protocol = strdup("")) == NULL) {
-			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
-			ret = 1;
-			goto out_destroy;
-		}
+		// OK, empty protocol
 	}
 	else if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "://") == 0) {
 		ssize_t protocol_name_length = new_pos - pos;
@@ -760,6 +832,12 @@ int rrr_http_util_uri_parse (
 		}
 		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "http", 4) == 0) {
 			uri_new->protocol = strdup("http");
+		}
+		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "ws", 4) == 0) {
+			uri_new->protocol = strdup("ws");
+		}
+		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "wss", 4) == 0) {
+			uri_new->protocol = strdup("wss");
 		}
 		else {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,str->str);
@@ -883,10 +961,10 @@ int rrr_http_util_uri_parse (
 	}
 
 	if (uri_new->port == 0 && uri_new->protocol != NULL) {
-		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0) {
+		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "wss")) {
 			uri_new->port = 443;
 		}
-		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0) {
+		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "ws")) {
 			uri_new->port = 80;
 		}
 	}
@@ -925,4 +1003,9 @@ void rrr_http_util_nprintf (
 	va_end(args);
 
 	RRR_FREE_IF_NOT_NULL(tmp);
+}
+
+void rrr_http_util_dbl_ptr_free (void *ptr) {
+	void *to_free = *((void **) ptr);
+	RRR_FREE_IF_NOT_NULL(to_free);
 }

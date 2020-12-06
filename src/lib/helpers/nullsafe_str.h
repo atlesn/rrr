@@ -32,12 +32,21 @@ struct rrr_nullsafe_str {
 };
 
 void rrr_nullsafe_str_destroy_if_not_null (
-	struct rrr_nullsafe_str *str
+	struct rrr_nullsafe_str **str
 );
-int rrr_nullsafe_str_new (
+void rrr_nullsafe_str_move (
+		struct rrr_nullsafe_str **target,
+		struct rrr_nullsafe_str **source
+);
+int rrr_nullsafe_str_new_or_replace (
 	struct rrr_nullsafe_str **result,
 	const void *str,
 	rrr_length len
+);
+int rrr_nullsafe_str_append (
+		struct rrr_nullsafe_str *nullsafe,
+		const void *str,
+		rrr_length len
 );
 void rrr_nullsafe_str_set_allocated (
 	struct rrr_nullsafe_str *str,

@@ -51,6 +51,7 @@ AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable Libre
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
 AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
+AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
@@ -98,6 +99,7 @@ SHELL_VARS_INIT([variables.sh])
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
+SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
@@ -109,6 +111,7 @@ AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
 AC_CHECK_HEADER([linux/input.h], [have_linux_input=yes], [have_linux_input=no])
@@ -461,6 +464,22 @@ AS_IF([test "x$enable_usb" = xno], [
 	], [
 		AC_MSG_ERROR([Test of symbols from usb.h failed, make sure libusb-dev or libusb-compat is installed.])
 	])
+])
+
+AC_MSG_CHECKING([NGHTTP2 bindings])
+AS_IF([test "x$enable_nghttp2" = xno], [
+	AC_MSG_RESULT([Not compiling with NGHTTP2 bindings])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NGHTTP2], [1], [Compile with NGHTTP2 bindings])
+	AC_CHECK_HEADERS([nghttp2/nghttp2.h])
+	AC_CHECK_LIB(nghttp2, nghttp2_pack_settings_payload, [], AC_MSG_ERROR([nghttp2_pack_settings_payload from nghttp2 not found]))
+	NGHTTP2_CFLAGS=""
+	NGHTTP2_LDFLAGS="-lnghttp2"
+
+	AC_SUBST([NGHTTP2_CFLAGS])
+	AC_SUBST([NGHTTP2_LDFLAGS])
+	AC_SUBST([NGHTTP2_LIBS])
 ])
 
 AC_MSG_CHECKING([MySQL module inclusion])

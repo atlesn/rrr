@@ -1591,8 +1591,8 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 				&data->connect_properties
 		)) != 0) {
 			if (ret & RRR_MQTT_INTERNAL_ERROR) {
-				RRR_MSG_0("Internal error from rrr_mqtt_client_connect in MQTT client instance %s\n",
-						INSTANCE_D_NAME(data->thread_data));
+				RRR_MSG_0("Internal error from rrr_mqtt_client_connect in MQTT client instance %s return was %i\n",
+						INSTANCE_D_NAME(data->thread_data), ret);
 				goto out;
 			}
 			if (i == 0) {

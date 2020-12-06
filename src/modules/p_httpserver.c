@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
 #include "../lib/http/http_util.h"
 #include "../lib/net_transport/net_transport_config.h"
@@ -75,6 +76,7 @@ struct httpserver_data {
 	int do_receive_full_request;
 	int do_accept_websocket_binary;
 	int do_receive_websocket_rrr_message;
+	int do_disable_http2;
 
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
@@ -166,6 +168,12 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_raw_response_timeout_ms", raw_response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
+
+	if (data->do_receive_raw_data || data->do_get_raw_response_from_senders) {
+		RRR_DBG_1("httpserver instance %s disabling HTTP2 due to http_server_get_raw_response_from_senders and/or http_server_receive_raw_data being active\n",
+				config->name);
+		data->do_disable_http2 = 1;
+	}
 
 	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
 		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
@@ -333,7 +341,7 @@ static int httpserver_worker_process_field_callback (
 	}
 
 	out:
-	rrr_nullsafe_str_destroy_if_not_null(name_to_use);
+	rrr_nullsafe_str_destroy_if_not_null(&name_to_use);
 	if (value_tmp != NULL) {
 		rrr_type_value_destroy(value_tmp);
 	}
@@ -580,7 +588,7 @@ static int httpserver_receive_get_raw_response (
 			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
 
 	// Will set our pointer to NULL
-	if (rrr_http_part_set_allocated_raw_response (
+	if (rrr_http_part_raw_response_set_allocated (
 			response_part,
 			&callback_data.response,
 			callback_data.response_size
@@ -598,7 +606,8 @@ static int httpserver_receive_get_raw_response (
 static int httpserver_receive_callback_full_request (
 		struct rrr_array *target_array,
 		const struct rrr_http_part *part,
-		const char *data_ptr
+		const char *data_ptr,
+		enum rrr_http_application_type next_protocol_version
 ) {
 	int ret = 0;
 
@@ -610,6 +619,7 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
+	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
 	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
@@ -675,26 +685,27 @@ static int httpserver_receive_callback (
 	};
 
 	if (data->do_receive_full_request) {
-		if ((RRR_HTTP_PART_BODY_LENGTH(request_part) == 0 && !data->do_allow_empty_messages)) {
+		if ((RRR_HTTP_PART_BODY_LENGTH(transaction->request_part) == 0 && !data->do_allow_empty_messages)) {
 			RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
 		}
 		else if ((ret = httpserver_receive_callback_full_request (
 				&array_tmp,
-				request_part,
-				data_ptr
+				transaction->request_part,
+				data_ptr,
+				next_protocol_version
 		)) != 0) {
 			goto out;
 		}
 	}
 
-	if (request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
 		// Don't receive fields, let server framework send default reply
 		RRR_DBG_3("Not processing fields from OPTIONS request\n");
 	}
 	else if ((ret = httpserver_receive_callback_get_fields (
 			&array_tmp,
 			data,
-			request_part
+			transaction->request_part
 	)) != 0) {
 		goto out;
 	}
@@ -718,16 +729,16 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (data->do_get_raw_response_from_senders && !websocket_upgrade_in_progress) {
+	if (data->do_get_raw_response_from_senders) {
 		if ((ret = httpserver_receive_get_raw_response (
 				handle,
 				thread,
 				data,
-				response_part,
+				transaction->response_part,
 				unique_id
 		)) != 0) {
 			if (ret == RRR_HTTP_SOFT_ERROR) {
-				response_part->response_code = RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT;
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT;
 				ret = RRR_HTTP_OK;
 			}
 			goto out;
@@ -866,19 +877,19 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(unique_id);
+	(void)(next_protocol_version);
+
 
 	int ret = 0;
 
 	void *new_application_data = NULL;
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, request_part->request_uri_nullsafe);
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, transaction->request_part->request_uri_nullsafe);
 
-	if (rrr_nullsafe_str_len(request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
+	if (rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
 		RRR_MSG_0("Received request URI for websocket request was too long (%" PRIrrrl " > %ld)",
-				request_part->request_uri_nullsafe->len, (unsigned long) sizeof(request_uri) - 1);
+				transaction->request_part->request_uri_nullsafe->len, (unsigned long) sizeof(request_uri) - 1);
 		goto out_bad_request;
 	}
 
@@ -937,17 +948,17 @@ static int httpserver_websocket_handshake_callback (
 
 	goto out;
 	out_not_found:
-		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND;
 		goto out;
 	out_bad_request:
-		response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		goto out;
 	out:
 		RRR_FREE_IF_NOT_NULL(new_application_data);
 		return ret;
 }
 
-int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct httpserver_callback_data *httpserver_callback_data = arg;
 
 	(void)(websocket_application_data);
@@ -999,7 +1010,7 @@ int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 	return ret;
 }
 
-int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
+static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
 	struct httpserver_data *data = callback_data->httpserver_data;
 
@@ -1025,13 +1036,13 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 	};
 
 	if (payload_size > SSIZE_MAX) {
-		RRR_MSG_0("Payload too long for frame with opcode %u in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
-				opcode, payload_size, (long int) SSIZE_MAX);
+		RRR_MSG_0("Payload too long for frame in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
+				payload_size, (long int) SSIZE_MAX);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
-	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY) {
+	if (is_binary) {
 		if (!data->do_accept_websocket_binary) {
 			RRR_DBG_3("httpserver instance %s dropping received binary websocket frame per configuration\n",
 					INSTANCE_D_NAME(data->thread_data));
@@ -1049,7 +1060,7 @@ int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_
 
 		goto out_write_entry;
 	}
-	else if (opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
+	else {
 		write_callback_data.data = payload;
 		write_callback_data.data_size = payload_size;
 
@@ -1076,6 +1087,9 @@ static int httpserver_receive_raw_callback (
 		RRR_HTTP_SERVER_WORKER_RAW_RECEIVE_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
+
+	(void)(next_protocol_version);
+	(void)(transaction);
 
 	int ret = 0;
 
@@ -1112,7 +1126,7 @@ static int httpserver_receive_raw_callback (
 	return ret;
 }
 
-int httpserver_unique_id_generator_callback (
+static int httpserver_unique_id_generator_callback (
 		RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *data = arg;
@@ -1170,14 +1184,15 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	struct rrr_http_server *http_server = NULL;
 
-	if (rrr_http_server_new(&http_server) != 0) {
+	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	// TODO : There are occasional (?) reports from valgrind that http_server is
-	//        not being freed upon program exit.
+	//        not being freed upon program exit. This happens if a worker thread
+	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
 
 	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
 

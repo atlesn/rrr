@@ -348,11 +348,9 @@ static int __rrr_stats_engine_unicast_send_intermediate (
 	int ret = 0;
 
 	ssize_t written_bytes_dummy = 0;
-	if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, client->connected_fd, data, size)) != 0) {
-//		if (ret != RRR_SOCKET_SOFT_ERROR) {
-			RRR_DBG_1("Warning: Send error in __rrr_stats_engine_send_unicast_intermediate for client with fd %i\n",
-					client->connected_fd);
-//		}
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, client->connected_fd, data, size)) != 0) {
+		RRR_DBG_1("Warning: Send error in __rrr_stats_engine_send_unicast_intermediate for client with fd %i\n",
+				client->connected_fd);
 	}
 
 	return ret;

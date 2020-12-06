@@ -37,9 +37,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read_constants.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/http/http_application.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_client_config.h"
+#include "../lib/http/http_transaction.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -49,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086
+#define INFLUXDB_MAX_REDIRECTS 5
 
 // Standardized return values, HTTP-framework compatible
 #define INFLUXDB_OK		 	RRR_READ_OK
@@ -118,20 +121,18 @@ static int influxdb_receive_http_response (
 
 	(void)(handle);
 	(void)(data_ptr);
-	(void)(sockaddr);
-	(void)(socklen);
 	(void)(overshoot_bytes);
-	(void)(request_part);
 	(void)(unique_id);
-	(void)(websocket_upgrade_in_progress);
+	(void)(next_protocol_version);
+
 
 	int ret = 0;
 
 	// TODO : Read error message from JSON
 
-	if (response_part->response_code < 200 || response_part->response_code > 299) {
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
-				INSTANCE_D_NAME(data->data->thread_data), response_part->response_code, response_part->response_str);
+				INSTANCE_D_NAME(data->data->thread_data), transaction->response_part->response_code, transaction->response_part->response_str);
 		ret = 1;
 		goto out;
 	}
@@ -164,6 +165,8 @@ static void influxdb_send_data_callback (
 
 	int ret = INFLUXDB_OK;
 
+	struct rrr_http_application *upgraded_app = NULL;
+	struct rrr_http_transaction *transaction = NULL;
 	char *uri = NULL;
 	struct rrr_http_query_builder query_builder;
 
@@ -181,16 +184,21 @@ static void influxdb_send_data_callback (
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
+			RRR_HTTP_APPLICATION_HTTP1,
 			handle,
-			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
 		RRR_MSG_0("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_set_endpoint (
-			handle,
+	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, INFLUXDB_MAX_REDIRECTS, NULL, NULL)) != 0) {
+		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_http_transaction_endpoint_set (
+			transaction,
 			uri
 	)) != 0) {
 		RRR_MSG_0("Could set endpoint in HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
@@ -253,8 +261,8 @@ static void influxdb_send_data_callback (
 
 	// TODO : Better distinguishing of soft/hard errors from HTTP layer
 
-	if ((ret = rrr_http_session_transport_ctx_add_query_field (
-			handle,
+	if ((ret = rrr_http_transaction_query_field_add (
+			transaction,
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
 			rrr_http_query_builder_wpos_get(&query_builder),
@@ -264,33 +272,53 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_request_send(handle, data->http_client_config.server)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_request_send (
+			&upgraded_app,
+			handle,
+			data->http_client_config.server,
+			transaction,
+			RRR_HTTP_UPGRADE_MODE_NONE
+	)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
+	}
+
+	if (upgraded_app != NULL) {
+		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
 	struct response_callback_data response_callback_data = {
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_receive (
-			handle,
-			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
-			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
-			0, // No max read size
-			0, // No unique id
-			NULL,
-			NULL,
-			influxdb_receive_http_response,
-			&response_callback_data,
-			NULL,
-			NULL
-	) != 0) {
-		RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = INFLUXDB_HARD_ERR;
-		goto out;
-	}
+	ssize_t received_bytes = 0;
+
+	do {
+		if ((ret = rrr_http_session_transport_ctx_tick (
+				&received_bytes,
+				handle,
+				0, // No max read size
+				0, // No unique id
+				1, // Is client
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				influxdb_receive_http_response,
+				&response_callback_data,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL
+		)) != 0 && ret != RRR_READ_INCOMPLETE) {
+			RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = INFLUXDB_HARD_ERR;
+			goto out;
+		}
+	} while (ret != 0);
 
 	if (response_callback_data.save_ok != 1) {
 		RRR_MSG_0("Warning: Error in HTTP response in influxdb instance %s\n",
@@ -300,6 +328,8 @@ static void influxdb_send_data_callback (
 	}
 
 	out:
+	rrr_http_transaction_decref_if_not_null(transaction);
+	rrr_http_application_destroy_if_not_null(&upgraded_app);
 	rrr_http_query_builder_cleanup(&query_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
 	callback_data->ret = ret;
@@ -464,6 +494,8 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	if (rrr_net_transport_new (
 			&transport,
 			&influxdb_data->net_transport_config,
+			0,
+			NULL,
 			0
 	) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");

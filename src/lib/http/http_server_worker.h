@@ -42,6 +42,8 @@ struct rrr_http_server_worker_config_data {
 	socklen_t addr_len;
 	ssize_t read_max_size;
 
+	int disable_http2;
+
 	struct rrr_http_server_callbacks callbacks;
 };
 
@@ -60,7 +62,7 @@ struct rrr_http_server_worker_preliminary_data {
 struct rrr_http_server_worker_data {
 	struct rrr_http_server_worker_config_data config_data;
 	struct rrr_thread *thread;
-	rrr_http_unique_id websocket_unique_id;
+	rrr_http_unique_id unique_id;
 	int request_complete;
 	uint64_t bytes_total;
 
@@ -71,7 +73,8 @@ struct rrr_http_server_worker_data {
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
-		const struct rrr_http_server_callbacks *callbacks
+		const struct rrr_http_server_callbacks *callbacks,
+		int disable_http2
 );
 void rrr_http_server_worker_preliminary_data_destroy_if_not_null (
 		struct rrr_http_server_worker_preliminary_data *worker_data

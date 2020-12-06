@@ -31,6 +31,8 @@ struct rrr_thread;
 
 #define RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS	\
 	struct rrr_thread *thread,							\
+	const struct sockaddr *sockaddr,					\
+	socklen_t socklen,									\
 	RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
