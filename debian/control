@@ -22,7 +22,6 @@ Package: rrr
 Architecture: any
 Multi-Arch: foreign
 Depends: librrr1 (= ${binary:Version}),
-         libssl1.1,
          libusb | libusb-1.0-0,
          systemd,
          ${misc:Depends},
@@ -36,7 +35,8 @@ Architecture: any
 Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
-         ${shlibs:Depends}
+         ${shlibs:Depends},
+         libssl1.1
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: librrr-dev
