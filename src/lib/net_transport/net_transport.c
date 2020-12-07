@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <limits.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -38,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
@@ -625,6 +627,10 @@ int rrr_net_transport_ctx_send_blocking (
 ) {
 	int ret = 0;
 
+	if (size < 0) {
+		RRR_BUG("BUG: Possible size overflow in rrr_net_transport_ctx_send_blocking\n");
+	}
+
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
 		RRR_BUG("BUG: Handle to rrr_net_transport_send_blocking was not of CONNECTION type\n");
 	}
@@ -650,6 +656,28 @@ int rrr_net_transport_ctx_send_blocking (
 	handle->bytes_written_total += written_bytes_total;
 
 	return ret;
+}
+
+static int __rrr_net_transport_ctx_send_blocking_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	if ((rrr_slength) len > (rrr_slength) SSIZE_MAX) {
+		RRR_MSG_0("Size too long in __rrr_net_transport_ctx_send_blocking_nullsafe_callback (%" PRIrrrl ">%lld)\n",
+				len,
+				(long long int) SSIZE_MAX
+		);
+	}
+	struct rrr_net_transport_handle *handle = arg;
+	return rrr_net_transport_ctx_send_blocking(handle, str, len);
+}
+
+int rrr_net_transport_ctx_send_blocking_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *str
+) {
+	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_net_transport_ctx_send_blocking_nullsafe_callback, handle);
 }
 
 int rrr_net_transport_ctx_read (

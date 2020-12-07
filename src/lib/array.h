@@ -96,6 +96,11 @@ int rrr_array_push_value_blob_with_tag_nullsafe (
 		const char *tag,
 		const struct rrr_nullsafe_str *str
 );
+int rrr_array_push_value_str_with_tag_nullsafe (
+		struct rrr_array *collection,
+		const char *tag,
+		const struct rrr_nullsafe_str *str
+);
 int rrr_array_push_value_str_with_tag (
 		struct rrr_array *collection,
 		const char *tag,

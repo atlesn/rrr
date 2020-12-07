@@ -251,18 +251,52 @@ int rrr_array_push_value_blob_with_tag_with_size (
 	);
 }
 
+struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data {
+	struct rrr_array *collection;
+	const char *tag;
+	const struct rrr_type_definition *definition;
+};
+
+static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data *callback_data = arg;
+
+	return __rrr_array_push_value_x_with_tag_with_size (
+			callback_data->collection,
+			callback_data->tag,
+			str,
+			len,
+			callback_data->definition
+	);
+}
+
 int rrr_array_push_value_blob_with_tag_nullsafe (
 		struct rrr_array *collection,
 		const char *tag,
 		const struct rrr_nullsafe_str *str
 ) {
-	return __rrr_array_push_value_x_with_tag_with_size (
+	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data callback_data = {
 			collection,
 			tag,
-			str->str,
-			str->len,
 			&rrr_type_definition_blob
-	);
+	};
+	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_array_push_value_x_with_tag_nullsafe_callback, &callback_data);
+}
+
+int rrr_array_push_value_str_with_tag_nullsafe (
+		struct rrr_array *collection,
+		const char *tag,
+		const struct rrr_nullsafe_str *str
+) {
+	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data callback_data = {
+			collection,
+			tag,
+			&rrr_type_definition_str
+	};
+	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_array_push_value_x_with_tag_nullsafe_callback, &callback_data);
 }
 
 int rrr_array_push_value_str_with_tag (

@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/helpers/nullsafe_str.h"
-//#include "../ip_util.h"
+#include "../lib/rrr_types.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
@@ -248,6 +248,30 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 	return ret;
 }
 
+struct httpserver_worker_process_field_allocate_callback_data {
+	struct rrr_type_value **value_tmp;
+};
+
+static int httpserver_worker_process_field_import_message_callback (
+		const void *str_a,
+		rrr_length len_a,
+		const void *str_b,
+		rrr_length len_b,
+		void *arg
+) {
+	struct httpserver_worker_process_field_allocate_callback_data *callback_data = arg;
+	return rrr_type_value_allocate_and_import_raw (
+			callback_data->value_tmp,
+			&rrr_type_definition_msg,
+			str_a,
+			str_a + len_a,
+			len_b,
+			str_b,
+			len_a,
+			1 // <-- We only support one message per field
+	);
+}
+
 struct httpserver_worker_process_field_callback {
 	struct rrr_array *array;
 	struct httpserver_data *parent_data;
@@ -298,18 +322,17 @@ static int httpserver_worker_process_field_callback (
 	if (	rrr_nullsafe_str_isset(field->value) &&
 			rrr_nullsafe_str_cmpto_case(field->content_type, RRR_MESSAGE_MIME_TYPE) == 0
 	) {
-		if (rrr_type_value_allocate_and_import_raw (
-				&value_tmp,
-				&rrr_type_definition_msg,
-				field->value->str,
-				field->value->str + field->value->len,
-				name_to_use->len,
-				name_to_use->str,
-				field->value->len,
-				1 // <-- We only support one message per field
-		) != 0) {
+		struct httpserver_worker_process_field_allocate_callback_data allocate_callback_data = {
+				&value_tmp
+		};
+		;
+		if ((ret = rrr_nullsafe_str_with_raw_do_double_const (
+				field->value,
+				name_to_use,
+				httpserver_worker_process_field_import_message_callback,
+				&allocate_callback_data
+		)) != 0) {
 			RRR_MSG_0("Failed to import RRR message from HTTP field\n");
-			ret = 1;
 			goto out;
 		}
 
@@ -318,11 +341,10 @@ static int httpserver_worker_process_field_callback (
 	}
 	else if (rrr_nullsafe_str_isset(field->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,name_to_use);
-		ret = rrr_array_push_value_str_with_tag_with_size (
+		ret = rrr_array_push_value_str_with_tag_nullsafe (
 				callback_data->array,
 				name,
-				field->value->str,
-				field->value->len
+				field->value
 		);
 	}
 	else {
@@ -753,8 +775,7 @@ static int httpserver_receive_callback (
 
 struct receive_raw_broker_callback_data {
 	struct httpserver_data *parent_data;
-	const char *data;
-	ssize_t data_size;
+	const struct rrr_nullsafe_str *data;
 	const char *topic;
 	int is_full_rrr_msg;
 };
@@ -773,21 +794,28 @@ static int httpserver_receive_raw_broker_callback (
 	struct rrr_msg *msg_to_free = NULL;
 
 	if (write_callback_data->is_full_rrr_msg) {
-		if ((msg_to_free = malloc(write_callback_data->data_size)) == NULL) {
+		if ((msg_to_free = malloc(rrr_nullsafe_str_len(write_callback_data->data))) == NULL) {
 			RRR_MSG_0("Could not allocate memory for RRR message in httpserver_receive_raw_broker_callback\n");
 			ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
 			goto out;
 		}
-		memcpy(msg_to_free, write_callback_data->data, write_callback_data->data_size);
 
-		if (rrr_msg_head_to_host_and_verify(msg_to_free, write_callback_data->data_size)) {
+		rrr_length written_size = 0;
+		rrr_nullsafe_str_copyto (
+				&written_size,
+				msg_to_free,
+				rrr_nullsafe_str_len(write_callback_data->data),
+				write_callback_data->data
+		);
+
+		if (rrr_msg_head_to_host_and_verify(msg_to_free, rrr_nullsafe_str_len(write_callback_data->data))) {
 			RRR_MSG_0("Received RRR message of which head verification failed in HTTP server instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 
-		if (rrr_msg_check_data_checksum_and_length(msg_to_free, write_callback_data->data_size) != 0) {
+		if (rrr_msg_check_data_checksum_and_length(msg_to_free, rrr_nullsafe_str_len(write_callback_data->data)) != 0) {
 			RRR_MSG_0("Received RRR message CRC32 mismatch in HTTP server instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_HTTP_SOFT_ERROR;
@@ -796,7 +824,7 @@ static int httpserver_receive_raw_broker_callback (
 
 		{
 			struct rrr_msg_msg *msg_msg = (struct rrr_msg_msg *) msg_to_free;
-			if (rrr_msg_msg_to_host_and_verify(msg_msg, write_callback_data->data_size) != 0) {
+			if (rrr_msg_msg_to_host_and_verify(msg_msg, rrr_nullsafe_str_len(write_callback_data->data)) != 0) {
 				RRR_MSG_0("Received RRR message was invalid in HTTP server instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				ret = RRR_HTTP_SOFT_ERROR;
@@ -836,18 +864,20 @@ static int httpserver_receive_raw_broker_callback (
 		msg_to_free = NULL;
 
 		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %li topic '%s'\n",
-				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
+				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data),
+				rrr_nullsafe_str_len(write_callback_data->data),
+				write_callback_data->topic
+		);
 	}
 	else {
-		if ((ret = rrr_msg_msg_new_with_data (
+		if ((ret = rrr_msg_msg_new_with_data_nullsafe (
 				(struct rrr_msg_msg **) &entry_new->message,
 				MSG_TYPE_MSG,
 				MSG_CLASS_DATA,
 				rrr_time_get_64(),
 				write_callback_data->topic,
 				(write_callback_data->topic != NULL ? strlen(write_callback_data->topic) : 0),
-				write_callback_data->data,
-				write_callback_data->data_size
+				write_callback_data->data
 		)) != 0) {
 			RRR_MSG_0("Could not create message in httpserver_receive_raw_broker_callback\n");
 			goto out;
@@ -855,8 +885,11 @@ static int httpserver_receive_raw_broker_callback (
 
 		entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
 
-		RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %li topic %s\n",
-				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data), write_callback_data->data_size, write_callback_data->topic);
+		RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %" PRIrrrl " topic %s\n",
+				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data),
+				rrr_nullsafe_str_len(write_callback_data->data),
+				write_callback_data->topic
+		);
 	}
 
 	out:
@@ -889,7 +922,7 @@ static int httpserver_websocket_handshake_callback (
 
 	if (rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
 		RRR_MSG_0("Received request URI for websocket request was too long (%" PRIrrrl " > %ld)",
-				transaction->request_part->request_uri_nullsafe->len, (unsigned long) sizeof(request_uri) - 1);
+				rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe), (unsigned long) sizeof(request_uri) - 1);
 		goto out_bad_request;
 	}
 
@@ -1029,54 +1062,23 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 
 	struct receive_raw_broker_callback_data write_callback_data = {
 		callback_data->httpserver_data,
-		NULL,
-		0,
+		payload,
 		topic,
-		0
+		(is_binary && data->do_receive_websocket_rrr_message)
 	};
 
-	if (payload_size > SSIZE_MAX) {
-		RRR_MSG_0("Payload too long for frame in httpserver_websocket_frame_callback %" PRIu64 ">%li\n",
-				payload_size, (long int) SSIZE_MAX);
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
+	// To avoid extra data copying and because payload is const, validation
+	// of any binary RRR message is performed in write callback
 
-	if (is_binary) {
-		if (!data->do_accept_websocket_binary) {
-			RRR_DBG_3("httpserver instance %s dropping received binary websocket frame per configuration\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-
-		if (data->do_receive_websocket_rrr_message) {
-			// To avoid extra data copying and because payload is const, validation
-			// of RRR message is performed in write callback
-			write_callback_data.is_full_rrr_msg = 1;
-		}
-
-		write_callback_data.data = payload;
-		write_callback_data.data_size = payload_size;
-
-		goto out_write_entry;
-	}
-	else {
-		write_callback_data.data = payload;
-		write_callback_data.data_size = payload_size;
-
-		goto out_write_entry;
-	}
-
-	goto out;
-	out_write_entry:
-		ret = rrr_message_broker_write_entry (
+	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),
 			addr,
 			addr_len,
 			RRR_IP_TCP,
 			httpserver_receive_raw_broker_callback,
 			&write_callback_data
-		);
+	);
+
 	out:
 		RRR_FREE_IF_NOT_NULL(topic);
 		return ret;
@@ -1107,7 +1109,6 @@ static int httpserver_receive_raw_callback (
 	struct receive_raw_broker_callback_data write_callback_data = {
 		receive_callback_data->httpserver_data,
 		data,
-		data_size,
 		topic,
 		0
 	};

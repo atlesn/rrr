@@ -153,6 +153,19 @@ static int __rrr_http_application_http1_send_header_field_callback (struct rrr_h
 	return ret;
 }
 
+static int __rrr_http_application_http1_blocking_send_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+	return rrr_net_transport_ctx_send_blocking (
+			handle,
+			str,
+			len
+	);
+}
+
 static int __rrr_http_application_http1_response_send (
 		struct rrr_http_application *application,
 		struct rrr_net_transport_handle *handle,
@@ -165,11 +178,11 @@ static int __rrr_http_application_http1_response_send (
 	struct rrr_http_part *response_part = transaction->response_part;
 
 	if (response_part->response_raw_data_nullsafe != NULL) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (
-				handle,
-				response_part->response_raw_data_nullsafe->str,
-				response_part->response_raw_data_nullsafe->len
-		)) != 0 ) {
+		if ((ret = rrr_nullsafe_str_with_raw_do_const (
+				response_part->response_raw_data_nullsafe,
+				__rrr_http_application_http1_blocking_send_callback,
+				handle
+		)) != 0) {
 			goto out_err;
 		}
 		goto out;
@@ -354,6 +367,57 @@ static int __rrr_http_application_http1_websocket_response_check_headers (
 	return ret;
 }
 
+struct rrr_http_application_http1_receive_raw_nullsafe_callback_data {
+	struct rrr_http_application_http1_receive_data *receive_data;
+	struct rrr_http_transaction *transaction;
+};
+
+static int __rrr_http_application_http1_receive_raw_nullsafe_callback (
+		const struct rrr_nullsafe_str *str,
+		void *arg
+) {
+	struct rrr_http_application_http1_receive_raw_nullsafe_callback_data *callback_data = arg;
+
+	return callback_data->receive_data->raw_callback (
+			str,
+			callback_data->transaction,
+			0,
+			callback_data->transaction->response_part->parsed_protocol_version,
+			callback_data->receive_data->raw_callback_arg
+	);
+}
+
+
+static int __rrr_http_application_http1_receive_raw_if_required (
+		struct rrr_http_application_http1_receive_data *receive_data,
+		struct rrr_http_transaction *transaction,
+		struct rrr_read_session *read_session
+) {
+	int ret = 0;
+
+	if (receive_data->raw_callback == NULL) {
+		goto out;
+	}
+
+	struct rrr_http_application_http1_receive_raw_nullsafe_callback_data callback_data = {
+			receive_data,
+			transaction
+	};
+	if ((ret = rrr_nullsafe_str_with_tmp_str_do (
+			read_session->rx_buf_ptr,
+			read_session->rx_buf_wpos,
+			__rrr_http_application_http1_receive_raw_nullsafe_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_0("Error %i from raw callback in __rrr_http_application_http1_receive_raw_if_required\n", ret);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+
 static int __rrr_http_application_http1_response_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -375,18 +439,8 @@ static int __rrr_http_application_http1_response_receive_callback (
 			transaction->response_part->header_length
 	);
 
-	if (receive_data->raw_callback != NULL) {
-		if ((ret = receive_data->raw_callback (
-				read_session->rx_buf_ptr,
-				read_session->rx_buf_wpos,
-				transaction,
-				0,
-				transaction->response_part->parsed_protocol_version,
-				receive_data->raw_callback_arg
-		)) != 0) {
-			RRR_MSG_0("Error %i from raw callback in __rrr_application_http1_response_receive_callback\n", ret);
-			goto out;
-		}
+	if ((ret = __rrr_http_application_http1_receive_raw_if_required(receive_data, transaction, read_session)) != 0) {
+		goto out;
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
@@ -799,18 +853,8 @@ static int __rrr_http_application_http1_request_receive_callback (
 			transaction->request_part->header_length
 	);
 
-	if (receive_data->raw_callback != NULL) {
-		if ((ret = receive_data->raw_callback (
-				read_session->rx_buf_ptr,
-				read_session->rx_buf_wpos,
-				transaction,
-				receive_data->unique_id,
-				transaction->response_part->parsed_protocol_version,
-				receive_data->raw_callback_arg
-		)) != 0) {
-			RRR_MSG_0("Error %i from raw callback in __rrr_application_http1_request_receive_callback\n", ret);
-			goto out;
-		}
+	if ((ret = __rrr_http_application_http1_receive_raw_if_required(receive_data, transaction, read_session)) != 0) {
+		goto out;
 	}
 
 	if ((ret = rrr_http_part_chunks_merge(&merged_chunks, transaction->request_part, read_session->rx_buf_ptr)) != 0) {
@@ -1076,7 +1120,6 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY || opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
 		return callback_data->callback (
 				payload,
-				payload_size,
 				(opcode == RRR_WEBSOCKET_OPCODE_BINARY ? 1 : 0),
 				callback_data->unique_id,
 				callback_data->callback_arg
@@ -1198,19 +1241,17 @@ static int __rrr_http_application_http1_request_send (
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
 	struct rrr_http_part *request_part = transaction->request_part;
 
-	char *request_buf = NULL;
 	char *host_buf = NULL;
 	char *user_agent_buf = NULL;
-	char *uri_tmp = NULL;
 	char *websocket_key_tmp = NULL;
 	char *http2_upgrade_settings_tmp = NULL;
+	struct rrr_nullsafe_str *request_nullsafe = NULL;
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &request_buf);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &host_buf);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &user_agent_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &uri_tmp);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &websocket_key_tmp);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &http2_upgrade_settings_tmp);
+	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_nullsafe);
 
 	struct rrr_string_builder *header_builder = NULL;
 
@@ -1238,7 +1279,7 @@ static int __rrr_http_application_http1_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&uri_tmp, transaction)) != 0) {
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&request_nullsafe, transaction)) != 0) {
 		goto out;
 	}
 
@@ -1290,14 +1331,24 @@ static int __rrr_http_application_http1_request_send (
 #endif /* RRR_WITH_NGHTTP2 */
 	}
 
-	if ((ret = rrr_asprintf (
-			&request_buf,
-			"%s %s HTTP/1.1\r\n"
+	// Prepend "GET " etc. before endpoint
+	if ((ret = rrr_nullsafe_str_prepend_asprintf (
+			request_nullsafe,
+			"%s ",
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method)
+	)) < 0) {
+		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	// Append the rest of the header after endpoint
+	if ((ret = rrr_nullsafe_str_append_asprintf (
+			request_nullsafe,
+			" HTTP/1.1\r\n"
 			"Host: %s\r\n"
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
-			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-			uri_tmp,
 			host_buf,
 			user_agent_buf
 	)) < 0) {
@@ -1306,7 +1357,7 @@ static int __rrr_http_application_http1_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (handle, request_nullsafe)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
@@ -1345,7 +1396,11 @@ static int __rrr_http_application_http1_request_send (
 	}
 
 	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (handle, transaction->send_data_tmp->str, transaction->send_data_tmp->len)) != 0) {
+		if ((ret = rrr_nullsafe_str_with_raw_do_const (
+				transaction->send_data_tmp,
+				__rrr_http_application_http1_blocking_send_callback,
+				handle
+		)) != 0) {
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
@@ -1359,7 +1414,6 @@ static int __rrr_http_application_http1_request_send (
 	out:
 		pthread_cleanup_pop(1);
 	out_final:
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);

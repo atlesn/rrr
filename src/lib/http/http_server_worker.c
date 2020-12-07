@@ -214,7 +214,6 @@ static int __rrr_http_server_worker_receive_raw_callback (
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
 				data,
-				data_size,
 				transaction,
 				unique_id,
 				next_protocol_version,
@@ -292,7 +291,6 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
 				payload,
-				payload_size,
 				is_binary,
 				unique_id,
 				worker_data->config_data.callbacks.websocket_handshake_callback_arg

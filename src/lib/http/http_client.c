@@ -248,7 +248,7 @@ static int __rrr_http_client_chunks_iterate_callback (
 	(void)(chunk_total);
 	(void)(chunk_idx);
 
-	return rrr_nullsafe_str_append(chunks_merged, data_start, chunk_data_size);
+	return rrr_nullsafe_str_append_raw(chunks_merged, data_start, chunk_data_size);
 }
 
 static int __rrr_http_client_receive_http_part_callback (
@@ -266,7 +266,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *chunks_merged = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace(&chunks_merged, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&chunks_merged, NULL, 0)) != 0) {
 		goto out;
 	}
 

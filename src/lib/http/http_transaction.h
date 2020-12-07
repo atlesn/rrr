@@ -90,7 +90,7 @@ int rrr_http_transaction_endpoint_path_get (
 		struct rrr_http_transaction *transaction
 );
 int rrr_http_transaction_endpoint_with_query_string_create (
-		char **new_endpoint,
+		struct rrr_nullsafe_str **target,
 		struct rrr_http_transaction *transaction
 );
 int rrr_http_transaction_form_data_generate_if_needed (

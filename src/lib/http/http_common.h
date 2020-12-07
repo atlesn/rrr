@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_PARSE_HARD_ERR 		RRR_READ_HARD_ERROR
 #define RRR_HTTP_PARSE_SOFT_ERR			RRR_READ_SOFT_ERROR
 #define RRR_HTTP_PARSE_INCOMPLETE		RRR_READ_INCOMPLETE
+#define RRR_HTTP_PARSE_EOF				RRR_READ_EOF
 
 #define RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS		101
 #define RRR_HTTP_RESPONSE_CODE_OK						200
@@ -151,16 +152,16 @@ extern const char *rrr_http_application_str_http2;
 	))
 
 typedef uint64_t rrr_http_unique_id;
+struct rrr_nullsafe_str;
 
 #define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS			\
-	const char *data,										\
-	size_t data_size,										\
+	const struct rrr_nullsafe_str *data,					\
 	struct rrr_http_transaction *transaction,				\
 	rrr_http_unique_id unique_id,							\
 	enum rrr_http_application_type next_protocol_version,	\
 	void *arg
 
 #define RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS \
-	const void *data, ssize_t data_size, void *arg
+	const struct rrr_nullsafe_str *str, void *arg
 
 #endif /* RRR_HTTP_COMMON_H */

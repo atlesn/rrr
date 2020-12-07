@@ -87,6 +87,43 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 	return ret;
 }
 
+struct rrr_http_application_http2_request_send_header_submit_callback_data {
+	struct rrr_http_application_http2 *http2;
+	int32_t stream_id;
+	const char *name;
+};
+
+static int __rrr_http_application_http2_header_submit_nullsafe_callback (
+		const char *str,
+		void *arg
+) {
+	struct rrr_http_application_http2_request_send_header_submit_callback_data *callback_data = arg;
+	return rrr_http2_header_submit (
+			callback_data->http2->http2_session,
+			callback_data->stream_id,
+			callback_data->name,
+			str
+	);
+}
+
+static int __rrr_http_application_http2_header_submit_nullsafe (
+		struct rrr_http_application_http2 *http2,
+		int32_t stream_id,
+		const char *name,
+		const struct rrr_nullsafe_str *value
+) {
+	struct rrr_http_application_http2_request_send_header_submit_callback_data callback_data = {
+			http2,
+			stream_id,
+			name
+	};
+	return rrr_nullsafe_str_with_raw_null_terminated_do (
+			value,
+			__rrr_http_application_http2_header_submit_nullsafe_callback,
+			&callback_data
+	);
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -97,7 +134,7 @@ static int __rrr_http_application_http2_request_send (
 	int ret = 0;
 
 	struct rrr_http_application *http1 = NULL;
-	char *endpoint_tmp = NULL;
+	struct rrr_nullsafe_str *endpoint_nullsafe = NULL;
 
 	if (rrr_net_transport_ctx_is_tls(handle)) {
 		const char *selected_proto = NULL;
@@ -143,7 +180,7 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_tmp, transaction)) != 0) {
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_nullsafe, transaction)) != 0) {
 		goto out;
 	}
 
@@ -160,7 +197,7 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
-	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":path", transaction->endpoint_str);
+	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
 
 	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
 			http2,
@@ -197,7 +234,7 @@ static int __rrr_http_application_http2_request_send (
 
 	out:
 	rrr_http_application_destroy_if_not_null(&http1);
-	RRR_FREE_IF_NOT_NULL(endpoint_tmp);
+	rrr_nullsafe_str_destroy_if_not_null(&endpoint_nullsafe);
 	return ret;
 }
 
@@ -366,6 +403,16 @@ static int __rrr_http_application_http2_callback (
 	return ret;
 }
 
+static int __rrr_http_application_http2_data_source_truncated_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	uint8_t *buf = arg;
+	memcpy(buf, str, len);
+	return 0;
+}
+
 static int __rrr_http_application_http2_data_source_callback (
 		RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS
 ) {
@@ -382,25 +429,34 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	if (transaction->send_data_tmp == NULL || transaction->send_data_pos >= transaction->send_data_tmp->len) {
+	if (transaction->send_data_tmp == NULL || transaction->send_data_pos >= rrr_nullsafe_str_len(transaction->send_data_tmp)) {
 		*done = 1;
 		goto out;
 	}
 
-	rrr_length bytes_to_send = transaction->send_data_tmp->len;
+	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_data_tmp);
 	if (bytes_to_send > buf_size) {
 		bytes_to_send = buf_size;
 	}
 
 	RRR_DBG_3("http2 source %" PRIrrrl "/%" PRIrrrl " bytes to send\n",
-			transaction->send_data_tmp->len - transaction->send_data_pos, transaction->send_data_tmp->len);
+			rrr_nullsafe_str_len(transaction->send_data_tmp) - transaction->send_data_pos, rrr_nullsafe_str_len(transaction->send_data_tmp));
 
-	memcpy(buf, transaction->send_data_tmp->str, bytes_to_send);
+	if ((ret = rrr_nullsafe_str_with_raw_truncated_do (
+			transaction->send_data_tmp,
+			transaction->send_data_pos,
+			bytes_to_send,
+			__rrr_http_application_http2_data_source_truncated_callback,
+			buf
+	)) != 0) {
+		goto out;
+	}
+
 	transaction->send_data_pos += bytes_to_send;
 	*written_bytes = bytes_to_send;
 
 	// Saves an extra call to this function
-	if (transaction->send_data_pos >= transaction->send_data_tmp->len) {
+	if (transaction->send_data_pos >= rrr_nullsafe_str_len(transaction->send_data_tmp)) {
 		RRR_DBG_3("http2 source complete\n", bytes_to_send);
 		*done = 1;
 	}
@@ -533,6 +589,19 @@ int rrr_http_application_http2_new (
 		return ret;
 }
 
+static char *__rrr_http_header_parse_base64_value_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	size_t *result_len = arg;
+	return rrr_base64_decode (
+			str,
+			len,
+			result_len
+	);
+}
+
 static int __rrr_http_application_http2_upgrade_postprocess (
 		struct rrr_http_application_http2 *app,
 		struct rrr_http_transaction *transaction
@@ -548,7 +617,15 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	}
 
 	size_t orig_http2_settings_length = 0;
-	orig_http2_settings_tmp = (char *) rrr_base64url_decode(orig_http2_settings->value->str, orig_http2_settings->value->len, &orig_http2_settings_length);
+	if ((orig_http2_settings_tmp = rrr_nullsafe_str_with_raw_do_const_return_str (
+			orig_http2_settings->value,
+			__rrr_http_header_parse_base64_value_callback,
+			&orig_http2_settings_length
+	)) == NULL) {
+		RRR_MSG_0("Base64 decoding failed for HTTP2-Settings field\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
 
 	if ((ret = rrr_http2_session_upgrade_postprocess (
 			app->http2_session,

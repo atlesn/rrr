@@ -277,34 +277,51 @@ static int __rrr_http_client_parse_config (
 	return ret;
 }
 
+static int __rrr_http_client_final_write_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	ssize_t *bytes = arg;
+	*bytes = write (STDOUT_FILENO, str, len);
+	return 0;
+}
+
 static int __rrr_http_client_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	if (response_data->len > 0) {
-		http_client_data->final_callback_count++;
-	}
-
 	(void)(transaction);
 
 	int ret = 0;
 
-	rrr_length data_size = response_data->len;
 	rrr_length data_start = 0;
+	rrr_length data_size = rrr_nullsafe_str_len(response_data);
 
-	while (data_size > 0) {
-		ssize_t bytes;
+	if (data_size > 0) {
+		http_client_data->final_callback_count++;
 
-		bytes = write (STDOUT_FILENO, response_data->str + data_start, data_size);
-		if (bytes < 0) {
-			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		else {
-			data_start += bytes;
-			data_size -= bytes;
+		while (data_size > 0) {
+			ssize_t bytes = 0;
+
+			rrr_nullsafe_str_with_raw_truncated_do (
+					response_data,
+					data_start,
+					data_size,
+					__rrr_http_client_final_write_callback,
+					&bytes
+			);
+
+			if (bytes < 0) {
+				RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+			else {
+				data_start += bytes;
+				data_size -= bytes;
+			}
 		}
 	}
 
@@ -450,17 +467,29 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	return ret;
 }
 
+static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	(void)(arg);
+	write (STDOUT_FILENO, str, len);
+	return 0;
+}
+
 static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(is_binary);
-	(void)(payload);
-	(void)(payload_size);
 	(void)(unique_id);
 	(void)(http_client_data);
 
-	if (payload_size < INT_MAX) {
-		printf("Received response: %.*s\n", (int) payload_size, payload);
+	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));
+
+	if (is_binary) {
+		printf ("- (binary data) -\n");
+	}
+	else {
+		rrr_nullsafe_str_with_raw_do_const(payload, __rrr_http_client_receive_websocket_frame_nullsafe_callback, NULL);
 	}
 
 	return 0;

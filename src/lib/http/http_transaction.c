@@ -221,68 +221,55 @@ int rrr_http_transaction_endpoint_path_get (
 	return ret;
 }
 
+static int __rrr_http_transaction_endpoint_with_query_string_create_urlencoded_form_data_callback (
+		struct rrr_nullsafe_str **target,
+		void *arg
+) {
+	struct rrr_http_field_collection *fields = arg;
+	return rrr_http_field_collection_to_urlencoded_form_data(target, fields);
+}
+
 int rrr_http_transaction_endpoint_with_query_string_create (
-		char **new_endpoint,
+		struct rrr_nullsafe_str **target,
 		struct rrr_http_transaction *transaction
 ) {
-	*new_endpoint = NULL;
-
 	int ret = 0;
 
-	char *uri_tmp = NULL;
+	*target = NULL;
 
-	rrr_length extra_uri_size = 0;
-	char *extra_uri_tmp = NULL;
+	struct rrr_nullsafe_str *result = NULL;
 
-	if (transaction->method != RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) > 0) {
-		if ((uri_tmp = strdup(transaction->endpoint_str)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for new URI in rrr_http_transaction_endpoint_with_query_string_create\n");
-			ret = 1;
-			goto out;
-		}
-		goto out_save;
-	}
-
-	extra_uri_tmp = rrr_http_field_collection_to_urlencoded_form_data(&extra_uri_size, &transaction->request_part->fields);
-
-	const char *extra_uri_separator;
-	if (strchr(transaction->endpoint_str, '?') != NULL) {
-		// Append to existing ?-query string in GET URI
-		extra_uri_separator = "&";
-	}
-	else {
-		extra_uri_separator = "?";
-	}
-
-	rrr_biglength uri_orig_len = strlen(transaction->endpoint_str);
-	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_application_http1_request_send");
-
-	if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
-		RRR_MSG_0("Could not allocate memory for new URI in rrr_http_transaction_endpoint_with_query_string_create\n");
-		ret = 1;
+	if ((rrr_nullsafe_str_new_or_replace_empty(&result)) != 0) {
 		goto out;
 	}
 
-	char *wpos = uri_tmp;
+	if ((ret = rrr_nullsafe_str_append_raw(result, transaction->endpoint_str, strlen(transaction->endpoint_str))) != 0) {
+		goto out;
+	}
 
-	memcpy(wpos, transaction->endpoint_str, uri_orig_len);
-	wpos += uri_orig_len;
+	if (transaction->method != RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) == 0) {
+		goto out_save;
+	}
 
-	*wpos = *extra_uri_separator;
-	wpos++;
+	const char extra_uri_separator = (strchr(transaction->endpoint_str, '?') ? '&' : '?');
+	if ((ret = rrr_nullsafe_str_append_raw(result, &extra_uri_separator, 1)) != 0) {
+		goto out;
+	}
 
-	memcpy(wpos, extra_uri_tmp, extra_uri_size);
-	wpos += extra_uri_size;
-
-	*wpos = '\0';
+	if ((ret = rrr_nullsafe_str_append_with_creator (
+			result,
+			__rrr_http_transaction_endpoint_with_query_string_create_urlencoded_form_data_callback,
+			&transaction->request_part->fields
+	)) != 0) {
+		goto out;
+	}
 
 	out_save:
-	*new_endpoint = uri_tmp;
-	uri_tmp = NULL;
+	*target = result;
+	result = NULL;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(uri_tmp);
-	RRR_FREE_IF_NOT_NULL(extra_uri_tmp);
+	rrr_nullsafe_str_destroy_if_not_null(&result);
 	return ret;
 }
 
@@ -290,7 +277,7 @@ int __rrr_http_transaction_form_data_make_if_needed_chunk_callback (
 		RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS
 ) {
 	struct rrr_http_transaction *transaction = arg;
-	return rrr_nullsafe_str_append(transaction->send_data_tmp, data, data_size);
+	return rrr_nullsafe_str_append(transaction->send_data_tmp, str);
 }
 
 int rrr_http_transaction_form_data_generate_if_needed (
@@ -306,7 +293,7 @@ int rrr_http_transaction_form_data_generate_if_needed (
 	}
 
 	transaction->send_data_pos = 0;
-	if ((ret = rrr_nullsafe_str_new_or_replace(&transaction->send_data_tmp, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&transaction->send_data_tmp, NULL, 0)) != 0) {
 		goto out;
 	}
 

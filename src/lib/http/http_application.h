@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	void **data, ssize_t *data_len, int *is_binary, void *arg
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS \
-	const char *payload, uint64_t payload_size, int is_binary, rrr_http_unique_id unique_id, void *arg
+	const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS		\
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
@@ -62,6 +62,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
+struct rrr_nullsafe_str;
 
 void rrr_http_application_destroy_if_not_null (
 		struct rrr_http_application **app

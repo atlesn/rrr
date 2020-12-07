@@ -53,7 +53,7 @@ void rrr_websocket_state_set_client_mode (
 void rrr_websocket_state_clear_receive (
 		struct rrr_websocket_state *ws_state
 ) {
-	RRR_FREE_IF_NOT_NULL(ws_state->receive_state.fragment_buffer);
+	rrr_nullsafe_str_destroy_if_not_null(&ws_state->receive_state.fragment_buffer_nullsafe);
 	memset(&ws_state->receive_state, '\0', sizeof(ws_state->receive_state));
 }
 
@@ -372,15 +372,14 @@ int __rrr_websocket_get_target_size (
 
 int __rrr_websocket_receive_callback_final_step (
 		struct rrr_websocket_state *ws_state,
-		const char *payload,
-		uint64_t payload_size,
+		const struct rrr_nullsafe_str *payload,
 		int (*final_callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
 
-	RRR_DBG_3("Websocket receive frame type %u size %" PRIu64 "\n",
-			ws_state->last_receive_opcode, payload_size);
+	RRR_DBG_3("Websocket receive frame type %u size %" PRIrrr_nullsafe_len "\n",
+			ws_state->last_receive_opcode, rrr_nullsafe_str_len(payload));
 
 	// last_receive time is updated in get_target_size function
 
@@ -403,7 +402,6 @@ int __rrr_websocket_receive_callback_final_step (
 			ret = final_callback (
 					ws_state->last_receive_opcode,
 					payload,
-					payload_size,
 					final_callback_arg
 			);
 			break;
@@ -413,14 +411,27 @@ int __rrr_websocket_receive_callback_final_step (
 	return ret;
 }
 
-int __rrr_websocket_receive_callback_fragmentation_step (
-		struct rrr_websocket_state *ws_state,
+static int __rrr_websocket_receive_callback_fragmentation_step_nullsafe_callback (
+		const struct rrr_nullsafe_str *payload,
+		void *arg
+) {
+	struct rrr_websocket_callback_data *callback_data = arg;
+	return __rrr_websocket_receive_callback_final_step (
+			callback_data->ws_state,
+			payload,
+			callback_data->callback,
+			callback_data->callback_arg
+	);
+}
+
+static int __rrr_websocket_receive_callback_fragmentation_step (
+		struct rrr_websocket_callback_data *callback_data,
 		uint8_t fin,
 		char *payload,
-		ssize_t payload_size,
-		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *callback_arg
+		ssize_t payload_size
 ) {
+	struct rrr_websocket_state *ws_state = callback_data->ws_state;
+
 	int ret = 0;
 
 	if (!ws_state->last_receive_opcode) {
@@ -429,52 +440,39 @@ int __rrr_websocket_receive_callback_fragmentation_step (
 		goto out;
 	}
 
-	const char *payload_to_callback;
-	ssize_t payload_size_to_callback;
-
 	// Shortcut for single frames
-	if (ws_state->receive_state.fragment_buffer == NULL && fin) {
-		payload_to_callback = payload;
-		payload_size_to_callback = payload_size;
-		goto out_callback;
+	if (ws_state->receive_state.fragment_buffer_nullsafe == NULL && fin) {
+		ret = rrr_nullsafe_str_with_tmp_str_do (
+				payload,
+				payload_size,
+				__rrr_websocket_receive_callback_fragmentation_step_nullsafe_callback,
+				callback_data
+		);
+		goto out;
 	}
 
-	uint64_t new_fragment_size = ws_state->receive_state.fragment_buffer_size + payload_size;
-	if (new_fragment_size < ws_state->receive_state.fragment_buffer_size) {
-		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large\n");
+	if (ws_state->receive_state.fragment_buffer_nullsafe == NULL) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_empty(&ws_state->receive_state.fragment_buffer_nullsafe)) != 0) {
+			goto out;
+		}
+	}
+
+	if ((ret = rrr_nullsafe_str_append_raw(ws_state->receive_state.fragment_buffer_nullsafe, payload, payload_size)) != 0) {
+		RRR_MSG_0("Fragment size overflow for websocket connection, total size of fragments too large or allocation failure, return was %i\n", ret);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	{
-		char *buf_new;
-		if ((buf_new = realloc (ws_state->receive_state.fragment_buffer, new_fragment_size)) == NULL) {
-			RRR_MSG_0("Allocation of %" PRIu64 " bytes failed while processing websocket fragments\n", new_fragment_size);
-			ret = RRR_READ_SOFT_ERROR; // Do not make hard error, the client may have caused this error
-			goto out;
-		}
-		ws_state->receive_state.fragment_buffer = buf_new;
-	}
-
-	memcpy(ws_state->receive_state.fragment_buffer + ws_state->receive_state.fragment_buffer_size, payload, payload_size);
-	ws_state->receive_state.fragment_buffer_size = new_fragment_size;
-
 	if (fin) {
-		payload_to_callback = ws_state->receive_state.fragment_buffer;
-		payload_size_to_callback = ws_state->receive_state.fragment_buffer_size;
-		goto out_callback;
+		ret = rrr_nullsafe_str_with_str_do (
+				ws_state->receive_state.fragment_buffer_nullsafe,
+				__rrr_websocket_receive_callback_fragmentation_step_nullsafe_callback,
+				callback_data
+		);
+		goto out;
 	}
 
 	goto out_no_clear;
-	out_callback:
-		// Remember to set callback data prior to goto out_callback
-		ret = __rrr_websocket_receive_callback_final_step (
-				ws_state,
-				payload_to_callback,
-				payload_size_to_callback,
-				callback,
-				callback_arg
-		);
 	out:
 		rrr_websocket_state_clear_receive(ws_state);
 	out_no_clear:
@@ -540,12 +538,10 @@ int __rrr_websocket_receive_callback_interpret_step (
 	}
 
 	ret = __rrr_websocket_receive_callback_fragmentation_step (
-			callback_data->ws_state,
+			callback_data,
 			fin,
 			(char *) payload,
-			payload_len,
-			callback_data->callback,
-			callback_data->callback_arg
+			payload_len
 	);
 
 	out:
