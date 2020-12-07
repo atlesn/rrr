@@ -230,6 +230,7 @@ int rrr_net_transport_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 );
+void rrr_net_transport_maintenance (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);

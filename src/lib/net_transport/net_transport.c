@@ -315,7 +315,7 @@ static void __rrr_net_transport_handle_close_tag_list_process_and_clear_locked (
 	RRR_LL_DESTROY(&collection->close_tags, struct rrr_net_transport_handle_close_tag_node, __rrr_net_transport_handle_close_tag_node_process_and_destroy(transport, node));
 }
 
-static void rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
+void rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	__rrr_net_transport_handle_close_tag_list_process_and_clear_locked(transport);
@@ -428,7 +428,7 @@ void rrr_net_transport_ctx_handle_close_while_locked (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	if (did_destroy != 1) {
-		RRR_BUG("Could not find transport handle %i in rrr_net_transport_close\n", handle->handle);
+		RRR_BUG("Could not find transport handle %i in rrr_net_transport_ctx_handle_close_while_locked\n", handle->handle);
 	}
 }
 

@@ -1034,7 +1034,8 @@ int rrr_http_client_tick (
 			targets,
 			0;
 			rrr_http_client_terminate_if_open(transport_keepalive, node->keepalive_handle);
-			rrr_http_client_target_destroy_and_close(node, transport_keepalive)
+			rrr_http_client_target_destroy_and_close(node, transport_keepalive);
+			rrr_net_transport_maintenance (transport_keepalive);
 	);
 
 	if (ret != 0) {

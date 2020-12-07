@@ -34,9 +34,10 @@ void rrr_http_client_target_destroy_and_close (
 		struct rrr_net_transport *transport_or_null
 ) {
 	RRR_FREE_IF_NOT_NULL(target->server);
-/*	if (transport_or_null != NULL && target->keepalive_handle != 0) {
+	if (transport_or_null != NULL && target->keepalive_handle != 0) {
+		//rrr_net_transport_handle_close_tag_list_push(transport_or_null, target->keepalive_handle);
 		rrr_net_transport_handle_close(transport_or_null, target->keepalive_handle);
-	}*/
+	}
 	free(target);
 }
 
