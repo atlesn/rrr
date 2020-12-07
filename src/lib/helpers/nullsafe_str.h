@@ -135,11 +135,6 @@ int rrr_nullsafe_str_begins_with (
 		const struct rrr_nullsafe_str *str,
 		const struct rrr_nullsafe_str *substr
 );
-int rrr_nullsafe_str_begins_with_raw (
-		const struct rrr_nullsafe_str *str,
-		const void *substr,
-		rrr_nullsafe_len len
-);
 int rrr_nullsafe_str_dup (
 		struct rrr_nullsafe_str **target,
 		const struct rrr_nullsafe_str *source

@@ -403,18 +403,6 @@ int rrr_nullsafe_str_begins_with (
 	return (memcmp (str->str, substr->str, substr->len) == 0);
 }
 
-int rrr_nullsafe_str_begins_with_raw (
-		const struct rrr_nullsafe_str *str,
-		const void *substr,
-		rrr_nullsafe_len len
-) {
-	struct rrr_nullsafe_str tmp = {
-			(void *) substr, // Cast away const OK
-			len
-	};
-	return rrr_nullsafe_str_begins_with(str, &tmp);
-}
-
 int rrr_nullsafe_str_dup (
 		struct rrr_nullsafe_str **target,
 		const struct rrr_nullsafe_str *source
