@@ -50,7 +50,7 @@ void rrr_nullsafe_str_destroy_if_not_null (
 }
 
 void rrr_nullsafe_str_destroy_if_not_null_void (
-	void *str_dbl_ptr
+		void *str_dbl_ptr
 ) {
 	struct rrr_nullsafe_str **str = str_dbl_ptr;
 	rrr_nullsafe_str_destroy_if_not_null(str);
@@ -66,9 +66,9 @@ void rrr_nullsafe_str_move (
 }
 
 int rrr_nullsafe_str_new_or_replace_raw (
-	struct rrr_nullsafe_str **result,
-	const void *str,
-	rrr_nullsafe_len len
+		struct rrr_nullsafe_str **result,
+		const void *str,
+		rrr_nullsafe_len len
 ) {
 	int ret = 0;
 
@@ -115,14 +115,14 @@ int rrr_nullsafe_str_new_or_replace_raw (
 }
 
 int rrr_nullsafe_str_new_or_replace (
-	struct rrr_nullsafe_str **result,
-	const struct rrr_nullsafe_str *source
+		struct rrr_nullsafe_str **result,
+		const struct rrr_nullsafe_str *source
 ) {
 	return rrr_nullsafe_str_new_or_replace_raw(result, source->str, source->len);
 }
 
 int rrr_nullsafe_str_new_or_replace_empty (
-	struct rrr_nullsafe_str **result
+		struct rrr_nullsafe_str **result
 ) {
 	return rrr_nullsafe_str_new_or_replace_raw(result, NULL, 0);
 }
@@ -276,9 +276,9 @@ int rrr_nullsafe_str_prepend_asprintf (
 }
 
 void rrr_nullsafe_str_set_allocated (
-	struct rrr_nullsafe_str *nullsafe,
-	void **ptr,
-	rrr_nullsafe_len len
+		struct rrr_nullsafe_str *nullsafe,
+		void **ptr,
+		rrr_nullsafe_len len
 ) {
 	if (nullsafe == NULL) {
 		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set_allocated");
@@ -290,9 +290,9 @@ void rrr_nullsafe_str_set_allocated (
 }
 
 int rrr_nullsafe_str_set (
-	struct rrr_nullsafe_str *nullsafe,
-	const void *src,
-	rrr_nullsafe_len len
+		struct rrr_nullsafe_str *nullsafe,
+		const void *src,
+		rrr_nullsafe_len len
 ) {
 	if (nullsafe == NULL) {
 		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set_allocated");
@@ -312,10 +312,10 @@ int rrr_nullsafe_str_set (
 }
 
 int rrr_nullsafe_str_chr (
-	const struct rrr_nullsafe_str *nullsafe,
-	char c,
-	int (*callback)(const void *start, size_t len_remaining, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe,
+		char c,
+		int (*callback)(const void *start, size_t len_remaining, void *arg),
+		void *callback_arg
 ) {
 	if (nullsafe == NULL) {
 		return 0;
@@ -332,16 +332,16 @@ int rrr_nullsafe_str_chr (
 }
 
 int rrr_nullsafe_str_str (
-	const struct rrr_nullsafe_str *haystack,
-	const struct rrr_nullsafe_str *needle,
-	int (*callback)(
-			const struct rrr_nullsafe_str *haystack_orig,
-			const struct rrr_nullsafe_str *needle_orig,
-			const struct rrr_nullsafe_str *pos_at_needle,
-			const struct rrr_nullsafe_str *pos_after_needle,
-			void *arg
-	),
-	void *callback_arg
+		const struct rrr_nullsafe_str *haystack,
+		const struct rrr_nullsafe_str *needle,
+		int (*callback)(
+				const struct rrr_nullsafe_str *haystack_orig,
+				const struct rrr_nullsafe_str *needle_orig,
+				const struct rrr_nullsafe_str *pos_at_needle,
+				const struct rrr_nullsafe_str *pos_after_needle,
+				void *arg
+		),
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -374,17 +374,17 @@ int rrr_nullsafe_str_str (
 }
 
 int rrr_nullsafe_str_str_raw (
-	const void *haystack_str,
-	rrr_nullsafe_len haystack_len,
-	const struct rrr_nullsafe_str *needle,
-	int (*callback)(
-			const struct rrr_nullsafe_str *haystack_orig,
-			const struct rrr_nullsafe_str *needle_orig,
-			const struct rrr_nullsafe_str *pos_at_needle,
-			const struct rrr_nullsafe_str *pos_after_needle,
-			void *arg
-	),
-	void *callback_arg
+		const void *haystack_str,
+		rrr_nullsafe_len haystack_len,
+		const struct rrr_nullsafe_str *needle,
+		int (*callback)(
+				const struct rrr_nullsafe_str *haystack_orig,
+				const struct rrr_nullsafe_str *needle_orig,
+				const struct rrr_nullsafe_str *pos_at_needle,
+				const struct rrr_nullsafe_str *pos_after_needle,
+				void *arg
+		),
+		void *callback_arg
 ) {
 	const struct rrr_nullsafe_str haystack_tmp = {
 			(void *) haystack_str, // Cast away const OK
@@ -404,9 +404,9 @@ int rrr_nullsafe_str_begins_with (
 }
 
 int rrr_nullsafe_str_begins_with_raw (
-	const struct rrr_nullsafe_str *str,
-	const void *substr,
-	rrr_nullsafe_len len
+		const struct rrr_nullsafe_str *str,
+		const void *substr,
+		rrr_nullsafe_len len
 ) {
 	struct rrr_nullsafe_str tmp = {
 			(void *) substr, // Cast away const OK
@@ -416,8 +416,8 @@ int rrr_nullsafe_str_begins_with_raw (
 }
 
 int rrr_nullsafe_str_dup (
-	struct rrr_nullsafe_str **target,
-	const struct rrr_nullsafe_str *source
+		struct rrr_nullsafe_str **target,
+		const struct rrr_nullsafe_str *source
 ) {
 	if (source == NULL) {
 		return 1;
@@ -429,13 +429,13 @@ int rrr_nullsafe_str_dup (
 }
 
 rrr_nullsafe_len rrr_nullsafe_str_len (
-	const struct rrr_nullsafe_str *nullsafe
+		const struct rrr_nullsafe_str *nullsafe
 ) {
 	return (nullsafe == NULL ? 0 : nullsafe->len);
 }
 
 void rrr_nullsafe_str_tolower (
-	struct rrr_nullsafe_str *nullsafe
+		struct rrr_nullsafe_str *nullsafe
 ) {
 	if (nullsafe == NULL) {
 		return;
@@ -447,14 +447,14 @@ void rrr_nullsafe_str_tolower (
 }
 
 int rrr_nullsafe_str_isset (
-	const struct rrr_nullsafe_str *nullsafe
+		const struct rrr_nullsafe_str *nullsafe
 ) {
 	return (nullsafe != NULL && nullsafe->len != 0);
 }
 
 int rrr_nullsafe_str_cmpto_case (
-	const struct rrr_nullsafe_str *nullsafe,
-	const char *str
+		const struct rrr_nullsafe_str *nullsafe,
+		const char *str
 ) {
 	if (nullsafe == NULL) {
 		return 1;
@@ -502,10 +502,10 @@ int rrr_nullsafe_str_cmpto (
 }
 
 void rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok (
-	char *buf,
-	rrr_nullsafe_len buf_size,
-	const char *str,
-	rrr_nullsafe_len len
+		char *buf,
+		rrr_nullsafe_len buf_size,
+		const char *str,
+		rrr_nullsafe_len len
 ) {
 	if (len == 0) {
 		*buf = '\0';
@@ -526,9 +526,9 @@ void rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok (
 }
 
 void rrr_nullsafe_str_output_strip_null_append_null_trim (
-	const struct rrr_nullsafe_str *nullsafe,
-	char *buf,
-	rrr_nullsafe_len buf_size
+		const struct rrr_nullsafe_str *nullsafe,
+		char *buf,
+		rrr_nullsafe_len buf_size
 ) {
 	if (nullsafe == NULL) {
 		*buf = '\0';
@@ -539,10 +539,10 @@ void rrr_nullsafe_str_output_strip_null_append_null_trim (
 }
 
 void rrr_nullsafe_str_copyto (
-	rrr_nullsafe_len *written_size,
-	void *target,
-	rrr_nullsafe_len target_size,
-	const struct rrr_nullsafe_str *nullsafe
+		rrr_nullsafe_len *written_size,
+		void *target,
+		rrr_nullsafe_len target_size,
+		const struct rrr_nullsafe_str *nullsafe
 ) {
 	*written_size = 0;
 	if (target_size == 0 || nullsafe == NULL || nullsafe->len == 0) {
@@ -558,18 +558,18 @@ void rrr_nullsafe_str_copyto (
 }
 
 int rrr_nullsafe_str_with_str_do (
-	const struct rrr_nullsafe_str *str,
-	int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *str,
+		int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
+		void *callback_arg
 ) {
 	return callback(str, callback_arg);
 }
 
 int rrr_nullsafe_str_with_tmp_str_do (
-	const void *str,
-	rrr_nullsafe_len len,
-	int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
-	void *callback_arg
+		const void *str,
+		rrr_nullsafe_len len,
+		int (*callback)(const struct rrr_nullsafe_str *str, void *arg),
+		void *callback_arg
 ) {
 	const struct rrr_nullsafe_str tmp = {
 			(void *) str, // Cast away const OK
@@ -579,9 +579,9 @@ int rrr_nullsafe_str_with_tmp_str_do (
 }
 
 int rrr_nullsafe_str_with_raw_do (
-	struct rrr_nullsafe_str *nullsafe,
-	int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
-	void *callback_arg
+		struct rrr_nullsafe_str *nullsafe,
+		int (*callback)(rrr_nullsafe_len *len, void *str, void *arg),
+		void *callback_arg
 ) {
 	char str_dummy[] = "";
 	void *str_to_use = str_dummy;
@@ -644,9 +644,9 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 	}} while (0)
 
 int rrr_nullsafe_str_with_raw_do_const (
-	const struct rrr_nullsafe_str *nullsafe_a,
-	int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe_a,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
 ) {
 	static const char *str_static = "";
 
@@ -656,10 +656,10 @@ int rrr_nullsafe_str_with_raw_do_const (
 }
 
 int rrr_nullsafe_str_with_raw_do_double_const (
-	const struct rrr_nullsafe_str *nullsafe_a,
-	const struct rrr_nullsafe_str *nullsafe_b,
-	int (*callback)(const void *str_a, rrr_nullsafe_len len_a, const void *str_b, rrr_nullsafe_len len_b, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe_a,
+		const struct rrr_nullsafe_str *nullsafe_b,
+		int (*callback)(const void *str_a, rrr_nullsafe_len len_a, const void *str_b, rrr_nullsafe_len len_b, void *arg),
+		void *callback_arg
 ) {
 	static const char *str_static = "";
 
@@ -670,9 +670,9 @@ int rrr_nullsafe_str_with_raw_do_double_const (
 }
 
 char *rrr_nullsafe_str_with_raw_do_const_return_str (
-	const struct rrr_nullsafe_str *nullsafe,
-	char *(*callback)(const void *str, rrr_nullsafe_len len, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe,
+		char *(*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
 ) {
 	static const char *str_static = "";
 	const void *str_to_use = str_static;
@@ -687,11 +687,11 @@ char *rrr_nullsafe_str_with_raw_do_const_return_str (
 }
 
 int rrr_nullsafe_str_with_raw_truncated_do (
-	const struct rrr_nullsafe_str *nullsafe,
-	rrr_nullsafe_len pos,
-	rrr_nullsafe_len len,
-	int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe,
+		rrr_nullsafe_len pos,
+		rrr_nullsafe_len len,
+		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
+		void *callback_arg
 ) {
 	if (pos + len > nullsafe->len) {
 		RRR_BUG("BUG: pos+len exceeds available length in rrr_nullsafe_str_with_raw_truncated_do\n");
@@ -701,9 +701,9 @@ int rrr_nullsafe_str_with_raw_truncated_do (
 }
 
 int rrr_nullsafe_str_foreach_byte_do (
-	const struct rrr_nullsafe_str *nullsafe,
-	int (*callback)(char byte, void *arg),
-	void *callback_arg
+		const struct rrr_nullsafe_str *nullsafe,
+		int (*callback)(char byte, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
