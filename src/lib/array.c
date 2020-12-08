@@ -715,39 +715,36 @@ int rrr_array_new_message_from_collection (
 	return ret;
 }
 
-int rrr_array_message_append_to_collection (
-		struct rrr_array *target,
-		const struct rrr_msg_msg *message_orig
+int rrr_array_message_iterate (
+		const struct rrr_msg_msg *message_orig,
+		int (*callback)(
+				const char *data_start,
+				const struct rrr_type_definition *type,
+				rrr_type_flags flags,
+				rrr_length tag_length,
+				rrr_length total_length,
+				rrr_length element_count,
+				void *arg
+		),
+		void *callback_arg
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
-		RRR_BUG("Message was not array in rrr_array_message_append_to_collection\n");
+		RRR_BUG("Message was not array in rrr_array_message_iterate\n");
 	}
+
+	int ret = 0;
 
 	// Modules should also check for array version to make sure they support any recent changes.
 	uint16_t version = message_orig->version;
 	if (version != RRR_ARRAY_VERSION) {
-		RRR_MSG_0("Array message version mismatch in rrr_array_message_to_collection. Need V%i but got V%u.\n",
+		RRR_MSG_0("Array message version mismatch in rrr_array_message_iterate. Need V%i but got V%u.\n",
 				RRR_ARRAY_VERSION, message_orig->version);
-		goto out_free_data;
+		ret = 1;
+		goto out;
 	}
-	target->version = version;
 
 	const char *pos = MSG_DATA_PTR(message_orig);
 	const char *end = MSG_DATA_PTR(message_orig) + MSG_DATA_LENGTH(message_orig);
-
-	if (RRR_DEBUGLEVEL_3) {
-		/* TODO : This needs to be put in a buffer then written out
-		RRR_DBG("rrr_array_message_to_collection input (data of message only): 0x");
-		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(array); i++) {
-			char c = MSG_DATA_PTR(array)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");
-		*/
-	}
 
 	int i = 0;
 	while (pos < end) {
@@ -756,7 +753,8 @@ int rrr_array_message_append_to_collection (
 
 		if (pos > end) {
 			RRR_MSG_0("Data type with index %i was too short in array\n", i);
-			goto out_free_data;
+			ret = 1;
+			goto out;
 		}
 
 		rrr_type type = data_packed->type;
@@ -768,57 +766,117 @@ int rrr_array_message_append_to_collection (
 		if (pos + tag_length + total_length > end) {
 			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
 					type, i, total_length, end - pos);
-			goto out_free_data;
+			ret = 1;
+			goto out;
 		}
 
 		const struct rrr_type_definition *def = rrr_type_get_from_id(type);
 		if (def == NULL) {
 			RRR_MSG_0("Unknown type %u in type index %i of array message\n", type, i);
-			goto out_free_data;
+			ret = 1;
+			goto out;
 		}
 
 		if (def->unpack == NULL) {
 			RRR_MSG_0("Illegal type in array message %u/%s\n",
 					def->type, def->identifier);
-			goto out_free_data;
+			ret = 1;
+			goto out;
 		}
 
-		struct rrr_type_value *template = NULL;
-		if (rrr_type_value_new (
-				&template,
+		if ((ret = callback (
+				pos,
 				def,
 				flags,
 				tag_length,
-				pos,
 				total_length,
-				NULL,
 				elements,
-				NULL,
-				total_length
-		) != 0) {
-			RRR_MSG_0("Could not allocate value in rrr_array_message_to_collection\n");
-			goto out_free_data;
-		}
-		RRR_LL_APPEND(target,template);
-
-		pos += tag_length;
-
-		memcpy (template->data, pos, total_length);
-
-		if (template->definition->unpack(template) != 0) {
-			RRR_MSG_0("Error while converting endianess for type %u index %i of array message\n", type, i);
-			goto out_free_data;
+				callback_arg
+		)) != 0) {
+			goto out;
 		}
 
-		pos += total_length;
+		pos += tag_length + total_length;
 		i++;
 	}
 
-	return 0;
+	out:
+	return ret;
+}
 
-	out_free_data:
-		rrr_array_clear(target);
-		return 1;
+struct rrr_array_message_append_to_collection_callback_data {
+	struct rrr_array *target_tmp;
+};
+
+static int __rrr_array_message_append_to_collection_callback (
+		const char *data_start,
+		const struct rrr_type_definition *type,
+		rrr_type_flags flags,
+		rrr_length tag_length,
+		rrr_length total_length,
+		rrr_length element_count,
+		void *arg
+) {
+	struct rrr_array_message_append_to_collection_callback_data *callback_data = arg;
+	int ret = 0;
+
+	struct rrr_type_value *template = NULL;
+	if ((ret = rrr_type_value_new (
+			&template,
+			type,
+			flags,
+			tag_length,
+			data_start,
+			total_length,
+			NULL,
+			element_count,
+			NULL,
+			total_length
+	)) != 0) {
+		RRR_MSG_0("Could not allocate value in __rrr_array_message_append_to_collection_callbackn\n");
+		goto out;
+	}
+
+	// Append immediately to array to manage memory
+	RRR_LL_APPEND(callback_data->target_tmp, template);
+
+	memcpy (template->data, data_start + tag_length, total_length);
+
+	if (template->definition->unpack(template) != 0) {
+		RRR_MSG_0("Error while converting endianess for type %u index %i of array message\n", type, RRR_LL_COUNT(callback_data->target_tmp));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_array_message_append_to_collection (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *message_orig
+) {
+	int ret = 0;
+
+	struct rrr_array target_tmp = {0};
+
+	struct rrr_array_message_append_to_collection_callback_data callback_data = {
+			&target_tmp
+	};
+
+	if ((ret =  rrr_array_message_iterate (
+			message_orig,
+			__rrr_array_message_append_to_collection_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target, &target_tmp);
+
+	out:
+	rrr_array_clear(&target_tmp);
+	return ret;
 }
 
 int rrr_array_dump (
