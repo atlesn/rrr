@@ -65,7 +65,7 @@ struct rrr_http2_session;
 struct rrr_http2_callback_data {
 	struct rrr_net_transport_handle *handle;
 	// Callback may be NULL
-	int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS);
+	int (*callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS);
 	int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -921,7 +921,7 @@ int rrr_http2_data_submit_request (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
+		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),
 		int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
@@ -931,7 +931,7 @@ int rrr_http2_transport_ctx_tick (
 	// new() function
 	struct rrr_http2_callback_data callback_data = {
 			handle,
-			callback,
+			data_receive_callback,
 			data_source_callback,
 			callback_arg
 	};

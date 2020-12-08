@@ -247,8 +247,8 @@ struct rrr_http_application_http2_callback_data {
 	void *callback_arg;
 };
 
-static int __rrr_http_application_http2_callback (
-		RRR_HTTP2_DATA_CALLBACK_ARGS
+static int __rrr_http_application_http2_data_receive_callback (
+		RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
 
@@ -488,7 +488,7 @@ static int __rrr_http_application_http2_tick (
 	if ((ret = rrr_http2_transport_ctx_tick (
 			http2->http2_session,
 			handle,
-			__rrr_http_application_http2_callback,
+			__rrr_http_application_http2_data_receive_callback,
 			__rrr_http_application_http2_data_source_callback,
 			&callback_data
 	)) != 0) {
@@ -589,7 +589,7 @@ int rrr_http_application_http2_new (
 		return ret;
 }
 
-static char *__rrr_http_header_parse_base64_value_callback (
+static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback (
 		const void *str,
 		rrr_length len,
 		void *arg
@@ -619,7 +619,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	size_t orig_http2_settings_length = 0;
 	if ((orig_http2_settings_tmp = rrr_nullsafe_str_with_raw_do_const_return_str (
 			orig_http2_settings->value,
-			__rrr_http_header_parse_base64_value_callback,
+			__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback,
 			&orig_http2_settings_length
 	)) == NULL) {
 		RRR_MSG_0("Base64 decoding failed for HTTP2-Settings field\n");

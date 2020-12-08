@@ -386,7 +386,7 @@ static int __rrr_http_client_send_websocket_frame_final_callback (
 	return ret;
 }
 
-static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 
 	int ret = 0;

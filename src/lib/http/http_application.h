@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,			\
 	void *arg
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
+#define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
 	void **data, ssize_t *data_len, int *is_binary, void *arg
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS \
@@ -56,8 +56,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
 	void *arg
 
-#define RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
+#define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS	\
+	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
@@ -96,13 +96,13 @@ int rrr_http_application_transport_ctx_tick (
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
 		void *websocket_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		int (*get_response_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
-		int (*raw_callback)(RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS),
+		int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
 int rrr_http_application_alpn_protos_with_all_do (

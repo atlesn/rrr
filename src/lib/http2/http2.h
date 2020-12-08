@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_HARD_ERROR	RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE			RRR_READ_EOF
 
-#define RRR_HTTP2_DATA_CALLBACK_ARGS					\
+#define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS					\
 	struct rrr_http2_session *session,					\
 	struct rrr_http_header_field_collection *headers,	\
 	int32_t stream_id,									\
@@ -114,7 +114,7 @@ int rrr_http2_data_submit_request (
 int rrr_http2_transport_ctx_tick (
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(RRR_HTTP2_DATA_CALLBACK_ARGS),
+		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),
 		int (*data_source_callback)(RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS),
 		void *callback_arg
 );

@@ -52,11 +52,11 @@ int rrr_http_field_new_no_value (
 		struct rrr_http_field **target,
 		const struct rrr_nullsafe_str *nullsafe
 );
-int rrr_http_field_set_content_type (
+int rrr_http_field_content_type_set (
 		struct rrr_http_field *target,
 		const struct rrr_nullsafe_str *content_type
 );
-int rrr_http_field_set_value (
+int rrr_http_field_value_set (
 		struct rrr_http_field *target,
 		const char *value,
 		rrr_length value_length

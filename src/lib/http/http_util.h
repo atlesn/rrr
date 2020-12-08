@@ -62,13 +62,13 @@ int rrr_http_util_uri_encode (
 int rrr_http_util_unquote_string (
 		struct rrr_nullsafe_str *str
 );
-char *rrr_http_util_quote_header_value (
+char *rrr_http_util_header_value_quote (
 		const char *input,
 		rrr_length length,
 		char delimeter_start,
 		char delimeter_end
 );
-char *rrr_http_util_quote_header_value_nullsafe (
+char *rrr_http_util_header_value_quote_nullsafe (
 		const struct rrr_nullsafe_str *str,
 		char delimeter_start,
 		char delimeter_end

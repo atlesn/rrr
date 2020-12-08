@@ -701,7 +701,7 @@ struct httpclient_raw_callback_data {
 };
 
 static int httpclient_raw_callback (
-		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
 )  {
 	struct httpclient_data *httpclient_data = arg;
 

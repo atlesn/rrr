@@ -231,7 +231,7 @@ struct rrr_http_client_tick_callback_data {
 
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
-	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS);
+	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
 	void *get_response_callback_arg;
 	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *frame_callback_arg;
@@ -385,7 +385,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_http_session_transport_ctx_raw_request_send (
+		if ((ret = rrr_http_session_transport_ctx_request_raw_send (
 				handle,
 				callback_data->raw_request_data,
 				callback_data->raw_request_data_size
@@ -955,7 +955,7 @@ int rrr_http_client_tick (
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
 		void *redirect_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,

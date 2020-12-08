@@ -412,7 +412,7 @@ int rrr_http_util_unquote_string (
 }
 
 // TODO : Support RFC8187. This function is less forgiving than the standard.
-char *rrr_http_util_quote_header_value (
+char *rrr_http_util_header_value_quote (
 		const char *input,
 		rrr_length length,
 		char delimeter_start,
@@ -509,7 +509,7 @@ static char *__rrr_http_util_quote_header_value_nullsafe_callback (
 ) {
 	struct rrr_http_util_quote_header_value_nullsafe_callback_data *callback_data = arg;
 
-	return rrr_http_util_quote_header_value (
+	return rrr_http_util_header_value_quote (
 				str,
 				len,
 				callback_data->delimeter_start,
@@ -517,7 +517,7 @@ static char *__rrr_http_util_quote_header_value_nullsafe_callback (
 	);
 }
 
-char *rrr_http_util_quote_header_value_nullsafe (
+char *rrr_http_util_header_value_quote_nullsafe (
 		const struct rrr_nullsafe_str *str,
 		char delimeter_start,
 		char delimeter_end

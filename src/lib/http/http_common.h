@@ -154,7 +154,7 @@ extern const char *rrr_http_application_str_http2;
 typedef uint64_t rrr_http_unique_id;
 struct rrr_nullsafe_str;
 
-#define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS			\
+#define RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS			\
 	const struct rrr_nullsafe_str *data,					\
 	struct rrr_http_transaction *transaction,				\
 	rrr_http_unique_id unique_id,							\

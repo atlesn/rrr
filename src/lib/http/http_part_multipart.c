@@ -349,7 +349,7 @@ static int __rrr_http_part_multipart_field_make (
 	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
 
 	if (rrr_nullsafe_str_isset(node->name)) {
-		if ((name_buf = rrr_http_util_quote_header_value_nullsafe(node->name, '"', '"')) == NULL) {
+		if ((name_buf = rrr_http_util_header_value_quote_nullsafe(node->name, '"', '"')) == NULL) {
 			RRR_MSG_0("Could not quote field name_buf in __rrr_http_part_multipart_field_make\n");
 			ret = 1;
 			goto out;

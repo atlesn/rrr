@@ -205,7 +205,7 @@ static int __rrr_http_server_worker_receive_callback (
 }
 
 static int __rrr_http_server_worker_receive_raw_callback (
-		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -258,7 +258,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 }
 
 static int __rrr_http_server_worker_websocket_get_response_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 

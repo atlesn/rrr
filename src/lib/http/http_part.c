@@ -418,7 +418,7 @@ static int __rrr_http_part_query_string_parse (
 		goto increment;
 
 		store_value:
-			if (rrr_http_field_set_value(value_target, buf, buf_pos) != 0) {
+			if (rrr_http_field_value_set(value_target, buf, buf_pos) != 0) {
 				RRR_MSG_0("Could not set value in __rrr_http_part_query_string_parse\n");
 				ret = RRR_HTTP_PARSE_HARD_ERR;
 				goto out;
@@ -529,7 +529,7 @@ int rrr_http_part_post_and_query_fields_extract (
 			}
 
 			if (data_end - data_start > 0) {
-				if ((ret = rrr_http_field_set_value(field_tmp, data_start, data_end - data_start)) != 0) {
+				if ((ret = rrr_http_field_value_set(field_tmp, data_start, data_end - data_start)) != 0) {
 					RRR_MSG_0("Could not set value of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
 				}
@@ -537,7 +537,7 @@ int rrr_http_part_post_and_query_fields_extract (
 
 			const struct rrr_http_header_field *field_content_type = rrr_http_part_header_field_get(node, "content-type");
 			if (field_content_type != NULL && rrr_nullsafe_str_isset(field_content_type->value)) {
-				if ((ret = rrr_http_field_set_content_type (
+				if ((ret = rrr_http_field_content_type_set (
 						field_tmp,
 						field_content_type->value
 				)) != 0) {
