@@ -55,11 +55,15 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	string_builder->wpos = 0;
 }
 
-rrr_biglength rrr_string_builder_length (struct rrr_string_builder *string_builder) {
+const char *rrr_string_builder_buf (const struct rrr_string_builder *string_builder) {
+	return string_builder->buf;
+}
+
+rrr_biglength rrr_string_builder_length (const struct rrr_string_builder *string_builder) {
 	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
 }
 
-rrr_biglength rrr_string_builder_size (struct rrr_string_builder *string_builder) {
+rrr_biglength rrr_string_builder_size (const struct rrr_string_builder *string_builder) {
 	return (string_builder->size);
 }
 
@@ -107,6 +111,24 @@ int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_b
 	}
 
 	return 0;
+}
+
+
+int rrr_string_builder_append_from (struct rrr_string_builder *target, const struct rrr_string_builder *source) {
+	int ret = 0;
+
+	if (source->wpos == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_reserve(target, source->wpos)) != 0) {
+		goto out;
+	}
+
+	rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos);
+
+	out:
+	return ret;
 }
 
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str) {

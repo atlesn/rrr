@@ -398,6 +398,42 @@ the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
 .El
 .PP
+.SS exploder (P)
+The exploder takes individual values from array messages and creates individual messages for each value.
+.PP
+.Bl -tag -width -indent
+.It exploder_non_array_passthrough={yes|no}
+If set to 'yes' and a non-array message is received, the message is passed through without modification.
+If set to 'no' or left unset, non-array messages will be dropped.
+
+.It exploder_original_passthrough={yes|no}
+If set to 'yes', all original array messages are passed through.
+If set to 'no' or left unset, the original messages are dropped.
+
+.It exploder_preserve_timestamp={yes|no}
+If set to 'yes', the timestamp from the original message will be used in any new messages.
+If set to 'no' or left unset, the current time will be used for new messages.
+In any case, any messages generated from a single message will have the same timestamp and the timestamp of the original message will not be modified.
+
+.It exploder_preserve_topic={yes|no}
+If set to 'yes', any topic from the original message will be used when the topics for new messages are created.
+If set no 'no' or left unset, the topic will not be used.
+
+.It exploder_topic=MQTT-TOPIC
+Sets an optional static topic for new messages. If
+.B exploder_preserve_topic
+is 'yes', this topic specified will be appended to the original topic. No extra slashes will be added.
+
+.It exploder_topic_append_tag={yes|no}
+If set to yes, the tag of each value will be appended to topic of the generated messages.
+The prefix to which the tag is added depends upon the configuration of options
+.B exploder_preserve_topic
+and
+.B exploder_topic.
+If none of those options are use, the tag will become the whole topic.
+If set to 'no', the tag will not be appended to the message topic.
+
+.El
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by other instances.
 .PP

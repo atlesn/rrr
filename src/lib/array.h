@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "cmdlineparser/cmdline.h"
 #include "util/linked_list.h"
+#include "rrr_inttypes.h"
 
 #define RRR_ARRAY_VERSION 7
 
@@ -149,7 +150,7 @@ int rrr_array_new_message_from_collection (
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
-		ssize_t topic_length
+		rrr_u16 topic_length
 );
 int rrr_array_message_iterate (
 		const struct rrr_msg_msg *message_orig,
