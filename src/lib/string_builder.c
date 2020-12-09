@@ -38,9 +38,10 @@ void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_buil
 	}
 }
 
-void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
+static void __rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
 	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
 	string_builder->wpos += buf_size;
+	string_builder->buf[string_builder->wpos] = '\0';
 }
 
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {
@@ -125,10 +126,20 @@ int rrr_string_builder_append_from (struct rrr_string_builder *target, const str
 		goto out;
 	}
 
-	rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos);
+	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos + 1);
 
 	out:
 	return ret;
+}
+
+int rrr_string_builder_append_raw (struct rrr_string_builder *target, const char *str, rrr_biglength length) {
+	if (rrr_string_builder_reserve(target, length) != 0) {
+		return 1;
+	}
+
+	__rrr_string_builder_unchecked_append_raw(target, str, length);
+
+	return 0;
 }
 
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str) {

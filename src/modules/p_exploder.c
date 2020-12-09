@@ -179,10 +179,9 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (data->do_preserve_topic && MSG_TOPIC_LENGTH(message) > 0) {
-		if ((ret = rrr_string_builder_reserve(&topic_prefix, MSG_TOPIC_LENGTH(message))) != 0) {
+		if ((ret = rrr_string_builder_append_raw(&topic_prefix, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
 			goto out_drop;
 		}
-		rrr_string_builder_unchecked_append_raw(&topic_prefix, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
 	}
 
 	if (data->topic != NULL && *(data->topic) != '\0') {
