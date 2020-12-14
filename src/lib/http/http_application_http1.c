@@ -46,7 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../sha1/sha1.h"
 #include "../util/base64.h"
-#include "../http2/http2.h"
+#ifdef RRR_WITH_NGHTTP2
+#	include "../http2/http2.h"
+#endif
 
 struct rrr_http_application_http1 {
 	RRR_HTTP_APPLICATION_HEAD;
@@ -939,7 +941,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		}
 
 		// HTTP2 application will send the actual response during the next tick
-		goto out_no_response;
+		goto out;
 	}
 	else {
 #endif /* RRR_WITH_NGHTTP2 */
@@ -963,7 +965,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out;
 	}
 
-	out_no_response:
 	out:
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;

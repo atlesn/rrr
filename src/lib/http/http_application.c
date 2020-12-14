@@ -60,6 +60,8 @@ int rrr_http_application_new (
 	else if (type == RRR_HTTP_APPLICATION_HTTP2) {
 		return rrr_http_application_http2_new(target, is_server, NULL, 0);
 	}
+#else
+	(void)(is_server);
 #endif
 	RRR_BUG("BUG: Unknown application type %i to rrr_http_application_new\n", type);
 	return 1;

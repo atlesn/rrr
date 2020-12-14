@@ -663,12 +663,14 @@ static int __rrr_net_transport_ctx_send_blocking_nullsafe_callback (
 		rrr_length len,
 		void *arg
 ) {
+#if RRR_SLENGTH_MAX > SSIZE_MAX
 	if ((rrr_slength) len > (rrr_slength) SSIZE_MAX) {
 		RRR_MSG_0("Size too long in __rrr_net_transport_ctx_send_blocking_nullsafe_callback (%" PRIrrrl ">%lld)\n",
 				len,
 				(long long int) SSIZE_MAX
 		);
 	}
+#endif
 	struct rrr_net_transport_handle *handle = arg;
 	return rrr_net_transport_ctx_send_blocking(handle, str, len);
 }
