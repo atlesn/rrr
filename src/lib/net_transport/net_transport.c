@@ -1028,10 +1028,10 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
 	}
 	else if (ret_6) {
-		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succedded. Assuming IPv4-only stack.\n", port);
+		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succeeded. Assuming IPv4-only stack.\n", port);
 	}
 	else if (ret_4) {
-		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succedded. Assuming dual-stack.\n", port);
+		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succeeded. Assuming dual-stack.\n", port);
 	}
 
 	return ret;
