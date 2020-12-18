@@ -1,4 +1,4 @@
-.Dd 2020-11-28
+.Dd 2020-12-18
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1755,6 +1755,19 @@ If there is only one open file, all messages in this file will be processed in o
 a new one is opened.
 Defaults to and has a maximum value (if set) of 65536.
 May be set to 0 which means that there is no maximum number of open files.
+
+.It file_try_serial_input={yes|no}
+If set to yes, an attempt will be made to set serial port parameters on opened files. Defaults to no.
+
+.It file_serial_no_raw={yes|no}
+If set to yes, do not disable any features on the serial port. If set to no or left unset, XON/XOFF, parity, canonical reading etc. will be disabled.
+Note that other configuration options for the serial ports will override this option (features may be re-enabled).
+
+.It file_serial_bps=UNSIGNED INTEGER
+If set and a file is recognized as a serial device, set this speed (values may be 19200, 38400 etc.). If left unset, speed settings will be left untoched.
+
+.It file_serial_parity={even|odd|none}
+If set and set to 'even' or 'odd', parity will be set accordingly. If set to 'none', parity will be forced off. If left unset, parity settings will be left untouched.
 
 .It file_try_keyboard_input={yes|no} (LINUX/FREEBSD ONLY)
 If set to yes, and character devices are found in the directory,

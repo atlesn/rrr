@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
-
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
@@ -52,7 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/util/posix.h"
 #include "../lib/input/input.h"
+#include "../lib/serial/serial.h"
 
 #define RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE 4096
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
@@ -62,6 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
+#define RRR_FILE_F_IS_SERIAL (1<<1)
 
 #define RRR_FILE_STOP RRR_READ_EOF
 
@@ -95,6 +97,16 @@ struct file_data {
 	int do_try_keyboard_input;
 	int do_no_keyboard_hijack;
 	int do_unlink_on_close;
+	int do_try_serial_input;
+	int do_serial_no_raw;
+	int do_serial_parity_even;
+	int do_serial_parity_odd;
+	int do_serial_parity_none;
+
+	char *serial_parity;
+
+	int serial_bps_set;
+	rrr_setting_uint serial_bps;
 
 	int do_read_all_to_message_;
 	char *read_all_method;
@@ -206,6 +218,7 @@ static void file_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->directory);
 	RRR_FREE_IF_NOT_NULL(data->prefix);
 	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_FREE_IF_NOT_NULL(data->serial_parity);
 }
 
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
@@ -240,13 +253,17 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 	}
 
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message_, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_read_all_method", read_all_method);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_serial_input", do_try_serial_input, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_serial_no_raw", do_serial_no_raw, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_keyboard_hijack", do_no_keyboard_hijack, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_serial_bps", serial_bps, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_serial_parity", serial_parity);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
@@ -254,6 +271,35 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT);
 
 	/* Don't goto out in errors, check all possible errors first. */
+
+	if (data->serial_parity != 0) {
+		if (rrr_posix_strcasecmp(data->serial_parity, "even") == 0) {
+			data->do_serial_parity_even = 1;
+		}
+		else if (rrr_posix_strcasecmp(data->serial_parity, "odd") == 0) {
+			data->do_serial_parity_odd = 1;
+		}
+		else if (rrr_posix_strcasecmp(data->serial_parity, "none") == 0) {
+			data->do_serial_parity_none = 1;
+		}
+		else {
+			RRR_MSG_0("Invalid value '%s' for file_serial_parity in file instance %s, possible values are even, odd, none\n",
+					data->serial_parity, config->name);
+			ret = 1;
+		}
+	}
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("file_serial_bps")) {
+		// 0 value is allowed for serial_bps, we need a separate value to check
+		// if it was set or not
+		data->serial_bps_set = 1;
+
+		if (rrr_serial_speed_check(data->serial_bps) != 0) {
+			RRR_MSG_0("Invalid value '%llu' for file_serial_bps in file instance %s, possible values are 19200, 38400 etc.\n",
+					(unsigned long long) data->serial_bps, config->name);
+			ret = 1;
+		}
+	}
 
 	if (data->do_read_all_to_message_) {
 		data->read_method = FILE_READ_METHOD_ALL_SIMPLE;
@@ -405,6 +451,53 @@ static int file_probe_callback (
 			flags |= RRR_FILE_F_IS_KEYBOARD;
 			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as keyboard event device\n",
 					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+		}
+	}
+
+	if (data->do_try_serial_input && type == DT_CHR) {
+		int is_serial = 0;
+		rrr_serial_check(&is_serial, fd); // Ignore errors
+		if (is_serial) {
+			flags |= RRR_FILE_F_IS_SERIAL;
+			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as serial device\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+
+			if (!data->do_serial_no_raw) {
+				RRR_DBG_3("file instance %s setting raw mode for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+				if ((ret = rrr_serial_raw_set(fd)) != 0) {
+					RRR_MSG_0("File instance %s failed to set raw mode of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->serial_bps_set) {
+				RRR_DBG_3("file instance %s setting speed %llu for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), data->serial_bps, orig_path, resolved_path);
+				if ((ret = rrr_serial_speed_set(fd, data->serial_bps)) != 0) {
+					RRR_MSG_0("File instance %s failed to set speed of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->do_serial_parity_even || data->do_serial_parity_odd) {
+				RRR_DBG_3("file instance %s setting %s parity for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), (data->do_serial_parity_even ? "even" : "odd"), orig_path, resolved_path);
+				if ((ret = rrr_serial_parity_set(fd, data->do_serial_parity_odd)) != 0) {
+					RRR_MSG_0("File instance %s failed to set parity of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+			else if (data->do_serial_parity_none) {
+				if ((ret = rrr_serial_parity_unset(fd)) != 0) {
+					RRR_MSG_0("File instance %s failed to unset parity of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
 		}
 	}
 
