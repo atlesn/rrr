@@ -1757,7 +1757,7 @@ Defaults to and has a maximum value (if set) of 65536.
 May be set to 0 which means that there is no maximum number of open files.
 
 .It file_try_serial_input={yes|no}
-If set to yes, an attempt will be made to set serial port parameters on opened files. Defaults to no.
+If set to yes, an attempt will be made to set serial port parameters on opened files. If left unset or set to no, any serial configuration parameters will be ignored.
 
 .It file_serial_no_raw={yes|no}
 If set to yes, do not disable any features on the serial port. If set to no or left unset, XON/XOFF, parity, canonical reading etc. will be disabled.
