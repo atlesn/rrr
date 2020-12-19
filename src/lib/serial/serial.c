@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <termios.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -27,6 +26,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../util/macro_utils.h"
 #include "../rrr_strerror.h"
+
+// Allow speed > 38400 on BSD
+#ifdef __BSD_VISIBLE
+#	undef __BSD_VISIBLE
+#endif
+#define __BSD_VISIBLE 1
+#include <termios.h>
 
 int rrr_serial_check (int *is_serial, int fd) {
 	*is_serial = 0;
