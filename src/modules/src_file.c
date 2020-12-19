@@ -102,6 +102,8 @@ struct file_data {
 	int do_serial_parity_even;
 	int do_serial_parity_odd;
 	int do_serial_parity_none;
+	int do_serial_one_stop_bit;
+	int do_serial_two_stop_bits;
 
 	char *serial_parity;
 
@@ -258,6 +260,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_serial_input", do_try_serial_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_serial_no_raw", do_serial_no_raw, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_serial_two_stop_bits", do_serial_two_stop_bits, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_keyboard_hijack", do_no_keyboard_hijack, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
@@ -271,6 +274,12 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT);
 
 	/* Don't goto out in errors, check all possible errors first. */
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("file_serial_two_stop_bits")) {
+		if (!data->do_serial_two_stop_bits) {
+			data->do_serial_one_stop_bit = 1;
+		}
+	}
 
 	if (data->serial_parity != 0) {
 		if (rrr_posix_strcasecmp(data->serial_parity, "even") == 0) {
@@ -494,6 +503,14 @@ static int file_probe_callback (
 			else if (data->do_serial_parity_none) {
 				if ((ret = rrr_serial_parity_unset(fd)) != 0) {
 					RRR_MSG_0("File instance %s failed to unset parity of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->do_serial_one_stop_bit || data->do_serial_two_stop_bits) {
+				if ((ret = rrr_serial_stop_bit_set(fd, data->do_serial_two_stop_bits)) != 0) {
+					RRR_MSG_0("File instance %s failed to set stop bits on serial device '%s'=>%s\n",
 							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
 					goto out;
 				}

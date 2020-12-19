@@ -173,6 +173,23 @@ int rrr_serial_parity_set (int fd, int is_odd) {
 	return ret;
 }
 
+int rrr_serial_stop_bit_set (int fd, int is_two) {
+	int ret = 0;
+
+	RRR_SERIAL_DEFINE_AND_GET_ATTR();
+
+	if (is_two) {
+		termios_p.c_cflag |= CSTOPB;
+	}
+	else {
+		termios_p.c_cflag &= ~(CSTOPB);
+	}
+
+	RRR_SERIAL_SET_ATTR();
+
+	out:
+	return ret;
+}
 
 int rrr_serial_parity_unset (int fd) {
 	int ret = 0;

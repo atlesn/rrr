@@ -27,6 +27,7 @@ int rrr_serial_speed_check (unsigned int speed);
 int rrr_serial_speed_set (int fd, unsigned int speed_bps);
 int rrr_serial_raw_set (int fd);
 int rrr_serial_parity_set (int fd, int is_odd);
+int rrr_serial_stop_bit_set (int fd, int is_two);
 int rrr_serial_parity_unset (int fd);
 
 #endif /* RRR_SERIAL_H */
