@@ -231,7 +231,7 @@ struct rrr_http_client_tick_callback_data {
 
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
-	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS);
+	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
 	void *get_response_callback_arg;
 	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *frame_callback_arg;
@@ -248,7 +248,7 @@ static int __rrr_http_client_chunks_iterate_callback (
 	(void)(chunk_total);
 	(void)(chunk_idx);
 
-	return rrr_nullsafe_str_append(chunks_merged, data_start, chunk_data_size);
+	return rrr_nullsafe_str_append_raw(chunks_merged, data_start, chunk_data_size);
 }
 
 static int __rrr_http_client_receive_http_part_callback (
@@ -266,7 +266,7 @@ static int __rrr_http_client_receive_http_part_callback (
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *chunks_merged = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace(&chunks_merged, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&chunks_merged, NULL, 0)) != 0) {
 		goto out;
 	}
 
@@ -385,7 +385,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_http_session_transport_ctx_raw_request_send (
+		if ((ret = rrr_http_session_transport_ctx_request_raw_send (
 				handle,
 				callback_data->raw_request_data,
 				callback_data->raw_request_data_size
@@ -955,7 +955,7 @@ int rrr_http_client_tick (
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
 		void *redirect_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,
@@ -1034,7 +1034,8 @@ int rrr_http_client_tick (
 			targets,
 			0;
 			rrr_http_client_terminate_if_open(transport_keepalive, node->keepalive_handle);
-			rrr_http_client_target_destroy_and_close(node, transport_keepalive)
+			rrr_http_client_target_destroy_and_close(node, transport_keepalive);
+			rrr_net_transport_maintenance (transport_keepalive);
 	);
 
 	if (ret != 0) {

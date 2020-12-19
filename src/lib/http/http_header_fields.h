@@ -70,7 +70,7 @@ void rrr_http_header_field_destroy (
 void rrr_http_header_field_collection_clear (
 		struct rrr_http_header_field_collection *collection
 );
-int rrr_http_header_field_new (
+int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
 		ssize_t field_name_len

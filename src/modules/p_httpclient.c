@@ -181,11 +181,33 @@ static void httpclient_transaction_destroy_void_dbl_ptr (void *target) {
 	}
 }
 
+struct httpclient_create_message_nullsafe_callback_data {
+	struct rrr_msg_holder *new_entry;
+	const struct httpclient_transaction_data *transaction_data;
+};
+
+static int httpclient_create_message_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	struct httpclient_create_message_nullsafe_callback_data *callback_data = arg;
+	return rrr_msg_msg_new_with_data (
+			(struct rrr_msg_msg **) &callback_data->new_entry->message,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			callback_data->transaction_data->msg_topic,
+			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
+			str,
+			len
+	);
+}
+
 struct httpclient_create_message_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct httpclient_transaction_data *transaction_data;
-	const void *data;
-	size_t size;
+	const struct rrr_nullsafe_str *response_data;
 };
 
 static int httpclient_create_message_callback (
@@ -196,21 +218,21 @@ static int httpclient_create_message_callback (
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	if (callback_data->size > 0xffffffff) { // Eight f's
+	if (rrr_nullsafe_str_len(callback_data->response_data) > 0xffffffff) { // Eight f's
 		RRR_MSG_0("HTTP length too long in httpclient_create_message_callback, max is 0xffffffff\n");
 		ret = RRR_MESSAGE_BROKER_DROP;
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_new_with_data (
-			(struct rrr_msg_msg **) &new_entry->message,
-			MSG_TYPE_MSG,
-			MSG_CLASS_DATA,
-			rrr_time_get_64(),
-			callback_data->transaction_data->msg_topic,
-			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
-			callback_data->data,
-			callback_data->size
+	struct httpclient_create_message_nullsafe_callback_data nullsafe_callback_data = {
+			new_entry,
+			callback_data->transaction_data
+	};
+
+	if ((ret = rrr_nullsafe_str_with_raw_do_const (
+			callback_data->response_data,
+			httpclient_create_message_nullsafe_callback,
+			&nullsafe_callback_data
 	)) != 0) {
 		RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
 		ret = RRR_MESSAGE_BROKER_ERR;
@@ -249,8 +271,7 @@ static int httpclient_final_callback (
 	struct httpclient_create_message_callback_data callback_data_broker = {
 			httpclient_data,
 			transaction->application_data,
-			response_data->str,
-			response_data->len
+			response_data
 	};
 
 	RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
@@ -680,7 +701,7 @@ struct httpclient_raw_callback_data {
 };
 
 static int httpclient_raw_callback (
-		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
 )  {
 	struct httpclient_data *httpclient_data = arg;
 
@@ -696,12 +717,11 @@ static int httpclient_raw_callback (
 	struct httpclient_create_message_callback_data callback_data_broker = {
 			httpclient_data,
 			transaction->application_data,
-			data,
-			data_size
+			data
 	};
 
-	RRR_DBG_3("httpclient instance %s creating message with raw HTTP response size %" PRIrrrbl "\n",
-			INSTANCE_D_NAME(httpclient_data->thread_data), data_size);
+	RRR_DBG_3("httpclient instance %s creating message with raw HTTP response size %" PRIrrrl "\n",
+			INSTANCE_D_NAME(httpclient_data->thread_data), rrr_nullsafe_str_len(data));
 
 	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),

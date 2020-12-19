@@ -48,12 +48,12 @@ struct rrr_thread;
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS		\
 	void **websocket_application_data,									\
 	rrr_http_unique_id unique_id,										\
-	RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+	RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_RAW_RECEIVE_CALLBACK_ARGS	\
 	const struct sockaddr *addr,							\
 	socklen_t addr_len,										\
-	RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+	RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
 
 struct rrr_http_server_callbacks {
 	int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);

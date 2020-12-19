@@ -38,9 +38,10 @@ void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_buil
 	}
 }
 
-void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
+static void __rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
 	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
 	string_builder->wpos += buf_size;
+	string_builder->buf[string_builder->wpos] = '\0';
 }
 
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {
@@ -55,11 +56,15 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	string_builder->wpos = 0;
 }
 
-rrr_biglength rrr_string_builder_length (struct rrr_string_builder *string_builder) {
+const char *rrr_string_builder_buf (const struct rrr_string_builder *string_builder) {
+	return string_builder->buf;
+}
+
+rrr_biglength rrr_string_builder_length (const struct rrr_string_builder *string_builder) {
 	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
 }
 
-rrr_biglength rrr_string_builder_size (struct rrr_string_builder *string_builder) {
+rrr_biglength rrr_string_builder_size (const struct rrr_string_builder *string_builder) {
 	return (string_builder->size);
 }
 
@@ -105,6 +110,34 @@ int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_b
 		string_builder->size = new_size;
 		string_builder->buf = new_buf;
 	}
+
+	return 0;
+}
+
+
+int rrr_string_builder_append_from (struct rrr_string_builder *target, const struct rrr_string_builder *source) {
+	int ret = 0;
+
+	if (source->wpos == 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_reserve(target, source->wpos)) != 0) {
+		goto out;
+	}
+
+	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos + 1);
+
+	out:
+	return ret;
+}
+
+int rrr_string_builder_append_raw (struct rrr_string_builder *target, const char *str, rrr_biglength length) {
+	if (rrr_string_builder_reserve(target, length) != 0) {
+		return 1;
+	}
+
+	__rrr_string_builder_unchecked_append_raw(target, str, length);
 
 	return 0;
 }

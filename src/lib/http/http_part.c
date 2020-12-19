@@ -134,7 +134,7 @@ int rrr_http_part_raw_response_set_allocated (
 	if (part->response_raw_data_nullsafe != NULL) {
 		RRR_BUG("BUG: rrr_http_part_set_allocated_raw_response called while raw data was already set\n");
 	}
-	if ((ret = rrr_nullsafe_str_new_or_replace(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
 		goto out;
 	}
 	rrr_nullsafe_str_set_allocated(part->response_raw_data_nullsafe, (void **) raw_data_source, raw_data_size);
@@ -314,7 +314,6 @@ int rrr_http_part_chunks_iterate (
 	return ret;
 }
 
-
 static int __rrr_http_part_query_string_parse (
 		struct rrr_http_field_collection *target,
 		const char *start,
@@ -364,7 +363,7 @@ static int __rrr_http_part_query_string_parse (
 			unsigned long long int result = 0;
 
 			rrr_length result_len = 0;
-			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
+			if (rrr_http_util_strtoull_raw (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in HTTP query string\n");
 				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -419,7 +418,7 @@ static int __rrr_http_part_query_string_parse (
 		goto increment;
 
 		store_value:
-			if (rrr_http_field_set_value(value_target, buf, buf_pos) != 0) {
+			if (rrr_http_field_value_set(value_target, buf, buf_pos) != 0) {
 				RRR_MSG_0("Could not set value in __rrr_http_part_query_string_parse\n");
 				ret = RRR_HTTP_PARSE_HARD_ERR;
 				goto out;
@@ -432,7 +431,7 @@ static int __rrr_http_part_query_string_parse (
 
 		push_new_field:
 			if (buf_pos > 0) {
-				if (rrr_http_field_new_no_value(&field_tmp, buf, buf_pos) != 0) {
+				if (rrr_http_field_new_no_value_raw(&field_tmp, buf, buf_pos) != 0) {
 					RRR_MSG_0("Could not allocate new field in __rrr_http_part_query_string_parse\n");
 					ret = RRR_HTTP_PARSE_HARD_ERR;
 					goto out;
@@ -465,18 +464,16 @@ static int __rrr_http_part_query_string_parse (
 	return ret;
 }
 
-static int __rrr_http_part_query_fields_from_uri_extract (
-		struct rrr_http_part *target
+static int __rrr_http_part_query_fields_from_uri_extract_callback (
+		const void *start,
+		size_t len_remaining,
+		void *arg
 ) {
+	const char *query_start = start;
+	const char *query_end = start + len_remaining;
+	struct rrr_http_part *target = arg;
+
 	int ret = 0;
-
-	const char *query_end = target->request_uri_nullsafe->str + target->request_uri_nullsafe->len;
-	const char *query_start = rrr_nullsafe_str_chr(target->request_uri_nullsafe, '?');
-
-	if (query_start == NULL) {
-		ret = 0;
-		goto out;
-	}
 
 	// Skip ?
 	query_start++;
@@ -492,6 +489,12 @@ static int __rrr_http_part_query_fields_from_uri_extract (
 
 	out:
 	return ret;
+}
+
+static int __rrr_http_part_query_fields_from_uri_extract (
+		struct rrr_http_part *target
+) {
+	return rrr_nullsafe_str_chr(target->request_uri_nullsafe, '?', __rrr_http_part_query_fields_from_uri_extract_callback, target);
 }
 
 int rrr_http_part_post_and_query_fields_extract (
@@ -520,13 +523,13 @@ int rrr_http_part_post_and_query_fields_extract (
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value->str, field_name->value->len)) != 0) {
+			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value)) != 0) {
 				RRR_MSG_0("Could not create new field in rrr_http_part_post_and_query_fields_extract\n");
 				goto out;
 			}
 
 			if (data_end - data_start > 0) {
-				if ((ret = rrr_http_field_set_value(field_tmp, data_start, data_end - data_start)) != 0) {
+				if ((ret = rrr_http_field_value_set(field_tmp, data_start, data_end - data_start)) != 0) {
 					RRR_MSG_0("Could not set value of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
 				}
@@ -534,10 +537,9 @@ int rrr_http_part_post_and_query_fields_extract (
 
 			const struct rrr_http_header_field *field_content_type = rrr_http_part_header_field_get(node, "content-type");
 			if (field_content_type != NULL && rrr_nullsafe_str_isset(field_content_type->value)) {
-				if ((ret = rrr_http_field_set_content_type (
+				if ((ret = rrr_http_field_content_type_set (
 						field_tmp,
-						field_content_type->value->str,
-						field_content_type->value->len
+						field_content_type->value
 				)) != 0) {
 					RRR_MSG_0("Could not set content type of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
@@ -618,35 +620,33 @@ int rrr_http_part_post_x_www_form_body_make (
 		void *chunk_callback_arg
 ) {
 	int ret = 0;
-	char *body_buf = NULL;
+
+	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
 	char *header_buf = NULL;
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
+	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &header_buf);
 
-	rrr_length body_size = 0;
 	if (no_urlencoding == 0) {
-		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&body_size, &part->fields);
+		if ((ret = rrr_http_field_collection_to_urlencoded_form_data(&body_buf_nullsafe, &part->fields)) != 0) {
+			goto out;
+		}
 	}
 	else {
-		body_buf = rrr_http_field_collection_to_raw_form_data(&body_size, &part->fields);
-	}
-
-	if (body_buf == NULL) {
-		RRR_MSG_0("Could not create body in rrr_http_part_post_x_www_form_body_make \n");
-		ret = 1;
-		goto out;
+		if ((ret = rrr_http_field_collection_to_raw_form_data(&body_buf_nullsafe, &part->fields)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_http_part_header_field_push(part, "content-type", "application/x-www-form-urlencoded")) != 0) {
 		goto out;
 	}
-
+/*
 	if ((ret = chunk_callback(header_buf, strlen(header_buf), chunk_callback_arg)) != 0) {
 		goto out;
 	}
-
-	if ((ret = chunk_callback(body_buf, body_size, chunk_callback_arg)) != 0) {
+*/
+	if ((ret = chunk_callback(body_buf_nullsafe, chunk_callback_arg)) != 0) {
 		goto out;
 	}
 

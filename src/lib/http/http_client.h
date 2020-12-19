@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 
 #define RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
+	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
 	const struct rrr_http_transaction *transaction,	\
@@ -52,8 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	uint16_t *port_override,								\
 	void *arg
 
-#define RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
-	RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+#define RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
+	RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
@@ -177,7 +177,7 @@ int rrr_http_client_tick (
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
 		void *redirect_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,

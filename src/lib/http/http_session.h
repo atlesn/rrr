@@ -34,8 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
-#define RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
-	RRR_HTTP_APPLICATION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+#define RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 #define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
 	rrr_http_unique_id *result,								\
@@ -59,8 +59,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS
 
-#define RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS \
-	RRR_HTTP_APPLICATION_RAW_RECEIVE_CALLBACK_ARGS
+#define RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS
 
 #ifdef RRR_WITH_NGHTTP2
 struct rrr_http2_session;
@@ -102,7 +102,7 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode
 );
-int rrr_http_session_transport_ctx_raw_request_send (
+int rrr_http_session_transport_ctx_request_raw_send (
 		struct rrr_net_transport_handle *handle,
 		const char *raw_request_data,
 		size_t raw_request_size
@@ -119,11 +119,11 @@ int rrr_http_session_transport_ctx_tick (
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
-		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,
-		int (*raw_callback)(RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS),
+		int (*raw_callback)(RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS),
 		void *raw_callback_arg
 );
 int rrr_http_session_transport_ctx_close_if_open (

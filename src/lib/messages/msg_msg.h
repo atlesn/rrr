@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_msg_struct.h"
 #include "../rrr_types.h"
 
+struct rrr_nullsafe_str;
+
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
@@ -49,6 +51,15 @@ int rrr_msg_msg_new_with_data (
 		rrr_u16 topic_length,
 		const char *data,
 		rrr_u32 data_length
+);
+int rrr_msg_msg_new_with_data_nullsafe (
+		struct rrr_msg_msg **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		const char *topic,
+		rrr_u16 topic_length,
+		const struct rrr_nullsafe_str *str
 );
 int rrr_msg_msg_to_string (
 	char **final_target,

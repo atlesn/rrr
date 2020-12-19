@@ -65,7 +65,7 @@ static int __rrr_http_part_parse_response_code (
 	start += rrr_http_util_count_whsp(start, end);
 
 	unsigned long long int response_code = 0;
-	if (rrr_http_util_strtoull(&response_code, &tmp_len, start, crlf, 10) != 0 || response_code > 999) {
+	if (rrr_http_util_strtoull_raw(&response_code, &tmp_len, start, crlf, 10) != 0 || response_code > 999) {
 		RRR_MSG_0("Could not understand HTTP response code in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -126,13 +126,13 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new_or_replace(&result->request_method_str_nullsafe, start, space - start) != 0) {
+	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_method_str_nullsafe, start, space - start) != 0) {
 		RRR_MSG_0("Could not allocate string for request method in __rrr_http_parse_request \n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
 
-	if (result->request_method_str_nullsafe->len == 0) {
+	if (rrr_nullsafe_str_len(result->request_method_str_nullsafe) == 0) {
 		RRR_MSG_0("Request method missing in HTTP request\n");
 		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -149,7 +149,7 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new_or_replace(&result->request_uri_nullsafe, start, space - start) != 0) {
+	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_uri_nullsafe, start, space - start) != 0) {
 		RRR_MSG_0("Could not allocate string for uri in __rrr_http_parse_request \n");
 		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_HARD_ERR;
@@ -250,7 +250,7 @@ static int __rrr_http_part_parse_chunk_header (
 	unsigned long long chunk_length = 0;
 
 	rrr_length parsed_bytes_tmp = 0;
-	if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
+	if ((ret = rrr_http_util_strtoull_raw(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
 		RRR_MSG_0("Error while parsing chunk length, invalid value\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;

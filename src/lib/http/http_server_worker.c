@@ -205,7 +205,7 @@ static int __rrr_http_server_worker_receive_callback (
 }
 
 static int __rrr_http_server_worker_receive_raw_callback (
-		RRR_HTTP_SESSION_RAW_RECEIVE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -214,7 +214,6 @@ static int __rrr_http_server_worker_receive_raw_callback (
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
 				data,
-				data_size,
 				transaction,
 				unique_id,
 				next_protocol_version,
@@ -259,7 +258,7 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 }
 
 static int __rrr_http_server_worker_websocket_get_response_callback (
-		RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
@@ -292,7 +291,6 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
 				payload,
-				payload_size,
 				is_binary,
 				unique_id,
 				worker_data->config_data.callbacks.websocket_handshake_callback_arg

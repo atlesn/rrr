@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <limits.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
@@ -38,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
@@ -313,7 +315,7 @@ static void __rrr_net_transport_handle_close_tag_list_process_and_clear_locked (
 	RRR_LL_DESTROY(&collection->close_tags, struct rrr_net_transport_handle_close_tag_node, __rrr_net_transport_handle_close_tag_node_process_and_destroy(transport, node));
 }
 
-static void rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
+void rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	__rrr_net_transport_handle_close_tag_list_process_and_clear_locked(transport);
@@ -426,7 +428,7 @@ void rrr_net_transport_ctx_handle_close_while_locked (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	if (did_destroy != 1) {
-		RRR_BUG("Could not find transport handle %i in rrr_net_transport_close\n", handle->handle);
+		RRR_BUG("Could not find transport handle %i in rrr_net_transport_ctx_handle_close_while_locked\n", handle->handle);
 	}
 }
 
@@ -625,6 +627,10 @@ int rrr_net_transport_ctx_send_blocking (
 ) {
 	int ret = 0;
 
+	if (size < 0) {
+		RRR_BUG("BUG: Possible size overflow in rrr_net_transport_ctx_send_blocking\n");
+	}
+
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
 		RRR_BUG("BUG: Handle to rrr_net_transport_send_blocking was not of CONNECTION type\n");
 	}
@@ -650,6 +656,30 @@ int rrr_net_transport_ctx_send_blocking (
 	handle->bytes_written_total += written_bytes_total;
 
 	return ret;
+}
+
+static int __rrr_net_transport_ctx_send_blocking_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+#if RRR_SLENGTH_MAX > SSIZE_MAX
+	if ((rrr_slength) len > (rrr_slength) SSIZE_MAX) {
+		RRR_MSG_0("Size too long in __rrr_net_transport_ctx_send_blocking_nullsafe_callback (%" PRIrrrl ">%lld)\n",
+				len,
+				(long long int) SSIZE_MAX
+		);
+	}
+#endif
+	struct rrr_net_transport_handle *handle = arg;
+	return rrr_net_transport_ctx_send_blocking(handle, str, len);
+}
+
+int rrr_net_transport_ctx_send_blocking_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *str
+) {
+	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_net_transport_ctx_send_blocking_nullsafe_callback, handle);
 }
 
 int rrr_net_transport_ctx_read (
@@ -998,10 +1028,10 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
 	}
 	else if (ret_6) {
-		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succedded. Assuming IPv4-only stack.\n", port);
+		RRR_DBG_1("Note: Listening failed for IPv6 on port %u, but IPv4 listening succeeded. Assuming IPv4-only stack.\n", port);
 	}
 	else if (ret_4) {
-		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succedded. Assuming dual-stack.\n", port);
+		RRR_DBG_1("Note: Listening failed for IPv4 on port %u, but IPv6 listening succeeded. Assuming dual-stack.\n", port);
 	}
 
 	return ret;

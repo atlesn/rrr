@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
+struct rrr_nullsafe_str;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
@@ -229,6 +230,7 @@ int rrr_net_transport_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 );
+void rrr_net_transport_maintenance (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
@@ -278,6 +280,10 @@ int rrr_net_transport_ctx_send_blocking (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_ctx_send_blocking_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *str
 );
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
