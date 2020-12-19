@@ -1330,7 +1330,7 @@ int __rrr_array_tree_import_value_callback (
 			goto out;
 		}
 		else if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
-			RRR_MSG_0("Invalid data in type conversion\n");
+			RRR_MSG_0("Type conversion in array tree failed for type '%s'\n", new_value->definition->identifier);
 		}
 		else {
 			RRR_MSG_0("Hard error while importing data in __rrr_array_tree_import_data_into_value, return was %i\n", ret);
