@@ -651,7 +651,7 @@ int rrr_array_new_message_from_collection (
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
-		ssize_t topic_length
+		rrr_u16 topic_length
 ) {
 	int ret = 0;
 
