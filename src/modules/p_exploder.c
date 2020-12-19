@@ -227,7 +227,7 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static int exploder_parse_config (struct exploder_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_original_passtrough", do_original_passthrough, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_original_passthrough", do_original_passthrough, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_non_array_passthrough", do_non_array_passthrough, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_timestamp", do_preserve_timestamp, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_topic", do_preserve_topic, 0);
