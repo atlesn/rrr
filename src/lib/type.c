@@ -835,7 +835,7 @@ static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
 	(void)(start);
 	(void)(end);
 
-	RRR_DBG_1("Error trigger reached while importing array definition, triggering soft error.\n");
+	RRR_DBG_3("Error trigger reached while importing array definition, triggering soft error.\n");
 
 	return RRR_TYPE_PARSE_SOFT_ERR;
 }
