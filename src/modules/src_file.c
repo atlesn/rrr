@@ -97,6 +97,7 @@ struct file_data {
 	int do_try_keyboard_input;
 	int do_no_keyboard_hijack;
 	int do_unlink_on_close;
+	int do_sync_byte_by_byte;
 	int do_try_serial_input;
 	int do_serial_no_raw;
 	int do_serial_parity_even;
@@ -264,6 +265,7 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_keyboard_hijack", do_no_keyboard_hijack, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_sync_byte_by_byte", do_sync_byte_by_byte, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_serial_bps", serial_bps, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_serial_parity", serial_parity);
@@ -884,7 +886,7 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				socket_flags,
 				&array_final,
 				data->tree,
-				0,
+				data->do_sync_byte_by_byte,
 				data->max_read_step_size,
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				file_read_array_callback,

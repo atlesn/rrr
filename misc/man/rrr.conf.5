@@ -1714,6 +1714,10 @@ Cannot be used with
 .B file_read_all_to_message=yes,
 but one of them must be specified. No default value.
 
+.It file_sync_byte_by_byte={yes|no}
+If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
+Defaults to no, which means to only sync on boundaries of incoming messages.
+
 .It file_read_all_to_message={yes|no}
 Read all data from the entries and put it into an RRR message.
 Note that this is probably not useful for sockets and character devices. Cannot be used with
