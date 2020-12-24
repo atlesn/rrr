@@ -416,10 +416,10 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 
 	rrr_length total_size = node->import_length * node->element_count;
 
+	CHECK_END_AND_RETURN(total_size);
+
 	rrr_length found = 0;
 	for (const char *start_tmp = start; start_tmp < end && found < total_size; start_tmp++) {
-		CHECK_END_AND_RETURN(1);
-
 		char c = *start_tmp;
 		if (!validate(c)) {
 			RRR_MSG_0("Invalid separator character 0x%01x\n", c);
@@ -451,7 +451,9 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 	if ((ret = __rrr_type_import_sep_stx(node, parsed_bytes, start, end, __rrr_type_validate_sep)) != RRR_TYPE_PARSE_OK) {
-		RRR_MSG_0("Import of sep type failed\n");
+		if (ret != RRR_TYPE_PARSE_INCOMPLETE) {
+			RRR_MSG_0("Import of sep type failed\n");
+		}
 	}
 	return ret;
 }
