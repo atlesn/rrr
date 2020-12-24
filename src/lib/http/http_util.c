@@ -316,6 +316,12 @@ int rrr_http_util_uri_encode (
 
 	memset(result, '\0', result_max_length + 1);
 
+	if (*target == NULL) {
+		if ((ret = rrr_nullsafe_str_new_or_replace_empty(target)) != 0) {
+			goto out;
+		}
+	}
+
 	if (result_max_length > 0) {
 		char *wpos = result;
 		char *wpos_max = result + result_max_length;
@@ -328,15 +334,9 @@ int rrr_http_util_uri_encode (
 		if (wpos > wpos_max) {
 			RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 		}
-	}
 
-	if (*target == NULL) {
-		if ((ret = rrr_nullsafe_str_new_or_replace_empty(target)) != 0) {
-			goto out;
-		}
+		rrr_nullsafe_str_set_allocated(*target, (void **) &result, wpos - result);
 	}
-
-	rrr_nullsafe_str_set_allocated(*target, (void **) &result, wpos - result);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(result);
