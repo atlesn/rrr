@@ -132,7 +132,8 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 			&base64_len
 	)) == NULL) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
-		RRR_MSG_0("Base64 decoding failed for field '%s'\n", name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
+		RRR_MSG_0("Base64 decoding failed for field '%s' value was '%s'\n", name, value);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}

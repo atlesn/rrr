@@ -595,7 +595,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		void *arg
 ) {
 	size_t *result_len = arg;
-	return rrr_base64_decode (
+	return rrr_base64url_decode (
 			str,
 			len,
 			result_len
