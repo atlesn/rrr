@@ -305,8 +305,6 @@ int rrr_http_util_uri_encode (
 	rrr_biglength result_max_length = (str != NULL ? rrr_nullsafe_str_len(str) * 3 : 0);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_max_length,"rrr_http_util_encode_uri");
 
-	*target = NULL;
-
 	int ret = 0;
 
 	char *result = malloc(result_max_length + 1); // Allocate extra byte for 0 from sprintf
@@ -318,20 +316,18 @@ int rrr_http_util_uri_encode (
 
 	memset(result, '\0', result_max_length + 1);
 
-	if (result_max_length == 0) {
-		goto out;
-	}
+	if (result_max_length > 0) {
+		char *wpos = result;
+		char *wpos_max = result + result_max_length;
 
-	char *wpos = result;
-	char *wpos_max = result + result_max_length;
+		// NOTE : Pass double pointer to wpos
+		if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &wpos)) != 0) {
+			goto out;
+		}
 
-	// NOTE : Pass double pointer to wpos
-	if ((ret = rrr_nullsafe_str_foreach_byte_do(str, __rrr_http_util_uri_encode_foreach_byte_callback, &wpos)) != 0) {
-		goto out;
-	}
-
-	if (wpos > wpos_max) {
-		RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
+		if (wpos > wpos_max) {
+			RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
+		}
 	}
 
 	if (*target == NULL) {
@@ -343,7 +339,6 @@ int rrr_http_util_uri_encode (
 	rrr_nullsafe_str_set_allocated(*target, (void **) &result, wpos - result);
 
 	out:
-	rrr_nullsafe_str_destroy_if_not_null(target);
 	RRR_FREE_IF_NOT_NULL(result);
 	return ret;
 }
