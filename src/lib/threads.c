@@ -122,6 +122,16 @@ static void rrr_thread_unlock_if_locked (
 	pthread_mutex_unlock(&thread->mutex);
 }
 
+void rrr_thread_signal_set (
+		struct rrr_thread *thread,
+		int signal
+) {
+	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
+	rrr_thread_lock(thread);
+	thread->signal |= signal;
+	rrr_thread_unlock(thread);
+}
+
 int rrr_thread_signal_check (
 		struct rrr_thread *thread,
 		int signal
@@ -172,16 +182,6 @@ int rrr_thread_ghost_check (
 	ret = thread->is_ghost;
 	rrr_thread_unlock(thread);
 	return ret;
-}
-
-void rrr_thread_signal_set (
-		struct rrr_thread *thread,
-		int signal
-) {
-	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
-	rrr_thread_lock(thread);
-	thread->signal |= signal;
-	rrr_thread_unlock(thread);
 }
 
 int rrr_thread_state_get (

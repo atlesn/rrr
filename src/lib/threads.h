@@ -116,6 +116,27 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
+/* Threads need to update this once in a while, if not it get's killed by watchdog */
+static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
+	rrr_thread_lock(thread);
+	thread->watchdog_time = rrr_time_get_64();
+	rrr_thread_unlock(thread);
+}
+
+/* Threads should check this once in awhile to see if it should exit,
+ * set by watchdog after it detects kill signal. */
+static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thread) {
+	int signal;
+	rrr_thread_lock(thread);
+	signal = thread->signal;
+	rrr_thread_unlock(thread);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
+}
+
+void rrr_thread_signal_set (
+		struct rrr_thread *thread,
+		int signal
+);
 int rrr_thread_signal_check (
 		struct rrr_thread *thread,
 		int signal
@@ -141,29 +162,8 @@ static inline void rrr_thread_unlock (
 	pthread_mutex_unlock(&thread->mutex);
 }
 
-/* Threads should check this once in awhile to see if it should exit,
- * set by watchdog after it detects kill signal. */
-static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thread) {
-	int signal;
-	rrr_thread_lock(thread);
-	signal = thread->signal;
-	rrr_thread_unlock(thread);
-	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
-}
-
-/* Threads need to update this once in a while, if not it get's killed by watchdog */
-static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
-	rrr_thread_lock(thread);
-	thread->watchdog_time = rrr_time_get_64();
-	rrr_thread_unlock(thread);;
-}
-
 int rrr_thread_ghost_check (
 		struct rrr_thread *thread
-);
-void rrr_thread_signal_set (
-		struct rrr_thread *thread,
-		int signal
 );
 int rrr_thread_state_get (
 		struct rrr_thread *thread
