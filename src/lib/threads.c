@@ -108,18 +108,73 @@ void rrr_thread_cleanup_postponed_run(int *count) {
 	pthread_mutex_unlock(&postponed_cleanup_lock);
 }
 
+static inline void __rrr_thread_lock(struct rrr_thread *thread) {
+	pthread_mutex_lock(&thread->mutex);
+}
+
+static inline void __rrr_thread_unlock(struct rrr_thread *thread) {
+	pthread_mutex_unlock(&thread->mutex);
+}
+
+static inline void __rrr_thread_unlock_if_locked(struct rrr_thread *thread) {
+	if (pthread_mutex_trylock(&thread->mutex) != 0) {
+	}
+	pthread_mutex_unlock(&thread->mutex);
+}
+
+int rrr_thread_signal_check (struct rrr_thread *thread, int signal) {
+	int ret;
+	__rrr_thread_lock(thread);
+	ret = (thread->signal & signal) == signal ? 1 : 0;
+	__rrr_thread_unlock(thread);;
+	return ret;
+}
+
+void rrr_thread_signal_wait (struct rrr_thread *thread, int signal) {
+	while (1) {
+		__rrr_thread_lock(thread);
+		int signal_test = thread->signal;
+		__rrr_thread_unlock(thread);
+		if ((signal_test & signal) == signal) {
+			break;
+		}
+		rrr_posix_usleep (10000); // 10ms
+	}
+}
+
+void rrr_thread_signal_wait_with_watchdog_update (struct rrr_thread *thread, int signal) {
+	while (1) {
+		__rrr_thread_lock(thread);
+		int signal_test = thread->signal;
+		thread->watchdog_time = rrr_time_get_64();
+		__rrr_thread_unlock(thread);
+		if ((signal_test & signal) == signal) {
+			break;
+		}
+		rrr_posix_usleep (10000); // 10ms
+	}
+}
+
+int rrr_thread_ghost_check (struct rrr_thread *thread) {
+	int ret;
+	__rrr_thread_lock(thread);
+	ret = thread->is_ghost;
+	__rrr_thread_unlock(thread);
+	return ret;
+}
+
 void rrr_thread_signal_set(struct rrr_thread *thread, int signal) {
 	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 	thread->signal |= signal;
-	rrr_thread_unlock(thread);
+	__rrr_thread_unlock(thread);
 }
 
 int rrr_thread_state_get(struct rrr_thread *thread) {
 	int state;
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 	state = thread->state;
-	rrr_thread_unlock(thread);;
+	__rrr_thread_unlock(thread);;
 	return state;
 }
 
@@ -128,7 +183,7 @@ int rrr_thread_state_check(struct rrr_thread *thread, int state) {
 }
 
 void rrr_thread_state_set (struct rrr_thread *thread, int new_state) {
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 
 	RRR_DBG_4 ("Thread %s setting state %i\n", thread->name, new_state);
 
@@ -143,13 +198,13 @@ void rrr_thread_state_set (struct rrr_thread *thread, int new_state) {
 
 	thread->state = new_state;
 
-	rrr_thread_unlock(thread);
+	__rrr_thread_unlock(thread);
 }
 
 static void __rrr_thread_self_set (struct rrr_thread *thread) {
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 	thread->self = pthread_self();
-	rrr_thread_unlock(thread);
+	__rrr_thread_unlock(thread);
 }
 
 static int __rrr_thread_collection_has_thread (struct rrr_thread_collection *collection, struct rrr_thread *thread) {
@@ -208,6 +263,18 @@ static int __rrr_thread_new (struct rrr_thread **target) {
 		return ret;
 }
 
+int rrr_thread_collection_count (
+		struct rrr_thread_collection *collection
+) {
+	int count = 0;
+
+	pthread_mutex_lock(&collection->threads_mutex);
+	count = RRR_LL_COUNT(collection);
+	pthread_mutex_unlock(&collection->threads_mutex);
+
+	return count;
+}
+
 int rrr_thread_collection_new (
 		struct rrr_thread_collection **target
 ) {
@@ -253,7 +320,7 @@ void rrr_thread_collection_destroy (
 	pthread_mutex_trylock(&collection->threads_mutex);
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
+		__rrr_thread_lock(node);
 		if (node->is_ghost == 1) {
 			// TODO : thread_cleanup() does not lock, maybe it should to avoid race
 			// condition with is_ghost and ghost_cleanup_pointer
@@ -261,10 +328,10 @@ void rrr_thread_collection_destroy (
 			// Move pointer to thread, we expect it to clean up if it dies
 			RRR_MSG_0 ("Thread %s is ghost when freeing all threads. It will add itself to cleanup list if it wakes up.\n",
 					node->name);
-			rrr_thread_unlock(node);
+			__rrr_thread_unlock(node);
 		}
 		else {
-			rrr_thread_unlock(node);
+			__rrr_thread_unlock(node);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
@@ -450,6 +517,20 @@ static void __rrr_thread_collection_add_thread (struct rrr_thread_collection *co
 	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
+static inline void __rrr_thread_ghost_set (struct rrr_thread *thread) {
+	__rrr_thread_lock(thread);
+	thread->is_ghost = 1;
+	rrr_thread_unlock(thread);
+}
+
+static inline uint64_t __rrr_thread_watchdog_time_get (struct rrr_thread *thread) {
+	uint64_t ret;
+	__rrr_thread_lock(thread);
+	ret = thread->watchdog_time;
+	__rrr_thread_unlock(thread);;
+	return ret;
+}
+
 struct watchdog_data {
 	struct rrr_thread *watchdog_thread;
 	struct rrr_thread *watched_thread;
@@ -465,9 +546,9 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	struct rrr_thread *thread = data.watched_thread;
 	struct rrr_thread *self_thread = data.watchdog_thread;
 
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 	freeze_limit = thread->watchdog_timeout_us;
-	rrr_thread_unlock(thread);
+	__rrr_thread_unlock(thread);
 
 	RRR_DBG_8 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 	rrr_posix_usleep(1000000);
@@ -487,7 +568,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	uint64_t prev_loop_time = rrr_time_get_64();
 	while (1) {
 		uint64_t nowtime = rrr_time_get_64();
-		uint64_t prevtime = rrr_thread_watchdog_time_get(thread);
+		uint64_t prevtime = __rrr_thread_watchdog_time_get(thread);
 
 //		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
 
@@ -579,7 +660,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 				RRR_MSG_0 ("Thread %s/%p is stuck in RUNNING_FORKED, has not started it's cleanup yet.\n", thread->name, thread);
 			}
 			RRR_MSG_0 ("Thread %s/%p: Tagging as ghost.\n", thread->name, thread);
-			rrr_thread_ghost_set(thread);
+			__rrr_thread_ghost_set(thread);
 			break;
 		}
 
@@ -603,6 +684,11 @@ static void __rrr_thread_cleanup(void *arg) {
 	}
 }
 
+static inline void __rrr_thread_state_set_stopped(void *arg) {
+	struct rrr_thread *thread = arg;
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPED);
+}
+
 static void *__rrr_thread_start_routine_intermediate(void *arg) {
 	struct rrr_thread *thread = arg;
 
@@ -610,7 +696,7 @@ static void *__rrr_thread_start_routine_intermediate(void *arg) {
 
 	// STOPPED must be set at the very end, allows
 	// data structures to be freed
-	pthread_cleanup_push(rrr_thread_state_set_stopped, thread);
+	pthread_cleanup_push(__rrr_thread_state_set_stopped, thread);
 	pthread_cleanup_push(__rrr_thread_cleanup, thread);
 
 	thread->start_routine(thread);
@@ -639,7 +725,7 @@ void rrr_thread_collection_stop_and_join_all_no_unlock (
 			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 			node->signal = RRR_THREAD_SIGNAL_ENCOURAGE_STOP|RRR_THREAD_SIGNAL_START_AFTERFORK|RRR_THREAD_SIGNAL_START_BEFOREFORK;
 		}
-		rrr_thread_unlock(node);
+		__rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
 	// Join with the watchdogs. The other threads might be in hung up state.
@@ -671,7 +757,7 @@ void rrr_thread_collection_stop_and_join_all_no_unlock (
 				RRR_MSG_0 ("Running post stop later if thread wakes up\n");
 			}
 		}
-		rrr_thread_unlock(node);
+		__rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
 	// Do not unlock
@@ -789,7 +875,7 @@ struct rrr_thread *rrr_thread_collection_thread_allocate_preload_and_register (
 	}
 	__rrr_thread_collection_add_thread(collection, thread->watchdog);
 
-	rrr_thread_lock(thread);
+	__rrr_thread_lock(thread);
 
 	int err = (preload_routine != NULL ? preload_routine(thread) : 0);
 	if (err != 0) {
@@ -798,17 +884,17 @@ struct rrr_thread *rrr_thread_collection_thread_allocate_preload_and_register (
 	}
 
 	// Thread tries to set a signal first and therefore can't proceed until we unlock
-	rrr_thread_unlock(thread);
+	__rrr_thread_unlock(thread);
 
 	return thread;
 
 	out_error:
 	if (thread != NULL) {
 		if (thread->watchdog != NULL) {
-			rrr_thread_unlock_if_locked(thread->watchdog);
+			__rrr_thread_unlock_if_locked(thread->watchdog);
 			__rrr_thread_destroy(thread->watchdog);
 		}
-		rrr_thread_unlock_if_locked(thread);
+		__rrr_thread_unlock_if_locked(thread);
 		__rrr_thread_destroy(thread);
 	}
 
@@ -840,10 +926,10 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 
 	// FIRST LOOP - Ghost handling, remove ghosts from list without freeing memory
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
+		__rrr_thread_lock(node);
 		if (node->is_ghost == 1) {
 			// Watchdog has tagged thread as ghost. Make sure the watchdog has exited.
-			rrr_thread_lock(node->watchdog);
+			__rrr_thread_lock(node->watchdog);
 			if (node->watchdog->state == RRR_THREAD_STATE_STOPPED) {
 				// The second loop won't be to find the watchdog anymore, tag the
 				// watchdog for destruction in the third loop now
@@ -852,30 +938,30 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 				// Does not free memory, which is now handled by ghost framework
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
-			rrr_thread_unlock(node->watchdog);
+			__rrr_thread_unlock(node->watchdog);
 		}
-		rrr_thread_unlock(node);
+		__rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
 
 	// SECOND LOOP - Check for both thread and watchdog STOPPED, tag to destroy
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
 		if (node->watchdog != NULL) {
-			rrr_thread_lock(node->watchdog);
+			__rrr_thread_lock(node->watchdog);
 
 			if (node->watchdog->state == RRR_THREAD_STATE_STOPPED && node->state == RRR_THREAD_STATE_STOPPED) {
 				node->watchdog->ready_to_destroy = 1;
 				node->ready_to_destroy = 1;
 			}
 
-			rrr_thread_unlock(node->watchdog);
+			__rrr_thread_unlock(node->watchdog);
 		}
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
 	// THIRD LOOP - Destroy tagged threads
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
+		__rrr_thread_lock(node);
 
 		if (node->ready_to_destroy) {
 			(*count)++;
@@ -889,7 +975,7 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 
-		rrr_thread_unlock(node);
+		__rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node));
 
 	pthread_mutex_unlock(&collection->threads_mutex);
@@ -906,7 +992,7 @@ int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
 	pthread_mutex_lock(&collection->threads_mutex);
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		rrr_thread_lock(node);
+		__rrr_thread_lock(node);
 		if (node->is_watchdog == 0 && node->signal == 0) {
 			if (node->state == state) {
 				ret = callback(node, callback_data);
@@ -917,7 +1003,7 @@ int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
 				RRR_LL_ITERATE_LAST();
 			}
 		}
-		rrr_thread_unlock(node);
+		__rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
 	pthread_mutex_unlock(&collection->threads_mutex);
