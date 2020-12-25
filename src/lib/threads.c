@@ -128,6 +128,10 @@ void rrr_thread_signal_set (
 ) {
 	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
 	rrr_thread_lock(thread);
+	int ret_tmp;
+	if ((ret_tmp = pthread_cond_signal(&thread->signal_cond)) != 0) {
+		RRR_MSG_0("Warning: Error %i from pthread_cond_signal in rrr_thread_signal_set, error will not be handled\n");
+	}
 	thread->signal |= signal;
 	rrr_thread_unlock(thread);
 }
@@ -143,7 +147,7 @@ int rrr_thread_signal_check (
 	return ret;
 }
 
-void rrr_thread_signal_wait (
+void rrr_thread_signal_wait_busy (
 		struct rrr_thread *thread,
 		int signal
 ) {
@@ -158,7 +162,7 @@ void rrr_thread_signal_wait (
 	}
 }
 
-void rrr_thread_signal_wait_with_watchdog_update (
+void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
 ) {
@@ -167,10 +171,30 @@ void rrr_thread_signal_wait_with_watchdog_update (
 		int signal_test = thread->signal;
 		thread->watchdog_time = rrr_time_get_64();
 		rrr_thread_unlock(thread);
+
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		rrr_posix_usleep (10000); // 10ms
+
+		struct timespec wakeup_time;
+
+		rrr_time_gettimeofday_timespec(&wakeup_time, 1 * 1000 * 1000); // 1 second
+
+		pthread_mutex_lock(&thread->mutex);
+		int ret_tmp = pthread_cond_timedwait(&thread->signal_cond, &thread->mutex, &wakeup_time);
+		pthread_mutex_unlock(&thread->mutex);
+
+		if (ret_tmp != 0) {
+			switch (errno) {
+				case EAGAIN:
+				case ETIMEDOUT:
+				case 0:
+					break;
+				default:
+					RRR_BUG("BUG: Return from pthread_cond_timedwait was %i %s in rrr_thread_signal_wait_cond_with_watchdog_update\n",
+							errno, rrr_strerror(errno));
+			}
+		}
 	}
 }
 
@@ -435,9 +459,9 @@ void rrr_thread_start_condition_helper_nofork (
 		struct rrr_thread *thread
 ) {
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+	rrr_thread_signal_wait_cond_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_RUNNING_FORKED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 }
 
 int rrr_thread_start_condition_helper_fork (
@@ -446,12 +470,12 @@ int rrr_thread_start_condition_helper_fork (
 		void *callback_arg
 ) {
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+	rrr_thread_signal_wait_cond_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 
 	int ret = fork_callback(callback_arg);
 
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_RUNNING_FORKED);
-	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 
 	return ret;
 }

@@ -153,11 +153,11 @@ int rrr_thread_signal_check (
 		struct rrr_thread *thread,
 		int signal
 );
-void rrr_thread_signal_wait (
+void rrr_thread_signal_wait_busy (
 		struct rrr_thread *thread,
 		int signal
 );
-void rrr_thread_signal_wait_with_watchdog_update (
+void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
 );
