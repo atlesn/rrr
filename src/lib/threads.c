@@ -73,6 +73,8 @@ struct rrr_ghost_postponed_cleanup_collection {
 static int __rrr_thread_destroy (
 		struct rrr_thread *thread
 ) {
+	pthread_cond_destroy(&thread->signal_cond);
+	pthread_mutex_destroy(&thread->mutex);
 	free(thread);
 	return 0;
 }
