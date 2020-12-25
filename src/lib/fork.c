@@ -196,6 +196,8 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handler *handler, int max_rounds) {
 	*active_forks_found = 0;
 
+	pid_t self = getpid();
+
 	do {
 		if (max_rounds-- <= 0) {
 			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
@@ -204,7 +206,8 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 		*active_forks_found = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0 && node->was_waited_for == 0) {
-				RRR_DBG_1("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
+				RRR_DBG_1("Checking wait for pid %i self is %i\n", node->pid, self);
+
 				pid_t pid;
 				int status;
 
@@ -231,6 +234,8 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
 
+	pid_t self = getpid();
+
 	__rrr_fork_handler_lock(handler);
 
 	// Signal handlers must be disabled before we do this
@@ -240,7 +245,7 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 		RRR_DBG_1("Sending SIGUSR1 to all forks and waiting in pid %i\n", getpid());
 
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid > 0) {
+			if (node->pid > 0 && node->pid != self) {
 				RRR_DBG_1("SIGUSR1 to fork %i\n", node->pid);
 				kill(node->pid, SIGUSR1);
 			}
@@ -251,13 +256,13 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 	 *		}*/
 		RRR_LL_ITERATE_END();
 
-		__rrr_fork_wait_loop(&active_forks_found, handler, 5); // 5 rounds = ~0.5 seconds
+		__rrr_fork_wait_loop(&active_forks_found, handler, 20); // 20 rounds = ~2 seconds
 	}
 
 	// Try SIGKILL
 	if (RRR_LL_COUNT(handler) > 0) {
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
-			if (node->pid > 0 && node->was_waited_for == 0) {
+			if (node->pid > 0 && node->was_waited_for == 0 && node->pid != self) {
 				RRR_DBG_1("SIGKILL to fork %i\n", node->pid);
 				kill(node->pid, SIGKILL);
 			}
@@ -304,7 +309,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			int was_waited_for = 0;
 
-			if (node->pid <= 0) {
+			if (node->pid <= 0 || node->pid == self) {
 				RRR_LL_ITERATE_NEXT();
 			}
 			else if (node->was_waited_for != 0) {
