@@ -116,27 +116,30 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
-static inline void rrr_thread_lock(struct rrr_thread *thread) {
-//	RRR_DBG_8 ("Thread %s lock\n", thread->name);
+int rrr_thread_signal_check (
+		struct rrr_thread *thread,
+		int signal
+);
+void rrr_thread_signal_wait (
+		struct rrr_thread *thread,
+		int signal
+);
+void rrr_thread_signal_wait_with_watchdog_update (
+		struct rrr_thread *thread,
+		int signal
+);
+
+static inline void rrr_thread_lock (
+		struct rrr_thread *thread
+) {
 	pthread_mutex_lock(&thread->mutex);
 }
 
-static inline void rrr_thread_unlock(struct rrr_thread *thread) {
-//	RRR_DBG_8 ("Thread %s unlock\n", thread->name);
+static inline void rrr_thread_unlock (
+		struct rrr_thread *thread
+) {
 	pthread_mutex_unlock(&thread->mutex);
 }
-
-static inline void rrr_thread_unlock_if_locked(struct rrr_thread *thread) {
-//	RRR_MSG_4 ("Thread %s test unlock\n", thread->name);
-	if (pthread_mutex_trylock(&thread->mutex) != 0) {
-//		RRR_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
-	}
-	pthread_mutex_unlock(&thread->mutex);
-}
-
-int rrr_thread_signal_check (struct rrr_thread *thread, int signal);
-void rrr_thread_signal_wait (struct rrr_thread *thread, int signal);
-void rrr_thread_signal_wait_with_watchdog_update (struct rrr_thread *thread, int signal);
 
 /* Threads should check this once in awhile to see if it should exit,
  * set by watchdog after it detects kill signal. */
@@ -155,14 +158,27 @@ static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 	rrr_thread_unlock(thread);;
 }
 
-int rrr_thread_ghost_check(struct rrr_thread *thread);
-void rrr_thread_signal_set(struct rrr_thread *thread, int signal);
-int rrr_thread_state_get(struct rrr_thread *thread);
-int rrr_thread_state_check(struct rrr_thread *thread, int state);
-void rrr_thread_state_set(struct rrr_thread *thread, int state);
-
-void rrr_thread_cleanup_postponed_run(int *count);
-
+int rrr_thread_ghost_check (
+		struct rrr_thread *thread
+);
+void rrr_thread_signal_set (
+		struct rrr_thread *thread,
+		int signal
+);
+int rrr_thread_state_get (
+		struct rrr_thread *thread
+);
+int rrr_thread_state_check (
+		struct rrr_thread *thread,
+		int state
+);
+void rrr_thread_state_set (
+		struct rrr_thread *thread,
+		int state
+);
+void rrr_thread_cleanup_postponed_run (
+		int *count
+);
 int rrr_thread_collection_count (
 		struct rrr_thread_collection *collection
 );
