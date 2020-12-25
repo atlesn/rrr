@@ -116,6 +116,18 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
+static inline void rrr_thread_lock (
+		struct rrr_thread *thread
+) {
+	pthread_mutex_lock(&thread->mutex);
+}
+
+static inline void rrr_thread_unlock (
+		struct rrr_thread *thread
+) {
+	pthread_mutex_unlock(&thread->mutex);
+}
+
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
 static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 	rrr_thread_lock(thread);
@@ -149,18 +161,6 @@ void rrr_thread_signal_wait_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
 );
-
-static inline void rrr_thread_lock (
-		struct rrr_thread *thread
-) {
-	pthread_mutex_lock(&thread->mutex);
-}
-
-static inline void rrr_thread_unlock (
-		struct rrr_thread *thread
-) {
-	pthread_mutex_unlock(&thread->mutex);
-}
 
 int rrr_thread_ghost_check (
 		struct rrr_thread *thread
