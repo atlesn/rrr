@@ -903,7 +903,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 			receive_data->http1->upgrade_active = upgrade_mode;
 		}
 		else {
-			RRR_DBG_1("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+			RRR_DBG_4("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
 					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
 		}
 	}

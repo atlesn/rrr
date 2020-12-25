@@ -34,7 +34,7 @@ sub process {
 
 	$message->send();
 
-	print "Send reply protocol \"$protocol\" topic \"$message->{'topic'}\" data \"$message->{'data'}\"\n";
+#	print "Send reply protocol \"$protocol\" topic \"$message->{'topic'}\" data \"$message->{'data'}\"\n";
 
 	# Return 1 for success and 0 for error
 	return 1;
