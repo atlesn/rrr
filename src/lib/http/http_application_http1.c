@@ -955,7 +955,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				data_to_use,
 				read_session->rx_overshoot_size,
 				receive_data->unique_id,
-				transaction->response_part->parsed_protocol_version,
+				transaction->request_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			goto out;
