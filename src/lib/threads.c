@@ -47,6 +47,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Set this higher (like 1000) when debugging
 #define RRR_THREAD_FREEZE_LIMIT_FACTOR 1
 
+#define RRR_THREAD_SIGNAL_CHECK(signals,test) \
+	((signals & test) == test)
+
+#define RRR_THREAD_STATE_CHECK(state,test) \
+	(state == test)
+
 // On some systems pthread_t is an int and on others it's a pointer
 static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
 	return (unsigned long long int) t;
@@ -142,7 +148,7 @@ int rrr_thread_signal_check (
 ) {
 	int ret;
 	rrr_thread_lock(thread);
-	ret = (thread->signal & signal) == signal ? 1 : 0;
+	ret = RRR_THREAD_SIGNAL_CHECK(thread->signal, signal);
 	rrr_thread_unlock(thread);;
 	return ret;
 }
@@ -222,7 +228,11 @@ int rrr_thread_state_check (
 		struct rrr_thread *thread,
 		int state
 ) {
-	return (rrr_thread_state_get(thread) == state);
+	int ret = 0;
+	rrr_thread_lock(thread);
+	ret = RRR_THREAD_STATE_CHECK(thread->state, state);
+	rrr_thread_unlock(thread);
+	return ret;
 }
 
 void rrr_thread_state_set (
@@ -581,16 +591,6 @@ static void __rrr_thread_ghost_set (
 	rrr_thread_unlock(thread);
 }
 
-static uint64_t __rrr_thread_watchdog_time_get (
-		struct rrr_thread *thread
-) {
-	uint64_t ret;
-	rrr_thread_lock(thread);
-	ret = thread->watchdog_time;
-	rrr_thread_unlock(thread);;
-	return ret;
-}
-
 struct watchdog_data {
 	struct rrr_thread *watchdog_thread;
 	struct rrr_thread *watched_thread;
@@ -630,18 +630,24 @@ static void *__rrr_thread_watchdog_entry (
 	uint64_t prev_loop_time = rrr_time_get_64();
 	while (1) {
 		uint64_t nowtime = rrr_time_get_64();
-		uint64_t prevtime = __rrr_thread_watchdog_time_get(thread);
 
 //		RRR_DBG_8 ("Watchdog for thread %s/%p tick\n", thread->name, thread);
 
+		// Read all variables at once and check them later
+		rrr_thread_lock(thread);
+		const int signals = thread->signal;
+		const int state = thread->state;
+		const uint64_t prevtime = thread->watchdog_time;
+		rrr_thread_unlock(thread);
+
 		// Main might try to stop the thread
-		if (rrr_thread_signal_encourage_stop_check(thread)) {
+		if (RRR_THREAD_SIGNAL_CHECK(signals, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
 			RRR_DBG_8 ("Thread %s/%p received encourage stop\n", thread->name, thread);
 			break;
 		}
 
-		if (	!rrr_thread_state_check(thread, RRR_THREAD_STATE_RUNNING_FORKED) &&
-				!rrr_thread_state_check(thread, RRR_THREAD_STATE_INITIALIZED)
+		if (	!RRR_THREAD_STATE_CHECK(state, RRR_THREAD_STATE_RUNNING_FORKED) &&
+				!RRR_THREAD_STATE_CHECK(state, RRR_THREAD_STATE_INITIALIZED)
 		) {
 			RRR_DBG_8 ("Thread %s/%p state is not RUNNING or INITIALIZED\n", thread->name, thread);
 			break;
@@ -659,7 +665,13 @@ static void *__rrr_thread_watchdog_entry (
 		}
 
 		prev_loop_time = rrr_time_get_64();
-		rrr_posix_usleep (50000); // 50 ms
+
+		if (RRR_THREAD_STATE_CHECK(state, RRR_THREAD_STATE_INITIALIZED)) {
+			rrr_posix_usleep (1500000); // 1500 ms
+		}
+		else {
+			rrr_posix_usleep (500000); // 500 ms
+		}
 	}
 
 	RRR_DBG_8 ("Watchdog for thread %s/%p: Executing shutdown routines\n", thread->name, thread);
