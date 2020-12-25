@@ -891,7 +891,7 @@ static int httpclient_redirect_callback (
 		goto out;
 	}
 
-	printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
+	// printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
 
 	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects.
 	// This function will incref the entry as needed.
