@@ -491,13 +491,13 @@ static int __rrr_http_part_query_fields_from_uri_extract_callback (
 	return ret;
 }
 
-static int __rrr_http_part_query_fields_from_uri_extract (
+int rrr_http_part_fields_from_uri_extract (
 		struct rrr_http_part *target
 ) {
 	return rrr_nullsafe_str_chr(target->request_uri_nullsafe, '?', __rrr_http_part_query_fields_from_uri_extract_callback, target);
 }
 
-int rrr_http_part_post_and_query_fields_extract (
+int rrr_http_part_fields_from_post_extract (
 		struct rrr_http_part *target,
 		const char *data_ptr
 ) {
@@ -549,10 +549,6 @@ int rrr_http_part_post_and_query_fields_extract (
 			RRR_LL_APPEND(&target->fields, field_tmp);
 			field_tmp = NULL;
 		RRR_LL_ITERATE_END();
-	}
-
-	if ((ret =  __rrr_http_part_query_fields_from_uri_extract(target)) != 0) {
-		goto out;
 	}
 
 	out:

@@ -359,12 +359,24 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 
-			if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
+			if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data)) != 0) {
 				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 					goto out_send_response_bad_request;
 				}
 				goto out;
 			}
+
+		}
+
+		if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
+
+		if (RRR_DEBUGLEVEL_3) {
+			rrr_http_field_collection_dump (&transaction->request_part->fields);
 		}
 	}
 
