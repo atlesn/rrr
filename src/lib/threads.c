@@ -132,13 +132,13 @@ void rrr_thread_signal_set (
 		struct rrr_thread *thread,
 		int signal
 ) {
-	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
+	RRR_DBG_8 ("Thread %s set signal %d\n", thread->name, signal);
 	rrr_thread_lock(thread);
+	thread->signal |= signal;
 	int ret_tmp;
-	if ((ret_tmp = pthread_cond_signal(&thread->signal_cond)) != 0) {
+	if ((ret_tmp = pthread_cond_broadcast(&thread->signal_cond)) != 0) {
 		RRR_MSG_0("Warning: Error %i from pthread_cond_signal in rrr_thread_signal_set, error will not be handled\n");
 	}
-	thread->signal |= signal;
 	rrr_thread_unlock(thread);
 }
 
@@ -168,6 +168,30 @@ void rrr_thread_signal_wait_busy (
 	}
 }
 
+static void __rrr_thread_signal_wait_cond_timed (
+		struct rrr_thread *thread
+) {
+
+	struct timespec wakeup_time;
+	rrr_time_gettimeofday_timespec(&wakeup_time, 1 * 1000 * 1000); // 1 second
+
+	pthread_mutex_lock(&thread->mutex);
+	int ret_tmp = pthread_cond_timedwait(&thread->signal_cond, &thread->mutex, &wakeup_time);
+	pthread_mutex_unlock(&thread->mutex);
+
+	if (ret_tmp != 0) {
+		switch (errno) {
+			case EAGAIN:
+			case ETIMEDOUT:
+			case 0:
+				break;
+			default:
+				RRR_BUG("BUG: Return from pthread_cond_timedwait was %i %s in __rrr_thread_signal_wait_cond_timed\n",
+						errno, rrr_strerror(errno));
+		}
+	}
+}
+
 void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
@@ -182,25 +206,7 @@ void rrr_thread_signal_wait_cond_with_watchdog_update (
 			break;
 		}
 
-		struct timespec wakeup_time;
-
-		rrr_time_gettimeofday_timespec(&wakeup_time, 1 * 1000 * 1000); // 1 second
-
-		pthread_mutex_lock(&thread->mutex);
-		int ret_tmp = pthread_cond_timedwait(&thread->signal_cond, &thread->mutex, &wakeup_time);
-		pthread_mutex_unlock(&thread->mutex);
-
-		if (ret_tmp != 0) {
-			switch (errno) {
-				case EAGAIN:
-				case ETIMEDOUT:
-				case 0:
-					break;
-				default:
-					RRR_BUG("BUG: Return from pthread_cond_timedwait was %i %s in rrr_thread_signal_wait_cond_with_watchdog_update\n",
-							errno, rrr_strerror(errno));
-			}
-		}
+		__rrr_thread_signal_wait_cond_timed(thread);
 	}
 }
 
@@ -241,7 +247,7 @@ void rrr_thread_state_set (
 ) {
 	rrr_thread_lock(thread);
 
-	RRR_DBG_4 ("Thread %s setting state %i\n", thread->name, new_state);
+	RRR_DBG_8 ("Thread %s setting state %i\n", thread->name, new_state);
 
 	if (new_state == RRR_THREAD_STATE_STOPPED && (
 			thread->state != RRR_THREAD_STATE_RUNNING_FORKED &&
@@ -667,7 +673,8 @@ static void *__rrr_thread_watchdog_entry (
 		prev_loop_time = rrr_time_get_64();
 
 		if (RRR_THREAD_STATE_CHECK(state, RRR_THREAD_STATE_INITIALIZED)) {
-			rrr_posix_usleep (1500000); // 1500 ms
+			// Waits for any signal change
+			__rrr_thread_signal_wait_cond_timed(thread);
 		}
 		else {
 			rrr_posix_usleep (500000); // 500 ms

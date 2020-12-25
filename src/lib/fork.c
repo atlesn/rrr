@@ -183,11 +183,11 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 		RRR_DBG_1("=== WAIT PID %i ========================================================================================\n", ret);
 		if (WIFSIGNALED(*status)) {
 			int signal = WTERMSIG(*status);
-			RRR_DBG_4("Fork %i was terminated by signal %i\n", ret, signal);
+			RRR_DBG_1("Fork %i was terminated by signal %i\n", ret, signal);
 		}
 		if (WIFEXITED(*status)) {
 			int child_status = WEXITSTATUS(*status);
-			RRR_DBG_4("Fork %i has exited with status %i\n", ret, child_status);
+			RRR_DBG_1("Fork %i has exited with status %i\n", ret, child_status);
 		}
 	}
 	return ret;
@@ -204,16 +204,16 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 		*active_forks_found = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0 && node->was_waited_for == 0) {
-				RRR_DBG_4("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
+				RRR_DBG_1("After signalling, checking wait for pid %i has exited is %i\n", node->pid, node->was_waited_for);
 				pid_t pid;
 				int status;
 
 				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
-					RRR_DBG_4("Wait pid %i ok\n", node->pid);
+					RRR_DBG_1("Wait pid %i ok\n", node->pid);
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
 				else if (pid == -1 && errno == ECHILD) {
-					RRR_DBG_4("Error from waitpid on pid %i in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
+					RRR_DBG_1("Error from waitpid on pid %i in parent %i status %i after signalling errno is %i. Not exited yet? Might be a child of a child (whos parent has not exited).\n",
 							node->pid, getpid(), status, errno);
 				}
 
@@ -282,10 +282,10 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 		rrr_fork_handler_signal_pending = 0;
 
 		if (force_wait_all) {
-			RRR_DBG_4("Fork force wait all, self pid is %i\n", self);
+			RRR_DBG_1("Fork force wait all, self pid is %i\n", self);
 		}
 		else {
-			RRR_DBG_4("Fork handle SIGCHLD, self pid is %i\n", self);
+			RRR_DBG_1("Fork handle SIGCHLD, self pid is %i\n", self);
 		}
 
 		int pid_count = 0;
@@ -298,7 +298,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 				RRR_BUG("BUG: Too many forks in rrr_fork_handle_sigchld_and_notify_if_needed\n");
 			}
 			waited_for_pids[pid_count++] = pid_tmp;
-			RRR_DBG_4("Fork %i exited with status %i\n", pid_tmp, status);
+			RRR_DBG_1("Fork %i exited with status %i\n", pid_tmp, status);
 		}
 
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
@@ -313,12 +313,12 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 			else {
 				if (force_wait_all) {
 					int status;
-					RRR_DBG_4("Fork late wait for pid %i self is %i\n", node->pid, self);
+					RRR_DBG_1("Fork late wait for pid %i self is %i\n", node->pid, self);
 					if (__rrr_fork_waitpid(node->pid, &status, WNOHANG) > 0) {
 						was_waited_for = 1;
 					}
 					else {
-						RRR_DBG_4("Fork %i had not yet exited or we are not the parent when late-waiting\n", node->pid);
+						RRR_DBG_1("Fork %i had not yet exited or we are not the parent when late-waiting\n", node->pid);
 					}
 				}
 				else {
