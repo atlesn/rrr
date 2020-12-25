@@ -869,7 +869,11 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data_to_use)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
 		goto out;
 	}
 
