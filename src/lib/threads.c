@@ -517,10 +517,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		goto out_nostop;
 	}
 	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_NEW)) {
-		RRR_MSG_0("Warning: Thread %s/%p state is still NEW\n", thread->name, thread);
+		RRR_MSG_0("Warning: Thread %s/%p state is still NEW when WD shutdown routines begin\n", thread->name, thread);
 	}
 	else if (rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
-		RRR_MSG_0("Warning: Thread %s/%p state is still INITIALIZED\n", thread->name, thread);
+		RRR_DBG_8("Note: Thread %s/%p state is still INITIALIZED when WD shutdown routines begin\n", thread->name, thread);
 	}
 	
 	// Ensure this is always set
