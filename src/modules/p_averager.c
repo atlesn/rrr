@@ -467,8 +467,8 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	uint64_t previous_average_time = rrr_time_get_64();
 	uint64_t average_interval_useconds = data->interval * 1000000;
 
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		averager_maintain_buffer(data);
 

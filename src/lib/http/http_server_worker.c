@@ -436,8 +436,8 @@ static void __rrr_http_server_worker_thread_entry (
 
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
 	uint64_t prev_bytes_total = 0;
-	while (rrr_thread_check_encourage_stop(thread) == 0) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int ret_tmp = 0;
 		if ((ret_tmp = rrr_net_transport_handle_with_transport_ctx_do (

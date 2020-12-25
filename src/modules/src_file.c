@@ -1014,8 +1014,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	int consecutive_nothing_happened = 0;
 
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		ticks++;
 

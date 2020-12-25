@@ -312,7 +312,7 @@ static int main_loop (
 		}
 
 		int count;
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
@@ -330,7 +330,7 @@ static int main_loop (
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 		int count;
 
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}

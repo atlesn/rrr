@@ -1143,8 +1143,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	unsigned int consecutive_nothing_happened = 0; // NO NOT use signed
 	uint64_t prev_bytes_total = 0;
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
@@ -1153,10 +1153,10 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 //			int pos = 0;
 			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
 //				printf("send loop %i/%i\n", pos++, RRR_LL_COUNT(&data->defer_queue));
-				if (rrr_thread_check_encourage_stop(thread)) {
+				if (rrr_thread_signal_encourage_stop_check(thread)) {
 					RRR_LL_ITERATE_BREAK();
 				}
-				rrr_thread_update_watchdog_time(thread);
+				rrr_thread_watchdog_time_update(thread);
 
 				rrr_msg_holder_lock(node);
 				pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
