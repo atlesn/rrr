@@ -624,7 +624,7 @@ int rrr_http_part_parse (
 			) {
 				// No content
 				part->data_length = 0;
-				*target_size = parsed_bytes_total;
+				*target_size = part->headroom_length + part->header_length;
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {
