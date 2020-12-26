@@ -977,16 +977,16 @@ static int __rrr_net_transport_openssl_send (
 	int sent_bytes_tmp;
 	if ((sent_bytes_tmp = BIO_write(ssl_data->web, data, size)) <= 0) {
 		if (BIO_should_retry(ssl_data->web)) {
-			return 0;
+			return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 		}
-		RRR_DBG_7("Write failure in __rrr_net_transport_opensl_send\n");
-		return 1;
+		RRR_DBG_7("Write failure in __rrr_net_transport_openssl_send, maybe remote has closed the connection\n");
+		return RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 	}
 	else {
 		*sent_bytes = sent_bytes_tmp;
 	}
 
-	return 0;
+	return RRR_NET_TRANSPORT_SEND_OK;
 }
 
 static int __rrr_net_transport_openssl_poll (
