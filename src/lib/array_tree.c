@@ -965,9 +965,36 @@ int rrr_array_tree_interpret_raw (
 		int data_length,
 		const char *name
 ) {
+	int ret = 0;
+
+	struct rrr_array_tree *new_tree = NULL;
+
 	struct rrr_parse_pos pos;
 	rrr_parse_pos_init(&pos, data, data_length);
-	return rrr_array_tree_interpret(target, &pos, name);
+
+	if ((ret = rrr_array_tree_interpret(&new_tree, &pos, name)) != 0) {
+		goto out;
+	}
+
+	// Allow extra ; at the end
+	rrr_parse_ignore_space_and_tab(&pos);
+	rrr_parse_match_word(&pos, ";");
+	rrr_parse_ignore_space_and_tab(&pos);
+
+	if (!RRR_PARSE_CHECK_EOF(&pos)) {
+		RRR_MSG_0("Extra data found after array definition\n");
+		ret = 1;
+		goto out;
+	}
+
+	*target = new_tree;
+	new_tree = NULL;
+
+	out:
+	if (new_tree != NULL) {
+		rrr_array_tree_destroy(new_tree);
+	}
+	return ret;
 }
 
 static void __rrr_array_tree_dump (
@@ -1330,7 +1357,7 @@ int __rrr_array_tree_import_value_callback (
 			goto out;
 		}
 		else if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
-			RRR_MSG_0("Invalid data in type conversion\n");
+			RRR_MSG_0("Type conversion in array tree failed for type '%s'\n", new_value->definition->identifier);
 		}
 		else {
 			RRR_MSG_0("Hard error while importing data in __rrr_array_tree_import_data_into_value, return was %i\n", ret);

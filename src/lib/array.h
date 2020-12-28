@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "cmdlineparser/cmdline.h"
 #include "util/linked_list.h"
+#include "rrr_inttypes.h"
 
 #define RRR_ARRAY_VERSION 7
 
@@ -96,6 +97,11 @@ int rrr_array_push_value_blob_with_tag_nullsafe (
 		const char *tag,
 		const struct rrr_nullsafe_str *str
 );
+int rrr_array_push_value_str_with_tag_nullsafe (
+		struct rrr_array *collection,
+		const char *tag,
+		const struct rrr_nullsafe_str *str
+);
 int rrr_array_push_value_str_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
@@ -109,6 +115,9 @@ int rrr_array_get_value_unsigned_64_by_tag (
 );
 void rrr_array_clear (
 		struct rrr_array *collection
+);
+void rrr_array_clear_void (
+		void *collection
 );
 void rrr_array_clear_by_tag (
 		struct rrr_array *collection,
@@ -141,7 +150,20 @@ int rrr_array_new_message_from_collection (
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
-		ssize_t topic_length
+		rrr_u16 topic_length
+);
+int rrr_array_message_iterate (
+		const struct rrr_msg_msg *message_orig,
+		int (*callback)(
+				const char *data_start,
+				const struct rrr_type_definition *type,
+				rrr_type_flags flags,
+				rrr_length tag_length,
+				rrr_length total_length,
+				rrr_length element_count,
+				void *arg
+		),
+		void *callback_arg
 );
 int rrr_array_message_append_to_collection (
 		struct rrr_array *target,

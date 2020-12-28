@@ -76,6 +76,7 @@ typedef int64_t rrr_slength;
 #define PRIrrrbl PRIu64
 #define PRIrrrsl PRIi64
 
+#define RRR_SLENGTH_MAX INT64_MAX
 #define RRR_LENGTH_MAX 0xffffffff // 8 f's
 
 static inline void __rrr_types_asserts(void) {

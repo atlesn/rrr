@@ -267,7 +267,7 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 	unsigned long long int result = 0;
 
 	if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting unsigned integer in import_ustr\n");
+		RRR_MSG_0("Error while converting unsigned integer in rrr_type_import_ustr_raw\n");
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
@@ -284,13 +284,13 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 
 static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_ustr\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_ustr\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_ustr\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_ustr\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_ustr\n");
+		RRR_BUG("length was not 0 in __rrr_type_import_ustr\n");
 	}
 
 	int ret = RRR_TYPE_PARSE_OK;
@@ -299,7 +299,7 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	size_t allocation_size = sizeof(rrr_type_ustr);
 
 	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_ustr\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_import_ustr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -352,7 +352,7 @@ int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const c
 	long long int result = 0;
 
 	if (__rrr_type_convert_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting unsigned integer in import_istr\n");
+		RRR_MSG_0("Error while converting signed integer in rrr_type_import_istr_raw\n");
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
@@ -369,13 +369,13 @@ int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const c
 
 static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_istr\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_istr\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_istr\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_istr\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_istr\n");
+		RRR_BUG("length was not 0 in __rrr_type_import_istr\n");
 	}
 
 	int ret = RRR_TYPE_PARSE_OK;
@@ -384,7 +384,7 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	size_t allocation_size = sizeof(rrr_type_istr);
 
 	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_istr\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_import_istr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -416,10 +416,10 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 
 	rrr_length total_size = node->import_length * node->element_count;
 
+	CHECK_END_AND_RETURN(total_size);
+
 	rrr_length found = 0;
 	for (const char *start_tmp = start; start_tmp < end && found < total_size; start_tmp++) {
-		CHECK_END_AND_RETURN(1);
-
 		char c = *start_tmp;
 		if (!validate(c)) {
 			RRR_MSG_0("Invalid separator character 0x%01x\n", c);
@@ -451,7 +451,9 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 	if ((ret = __rrr_type_import_sep_stx(node, parsed_bytes, start, end, __rrr_type_validate_sep)) != RRR_TYPE_PARSE_OK) {
-		RRR_MSG_0("Import of sep type failed\n");
+		if (ret != RRR_TYPE_PARSE_INCOMPLETE) {
+			RRR_MSG_0("Import of sep type failed\n");
+		}
 	}
 	return ret;
 }
@@ -835,7 +837,7 @@ static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
 	(void)(start);
 	(void)(end);
 
-	RRR_DBG_1("Error trigger reached while importing array definition, triggering soft error.\n");
+	RRR_DBG_3("Error trigger reached while importing array definition, triggering soft error.\n");
 
 	return RRR_TYPE_PARSE_SOFT_ERR;
 }

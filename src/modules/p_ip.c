@@ -1577,8 +1577,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	unsigned int consecutive_nothing_happened = 0;
 	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 //		printf ("IP ticks: %u\n", tick);
 

@@ -29,10 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /*
  * About debug levels, ORed together:
  * 0 - Only errors are printed. Critical errors to STDERR, other errors to STDOUT.
- * 1 - Info about loading and closing of modules and threads. Detailed errors about incorrect data from outside. (low rate)
+ * 1 - Info about loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside. (low rate)
  * 2 - Runtime information in modules, they tell what they do. Log messages between modules. (high rate)
  * 3 - Some data debugging is printed (high rate)
- * 4 - Debug locking, thread states and buffers (very high rate)
+ * 4 - Debug locking and buffers (very high rate)
  * 5 - Debug cmodule worker fork and mmap channel communication
  * 6 - Not used
  * 7 - Debug sockets (high rate at initialization)

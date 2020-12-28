@@ -72,6 +72,9 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_method");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, method_str);
 
+	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
+
 	/*
 	 * DO NOT REMOVE THIS COMMENT
 	 * Default method when user only specifies POST is RRR_HTTP_METHOD_POST_URLENCODED

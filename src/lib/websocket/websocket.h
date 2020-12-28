@@ -36,7 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_WEBSOCKET_OPCODE_PONG				10
 
 #define RRR_WEBSOCKET_FRAME_CALLBACK_ARGS \
-	uint8_t opcode, const char *payload, uint64_t payload_size, void *arg
+	uint8_t opcode, const struct rrr_nullsafe_str *payload, void *arg
+
+struct rrr_nullsafe_str;
+struct rrr_net_transport_handle;
 
 struct rrr_websocket_header {
 	uint8_t fin;
@@ -65,8 +68,7 @@ struct rrr_websocket_frame_collection {
 
 struct rrr_websocket_state_receive {
 	struct rrr_websocket_header header;
-	char *fragment_buffer;
-	uint64_t fragment_buffer_size;
+	struct rrr_nullsafe_str *fragment_buffer_nullsafe;
 };
 
 struct rrr_websocket_state {
@@ -86,8 +88,6 @@ struct rrr_websocket_state {
 		uint64_t websocket_key_64[2];
 	};
 };
-
-struct rrr_net_transport_handle;
 
 void rrr_websocket_state_set_client_mode (
 		struct rrr_websocket_state *ws_state
