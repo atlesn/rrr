@@ -1922,11 +1922,12 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			}
 			else {
 				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, mqttclient_poll_callback, poll_sleep) != 0) {
+				ret_tmp = rrr_poll_do_poll_delete (thread_data, &thread_data->poll, mqttclient_poll_callback, poll_sleep);
+				RRR_BENCHMARK_OUT(mqtt_client_sleep);
+				if (ret_tmp != 0) {
 					RRR_MSG_0("Error while polling from senders in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
 					break;
 				}
-				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 			}
 		}
 
