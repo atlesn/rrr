@@ -231,7 +231,7 @@ static int __rrr_net_transport_libressl_connect (
 			__rrr_net_transport_libressl_connect_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_accept return was %i\n", ret);
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_connect return was %i\n", ret);
 		goto out_destroy_ip;
 	}
 
