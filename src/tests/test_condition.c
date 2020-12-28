@@ -61,10 +61,10 @@ do {if (tree != NULL) {				\
 	rrr_array_tree_destroy(tree);	\
 }} while(0)
 
-#define TREE_INTERPRET(name)															\
+#define TREE_INTERPRET(name)																								\
 	do {if (rrr_array_tree_interpret_raw(&tree, name, strlen(name), RRR_QUOTE(name))) {	\
-		TEST_MSG("Array tree parsing failed\n");										\
-		ret |= 1;																		\
+		TEST_MSG("Array tree parsing failed\n");																			\
+		ret |= 1;																											\
 	}}while(0)
 
 static int __rrr_test_condition_array_import_callback (
