@@ -228,7 +228,7 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id_preliminary)) != 0) {
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id_preliminary)) != 0) {
 		goto out;
 	}
 
@@ -294,6 +294,10 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 	else {
+		if (is_stream_close) {
+			goto out;
+		}
+
 		if (transaction == NULL) {
 			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, 0, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
@@ -759,8 +763,8 @@ int rrr_http_application_http2_response_submit (
 		goto out;
 	}
 
-	// Misc. callbacks will product the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id)) != 0) {
+	// Misc. callbacks will produce the actual response during ticking, if any
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id)) != 0) {
 		goto out;
 	}
 

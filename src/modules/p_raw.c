@@ -144,8 +144,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	uint64_t total_counter = 0;
 	uint64_t timer_start = rrr_time_get_64();
 	int ticks = 0;
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int prev_message_count = raw_data->message_count;
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
@@ -178,7 +178,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	}
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
 
 	pthread_exit(0);
 }

@@ -604,7 +604,7 @@ int rrr_net_transport_ctx_send_nonblock (
 			size
 	)) != 0) {
 		if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-			RRR_MSG_1("Error from submodule send() in rrr_net_transport_send_nonblock\n");
+			RRR_DBG_7("Error from submodule send() in rrr_net_transport_send_nonblock, connection should be closed\n");
 			goto out;
 		}
 	}

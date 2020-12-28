@@ -563,8 +563,8 @@ static int httpserver_receive_get_raw_response (
 	// We may spend some time in this loop. This is not a problem as each request
 	// is processed by a dedicated thread.
 	uint64_t time_begin = rrr_time_get_64();
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		uint64_t max_time = (rrr_time_get_64() + 10 * 1000);
 		while (rrr_time_get_64() < max_time) {
@@ -1224,8 +1224,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			&callback_data
 	};
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int accept_count = 0;
 

@@ -781,7 +781,7 @@ int process_callback (
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct rrr_msg_msg *message = entry->message;
 
-	rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(thread_data));
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
 	RRR_DBG_3 ("mysql instance %s: processing message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
@@ -911,8 +911,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
 			RRR_MSG_0("Error while polling in mysql instance %s\n",

@@ -206,7 +206,7 @@ static int __rrr_net_transport_plain_read_message (
 				RRR_MSG_0("Hard error while reading from remote in __rrr_net_transport_plain_read_message\n");
 			}
 			else {
-				RRR_DBG_1("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+				RRR_DBG_7("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
 			}
 			goto out;
 		}

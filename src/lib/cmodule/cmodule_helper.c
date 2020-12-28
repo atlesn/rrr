@@ -541,8 +541,8 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 
 	uint64_t start_time = rrr_time_get_64();
 	int tick = 0;
-	while (rrr_thread_check_encourage_stop(thread) == 0) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int read_count_tmp = 0;
 		int config_complete_tmp = 0;
@@ -644,7 +644,7 @@ static int __rrr_cmodule_helper_threads_start (
 
 	sprintf(name, name_template, INSTANCE_D_NAME(parent_thread_data));
 
-	if ((ret = rrr_thread_new_collection(&thread_collection)) != 0) {
+	if ((ret = rrr_thread_collection_new(&thread_collection)) != 0) {
 		RRR_MSG_0("Could not create thread collection in __rrr_cmodule_helper_threads_start in instance %s\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		goto out;
@@ -656,7 +656,7 @@ static int __rrr_cmodule_helper_threads_start (
 	data->stats = stats;
 	data->long_sleep_time_us = long_sleep_time_us;
 
-	if ((thread = rrr_thread_allocate_preload_and_register (
+	if ((thread = rrr_thread_collection_thread_allocate_preload_and_register (
 			thread_collection,
 			__rrr_cmodule_helper_reader_thread_entry,
 			NULL,
@@ -678,7 +678,7 @@ static int __rrr_cmodule_helper_threads_start (
 		goto out_destroy_collection;
 	}
 
-	if ((ret = rrr_thread_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
+	if ((ret = rrr_thread_collection_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
 		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		ret = 1;
@@ -687,7 +687,7 @@ static int __rrr_cmodule_helper_threads_start (
 
 	goto out;
 	out_destroy_collection:
-		rrr_thread_destroy_collection(thread_collection);
+		rrr_thread_collection_destroy(thread_collection);
 		// Set everything to zero to avoid confusing cleanup functions
 		memset(data, '\0', sizeof(*data));
 
@@ -699,12 +699,12 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	struct rrr_cmodule_helper_reader_thread_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		rrr_thread_stop_and_join_all_no_unlock(data->thread_collection);
-		rrr_thread_destroy_collection(data->thread_collection);
+		rrr_thread_collection_stop_and_join_all_no_unlock(data->thread_collection);
+		rrr_thread_collection_destroy(data->thread_collection);
 		data->thread_collection = NULL;
 	}
 
-	if (data->parent_thread_data != NULL && rrr_thread_is_ghost(INSTANCE_D_THREAD(data->parent_thread_data))) {
+	if (data->parent_thread_data != NULL && rrr_thread_ghost_check(INSTANCE_D_THREAD(data->parent_thread_data))) {
 		RRR_BUG("Could not stop reader threads in cmodule instance %s. Can't continue.",
 				INSTANCE_D_NAME(data->parent_thread_data));
 	}
@@ -753,10 +753,10 @@ void rrr_cmodule_helper_loop (
 	unsigned int consecutive_nothing_happened = 0;
 
 	uint64_t next_stats_time = 0;
-	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
-		rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(thread_data));
+	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
+		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
-		if (rrr_thread_check_any_stopped(reader_thread_data.thread_collection)) {
+		if (rrr_thread_collection_check_any_stopped(reader_thread_data.thread_collection)) {
 			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
 			break;
 		}

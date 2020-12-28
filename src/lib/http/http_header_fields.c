@@ -72,6 +72,18 @@ static int __rrr_http_header_parse_single_unsigned_value (RRR_HTTP_HEADER_FIELD_
 		goto out;
 	}
 
+	char test[64];
+	snprintf(test, sizeof(test), "%llu", (long long unsigned) field->value_unsigned);
+	test[sizeof(test) - 1] = '\0';
+
+	if (strlen(test) != rrr_nullsafe_str_len(subvalue->name)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,subvalue->name);
+		RRR_MSG_0("Syntax error in field '%s' requiring an unsigned value, not all bytes were parsed. Value was '%s'.\n", name, value);
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
 	out:
 	return ret;
 }

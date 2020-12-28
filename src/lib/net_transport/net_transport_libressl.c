@@ -231,7 +231,7 @@ static int __rrr_net_transport_libressl_connect (
 			__rrr_net_transport_libressl_connect_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_accept return was %i\n", ret);
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_libressl_connect return was %i\n", ret);
 		goto out_destroy_ip;
 	}
 
@@ -606,12 +606,12 @@ static int __rrr_net_transport_libressl_send (
 	while (size_remaining > 0 && --retries > 0) {
 		int ret_tmp = poll(&pfd, 1, 0);
 		if (ret_tmp == -1) {
-			RRR_MSG_1("Poll failed for TLS fd %i while writing: %s\n", pfd.fd, rrr_strerror(errno));
+			RRR_DBG_7("Poll failed for TLS fd %i while writing: %s\n", pfd.fd, rrr_strerror(errno));
 			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
 		else if ((pfd.revents & (POLLERR|POLLNVAL))) {
-			RRR_MSG_1("Bad file descriptor for TLS fd %i while writing\n", pfd.fd);
+			RRR_DBG_7("Bad file descriptor for TLS fd %i while writing, maybe remote has closed the connection\n", pfd.fd);
 			ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 			goto out;
 		}
@@ -626,7 +626,7 @@ static int __rrr_net_transport_libressl_send (
 				pfd.events = POLLOUT;
 			}
 			else if (bytes == -1) {
-				RRR_MSG_1("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->ctx));
+				RRR_DBG_7("Error while writing to TLS fd %i: %s\n", pfd.fd, tls_error(tls_data->ctx));
 				ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 				goto out;
 			}

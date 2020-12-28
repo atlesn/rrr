@@ -903,7 +903,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 			receive_data->http1->upgrade_active = upgrade_mode;
 		}
 		else {
-			RRR_DBG_1("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+			RRR_DBG_4("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
 					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
 		}
 	}
@@ -955,7 +955,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				data_to_use,
 				read_session->rx_overshoot_size,
 				receive_data->unique_id,
-				transaction->response_part->parsed_protocol_version,
+				transaction->request_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			goto out;
@@ -985,7 +985,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
 	// ASCII validation
-	int rnrn_counter = 4;
+/*	int rnrn_counter = 4;
 	for (const unsigned char *pos = (const unsigned char *) read_session->rx_buf_ptr; pos < (const unsigned char *) end; pos++) {
 //		printf("pos: %02x\n", *pos);
 		if (*pos == '\r' && (rnrn_counter == 4 || rnrn_counter == 2)) {
@@ -1011,7 +1011,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	if (rnrn_counter != 0) {
 		ret = RRR_READ_INCOMPLETE;
 		goto out;
-	}
+	}*/
 
 	size_t target_size;
 	size_t parsed_bytes = 0;
@@ -1040,6 +1040,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		part_to_use = receive_data->http1->active_transaction->request_part;
 		parse_type = RRR_HTTP_PARSE_REQUEST;
 	}
+
 
 #ifdef RRR_WITH_NGHTTP2
 	if (read_session->parse_pos == 0 && !receive_data->is_client) {

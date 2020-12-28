@@ -263,8 +263,8 @@ static void *thread_entry_exploder (struct rrr_thread *thread) {
 
 
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, exploder_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in exploder instance %s\n",
