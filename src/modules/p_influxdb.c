@@ -511,8 +511,8 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, influxdb_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in influxdb instance %s\n",
@@ -550,14 +550,14 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
 
 	pthread_exit(0);
 }

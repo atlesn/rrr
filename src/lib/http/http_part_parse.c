@@ -471,8 +471,6 @@ int rrr_http_part_parse (
 ) {
 	int ret = RRR_HTTP_PARSE_INCOMPLETE;
 
-//	printf ("Parse part at: %s\n", data_ptr + start_pos);
-
 //	static int run_count = 0;
 //	printf ("Run count: %i pos %i\n", ++run_count, start_pos);
 
@@ -511,7 +509,12 @@ int rrr_http_part_parse (
 
 		parsed_bytes_total += parsed_bytes_tmp;
 
-		if (ret != RRR_HTTP_PARSE_OK) {
+		if (ret == RRR_HTTP_PARSE_INCOMPLETE && end - data_ptr > 65536) {
+			RRR_MSG_0("HTTP1 request or response line not found in the first 64K bytes, triggering soft error.\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+		else if (ret != RRR_HTTP_PARSE_OK) {
 			if (part->parsed_protocol_version != 0) {
 				RRR_BUG("BUG: Protocol version was set prior to complete response/request parsing in rrr_http_part_parse\n");
 			}
@@ -624,7 +627,7 @@ int rrr_http_part_parse (
 			) {
 				// No content
 				part->data_length = 0;
-				*target_size = parsed_bytes_total;
+				*target_size = part->headroom_length + part->header_length;
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {

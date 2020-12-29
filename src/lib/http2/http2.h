@@ -107,7 +107,7 @@ int rrr_http2_response_submit (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );
-int rrr_http2_data_submit_request (
+int rrr_http2_data_submission_request_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 );

@@ -1345,7 +1345,7 @@ static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
 static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
 	int ret = RRR_MQTT_SOFT_ERROR; // Default is soft failure
 
-	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(data->thread_data)) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1) {
 		int alive = 0;
 		int send_allowed = 0;
 
@@ -1464,7 +1464,7 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 	}
 
 	// Subscription loop
-	while (rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(data->thread_data)) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1) {
 		// This will also do sending/receiving
 		if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
 			goto out;
@@ -1564,8 +1564,8 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	data->transport_handle = 0;
 	data->session = NULL;
 
-	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(INSTANCE_D_THREAD(data->thread_data)) != 1; i--) {
-		rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(data->thread_data));
+	for (int i = i_first; i >= 0 && rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1; i--) {
+		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
 		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%" PRIrrrbl "' username '%s' client-ID '%s' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data),
@@ -1775,7 +1775,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	// Do this to avoid connection build-up on persistent error conditions
 	rrr_mqtt_client_close_all_connections(data->mqtt_client_data);
 
-	if (rrr_thread_check_encourage_stop(thread) == 1) {
+	if (rrr_thread_signal_encourage_stop_check(thread) == 1) {
 		goto out_destroy_client;
 	}
 
@@ -1824,9 +1824,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	uint64_t prev_stats_time = rrr_time_get_64();
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_update_watchdog_time(thread);
+		rrr_thread_watchdog_time_update(thread);
 
 		int alive = 0;
 		int send_allowed = 0;
@@ -1922,11 +1922,12 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			}
 			else {
 				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, mqttclient_poll_callback, poll_sleep) != 0) {
+				ret_tmp = rrr_poll_do_poll_delete (thread_data, &thread_data->poll, mqttclient_poll_callback, poll_sleep);
+				RRR_BENCHMARK_OUT(mqtt_client_sleep);
+				if (ret_tmp != 0) {
 					RRR_MSG_0("Error while polling from senders in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
 					break;
 				}
-				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 			}
 		}
 

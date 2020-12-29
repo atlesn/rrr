@@ -74,10 +74,7 @@ int rrr_nullsafe_str_new_or_replace_raw (
 
 	*result = NULL;
 
-	if (len == 0 && str != NULL) {
-		RRR_BUG("BUG: len was 0 but str was not NULL in rrr_nullsafe_str_new\n");
-	}
-	else if (len != 0 && str == NULL) {
+	if (len != 0 && str == NULL) {
 		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
 

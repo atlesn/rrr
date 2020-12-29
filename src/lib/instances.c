@@ -51,9 +51,9 @@ int rrr_instance_check_threads_stopped (
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance *instance = node;
 		if (
-				rrr_thread_get_state(instance->thread) == RRR_THREAD_STATE_STOPPED ||
+				rrr_thread_state_get(instance->thread) == RRR_THREAD_STATE_STOPPED ||
 	//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
-				rrr_thread_is_ghost(instance->thread)
+				rrr_thread_ghost_check(instance->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", INSTANCE_M_NAME(instance));
 			ret = 1;

@@ -388,8 +388,8 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
 	unsigned int consecutive_nothing_happened = 0;
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
 			RRR_MSG_0("Error while accepting connections in socket instance %s\n",

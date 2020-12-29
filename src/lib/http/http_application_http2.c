@@ -228,7 +228,7 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id_preliminary)) != 0) {
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id_preliminary)) != 0) {
 		goto out;
 	}
 
@@ -294,6 +294,10 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 	else {
+		if (is_stream_close) {
+			goto out;
+		}
+
 		if (transaction == NULL) {
 			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, 0, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
@@ -359,12 +363,24 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 
-			if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
+			if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data)) != 0) {
 				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 					goto out_send_response_bad_request;
 				}
 				goto out;
 			}
+
+		}
+
+		if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
+
+		if (RRR_DEBUGLEVEL_3) {
+			rrr_http_field_collection_dump (&transaction->request_part->fields);
 		}
 	}
 
@@ -595,7 +611,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		void *arg
 ) {
 	size_t *result_len = arg;
-	return rrr_base64_decode (
+	return rrr_base64url_decode (
 			str,
 			len,
 			result_len
@@ -747,8 +763,8 @@ int rrr_http_application_http2_response_submit (
 		goto out;
 	}
 
-	// Misc. callbacks will product the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id)) != 0) {
+	// Misc. callbacks will produce the actual response during ticking, if any
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id)) != 0) {
 		goto out;
 	}
 
