@@ -434,8 +434,10 @@ static void __rrr_http_server_worker_thread_entry (
 		}
 	}
 
+	uint64_t connection_start_time = rrr_time_get_64();
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
 	uint64_t prev_bytes_total = 0;
+	uint64_t prev_something_happened = rrr_time_get_64();
 	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
@@ -468,7 +470,22 @@ static void __rrr_http_server_worker_thread_entry (
 			break;
 		}
 
+		const uint64_t time_now = rrr_time_get_64();
+
+		if (worker_data.bytes_total == 0 && time_now - connection_start_time > RRR_HTTP_SERVER_WORKER_FIRST_DATA_TIMEOUT_MS * 1000) {
+			RRR_MSG_0("HTTP worker %i: No data received within %i ms, closing connection.\n",
+					worker_data.config_data.transport_handle, RRR_HTTP_SERVER_WORKER_FIRST_DATA_TIMEOUT_MS);
+			break;
+		}
+
+		if (time_now - prev_something_happened > RRR_HTTP_SERVER_WORKER_IDLE_TIMEOUT_MS * 1000) {
+			RRR_DBG_2("HTTP worker %i: Nothing received for %i ms, closing connection.\n",
+					worker_data.config_data.transport_handle, RRR_HTTP_SERVER_WORKER_IDLE_TIMEOUT_MS);
+			break;
+		}
+
 		if (prev_bytes_total != worker_data.bytes_total) {
+			prev_something_happened = time_now;
 			consecutive_nothing_happened = 0;
 		}
 		else {

@@ -125,6 +125,12 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
+	if (crlf == start) {
+		RRR_MSG_0("No request method string found in HTTP request, only CRLF found\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
 		RRR_MSG_0("Whitespace missing after request method in HTTP request\n");
 		rrr_http_util_print_where_message(start, end);
