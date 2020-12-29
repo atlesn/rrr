@@ -1029,6 +1029,11 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	enum rrr_http_parse_type parse_type = 0;
 
 	if (receive_data->is_client == 1) {
+		if (receive_data->http1->active_transaction == NULL) {
+			RRR_MSG_0("Received unexpected data from HTTP server, no transaction was active\n");
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
 		part_to_use = receive_data->http1->active_transaction->response_part;
 		parse_type = RRR_HTTP_PARSE_RESPONSE;
 	}
