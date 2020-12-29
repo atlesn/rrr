@@ -1244,6 +1244,14 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	return ret;
 }
 
+static int __rrr_http_application_http1_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+	*is_possible = (http1->active_transaction == NULL);
+	return 0;
+}
+
 static int __rrr_http_application_http1_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -1269,6 +1277,10 @@ static int __rrr_http_application_http1_request_send (
 	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_nullsafe);
 
 	struct rrr_string_builder *header_builder = NULL;
+
+	if (http1->active_transaction != NULL) {
+		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
+	}
 
 	__rrr_http_application_http1_transaction_set(http1, transaction);
 
@@ -1512,6 +1524,7 @@ static void __rrr_http_application_http1_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
+	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
 	__rrr_http_application_http1_polite_close

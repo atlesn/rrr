@@ -179,6 +179,17 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 	return ret;
 }
 
+int rrr_http_session_transport_ctx_request_send_possible (
+		int *is_possible,
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return rrr_http_application_transport_ctx_request_send_possible (
+			is_possible,
+			session->application
+	);
+}
+
 int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_application **upgraded_app,
 		struct rrr_net_transport_handle *handle,

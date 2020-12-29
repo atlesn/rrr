@@ -958,7 +958,6 @@ int rrr_http2_transport_ctx_tick (
 	if (session->initial_receive_data != NULL) {
 		size_t send_bytes = session->initial_receive_data_len;
 		const void *send_pos = session->initial_receive_data;
-		printf("initial receive data: --%llu--%s--\n", send_bytes, (const char *) send_pos);
 		while (send_bytes) {
 			ssize_t bytes = nghttp2_session_mem_recv(session->session, send_pos, send_bytes);
 			if (bytes < 0) {

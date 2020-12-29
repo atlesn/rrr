@@ -67,6 +67,13 @@ int rrr_http_application_new (
 	return 1;
 }
 
+int rrr_http_application_transport_ctx_request_send_possible (
+		int *is_possible,
+		struct rrr_http_application *app
+) {
+	return app->constants->request_send_possible(is_possible, app);
+}
+
 int rrr_http_application_transport_ctx_request_send (
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,

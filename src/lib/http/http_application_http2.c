@@ -124,6 +124,14 @@ static int __rrr_http_application_http2_header_submit_nullsafe (
 	);
 }
 
+static int __rrr_http_application_http2_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	(void)(application);
+	*is_possible = 1;
+	return 0;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -539,6 +547,7 @@ static void __rrr_http_application_http2_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http2_constants = {
 	RRR_HTTP_APPLICATION_HTTP2,
 	__rrr_http_application_http2_destroy,
+	__rrr_http_application_http2_request_send_possible,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
 	__rrr_http_application_http2_polite_close

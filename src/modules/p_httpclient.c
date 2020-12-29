@@ -1172,15 +1172,21 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						data->redirects_max,
 						0
 				)) != RRR_HTTP_OK) {
-					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-						// Let soft error propagate
+					if (ret_tmp == RRR_HTTP_BUSY) {
+						// Try again
+						ret_tmp = 0;
 					}
 					else {
-						RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s\n",
-								INSTANCE_D_NAME(thread_data));
-						ret_tmp = RRR_HTTP_HARD_ERROR;
+						if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
+							// Let soft error propagate
+						}
+						else {
+							RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s\n",
+									INSTANCE_D_NAME(thread_data));
+							ret_tmp = RRR_HTTP_HARD_ERROR;
+						}
+						RRR_LL_ITERATE_LAST(); // Don't break, unlock first
 					}
-					RRR_LL_ITERATE_LAST(); // Don't break, unlock first
 				}
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
