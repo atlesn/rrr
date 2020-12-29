@@ -66,11 +66,18 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	free(http1);
 }
 
+static void __rrr_http_application_http1_transaction_clear (
+		struct rrr_http_application_http1 *http1
+) {
+	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	http1->active_transaction = NULL;
+}
+
 static void __rrr_http_application_http1_transaction_set (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_http_transaction *transaction
 ) {
-	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	__rrr_http_application_http1_transaction_clear(http1);
 	rrr_http_transaction_incref(transaction);
 	http1->active_transaction = transaction;
 }
@@ -555,6 +562,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 	receive_data->http1->upgrade_active = upgrade_mode;
 
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	return ret;
 }
@@ -970,6 +978,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
