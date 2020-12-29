@@ -378,6 +378,20 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		goto out;
 	}
 
+	int request_send_is_possible;
+	if ((ret = rrr_http_session_transport_ctx_request_send_possible (
+			&request_send_is_possible,
+			handle
+	)) != 0) {
+		RRR_MSG_0("Error while checking for request send possible in HTTP session in __rrr_http_client_request_send_callback\n");
+		goto out;
+	}
+
+	if (!request_send_is_possible) {
+		ret = RRR_HTTP_BUSY;
+		goto out;
+	}
+
 	if (callback_data->raw_request_data != NULL) {
 		if (callback_data->raw_request_data_size == 0) {
 			RRR_DBG_1("Raw request data was set in __rrr_http_client_request_send_callback_final but size was 0, nothing to send.\n");
@@ -553,6 +567,9 @@ static int __rrr_http_client_request_send_intermediate_target_create (
 			__rrr_http_client_request_send_final_transport_ctx_callback,
 			callback_data
 	)) != 0) {
+		if (ret == RRR_HTTP_BUSY) {
+			goto out;
+		}
 		goto out_remove_target;
 	}
 
@@ -767,8 +784,14 @@ static int __rrr_http_client_request_send (
 			server_to_use,
 			port_to_use
 	)) != 0) {
-		RRR_MSG_0("HTTP Connection failed to server %s port %u transport %s in http client return was %i\n",
+		if (ret == RRR_HTTP_BUSY) {
+			RRR_DBG_3("HTTP application temporarily busy during request to server %s port %u transport %s in http client\n",
+				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
+		}
+		else {
+			RRR_MSG_0("HTTP request to server %s port %u transport %s in http client return was %i\n",
 				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
+		}
 		goto out;
 	}
 

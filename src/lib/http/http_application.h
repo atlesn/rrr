@@ -75,6 +75,10 @@ int rrr_http_application_new (
 		enum rrr_http_application_type type,
 		int is_server
 );
+int rrr_http_application_transport_ctx_request_send_possible (
+		int *is_possible,
+		struct rrr_http_application *app
+);
 int rrr_http_application_transport_ctx_request_send (
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_OK						RRR_READ_OK
 #define RRR_HTTP_HARD_ERROR				RRR_READ_HARD_ERROR
 #define RRR_HTTP_SOFT_ERROR				RRR_READ_SOFT_ERROR
+#define RRR_HTTP_BUSY						RRR_READ_INCOMPLETE
 
 #define RRR_HTTP_PARSE_OK				RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR 		RRR_READ_HARD_ERROR

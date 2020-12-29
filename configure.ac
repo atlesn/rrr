@@ -645,3 +645,10 @@ AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 
 AC_OUTPUT
 SHELL_VARS_CLEANUP
+
+# Make sure dependency_libs is always set to empty in new .la files to avoid
+# recursive depedency linking
+echo "rrr: disabling libtool depedency_libs variable"
+sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
+mv libtool.new libtool
+chmod +x libtool

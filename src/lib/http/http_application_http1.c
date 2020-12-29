@@ -66,11 +66,18 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	free(http1);
 }
 
+static void __rrr_http_application_http1_transaction_clear (
+		struct rrr_http_application_http1 *http1
+) {
+	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	http1->active_transaction = NULL;
+}
+
 static void __rrr_http_application_http1_transaction_set (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_http_transaction *transaction
 ) {
-	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	__rrr_http_application_http1_transaction_clear(http1);
 	rrr_http_transaction_incref(transaction);
 	http1->active_transaction = transaction;
 }
@@ -555,6 +562,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 	receive_data->http1->upgrade_active = upgrade_mode;
 
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	return ret;
 }
@@ -970,6 +978,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
@@ -1235,6 +1244,14 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	return ret;
 }
 
+static int __rrr_http_application_http1_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+	*is_possible = (http1->active_transaction == NULL);
+	return 0;
+}
+
 static int __rrr_http_application_http1_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -1260,6 +1277,10 @@ static int __rrr_http_application_http1_request_send (
 	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_nullsafe);
 
 	struct rrr_string_builder *header_builder = NULL;
+
+	if (http1->active_transaction != NULL) {
+		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
+	}
 
 	__rrr_http_application_http1_transaction_set(http1, transaction);
 
@@ -1503,6 +1524,7 @@ static void __rrr_http_application_http1_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
+	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
 	__rrr_http_application_http1_polite_close
