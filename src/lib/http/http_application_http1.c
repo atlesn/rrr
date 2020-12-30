@@ -464,10 +464,13 @@ static int __rrr_http_application_http1_response_receive_callback (
 		const struct rrr_http_header_field *field_response_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
 		const struct rrr_http_header_field *field_response_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
 
-		const struct rrr_http_header_field *field_request_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
-		const struct rrr_http_header_field *field_request_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
-
 		if (field_response_upgrade_websocket != NULL) {
+			const struct rrr_http_header_field *field_request_upgrade_websocket = rrr_http_part_header_field_get_with_value_case (
+					transaction->request_part,
+					"upgrade",
+					"websocket"
+			);
+
 			if (field_request_upgrade_websocket == NULL) {
 				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not WebSocket upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
@@ -500,6 +503,12 @@ static int __rrr_http_application_http1_response_receive_callback (
 			upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
 		else if (field_response_upgrade_h2c != NULL) {
+			const struct rrr_http_header_field *field_request_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(
+					transaction->request_part,
+					"upgrade",
+					"h2c"
+			);
+
 			if (field_request_upgrade_h2c == NULL) {
 				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not HTTP2 upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;

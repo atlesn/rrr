@@ -19,7 +19,7 @@ sub source {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	my $port =  (++$count % 2 == 0 ? "443" : "80");
+	my $port =  (++$count % 2 == 0 ? "443" : "8888");
 
 	$message->push_tag("http_server", "localhost");
 	$message->push_tag("http_endpoint", "/redirect.php");
