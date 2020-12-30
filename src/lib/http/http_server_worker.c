@@ -511,13 +511,13 @@ static void __rrr_http_server_worker_thread_entry (
 			consecutive_nothing_happened++;
 		}
 
-		if (consecutive_nothing_happened > 250) {
+		if (consecutive_nothing_happened > 50) {
 			rrr_posix_usleep(30000); // 30 ms
-//			printf("long sleep complete transactions: %" PRIu64 "\n", worker_data.complete_transactions_total);
+			//printf("long sleep complete transactions: %" PRIu64 "\n", worker_data.complete_transactions_total);
 		}
-		else if (consecutive_nothing_happened > 25) {
-			rrr_posix_usleep(1000); // 1 ms
-//			printf("short sleep\n");
+		else if (consecutive_nothing_happened > 10) {
+			rrr_posix_usleep(5000); // 5 ms
+			//printf("short sleep %u\n", consecutive_nothing_happened);
 		}
 
 		prev_bytes_total = worker_data.bytes_total;
