@@ -94,8 +94,8 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
-librrr_la_CFLAGS = ${OPENSSL_INCLUDES} ${LIBRESSL_LIBTLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${OPENSSL_LDFLAGS} ${LIBRESSL_LIBTLS_LDFLAGS} ${perl5_extra_ld} ${nghttp2_extra_ld}
+librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${nghttp2_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c array.c array_tree.c \
@@ -161,4 +161,4 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm 
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm 
