@@ -90,6 +90,7 @@ int rrr_http_application_transport_ctx_request_send (
 );
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *complete_transaction_count,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,

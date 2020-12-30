@@ -411,7 +411,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 		goto out_send_response;
 	}
 
-	goto out;
+	goto out_complete_transaction;
+
 	out_send_response_bad_request:
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out_send_response:
@@ -422,6 +423,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 		}
+	out_complete_transaction:
+		callback_data->http2->complete_transaction_count++;
 	out:
 		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
 	return ret;

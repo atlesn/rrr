@@ -332,6 +332,7 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 
 	if ((ret = rrr_http_session_transport_ctx_tick (
 			&received_bytes,
+			&worker_data->complete_transactions_total,
 			handle,
 			worker_data->config_data.read_max_size,
 			worker_data->unique_id,
@@ -422,7 +423,10 @@ static void __rrr_http_server_worker_thread_entry (
 
 	pthread_cleanup_push(__rrr_http_server_worker_data_cleanup, &worker_data);
 
-	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.config_data.transport_handle);
+	RRR_DBG_8("HTTP worker %i thread %p starting\n",
+			worker_data.config_data.transport_handle,
+			thread
+	);
 
 	if (worker_data.config_data.callbacks.unique_id_generator_callback != NULL) {
 		if (worker_data.config_data.callbacks.unique_id_generator_callback (
@@ -430,7 +434,7 @@ static void __rrr_http_server_worker_thread_entry (
 				worker_data.config_data.callbacks.unique_id_generator_callback_arg
 		) != 0) {
 			RRR_MSG_0("Failed to generate unique id in HTTP server worker thread\n");
-			goto out;
+			goto out_cleanup;
 		}
 	}
 
@@ -438,6 +442,10 @@ static void __rrr_http_server_worker_thread_entry (
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
 	uint64_t prev_bytes_total = 0;
 	uint64_t prev_something_happened = rrr_time_get_64();
+
+	uint64_t prev_transaction_complete_count = 0;
+	uint64_t prev_transaction_complete = rrr_time_get_64();
+
 	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
@@ -484,6 +492,16 @@ static void __rrr_http_server_worker_thread_entry (
 			break;
 		}
 
+		if (prev_transaction_complete_count != worker_data.complete_transactions_total) {
+			prev_transaction_complete = time_now;
+			prev_transaction_complete_count = worker_data.complete_transactions_total;
+		}
+		else if (time_now - prev_transaction_complete > RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS * 1000) {
+			RRR_DBG_2("HTTP worker %i: No transaction completed for %i ms, closing connection.\n",
+					worker_data.config_data.transport_handle, RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS);
+			break;
+		}
+
 		if (prev_bytes_total != worker_data.bytes_total) {
 			prev_something_happened = time_now;
 			consecutive_nothing_happened = 0;
@@ -494,7 +512,7 @@ static void __rrr_http_server_worker_thread_entry (
 
 		if (consecutive_nothing_happened > 250) {
 			rrr_posix_usleep(30000); // 30 ms
-//			printf("long sleep\n");
+//			printf("long sleep complete transactions: %" PRIu64 "\n", worker_data.complete_transactions_total);
 		}
 		else if (consecutive_nothing_happened > 25) {
 			rrr_posix_usleep(1000); // 1 ms
@@ -504,12 +522,21 @@ static void __rrr_http_server_worker_thread_entry (
 		prev_bytes_total = worker_data.bytes_total;
 	}
 
-	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.config_data.transport_handle);
+	RRR_DBG_3("HTTP worker %i done, %" PRIu64 " requests was processed\n",
+			worker_data.config_data.transport_handle,
+			worker_data.complete_transactions_total
+	);
+
+	RRR_DBG_8("HTTP worker %i thread %p exiting\n",
+			worker_data.config_data.transport_handle,
+			thread
+	);
 
 	// This cleans up HTTP data
-	pthread_cleanup_pop(1);
+	out_cleanup:
+		pthread_cleanup_pop(1);
 	out:
-	return;
+		return;
 }
 
 void *rrr_http_server_worker_thread_entry_intermediate (

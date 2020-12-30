@@ -113,6 +113,7 @@ int rrr_http_session_transport_ctx_request_raw_send (
 );
 int rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *comlete_transactions_count,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,

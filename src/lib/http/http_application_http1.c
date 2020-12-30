@@ -442,7 +442,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li header length is %li\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
 			transaction->response_part->header_length
@@ -559,6 +559,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 		}
 	}
 
+	receive_data->http1->complete_transaction_count++;
 	receive_data->http1->upgrade_active = upgrade_mode;
 
 	out:
@@ -857,7 +858,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP request reading complete, data length is %li response length is %li header length is %li\n",
 			transaction->request_part->data_length,
 			transaction->request_part->headroom_length,
 			transaction->request_part->header_length
@@ -976,6 +977,8 @@ static int __rrr_http_application_http1_request_receive_callback (
 	if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
 		goto out;
 	}
+
+	receive_data->http1->complete_transaction_count++;
 
 	out:
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);

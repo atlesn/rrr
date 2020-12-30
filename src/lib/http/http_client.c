@@ -881,9 +881,11 @@ static int __rrr_http_client_transport_ctx_tick (
 	struct rrr_http_client_tick_callback_data *callback_data = arg;
 
 	ssize_t received_bytes_dummy = 0;
+	uint64_t complete_transactions_count_dummy = 0;
 
 	int ret = rrr_http_session_transport_ctx_tick (
 			&received_bytes_dummy,
+			&complete_transactions_count_dummy,
 			handle,
 			callback_data->read_max_size,
 			0, // No unique ID
