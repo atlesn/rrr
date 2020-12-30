@@ -79,8 +79,9 @@ struct rrr_http_application_constants {
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);
 };
 
-#define RRR_HTTP_APPLICATION_HEAD \
-		const struct rrr_http_application_constants *constants
+#define RRR_HTTP_APPLICATION_HEAD								\
+		const struct rrr_http_application_constants *constants;	\
+		uint64_t complete_transaction_count
 
 struct rrr_http_application {
 	RRR_HTTP_APPLICATION_HEAD;

@@ -50,7 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_types.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
+#endif
 #define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
 
@@ -65,7 +67,10 @@ struct httpserver_data {
 	struct rrr_net_transport_config net_transport_config;
 
 	rrr_setting_uint port_plain;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	rrr_setting_uint port_tls;
+#endif
 
 	struct rrr_map http_fields_accept;
 
@@ -121,9 +126,8 @@ static int httpserver_parse_config (
 		goto out;
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_tls", port_tls, RRR_HTTPSERVER_DEFAULT_PORT_TLS);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
-
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_tls",
 			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
 				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
@@ -134,7 +138,9 @@ static int httpserver_parse_config (
 				goto out;
 			}
 	);
+#endif
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_plain",
 			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
 				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
@@ -228,6 +234,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		}
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS ||
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
@@ -243,6 +250,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 			goto out;
 		}
 	}
+#endif
 
 	out:
 	return ret;

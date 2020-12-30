@@ -351,8 +351,6 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 	unsigned char *base64_tmp = NULL;
 	size_t base64_tmp_length = 0;
 
-	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
-
 	int ret = 0;
 
 	*result = NULL;
@@ -369,6 +367,8 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 
 #ifdef RRR_WITH_OPENSSL_CRYPT
 	unsigned char salt[RRR_PASSWD_SALT_BYTES];
+	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
+
 	if (RAND_bytes(salt, RRR_PASSWD_SALT_BYTES) != 1) {
 		ERR_error_string_n(ERR_get_error(), (char *) tmp, RRR_PASSWD_HASH_MAX_LENGTH + 1);
 		RRR_MSG_0("Could not generate salt in rrr_passwd_encrypt: %s\n", tmp);

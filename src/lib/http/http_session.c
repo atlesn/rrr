@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../util/rrr_time.h"
 #include "http_session.h"
 #include "http_transaction.h"
 #include "http_application.h"
@@ -222,6 +223,7 @@ int rrr_http_session_transport_ctx_request_raw_send (
 
 int rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
@@ -253,6 +255,7 @@ int rrr_http_session_transport_ctx_tick (
 
 	if ((ret = rrr_http_application_transport_ctx_tick (
 			received_bytes,
+			complete_transactions_total,
 			&upgraded_app,
 			session->application,
 			handle,

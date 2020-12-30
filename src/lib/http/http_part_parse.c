@@ -47,6 +47,12 @@ static int __rrr_http_part_parse_response_code (
 		goto out;
 	}
 
+	if (crlf == start) {
+		RRR_MSG_0("No response string found in HTTP response, only CRLF found\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
 	if (crlf - start < (ssize_t) strlen("HTTP/1.1 200")) {
 		ret = RRR_HTTP_PARSE_INCOMPLETE;
 		goto out;
@@ -116,6 +122,12 @@ static int __rrr_http_part_parse_request (
 
 	if ((crlf = rrr_http_util_find_crlf(start, end)) == NULL) {
 		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
+
+	if (crlf == start) {
+		RRR_MSG_0("No request method string found in HTTP request, only CRLF found\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 

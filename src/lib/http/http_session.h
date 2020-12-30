@@ -76,6 +76,10 @@ struct rrr_http_session {
 #ifdef RRR_WITH_NGHTTP2
 	struct rrr_http2_session *http2_session;
 #endif
+
+	// Used when ticking
+	uint64_t prev_complete_transaction_time;
+	uint64_t prev_complete_transaction_count;
 };
 
 struct rrr_net_transport;
@@ -113,6 +117,7 @@ int rrr_http_session_transport_ctx_request_raw_send (
 );
 int rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
