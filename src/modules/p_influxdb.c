@@ -302,6 +302,7 @@ static void influxdb_send_data_callback (
 				0, // No max read size
 				0, // No unique id
 				1, // Is client
+				5000, // Idle timeout, 5 sec
 				NULL,
 				NULL,
 				NULL,

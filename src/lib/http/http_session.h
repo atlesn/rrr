@@ -76,6 +76,10 @@ struct rrr_http_session {
 #ifdef RRR_WITH_NGHTTP2
 	struct rrr_http2_session *http2_session;
 #endif
+
+	// Used when ticking
+	uint64_t prev_complete_transaction_time;
+	uint64_t prev_complete_transaction_count;
 };
 
 struct rrr_net_transport;
@@ -118,6 +122,7 @@ int rrr_http_session_transport_ctx_tick (
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
+		unsigned int complete_transaction_timeout_ms,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),

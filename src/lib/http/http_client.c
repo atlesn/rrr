@@ -222,7 +222,7 @@ void rrr_http_client_request_data_cleanup_void (
 }
 
 struct rrr_http_client_tick_callback_data {
-	int timeout_s;
+	int idle_timeout_ms;
 	ssize_t read_max_size;
 	uint64_t bytes_total;
 
@@ -980,6 +980,7 @@ static int __rrr_http_client_tick_handle_callback (
 			callback_data->read_max_size,
 			0, // No unique ID
 			1, // Is client
+			callback_data->idle_timeout_ms,
 			NULL,
 			NULL,
 			__rrr_http_client_websocket_handshake_callback,
@@ -1004,6 +1005,7 @@ int rrr_http_client_tick (
 		struct rrr_net_transport *transport_keepalive_plain,
 		struct rrr_net_transport *transport_keepalive_tls,
 		ssize_t read_max_size,
+		unsigned int idle_timeout_ms,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
@@ -1024,7 +1026,7 @@ int rrr_http_client_tick (
 	pthread_cleanup_push(rrr_http_redirect_collection_clear_void, &redirects);
 
 	struct rrr_http_client_tick_callback_data callback_data = {
-			0,
+			idle_timeout_ms,
 			read_max_size,
 			0,
 			&redirects,

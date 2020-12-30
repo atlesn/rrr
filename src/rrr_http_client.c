@@ -581,7 +581,7 @@ int main (int argc, const char **argv, const char **env) {
 				data.net_transport_keepalive_plain,
 				data.net_transport_keepalive_tls,
 				1 * 1024 * 1024 * 1024, // 1 GB
-//				5, // Keepalive timeout 5 sec
+				5000, // Idle timeout 5 sec
 				__rrr_http_client_final_callback,
 				&data,
 				__rrr_http_client_redirect_callback,

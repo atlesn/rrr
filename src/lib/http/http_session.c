@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../util/rrr_time.h"
 #include "http_session.h"
 #include "http_transaction.h"
 #include "http_application.h"
@@ -227,6 +228,7 @@ int rrr_http_session_transport_ctx_tick (
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
+		unsigned int complete_transaction_timeout_ms,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -247,6 +249,17 @@ int rrr_http_session_transport_ctx_tick (
 	struct rrr_http_application *upgraded_app = NULL;
 
 	pthread_cleanup_push(rrr_http_application_destroy_if_not_null_void, &upgraded_app);
+
+	if (*complete_transactions_count != session->prev_complete_transaction_count || session->prev_complete_transaction_time == 0) {
+		session->prev_complete_transaction_time = rrr_time_get_64();
+		session->prev_complete_transaction_count = *complete_transactions_count;
+	}
+	else if (complete_transaction_timeout_ms * 1000 + session->prev_complete_transaction_count < rrr_time_get_64()) {
+		// Timeout
+		RRR_DBG_2("HTTP session idle timeout, return soft error\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
 
 	if  (session->application == NULL) {
 		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");

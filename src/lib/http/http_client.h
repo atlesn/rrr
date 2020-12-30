@@ -170,6 +170,7 @@ int rrr_http_client_tick (
 		struct rrr_net_transport *transport_keepalive_plain,
 		struct rrr_net_transport *transport_keepalive_tls,
 		ssize_t read_max_size,
+		unsigned int idle_timeout_ms,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),

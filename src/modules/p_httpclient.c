@@ -1211,7 +1211,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				data->keepalive_transport_plain,
 				data->keepalive_transport_tls,
 				RRR_HTTPCLIENT_READ_MAX_SIZE,
-//					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S,
+				RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
 				httpclient_final_callback,
 				data,
 				httpclient_redirect_callback,
