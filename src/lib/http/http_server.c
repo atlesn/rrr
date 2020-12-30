@@ -44,9 +44,12 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
 	}
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https != NULL) {
 		rrr_net_transport_destroy(server->transport_https);
 	}
+#endif
 
 	free(server);
 }
@@ -186,6 +189,7 @@ int rrr_http_server_start_plain (
 	return ret;
 }
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		uint16_t port,
@@ -206,6 +210,7 @@ int rrr_http_server_start_tls (
 
 	return ret;
 }
+#endif
 
 static void __rrr_http_server_accept_create_http_session_callback (
 		struct rrr_net_transport_handle *handle,
@@ -465,6 +470,7 @@ int rrr_http_server_tick (
 		accept_count += accept_count_tmp;
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https != NULL) {
 		int accept_count_tmp = 0;
 		if ((ret = __rrr_http_server_accept_if_free_thread (
@@ -476,6 +482,7 @@ int rrr_http_server_tick (
 		}
 		accept_count += accept_count_tmp;
 	}
+#endif
 
 	int count_dummy = 0;
 	rrr_thread_collection_join_and_destroy_stopped_threads(&count_dummy, server->threads);
