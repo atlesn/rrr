@@ -480,7 +480,7 @@ static void __rrr_http_server_worker_thread_entry (
 		const uint64_t time_now = rrr_time_get_64();
 
 		if (worker_data.bytes_total == 0 && time_now - connection_start_time > RRR_HTTP_SERVER_WORKER_FIRST_DATA_TIMEOUT_MS * 1000) {
-			RRR_MSG_0("HTTP worker %i: No data received within %i ms, closing connection.\n",
+			RRR_DBG_2("HTTP worker %i: No data received within %i ms, closing connection.\n",
 					worker_data.config_data.transport_handle, RRR_HTTP_SERVER_WORKER_FIRST_DATA_TIMEOUT_MS);
 			break;
 		}
