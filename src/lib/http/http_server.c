@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_application.h"
 
 #include "../threads.h"
+#include "../ip/ip_util.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
@@ -243,9 +244,10 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		goto out;
 	}
 
-/*	char buf[256];
+	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
-	printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
+	RRR_DBG_3("HTTP accept for %s family %i using worker %i\n",
+			buf, sockaddr->sa_family, handle->handle);
 
 	// DO NOT STORE HANDLE POINTER
 

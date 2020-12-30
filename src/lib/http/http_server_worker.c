@@ -326,8 +326,6 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 
 	int ret = 0;
 
-	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &worker_data->bytes_total, handle);
-
 	ssize_t received_bytes = 0;
 
 	if ((ret = rrr_http_session_transport_ctx_tick (
@@ -337,7 +335,6 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			worker_data->config_data.read_max_size,
 			worker_data->unique_id,
 			0, // Is not client
-			3600 * 1000, // Idle timeout, 1 hour
 			__rrr_http_server_worker_upgrade_verify_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_handshake_callback,
@@ -357,6 +354,11 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 		}
 		goto out;
 	}
+
+	// Get this after the first tick to make sure we don't print
+	// the no data within XXX ms message in the main loop if the
+	// request took for some time
+	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &worker_data->bytes_total, handle);
 
 	out:
 	return ret;
@@ -402,10 +404,6 @@ static void __rrr_http_server_worker_thread_entry (
 		RRR_MSG_0("Failed to get preliminary data in HTTP server worker\n");
 		goto out;
 	}
-
-//	char buf[256];
-//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &worker_data.sockaddr, worker_data.socklen);
-//	printf("http worker start: %s family %i socklen %i\n", buf, worker_data.sockaddr.ss_family, worker_data.socklen);
 
 	// This might happen upon server shutdown
 	if (worker_data.config_data.transport_handle == 0) {

@@ -117,12 +117,11 @@ int rrr_http_session_transport_ctx_request_raw_send (
 );
 int rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
-		uint64_t *complete_transactions_count,
+		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		rrr_http_unique_id unique_id,
 		int is_client,
-		unsigned int complete_transaction_timeout_ms,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),

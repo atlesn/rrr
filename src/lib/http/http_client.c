@@ -980,7 +980,6 @@ static int __rrr_http_client_tick_handle_callback (
 			callback_data->read_max_size,
 			0, // No unique ID
 			1, // Is client
-			callback_data->idle_timeout_ms,
 			NULL,
 			NULL,
 			__rrr_http_client_websocket_handshake_callback,
