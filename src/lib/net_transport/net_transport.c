@@ -341,6 +341,9 @@ int rrr_net_transport_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 ) {
+#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL)
+	(void)(alpn_protos_length);
+#endif
 	int ret = 0;
 
 	*result = NULL;

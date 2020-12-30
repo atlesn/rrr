@@ -641,6 +641,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 	}
 #else
 	(void)(transport_keepalive_tls);
+	(void)(net_transport_config);
+	(void)(ssl_no_cert_verify);
 #endif
 
 	if (*transport_keepalive_plain == NULL) {
