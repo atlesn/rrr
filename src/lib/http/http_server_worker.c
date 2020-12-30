@@ -495,8 +495,10 @@ static void __rrr_http_server_worker_thread_entry (
 			prev_transaction_complete = time_now;
 			prev_transaction_complete_count = worker_data.complete_transactions_total;
 		}
-		else if (time_now - prev_transaction_complete > RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS * 1000) {
-			RRR_DBG_2("HTTP worker %i: No transaction completed for %i ms, closing connection.\n",
+		else if (	worker_data.complete_transactions_total == 0 &&
+				time_now - prev_transaction_complete > RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS * 1000
+		) {
+			RRR_DBG_2("HTTP worker %i: No transactions completed within %i ms, closing connection.\n",
 					worker_data.config_data.transport_handle, RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS);
 			break;
 		}
