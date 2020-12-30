@@ -42,7 +42,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
 #include "lib/http/http_client.h"
-#include "lib/http/http_client_target_collection.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -79,23 +78,27 @@ struct rrr_http_client_data {
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
-	struct rrr_http_client_target_collection targets;
 	struct rrr_net_transport_config net_transport_config;
-	struct rrr_net_transport *net_transport_keepalive;
+	struct rrr_net_transport *net_transport_keepalive_plain;
+	struct rrr_net_transport *net_transport_keepalive_tls;
 	int final_callback_count;
 };
 
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
-	rrr_http_client_target_collection_clear(&data->targets, data->net_transport_keepalive);
-	if (data->net_transport_keepalive != NULL) {
-		rrr_net_transport_destroy(data->net_transport_keepalive);
+	if (data->net_transport_keepalive_plain != NULL) {
+		rrr_net_transport_destroy(data->net_transport_keepalive_plain);
 	}
+	if (data->net_transport_keepalive_tls != NULL) {
+		rrr_net_transport_destroy(data->net_transport_keepalive_tls);
+	}
+
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
 	}
+
 	rrr_read_session_collection_clear(&data->read_sessions);
 	rrr_map_clear(&data->tags);
 }
@@ -342,13 +345,10 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
-	rrr_net_transport_destroy(http_client_data->net_transport_keepalive);
-	http_client_data->net_transport_keepalive = 0;
-
 	if (rrr_http_client_request_send (
 			&http_client_data->request_data,
-			&http_client_data->net_transport_keepalive,
-			&http_client_data->targets,
+			&http_client_data->net_transport_keepalive_plain,
+			&http_client_data->net_transport_keepalive_tls,
 			&http_client_data->net_transport_config,
 			5, // Max redirects
 			NULL,
@@ -555,8 +555,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (rrr_http_client_request_send (
 			&data.request_data,
-			&data.net_transport_keepalive,
-			&data.targets,
+			&data.net_transport_keepalive_plain,
+			&data.net_transport_keepalive_tls,
 			&data.net_transport_config,
 			5, // Max redirects
 			NULL,
@@ -570,16 +570,18 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
+	int targets_plain = 0;
+	int targets_tls = 0;
 	uint64_t prev_bytes_total = 0;
 	do {
 		uint64_t bytes_total = 0;
 
 		if ((ret = rrr_http_client_tick (
 				&bytes_total,
-				data.net_transport_keepalive,
-				&data.targets,
+				data.net_transport_keepalive_plain,
+				data.net_transport_keepalive_tls,
 				1 * 1024 * 1024 * 1024, // 1 GB
-				5, // Keepalive timeout 5 sec
+//				5, // Keepalive timeout 5 sec
 				__rrr_http_client_final_callback,
 				&data,
 				__rrr_http_client_redirect_callback,
@@ -599,7 +601,14 @@ int main (int argc, const char **argv, const char **env) {
 		}
 
 		prev_bytes_total = bytes_total;
-	} while (main_running && data.final_callback_count == 0 && RRR_LL_COUNT(&data.targets) > 0);
+
+		if (data.net_transport_keepalive_plain) {
+			rrr_net_transport_stats_get(&targets_plain, data.net_transport_keepalive_plain);
+		}
+		if (data.net_transport_keepalive_tls) {
+			rrr_net_transport_stats_get(&targets_tls, data.net_transport_keepalive_tls);
+		}
+	} while (main_running && data.final_callback_count == 0 && targets_plain + targets_tls > 0);
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

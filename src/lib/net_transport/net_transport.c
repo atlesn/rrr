@@ -249,6 +249,8 @@ static int __rrr_net_transport_handle_destroy (
 		handle->application_ptr_destroy(handle->application_private_ptr);
 	}
 
+	RRR_FREE_IF_NOT_NULL(handle->match_string);
+
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle, "__rrr_net_transport_handle_destroy");
 	pthread_mutex_destroy(&handle->lock_);
 
@@ -319,6 +321,16 @@ void rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	__rrr_net_transport_handle_close_tag_list_process_and_clear_locked(transport);
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+}
+
+void rrr_net_transport_stats_get (
+		int *handle_count,
+		struct rrr_net_transport *transport
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+	*handle_count = RRR_LL_COUNT(collection);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
 
@@ -542,6 +554,67 @@ int rrr_net_transport_connect (
 	return __rrr_net_transport_connect (transport, port, host, callback, callback_arg, 0);
 }
 
+int rrr_net_transport_handle_get_by_match (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	int result_handle = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_handle_get_by_match");
+
+			if (number != node->match_number) {
+				goto mismatch;
+			}
+			else if (string == NULL && node->match_string == NULL) {
+				// OK, match
+			}
+			else if (node->match_string == NULL || string == NULL) {
+				goto mismatch;
+			}
+			else if (strcmp(string, node->match_string) != 0) {
+				goto mismatch;
+			}
+
+			result_handle = node->handle;
+			RRR_LL_ITERATE_LAST();
+
+			mismatch:
+			RRR_NET_TRANSPORT_HANDLE_UNLOCK(node, "rrr_net_transport_handle_get_by_match");
+	RRR_LL_ITERATE_END();
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+
+	return result_handle;
+}
+
+int rrr_net_transport_is_tls (
+		struct rrr_net_transport *transport
+) {
+	return transport->methods->is_tls();
+}
+
+int rrr_net_transport_ctx_handle_match_data_set (
+		struct rrr_net_transport_handle *handle,
+		const char *string,
+		uint64_t number
+) {
+	RRR_FREE_IF_NOT_NULL(handle->match_string);
+	if ((handle->match_string = strdup(string)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
+		return 1;
+	}
+
+	handle->match_number = number;
+
+	return 0;
+}
+
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -733,7 +806,7 @@ void rrr_net_transport_ctx_get_socket_stats (
 int rrr_net_transport_ctx_is_tls (
 		struct rrr_net_transport_handle *handle
 ) {
-	return handle->transport->methods->is_tls();
+	return rrr_net_transport_is_tls(handle->transport);
 }
 
 void rrr_net_transport_ctx_selected_proto_get (
@@ -783,7 +856,7 @@ int rrr_net_transport_iterate_with_callback (
 					ret = 0;
 					goto unlock;
 				}
-				else if (ret == RRR_READ_SOFT_ERROR) {
+				else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
 					ret = 0;
 					// For nice treatment of remote, for instance send a disconnect packet
 					if (node->application_ptr_iterator_pre_destroy != NULL) {
@@ -906,6 +979,24 @@ int rrr_net_transport_read_message_all_handles (
 	return ret;
 }
 */
+
+int rrr_net_transport_match_data_set (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const char *string,
+		uint64_t number
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_match_data_set");
+
+	ret = rrr_net_transport_ctx_handle_match_data_set(handle, string, number);
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+
+	return ret;
+}
+
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,
 		int transport_handle,

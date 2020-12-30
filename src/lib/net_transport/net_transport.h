@@ -56,6 +56,10 @@ struct rrr_net_transport_handle {
 	void *application_private_ptr;
 	void (*application_ptr_destroy)(void *ptr);
 
+	// Optionally used to find existing connections to remotes
+	char *match_string;
+	uint64_t match_number;
+
 	// Called first when we try to destroy. When it returns 0,
 	// we go ahead with destruction and call ptr_destroy. Only
 	// used from within the iterator function.
@@ -223,6 +227,10 @@ int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
 );
+void rrr_net_transport_stats_get (
+		int *handle_count,
+		struct rrr_net_transport *transport
+);
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
@@ -255,6 +263,19 @@ int rrr_net_transport_connect (
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
+);
+int rrr_net_transport_handle_get_by_match (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+);
+int rrr_net_transport_is_tls (
+		struct rrr_net_transport *transport
+);
+int rrr_net_transport_ctx_handle_match_data_set (
+		struct rrr_net_transport_handle *handle,
+		const char *string,
+		uint64_t number
 );
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
@@ -323,6 +344,12 @@ int rrr_net_transport_iterate_with_callback (
 		enum rrr_net_transport_socket_mode mode,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
+);
+int rrr_net_transport_match_data_set (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const char *string,
+		uint64_t number
 );
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,

@@ -65,7 +65,6 @@ struct rrr_http_uri;
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
-struct rrr_http_client_target_collection;
 struct rrr_http_session;
 struct rrr_net_transport;
 
@@ -142,11 +141,10 @@ void rrr_http_client_terminate_if_open (
 		struct rrr_net_transport *transport_keepalive,
 		int transport_keepalive_handle
 );
-// Note that data in the struct may change if there are any redirects
 int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive,
-		struct rrr_http_client_target_collection *targets,
+		struct rrr_net_transport **transport_keepalive_plain,
+		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -158,8 +156,8 @@ int rrr_http_client_request_send (
 );
 int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive,
-		struct rrr_http_client_target_collection *targets,
+		struct rrr_net_transport **transport_keepalive_plain,
+		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
 		const char *raw_request_data,
@@ -169,10 +167,9 @@ int rrr_http_client_request_raw_send (
 );
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
-		struct rrr_net_transport *transport_keepalive,
-		struct rrr_http_client_target_collection *targets,
+		struct rrr_net_transport *transport_keepalive_plain,
+		struct rrr_net_transport *transport_keepalive_tls,
 		ssize_t read_max_size,
-		int keepalive_timeout_s,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg,
 		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),

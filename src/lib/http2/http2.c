@@ -998,6 +998,7 @@ int rrr_http2_transport_ctx_tick (
 
 	if ((ret = nghttp2_session_send(session->session)) != 0) {
 		if (ret == NGHTTP2_ERR_EOF) {
+			RRR_DBG_7("http2 done during send\n");
 			ret = RRR_HTTP2_DONE;
 			goto out;
 		}
@@ -1008,6 +1009,7 @@ int rrr_http2_transport_ctx_tick (
 
 	if ((ret = nghttp2_session_recv(session->session)) != 0) {
 		if (ret == NGHTTP2_ERR_EOF) {
+			RRR_DBG_7("http2 done during recv\n");
 			ret = RRR_HTTP2_DONE;
 			goto out;
 		}

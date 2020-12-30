@@ -179,6 +179,11 @@ static int __rrr_net_transport_libressl_connect_callback (
 		goto out_destroy_data;
 	}
 
+	// Set after handshake to prevent double close of fd if there is any failure
+	data->sockaddr = callback_data->accept_data->addr;
+	data->socklen = callback_data->accept_data->len;
+	data->ip_data = callback_data->accept_data->ip_data;
+
 	*submodule_private_ptr = data;
 	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
 
