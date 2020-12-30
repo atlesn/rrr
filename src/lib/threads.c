@@ -228,7 +228,7 @@ int rrr_thread_state_get (
 	int state;
 	rrr_thread_lock(thread);
 	state = thread->state;
-	rrr_thread_unlock(thread);;
+	rrr_thread_unlock(thread);
 	return state;
 }
 
