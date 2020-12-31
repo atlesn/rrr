@@ -1079,17 +1079,18 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		read_session->parse_pos += parsed_bytes;
 	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
 
-	if (target_size > SSIZE_MAX) {
-		RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
-				target_size, SSIZE_MAX);
-		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
-		goto out;
-	}
+	// Do not overwrite ret value here
 
 	// Used only for stall timeout
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
+		if (target_size > SSIZE_MAX) {
+			RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
+					target_size, SSIZE_MAX);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
