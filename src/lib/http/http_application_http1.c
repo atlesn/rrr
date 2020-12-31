@@ -510,7 +510,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 			);
 
 			if (field_request_upgrade_h2c == NULL) {
-				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not HTTP2 upgrade\n");
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: h2c set, an upgrade was requested but not HTTP2 upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
