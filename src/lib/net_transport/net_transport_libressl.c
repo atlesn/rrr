@@ -148,7 +148,6 @@ static int __rrr_net_transport_libressl_connect_callback (
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&data)) != 0) {
 		RRR_MSG_0("Could not create TLS data in __rrr_net_transport_libressl_connect_callback\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -375,7 +374,6 @@ int __rrr_net_transport_libressl_accept_callback (
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&new_data)) != 0) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_libressl_accept_callback\n");
-		ret = 1;
 		goto out;
 	}
 

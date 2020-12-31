@@ -207,6 +207,10 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
 	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
 
+	if (ret != 0) {
+		goto out;
+	}
+
 	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
 			http2,
 			stream_id_preliminary

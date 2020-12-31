@@ -543,13 +543,13 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	int keepalive_handle = rrr_net_transport_handle_get_by_match(transport_keepalive, server_to_use, port_to_use);
 
 	if (keepalive_handle == 0) {
-		if ((ret = rrr_net_transport_connect (
+		if (rrr_net_transport_connect (
 				transport_keepalive,
 				port_to_use,
 				server_to_use,
 				__rrr_http_client_request_send_connect_callback,
 				&keepalive_handle
-		)) != 0) {
+		) != 0) {
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}

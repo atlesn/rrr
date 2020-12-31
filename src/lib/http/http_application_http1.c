@@ -1325,7 +1325,6 @@ static int __rrr_http_application_http1_request_send (
 #ifdef RRR_WITH_NGHTTP2
 		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
 			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
-			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 		}
 		else {
 			if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
