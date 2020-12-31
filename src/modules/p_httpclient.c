@@ -888,7 +888,7 @@ static int httpclient_redirect_callback (
 	// Overrides from redirect URI which may be multiple parameters
 	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data));
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 

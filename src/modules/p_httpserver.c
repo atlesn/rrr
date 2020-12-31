@@ -871,7 +871,7 @@ static int httpserver_receive_raw_broker_callback (
 
 		msg_to_free = NULL;
 
-		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %li topic '%s'\n",
+		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %" PRIrrr_nullsafe_len " topic '%s'\n",
 				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data),
 				rrr_nullsafe_str_len(write_callback_data->data),
 				write_callback_data->topic

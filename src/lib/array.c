@@ -843,7 +843,7 @@ static int __rrr_array_message_append_to_collection_callback (
 	memcpy (template->data, data_start + tag_length, total_length);
 
 	if (template->definition->unpack(template) != 0) {
-		RRR_MSG_0("Error while converting endianess for type %u index %i of array message\n", type, RRR_LL_COUNT(callback_data->target_tmp));
+		RRR_MSG_0("Error while converting endianess for type '%s' index %i of array message\n", type->identifier, RRR_LL_COUNT(callback_data->target_tmp));
 		ret = 1;
 		goto out;
 	}
