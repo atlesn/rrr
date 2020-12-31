@@ -627,13 +627,13 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		rrr_http_application_http2_alpn_protos_get(&alpn_protos, &alpn_protos_length);
 #endif /* RRR_WITH_NGHTTP2 */
 
-		if ((ret = rrr_net_transport_new (
+		if (rrr_net_transport_new (
 				transport_keepalive_tls,
 				&net_transport_config_tmp,
 				tls_flags,
 				alpn_protos,
 				alpn_protos_length
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
@@ -655,13 +655,13 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				RRR_NET_TRANSPORT_PLAIN
 		};
 
-		if ((ret = rrr_net_transport_new (
+		if (rrr_net_transport_new (
 				transport_keepalive_plain,
 				&net_transport_config_tmp,
 				0,
 				NULL,
 				0
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
