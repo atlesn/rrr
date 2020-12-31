@@ -712,19 +712,9 @@ static int __rrr_http_client_request_send (
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
 	if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
-/*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
-			RRR_MSG_0("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}*/
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 	else if (data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
-/*		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
-			RRR_MSG_0("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
-		}*/
 		transport_code = RRR_HTTP_TRANSPORT_HTTP;
 	}
 
