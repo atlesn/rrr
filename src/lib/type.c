@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 #include "log.h"
 #include "type.h"
@@ -249,8 +250,9 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 	strncpy(tmp, start, max - 1);
 
 	int found_end_char = 0;
+	// Use isspace for compatibility with strtoull
 	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
-		if (*pos >= '0' && *pos <= '9') {
+		if ((*pos >= '0' && *pos <= '9')  || isspace(*pos)) {
 			continue;
 		}
 		else {
@@ -334,8 +336,9 @@ int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const c
 	strncpy(tmp, start, max - 1);
 
 	int found_end_char = 0;
-	for (const char *pos = tmp + (tmp[0] == '-' || tmp[0] == '+' ? 1 : 0); pos < tmp + sizeof(tmp); pos++) {
-		if (*pos >= '0' && *pos <= '9') {
+	// Use isspace for compatibility with strtoull
+	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
+		if ((*pos >= '0' && *pos <= '9') || *pos == '-' || *pos == '+' || isspace(*pos)) {
 			continue;
 		}
 		else {
