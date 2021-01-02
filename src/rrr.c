@@ -511,6 +511,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	// The fork signal handler must be first
+	printf("Fork signal handler: %p\n", rrr_fork_signal_handler);
 	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
