@@ -66,11 +66,18 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	free(http1);
 }
 
+static void __rrr_http_application_http1_transaction_clear (
+		struct rrr_http_application_http1 *http1
+) {
+	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	http1->active_transaction = NULL;
+}
+
 static void __rrr_http_application_http1_transaction_set (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_http_transaction *transaction
 ) {
-	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
+	__rrr_http_application_http1_transaction_clear(http1);
 	rrr_http_transaction_incref(transaction);
 	http1->active_transaction = transaction;
 }
@@ -435,7 +442,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li header length is %li\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
 			transaction->response_part->header_length
@@ -457,10 +464,13 @@ static int __rrr_http_application_http1_response_receive_callback (
 		const struct rrr_http_header_field *field_response_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
 		const struct rrr_http_header_field *field_response_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
 
-		const struct rrr_http_header_field *field_request_upgrade_websocket = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "websocket");
-		const struct rrr_http_header_field *field_request_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(transaction->response_part, "upgrade", "h2c");
-
 		if (field_response_upgrade_websocket != NULL) {
+			const struct rrr_http_header_field *field_request_upgrade_websocket = rrr_http_part_header_field_get_with_value_case (
+					transaction->request_part,
+					"upgrade",
+					"websocket"
+			);
+
 			if (field_request_upgrade_websocket == NULL) {
 				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not WebSocket upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
@@ -493,8 +503,14 @@ static int __rrr_http_application_http1_response_receive_callback (
 			upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 		}
 		else if (field_response_upgrade_h2c != NULL) {
+			const struct rrr_http_header_field *field_request_upgrade_h2c = rrr_http_part_header_field_get_with_value_case(
+					transaction->request_part,
+					"upgrade",
+					"h2c"
+			);
+
 			if (field_request_upgrade_h2c == NULL) {
-				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: websocket set, an upgrade was requested but not HTTP2 upgrade\n");
+				RRR_MSG_0("Unexpected 101 Switching Protocols response with Upgrade: h2c set, an upgrade was requested but not HTTP2 upgrade\n");
 				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
@@ -552,9 +568,11 @@ static int __rrr_http_application_http1_response_receive_callback (
 		}
 	}
 
+	receive_data->http1->complete_transaction_count++;
 	receive_data->http1->upgrade_active = upgrade_mode;
 
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	return ret;
 }
@@ -849,7 +867,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP request reading complete, data length is %li response length is %li header length is %li\n",
 			transaction->request_part->data_length,
 			transaction->request_part->headroom_length,
 			transaction->request_part->header_length
@@ -969,7 +987,10 @@ static int __rrr_http_application_http1_request_receive_callback (
 		goto out;
 	}
 
+	receive_data->http1->complete_transaction_count++;
+
 	out:
+	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
@@ -984,35 +1005,6 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
-	// ASCII validation
-/*	int rnrn_counter = 4;
-	for (const unsigned char *pos = (const unsigned char *) read_session->rx_buf_ptr; pos < (const unsigned char *) end; pos++) {
-//		printf("pos: %02x\n", *pos);
-		if (*pos == '\r' && (rnrn_counter == 4 || rnrn_counter == 2)) {
-			--rnrn_counter;
-		}
-		else if (*pos == '\n' && (rnrn_counter == 3 || rnrn_counter == 1)) {
-			if (--rnrn_counter == 0) {
-				break; // Header complete
-			}
-		}
-		else {
-			rnrn_counter = 4;
-
-			// TODO : Why do this? We should be OK with non-ASCII
-			if (*pos > 0x7f) {
-				RRR_MSG_0("Received non-ASCII character %02x in HTTP request\n", *pos);
-				ret = RRR_READ_SOFT_ERROR;
-				goto out;
-			}
-		}
-	}
-
-	if (rnrn_counter != 0) {
-		ret = RRR_READ_INCOMPLETE;
-		goto out;
-	}*/
-
 	size_t target_size;
 	size_t parsed_bytes = 0;
 
@@ -1020,6 +1012,11 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	enum rrr_http_parse_type parse_type = 0;
 
 	if (receive_data->is_client == 1) {
+		if (receive_data->http1->active_transaction == NULL) {
+			RRR_MSG_0("Received unexpected data from HTTP server, no transaction was active\n");
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
 		part_to_use = receive_data->http1->active_transaction->response_part;
 		parse_type = RRR_HTTP_PARSE_RESPONSE;
 	}
@@ -1082,17 +1079,18 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		read_session->parse_pos += parsed_bytes;
 	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
 
-	if (target_size > SSIZE_MAX) {
-		RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
-				target_size, SSIZE_MAX);
-		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
-		goto out;
-	}
+	// Do not overwrite ret value here
 
 	// Used only for stall timeout
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
+		if (target_size > SSIZE_MAX) {
+			RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
+					target_size, SSIZE_MAX);
+			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+			goto out;
+		}
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
@@ -1235,6 +1233,14 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	return ret;
 }
 
+static int __rrr_http_application_http1_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+	*is_possible = (http1->active_transaction == NULL);
+	return 0;
+}
+
 static int __rrr_http_application_http1_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -1260,6 +1266,10 @@ static int __rrr_http_application_http1_request_send (
 	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_nullsafe);
 
 	struct rrr_string_builder *header_builder = NULL;
+
+	if (http1->active_transaction != NULL) {
+		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
+	}
 
 	__rrr_http_application_http1_transaction_set(http1, transaction);
 
@@ -1315,7 +1325,6 @@ static int __rrr_http_application_http1_request_send (
 #ifdef RRR_WITH_NGHTTP2
 		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
 			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
-			upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 		}
 		else {
 			if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade, HTTP2-Settings")) != 0) {
@@ -1503,6 +1512,7 @@ static void __rrr_http_application_http1_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
+	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
 	__rrr_http_application_http1_polite_close

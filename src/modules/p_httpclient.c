@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_util.h"
-#include "../lib/http/http_client_target_collection.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
@@ -83,8 +82,8 @@ struct httpclient_data {
 
 	struct rrr_net_transport_config net_transport_config;
 
-	struct rrr_net_transport *keepalive_transport;
-	struct rrr_http_client_target_collection targets;
+	struct rrr_net_transport *keepalive_transport_plain;
+	struct rrr_net_transport *keepalive_transport_tls;
 
 	struct rrr_http_client_request_data request_data;
 
@@ -95,11 +94,13 @@ struct httpclient_data {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 
-	rrr_http_client_target_collection_clear(&data->targets, data->keepalive_transport);
-
-	if (data->keepalive_transport != NULL) {
-		rrr_net_transport_destroy(data->keepalive_transport);
+	if (data->keepalive_transport_plain != NULL) {
+		rrr_net_transport_destroy(data->keepalive_transport_plain);
 	}
+	if (data->keepalive_transport_tls != NULL) {
+		rrr_net_transport_destroy(data->keepalive_transport_tls);
+	}
+
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
@@ -783,8 +784,8 @@ static int httpclient_request_send (
 
 		ret = rrr_http_client_request_raw_send (
 				request_data,
-				&data->keepalive_transport,
-				&data->targets,
+				&data->keepalive_transport_plain,
+				&data->keepalive_transport_tls,
 				&data->net_transport_config,
 				remaining_redirects,
 				MSG_DATA_PTR(message),
@@ -811,8 +812,8 @@ static int httpclient_request_send (
 
 		ret = rrr_http_client_request_send (
 				request_data,
-				&data->keepalive_transport,
-				&data->targets,
+				&data->keepalive_transport_plain,
+				&data->keepalive_transport_tls,
 				&data->net_transport_config,
 				remaining_redirects,
 				httpclient_connection_prepare_callback,
@@ -887,7 +888,7 @@ static int httpclient_redirect_callback (
 	// Overrides from redirect URI which may be multiple parameters
 	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data));
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
@@ -1172,15 +1173,21 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						data->redirects_max,
 						0
 				)) != RRR_HTTP_OK) {
-					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-						// Let soft error propagate
+					if (ret_tmp == RRR_HTTP_BUSY) {
+						// Try again
 					}
 					else {
-						RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s\n",
-								INSTANCE_D_NAME(thread_data));
-						ret_tmp = RRR_HTTP_HARD_ERROR;
+						if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
+							rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
+							// Try again
+						}
+						else {
+							RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",
+									INSTANCE_D_NAME(thread_data));
+							RRR_LL_ITERATE_SET_DESTROY();
+							// Delete message
+						}
 					}
-					RRR_LL_ITERATE_LAST(); // Don't break, unlock first
 				}
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
@@ -1194,36 +1201,30 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						send_timeout_count,
 						INSTANCE_D_NAME(data->thread_data));
 			}
-
-			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
-			}
 		}
 
-//		printf("TICK %p %i\n", data->keepalive_transport, RRR_LL_COUNT(&data->targets));
-
 		uint64_t bytes_total = 0;
-		if (data->keepalive_transport != NULL) {
-			if (rrr_http_client_tick (
-					&bytes_total,
-					data->keepalive_transport,
-					&data->targets,
-					RRR_HTTPCLIENT_READ_MAX_SIZE,
-					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S,
-					httpclient_final_callback,
-					data,
-					httpclient_redirect_callback,
-					data,
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					httpclient_raw_callback,
-					data
-			) != 0) {
-				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
-				goto out_message;
-			}
+
+		// We are allowed to pass NULL transport pointers
+		if (rrr_http_client_tick (
+				&bytes_total,
+				data->keepalive_transport_plain,
+				data->keepalive_transport_tls,
+				RRR_HTTPCLIENT_READ_MAX_SIZE,
+				RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
+				httpclient_final_callback,
+				data,
+				httpclient_redirect_callback,
+				data,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				httpclient_raw_callback,
+				data
+		) != 0) {
+			RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
+			goto out_message;
 		}
 
 		if (prev_bytes_total == bytes_total) {

@@ -35,7 +35,8 @@ Multi-Arch: same
 Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends},
          ${shlibs:Depends},
-         libssl1.1
+         libssl1.1,
+         python3 (>= 3.6)
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: librrr-dev
@@ -45,15 +46,6 @@ Multi-Arch: same
 Depends: librrr1 (= ${binary:Version}),
          ${misc:Depends}
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
-
-Package: rrr-mod-python3
-Architecture: any
-Multi-Arch: foreign
-Depends: rrr (= ${binary:Version}),
-         python3 (>= 3.6),
-         ${misc:Depends},
-         ${shlibs:Depends}
-Description: Read Route Record module for Python 3.
 
 Package: rrr-mod-mariadb
 Architecture: any

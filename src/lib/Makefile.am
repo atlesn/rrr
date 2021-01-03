@@ -26,11 +26,12 @@ encryption = rrr_openssl.c
 endif
 
 if RRR_WITH_PYTHON3
-lib_python3 = librrrpython3.la
+libadd_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
 							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\" ${AM_CFLAGS}
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS} ${AM_LDFLAGS}
+python3_extra_ld = ${PYTHON3_LDFLAGS}
 endif
 
 if RRR_WITH_PERL5
@@ -64,7 +65,7 @@ http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 		http/http_server.c http/http_server_worker.c http/http_header_fields.c \
 		http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
 		http/http_application.c http/http_application_http1.c \
-		http/http_client_target_collection.c http/http_redirect.c
+		http/http_redirect.c
 
 websocket = websocket/websocket.c
 
@@ -94,8 +95,8 @@ if RRR_WITH_LIBRESSL
 net_transport_libressl = net_transport/net_transport_libressl.c net_transport/net_transport_tls_common.c
 endif
 
-librrr_la_CFLAGS = ${OPENSSL_INCLUDES} ${LIBRESSL_LIBTLS_CFLAGS} ${AM_CFLAGS}
-librrr_la_LDFLAGS = ${OPENSSL_LDFLAGS} ${LIBRESSL_LIBTLS_LDFLAGS} ${perl5_extra_ld} ${nghttp2_extra_ld}
+librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
+librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c array.c array_tree.c \
@@ -109,7 +110,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					${util} ${ip} ${message_holder} ${messages} \
 					${input} ${input_system} ${helpers} ${websocket}
 
-lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
+lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
@@ -149,7 +150,9 @@ librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 libadd_rrr_sha1 = sha1/libsha1.la
 sha1_libsha1_la_SOURCES = sha1/sha1.c
 
-libadd_all =	${libadd_perl5}					\
+libadd_all =							\
+	${libadd_python3}					\
+	${libadd_perl5}					\
 				${libadd_nghttp2}				\
 				${libadd_rrr_readdir}			\
 				${libadd_rrr_strerror}			\
@@ -161,4 +164,4 @@ libadd_all =	${libadd_perl5}					\
 				${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${LIBRESSL_LIBTLS_LIBADD} ${OPENSSL_LIBS} ${JOURNALD_LIBS} -lpthread -ldl -lm 
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm 

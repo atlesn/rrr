@@ -292,10 +292,12 @@ static void influxdb_send_data_callback (
 	};
 
 	ssize_t received_bytes = 0;
+	uint64_t complete_transactions_count = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick (
 				&received_bytes,
+				&complete_transactions_count,
 				handle,
 				0, // No max read size
 				0, // No unique id

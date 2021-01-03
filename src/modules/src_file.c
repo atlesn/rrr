@@ -485,7 +485,7 @@ static int file_probe_callback (
 
 			if (data->serial_bps_set) {
 				RRR_DBG_3("file instance %s setting speed %llu for serial device '%s'=>'%s'\n",
-						INSTANCE_D_NAME(data->thread_data), data->serial_bps, orig_path, resolved_path);
+						INSTANCE_D_NAME(data->thread_data), (unsigned long long) data->serial_bps, orig_path, resolved_path);
 				if ((ret = rrr_serial_speed_set(fd, data->serial_bps)) != 0) {
 					RRR_MSG_0("File instance %s failed to set speed of serial device '%s'=>%s\n",
 							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);

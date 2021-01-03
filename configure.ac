@@ -154,6 +154,10 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+TLS_CFLAGS=
+TLS_LDFLAGS=
+TLS_LIBADD=
+
 CHECK_LIBRESSL_LIBTLS
 
 AC_MSG_CHECKING([for automatic LibreSSL/OpenSSL selection])
@@ -182,9 +186,9 @@ AS_IF([test "x$enable_libressl" = xyes], [
 	AC_MSG_CHECKING([LibreSSL LIBADD])
 	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
 
-	AC_SUBST([LIBRESSL_LIBTLS_CFLAGS])
-	AC_SUBST([LIBRESSL_LIBTLS_LDFLAGS])
-	AC_SUBST([LIBRESSL_LIBTLS_LIBADD])
+	TLS_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
+	TLS_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
+	TLS_LIBADD=$LIBRESSL_LIBTLS_LIBADD
 ], [
 	AC_MSG_RESULT([Not compiling with LibreSSL])
 ])
@@ -211,6 +215,10 @@ AS_IF([test "x$enable_openssl" = xyes], [
 	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+
+	AC_SUBST([TLS_CFLAGS])
+	AC_SUBST([TLS_LDFLAGS])
+	AC_SUBST([TLS_LIBADD])
 ], [
 	AC_MSG_RESULT([Not compiling with OpenSSL])
 ])
@@ -228,9 +236,21 @@ AS_IF([test "x$enable_encryption" != "xno" ], [
 	AC_MSG_RESULT([yes])
 	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
 	AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
+	AS_IF([test "x$TLS_LDFLAGS" = "x"], [
+		AX_CHECK_OPENSSL([], [
+			AC_MSG_ERROR([Cannot compile with encryption, OpenSSL/LibreSSL missing])
+		])
+		TLS_CFLAGS=$OPENSSL_INCLUDES
+		TLS_LDFLAGS=$OPENSSL_LDFLAGS
+		TLS_LIBADD=$OPENSSL_LIBS
+	])
 ], [
 	AC_MSG_RESULT([not enabled])
 ])
+
+AC_SUBST([TLS_CFLAGS])
+AC_SUBST([TLS_LDFLAGS])
+AC_SUBST([TLS_LIBADD])
 
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL_CRYPT], $enable_openssl_crypt)

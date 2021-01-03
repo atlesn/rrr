@@ -67,6 +67,13 @@ int rrr_http_application_new (
 	return 1;
 }
 
+int rrr_http_application_transport_ctx_request_send_possible (
+		int *is_possible,
+		struct rrr_http_application *app
+) {
+	return app->constants->request_send_possible(is_possible, app);
+}
+
 int rrr_http_application_transport_ctx_request_send (
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
@@ -81,6 +88,7 @@ int rrr_http_application_transport_ctx_request_send (
 
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *complete_transaction_count,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
@@ -100,6 +108,8 @@ int rrr_http_application_transport_ctx_tick (
 		int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS),
 		void *raw_callback_arg
 ) {
+	*complete_transaction_count = app->complete_transaction_count;
+
 	return app->constants->tick (
 			received_bytes,
 			upgraded_app,

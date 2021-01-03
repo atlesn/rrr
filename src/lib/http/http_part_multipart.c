@@ -73,6 +73,7 @@ static int __rrr_http_part_multipart_process_part_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	struct rrr_http_part *new_part = NULL;
 	int end_boundary_found = 0;
 
 	if (RRR_LL_COUNT(callback_data->parent) >= callback_data->max_parts) {
@@ -80,8 +81,6 @@ static int __rrr_http_part_multipart_process_part_callback (
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
-
-	struct rrr_http_part *new_part = NULL;
 
 	// 4 bytes are OK, thats the previous -- and CRLF
 	if (rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_at_needle) > 4) {
@@ -112,18 +111,18 @@ static int __rrr_http_part_multipart_process_part_callback (
 	// Since the needle we use with the boundary has \r\n in it, the last boundary will produce
 	// a mismatch here as it has -- after the boundary. If this is the case, look for the end boundary
 	// instead.
-	if ((ret = rrr_nullsafe_str_str (
+	if (rrr_nullsafe_str_str (
 			pos_after_needle,
 			needle_orig,
 			__rrr_http_part_multipart_process_part_find_end_callback,
 			&find_end_callback_data
-	)) != RRR_HTTP_PARSE_EOF) {
-		if ((ret = rrr_nullsafe_str_str (
+	) != RRR_HTTP_PARSE_EOF) {
+		if (rrr_nullsafe_str_str (
 				pos_after_needle,
 				callback_data->boundary_with_dashes_end,
 				__rrr_http_part_multipart_process_part_find_end_callback,
 				&find_end_callback_data
-		)) != RRR_HTTP_PARSE_EOF) {
+		) != RRR_HTTP_PARSE_EOF) {
 			RRR_MSG_0("Could not find boundary while looking for part end in HTTP multipart request\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
