@@ -445,7 +445,7 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
 			if (++msg_count == 1) {
-				RRR_MSG_0("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
+				RRR_MSG_1("Note: Pointer was still present in block in rrr_mmap_channel_destroy, fork might not have exited yet or has been killed before cleanup.\n");
 			}
 		}
 		if (pthread_mutex_trylock(&target->blocks[i].block_lock) != 0) {
@@ -458,7 +458,7 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 		}
 	}
 	if (msg_count > 1) {
-		RRR_MSG_0("Last message duplicated %i times\n", msg_count - 1);
+		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
 	}
 
 	rrr_mmap_free(target->mmap, target);
