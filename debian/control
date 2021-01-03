@@ -26,6 +26,8 @@ Depends: librrr1 (= ${binary:Version}),
          systemd,
          ${misc:Depends},
          ${shlibs:Depends}
+Replaces: rrr-mod-python3
+Breaks: rrr-mod-python3
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 Conflicts: rrr-mysql
 
