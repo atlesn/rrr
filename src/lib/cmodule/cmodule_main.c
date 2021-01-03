@@ -143,12 +143,16 @@ int rrr_cmodule_main_worker_fork_start (
 
 	// Append to LL after forking is OK
 
+
+	printf("Fork signal handler before fork: %p\n", rrr_fork_signal_handler);
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,
 			__rrr_cmodule_parent_exit_notify_handler,
 			worker
 	);
 
+
+	printf("Fork signal handler after fork: %p pid: %li\n", rrr_fork_signal_handler, (long int) pid);
 	if (pid < 0) {
 		// Don't use rrr_strerror() due to use of global lock
 		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n", errno);
