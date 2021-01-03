@@ -145,7 +145,6 @@ static PerlInterpreter *__rrr_perl5_construct(void) {
 	out_unlock:
 	__rrr_perl5_init_unlock();
 
-	out:
 	return ret;
 }
 
