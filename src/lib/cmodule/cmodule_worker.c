@@ -627,8 +627,6 @@ int rrr_cmodule_worker_main (
 		// signals while working with the handler list, then always set ACTIVE afterwards.
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
-		printf("Fork signal handler: %p\n", rrr_fork_signal_handler);
-
 		// Preserve fork signal andler in case child makes any forks
 		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
 		if (was_found == 0) {
