@@ -2596,23 +2596,33 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 
 	*packet_to_transmit = NULL;
 
+	if (publish->qos_packets.puback != NULL ||
+		publish->qos_packets.pubcomp != NULL) {
+		// Nothing more to do for this QoS handshake
+		goto out;
+	}
+
+	if (	publish->is_outbound &&
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0 &&
+			publish->qos_packets.pubcomp == NULL &&
+			publish->qos_packets.pubrec == NULL &&
+			publish->planned_expiry_time == 0
+	) {
+		counters->incomplete_qos_publish_counter++;
+	}
+
 	if (	publish->last_attempt == 0 &&
 			publish->is_outbound != 0 &&
-			counters->incomplete_qos_publish_counter > iterate_callback_data->ram_session->max_in_flight
+			counters->incomplete_qos_publish_counter >= iterate_callback_data->ram_session->max_in_flight
 	) {
-		if (++(counters->incomplete_qos_publish_max_reached_counter) == 1) {
+		// Only print message once per iteration
+		if (counters->incomplete_qos_publish_counter == iterate_callback_data->ram_session->max_in_flight) {
 			RRR_DBG_3("Session %p max in flight %u/%u reached\n",
 					iterate_callback_data->ram_session,
 					counters->incomplete_qos_publish_counter,
 					iterate_callback_data->ram_session->max_in_flight
 			);
 		}
-		goto out;
-	}
-
-	if (publish->qos_packets.puback != NULL ||
-		publish->qos_packets.pubcomp != NULL) {
-		// Nothing more to do for this QoS handshake
 		goto out;
 	}
 
@@ -2704,12 +2714,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
 }
 
 static void __rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or_retransmit (
-		*do_transmit,
+		int *do_transmit,
 		struct iterate_send_queue_callback_data *iterate_callback_data,
 		struct rrr_mqtt_p *packet
 ) {
-	struct rrr_mqtt_session_iterate_send_queue_counters *counters = iterate_callback_data->counters;
-
 	if (	packet->last_attempt != 0 &&
 			rrr_time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec
 	) {
@@ -2717,27 +2725,12 @@ static void __rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or
 		packet->dup = 1;
 	}
 
-	if (packet->last_attempt != 0) {
-		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
-			struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
-			if (	publish->is_outbound != 0 &&
-					RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0 &&
-					publish->qos_packets.pubcomp == NULL &&
-					publish->qos_packets.pubrec == NULL &&
-					publish->planned_expiry_time == 0
-			) {
-				counters->incomplete_qos_publish_counter++;
-			}
-		}
-		*do_transmit = 0;
-	}
-	else {
-		*do_transmit = 1;
-	}
+	*do_transmit = (packet->last_attempt == 0 ? 1 : 0);
 }
 
 static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	// context is fifo_search
+	// Context is fifo_search
+	// Note that counters all start on zero as iteration begins
 
 	struct iterate_send_queue_callback_data *iterate_callback_data = arg;
 	struct rrr_mqtt_session_iterate_send_queue_counters *counters = iterate_callback_data->counters;
@@ -2760,7 +2753,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		int do_transmit;
 		__rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or_retransmit (&do_transmit, iterate_callback_data, packet);
 
-		if (!do_transmit) {
+		if (!do_transmit) {
 			goto out_unlock;
 		}
 	}
