@@ -2679,8 +2679,16 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		ret = RRR_FIFO_SEARCH_STOP;
 		goto out_unlock;
 	}
+	
+	// TODO : Function is messy/too big, prone to bugs. Clean up.
 
-	if (packet->dup != 0) {
+	{
+	// Make sure correct packet is locked before callback.
+	// NOTE !!! Not goto out within this block. Reverse locking before block end.
+	RRR_MQTT_P_UNLOCK(packet);
+	RRR_MQTT_P_LOCK(packet_to_transmit);
+
+	if (packet_to_transmit->dup != 0) {
 		RRR_DBG_1("!! Retransmit !! Packet of type %s id %u\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet_to_transmit), RRR_MQTT_P_GET_IDENTIFIER(packet_to_transmit));
 	}
@@ -2692,6 +2700,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 			packet_to_transmit,
 			iterate_callback_data->callback_arg
 	);
+	
+	RRR_MQTT_P_UNLOCK(packet_to_transmit);
+	RRR_MQTT_P_LOCK(packet);
+	}
 
 	// Set the last attempt of the original packet, as packet_to transmit
 	// might be store inside another packet
