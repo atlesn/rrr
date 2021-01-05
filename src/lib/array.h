@@ -166,6 +166,7 @@ int rrr_array_message_iterate (
 		void *callback_arg
 );
 int rrr_array_message_append_to_collection (
+		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
 );

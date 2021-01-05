@@ -335,13 +335,15 @@ int colplan_array_bind_execute (
 	struct rrr_array collection = {0};
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_array_message_append_to_collection(&collection, entry->message) != 0) {
+	uint16_t array_version = 0;
+
+	if (rrr_array_message_append_to_collection(&array_version, &collection, entry->message) != 0) {
 		RRR_MSG_0("Could not convert array message to data collection in mysql\n");
 		ret = 1;
 		goto out_cleanup;
 	}
 
-	if (collection.version != 7) {
+	if (array_version != 7) {
 		RRR_BUG("Array version mismatch in MySQL colplan_array_bind_execute (%u vs %i), module must be updated\n",
 				collection.version, 7);
 	}

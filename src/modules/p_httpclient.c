@@ -398,7 +398,8 @@ static int httpclient_message_values_get (
 ) {
 	int ret = 0;
 
-	if (rrr_array_message_append_to_collection(target_array, message) != 0) {
+	uint16_t array_version_dummy;
+	if (rrr_array_message_append_to_collection(&array_version_dummy, target_array, message) != 0) {
 		RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
