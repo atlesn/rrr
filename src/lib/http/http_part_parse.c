@@ -175,15 +175,6 @@ static int __rrr_http_part_parse_request (
 
 	rrr_length protocol_length = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		if (	rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/0.9") ||
-				rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.0") ||
-				rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/2.0")
-		) {
-			result->response_code = RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED;
-		}
-		else {
-			result->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-		}
 		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -463,10 +454,59 @@ static int __rrr_http_part_request_method_str_to_enum (
 	else {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,part->request_method_str_nullsafe);
 		RRR_MSG_0("Unknown request method '%s' in HTTP request (not GET/OPTIONS/POST/PUT/HEAD/DELETE)\n", value);
-		part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_part_parse_chunked (
+		struct rrr_http_part *part,
+		size_t *target_size,
+		size_t *parsed_bytes,
+		const char *data_ptr,
+		size_t start_pos,
+		const char *end,
+		enum rrr_http_parse_type parse_type
+) {
+	int ret = 0;
+
+	*target_size = 0;
+	*parsed_bytes = 0;
+
+	size_t parsed_bytes_tmp = 0;
+
+	if (parse_type == RRR_HTTP_PARSE_MULTIPART) {
+		RRR_MSG_0("Chunked transfer encoding found in HTTP multipart body, this is not allowed\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	RRR_DBG_3("HTTP chunked transfer encoding specified\n");
+
+	ret = __rrr_http_part_parse_chunk (
+			&part->chunks,
+			&parsed_bytes_tmp,
+			data_ptr,
+			start_pos,
+			end
+	);
+
+	if (ret == RRR_HTTP_PARSE_OK) {
+		if (RRR_LL_LAST(&part->chunks)->length != 0) {
+			RRR_BUG("BUG: __rrr_http_part_parse_chunk return OK but last chunk length was not 0 in __rrr_http_part_parse_chunked\n");
+		}
+
+		// Part length is position of last chunk plus CRLF minus header and response code
+		part->data_length = RRR_LL_LAST(&part->chunks)->start + 2 - part->header_length - part->headroom_length;
+
+		// Target size is total length from start of session to last chunk plus CRLF
+		*target_size = RRR_LL_LAST(&part->chunks)->start + 2;
+	}
+
+	*parsed_bytes = parsed_bytes_tmp;
 
 	out:
 	return ret;
@@ -493,7 +533,8 @@ int rrr_http_part_parse (
 	size_t parsed_bytes_total = 0;
 
 	if (part->is_chunked == 1) {
-		goto parse_chunked;
+		// This is merely a shortcut to skip already checked conditions
+		goto out_parse_chunked;
 	}
 
 	if (part->parsed_protocol_version == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
@@ -539,7 +580,11 @@ int rrr_http_part_parse (
 		part->headroom_length = parsed_bytes_tmp;
 	}
 
-	if (part->header_complete == 0) {
+	if (part->header_complete) {
+		goto out;
+	}
+
+	{
 		ret = __rrr_http_part_header_fields_parse (
 				&part->headers,
 				&parsed_bytes_tmp,
@@ -555,131 +600,83 @@ int rrr_http_part_parse (
 		part->header_length += parsed_bytes_tmp;
 
 		if (ret != RRR_HTTP_PARSE_OK) {
+			// Incomplete or error
 			goto out;
 		}
 
 		part->header_complete = 1;
+	}
+
+	if (parse_type == RRR_HTTP_PARSE_REQUEST) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method, part->request_method_str_nullsafe);
+		RRR_DBG_3("HTTP request header parse complete, request method is '%s'\n", method);
+
+		if (part->request_method != 0) {
+			RRR_BUG("BUG: Numeric request method was non zero in rrr_http_part_parse\n");
+		}
 
 		const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
-		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
-		const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
-
-		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
-			RRR_DBG_3("HTTP request header parse complete\n");
-
-			if (part->request_method_str_nullsafe == NULL) {
-				RRR_BUG("Request method not set in rrr_http_part_parse after header completed\n");
-			}
-
-			if (part->request_method != 0) {
-				RRR_BUG("Numeric request method was non zero in rrr_http_part_parse\n");
-			}
-
-			if ((ret = __rrr_http_part_request_method_str_to_enum (part, (content_type != NULL ? content_type->value : NULL))) != 0) {
-				goto out;
-			}
-
-			if (part->request_method == RRR_HTTP_METHOD_GET ||
-				part->request_method == RRR_HTTP_METHOD_OPTIONS ||
-				part->request_method == RRR_HTTP_METHOD_HEAD ||
-				part->request_method == RRR_HTTP_METHOD_DELETE
-			) {
-				if (content_length != NULL && content_length->value_unsigned != 0) {
-					RRR_MSG_0("Content-Length was non-zero for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
-					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-					ret = RRR_HTTP_PARSE_SOFT_ERR;
-					goto out;
-				}
-
-				if (transfer_encoding != NULL) {
-					RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
-					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-					ret = RRR_HTTP_PARSE_SOFT_ERR;
-					goto out;
-				}
-
-				if (content_type != NULL) {
-					RRR_MSG_0("Content-Type was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
-					part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-					ret = RRR_HTTP_PARSE_SOFT_ERR;
-					goto out;
-				}
-			}
-		}
-		else {
-			RRR_DBG_3("HTTP header parse complete, response was %i\n", part->response_code);
-		}
-
-		if (content_length != NULL) {
-			part->data_length = content_length->value_unsigned;
-			*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
-
-			RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
-					content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
-
-			ret = RRR_HTTP_PARSE_OK;
-
-			goto out;
-		}
-		else if (transfer_encoding != NULL && rrr_nullsafe_str_cmpto_case(transfer_encoding->value, "chunked") == 0) {
-			if (parse_type == RRR_HTTP_PARSE_MULTIPART) {
-				RRR_MSG_0("Chunked transfer encoding found in HTTP multipart body, this is not allowed\n");
-				part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-				ret = RRR_HTTP_SOFT_ERROR;
-				goto out;
-			}
-			part->is_chunked = 1;
-			RRR_DBG_3("HTTP chunked transfer encoding specified\n");
-			goto parse_chunked;
-		}
-		else {
-			if (	parse_type == RRR_HTTP_PARSE_REQUEST ||
-					part->response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT ||
-					part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS
-			) {
-				// No content
-				part->data_length = 0;
-				*target_size = part->headroom_length + part->header_length;
-				ret = RRR_HTTP_PARSE_OK;
-			}
-			else {
-				// Unknown size, parse until connection closes
-				part->data_length_unknown = 1;
-				*target_size = 0;
-				ret = RRR_HTTP_PARSE_INCOMPLETE;
-			}
+		if ((ret = __rrr_http_part_request_method_str_to_enum (part, (content_type != NULL ? content_type->value : NULL))) != 0) {
 			goto out;
 		}
 	}
+	else {
+		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
+	}
+
+	const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
+	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
+
+	if (content_length != NULL) {
+		part->data_length = content_length->value_unsigned;
+		*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
+
+		RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
+				content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
+
+		ret = RRR_HTTP_PARSE_OK;
+
+		goto out;
+	}
+	else if (transfer_encoding != NULL && rrr_nullsafe_str_cmpto_case(transfer_encoding->value, "chunked") == 0) {
+		goto out_parse_chunked;
+	}
+	else if (	parse_type == RRR_HTTP_PARSE_REQUEST ||
+				part->response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT ||
+				part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS
+	) {
+		goto out_no_content;
+	}
+
+	// Unknown size, parse until connection closes
+	part->data_length_unknown = 1;
+	*target_size = 0;
+	ret = RRR_HTTP_PARSE_INCOMPLETE;
 
 	goto out;
-	parse_chunked:
+	out_no_content:
+		part->data_length = 0;
+		*target_size = part->headroom_length + part->header_length;
+		ret = RRR_HTTP_PARSE_OK;
+		goto out;
 
-	ret = __rrr_http_part_parse_chunk (
-			&part->chunks,
-			&parsed_bytes_tmp,
-			data_ptr,
-			start_pos + parsed_bytes_total,
-			end
-	);
-
-	parsed_bytes_total += parsed_bytes_tmp;
-
-	if (ret == RRR_HTTP_PARSE_OK) {
-		if (RRR_LL_LAST(&part->chunks)->length != 0) {
-			RRR_BUG("BUG: __rrr_http_part_parse_chunk return OK but last chunk length was not 0 in rrr_http_part_parse\n");
-		}
-
-		// Part length is position of last chunk plus CRLF minus header and response code
-		part->data_length = RRR_LL_LAST(&part->chunks)->start + 2 - part->header_length - part->headroom_length;
-
-		// Target size is total length from start of session to last chunk plus CRLF
-		*target_size = RRR_LL_LAST(&part->chunks)->start + 2;
-	}
+	out_parse_chunked:
+		part->is_chunked = 1;
+		ret = __rrr_http_part_parse_chunked (
+				part,
+				target_size,
+				&parsed_bytes_tmp,
+				data_ptr,
+				start_pos + parsed_bytes_total,
+				end,
+				parse_type
+		);
+		parsed_bytes_total += parsed_bytes_tmp;
+		goto out;
 
 	out:
-	*parsed_bytes = parsed_bytes_total;
-	return ret;
+		*parsed_bytes = parsed_bytes_total;
+		return ret;
 }
 
 // Set all required request data without parsing

@@ -858,6 +858,12 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
+	if (transaction->request_part->request_method == 0) {
+		RRR_DBG_2("Request parsing was incomplete in HTTP final callback, sending bad request to client.\n");
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+		goto out_send_response;
+	}
+
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_header_dump(transaction->request_part);
 	}
@@ -995,6 +1001,47 @@ static int __rrr_http_application_http1_request_receive_callback (
 	return ret;
 }
 
+static int __rrr_http_application_http1_receive_get_target_size_validate_request (
+		const struct rrr_http_part *part
+) {
+	int ret = 0;
+
+	const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(part, "content-type");
+	const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
+	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
+
+	if (part->request_method_str_nullsafe == NULL) {
+		RRR_BUG("BUF: Request method not set in rrr_http_part_parse after header completed\n");
+	}
+
+	if (part->request_method == 0) {
+		RRR_BUG("BUG: Numeric request method was zero in __rrr_http_application_http1_receive_get_target_size_validate_request\n");
+	}
+
+	if (part->request_method == RRR_HTTP_METHOD_GET ||
+		part->request_method == RRR_HTTP_METHOD_OPTIONS ||
+		part->request_method == RRR_HTTP_METHOD_HEAD ||
+		part->request_method == RRR_HTTP_METHOD_DELETE
+	) {
+		if (content_length != NULL && content_length->value_unsigned != 0) {
+			RRR_MSG_0("Content-Length was non-zero for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+		}
+
+		if (transfer_encoding != NULL) {
+			RRR_MSG_0("Transfer-Encoding header was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+		}
+
+		if (content_type != NULL) {
+			RRR_MSG_0("Content-Type was set for GET, HEAD, DELETE or OPTIONS request, this is an error.\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+		}
+	}
+
+	return ret;
+}
+
 static int __rrr_http_application_http1_receive_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -1085,12 +1132,29 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
+		if (!receive_data->is_client) {
+			if ((ret = __rrr_http_application_http1_receive_get_target_size_validate_request (
+					receive_data->http1->active_transaction->request_part
+			)) != 0) {
+				// Ignore any body
+				target_size = RRR_HTTP_PART_TOP_LENGTH(receive_data->http1->active_transaction->request_part);
+
+				// Delete everything in the request part to prevent haywire, the final callback will generate bad request response
+				if ((ret = rrr_http_transaction_request_reset(receive_data->http1->active_transaction)) != 0) {
+					goto out;
+				}
+
+				ret = RRR_HTTP_PARSE_OK;
+			}
+		}
+
 		if (target_size > SSIZE_MAX) {
 			RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
 					target_size, SSIZE_MAX);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 			goto out;
 		}
+
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
