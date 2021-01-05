@@ -453,10 +453,6 @@ int rrr_http_part_multipart_form_data_make (
 		}
 	}
 
-	if ((ret = rrr_nullsafe_str_with_tmp_str_do("\r\n", 2, chunk_callback, chunk_callback_arg)) != 0) {
-		goto out;
-	}
-
 	int is_first = 1;
 	RRR_LL_ITERATE_BEGIN(&part->fields, struct rrr_http_field);
 		if ((ret = __rrr_http_part_multipart_field_make(boundary_buf, node, is_first, chunk_callback, chunk_callback_arg)) != 0) {
