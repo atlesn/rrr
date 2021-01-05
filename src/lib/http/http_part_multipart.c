@@ -99,8 +99,6 @@ static int __rrr_http_part_multipart_process_part_callback (
 
 	// Check for last boundary with --
 	if (rrr_nullsafe_str_begins_with(pos_at_needle, callback_data->boundary_with_dashes_end)) {
-
-
 		goto out;
 	}
 
