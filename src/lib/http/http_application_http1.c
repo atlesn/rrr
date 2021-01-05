@@ -1410,6 +1410,11 @@ static int __rrr_http_application_http1_request_send (
 		}
 	}
 
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != 0) {
+		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send\n");
+		goto out;
+	}
+
 	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
 				transaction->send_data_tmp,
@@ -1419,11 +1424,6 @@ static int __rrr_http_application_http1_request_send (
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send\n");
 			goto out;
 		}
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != 0) {
-		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send\n");
-		goto out;
 	}
 
 	out:
