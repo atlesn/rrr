@@ -299,9 +299,7 @@ static int __rrr_http2_on_stream_close_callback (
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, stream_id);
-	if (stream->data != NULL) {
-		stream->please_delete_me = 1;
-	}
+	stream->please_delete_me = 1;
 
 	if (session->callback_data.callback != NULL) {
 		if (session->callback_data.callback (
