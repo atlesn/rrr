@@ -190,10 +190,6 @@ static int __rrr_http_part_parse_request (
 	// Must be set when everything is complete
 	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
 
-	start += protocol_length;
-	// We are generous, allow spaces after protocol version
-	start += rrr_http_util_count_whsp(start, end);
-
 	*parsed_bytes = (crlf - (buf + start_pos) + 2);
 
 	out:
