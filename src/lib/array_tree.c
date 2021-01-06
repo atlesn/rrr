@@ -1371,7 +1371,7 @@ int __rrr_array_tree_import_value_callback (
 	}
 
 	RRR_DBG_3("Imported a value of type %s size %" PRIrrrl "x%" PRIrrrl "\n",
-			new_value->definition->identifier, new_value->import_length, new_value->element_count);
+			new_value->definition->identifier, parsed_bytes, new_value->element_count);
 
 	callback_data->pos += parsed_bytes;
 
