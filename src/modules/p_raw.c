@@ -70,7 +70,8 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				INSTANCE_D_NAME(thread_data), MSG_DATA_LENGTH(reading), reading->timestamp, topic_tmp);
 
 		if (MSG_IS_ARRAY(reading)) {
-			if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
+			uint16_t array_version_dummy;
+			if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, reading) != 0) {
 				RRR_MSG_0("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;

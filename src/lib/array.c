@@ -853,6 +853,7 @@ static int __rrr_array_message_append_to_collection_callback (
 }
 
 int rrr_array_message_append_to_collection (
+		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
 ) {
@@ -872,6 +873,7 @@ int rrr_array_message_append_to_collection (
 		goto out;
 	}
 
+	*array_version = message_orig->version;
 	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target, &target_tmp);
 
 	out:
