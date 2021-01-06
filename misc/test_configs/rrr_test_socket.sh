@@ -1,0 +1,2 @@
+#!/bin/sh
+./src/.libs/rrr_post -f - -a istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep1,istr,sep2 < data.ascii /tmp/rrr_test_socket.sock
