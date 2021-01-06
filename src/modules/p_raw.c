@@ -66,8 +66,8 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out;
 		}
 
-		RRR_DBG_2("Raw %s: Received data of size %lu with timestamp %" PRIu64 " topic '%s'\n",
-				INSTANCE_D_NAME(thread_data), MSG_DATA_LENGTH(reading), reading->timestamp, topic_tmp);
+		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp);
 
 		if (MSG_IS_ARRAY(reading)) {
 			uint16_t array_version_dummy;
