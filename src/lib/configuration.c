@@ -523,7 +523,8 @@ int rrr_config_parse_file (
 	}
 	else {
 		if (file_size > INT_MAX) {
-			RRR_MSG_0("Size of configuration file '%s' too long (%lli>%lli)\n", (long long int) file_size, (long long int) INT_MAX);
+			RRR_MSG_0("Size of configuration file '%s' too long (%lli>%lli)\n",
+					filename, (long long int) file_size, (long long int) INT_MAX);
 			ret = 1;
 			goto out;
 		}
