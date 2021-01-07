@@ -50,7 +50,7 @@ int rrr_main_create_and_start_threads (
 
 void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection);
 int rrr_main_parse_cmd_arguments_and_env(struct cmd_data *cmd, const char **env, cmd_conf config);
-int rrr_main_print_help_and_version (
+int rrr_main_print_banner_help_and_version (
 		struct cmd_data *cmd,
 		int argc_minimum
 );
