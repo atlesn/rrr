@@ -25,9 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_module_common.h"
 #include "python3_message.h"
 
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include "../log.h"
 #include "../array.h"
 #include "../fixed_point.h"
+#include "../ip/ip_util.h"
+#include "../ip/ip_defines.h"
+#include "../util/posix.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
@@ -59,6 +65,7 @@ struct rrr_python3_rrr_message_data {
 	struct rrr_python3_rrr_message_constants constants;
 	struct sockaddr_storage ip_addr;
 	socklen_t ip_addr_len;
+	uint8_t ip_protocol;
 };
 
 static int __rrr_python3_rrr_message_set_topic_and_data (
@@ -302,6 +309,288 @@ static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *a
 	return ret;
 }
 
+static PyObject *rrr_python3_rrr_message_f_get_ip(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+	(void)(args);
+
+	PyObject *ret = NULL;
+
+	if (data->ip_addr_len == 0) {
+		Py_RETURN_NONE;
+	}
+
+	char ip_addr[128];
+	uint16_t port_u = 0;
+
+	if (rrr_ip_to_str_and_port(&port_u, ip_addr, sizeof(ip_addr), (const struct sockaddr *) &data->ip_addr, data->ip_addr_len) != 0) {
+		RRR_MSG_0("Failed to convert IP address in rrr_message.get_ip()\n");
+		goto out_false;
+	}
+
+	if ((ret = PyTuple_New(2)) == NULL) {
+		RRR_MSG_0("Failed to create tuple in rrr_python3_rrr_message_f_get_ip\n");
+		PyErr_Print();
+		goto out_false;
+	}
+
+	{
+		PyObject *ip = PyUnicode_FromString(ip_addr);
+		if (ip == NULL) {
+			RRR_MSG_0("Failed to create python string in rrr_python3_rrr_message_f_get_ip\n");
+			PyErr_Print();
+			goto out_false;
+		}
+		PyTuple_SET_ITEM(ret, 0, ip);
+	}
+
+	{
+		PyObject *port = PyLong_FromUnsignedLong(port_u);
+		if (port == NULL) {
+			RRR_MSG_0("Failed to create python long in rrr_python3_rrr_message_f_get_ip\n");
+			PyErr_Print();
+			goto out_false;
+		}
+		PyTuple_SET_ITEM(ret, 1, port);
+	}
+
+	goto out;
+	out_false:
+		Py_XDECREF(ret);
+		Py_RETURN_FALSE;
+	out:
+		return ret;
+}
+
+static PyObject *rrr_python3_rrr_message_f_clear_ip(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+	(void)(args);
+
+	data->ip_addr_len = 0;
+	memset(&data->ip_addr, '\0', sizeof(data->ip_addr));
+
+	Py_RETURN_TRUE;
+}
+
+static int __rrr_python3_rrr_message_f_set_ip_extract_ip (char **target, PyObject *ip) {
+	int ret = 0;
+
+	*target = NULL;
+
+	Py_ssize_t ip_str_size = 0;
+	const char *ip_str_tmp = PyUnicode_AsUTF8AndSize(ip, &ip_str_size);
+
+	if (ip_str_size == 0) {
+		RRR_MSG_0("Error: IP given to rrr_message.set_ip() was empty\n");
+		ret = 1;
+		goto out;
+	}
+
+	const Py_ssize_t final_size = ip_str_size + 1;
+
+	char *result;
+	if ((result = malloc(final_size)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for string in __rrr_python3_rrr_message_f_set_ip_extract_ip\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(result, '\0', final_size);
+	memcpy(result, ip_str_tmp, ip_str_size);
+
+	*target = result;
+
+	out:
+	return ret;
+}
+
+static PyObject *rrr_python3_rrr_message_f_set_ip(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+
+	int ret = 0;
+
+	char *ip_str_tmp = NULL;
+
+	if (PyTuple_Size(args) != 2) {
+		RRR_MSG_0("Error: Wrong number of arguments to rrr_message.set_ip(), excactly two arguments are expected but %lli were given.\n",
+				(long long int) PyTuple_Size(args));
+		ret = 1;
+		goto out;
+	}
+
+	int af_protocol = 0;
+	char ip_bin_tmp[sizeof(((struct sockaddr_in6 *) NULL)->sin6_addr)];
+
+	memset(ip_bin_tmp, '\0', sizeof(ip_bin_tmp));
+
+	// Convert IP argument
+	{
+		// Borrowed reference
+		PyObject *ip = PyTuple_GetItem(args, 0);
+		if (!PyUnicode_Check(ip)) {
+			RRR_MSG_0("Error: First argument to rrr_message.set_ip() was not a string.\n");
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = __rrr_python3_rrr_message_f_set_ip_extract_ip(&ip_str_tmp, ip)) != 0) {
+			goto out;
+		}
+
+		// IPv6 must be checked first as this address may also contain dots .
+		if (strchr(ip_str_tmp, ':') != NULL) {
+			af_protocol = AF_INET6;
+		}
+		else if (strchr(ip_str_tmp, '.') != NULL) {
+			af_protocol = AF_INET;
+		}
+		else {
+			RRR_MSG_0("Error: Could not find colon : or dot . in IP given to rrr_message.set_ip() which was '%s'\n", ip_str_tmp);
+			ret = 1;
+			goto out;
+		}
+
+		// Note : Returns 1 on success
+		if (inet_pton(af_protocol, ip_str_tmp, ip_bin_tmp) != 1) {
+			RRR_MSG_0("Error: Could not convert IP given to rrr_message.set_ip() which was '%s'. The value was invalid.\n", ip_str_tmp);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	long int port_long = 0;
+
+	// Convert port argument
+	{
+		// Borrowed reference
+		PyObject *port = PyTuple_GetItem(args, 1);
+		if (PyLong_Check(port)) {
+			printf("is long\n");
+			port_long = PyLong_AsLong(port);
+		}
+		else if (PyUnicode_Check(port)) {
+			PyObject *port_long_tmp = NULL;
+			if ((port_long_tmp = PyLong_FromUnicodeObject(port, 10)) == NULL) {
+				RRR_MSG_0("Error: Could convert port given to rrr_message.set_ip() to number\n");
+				PyErr_Print();
+				ret = 1;
+				goto out;
+			}
+			port_long = PyLong_AsLong(port_long_tmp);
+			Py_XDECREF(port_long_tmp);
+		}
+
+		if (port_long < 1 || port_long > 65535) {
+			RRR_MSG_0("Error: Invalidt port given to rrr_message.set_ip(). The value was %li after conversion.\n", port_long);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	struct sockaddr_storage sockaddr_tmp = {0};
+
+	// Save address and port
+	{
+		if (af_protocol == AF_INET6) {
+			struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) &sockaddr_tmp;
+			in6->sin6_family = AF_INET6;
+			in6->sin6_port = htons(port_long);
+			memcpy(&in6->sin6_addr, ip_bin_tmp, sizeof(in6->sin6_addr));
+
+			data->ip_addr_len = sizeof(*in6);
+		}
+		else {
+			struct sockaddr_in *in = (struct sockaddr_in *) &sockaddr_tmp;
+			in->sin_family = AF_INET6;
+			in->sin_port = htons(port_long);
+			memcpy(&in->sin_addr, ip_bin_tmp, sizeof(in->sin_addr));
+
+			data->ip_addr_len = sizeof(*in);
+		}
+	}
+
+	RRR_ASSERT(sizeof(data->ip_addr) == sizeof(sockaddr_tmp), rrr_python3_rrr_message_f_set_ip_correct_size_of_sockaddr_tmp);
+
+	memcpy(&data->ip_addr, &sockaddr_tmp, sizeof(sockaddr_tmp));
+
+	out:
+	RRR_FREE_IF_NOT_NULL(ip_str_tmp);
+	if (ret) {
+		Py_RETURN_FALSE;
+	}
+	Py_RETURN_TRUE;
+}
+
+static PyObject *rrr_python3_rrr_message_f_get_ip_proto(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+	(void)(args);
+
+	PyObject *ret = NULL;
+
+	const char *protocol = "";
+
+	if (data->ip_protocol == RRR_IP_TCP) {
+		protocol = "TCP";
+	}
+	else if (data->ip_protocol == RRR_IP_UDP) {
+		protocol = "UDP";
+	}
+
+	if ((ret = PyUnicode_FromString(protocol)) == NULL) {
+		RRR_MSG_0("Could not allocate string in rrr_python3_rrr_message_f_get_ip_proto\n");
+		goto out;
+	}
+
+	out:
+	if (ret != NULL) {
+		return ret;
+	}
+	Py_RETURN_FALSE;
+}
+
+static PyObject *rrr_python3_rrr_message_f_set_ip_proto(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+
+	int ret = 0;
+
+	if (!PyUnicode_Check(args)) {
+		RRR_MSG_0("Error: Value given to rrr_message.set_ip_proto() was not a string\n");
+		ret = 1;
+		goto out;
+	}
+
+	const char *protocol = NULL;
+	Py_ssize_t protocol_len = 0;
+
+	protocol = PyUnicode_AsUTF8AndSize(args, &protocol_len);
+
+	if (protocol_len == 0) {
+		data->ip_protocol = 0;
+	}
+	else if (protocol_len != 3) {
+		goto out_invalid_value;
+	}
+	else if (rrr_posix_strncasecmp(protocol, "TCP", 3) == 0) {
+		data->ip_protocol = RRR_IP_TCP;
+	}
+	else if (rrr_posix_strncasecmp(protocol, "UDP", 3) == 0) {
+		data->ip_protocol = RRR_IP_UDP;
+	}
+	else {
+		goto out_invalid_value;
+	}
+
+	goto out;
+	out_invalid_value:
+		RRR_MSG_0("Error: Invalid value given to rrr_message.set_ip_proto(), value must be TCP, UDP or empty\n");
+		ret = 1;
+		goto out;
+	out:
+	if (ret != 0) {
+		Py_RETURN_FALSE;
+	}
+	Py_RETURN_TRUE;
+}
+
 static PyMethodDef rrr_message_methods[] = {
 		{
 				.ml_name	= "set_data",
@@ -350,6 +639,36 @@ static PyMethodDef rrr_message_methods[] = {
 				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_topic,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get topic parameter from message as a string"
+		},
+		{
+				.ml_name	= "get_ip",
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_ip,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get IP and port tuplet from the message"
+		},
+		{
+				.ml_name	= "clear_ip",
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_clear_ip,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Clear any IP address information from the message"
+		},
+		{
+				.ml_name	= "set_ip",
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_ip,
+				.ml_flags	= METH_VARARGS,
+				.ml_doc		= "Set IP address and port of a message"
+		},
+		{
+				.ml_name	= "get_ip_proto",
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_ip_proto,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get the protocol of a message, either UDP or TCP"
+		},
+		{
+				.ml_name	= "set_ip_proto",
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_ip_proto,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Set the protocol of a message, either UDP or TCP"
 		},
 		{ NULL, NULL, 0, NULL }
 };
@@ -1112,7 +1431,7 @@ struct rrr_msg_msg *rrr_python3_rrr_message_get_message (struct rrr_msg_addr *me
 		MSG_SET_CLASS(ret, MSG_CLASS_DATA);
 	}
 
-	// Make shure the message type is preserver in case the user has changed it. The user is however
+	// Make sure the message type is preserver in case the user has changed it. The user is however
 	// not able to choose the class, this is always set to to either ARRAY or DATA.
 	MSG_SET_TYPE(ret, type_orig);
 
@@ -1123,6 +1442,7 @@ struct rrr_msg_msg *rrr_python3_rrr_message_get_message (struct rrr_msg_addr *me
 
 	memcpy (&message_addr->addr, &data->ip_addr, data->ip_addr_len);
 	RRR_MSG_ADDR_SET_ADDR_LEN(message_addr, data->ip_addr_len);
+	message_addr->protocol = data->ip_protocol;
 
 	goto out;
 	out_err:
@@ -1156,6 +1476,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 	if (message_addr != NULL) {
 		memcpy(&ret->ip_addr, &message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
 		ret->ip_addr_len = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
+		ret->ip_protocol = message_addr->protocol;
 	}
 	else {
 		memset(&ret->ip_addr, '\0', sizeof(ret->ip_addr));

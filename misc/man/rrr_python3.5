@@ -67,6 +67,22 @@ Set the MQTT topic of a message.
 .TP
 .B rrr_message.get_topic()
 Return the MQTT topic of a message. If there is no topic, return an empty string.
+.TP
+.B rrr_message.get_ip()
+Returns the IP and port of a message as a tuple. If no address is set, NULL is returned.
+.TP
+.B rrr_message.clear_ip()
+Clear any IP address information of a message.
+.TP
+.B rrr_message.set_ip(ip : str, port : str|long)
+Set the IP address and port of the message, may be either IPv4 or IPv6.
+.TP
+.B rrr_message.get_ip_proto()
+Get the protocol of a message, returns TCP, UDP or empty string.
+.TP
+.B rrr_message.set_ip_proto(str)
+Set the protocol of a message, the argument may be one of the values returned by
+.B rrr_message.get_ip_proto().
 .SS rrr_array
 This class allows for modification of the array part of a message, or creation of a new one. An array consist
 of multiple members, optionally with a tag to identify them. Each member may itself have multiple values, but these
