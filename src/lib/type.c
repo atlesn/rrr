@@ -263,7 +263,6 @@ static int __rrr_type_import_numeric_str_raw (
 	char tmp[64];
 	memset(tmp, '\0', sizeof(tmp));
 
-	// Use isspace for compatibility with strtoull
 	for (const char *pos = start; pos < end; pos++) {
 		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || *pos == ' ' || *pos == '\t' || (is_signed && *pos == '-')) {
 			tmp[total_length++] = *pos;
