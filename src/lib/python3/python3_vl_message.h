@@ -28,15 +28,15 @@ struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
-struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (
+struct rrr_msg_msg *rrr_python3_rrr_message_get_message (
 		struct rrr_msg_addr *message_addr,
 		PyObject *self
 );
-PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
+PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		const struct rrr_msg_msg *msg,
 		const struct rrr_msg_addr *message_addr
 );
-PyObject *rrr_python3_rrr_msg_msg_new_from_message (
+PyObject *rrr_python3_rrr_message_new_from_message (
 		const struct rrr_msg_msg *msg
 );
 

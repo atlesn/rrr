@@ -88,13 +88,13 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	const struct rrr_msg_msg *message_orig = NULL;
 	struct rrr_msg_msg *message = NULL;
 
-	if (!rrr_python3_rrr_msg_msg_check(arg)) {
+	if (!rrr_python3_rrr_message_check(arg)) {
 		RRR_MSG_0("Received unknown object type in python3 socket send\n");
 		ret = 1;
 		goto out;
 	}
 
-	message_orig = rrr_python3_rrr_msg_msg_get_message (&message_addr, arg);
+	message_orig = rrr_python3_rrr_message_get_message (&message_addr, arg);
 
 	message = rrr_msg_msg_duplicate(message_orig);
 	if (message == NULL) {

@@ -143,7 +143,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	PyObject *arg_message = NULL;
 
-	arg_message = rrr_python3_rrr_msg_msg_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
+	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
 	if (arg_message == NULL) {
 		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
 		ret = 1;

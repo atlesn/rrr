@@ -18,7 +18,7 @@ def config(config : rrr_config):
 
 	return True
 
-def source(socket: rrr_socket, message : rrr_msg_msg):
+def source(socket: rrr_socket, message : rrr_message):
 	global persistent_setting_a
 	global persistent_setting_b
 
@@ -28,7 +28,7 @@ def source(socket: rrr_socket, message : rrr_msg_msg):
 
 	return True
 
-def process(socket: rrr_socket, message: rrr_msg_msg):
+def process(socket: rrr_socket, message: rrr_message):
 	global persistent_setting_a
 	global persistent_setting_b
 
