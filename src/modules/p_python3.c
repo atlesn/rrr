@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/python3/python3_common.h"
 #include "../lib/python3/python3_config.h"
-#include "../lib/python3/python3_vl_message.h"
+#include "../lib/python3/python3_message.h"
 #include "../lib/python3/python3_cmodule.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/messages/msg_addr.h"

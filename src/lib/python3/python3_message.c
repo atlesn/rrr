@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_array.h"
 #include "python3_module_common.h"
-#include "python3_vl_message.h"
+#include "python3_message.h"
 
 #include "../log.h"
 #include "../array.h"

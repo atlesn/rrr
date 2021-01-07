@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_RRR_MESSAGE_H
-#define RRR_PYTHON3_RRR_MESSAGE_H
+#ifndef RRR_PYTHON3_MESSAGE_H
+#define RRR_PYTHON3_MESSAGE_H
 
 #include "python3_headers.h"
 
@@ -40,4 +40,4 @@ PyObject *rrr_python3_rrr_message_new_from_message (
 		const struct rrr_msg_msg *msg
 );
 
-#endif /* RRR_PYTHON3_RRR_MESSAGE_H */
+#endif /* RRR_PYTHON3_MESSAGE_H */
