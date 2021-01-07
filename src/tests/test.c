@@ -214,17 +214,9 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	TEST_BEGIN("non-existent config file") {
-		config = rrr_config_parse_file("nonexistent_file");
-	} TEST_RESULT(config == NULL);
-
-	if (config != NULL) {
-		goto out_cleanup_config;
-	}
-
-	TEST_BEGIN("true configuration loading") {
-		config = rrr_config_parse_file(config_file);
-	} TEST_RESULT(config != NULL);
+	TEST_BEGIN("configuration loading") {
+		ret = rrr_config_parse_file(&config, config_file);
+	} TEST_RESULT(ret == 0);
 
 	if (config == NULL) {
 		ret = 1;

@@ -652,6 +652,12 @@ int rrr_passwd_authenticate (
 		goto out;
 	}
 
+	if (passwd_file_size == 0) {
+		RRR_DBG_1("Password file '%s' was empty, access denied\n", filename);
+		ret = 1;
+		goto out;
+	}
+
 	struct rrr_passwd_authenticate_callback_data callback_data = {
 			username,
 			password,

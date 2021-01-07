@@ -213,13 +213,13 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
-	if ((config = rrr_config_parse_file(config_file)) == NULL) {
+	if (rrr_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {

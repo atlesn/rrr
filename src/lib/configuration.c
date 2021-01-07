@@ -23,16 +23,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include "parse.h"
 #include "log.h"
 #include "configuration.h"
 #include "rrr_strerror.h"
 #include "array_tree.h"
+#include "socket/rrr_socket.h"
 
 #include "instance_config.h"
 
-struct rrr_config *__rrr_config_new (void) {
+static struct rrr_config *__rrr_config_new (void) {
 	struct rrr_config *ret = malloc(sizeof(*ret));
 
 	if (ret == NULL) {
@@ -45,7 +47,9 @@ struct rrr_config *__rrr_config_new (void) {
 	return ret;
 }
 
-int __rrr_config_expand(struct rrr_config *target) {
+static int __rrr_config_expand (
+		struct rrr_config *target
+) {
 	int old_size = target->module_count_max * sizeof(*target->configs);
 	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
 	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
@@ -63,8 +67,28 @@ int __rrr_config_expand(struct rrr_config *target) {
 	return 0;
 }
 
-int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config_data *instance_config) {
-	if (rrr_config_find_instance (target, instance_config->name) != NULL) {
+static struct rrr_instance_config_data *__rrr_config_find_instance (
+		struct rrr_config *source,
+		const char *name
+) {
+	struct rrr_instance_config_data *ret = NULL;
+
+	for (int i = 0; i < source->module_count; i++) {
+		struct rrr_instance_config_data *test = source->configs[i];
+		if (strcmp(test->name, name) == 0) {
+			ret = test;
+			break;
+		}
+	}
+
+	return ret;
+}
+
+static int __rrr_config_push (
+		struct rrr_config *target,
+		struct rrr_instance_config_data *instance_config
+) {
+	if (__rrr_config_find_instance (target, instance_config->name) != NULL) {
 		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
 		return 1;
 	}
@@ -82,7 +106,11 @@ int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config_dat
 	return 0;
 }
 
-int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_settings *settings, int *did_parse) {
+static int __rrr_config_parse_setting (
+		struct rrr_parse_pos *pos,
+		struct rrr_instance_settings *settings,
+		int *did_parse
+) {
 	int ret = 0;
 
 	char c;
@@ -201,7 +229,11 @@ int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_s
 	return ret;
 }
 
-int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos *pos, int *did_parse) {
+static int __rrr_config_parse_instance (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos,
+		int *did_parse
+) {
 	int ret = 0;
 	*did_parse = 0;
 
@@ -289,11 +321,6 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		*did_parse = 0;
 	}
 
-/*	if (RRR_DEBUGLEVEL_1) {
-		RRR_MSG_1("\nDumping settings for instance %s:\n", instance_config->name);
-		rrr_settings_dump(instance_config->settings);
-	}*/
-
 	if (ret == 0) {
 		*did_parse = 1;
 	}
@@ -313,7 +340,10 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 	return ret;
 }
 
-int __rrr_config_interpret_array_tree (struct rrr_config *config, struct rrr_parse_pos *pos) {
+static int __rrr_config_interpret_array_tree (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos
+) {
 	int ret = 0;
 
 	struct rrr_array_tree *new_tree = NULL;
@@ -384,7 +414,10 @@ int __rrr_config_interpret_array_tree (struct rrr_config *config, struct rrr_par
 		return ret;
 }
 
-int __rrr_config_parse_any (struct rrr_config *config, struct rrr_parse_pos *pos) {
+static int __rrr_config_parse_any (
+		struct rrr_config *config,
+		struct rrr_parse_pos *pos
+) {
 	int ret = 0;
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
@@ -427,7 +460,10 @@ int __rrr_config_parse_any (struct rrr_config *config, struct rrr_parse_pos *pos
 	return ret;
 }
 
-int __rrr_config_parse_file (struct rrr_config *config, const void *data, const int size) {
+static int __rrr_config_parse_file (
+		struct rrr_config *config,
+		const void *data, const int size
+) {
 	int ret = 0;
 
 	struct rrr_parse_pos pos;
@@ -449,21 +485,9 @@ int __rrr_config_parse_file (struct rrr_config *config, const void *data, const 
 	return ret;
 }
 
-struct rrr_instance_config_data *rrr_config_find_instance (struct rrr_config *source, const char *name) {
-	struct rrr_instance_config_data *ret = NULL;
-
-	for (int i = 0; i < source->module_count; i++) {
-		struct rrr_instance_config_data *test = source->configs[i];
-		if (strcmp(test->name, name) == 0) {
-			ret = test;
-			break;
-		}
-	}
-
-	return ret;
-}
-
-void rrr_config_destroy (struct rrr_config *target) {
+void rrr_config_destroy (
+		struct rrr_config *target
+) {
 	for (int i = 0; i < target->module_count; i++) {
 		rrr_instance_config_destroy(target->configs[i]);
 	}
@@ -472,82 +496,54 @@ void rrr_config_destroy (struct rrr_config *target) {
 	free(target);
 }
 
-struct rrr_config *rrr_config_parse_file (const char *filename) {
-	struct rrr_config *ret = __rrr_config_new();
-	int err = 0;
+int rrr_config_parse_file (
+		struct rrr_config **target,
+		const char *filename
+) {
+	int ret = 0;
 
-	if (ret == NULL) {
-		err = 1;
+	*target = NULL;
+
+	char *file_data = NULL;
+
+	struct rrr_config *result = __rrr_config_new();
+	if (result == NULL) {
+		ret = 1;
 		goto out;
 	}
 
-	// TODO : Use rrr_socket read whole file function
-
-	FILE *cfgfile = fopen(filename, "r");
-
-	if (cfgfile == NULL) {
-		RRR_MSG_0("Could not open configuration file %s: %s\n", filename, rrr_strerror(errno));
-		err = 1;
+	ssize_t file_size = 0;
+	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, filename, O_RDONLY, 0)) != 0) {
+		RRR_MSG_0("Error while reading configuration file '%s'\n", filename);
 		goto out;
 	}
 
-	if (fseek(cfgfile, 0L, SEEK_END) != 0) {
-		RRR_MSG_0("Could not fseek to the end in configuration file %s: %s\n", filename, rrr_strerror(errno));
-		err = 1;
-		goto out_close;
-	}
-	ssize_t size_signed = ftell(cfgfile);
-	if (size_signed < 0) {
-		RRR_MSG_0("Could not get size of configuration file %s: %s\n", filename, rrr_strerror(errno));
-		err = 1;
-		goto out_close;
-	}
-
-	size_t size = size_signed;
-	if (size > RRR_CONFIG_MAX_SIZE) {
-		RRR_MSG_0("Configuration file %s was too big (%li > %d)\n", filename, size, RRR_CONFIG_MAX_SIZE);
-		err = 1;
-		goto out_close;
-	}
-
-	if (fseek(cfgfile, 0L, 0) != 0) {
-		RRR_MSG_0("Could not fseek to the beginning in configuration file %s: %s\n", filename, rrr_strerror(errno));
-		err = 1;
-		goto out_close;
-	}
-
-	void *file_data = malloc(size);
 	if (file_data == NULL) {
-		RRR_MSG_0("Could not allocate memory for configuration file\n");
-		err = 1;
-		goto out_close;
+		RRR_DBG_1("Configuration file '%s' was empty\n", filename);
 	}
+	else {
+		if (file_size > INT_MAX) {
+			RRR_MSG_0("Size of configuration file '%s' too long (%lli>%lli)\n", (long long int) file_size, (long long int) INT_MAX);
+			ret = 1;
+			goto out;
+		}
 
-	size_t bytes = fread(file_data, 1, size, cfgfile);
-	if (bytes != size) {
-		RRR_MSG_0("The whole configuration file was not read (result %lu): %s\n", bytes, rrr_strerror(ferror(cfgfile)));
-		err = 1;
-		goto out_free;
-	}
+		RRR_DBG_1("Read %lli bytes from configuration file '%s'\n", (long long int) file_size, filename);
 
-	RRR_DBG_1("Read %li bytes from configuration file\n", size);
-
-	err = __rrr_config_parse_file(ret, file_data, size);
-
-	out_free:
-	free(file_data);
-
-	out_close:
-	fclose(cfgfile);
-
-	out:
-	if (err == 1) {
-		if (ret != NULL) {
-			rrr_config_destroy(ret);
-			ret = NULL;
+		if ((ret = __rrr_config_parse_file(result, file_data, file_size)) != 0) {
+			RRR_MSG_0("Error while parsing configuration file '%s'\n", filename);
+			goto out;
 		}
 	}
 
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(file_data);
+	if (result != NULL) {
+		rrr_config_destroy(result);
+	}
 	return ret;
 }
 

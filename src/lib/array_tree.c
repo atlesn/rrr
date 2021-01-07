@@ -250,7 +250,7 @@ static int __rrr_array_tree_interpret_if_or_elsif (
 	out_destroy_branch:
 		__rrr_array_branch_destroy(branch);
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_array_tree_interpret_conditional_node (
@@ -363,10 +363,13 @@ static int __rrr_array_tree_interpret_unsigned_integer_10(const char **end, unsi
 	if (*value == '\0') {
 		return 1;
 	}
+
 	*result = strtoull(value, (char **) end, 10);
+
 	if (*end == value) {
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -400,8 +403,8 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 	*length_ref_return = NULL;
 	*item_count_return = 0;
 	*item_count_ref_return = NULL;
-	*bytes_parsed_return = 0;
 	*flags_return = 0;
+	*bytes_parsed_return = 0;
 
 	type = rrr_type_parse_from_string(&parsed_bytes, start, end);
 	if (type == NULL) {
@@ -562,12 +565,17 @@ static int __rrr_array_tree_interpret_single_definition (
 	int ret = 0;
 
 	rrr_length parsed_bytes = 0;
+
 	const struct rrr_type_definition *type = NULL;
+
 	unsigned int length = 0;
 	char *length_ref = NULL;
+
 	unsigned int item_count = 0;
 	char *item_count_ref = NULL;
+
 	rrr_type_flags flags = 0;
+
 	const char *tag_start = NULL;
 	unsigned int tag_length = 0;
 
@@ -768,8 +776,6 @@ static int __rrr_array_tree_interpret_node (
 		char tmp[length + 1];
 		memcpy(tmp, pos->data + start, length);
 		tmp[length] = '\0';
-
-//		printf("tmp: %s\n", tmp);
 
 		int i; // DO NOT use unsigned
 		for (i = length - 1; i >= 0; i--) {
@@ -1158,7 +1164,7 @@ static int __rrr_array_tree_iterate (
 ) {
 	int ret = 0;
 
-	int value_count_orig = value_count;
+	const int value_count_orig = value_count;
 
 	RRR_LL_ITERATE_BEGIN(tree, const struct rrr_array_node);
 		if (node->rewind_count > 0 && rewind_callback != NULL) {
@@ -1234,7 +1240,6 @@ int __rrr_array_tree_import_rewind_callback (
 		void *arg
 ) {
 	struct rrr_array_tree_import_callback_data *callback_data = arg;
-	int ret = 0;
 
 	if ((rrr_slength) count > (rrr_slength) RRR_LL_COUNT(&callback_data->array)) {
 		RRR_MSG_0("Attempt to REWIND %" PRIrrrl " positions past beginning of array which currently has %i elements, check configuration\n",
@@ -1246,19 +1251,23 @@ int __rrr_array_tree_import_rewind_callback (
 
 	rrr_length total_length = 0;
 	while (RRR_LL_COUNT(&callback_data->array) > target) {
+		// Note : Local variable 'value' must be freed at loop end
 		struct rrr_type_value *value = RRR_LL_POP(&callback_data->array);
+
 		callback_data->pos -= value->import_length * value->element_count;
 		total_length += value->import_length * value->element_count;
+
 		if (callback_data->pos < callback_data->start) {
 			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
 		}
+
 		rrr_type_value_destroy(value);
 	}
 
 	RRR_DBG_3("REWIND %" PRIrrrl " array positions and %" PRIrrrl " bytes while parsing array tree\n",
 			count, total_length);
 
-	return ret;
+	return RRR_ARRAY_TREE_OK;
 }
 
 int __rrr_array_tree_import_value_resolve_ref (
@@ -1274,12 +1283,14 @@ int __rrr_array_tree_import_value_resolve_ref (
 						name, result_tmp, RRR_LENGTH_MAX);
 				return RRR_ARRAY_TREE_SOFT_ERROR;
 			}
+
 			*result = result_tmp;
+
 			return RRR_ARRAY_TREE_OK;
 		}
 	RRR_LL_ITERATE_END();
 
-	RRR_MSG_0("Failed to find tag '%s' while resolving reference\n", name);
+	RRR_MSG_0("Failed to find tag '%s' while resolving reference in array tree\n", name);
 
 	return RRR_ARRAY_TREE_SOFT_ERROR;
 }
