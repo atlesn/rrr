@@ -320,11 +320,21 @@ static int __rrr_type_import_numeric_str_raw (
 	return RRR_TYPE_PARSE_OK;
 }
 
-int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
+int rrr_type_import_ustr_raw (
+		uint64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
 	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 0);
 }
 
-int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
+int rrr_type_import_istr_raw (
+		int64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
 	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 1);
 }
 

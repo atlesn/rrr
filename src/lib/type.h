@@ -227,9 +227,18 @@ RRR_TYPE_DEFINE_EXTERN(stx);
 RRR_TYPE_DEFINE_EXTERN(err);
 RRR_TYPE_DEFINE_EXTERN(null);
 
-//int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const char *start, const char *end);
-//int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const char *start, const char *end);
-
+int rrr_type_import_ustr_raw (
+		uint64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+);
+int rrr_type_import_istr_raw (
+		int64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+);
 const struct rrr_type_definition *rrr_type_parse_from_string (
 		rrr_length *parsed_bytes,
 		const char *start,
