@@ -480,8 +480,6 @@ static int __rrr_http_part_parse_chunked (
 		goto out;
 	}
 
-	RRR_DBG_3("HTTP chunked transfer encoding specified\n");
-
 	ret = __rrr_http_part_parse_chunk (
 			&part->chunks,
 			&parsed_bytes_tmp,
