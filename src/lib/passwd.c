@@ -331,7 +331,10 @@ static int __rrr_passwd_check_callback (
 	return ret;
 }
 
-int rrr_passwd_check (const char *hash, const char *password) {
+int rrr_passwd_check (
+		const char *hash,
+		const char *password
+) {
 	struct passwd_check_callback_data callback_data = { password };
 
 	if (*password == '\0') {
@@ -347,7 +350,10 @@ int rrr_passwd_check (const char *hash, const char *password) {
 	return rrr_parse_str_split(hash, '$', 4, __rrr_passwd_check_callback, &callback_data);
 }
 
-int rrr_passwd_encrypt (char **result, const char *password) {
+int rrr_passwd_encrypt (
+		char **result,
+		const char *password
+) {
 	unsigned char *base64_tmp = NULL;
 	size_t base64_tmp_length = 0;
 

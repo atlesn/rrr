@@ -35,7 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/gnu.h"
 
-static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
+static int __rrr_type_convert_integer_10 (
+		char **end,
+		long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}
@@ -46,7 +50,11 @@ static int __rrr_type_convert_integer_10(char **end, long long int *result, cons
 	return 0;
 }
 
-static int __rrr_type_convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
+static int __rrr_type_convert_unsigned_integer_10 (
+		char **end,
+		unsigned long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}

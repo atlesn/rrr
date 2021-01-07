@@ -30,7 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder/message_holder_util.h"
 #include "message_holder/message_holder.h"
 
-static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
+static int __poll_collection_entry_destroy (
+		struct rrr_poll_collection_entry *entry
+) {
 	free(entry);
 	return 0;
 }

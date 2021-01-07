@@ -59,23 +59,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 static void __rrr_fork_handler_lock (
-	struct rrr_fork_handler *handler
+		struct rrr_fork_handler *handler
 ) {
-//	printf("%i %p trylock\n", getpid(), handler);
 	// Make sure that we actually wake up and take the lock while 
 	// other users sleep between unlock/lock
 	while (pthread_mutex_trylock (&handler->lock) != 0) {
 		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
 	}
-//	printf("%i %p locked\n", getpid(), handler);
 }
 
-static void __rrr_fork_handler_unlock (struct rrr_fork_handler *handler) {
-//	printf("%i %p unlock\n", getpid(), handler);
+static void __rrr_fork_handler_unlock (
+		struct rrr_fork_handler *handler
+) {
 	pthread_mutex_unlock (&handler->lock);
 }
 
-int rrr_fork_handler_new (struct rrr_fork_handler **result) {
+int rrr_fork_handler_new (
+		struct rrr_fork_handler **result
+) {
 	int ret = 0;
 
 	struct rrr_fork_handler *handler = NULL;
@@ -112,22 +113,31 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 		return ret;
 }
 
-static void __rrr_fork_handler_free (struct rrr_fork_handler *handler) {
+static void __rrr_fork_handler_free (
+		struct rrr_fork_handler *handler
+) {
 	munmap(handler, RRR_FORK_HANDLER_ALLOCATION_SIZE);
 }
 
-static int __rrr_fork_clear (struct rrr_fork *fork) {
+static int __rrr_fork_clear (
+		struct rrr_fork *fork
+) {
 	fork->exit_notify_arg = NULL;
 	fork->exit_notify = NULL;
 	fork->pid = 0;
 	fork->parent_pid = 0;
 	fork->was_waited_for = 0;
+
 	return 0;
 }
 
-void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
+void rrr_fork_handler_destroy (
+		struct rrr_fork_handler *handler
+) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
+
 	__rrr_fork_handler_lock(handler);
+
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 		if (node->pid > 0) {
 			RRR_MSG_0("Warning: Child fork pid %i had not yet exited or exit notifications was not set while destroying fork handler.\n", node->pid);
@@ -135,9 +145,12 @@ void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
 				RRR_MSG_0("Warning: Child fork pid %i had not been waited for while destroying fork handler, is now possibly a zombie.\n", node->pid);
 			}
 		}
+
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_clear(node));
+
 	__rrr_fork_handler_unlock(handler);
+
 	pthread_mutex_destroy(&handler->lock);
 	__rrr_fork_handler_free(handler);
 }
@@ -159,14 +172,18 @@ int rrr_fork_signal_handler (int s, void *arg) {
 	return RRR_SIGNAL_NOT_HANDLED;
 }
 
-static int __rrr_fork_set_waited_for (struct rrr_fork *fork) {
+static int __rrr_fork_set_waited_for (
+		struct rrr_fork *fork
+) {
 	// The parent must call the notify function
 	fork->was_waited_for = 1;
 
 	return 0;
 }
 
-static int __rrr_fork_notify_and_clear (struct rrr_fork *fork) {
+static int __rrr_fork_notify_and_clear (
+		struct rrr_fork *fork
+) {
 	RRR_DBG_1("Notification to exit handlers for exited pid %i in parent pid %i\n",
 			fork->pid, getpid());
 
@@ -193,7 +210,11 @@ static int __rrr_fork_waitpid (pid_t pid, int *status, int options) {
 	return ret;
 }
 
-static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handler *handler, int max_rounds) {
+static void __rrr_fork_wait_loop (
+		int *active_forks_found,
+		struct rrr_fork_handler *handler,
+		int max_rounds
+) {
 	*active_forks_found = 0;
 
 	pid_t self = getpid();
@@ -231,7 +252,9 @@ static void __rrr_fork_wait_loop (int *active_forks_found, struct rrr_fork_handl
 }
 
 // Call from main() only
-void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
+void rrr_fork_send_sigusr1_and_wait (
+		struct rrr_fork_handler *handler
+) {
 	RRR_FORK_HANDLER_VERIFY_SELF();
 
 	pid_t self = getpid();
@@ -278,7 +301,10 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 	__rrr_fork_handler_unlock (handler);
 }
 
-void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *handler, int force_wait_all) {
+void rrr_fork_handle_sigchld_and_notify_if_needed (
+		struct rrr_fork_handler *handler,
+		int force_wait_all
+) {
 	pid_t self = getpid();
 
 	// We cannot lock this because it's written to within signal context
@@ -344,7 +370,9 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 	}
 }
 
-static struct rrr_fork *__rrr_fork_allocate_unlocked (struct rrr_fork_handler *handler) {
+static struct rrr_fork *__rrr_fork_allocate_unlocked (
+		struct rrr_fork_handler *handler
+) {
 	struct rrr_fork *result = NULL;
 
 	RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);

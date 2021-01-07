@@ -82,12 +82,6 @@ struct rrr_settings_list {
 	unsigned int length;
 };
 
-struct rrr_msg *rrr_setting_safe_cast (
-		struct rrr_setting_packed *setting
-);
-void rrr_settings_list_destroy (
-		struct rrr_settings_list *list
-);
 struct rrr_instance_settings *rrr_settings_new (
 		const int count
 );

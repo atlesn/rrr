@@ -74,6 +74,10 @@ struct rrr_module_operations {
 };
 
 void rrr_module_unload (void *dl_ptr, void (*unload)(void));
-int rrr_module_load(struct rrr_module_load_data *target, const char *name, const char **library_paths);
+int rrr_module_load (
+		struct rrr_module_load_data *target,
+		const char *name,
+		const char **library_paths
+);
 
 #endif
