@@ -316,8 +316,7 @@ static int python3_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_fork_start (
-			callback_data->fork_pid,
+	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			python3_init_wrapper_callback,
 			data,
@@ -365,8 +364,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll,
-			fork_pid
+			&thread_data->poll
 	);
 
 	out_message:
