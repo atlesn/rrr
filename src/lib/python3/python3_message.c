@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_python3_rrr_message_constants {
 		unsigned int TYPE_MSG;
 		unsigned int TYPE_TAG;
-		unsigned int CLASS_POINT;
+		unsigned int CLASS_DATA;
 		unsigned int CLASS_ARRAY;
 };
 
@@ -685,7 +685,7 @@ static PyMemberDef rrr_message_members[] = {
 
 		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),		READONLY,	"Type is MSG (default)"},
 		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),		READONLY,	"Type is TAG"},
-		{"CLASS_POINT",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_POINT),	READONLY,	"Class is POINT (default)"},
+		{"CLASS_DATA",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_DATA),		READONLY,	"Class is DATA (default)"},
 		{"CLASS_ARRAY",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_ARRAY),	READONLY,	"Class is ARRAY"},
 		{ NULL, 0, 0, 0, NULL}
 };
@@ -1389,11 +1389,6 @@ struct rrr_msg_msg *rrr_python3_rrr_message_get_message (struct rrr_msg_addr *me
 
 	struct rrr_msg_msg *ret = data->message_dynamic;
 	struct rrr_msg_msg *new_msg = NULL;
-
-	if (MSG_CLASS(ret) != MSG_CLASS(&data->message_static)) {
-		RRR_MSG_0("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed. Original class: %i, new class %i\n",
-			MSG_CLASS(ret), MSG_CLASS(&data->message_static));
-	}
 
 	// Overwrite header fields
 	memcpy (ret, &data->message_static, sizeof(data->message_static) - 1);
