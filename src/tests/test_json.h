@@ -10,7 +10,6 @@ the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
@@ -19,24 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_JSON_H
-#define RRR_JSON_H
+#ifndef RRR_TEST_JSON_H
+#define RRR_TEST_JSON_H
 
-#include "../read_constants.h"
+int rrr_test_json(void);
 
-#define RRR_JSON_OK                RRR_READ_OK
-#define RRR_JSON_HARD_ERROR        RRR_READ_HARD_ERROR
-#define RRR_JSON_PARSE_ERROR       RRR_READ_SOFT_ERROR
-#define RRR_JSON_PARSE_INCOMPLETE  RRR_READ_INCOMPLETE
-
-struct rrr_array;
-
-int rrr_json_to_arrays (
-		const char *data,
-		size_t data_size,
-		const int max_levels,
-		int (*callback)(const struct rrr_array *array, void *arg),
-		void *callback_arg
-);
-
-#endif /* RRR_JSON_H */
+#endif /* RRR_TEST_JSON_H */
