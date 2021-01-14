@@ -195,7 +195,7 @@ static int __rrr_json_to_array_recurse (
 
 /* For all found objects, an RRR array containing all plain values is
  * created and handed to the callback. If an object contains another object,
- * an array is created for both of them. The array resulring from the parent object
+ * an array is created for both of them. The array resulting from the parent object
  * will not have any information about it's child or vice versa. */
 int rrr_json_to_arrays (
 		const char *data,

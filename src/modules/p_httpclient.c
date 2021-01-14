@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -255,12 +255,9 @@ static int httpclient_final_callback (
 	struct httpclient_data *httpclient_data = arg;
 
 	int ret = RRR_HTTP_OK;
-/*
-	if (data->response_code < 200 || data->response_code > 299) {
-		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", data->response_code);
-	}
-*/
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: data size %" PRIrrrl "\n",
+
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl "\n",
+			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data)
 	);
@@ -682,7 +679,7 @@ static int httpclient_session_query_prepare_callback (
 
 	{
 		const char *endpoint_to_print = (endpoint_to_free != NULL ? endpoint_to_free : data->http_client_config.endpoint);
-		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
+		RRR_DBG_2("HTTP client instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
 				INSTANCE_D_NAME(data->thread_data),
 				message->timestamp,
 				endpoint_to_print
@@ -810,6 +807,8 @@ static int httpclient_request_send (
 		};
 
 		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+
+		// Debug message for sending a request is in query prepare callback
 
 		ret = rrr_http_client_request_send (
 				request_data,
