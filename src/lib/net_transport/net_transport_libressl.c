@@ -148,7 +148,6 @@ static int __rrr_net_transport_libressl_connect_callback (
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&data)) != 0) {
 		RRR_MSG_0("Could not create TLS data in __rrr_net_transport_libressl_connect_callback\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -178,6 +177,11 @@ static int __rrr_net_transport_libressl_connect_callback (
 	if ((ret = __rrr_net_transport_libressl_handshake_perform(data->ctx)) != 0) {
 		goto out_destroy_data;
 	}
+
+	// Set after handshake to prevent double close of fd if there is any failure
+	data->sockaddr = callback_data->accept_data->addr;
+	data->socklen = callback_data->accept_data->len;
+	data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = data;
 	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
@@ -370,7 +374,6 @@ int __rrr_net_transport_libressl_accept_callback (
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&new_data)) != 0) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_libressl_accept_callback\n");
-		ret = 1;
 		goto out;
 	}
 

@@ -51,6 +51,7 @@ struct rrr_cmodule_config_data {
 	rrr_setting_uint worker_spawn_interval_us;
 	rrr_setting_uint worker_sleep_time_us;
 	rrr_setting_uint worker_nothing_happened_limit;
+	rrr_setting_uint worker_count;
 
 	int do_spawning;
 	int do_processing;
@@ -71,12 +72,13 @@ struct rrr_cmodule {
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
 
+	struct rrr_msg_holder_collection queue_to_forks;
+
 	// Used by message_broker_cmodule poll functions, not managed
 	void *callback_data_tmp;
 };
 
 int rrr_cmodule_main_worker_fork_start (
-		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,

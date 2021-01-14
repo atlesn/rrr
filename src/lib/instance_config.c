@@ -47,7 +47,9 @@ int rrr_instance_config_string_set (
 	return 0;
 }
 
-void rrr_instance_config_destroy(struct rrr_instance_config_data *config) {
+void rrr_instance_config_destroy (
+		struct rrr_instance_config_data *config
+) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
@@ -97,7 +99,11 @@ struct rrr_instance_config_data *rrr_instance_config_new (
 	return ret;
 }
 
-int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config_data *source, const char *name) {
+int rrr_instance_config_read_port_number (
+		rrr_setting_uint *target,
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
 	int ret = 0;
 
 	*target = 0;
@@ -138,7 +144,9 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	return ret;
 }
 
-int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data *config) {
+int rrr_instance_config_check_all_settings_used (
+		struct rrr_instance_config_data *config
+) {
 	int ret = rrr_settings_check_all_used (config->settings);
 
 	if (ret != 0) {

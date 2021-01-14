@@ -438,7 +438,7 @@ int rrr_http_header_field_new_with_value (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new_or_replace_raw(&field->value, value, strlen(value)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, strlen(value))) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
 		goto out_destroy;
 	}

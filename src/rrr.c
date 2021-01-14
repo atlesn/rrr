@@ -102,6 +102,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 // Not implemented (yet). TTL check is present in duplicator and buffer modules
 //		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"ttl",					"[-t|--time-to-live]"},
 		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{0,							'b',	"banner",				"[-b|--banner]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -213,13 +214,13 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
-	if ((config = rrr_config_parse_file(config_file)) == NULL) {
+	if (rrr_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
@@ -522,7 +523,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_signal;
 	}
 

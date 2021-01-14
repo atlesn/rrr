@@ -136,83 +136,43 @@ static void __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runt
 	RRR_LL_ITERATE_END();
 }
 
-static int __rrr_cmodule_helper_send_messages_to_fork (
-		struct rrr_cmodule_worker *worker
+static int __rrr_cmodule_helper_send_message_to_fork (
+		struct rrr_cmodule_worker *worker,
+		struct rrr_msg_holder *node
 ) {
 	int ret = 0;
 
-	int i = 0;
-	RRR_LL_ITERATE_BEGIN(&worker->queue_to_fork, struct rrr_msg_holder);
-		rrr_msg_holder_lock(node);
+	struct rrr_msg_addr addr_msg;
+	rrr_msg_addr_init(&addr_msg);
 
-		struct rrr_msg_addr addr_msg;
-		rrr_msg_addr_init(&addr_msg);
+	if (node->addr_len > 0) {
+		memcpy(&addr_msg.addr, &node->addr, sizeof(addr_msg.addr));
+		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, node->addr_len);
+		addr_msg.protocol = node->protocol;
+	}
 
-		if (node->addr_len > 0) {
-			memcpy(&addr_msg.addr, &node->addr, sizeof(addr_msg.addr));
-			RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, node->addr_len);
-			addr_msg.protocol = node->protocol;
-		}
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
 
-		struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;
+	RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " to worker fork '%s'\n",
+			message->timestamp, worker->name);
 
-		RRR_DBG_3("Transmission of message with timestamp %" PRIu64 " to worker fork '%s'\n",
-				message->timestamp, worker->name);
+	// Insert PING in between to make the child fork send PONGs back
+	// while it processes messages
+	if (worker->ping_counter++ % 8 == 0) {
+		__rrr_cmodule_helper_send_ping_worker(worker);
+	}
 
-		// Insert PING in between to make the child fork send PONGs back
-		// while it processes messages
-		if (i % 10 == 0) {
-			__rrr_cmodule_helper_send_ping_worker(worker);
-		}
-
-		if ((ret = rrr_cmodule_channel_send_message_and_address (
-				worker->channel_to_fork,
-				message,
-				&addr_msg
-		)) != 0) {
-			if (ret == RRR_CMODULE_CHANNEL_FULL) {
-				worker->to_fork_write_retry_counter += 1;
-				ret = 0;
-			}
-			else {
-				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
-			}
-			RRR_LL_ITERATE_LAST();
-		}
-		if (ret == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
+	if ((ret = rrr_cmodule_channel_send_message_and_address (
+			worker->channel_to_fork,
+			message,
+			&addr_msg
+	)) != 0) {
+		if (ret == RRR_CMODULE_CHANNEL_FULL) {
+			worker->to_fork_write_retry_counter += 1;
 		}
 		else {
-			rrr_msg_holder_unlock(node);
+			RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
 		}
-		i++;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&worker->queue_to_fork, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
-
-	return ret;
-}
-
-static int __rrr_cmodule_helper_queue_entry_to_fork_nolock (
-		struct rrr_instance_runtime_data *thread_data,
-		pid_t fork_pid,
-		struct rrr_msg_holder *entry
-) {
-
-	int ret = 0;
-
-
-	int pid_was_found = 0;
-	RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
-		if (node->pid == fork_pid) {
-			pid_was_found = 1;
-			rrr_msg_holder_incref_while_locked(entry);
-			RRR_LL_APPEND(&node->queue_to_fork, entry);
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END();
-
-	if (pid_was_found == 0) {
-		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n", fork_pid);
-		ret = 1;
 		goto out;
 	}
 
@@ -220,8 +180,47 @@ static int __rrr_cmodule_helper_queue_entry_to_fork_nolock (
 	return ret;
 }
 
+static int __rrr_cmodule_helper_send_messages_to_forks (
+		struct rrr_cmodule *cmodule
+) {
+	int ret = 0;
+
+	// Balanced algorithm
+
+	RRR_LL_ITERATE_BEGIN(&cmodule->queue_to_forks, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+
+		struct rrr_cmodule_worker *preferred = RRR_LL_FIRST(cmodule);
+		int preferred_count = rrr_cmodule_channel_count(preferred->channel_to_fork);
+
+		RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+			int count = rrr_cmodule_channel_count(node->channel_to_fork);
+			if (count < preferred_count) {
+				preferred = node;
+				preferred_count = count;
+			}
+		RRR_LL_ITERATE_END();
+
+		ret = __rrr_cmodule_helper_send_message_to_fork(preferred, node);
+
+		if (ret == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			rrr_msg_holder_unlock(node);
+			RRR_LL_ITERATE_LAST();
+			if (ret == RRR_CMODULE_CHANNEL_FULL) {
+				ret = 0;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&cmodule->queue_to_forks, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
+
+	// Let return value from last send attempt propagate
+
+	return ret;
+}
+
 struct rrr_cmodule_helper_poll_callback_data {
-	pid_t pid;
 	int count;
 	int max_count;
 };
@@ -237,20 +236,13 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", queing for transmission to worker fork\n",
 			INSTANCE_D_NAME(thread_data), msg->timestamp);
 
-	if ((ret = __rrr_cmodule_helper_queue_entry_to_fork_nolock (
-			thread_data,
-			callback_data->pid,
-			entry
-	)) != 0) {
-		ret = RRR_FIFO_GLOBAL_ERR;
-		goto out;
-	}
+	rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&thread_data->cmodule->queue_to_forks, entry);
 
 	if (++(callback_data->count) > callback_data->max_count) {
 		ret = RRR_FIFO_SEARCH_STOP;
 	}
 
-	out:
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -259,7 +251,6 @@ static int __rrr_cmodule_helper_poll_delete (
 		int *count,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *poll,
-		pid_t target_pid,
 		int wait_ms,
 		int max_count
 ) {
@@ -268,7 +259,6 @@ static int __rrr_cmodule_helper_poll_delete (
 	*count = 0;
 
 	struct rrr_cmodule_helper_poll_callback_data callback_data = {
-		target_pid,
 		0,
 		max_count
 	};
@@ -713,8 +703,7 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
-		struct rrr_poll_collection *poll,
-		pid_t fork_pid
+		struct rrr_poll_collection *poll
 ) {
 	int no_polling = 0;
 
@@ -753,7 +742,7 @@ void rrr_cmodule_helper_loop (
 	unsigned int consecutive_nothing_happened = 0;
 
 	uint64_t next_stats_time = 0;
-	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1 && fork_pid != 0) {
+	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1) {
 		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
 		if (rrr_thread_collection_check_any_stopped(reader_thread_data.thread_collection)) {
@@ -763,25 +752,22 @@ void rrr_cmodule_helper_loop (
 
 		int from_senders_count_tmp = 0;
 		int send_queue_total = 0;
-		RRR_LL_ITERATE_BEGIN(thread_data->cmodule, struct rrr_cmodule_worker);
-			send_queue_total += RRR_LL_COUNT(&node->queue_to_fork);
-			rrr_posix_usleep(1); // Schedule
-			if (RRR_LL_COUNT(&node->queue_to_fork) < 250 && no_polling == 0) {
-				if (__rrr_cmodule_helper_poll_delete (
-						&from_senders_count_tmp,
-						thread_data,
-						poll,
-						fork_pid,
-						0,
-						250
-				) != 0) {
-					goto cleanup;
-				}
-			}
-			if  (__rrr_cmodule_helper_send_messages_to_fork (node) != 0) {
+
+		if ((send_queue_total = RRR_LL_COUNT(&(INSTANCE_D_CMODULE(thread_data)->queue_to_forks))) < 250 && no_polling == 0) {
+			if (__rrr_cmodule_helper_poll_delete (
+					&from_senders_count_tmp,
+					thread_data,
+					poll,
+					0,
+					250
+			) != 0) {
 				goto cleanup;
 			}
-		RRR_LL_ITERATE_END();
+		}
+
+		if (__rrr_cmodule_helper_send_messages_to_forks(INSTANCE_D_CMODULE(thread_data)) != 0) {
+			goto cleanup;
+		}
 
 		from_senders_counter += from_senders_count_tmp;
 
@@ -822,12 +808,11 @@ void rrr_cmodule_helper_loop (
 				unsigned long long int write_full_counter = 0;
 				unsigned long long int write_retry_counter = 0;
 
-				rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+				rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
-						INSTANCE_D_CMODULE(thread_data),
-						fork_pid
+						INSTANCE_D_CMODULE(thread_data)
 				);
 
 				rrr_stats_instance_update_rate(stats, 1, "mmap_to_child_full_events", write_full_counter);
@@ -844,8 +829,7 @@ void rrr_cmodule_helper_loop (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
-						INSTANCE_D_CMODULE(thread_data),
-						fork_pid
+						INSTANCE_D_CMODULE(thread_data)
 				);
 
 				rrr_stats_instance_update_rate(stats, 5, "mmap_to_parent_full_events", write_full_counter);
@@ -936,6 +920,16 @@ int rrr_cmodule_helper_parse_config (
 		goto out;
 	}
 
+	RRR_INSTANCE_CONFIG_STRING_SET("_workers");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, worker_count, RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT);
+
+	if (data->worker_count < 1 || data->worker_count > RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+		RRR_MSG_0("Invalid value %llu for parameter %s of instance %s, must be >= 1 and <= %i\n",
+				(long long unsigned) data->worker_count, config_string, config->name, RRR_CMODULE_WORKER_MAX_WORKER_COUNT);
+		ret = 1;
+		goto out;
+	}
+
 	RRR_INSTANCE_CONFIG_STRING_SET("_drop_on_error");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_drop_on_error, 0);
 
@@ -947,8 +941,7 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
-int rrr_cmodule_helper_worker_fork_start (
-		pid_t *handle_pid,
+int rrr_cmodule_helper_worker_forks_start (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
@@ -957,18 +950,22 @@ int rrr_cmodule_helper_worker_fork_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-	return rrr_cmodule_main_worker_fork_start (
-			handle_pid,
-			INSTANCE_D_CMODULE(thread_data),
-			INSTANCE_D_NAME(thread_data),
-			INSTANCE_D_SETTINGS(thread_data),
-			init_wrapper_callback,
-			init_wrapper_callback_arg,
-			configuration_callback,
-			configuration_callback_arg,
-			process_callback,
-			process_callback_arg
-	);
+	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
+		if (rrr_cmodule_main_worker_fork_start (
+					INSTANCE_D_CMODULE(thread_data),
+					INSTANCE_D_NAME(thread_data),
+					INSTANCE_D_SETTINGS(thread_data),
+					init_wrapper_callback,
+					init_wrapper_callback_arg,
+					configuration_callback,
+					configuration_callback_arg,
+					process_callback,
+					process_callback_arg
+		) != 0) {
+			return 1;
+		}
+	}
+	return 0;
 }
 
 static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
@@ -976,7 +973,6 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
 		struct rrr_cmodule *cmodule,
-		pid_t pid,
 		int is_to_parent
 ) {
 	*read_starvation_counter = 0;
@@ -984,40 +980,44 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 	*write_retry_counter = 0;
 
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		if (node->pid == pid) {
-			if (is_to_parent) {
-				rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
-						read_starvation_counter,
-						write_full_counter,
-						node
-				);
-			}
-			else {
-				rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
-						read_starvation_counter,
-						write_full_counter,
-						node
-				);
-			}
-			node->to_fork_write_retry_counter = 0;
-			RRR_LL_ITERATE_LAST();
+		unsigned long long int tmp_read_starvation_counter = 0;
+		unsigned long long int tmp_write_full_counter = 0;
+		unsigned long long int tmp_write_retry_counter = 0;
+
+		if (is_to_parent) {
+			rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+					&tmp_read_starvation_counter,
+					&tmp_write_full_counter,
+					node
+			);
 		}
+		else {
+			rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+					&tmp_read_starvation_counter,
+					&tmp_write_full_counter,
+					node
+			);
+		}
+
+		*read_starvation_counter += tmp_read_starvation_counter;
+		*write_full_counter += tmp_write_full_counter;
+		*write_retry_counter += tmp_write_retry_counter;
+
+		node->to_fork_write_retry_counter = 0;
 	RRR_LL_ITERATE_END();
 }
 
-void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
 			cmodule,
-			pid,
 			0 // <-- 0 = is not to parent, but to fork
 	);
 }
@@ -1026,15 +1026,13 @@ void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 			read_starvation_counter,
 			write_full_counter,
 			write_retry_counter,
 			cmodule,
-			pid,
 			1 // <-- 1 = is to parent
 	);
 }

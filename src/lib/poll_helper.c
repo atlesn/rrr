@@ -30,7 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder/message_holder_util.h"
 #include "message_holder/message_holder.h"
 
-static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
+static int __poll_collection_entry_destroy (
+		struct rrr_poll_collection_entry *entry
+) {
 	free(entry);
 	return 0;
 }
@@ -187,7 +189,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	return ret;
 }
 
-int __rrr_poll_do_poll (
+static int __rrr_poll_do_poll (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),

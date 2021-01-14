@@ -331,7 +331,10 @@ static int __rrr_passwd_check_callback (
 	return ret;
 }
 
-int rrr_passwd_check (const char *hash, const char *password) {
+int rrr_passwd_check (
+		const char *hash,
+		const char *password
+) {
 	struct passwd_check_callback_data callback_data = { password };
 
 	if (*password == '\0') {
@@ -347,11 +350,12 @@ int rrr_passwd_check (const char *hash, const char *password) {
 	return rrr_parse_str_split(hash, '$', 4, __rrr_passwd_check_callback, &callback_data);
 }
 
-int rrr_passwd_encrypt (char **result, const char *password) {
+int rrr_passwd_encrypt (
+		char **result,
+		const char *password
+) {
 	unsigned char *base64_tmp = NULL;
 	size_t base64_tmp_length = 0;
-
-	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
 
 	int ret = 0;
 
@@ -369,6 +373,8 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 
 #ifdef RRR_WITH_OPENSSL_CRYPT
 	unsigned char salt[RRR_PASSWD_SALT_BYTES];
+	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
+
 	if (RAND_bytes(salt, RRR_PASSWD_SALT_BYTES) != 1) {
 		ERR_error_string_n(ERR_get_error(), (char *) tmp, RRR_PASSWD_HASH_MAX_LENGTH + 1);
 		RRR_MSG_0("Could not generate salt in rrr_passwd_encrypt: %s\n", tmp);
@@ -648,6 +654,12 @@ int rrr_passwd_authenticate (
 	}
 
 	if (rrr_socket_open_and_read_file(&passwd_file_contents, &passwd_file_size, filename, O_RDONLY, 0) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (passwd_file_size == 0) {
+		RRR_DBG_1("Password file '%s' was empty, access denied\n", filename);
 		ret = 1;
 		goto out;
 	}

@@ -1,4 +1,4 @@
-.Dd 2020-09-16
+.Dd 2021-01-14
 .TH RRR_POST 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -59,6 +59,10 @@ Defaults to 4096.
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC
 Set an MQTT topic in the messages generated.
+.IP -S|--strip-separators
+Strip out any parsed
+.B sep
+fields from arrays.
 .IP -s|--sync
 If array parsing fails (invalid input data), try to parse again after skipping one byte forward in the input.
 .IP -q|--quiet
@@ -164,9 +168,9 @@ The length of these types are identified automatically and must not have length 
 .PP
 .Bl -tag -width -indent
 .It ustr
-An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
+An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits. Number may begin with one or more white spaces.
 .It istr
-A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
+A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits. Number may begin with one or more white spaces.
 .It fixp
 The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
 and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -94,6 +94,7 @@ struct file_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	struct rrr_array_tree *tree;
+	int do_strip_array_separators;
 	int do_try_keyboard_input;
 	int do_no_keyboard_hijack;
 	int do_unlink_on_close;
@@ -256,6 +257,8 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_strip_array_separators", do_strip_array_separators, 0);
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message_, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_read_all_method", read_all_method);
 
@@ -310,6 +313,12 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 					(unsigned long long) data->serial_bps, config->name);
 			ret = 1;
 		}
+	}
+
+	if (data->do_strip_array_separators && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
+		RRR_MSG_0("file_do_strip_array_separators was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
+				config->name);
+		ret = 1;
 	}
 
 	if (data->do_read_all_to_message_) {
@@ -485,7 +494,7 @@ static int file_probe_callback (
 
 			if (data->serial_bps_set) {
 				RRR_DBG_3("file instance %s setting speed %llu for serial device '%s'=>'%s'\n",
-						INSTANCE_D_NAME(data->thread_data), data->serial_bps, orig_path, resolved_path);
+						INSTANCE_D_NAME(data->thread_data), (unsigned long long) data->serial_bps, orig_path, resolved_path);
 				if ((ret = rrr_serial_speed_set(fd, data->serial_bps)) != 0) {
 					RRR_MSG_0("File instance %s failed to set speed of serial device '%s'=>%s\n",
 							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
@@ -604,6 +613,10 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			callback_data->file_data,
 			array_final
 	};
+
+	if (callback_data->file_data->do_strip_array_separators) {
+		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+	}
 
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->file_data->thread_data),

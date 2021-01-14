@@ -105,7 +105,6 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 }
 
 int rrr_cmodule_main_worker_fork_start (
-		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,
@@ -119,8 +118,6 @@ int rrr_cmodule_main_worker_fork_start (
 	int ret = 0;
 
 	// Use of global locks NOT ALLOWED before we are in child code
-
-	*handle_pid = 0;
 
 	struct rrr_cmodule_worker *worker = NULL;
 
@@ -163,8 +160,6 @@ int rrr_cmodule_main_worker_fork_start (
 
 		RRR_LL_APPEND(cmodule, worker);
 		worker = NULL;
-
-		*handle_pid = pid;
 
 		goto out_parent;
 	}
@@ -211,6 +206,7 @@ static void __rrr_cmodule_config_data_cleanup (
 void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
+	rrr_msg_holder_collection_clear(&cmodule->queue_to_forks);
 	rrr_cmodule_main_workers_stop(cmodule);
 	if (cmodule->mmap != NULL) {
 		rrr_mmap_destroy(cmodule->mmap);

@@ -292,10 +292,12 @@ static void influxdb_send_data_callback (
 	};
 
 	ssize_t received_bytes = 0;
+	uint64_t complete_transactions_count = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick (
 				&received_bytes,
+				&complete_transactions_count,
 				handle,
 				0, // No max read size
 				0, // No unique id
@@ -379,7 +381,8 @@ static int influxdb_common_callback (
 		goto discard;
 	}
 
-	if (rrr_array_message_append_to_collection(&array, reading) != 0) {
+	uint16_t array_version_dummy;
+	if (rrr_array_message_append_to_collection(&array_version_dummy, &array, reading) != 0) {
 		RRR_MSG_0("Error while parsing incoming array in influxdb instance %s\n",
 				INSTANCE_D_NAME(influxdb_data->thread_data));
 		ret = 0;

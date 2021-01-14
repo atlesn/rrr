@@ -348,8 +348,8 @@ int rrr_nullsafe_str_str (
 
 	const void *start = haystack->str;
 	const void *end = haystack->str + haystack->len;
-
-	while (start + needle->len < end) {
+	
+	while (start + needle->len <= end) {
 		if (memcmp(start, needle->str, needle->len) == 0) {
 			const struct rrr_nullsafe_str tmp_at_needle = {
 					(void *) start, // Cast away const OK

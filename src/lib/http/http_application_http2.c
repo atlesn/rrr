@@ -124,6 +124,14 @@ static int __rrr_http_application_http2_header_submit_nullsafe (
 	);
 }
 
+static int __rrr_http_application_http2_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	(void)(application);
+	*is_possible = 1;
+	return 0;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -198,6 +206,10 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
 	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
+
+	if (ret != 0) {
+		goto out;
+	}
 
 	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
 			http2,
@@ -403,7 +415,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 		goto out_send_response;
 	}
 
-	goto out;
+	goto out_complete_transaction;
+
 	out_send_response_bad_request:
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out_send_response:
@@ -414,6 +427,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 		}
+	out_complete_transaction:
+		callback_data->http2->complete_transaction_count++;
 	out:
 		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
 	return ret;
@@ -539,6 +554,7 @@ static void __rrr_http_application_http2_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http2_constants = {
 	RRR_HTTP_APPLICATION_HTTP2,
 	__rrr_http_application_http2_destroy,
+	__rrr_http_application_http2_request_send_possible,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
 	__rrr_http_application_http2_polite_close

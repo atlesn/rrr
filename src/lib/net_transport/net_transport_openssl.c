@@ -463,8 +463,6 @@ int __rrr_net_transport_openssl_connect_callback (
 		goto out_destroy_ssl_data;
 	}
 
-	ret = 0;
-
 	// Not used for TLSv1.3
 	//const char* const PREFERRED_CIPHERS = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4";
 	if (SSL_set_cipher_list(ssl, "DEFAULT") != 1) {

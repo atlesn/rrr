@@ -37,7 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/posix.h"
 
-static void __rrr_message_broker_split_buffer_node_destroy(struct rrr_message_broker_split_buffer_node *node) {
+static void __rrr_message_broker_split_buffer_node_destroy (
+		struct rrr_message_broker_split_buffer_node *node
+) {
 	struct rrr_fifo_buffer_stats stats;
 	rrr_fifo_buffer_get_stats(&stats, &node->queue);
 	RRR_DBG_1("\t- Split buffer stats: %" PRIu64 "/%" PRIu64 "\n",
@@ -46,16 +48,22 @@ static void __rrr_message_broker_split_buffer_node_destroy(struct rrr_message_br
 	free(node);
 }
 
-static void __rrr_message_broker_costumer_incref (struct rrr_message_broker_costumer *costumer) {
+static void __rrr_message_broker_costumer_incref (
+		struct rrr_message_broker_costumer *costumer
+) {
 	costumer->usercount++;
 }
 
-static void __rrr_message_broker_costumer_decref (struct rrr_message_broker_costumer *costumer) {
+static void __rrr_message_broker_costumer_decref (
+		struct rrr_message_broker_costumer *costumer
+) {
 	if (--(costumer->usercount) == 0) {
 		struct rrr_fifo_buffer_stats stats;
 		rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
+
 		RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
 				costumer->name, stats.total_entries_deleted, stats.total_entries_written);
+
 		RRR_LL_DESTROY (
 				&costumer->split_buffers,
 				struct rrr_message_broker_split_buffer_node,
@@ -862,7 +870,9 @@ static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_READ_CALLB
 	return ret | RRR_FIFO_SEARCH_FREE;
 }
 
-static int __rrr_message_broker_split_buffers_fill (struct rrr_message_broker_costumer *costumer) {
+static int __rrr_message_broker_split_buffers_fill (
+		struct rrr_message_broker_costumer *costumer
+) {
 	int ret = 0;
 
 	if (rrr_fifo_buffer_get_entry_count(&costumer->main_queue) == 0) {

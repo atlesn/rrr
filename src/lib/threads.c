@@ -139,7 +139,7 @@ void rrr_thread_signal_set (
 	thread->signal |= signal;
 	int ret_tmp;
 	if ((ret_tmp = pthread_cond_broadcast(&thread->signal_cond)) != 0) {
-		RRR_MSG_0("Warning: Error %i from pthread_cond_signal in rrr_thread_signal_set, error will not be handled\n");
+		RRR_MSG_0("Warning: Error %i from pthread_cond_broadcast in rrr_thread_signal_set, error will not be handled\n", ret_tmp);
 	}
 	rrr_thread_unlock(thread);
 }
@@ -228,7 +228,7 @@ int rrr_thread_state_get (
 	int state;
 	rrr_thread_lock(thread);
 	state = thread->state;
-	rrr_thread_unlock(thread);;
+	rrr_thread_unlock(thread);
 	return state;
 }
 

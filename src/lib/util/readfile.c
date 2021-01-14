@@ -29,6 +29,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 #include "../rrr_strerror.h"
 
+/*
+ * Function for reading files without the rrr_socket framework. If a
+ * file is to be read in normal circumstances after the program has started,
+ * the read file function in rrr_socket framework should be used instead.
+ */
 int rrr_readfile_read (
 		char **target,
 		rrr_biglength *target_size,
@@ -43,8 +48,8 @@ int rrr_readfile_read (
 
 	char *file_data = NULL;
 
-	FILE *cfgfile = fopen(filename, "r");
-	if (cfgfile == NULL) {
+	FILE *file = fopen(filename, "r");
+	if (file == NULL) {
 		if (errno == ENOENT && enoent_ok) {
 			goto out;
 		}
@@ -54,13 +59,13 @@ int rrr_readfile_read (
 		goto out;
 	}
 
-	if (fseek(cfgfile, 0L, SEEK_END) != 0) {
+	if (fseek(file, 0L, SEEK_END) != 0) {
 		RRR_MSG_0("Could not fseek to the end in file %s: %s\n", filename, rrr_strerror(errno));
 		ret = 1;
 		goto out_close;
 	}
 
-	rrr_slength size_signed = ftell(cfgfile);
+	rrr_slength size_signed = ftell(file);
 	if (size_signed < 0) {
 		RRR_MSG_0("Could not get size of file %s: %s\n", filename, rrr_strerror(errno));
 		ret = 1;
@@ -74,7 +79,7 @@ int rrr_readfile_read (
 		goto out_close;
 	}
 
-	if (fseek(cfgfile, 0L, 0) != 0) {
+	if (fseek(file, 0L, 0) != 0) {
 		RRR_MSG_0("Could not fseek to the beginning in file %s: %s\n", filename, rrr_strerror(errno));
 		ret = 1;
 		goto out_close;
@@ -87,10 +92,10 @@ int rrr_readfile_read (
 		goto out_close;
 	}
 
-	size_t bytes = fread(file_data, 1, size, cfgfile);
+	size_t bytes = fread(file_data, 1, size, file);
 	if (bytes != size) {
 		RRR_MSG_0("The whole file %s was not read (result %lu): %s\n",
-				filename, bytes, rrr_strerror(ferror(cfgfile)));
+				filename, bytes, rrr_strerror(ferror(file)));
 		ret = 1;
 		goto out_free;
 	}
@@ -102,7 +107,7 @@ int rrr_readfile_read (
 	out_free:
 		free(file_data);
 	out_close:
-		fclose(cfgfile);
+		fclose(file);
 	out:
 		return ret;
 }

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -83,11 +83,12 @@ struct ip_data {
 	struct rrr_array_tree *definitions;
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
+	int do_strip_array_separators;
 	int do_smart_timeout;
 	int do_sync_byte_by_byte;
 	int do_send_rrr_msg_msg;
 	int do_force_target;
-	int do_extract_rrr_msg_msgs;
+	int do_extract_rrr_messages;
 	int do_preserve_order;
 	int do_persistent_connections;
 	int do_multiple_per_connection;
@@ -285,11 +286,19 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_msg_msgs, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_strip_array_separators", do_strip_array_separators, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
+
+	if (data->do_strip_array_separators && data->definitions == NULL) {
+		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
 			data->do_multiple_per_connection == 0 &&
@@ -510,7 +519,7 @@ static int __rrr_ip_receive_array_tree_callback (
 			protocol
 	);
 
-	if (data->do_extract_rrr_msg_msgs) {
+	if (data->do_extract_rrr_messages) {
 		if ((ret = ip_read_data_receive_extract_messages (
 				data,
 				callback_data->template_entry,
@@ -521,6 +530,10 @@ static int __rrr_ip_receive_array_tree_callback (
 	}
 	else {
 		struct rrr_msg_msg *message_new = NULL;
+
+		if (data->do_strip_array_separators) {
+			rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+		}
 
 		if ((ret = rrr_array_new_message_from_collection (
 				&message_new,
@@ -1074,7 +1087,8 @@ static int ip_send_message (
 	else if (MSG_IS_ARRAY(message)) {
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
-		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
+		uint16_t array_version_dummy;
+		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
