@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -364,6 +364,17 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 	out:
 	return ret;
+}
+
+void rrr_array_strip_type (
+		struct rrr_array *collection,
+		const struct rrr_type_definition *definition
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+		if (node->definition == definition) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
 }
 
 void rrr_array_clear (struct rrr_array *collection) {

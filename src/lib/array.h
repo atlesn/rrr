@@ -113,6 +113,10 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		const char *tag,
 		int index
 );
+void rrr_array_strip_type (
+		struct rrr_array *collection,
+		const struct rrr_type_definition *definition
+);
 void rrr_array_clear (
 		struct rrr_array *collection
 );

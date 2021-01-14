@@ -615,11 +615,7 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 	};
 
 	if (callback_data->file_data->do_strip_array_separators) {
-		RRR_LL_ITERATE_BEGIN(array_final, struct rrr_type_value);
-			if (node->definition == &rrr_type_definition_sep) {
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY(array_final, 0; rrr_type_value_destroy(node));
+		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
 	}
 
 	if ((ret = rrr_message_broker_write_entry (
