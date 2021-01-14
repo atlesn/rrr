@@ -59,6 +59,10 @@ Defaults to 4096.
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC
 Set an MQTT topic in the messages generated.
+.IP -S|--strip-separators
+Strip out any parsed
+.B sep
+fields from arrays.
 .IP -s|--sync
 If array parsing fails (invalid input data), try to parse again after skipping one byte forward in the input.
 .IP -q|--quiet
