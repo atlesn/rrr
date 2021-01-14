@@ -155,8 +155,8 @@ static int __rrr_json_to_array_recurse (
 
 	const enum json_type type = json_object_get_type(object);
 
-    if (type == json_type_array) {
-    	const size_t length = json_object_array_length(object);
+	if (type == json_type_array) {
+		const size_t length = json_object_array_length(object);
 		for (size_t i = 0; i <  length; i++) {
 			RRR_DBG_3("[%i/%i] JSON ARRAY IDX %llu\n", cur_level, max_levels, (long long unsigned) i);
 			if ((ret = __rrr_json_to_array_recurse (
@@ -169,28 +169,28 @@ static int __rrr_json_to_array_recurse (
 				goto out;
 			}
 		}
-    }
-    else if (type == json_type_object) {
+	}
+	else if (type == json_type_object) {
 		RRR_DBG_3("[%i/%i] JSON OBJECT\n", cur_level, max_levels);
-    	if ((ret = __rrr_json_to_array_recurse_object (
-    			object,
+		if ((ret = __rrr_json_to_array_recurse_object (
+				object,
 				max_levels,
 				cur_level,
 				callback,
 				callback_arg
-    	)) != 0) {
-    		goto out;
-    	}
-    }
-    else {
-    	RRR_MSG_0("Unknown JSON type '%s' at current level, expecting object or array. Loose values outside of objects are not supported.\n",
-    			json_type_to_name(type));
-    	ret = RRR_JSON_PARSE_ERROR;
-    	goto out;
-    }
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		RRR_MSG_0("Unknown JSON type '%s' at current level, expecting object or array. Loose values outside of objects are not supported.\n",
+				json_type_to_name(type));
+		ret = RRR_JSON_PARSE_ERROR;
+		goto out;
+	}
 
-    out:
-    return ret;
+	out:
+	return ret;
 }
 
 /* For all found objects, an RRR array containing all plain values is
