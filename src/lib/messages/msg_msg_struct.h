@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_head.h"
 
 #define MSG_TYPE_MSG 1
-//#define MSG_TYPE_ACK 2
 #define MSG_TYPE_TAG 2
 
 #define MSG_CLASS_DATA 1

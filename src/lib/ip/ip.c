@@ -382,12 +382,21 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		return ret;
 }
 
+static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {
+	struct addrinfo **addrinfo = arg;
+	if (*addrinfo != NULL) {
+		freeaddrinfo(*addrinfo);
+	}
+}
+
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
 		unsigned int port,
 		const char *host,
 		struct rrr_ip_graylist *graylist
 ) {
+	int ret = 0;
+
 	int fd = 0;
 
 	*accept_data = NULL;
@@ -400,7 +409,9 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 	sprintf(port_str, "%u", port);
 
     struct addrinfo hints;
-    struct addrinfo *addrinfo_result;
+    struct addrinfo *addrinfo_result = NULL;
+
+    pthread_cleanup_push(__rrr_ip_freeaddrinfo_void_dbl_ptr, &addrinfo_result);
 
     memset (&hints, '\0', sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -409,7 +420,8 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
     if (s != 0) {
     	RRR_MSG_0("Failed to get address of '%s': %s\n", host, gai_strerror(s));
-    	goto out_error;
+    	ret = 1;
+    	goto out;
     }
 
     int i = 1;
@@ -428,12 +440,12 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     	}
 
         if (__rrr_ip_network_connect_tcp_check_graylist (graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) != 0) {
-        	RRR_DBG_4("Not attempting to connect with address suggestion #%i to %s:%u address family %u, suggestion is graylisted\n",
+        	RRR_DBG_3("Not attempting to connect with address suggestion #%i to %s:%u address family %u, suggestion is graylisted\n",
         			i, host, port, rp->ai_addr->sa_family);
         	goto graylist_next;
         }
         else {
-        	RRR_DBG_4("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
+        	RRR_DBG_3("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
         			i, host, port, rp->ai_addr->sa_family);
 
 			if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
@@ -455,11 +467,10 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     	i++;
     }
 
-    freeaddrinfo(addrinfo_result);
-
     if (fd <= 0 || rp == NULL) {
-		RRR_DBG_4 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
-		goto out_error;
+		RRR_DBG_3 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
+		ret = 1;
+		goto out;
     }
 
     struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
@@ -480,14 +491,14 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 
     *accept_data = accept_result;
 
-	return 0;
-
+    goto out;
 	out_error_free_accept:
 		free(accept_result);
 	out_error_close_socket:
 		rrr_socket_close(fd);
-	out_error:
-		return 1;
+	out:
+		pthread_cleanup_pop(1);
+		return ret;
 }
 
 int rrr_ip_network_start_tcp (

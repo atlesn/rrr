@@ -206,10 +206,6 @@ int rrr_fifo_buffer_search_and_replace (
 		unsigned int wait_milliseconds,
 		int call_again_after_looping
 );
-int rrr_fifo_buffer_clear_order_lt (
-		struct rrr_fifo_buffer *buffer,
-		uint64_t order_min
-);
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),

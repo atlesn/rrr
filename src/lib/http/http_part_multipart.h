@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,25 +19,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_RRR_MESSAGE_H
-#define RRR_PYTHON3_RRR_MESSAGE_H
+#ifndef RRR_HTTP_PART_MULTIPART_H
+#define RRR_HTTP_PART_MULTIPART_H
 
-#include "python3_headers.h"
+struct rrr_http_part;
 
-struct rrr_msg;
-struct rrr_msg_msg;
-struct rrr_msg_addr;
-
-struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (
-		struct rrr_msg_addr *message_addr,
-		PyObject *self
+int rrr_http_part_multipart_process (
+		struct rrr_http_part *part,
+		const char *data_ptr
 );
-PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
-		const struct rrr_msg_msg *msg,
-		const struct rrr_msg_addr *message_addr
-);
-PyObject *rrr_python3_rrr_msg_msg_new_from_message (
-		const struct rrr_msg_msg *msg
+int rrr_http_part_multipart_form_data_make (
+		struct rrr_http_part *request_part,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
 );
 
-#endif /* RRR_PYTHON3_RRR_MESSAGE_H */
+#endif /* HTTP_PART_MULTIPART_H */

@@ -298,7 +298,6 @@ static int __rrr_perl5_type_to_value_64_common (
 	int some_values_were_signed = 0;
 
 	const struct rrr_type_definition *definition = NULL;
-	rrr_type_flags flags = 0;
 
 	switch (type) {
 		case RRR_TYPE_FIXP:

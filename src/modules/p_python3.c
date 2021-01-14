@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/python3/python3_common.h"
 #include "../lib/python3/python3_config.h"
-#include "../lib/python3/python3_vl_message.h"
+#include "../lib/python3/python3_message.h"
 #include "../lib/python3/python3_cmodule.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/messages/msg_addr.h"
@@ -143,7 +143,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	PyObject *arg_message = NULL;
 
-	arg_message = rrr_python3_rrr_msg_msg_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
+	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
 	if (arg_message == NULL) {
 		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
 		ret = 1;
@@ -316,8 +316,7 @@ static int python3_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_fork_start (
-			callback_data->fork_pid,
+	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			python3_init_wrapper_callback,
 			data,
@@ -365,8 +364,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll,
-			fork_pid
+			&thread_data->poll
 	);
 
 	out_message:

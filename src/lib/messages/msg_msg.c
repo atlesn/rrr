@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
+#include "helpers/nullsafe_str.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
@@ -121,6 +122,57 @@ int rrr_msg_msg_new_with_data (
 	}
 
 	return 0;
+}
+
+struct rrr_msg_msg_new_with_data_nullsafe_callback_data {
+	struct rrr_msg_msg **final_result;
+	rrr_u8 type;
+	rrr_u8 class;
+	rrr_u64 timestamp;
+	const char *topic;
+	rrr_u16 topic_length;
+};
+
+static int __rrr_msg_msg_new_with_data_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	struct rrr_msg_msg_new_with_data_nullsafe_callback_data *callback_data = arg;
+	return rrr_msg_msg_new_with_data (
+			callback_data->final_result,
+			callback_data->type,
+			callback_data->class,
+			callback_data->timestamp,
+			callback_data->topic,
+			callback_data->topic_length,
+			str,
+			len
+	);
+}
+
+int rrr_msg_msg_new_with_data_nullsafe (
+		struct rrr_msg_msg **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		const char *topic,
+		rrr_u16 topic_length,
+		const struct rrr_nullsafe_str *str
+) {
+	struct rrr_msg_msg_new_with_data_nullsafe_callback_data callback_data = {
+			final_result,
+			type,
+			class,
+			timestamp,
+			topic,
+			topic_length
+	};
+	return rrr_nullsafe_str_with_raw_do_const (
+			str,
+			__rrr_msg_msg_new_with_data_nullsafe_callback,
+			&callback_data
+	);
 }
 
 int rrr_msg_msg_to_string (

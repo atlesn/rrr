@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 #include "log.h"
 #include "type.h"
@@ -34,7 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/gnu.h"
 
-static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
+static int __rrr_type_convert_integer_10 (
+		char **end,
+		long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}
@@ -45,7 +50,11 @@ static int __rrr_type_convert_integer_10(char **end, long long int *result, cons
 	return 0;
 }
 
-static int __rrr_type_convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
+static int __rrr_type_convert_unsigned_integer_10 (
+		char **end,
+		unsigned long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}
@@ -231,26 +240,46 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 	return RRR_TYPE_PARSE_OK;
 }
 
-int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
+static int __rrr_type_import_numeric_str_raw (
+		char target[8],
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end,
+		int is_signed
+) {
 	CHECK_END_AND_RETURN(1);
 
 	*parsed_bytes = 0;
 
 	if (end < start) {
-		RRR_BUG("BUG: end was less than start in rrr_type_import_ustr_raw\n");
+		RRR_BUG("BUG: end was less than start in rrr_type_import_istr_raw\n");
 	}
-
-	rrr_length max = (rrr_length) (end - start) + 1;
-	if (max > 30) {
-		max = 30;
-	}
-	char tmp[max];
-	memset(tmp, '\0', sizeof(tmp));
-	strncpy(tmp, start, max - 1);
 
 	int found_end_char = 0;
-	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
-		if (*pos >= '0' && *pos <= '9') {
+	unsigned int total_length = 0;
+
+	union {
+		long long int s;
+		unsigned long long int u;
+	} result;
+
+	result.s = 0;
+
+	// Must match return argument
+	RRR_ASSERT(8==sizeof(result),rrr_type_import_numeric_str_raw_size_of_result_correct);
+
+	char tmp[64];
+	memset(tmp, '\0', sizeof(tmp));
+
+	for (const char *pos = start; pos < end; pos++) {
+		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || *pos == ' ' || *pos == '\t' || (is_signed && *pos == '-')) {
+			tmp[total_length++] = *pos;
+
+			// Make sure we don't overwrite last \0 needed by conversion function
+			if (total_length > sizeof(tmp) - 1) {
+				RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, number too long (> 63 characters)\n");
+				return RRR_TYPE_PARSE_SOFT_ERR;
+			}
 			continue;
 		}
 		else {
@@ -263,34 +292,68 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 		return RRR_TYPE_PARSE_INCOMPLETE;
 	}
 
-	char *convert_end = NULL;
-	unsigned long long int result = 0;
-
-	if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting unsigned integer in import_ustr\n");
+	if (total_length == 0) {
+		RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, no number found.\n");
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	memcpy(target, &result, sizeof(rrr_type_ustr));
+	char *convert_end = NULL;
 
-	if (convert_end < tmp) {
-		RRR_BUG("BUG: convert_end was less than tmp in rrr_type_import_ustr_raw\n");
+	if (is_signed) {
+		if (__rrr_type_convert_integer_10(&convert_end, &result.s, tmp)) {
+			RRR_MSG_0("Error while converting signed integer in rrr_type_import_numeric_str_raw A, input data was '%s'\n", tmp);
+			return RRR_TYPE_PARSE_SOFT_ERR;
+		}
+	}
+	else {
+		if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result.u, tmp)) {
+			RRR_MSG_0("Error while converting unsigned integer in rrr_type_import_numeric_str_raw A, input data was '%s'\n", tmp);
+			return RRR_TYPE_PARSE_SOFT_ERR;
+		}
 	}
 
-	*parsed_bytes = (rrr_length) (convert_end - tmp);
+	if (convert_end - tmp != total_length) {
+		RRR_MSG_0("Error while converting number in rrr_type_import_numeric_str_raw B, input data was '%s'\n", tmp);
+		return RRR_TYPE_PARSE_SOFT_ERR;
+	}
+
+	memcpy(target, &result, sizeof(result));
+
+	if (convert_end < tmp) {
+		RRR_BUG("BUG: convert_end was less than tmp in __rrr_type_import_numeric_str_raw\n");
+	}
+	*parsed_bytes = (rrr_length) total_length;
 
 	return RRR_TYPE_PARSE_OK;
 }
 
+int rrr_type_import_ustr_raw (
+		uint64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 0);
+}
+
+int rrr_type_import_istr_raw (
+		int64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 1);
+}
+
 static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_ustr\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_ustr\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_ustr\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_ustr\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_ustr\n");
+		RRR_BUG("length was not 0 in __rrr_type_import_ustr\n");
 	}
 
 	int ret = RRR_TYPE_PARSE_OK;
@@ -299,7 +362,7 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	size_t allocation_size = sizeof(rrr_type_ustr);
 
 	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_ustr\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_import_ustr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -316,66 +379,15 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
-	CHECK_END_AND_RETURN(1);
-
-	*parsed_bytes = 0;
-
-	if (end < start) {
-		RRR_BUG("BUG: end was less than start in rrr_type_import_istr_raw\n");
-	}
-
-	rrr_length max = (rrr_length) (end - start) + 1;
-	if (max > 30) {
-		max = 30;
-	}
-	char tmp[max];
-	memset(tmp, '\0', sizeof(tmp));
-	strncpy(tmp, start, max - 1);
-
-	int found_end_char = 0;
-	for (const char *pos = tmp + (tmp[0] == '-' || tmp[0] == '+' ? 1 : 0); pos < tmp + sizeof(tmp); pos++) {
-		if (*pos >= '0' && *pos <= '9') {
-			continue;
-		}
-		else {
-			found_end_char = 1;
-			break;
-		}
-	}
-
-	if (found_end_char == 0) {
-		return RRR_TYPE_PARSE_INCOMPLETE;
-	}
-
-	char *convert_end = NULL;
-	long long int result = 0;
-
-	if (__rrr_type_convert_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting unsigned integer in import_istr\n");
-		return RRR_TYPE_PARSE_SOFT_ERR;
-	}
-
-	memcpy(target, &result, sizeof(rrr_type_ustr));
-
-	if (convert_end < tmp) {
-		RRR_BUG("BUG: convert_end was less than tmp in rrr_type_import_istr_raw\n");
-	}
-
-	*parsed_bytes = (rrr_length) (convert_end - tmp);
-
-	return RRR_TYPE_PARSE_OK;
-}
-
 static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_istr\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_istr\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_istr\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_istr\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_istr\n");
+		RRR_BUG("length was not 0 in __rrr_type_import_istr\n");
 	}
 
 	int ret = RRR_TYPE_PARSE_OK;
@@ -384,12 +396,12 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	size_t allocation_size = sizeof(rrr_type_istr);
 
 	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_istr\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_import_istr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
 
-	if ((ret = rrr_type_import_istr_raw ((int64_t*) node->data, parsed_bytes, start, end)) != 0) {
+	if ((ret = rrr_type_import_istr_raw ((int64_t *) node->data, parsed_bytes, start, end)) != 0) {
 		goto out;
 	}
 
@@ -416,10 +428,10 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 
 	rrr_length total_size = node->import_length * node->element_count;
 
+	CHECK_END_AND_RETURN(total_size);
+
 	rrr_length found = 0;
 	for (const char *start_tmp = start; start_tmp < end && found < total_size; start_tmp++) {
-		CHECK_END_AND_RETURN(1);
-
 		char c = *start_tmp;
 		if (!validate(c)) {
 			RRR_MSG_0("Invalid separator character 0x%01x\n", c);
@@ -451,7 +463,9 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 	if ((ret = __rrr_type_import_sep_stx(node, parsed_bytes, start, end, __rrr_type_validate_sep)) != RRR_TYPE_PARSE_OK) {
-		RRR_MSG_0("Import of sep type failed\n");
+		if (ret != RRR_TYPE_PARSE_INCOMPLETE) {
+			RRR_MSG_0("Import of sep type failed\n");
+		}
 	}
 	return ret;
 }
@@ -835,7 +849,7 @@ static int __rrr_type_import_err (RRR_TYPE_IMPORT_ARGS) {
 	(void)(start);
 	(void)(end);
 
-	RRR_DBG_1("Error trigger reached while importing array definition, triggering soft error.\n");
+	RRR_DBG_3("Error trigger reached while importing array definition, triggering soft error.\n");
 
 	return RRR_TYPE_PARSE_SOFT_ERR;
 }

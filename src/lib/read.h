@@ -75,6 +75,9 @@ struct rrr_read_session {
 	// Populated by get target length-function if bytes are to be skipped at beginning of buffer
 	ssize_t rx_buf_skip;
 
+	// May be used by freely by application layer to keep track of any parsing
+	ssize_t parse_pos;
+
 	// Complete callback may set this to indicate that parsing of a block has completed successfully
 	// and that if an EOF or connection close occurs in the next read, this should not produce a soft error.
 	// If EOF does not occur during the next read, the flag is reset to zero.

@@ -61,8 +61,8 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 			return 1;
 		}
 
-		if (	rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
-				rrr_thread_get_state(check->thread) == RRR_THREAD_STATE_STOPPED
+		if (	rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
+				rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_STOPPED
 		) {
 			// OK
 		}
@@ -104,7 +104,7 @@ int rrr_main_create_and_start_threads (
 	runtime_data = malloc(sizeof(*runtime_data) * RRR_LL_COUNT(instances)); // Size of pointer
 
 	// Create thread collection
-	if (rrr_thread_new_collection (thread_collection) != 0) {
+	if (rrr_thread_collection_new (thread_collection) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
 		ret = 1;
 		goto out;
@@ -139,7 +139,7 @@ int rrr_main_create_and_start_threads (
 					INSTANCE_M_NAME(instance));
 		}
 
-		struct rrr_thread *thread = rrr_thread_allocate_preload_and_register (
+		struct rrr_thread *thread = rrr_thread_collection_thread_allocate_preload_and_register (
 				*thread_collection,
 				rrr_instance_thread_entry_intermediate,
 				instance->module_data->operations.preload,
@@ -172,7 +172,7 @@ int rrr_main_create_and_start_threads (
 
 	struct rrr_main_check_wait_for_data callback_data = { instances };
 
-	if (rrr_thread_start_all_after_initialized (
+	if (rrr_thread_collection_start_all_after_initialized (
 			*thread_collection,
 			__rrr_main_start_threads_check_wait_for_callback,
 			&callback_data
@@ -188,8 +188,8 @@ int rrr_main_create_and_start_threads (
 }
 
 void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection) {
-	rrr_thread_stop_and_join_all_no_unlock(collection);
-	rrr_thread_destroy_collection (collection);
+	rrr_thread_collection_stop_and_join_all_no_unlock(collection);
+	rrr_thread_collection_destroy (collection);
 }
 
 #ifdef HAVE_JOURNALD
@@ -388,11 +388,31 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	return ret;
 }
 
-int rrr_main_print_help_and_version (
+static const char *rrr_main_banner =
+		"======================================\n"
+		"  =      RRRRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRRRRRRRRRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =       RRRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRR    RRR   RRR   RRR\n"
+		"  =       RRR     RRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =      RRRR       RRRR   RRRR  RRRR\n"
+		"================================================\n\n";
+
+int rrr_main_print_banner_help_and_version (
 		struct cmd_data *cmd,
 		int argc_minimum
 ) {
 	int help_or_version_printed = 0;
+
+	if (cmd_exists(cmd, "banner", 0)) {
+		RRR_MSG_PLAIN("%s", rrr_main_banner);
+		argc_minimum++;
+	}
+
 	if (cmd_exists(cmd, "version", 0)) {
 		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
@@ -403,9 +423,5 @@ int rrr_main_print_help_and_version (
 		help_or_version_printed = 1;
 	}
 
-	if (help_or_version_printed) {
-		return 1;
-	}
-
-	return 0;
+	return help_or_version_printed;
 }

@@ -473,8 +473,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	int queued_total = 0;
 	int send_total = 0;
 	int delivered_total = 0;
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		time_now = rrr_time_get_64();
 
@@ -496,7 +496,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 //				INSTANCE_D_NAME(thread_data));
 
 		int queue_count = 0;
-		rrr_thread_update_watchdog_time(thread);
+		rrr_thread_watchdog_time_update(thread);
 		if (queue_or_delete_messages(&queue_count, data) != 0) {
 			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;

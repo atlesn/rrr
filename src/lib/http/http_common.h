@@ -33,10 +33,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_SERVER_USER_AGENT						"RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_WORKER_THREAD_WATCHDOG_TIMER_MS	5000
+#define RRR_HTTP_SERVER_WORKER_FIRST_DATA_TIMEOUT_MS	2000
+#define RRR_HTTP_SERVER_WORKER_IDLE_TIMEOUT_MS			30000
+#define RRR_HTTP_SERVER_WORKER_TRANSACTION_TIMEOUT_MS	RRR_HTTP_SERVER_WORKER_IDLE_TIMEOUT_MS
 
 #define RRR_HTTP_OK						RRR_READ_OK
 #define RRR_HTTP_HARD_ERROR				RRR_READ_HARD_ERROR
 #define RRR_HTTP_SOFT_ERROR				RRR_READ_SOFT_ERROR
+#define RRR_HTTP_BUSY						RRR_READ_INCOMPLETE
+
+#define RRR_HTTP_PARSE_OK				RRR_READ_OK
+#define RRR_HTTP_PARSE_HARD_ERR 		RRR_READ_HARD_ERROR
+#define RRR_HTTP_PARSE_SOFT_ERR			RRR_READ_SOFT_ERROR
+#define RRR_HTTP_PARSE_INCOMPLETE		RRR_READ_INCOMPLETE
+#define RRR_HTTP_PARSE_EOF				RRR_READ_EOF
 
 #define RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS		101
 #define RRR_HTTP_RESPONSE_CODE_OK						200
@@ -56,8 +66,8 @@ enum rrr_http_transport {
 };
 
 enum rrr_http_method {
+	RRR_HTTP_METHOD_UNKNOWN,
 	RRR_HTTP_METHOD_GET,
-	RRR_HTTP_METHOD_GET_WEBSOCKET,
 	RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA,
 	RRR_HTTP_METHOD_POST_URLENCODED,
 	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
@@ -66,7 +76,25 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_OPTIONS,
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
-	RRR_HTTP_METHOD_PUT,
+	RRR_HTTP_METHOD_PUT
+};
+
+enum rrr_http_upgrade_mode {
+	RRR_HTTP_UPGRADE_MODE_NONE,
+	RRR_HTTP_UPGRADE_MODE_WEBSOCKET,
+	RRR_HTTP_UPGRADE_MODE_HTTP2
+};
+
+enum rrr_http_application_type {
+	RRR_HTTP_APPLICATION_UNSPECIFIED,
+	RRR_HTTP_APPLICATION_HTTP1,
+	RRR_HTTP_APPLICATION_HTTP2
+};
+
+enum rrr_http_parse_type {
+	RRR_HTTP_PARSE_REQUEST,
+	RRR_HTTP_PARSE_RESPONSE,
+	RRR_HTTP_PARSE_MULTIPART
 };
 
 extern const char *rrr_http_transport_str_any;
@@ -80,7 +108,10 @@ extern const char *rrr_http_transport_str_https;
 	)))
 
 extern const char *rrr_http_method_str_get;
-extern const char *rrr_http_method_str_get_websocket;
+extern const char *rrr_http_method_str_head;
+extern const char *rrr_http_method_str_put;
+extern const char *rrr_http_method_str_delete;
+extern const char *rrr_http_method_str_post;
 extern const char *rrr_http_method_str_post_multipart_form_data;
 extern const char *rrr_http_method_str_post_urlencoded;
 extern const char *rrr_http_method_str_post_urlencoded_no_quoting;
@@ -89,20 +120,53 @@ extern const char *rrr_http_method_str_post_application_text_plain;
 
 #define RRR_HTTP_METHOD_TO_STR(method)																				\
 	(method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :														\
-	(method == RRR_HTTP_METHOD_GET_WEBSOCKET ? rrr_http_method_str_get_websocket :									\
+	(method == RRR_HTTP_METHOD_HEAD ? rrr_http_method_str_head :													\
+	(method == RRR_HTTP_METHOD_PUT ? rrr_http_method_str_put :														\
+	(method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :												\
 	(method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA ? rrr_http_method_str_post_multipart_form_data :			\
 	(method == RRR_HTTP_METHOD_POST_URLENCODED ? rrr_http_method_str_post_urlencoded :								\
 	(method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING ? rrr_http_method_str_post_urlencoded_no_quoting :		\
 	(method == RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM ? rrr_http_method_str_post_application_octet_stream :	\
 	(method == RRR_HTTP_METHOD_POST_TEXT_PLAIN ? rrr_http_method_str_post_application_text_plain : ("unknown")		\
-	)))))))
+	)))))))))
+
+#define RRR_HTTP_METHOD_TO_STR_CONFORMING(method)																	\
+	(method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :														\
+	(method == RRR_HTTP_METHOD_HEAD ? rrr_http_method_str_head :													\
+	(method == RRR_HTTP_METHOD_PUT ? rrr_http_method_str_put :														\
+	(method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :												\
+	rrr_http_method_str_post																						\
+	))))
+
+extern const char *rrr_http_upgrade_mode_str_none;
+extern const char *rrr_http_upgrade_mode_str_websocket;
+extern const char *rrr_http_upgrade_mode_str_http2;
+
+#define RRR_HTTP_UPGRADE_MODE_TO_STR(transport)													\
+	(transport == RRR_HTTP_UPGRADE_MODE_NONE ? rrr_http_upgrade_mode_str_none :					\
+	(transport == RRR_HTTP_UPGRADE_MODE_WEBSOCKET ? rrr_http_upgrade_mode_str_websocket :		\
+	(transport == RRR_HTTP_UPGRADE_MODE_HTTP2 ? rrr_http_upgrade_mode_str_http2 : ("unknown")	\
+	)))
+
+extern const char *rrr_http_application_str_http1;
+extern const char *rrr_http_application_str_http2;
+
+#define RRR_HTTP_APPLICATION_TO_STR(transport)												\
+	(transport == RRR_HTTP_APPLICATION_HTTP1 ? rrr_http_application_str_http1 :				\
+	(transport == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 : ("unknown")	\
+	))
 
 typedef uint64_t rrr_http_unique_id;
+struct rrr_nullsafe_str;
 
-#define RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS	\
-	const char *data,								\
-	ssize_t data_size,								\
-	rrr_http_unique_id unique_id,					\
+#define RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS			\
+	const struct rrr_nullsafe_str *data,					\
+	struct rrr_http_transaction *transaction,				\
+	rrr_http_unique_id unique_id,							\
+	enum rrr_http_application_type next_protocol_version,	\
 	void *arg
+
+#define RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS \
+	const struct rrr_nullsafe_str *str, void *arg
 
 #endif /* RRR_HTTP_COMMON_H */

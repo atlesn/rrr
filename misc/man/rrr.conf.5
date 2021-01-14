@@ -1,4 +1,4 @@
-.Dd 2020-08-27
+.Dd 2021-01-14
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -191,6 +191,9 @@ Dumps messages, used for debugging.
 .It ip (PAI)
 Handles IP communication, UDP and TCP.
 
+.It exploder (PA)
+Splits RRR array messages into multiple messages. 
+
 .It buffer (P)
 Buffers messages, may be used to duplicate messages to multiple readers.
 
@@ -299,6 +302,11 @@ and set
 to
 .B yes.
 
+.It ip_strip_array_separators={yes|no}
+If set to yes, any array fields of the
+.B sep
+type is stripped out before RRR array messages are created. Defaults to no.  
+
 .It ip_extract_rrr_messages={yes|no}
 Extract any RRR messages from the received data (if specified in ip_input_types) and save them in the buffer for other modules to pick up.
 Causes any other data in the received arrays to be dropped.
@@ -398,6 +406,42 @@ the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
 .El
 .PP
+.SS exploder (P)
+The exploder takes individual values from array messages and creates individual messages for each value.
+.PP
+.Bl -tag -width -indent
+.It exploder_non_array_passthrough={yes|no}
+If set to 'yes' and a non-array message is received, the message is passed through without modification.
+If set to 'no' or left unset, non-array messages will be dropped.
+
+.It exploder_original_passthrough={yes|no}
+If set to 'yes', all original array messages are passed through.
+If set to 'no' or left unset, the original messages are dropped.
+
+.It exploder_preserve_timestamp={yes|no}
+If set to 'yes', the timestamp from the original message will be used in any new messages.
+If set to 'no' or left unset, the current time will be used for new messages.
+In any case, any messages generated from a single message will have the same timestamp and the timestamp of the original message will not be modified.
+
+.It exploder_preserve_topic={yes|no}
+If set to 'yes', any topic from the original message will be used when the topics for new messages are created.
+If set no 'no' or left unset, the topic will not be used.
+
+.It exploder_topic=MQTT-TOPIC
+Sets an optional static topic for new messages. If
+.B exploder_preserve_topic
+is 'yes', this topic specified will be appended to the original topic. No extra slashes will be added.
+
+.It exploder_topic_append_tag={yes|no}
+If set to yes, the tag of each value will be appended to topic of the generated messages.
+The prefix to which the tag is added depends upon the configuration of options
+.B exploder_preserve_topic
+and
+.B exploder_topic.
+If none of those options are use, the tag will become the whole topic.
+If set to 'no', the tag will not be appended to the message topic.
+
+.El
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by other instances.
 .PP
@@ -501,6 +545,7 @@ part of the
 section for descriptions of the following parameters:
 .PP
 .Bl -tag -width -indent
+.It python3_workers=UNSIGNED INTEGER
 .It python3_source_interval_ms=MILLISECONDS
 .It python3_sleep_time_ms=MILLISECONDS
 .It python3_nothing_happend_limit=UNSIGNED INTEGER
@@ -630,6 +675,7 @@ part of the
 section for descriptions of the following parameters:
 .PP
 .Bl -tag -width -indent
+.It perl5_workers=UNSIGNED INTEGER
 .It perl5_source_interval_ms=MILLISECONDS
 .It perl5_sleep_time_ms=MILLISECONDS
 .It perl5_nothing_happend_limit=UNSIGNED INTEGER
@@ -971,6 +1017,7 @@ part of the
 section for descriptions of the following parameters:
 .PP
 .Bl -tag -width -indent
+.It cmodule_workers=UNSIGNED INTEGER
 .It cmodule_source_interval_ms=MILLISECONDS
 .It cmodule_sleep_time_ms=MILLISECONDS
 .It cmodule_nothing_happend_limit=UNSIGNED INTEGER
@@ -1106,7 +1153,7 @@ Create RRR messages for incoming request even if no field names would be added t
 .It http_server_receive_full_request={yes|no}
 Get HTTP data from the request and add it to an RRR array message along with any fields from POST and GET. 
 The fields
-.B http_method, http_endpoint, http_body, http_content_transfer_encoding
+.B http_method, http_protocol, http_endpoint, http_body, http_content_transfer_encoding
 and
 .B http_content_type
 will be added. The latter two values will only be added if present in request header, and the body only if the request body has non-zero length.
@@ -1115,13 +1162,15 @@ These fields are always added regardless of other options, except from the
 option which need to be set to 'yes' for HTTP requests with zero length body to be processed.
 The generated RRR message will have a topic of
 .B httpserver/request/uuu
-where uuu is a unique ID for one HTTP connection. Defaults to no. 
+where uuu is a unique ID for one HTTP connection.
+.B http_protocol
+is either 1 or 2. Defaults to no. 
 
 .It http_server_receive_raw_data={yes|no}
 When receiving a request from a client, put the full request including header into an RRR message for other instances to pick up.
 The generated RRR messages will have a topic of
 .B httpserver/raw/uuu
-where uuu is a unique ID for one HTTP connection. Defaults to no. 
+where uuu is a unique ID for one HTTP connection. HTTP/2 will be disabled if this option is set to 'yes'. Defaults to no. 
 
 .It http_server_get_raw_response_from_senders={yes|no}
 Instead of sending standard responses to clients, like "204 No Content", check senders of httpserver for raw data responses.
@@ -1135,9 +1184,15 @@ The response message given back must have the topic
 set. If a response is generated by another module based on an array message, the topic 'httpserver/request/uuu' must be changed
 to 'httpserver/raw/uuu' for
 .B httpserver
-to pick it up.   
+to pick it up.
+
 If httpserver receives messages which do not match any active requests, they are dropped after a timeout.
-If a connection is to be upgraded to websocket, this option is ignored for that connection. Defaults to no.
+
+If a connection has been upgraded to websocket, this option is ignored for that connection.
+
+HTTP/2 will be disabled if this option is to 'yes'.
+
+Defaults to no.
 
 .It http_server_raw_response_timeout_ms=MILLISECONDS
 Timeout when waiting for raw response from senders. May be zero to indicate no timeout. Defaults to 1500ms.
@@ -1239,6 +1294,15 @@ parameter.
 
 Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string.
 
+.It http_endpoint_from_topic={yes|no}
+.It http_endpoint_from_topic_force={yes|no}
+If
+.B http_endpoint_from_topic
+is set to yes, the MQTT topic of received messaged will be used as the HTTP endpoint. A slash / will be prepended to the topic.
+If force is set to yes, messages without a topic will be dropped.
+May not be used together with
+.B http_endpoint_tag.
+
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,
@@ -1307,22 +1371,35 @@ Keep connection to server open across multiple requests. When the server finally
 
 .It http_receive_part_data={yes|no}
 .It http_receive_raw_data={yes|no}
+.It http_receive_json_data={yes|no}
+Any combination of yes and no is allowed for the receive options. By default, no messages are generated by
+.B httpclient
+
 When receiving part data, HTTP response data is put into messages for other modules to read from httpclient.
 
 The raw method will put full HTTP responses including headers into messages. No processing will be performed on the data, and
 chunked data may be present in the messages if the server has responded with this. May be used in conjunction with raw functionallity in
 .B httpserver.
 If there are redirects from the server, one message will be created for every redirect response.
+Raw data will not be generated for HTTP2 requests, this would make no sense.
 
-If the original message which caused the query had a topic set, this topic will be present in generated messages.
+When receiving JSON data, multiple RRR array messages may be generated for every response.
+Every JSON object containing bare associative values will result in a separate RRR message, regardless of of it's position in the object tree.
+A good solution might be to have the server send one or more JSON objects representing data records, all contained in a JSON array.
+A maximum of four object tree levels are parsed.
 
-Any combination of yes and no is allowed for the receive options. By default, no messages are generated by
-.B httpclient 
+Httpclient will attempt to parse any received data as JSON, regardless of what content type has been set.
+Should the parsing fail, no error messages are printed unless debuglevel 2 is set.  
+
+If the original message which caused the query had a topic set, this topic will be present in generated messages. 
 
 .It http_send_raw_data={yes|no}
 Assume that received messages contains raw HTTP data (including headers), and send this to the specified server untouched.
 May be used in conjunction with raw functionallity in
 .B httpserver.
+
+.It http_plain_http2={yes|no}
+In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
 
 .It http_tls_*
 Refer to the
@@ -1667,6 +1744,13 @@ Cannot be used with
 .B file_read_all_to_message=yes,
 but one of them must be specified. No default value.
 
+.It file_strip_array_separators={yes|no}
+Disregard any separator items when creating RRR array messages. Defaults to no.
+
+.It file_sync_byte_by_byte={yes|no}
+If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
+Defaults to no, which means to only sync on boundaries of incoming messages.
+
 .It file_read_all_to_message={yes|no}
 Read all data from the entries and put it into an RRR message.
 Note that this is probably not useful for sockets and character devices. Cannot be used with
@@ -1708,6 +1792,22 @@ If there is only one open file, all messages in this file will be processed in o
 a new one is opened.
 Defaults to and has a maximum value (if set) of 65536.
 May be set to 0 which means that there is no maximum number of open files.
+
+.It file_try_serial_input={yes|no}
+If set to yes, an attempt will be made to set serial port parameters on opened files. If left unset or set to no, any serial configuration parameters will be ignored.
+
+.It file_serial_no_raw={yes|no}
+If set to yes, do not disable any features on serial ports. If set to no or left unset, XON/XOFF, parity, canonical reading etc. will be disabled.
+Note that other configuration options for the serial ports will override this option (features may be re-enabled).
+
+.It file_serial_bps=UNSIGNED INTEGER
+If set, set a speed int bits per second like 19200, 38400 etc. on serial serial ports. If left unset, speed settings will be left untoched.
+
+.It file_serial_parity={even|odd|none}
+If set and set to 'even' or 'odd', parity will be set accordingly on serial ports. If set to 'none', parity will be forced off. If left unset, parity settings will be left untouched.
+
+.It file_serial_two_stop_bits={yes|no}
+If set to yes, use two stop bits on serial ports. If set to no, force one stop bit to be used. If left unset, stop bit configuration is left untouched. 
 
 .It file_try_keyboard_input={yes|no} (LINUX/FREEBSD ONLY)
 If set to yes, and character devices are found in the directory,
@@ -1925,6 +2025,11 @@ with the configuration paramenter prefix of the module.
 .PP
 .SS cmodule parameters
 .Bl -tag -width -indent
+.It X_workers=UNSIGNED INTEGER
+How many worker fork copies to spawn. If multiple forks are used, incoming messages will be given to
+the fork having the least amount of messages waiting to be processed. Note that if sourcing is used,
+each for will source messages according to given parameters. Defaults to 1, maximum is 16.
+
 .It X_source_interval_ms=MILLISECONDS
 How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
 

@@ -66,11 +66,12 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out;
 		}
 
-		RRR_DBG_2("Raw %s: Received data of size %lu with timestamp %" PRIu64 " topic '%s'\n",
-				INSTANCE_D_NAME(thread_data), MSG_DATA_LENGTH(reading), reading->timestamp, topic_tmp);
+		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp);
 
 		if (MSG_IS_ARRAY(reading)) {
-			if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
+			uint16_t array_version_dummy;
+			if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, reading) != 0) {
 				RRR_MSG_0("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
@@ -144,8 +145,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	uint64_t total_counter = 0;
 	uint64_t timer_start = rrr_time_get_64();
 	int ticks = 0;
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int prev_message_count = raw_data->message_count;
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
@@ -178,7 +179,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	}
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting state is %i\n",
-			thread, INSTANCE_D_NAME(thread_data), rrr_thread_get_state(thread));
+			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
 
 	pthread_exit(0);
 }

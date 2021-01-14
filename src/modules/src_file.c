@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
-
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
@@ -52,7 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"
+#include "../lib/util/posix.h"
 #include "../lib/input/input.h"
+#include "../lib/serial/serial.h"
 
 #define RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE 4096
 #define RRR_FILE_DEFAULT_PROBE_INTERVAL_MS 5000LLU
@@ -62,6 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FILE_MAX_SIZE_MB 32
 
 #define RRR_FILE_F_IS_KEYBOARD (1<<0)
+#define RRR_FILE_F_IS_SERIAL (1<<1)
 
 #define RRR_FILE_STOP RRR_READ_EOF
 
@@ -92,9 +94,23 @@ struct file_data {
 	struct rrr_instance_runtime_data *thread_data;
 
 	struct rrr_array_tree *tree;
+	int do_strip_array_separators;
 	int do_try_keyboard_input;
 	int do_no_keyboard_hijack;
 	int do_unlink_on_close;
+	int do_sync_byte_by_byte;
+	int do_try_serial_input;
+	int do_serial_no_raw;
+	int do_serial_parity_even;
+	int do_serial_parity_odd;
+	int do_serial_parity_none;
+	int do_serial_one_stop_bit;
+	int do_serial_two_stop_bits;
+
+	char *serial_parity;
+
+	int serial_bps_set;
+	rrr_setting_uint serial_bps;
 
 	int do_read_all_to_message_;
 	char *read_all_method;
@@ -206,6 +222,7 @@ static void file_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->directory);
 	RRR_FREE_IF_NOT_NULL(data->prefix);
 	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_FREE_IF_NOT_NULL(data->serial_parity);
 }
 
 static int file_parse_config (struct file_data *data, struct rrr_instance_config_data *config) {
@@ -240,13 +257,21 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 		}
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_strip_array_separators", do_strip_array_separators, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_read_all_to_message", do_read_all_to_message_, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_read_all_method", read_all_method);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_serial_input", do_try_serial_input, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_serial_no_raw", do_serial_no_raw, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_serial_two_stop_bits", do_serial_two_stop_bits, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_try_keyboard_input", do_try_keyboard_input, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_no_keyboard_hijack", do_no_keyboard_hijack, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_unlink_on_close", do_unlink_on_close, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("file_sync_byte_by_byte", do_sync_byte_by_byte, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_serial_bps", serial_bps, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_serial_parity", serial_parity);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_messages_per_file", max_messages_per_file, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_max_read_step_size", max_read_step_size, RRR_FILE_DEFAULT_READ_STEP_MAX_SIZE);
@@ -254,6 +279,47 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_timeout_s", timeout_s, RRR_FILE_DEFAULT_TIMEOUT);
 
 	/* Don't goto out in errors, check all possible errors first. */
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("file_serial_two_stop_bits")) {
+		if (!data->do_serial_two_stop_bits) {
+			data->do_serial_one_stop_bit = 1;
+		}
+	}
+
+	if (data->serial_parity != 0) {
+		if (rrr_posix_strcasecmp(data->serial_parity, "even") == 0) {
+			data->do_serial_parity_even = 1;
+		}
+		else if (rrr_posix_strcasecmp(data->serial_parity, "odd") == 0) {
+			data->do_serial_parity_odd = 1;
+		}
+		else if (rrr_posix_strcasecmp(data->serial_parity, "none") == 0) {
+			data->do_serial_parity_none = 1;
+		}
+		else {
+			RRR_MSG_0("Invalid value '%s' for file_serial_parity in file instance %s, possible values are even, odd, none\n",
+					data->serial_parity, config->name);
+			ret = 1;
+		}
+	}
+
+	if (RRR_INSTANCE_CONFIG_EXISTS("file_serial_bps")) {
+		// 0 value is allowed for serial_bps, we need a separate value to check
+		// if it was set or not
+		data->serial_bps_set = 1;
+
+		if (rrr_serial_speed_check(data->serial_bps) != 0) {
+			RRR_MSG_0("Invalid value '%llu' for file_serial_bps in file instance %s, possible values are 19200, 38400 etc.\n",
+					(unsigned long long) data->serial_bps, config->name);
+			ret = 1;
+		}
+	}
+
+	if (data->do_strip_array_separators && !RRR_INSTANCE_CONFIG_EXISTS("file_input_types")) {
+		RRR_MSG_0("file_do_strip_array_separators was 'yes' while no array definition was set in file_input_type in file instance %s, this is a configuration error.\n",
+				config->name);
+		ret = 1;
+	}
 
 	if (data->do_read_all_to_message_) {
 		data->read_method = FILE_READ_METHOD_ALL_SIMPLE;
@@ -408,6 +474,61 @@ static int file_probe_callback (
 		}
 	}
 
+	if (data->do_try_serial_input && type == DT_CHR) {
+		int is_serial = 0;
+		rrr_serial_check(&is_serial, fd); // Ignore errors
+		if (is_serial) {
+			flags |= RRR_FILE_F_IS_SERIAL;
+			RRR_DBG_3("file instance %s character device '%s'=>'%s' recognized as serial device\n",
+					INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+
+			if (!data->do_serial_no_raw) {
+				RRR_DBG_3("file instance %s setting raw mode for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+				if ((ret = rrr_serial_raw_set(fd)) != 0) {
+					RRR_MSG_0("File instance %s failed to set raw mode of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->serial_bps_set) {
+				RRR_DBG_3("file instance %s setting speed %llu for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), (unsigned long long) data->serial_bps, orig_path, resolved_path);
+				if ((ret = rrr_serial_speed_set(fd, data->serial_bps)) != 0) {
+					RRR_MSG_0("File instance %s failed to set speed of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->do_serial_parity_even || data->do_serial_parity_odd) {
+				RRR_DBG_3("file instance %s setting %s parity for serial device '%s'=>'%s'\n",
+						INSTANCE_D_NAME(data->thread_data), (data->do_serial_parity_even ? "even" : "odd"), orig_path, resolved_path);
+				if ((ret = rrr_serial_parity_set(fd, data->do_serial_parity_odd)) != 0) {
+					RRR_MSG_0("File instance %s failed to set parity of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+			else if (data->do_serial_parity_none) {
+				if ((ret = rrr_serial_parity_unset(fd)) != 0) {
+					RRR_MSG_0("File instance %s failed to unset parity of serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+
+			if (data->do_serial_one_stop_bit || data->do_serial_two_stop_bits) {
+				if ((ret = rrr_serial_stop_bit_set(fd, data->do_serial_two_stop_bits)) != 0) {
+					RRR_MSG_0("File instance %s failed to set stop bits on serial device '%s'=>%s\n",
+							INSTANCE_D_NAME(data->thread_data), orig_path, resolved_path);
+					goto out;
+				}
+			}
+		}
+	}
+
 	struct stat file_stat = {0};
 	if (fstat(fd, &file_stat) != 0) {
 		RRR_MSG_0("Warning: Failed to stat file %s: %s\n",
@@ -492,6 +613,10 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			callback_data->file_data,
 			array_final
 	};
+
+	if (callback_data->file_data->do_strip_array_separators) {
+		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+	}
 
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->file_data->thread_data),
@@ -774,7 +899,7 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				socket_flags,
 				&array_final,
 				data->tree,
-				0,
+				data->do_sync_byte_by_byte,
 				data->max_read_step_size,
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				file_read_array_callback,
@@ -902,8 +1027,8 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 
 	int consecutive_nothing_happened = 0;
 
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		ticks++;
 
