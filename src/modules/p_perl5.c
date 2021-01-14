@@ -383,7 +383,6 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 struct perl5_fork_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
-	pid_t *fork_pid;
 };
 
 static int perl5_fork (void *arg) {
@@ -402,8 +401,7 @@ static int perl5_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_fork_start (
-			callback_data->fork_pid,
+	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			perl5_init_wrapper_callback,
 			data,
@@ -432,10 +430,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	pthread_cleanup_push(data_cleanup, data);
 
-	pid_t fork_pid = 0;
-
 	struct perl5_fork_callback_data fork_callback_data = {
-		thread_data, &fork_pid
+		thread_data
 	};
 
 	if (rrr_thread_start_condition_helper_fork(thread, perl5_fork, &fork_callback_data) != 0) {
@@ -447,8 +443,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll,
-			fork_pid
+			&thread_data->poll
 	);
 
 	out_message:

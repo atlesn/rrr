@@ -60,6 +60,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
+		{0,							'O',	"no-output",			"[-O|--no-output]"},
 		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
 		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
@@ -78,6 +79,7 @@ struct rrr_http_client_data {
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
+	int no_output;
 	struct rrr_net_transport_config net_transport_config;
 	struct rrr_net_transport *net_transport_keepalive_plain;
 	struct rrr_net_transport *net_transport_keepalive_tls;
@@ -224,6 +226,11 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
+	// Disable output
+	if (cmd_exists(cmd, "no-output", 0)) {
+		data->no_output = 1;
+	}
+
 	// No certificate verification
 	if (cmd_exists(cmd, "no-cert-verify", 0)) {
 		request_data->ssl_no_cert_verify = 1;
@@ -302,29 +309,37 @@ static int __rrr_http_client_final_callback (
 	rrr_length data_start = 0;
 	rrr_length data_size = rrr_nullsafe_str_len(response_data);
 
-	if (data_size > 0) {
-		http_client_data->final_callback_count++;
+	if (data_size == 0) {
+		goto out;
+	}
 
-		while (data_size > 0) {
-			ssize_t bytes = 0;
+	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
-			rrr_nullsafe_str_with_raw_truncated_do (
-					response_data,
-					data_start,
-					data_size,
-					__rrr_http_client_final_write_callback,
-					&bytes
-			);
+	http_client_data->final_callback_count++;
 
-			if (bytes < 0) {
-				RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
-			else {
-				data_start += bytes;
-				data_size -= bytes;
-			}
+	if (http_client_data->no_output) {
+		goto out;
+	}
+
+	while (data_size > 0) {
+		ssize_t bytes = 0;
+
+		rrr_nullsafe_str_with_raw_truncated_do (
+				response_data,
+				data_start,
+				data_size,
+				__rrr_http_client_final_write_callback,
+				&bytes
+		);
+
+		if (bytes < 0) {
+			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_final_callback: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		else {
+			data_start += bytes;
+			data_size -= bytes;
 		}
 	}
 
@@ -528,7 +543,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 

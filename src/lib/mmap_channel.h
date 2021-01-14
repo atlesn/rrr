@@ -59,6 +59,9 @@ struct rrr_mmap_channel {
 	unsigned long long int write_full_counter;
 };
 
+int rrr_mmap_channel_count (
+		struct rrr_mmap_channel *target
+);
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,

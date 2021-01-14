@@ -709,10 +709,11 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	struct httpserver_write_message_callback_data write_callback_data = {
-			&array_tmp,
-			request_topic
-	};
+	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+		// Don't receive fields, let server framework send default reply
+		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
+		goto out;
+	}
 
 	if (data->do_receive_full_request) {
 		if ((RRR_HTTP_PART_BODY_LENGTH(transaction->request_part) == 0 && !data->do_allow_empty_messages)) {
@@ -728,17 +729,18 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
-		// Don't receive fields, let server framework send default reply
-		RRR_DBG_3("Not processing fields from OPTIONS request\n");
-	}
-	else if ((ret = httpserver_receive_callback_get_fields (
+	if ((ret = httpserver_receive_callback_get_fields (
 			&array_tmp,
 			data,
 			transaction->request_part
 	)) != 0) {
 		goto out;
 	}
+
+	struct httpserver_write_message_callback_data write_callback_data = {
+			&array_tmp,
+			request_topic
+	};
 
 	if (RRR_LL_COUNT(&array_tmp) == 0 && data->do_allow_empty_messages == 0) {
 		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");

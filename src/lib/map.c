@@ -27,17 +27,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
-void rrr_map_item_destroy (struct rrr_map_item *item) {
+void rrr_map_item_destroy (
+		struct rrr_map_item *item
+) {
 	RRR_FREE_IF_NOT_NULL(item->tag);
 	RRR_FREE_IF_NOT_NULL(item->value);
 	free(item);
 }
 
-void rrr_map_clear (struct rrr_map *map) {
+void rrr_map_clear (
+		struct rrr_map *map
+) {
 	RRR_LL_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
 }
 
-int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
+int rrr_map_item_new (
+		struct rrr_map_item **target,
+		ssize_t field_size
+) {
 	int ret = 0;
 
 	struct rrr_map_item *item = malloc(sizeof(*item));
@@ -70,12 +77,19 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 	return ret;
 }
 
-int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item) {
+int rrr_map_item_add (
+		struct rrr_map *map,
+		struct rrr_map_item *item
+) {
 	RRR_LL_APPEND(map, item);
 	return 0;
 }
 
-int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value) {
+int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
 	int ret = 0;
 
 	struct rrr_map_item *item_new = NULL;
@@ -106,7 +120,11 @@ int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *valu
 	return ret;
 }
 
-int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter) {
+int rrr_map_parse_pair (
+		const char *input,
+		struct rrr_map *target,
+		const char *delimeter
+) {
 	int ret = 0;
 	struct rrr_map_item *column = NULL;
 
@@ -163,7 +181,9 @@ int rrr_map_parse_tag_only (const char *input, void *arg) {
 	return rrr_map_parse_pair (input, arg, NULL);
 }
 
-const char *rrr_map_get_value (const struct rrr_map *map, const char *tag) {
+const char *rrr_map_get_value (
+		const struct rrr_map *map, const char *tag
+) {
 	RRR_LL_ITERATE_BEGIN(map, const struct rrr_map_item);
 		if (strcmp (node->tag, tag) == 0) {
 			return node->value;

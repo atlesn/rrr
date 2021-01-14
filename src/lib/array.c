@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -45,6 +45,8 @@ static int __rrr_array_clone (
 		const struct rrr_array *source,
 		int do_clone_data
 ) {
+	int ret = 0;
+
 	if (target->node_count != 0) {
 		RRR_BUG("BUG: Target was not empty in rrr_array_clone\n");
 	}
@@ -61,12 +63,13 @@ static int __rrr_array_clone (
 
 	target->version = source->version;
 
-	return 0;
-
+	goto out;
 	out_err:
 		RRR_LL_DESTROY(target, struct rrr_type_value, rrr_type_value_destroy(node));
 		memset(target, '\0', sizeof(*target));
-		return 1;
+		ret = 1;
+	out:
+		return ret;
 }
 
 int rrr_array_clone_without_data (
@@ -283,7 +286,12 @@ int rrr_array_push_value_blob_with_tag_nullsafe (
 			tag,
 			&rrr_type_definition_blob
 	};
-	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_array_push_value_x_with_tag_nullsafe_callback, &callback_data);
+
+	return rrr_nullsafe_str_with_raw_do_const(
+			str,
+			__rrr_array_push_value_x_with_tag_nullsafe_callback,
+			&callback_data
+	);
 }
 
 int rrr_array_push_value_str_with_tag_nullsafe (
@@ -296,7 +304,12 @@ int rrr_array_push_value_str_with_tag_nullsafe (
 			tag,
 			&rrr_type_definition_str
 	};
-	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_array_push_value_x_with_tag_nullsafe_callback, &callback_data);
+
+	return rrr_nullsafe_str_with_raw_do_const(
+			str,
+			__rrr_array_push_value_x_with_tag_nullsafe_callback,
+			&callback_data
+	);
 }
 
 int rrr_array_push_value_str_with_tag (
@@ -351,6 +364,17 @@ int rrr_array_get_value_unsigned_64_by_tag (
 
 	out:
 	return ret;
+}
+
+void rrr_array_strip_type (
+		struct rrr_array *collection,
+		const struct rrr_type_definition *definition
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
+		if (node->definition == definition) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
 }
 
 void rrr_array_clear (struct rrr_array *collection) {
@@ -422,10 +446,12 @@ ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 ) {
 	ssize_t result = 0;
+
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
 		result += node->tag_length;
 	RRR_LL_ITERATE_END();
+
 	return result;
 }
 
@@ -433,9 +459,11 @@ static ssize_t __rrr_array_get_exported_length (
 		const struct rrr_array *definition
 ) {
 	ssize_t result = 0;
+
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		result += rrr_type_value_get_export_length(node);
 	RRR_LL_ITERATE_END();
+
 	return result;
 }
 
@@ -461,7 +489,6 @@ static int __rrr_array_collection_iterate_chosen_tags (
 				const char *tag = node->tag;
 				const rrr_length tag_length = node->tag_length;
 				RRR_MAP_ITERATE_BEGIN_CONST(tags);
-//					printf ("Match tag '%s' vs '%s'\n", tag, (char *) node_tag);
 					if (strncmp (tag, node_tag, tag_length) == 0) {
 						found = 1;
 						RRR_LL_ITERATE_LAST();
@@ -694,19 +721,6 @@ int rrr_array_new_message_from_collection (
 				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
 
-	if (RRR_DEBUGLEVEL_3) {
-		// TODO : Data must be put in a buffer and then printed
-/*		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
-		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(message); i++) {
-			char c = MSG_DATA_PTR(message)[i];
-			if (c < 0x10) {
-				RRR_DBG_NOPREFIX("0");
-			}
-			RRR_DBG_NOPREFIX("%x", c);
-		}
-		RRR_DBG_NOPREFIX("\n");*/
-	}
-
 	*final_message = (struct rrr_msg_msg *) message;
 	message = NULL;
 
@@ -853,6 +867,7 @@ static int __rrr_array_message_append_to_collection_callback (
 }
 
 int rrr_array_message_append_to_collection (
+		uint16_t *array_version,
 		struct rrr_array *target,
 		const struct rrr_msg_msg *message_orig
 ) {
@@ -872,6 +887,7 @@ int rrr_array_message_append_to_collection (
 		goto out;
 	}
 
+	*array_version = message_orig->version;
 	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target, &target_tmp);
 
 	out:
@@ -922,7 +938,6 @@ int rrr_array_dump (
 
 		i++;
 	RRR_LL_ITERATE_END();
-
 
 	RRR_DBG_2 ("== ARRAY DUMP END ====================================================\n");
 

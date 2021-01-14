@@ -58,6 +58,9 @@ int rrr_http_transaction_new (
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 );
+int rrr_http_transaction_request_reset (
+		struct rrr_http_transaction *transaction
+);
 void rrr_http_transaction_decref_if_not_null (
 		struct rrr_http_transaction *transaction
 );

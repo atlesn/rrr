@@ -294,10 +294,10 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 		ret = RRR_MESSAGE_BROKER_DROP;
 	}
 	else {
-		RRR_DBG_3("socket instance %s created a message with timestamp %llu size %lu\n",
+		RRR_DBG_2("socket instance %s created a message with timestamp %llu size %llu\n",
 				INSTANCE_D_NAME(data->thread_data),
 				(long long unsigned int) message->timestamp,
-				(long unsigned int) sizeof(*message)
+				(unsigned long long) MSG_TOTAL_SIZE(message)
 		);
 	}
 

@@ -28,6 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_ip_to_str (
 		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
 );
+int rrr_ip_to_str_and_port (
+		uint16_t *target_port,
+		char *target_ip,
+		size_t target_ip_size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
 void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (
 		struct sockaddr_storage *target,
 		socklen_t *target_len,

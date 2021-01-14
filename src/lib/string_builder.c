@@ -29,7 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/gnu.h"
 #include "util/macro_utils.h"
 
-void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
+void rrr_string_builder_unchecked_append (
+		struct rrr_string_builder *string_builder,
+		const char *str
+) {
 	rrr_biglength length = strlen(str);
 	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
 	string_builder->wpos += length;
@@ -38,37 +41,52 @@ void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_buil
 	}
 }
 
-static void __rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, rrr_biglength buf_size) {
+static void __rrr_string_builder_unchecked_append_raw (
+		struct rrr_string_builder *string_builder,
+		const char *buf, rrr_biglength buf_size
+) {
 	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
 	string_builder->wpos += buf_size;
 	string_builder->buf[string_builder->wpos] = '\0';
 }
 
-char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {
+char *rrr_string_builder_buffer_takeover (
+		struct rrr_string_builder *string_builder
+) {
 	char *ret = string_builder->buf;
 	memset(string_builder, '\0', sizeof(*string_builder));
 	return ret;
 }
 
-void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
+void rrr_string_builder_clear (
+		struct rrr_string_builder *string_builder
+) {
 	RRR_FREE_IF_NOT_NULL(string_builder->buf);
 	string_builder->size = 0;
 	string_builder->wpos = 0;
 }
 
-const char *rrr_string_builder_buf (const struct rrr_string_builder *string_builder) {
+const char *rrr_string_builder_buf (
+		const struct rrr_string_builder *string_builder
+) {
 	return string_builder->buf;
 }
 
-rrr_biglength rrr_string_builder_length (const struct rrr_string_builder *string_builder) {
+rrr_biglength rrr_string_builder_length (
+		const struct rrr_string_builder *string_builder
+) {
 	return (string_builder->buf == NULL ? 0 : string_builder->wpos);
 }
 
-rrr_biglength rrr_string_builder_size (const struct rrr_string_builder *string_builder) {
+rrr_biglength rrr_string_builder_size (
+		const struct rrr_string_builder *string_builder
+) {
 	return (string_builder->size);
 }
 
-int rrr_string_builder_new (struct rrr_string_builder **result) {
+int rrr_string_builder_new (
+		struct rrr_string_builder **result
+) {
 	*result = NULL;
 
 	struct rrr_string_builder *string_builder = malloc(sizeof(*string_builder));
@@ -85,17 +103,24 @@ int rrr_string_builder_new (struct rrr_string_builder **result) {
 	return 0;
 }
 
-void rrr_string_builder_destroy (struct rrr_string_builder *string_builder) {
+void rrr_string_builder_destroy (
+		struct rrr_string_builder *string_builder
+) {
 	rrr_string_builder_clear (string_builder);
 	free(string_builder);
 }
 
-void rrr_string_builder_destroy_void (void *ptr) {
+void rrr_string_builder_destroy_void (
+		void *ptr
+) {
 	rrr_string_builder_clear (ptr);
 	free(ptr);
 }
 
-int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_biglength bytes) {
+int rrr_string_builder_reserve (
+		struct rrr_string_builder *string_builder,
+		rrr_biglength bytes
+) {
 	if (bytes == 0) {
 		return 0;
 	}
@@ -115,7 +140,10 @@ int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, rrr_b
 }
 
 
-int rrr_string_builder_append_from (struct rrr_string_builder *target, const struct rrr_string_builder *source) {
+int rrr_string_builder_append_from (
+		struct rrr_string_builder *target,
+		const struct rrr_string_builder *source
+) {
 	int ret = 0;
 
 	if (source->wpos == 0) {
@@ -132,7 +160,11 @@ int rrr_string_builder_append_from (struct rrr_string_builder *target, const str
 	return ret;
 }
 
-int rrr_string_builder_append_raw (struct rrr_string_builder *target, const char *str, rrr_biglength length) {
+int rrr_string_builder_append_raw (
+		struct rrr_string_builder *target,
+		const char *str,
+		rrr_biglength length
+) {
 	if (rrr_string_builder_reserve(target, length) != 0) {
 		return 1;
 	}
@@ -142,7 +174,10 @@ int rrr_string_builder_append_raw (struct rrr_string_builder *target, const char
 	return 0;
 }
 
-int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str) {
+int rrr_string_builder_append (
+		struct rrr_string_builder *string_builder,
+		const char *str
+) {
 	if (*str == '\0') {
 		return 0;
 	}
@@ -159,7 +194,11 @@ int rrr_string_builder_append (struct rrr_string_builder *string_builder, const 
 	return 0;
 }
 
-int rrr_string_builder_append_format (struct rrr_string_builder *string_builder, const char *format, ...) {
+int rrr_string_builder_append_format (
+		struct rrr_string_builder *string_builder,
+		const char *format,
+		...
+) {
 	int ret = 0;
 
 	va_list args;

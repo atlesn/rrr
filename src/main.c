@@ -388,11 +388,31 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	return ret;
 }
 
-int rrr_main_print_help_and_version (
+static const char *rrr_main_banner =
+		"======================================\n"
+		"  =      RRRRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRRRRRRRRRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =       RRRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRRRRRRRR  RRRR  RRRR\n"
+		"  =       RRR    RRR   RRR   RRR\n"
+		"  =       RRR     RRR   RRR   RRR\n"
+		"  =       RRR      RRR   RRR   RRR\n"
+		"  =      RRRR       RRRR   RRRR  RRRR\n"
+		"================================================\n\n";
+
+int rrr_main_print_banner_help_and_version (
 		struct cmd_data *cmd,
 		int argc_minimum
 ) {
 	int help_or_version_printed = 0;
+
+	if (cmd_exists(cmd, "banner", 0)) {
+		RRR_MSG_PLAIN("%s", rrr_main_banner);
+		argc_minimum++;
+	}
+
 	if (cmd_exists(cmd, "version", 0)) {
 		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
@@ -403,9 +423,5 @@ int rrr_main_print_help_and_version (
 		help_or_version_printed = 1;
 	}
 
-	if (help_or_version_printed) {
-		return 1;
-	}
-
-	return 0;
+	return help_or_version_printed;
 }

@@ -163,20 +163,12 @@ int rrr_cmodule_worker_new (
 		return ret;
 }
 
-// Parent need not to call this explicitly, done in destroy function.
-void rrr_cmodule_worker_clear_queue_to_fork (
-		struct rrr_cmodule_worker *worker
-) {
-	rrr_msg_holder_collection_clear(&worker->queue_to_fork);
-}
-
 // Child MUST NOT call this when exiting
 void rrr_cmodule_worker_destroy (
 		struct rrr_cmodule_worker *worker
 ) {
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
-	rrr_cmodule_worker_clear_queue_to_fork(worker);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
 	free(worker);
@@ -626,8 +618,6 @@ int rrr_cmodule_worker_main (
 		// There is no guarantee for whether signals are active or not at this point. Disable
 		// signals while working with the handler list, then always set ACTIVE afterwards.
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-
-		printf("Fork signal handler: %p\n", rrr_fork_signal_handler);
 
 		// Preserve fork signal andler in case child makes any forks
 		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);

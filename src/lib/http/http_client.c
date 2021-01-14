@@ -768,7 +768,7 @@ static int __rrr_http_client_request_send (
 
 	callback_data.request_header_host = server_to_use;
 
-	RRR_DBG_3("Using server %s port %u transport %s method '%s' application '%s' upgrade mode '%s'\n",
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' application '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
@@ -809,7 +809,7 @@ static int __rrr_http_client_request_send (
 				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code));
 		}
 		else {
-			RRR_MSG_0("HTTP request to server %s port %u transport %s in http client return was %i\n",
+			RRR_DBG_2("HTTP request to server %s port %u transport %s failed in http client, return was %i\n",
 				server_to_use, port_to_use, RRR_HTTP_TRANSPORT_TO_STR(transport_code), ret);
 		}
 		goto out;

@@ -77,7 +77,9 @@ struct rrr_map_iterator {
 	struct rrr_map_item *cur;
 };
 
-static inline struct rrr_map_item *rrr_map_iterator_next (struct rrr_map_iterator *iterator) {
+static inline struct rrr_map_item *rrr_map_iterator_next (
+		struct rrr_map_iterator *iterator
+) {
 	if (iterator->cur == NULL) {
 		if (iterator->rpos == 0) {
 			iterator->cur = iterator->source->ptr_first;
@@ -91,15 +93,36 @@ static inline struct rrr_map_item *rrr_map_iterator_next (struct rrr_map_iterato
 	return iterator->cur;
 }
 
-void rrr_map_item_destroy (struct rrr_map_item *item);
-void rrr_map_clear (struct rrr_map *map);
-int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size);
-int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item);
-int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value);
-int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter);
+void rrr_map_item_destroy (
+		struct rrr_map_item *item
+);
+void rrr_map_clear (
+		struct rrr_map *map
+);
+int rrr_map_item_new (
+		struct rrr_map_item **target,
+		ssize_t field_size
+);
+int rrr_map_item_add (
+		struct rrr_map *map,
+		struct rrr_map_item *item
+	);
+int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+);
+int rrr_map_parse_pair (
+		const char *input,
+		struct rrr_map *target,
+		const char *delimeter
+);
 int rrr_map_parse_pair_arrow (const char *input, void *arg);
 int rrr_map_parse_pair_equal (const char *input, void *arg);
 int rrr_map_parse_tag_only (const char *input, void *arg);
-const char *rrr_map_get_value (const struct rrr_map *map, const char *tag);
+const char *rrr_map_get_value (
+		const struct rrr_map *map,
+		const char *tag
+);
 
 #endif /* RRR_MAP_H */

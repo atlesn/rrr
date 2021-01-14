@@ -35,7 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/gnu.h"
 
-static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
+static int __rrr_type_convert_integer_10 (
+		char **end,
+		long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}
@@ -46,7 +50,11 @@ static int __rrr_type_convert_integer_10(char **end, long long int *result, cons
 	return 0;
 }
 
-static int __rrr_type_convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
+static int __rrr_type_convert_unsigned_integer_10 (
+		char **end,
+		unsigned long long int *result,
+		const char *value
+) {
 	if (*value == '\0') {
 		return 1;
 	}
@@ -232,27 +240,46 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 	return RRR_TYPE_PARSE_OK;
 }
 
-int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
+static int __rrr_type_import_numeric_str_raw (
+		char target[8],
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end,
+		int is_signed
+) {
 	CHECK_END_AND_RETURN(1);
 
 	*parsed_bytes = 0;
 
 	if (end < start) {
-		RRR_BUG("BUG: end was less than start in rrr_type_import_ustr_raw\n");
+		RRR_BUG("BUG: end was less than start in rrr_type_import_istr_raw\n");
 	}
-
-	rrr_length max = (rrr_length) (end - start) + 1;
-	if (max > 30) {
-		max = 30;
-	}
-	char tmp[max];
-	memset(tmp, '\0', sizeof(tmp));
-	strncpy(tmp, start, max - 1);
 
 	int found_end_char = 0;
-	// Use isspace for compatibility with strtoull
-	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
-		if ((*pos >= '0' && *pos <= '9')  || isspace(*pos)) {
+	unsigned int total_length = 0;
+
+	union {
+		long long int s;
+		unsigned long long int u;
+	} result;
+
+	result.s = 0;
+
+	// Must match return argument
+	RRR_ASSERT(8==sizeof(result),rrr_type_import_numeric_str_raw_size_of_result_correct);
+
+	char tmp[64];
+	memset(tmp, '\0', sizeof(tmp));
+
+	for (const char *pos = start; pos < end; pos++) {
+		if ((*pos >= '0' && *pos <= '9') || *pos == '+' || *pos == ' ' || *pos == '\t' || (is_signed && *pos == '-')) {
+			tmp[total_length++] = *pos;
+
+			// Make sure we don't overwrite last \0 needed by conversion function
+			if (total_length > sizeof(tmp) - 1) {
+				RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, number too long (> 63 characters)\n");
+				return RRR_TYPE_PARSE_SOFT_ERR;
+			}
 			continue;
 		}
 		else {
@@ -265,23 +292,57 @@ int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const 
 		return RRR_TYPE_PARSE_INCOMPLETE;
 	}
 
-	char *convert_end = NULL;
-	unsigned long long int result = 0;
-
-	if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting unsigned integer in rrr_type_import_ustr_raw\n");
+	if (total_length == 0) {
+		RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, no number found.\n");
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	memcpy(target, &result, sizeof(rrr_type_ustr));
+	char *convert_end = NULL;
 
-	if (convert_end < tmp) {
-		RRR_BUG("BUG: convert_end was less than tmp in rrr_type_import_ustr_raw\n");
+	if (is_signed) {
+		if (__rrr_type_convert_integer_10(&convert_end, &result.s, tmp)) {
+			RRR_MSG_0("Error while converting signed integer in rrr_type_import_numeric_str_raw A, input data was '%s'\n", tmp);
+			return RRR_TYPE_PARSE_SOFT_ERR;
+		}
+	}
+	else {
+		if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result.u, tmp)) {
+			RRR_MSG_0("Error while converting unsigned integer in rrr_type_import_numeric_str_raw A, input data was '%s'\n", tmp);
+			return RRR_TYPE_PARSE_SOFT_ERR;
+		}
 	}
 
-	*parsed_bytes = (rrr_length) (convert_end - tmp);
+	if (convert_end - tmp != total_length) {
+		RRR_MSG_0("Error while converting number in rrr_type_import_numeric_str_raw B, input data was '%s'\n", tmp);
+		return RRR_TYPE_PARSE_SOFT_ERR;
+	}
+
+	memcpy(target, &result, sizeof(result));
+
+	if (convert_end < tmp) {
+		RRR_BUG("BUG: convert_end was less than tmp in __rrr_type_import_numeric_str_raw\n");
+	}
+	*parsed_bytes = (rrr_length) total_length;
 
 	return RRR_TYPE_PARSE_OK;
+}
+
+int rrr_type_import_ustr_raw (
+		uint64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 0);
+}
+
+int rrr_type_import_istr_raw (
+		int64_t *target,
+		rrr_length *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	return __rrr_type_import_numeric_str_raw((char *) target, parsed_bytes, start, end, 1);
 }
 
 static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
@@ -318,58 +379,6 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const char *start, const char *end) {
-	CHECK_END_AND_RETURN(1);
-
-	*parsed_bytes = 0;
-
-	if (end < start) {
-		RRR_BUG("BUG: end was less than start in rrr_type_import_istr_raw\n");
-	}
-
-	rrr_length max = (rrr_length) (end - start) + 1;
-	if (max > 30) {
-		max = 30;
-	}
-	char tmp[max];
-	memset(tmp, '\0', sizeof(tmp));
-	strncpy(tmp, start, max - 1);
-
-	int found_end_char = 0;
-	// Use isspace for compatibility with strtoull
-	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
-		if ((*pos >= '0' && *pos <= '9') || *pos == '-' || *pos == '+' || isspace(*pos)) {
-			continue;
-		}
-		else {
-			found_end_char = 1;
-			break;
-		}
-	}
-
-	if (found_end_char == 0) {
-		return RRR_TYPE_PARSE_INCOMPLETE;
-	}
-
-	char *convert_end = NULL;
-	long long int result = 0;
-
-	if (__rrr_type_convert_integer_10(&convert_end, &result, tmp)) {
-		RRR_MSG_0("Error while converting signed integer in rrr_type_import_istr_raw\n");
-		return RRR_TYPE_PARSE_SOFT_ERR;
-	}
-
-	memcpy(target, &result, sizeof(rrr_type_ustr));
-
-	if (convert_end < tmp) {
-		RRR_BUG("BUG: convert_end was less than tmp in rrr_type_import_istr_raw\n");
-	}
-
-	*parsed_bytes = (rrr_length) (convert_end - tmp);
-
-	return RRR_TYPE_PARSE_OK;
-}
-
 static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
 		RRR_BUG("data was not NULL in __rrr_type_import_istr\n");
@@ -392,7 +401,7 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 		goto out;
 	}
 
-	if ((ret = rrr_type_import_istr_raw ((int64_t*) node->data, parsed_bytes, start, end)) != 0) {
+	if ((ret = rrr_type_import_istr_raw ((int64_t *) node->data, parsed_bytes, start, end)) != 0) {
 		goto out;
 	}
 

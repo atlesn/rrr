@@ -66,6 +66,7 @@ enum rrr_http_transport {
 };
 
 enum rrr_http_method {
+	RRR_HTTP_METHOD_UNKNOWN,
 	RRR_HTTP_METHOD_GET,
 	RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA,
 	RRR_HTTP_METHOD_POST_URLENCODED,
@@ -75,7 +76,7 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_OPTIONS,
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
-	RRR_HTTP_METHOD_PUT,
+	RRR_HTTP_METHOD_PUT
 };
 
 enum rrr_http_upgrade_mode {
