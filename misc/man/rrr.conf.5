@@ -191,6 +191,9 @@ Dumps messages, used for debugging.
 .It ip (PAI)
 Handles IP communication, UDP and TCP.
 
+.It exploder (PA)
+Splits RRR array messages into multiple messages. 
+
 .It buffer (P)
 Buffers messages, may be used to duplicate messages to multiple readers.
 
@@ -1735,6 +1738,9 @@ Reading will stop when there is an error or when EOF is encountered.
 Cannot be used with
 .B file_read_all_to_message=yes,
 but one of them must be specified. No default value.
+
+.It file_strip_array_separators={yes|no}
+Disregard any separator items when creating RRR array messages. Defaults to no.
 
 .It file_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
