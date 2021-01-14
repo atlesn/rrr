@@ -38,7 +38,9 @@ void rrr_parse_pos_init (
 	target->line_begin_pos = 0;
 }
 
-void rrr_parse_ignore_space_and_tab (struct rrr_parse_pos *pos) {
+void rrr_parse_ignore_space_and_tab (
+		struct rrr_parse_pos *pos
+) {
 	if (pos->pos >= pos->size) {
 		return;
 	}
@@ -55,7 +57,9 @@ void rrr_parse_ignore_space_and_tab (struct rrr_parse_pos *pos) {
 	}
 }
 
-void rrr_parse_ignore_spaces_and_increment_line (struct rrr_parse_pos *pos) {
+void rrr_parse_ignore_spaces_and_increment_line (
+		struct rrr_parse_pos *pos
+) {
 	if (pos->pos >= pos->size) {
 		return;
 	}
@@ -91,7 +95,9 @@ void rrr_parse_ignore_spaces_and_increment_line (struct rrr_parse_pos *pos) {
 	}
 }
 
-void rrr_parse_comment (struct rrr_parse_pos *pos) {
+void rrr_parse_comment (
+		struct rrr_parse_pos *pos
+) {
 	if (pos->pos >= pos->size) {
 		return;
 	}
@@ -356,7 +362,6 @@ int rrr_parse_str_split (
 	const char *element = tmp;
 	int zero_found = 0;
 	while (!zero_found) {
-//		printf ("Split pos %s\n", pos);
 
 		if (elements_count == elements_max) {
 			RRR_MSG_0("Too many elements while splitting string (more than %lu)\n", elements_max);

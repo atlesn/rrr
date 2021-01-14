@@ -299,9 +299,7 @@ static int __rrr_http2_on_stream_close_callback (
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
 	struct rrr_http2_stream *stream = __rrr_http2_stream_collection_maintain_and_find(&session->streams, stream_id);
-	if (stream->data != NULL) {
-		stream->please_delete_me = 1;
-	}
+	stream->please_delete_me = 1;
 
 	if (session->callback_data.callback != NULL) {
 		if (session->callback_data.callback (
@@ -319,6 +317,18 @@ static int __rrr_http2_on_stream_close_callback (
 			return NGHTTP2_ERR_CALLBACK_FAILURE;
 		}
 	}
+
+	return 0;
+}
+
+static int __rrr_http2_on_frame_send_callback (
+		nghttp2_session *nghttp2_session,
+		const nghttp2_frame *frame,
+		void *user_data
+) {
+	struct rrr_http2_session *session = user_data;
+
+	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
 
 	return 0;
 }
@@ -426,6 +436,8 @@ static int __rrr_http2_on_begin_headers_callback(
 	(void)(frame);
 	(void)(user_data);
 
+	RRR_DBG_7("nghttp2 begin headers\n");
+
 	return 0;
 }
 
@@ -440,8 +452,7 @@ static int __rrr_http2_error_callback (
 	(void)(user_data);
 	(void)(msg);
 
-	// Noisy debugging
-	// printf("nghttp2 error: %s\n", msg);
+	RRR_DBG_7("nghttp2 error: %s\n", msg);
 
 	return 0;
 }
@@ -565,11 +576,15 @@ int rrr_http2_session_new_or_reset (
 	nghttp2_session_callbacks_set_on_data_chunk_recv_callback	(callbacks, __rrr_http2_on_data_chunk_recv_callback);
 	nghttp2_session_callbacks_set_on_stream_close_callback		(callbacks, __rrr_http2_on_stream_close_callback);
 	nghttp2_session_callbacks_set_on_frame_recv_callback		(callbacks, __rrr_http2_on_frame_recv_callback);
-	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(callbacks, __rrr_http2_on_invalid_frame_recv_callback);
 	nghttp2_session_callbacks_set_on_header_callback			(callbacks, __rrr_http2_on_header_callback);
-	nghttp2_session_callbacks_set_on_begin_headers_callback		(callbacks, __rrr_http2_on_begin_headers_callback);
-	nghttp2_session_callbacks_set_error_callback 				(callbacks, __rrr_http2_error_callback);
 	nghttp2_session_callbacks_set_before_frame_send_callback	(callbacks, __rrr_http2_before_frame_send_callback);
+
+	if (RRR_DEBUGLEVEL_7) {
+		nghttp2_session_callbacks_set_on_frame_send_callback		(callbacks, __rrr_http2_on_frame_send_callback);
+		nghttp2_session_callbacks_set_on_begin_headers_callback		(callbacks, __rrr_http2_on_begin_headers_callback);
+		nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(callbacks, __rrr_http2_on_invalid_frame_recv_callback);
+		nghttp2_session_callbacks_set_error_callback 				(callbacks, __rrr_http2_error_callback);
+	}
 
 	if (result == NULL) {
 		if ((result = malloc(sizeof(*result))) == NULL) {
@@ -904,7 +919,7 @@ int rrr_http2_response_submit (
 	return ret;
 }
 
-int rrr_http2_data_submit_request (
+int rrr_http2_data_submission_request_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
@@ -981,6 +996,7 @@ int rrr_http2_transport_ctx_tick (
 
 	if ((ret = nghttp2_session_send(session->session)) != 0) {
 		if (ret == NGHTTP2_ERR_EOF) {
+			RRR_DBG_7("http2 done during send\n");
 			ret = RRR_HTTP2_DONE;
 			goto out;
 		}
@@ -991,6 +1007,7 @@ int rrr_http2_transport_ctx_tick (
 
 	if ((ret = nghttp2_session_recv(session->session)) != 0) {
 		if (ret == NGHTTP2_ERR_EOF) {
+			RRR_DBG_7("http2 done during recv\n");
 			ret = RRR_HTTP2_DONE;
 			goto out;
 		}

@@ -55,17 +55,29 @@ struct rrr_fork_default_exit_notification_data {
 	int *int_to_set;
 };
 
-int rrr_fork_handler_new (struct rrr_fork_handler **result);
-void rrr_fork_handler_destroy (struct rrr_fork_handler *handler);
-int rrr_fork_signal_handler(int s, void *arg);
-void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler);
-void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *handler, int force_wait_all);
+int rrr_fork_handler_new (
+		struct rrr_fork_handler **result
+);
+void rrr_fork_handler_destroy (
+		struct rrr_fork_handler *handler
+);
+int rrr_fork_signal_handler (int s, void *arg);
+void rrr_fork_send_sigusr1_and_wait (
+		struct rrr_fork_handler *handler
+);
+void rrr_fork_handle_sigchld_and_notify_if_needed (
+		struct rrr_fork_handler *handler,
+		int force_wait_all
+);
 pid_t rrr_fork (
 		struct rrr_fork_handler *handler,
 		void (*exit_notify)(pid_t pid, void *exit_notify_arg),
 		void *exit_notify_arg
 );
-void rrr_fork_unregister_exit_handler (struct rrr_fork_handler *handler, pid_t pid);
+void rrr_fork_unregister_exit_handler (
+		struct rrr_fork_handler *handler,
+		pid_t pid
+);
 void rrr_fork_unregister_exit_handler_void (void *arg);
 void rrr_fork_default_exit_notification (pid_t pid, void *arg);
 

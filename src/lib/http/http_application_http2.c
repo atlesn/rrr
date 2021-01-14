@@ -124,6 +124,14 @@ static int __rrr_http_application_http2_header_submit_nullsafe (
 	);
 }
 
+static int __rrr_http_application_http2_request_send_possible (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
+) {
+	(void)(application);
+	*is_possible = 1;
+	return 0;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -199,6 +207,10 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
 	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
 
+	if (ret != 0) {
+		goto out;
+	}
+
 	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
 			http2,
 			stream_id_preliminary
@@ -228,7 +240,7 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id_preliminary)) != 0) {
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id_preliminary)) != 0) {
 		goto out;
 	}
 
@@ -294,6 +306,10 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 	else {
+		if (is_stream_close) {
+			goto out;
+		}
+
 		if (transaction == NULL) {
 			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, 0, NULL, NULL)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
@@ -359,12 +375,24 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 
-			if ((ret = rrr_http_part_post_and_query_fields_extract(transaction->request_part, data)) != 0) {
+			if ((ret = rrr_http_part_fields_from_post_extract(transaction->request_part, data)) != 0) {
 				if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 					goto out_send_response_bad_request;
 				}
 				goto out;
 			}
+
+		}
+
+		if ((ret = rrr_http_part_fields_from_uri_extract(transaction->request_part)) != 0) {
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			goto out;
+		}
+
+		if (RRR_DEBUGLEVEL_3) {
+			rrr_http_field_collection_dump (&transaction->request_part->fields);
 		}
 	}
 
@@ -387,7 +415,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 		goto out_send_response;
 	}
 
-	goto out;
+	goto out_complete_transaction;
+
 	out_send_response_bad_request:
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 	out_send_response:
@@ -398,6 +427,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 		}
+	out_complete_transaction:
+		callback_data->http2->complete_transaction_count++;
 	out:
 		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
 	return ret;
@@ -523,6 +554,7 @@ static void __rrr_http_application_http2_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http2_constants = {
 	RRR_HTTP_APPLICATION_HTTP2,
 	__rrr_http_application_http2_destroy,
+	__rrr_http_application_http2_request_send_possible,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
 	__rrr_http_application_http2_polite_close
@@ -595,7 +627,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		void *arg
 ) {
 	size_t *result_len = arg;
-	return rrr_base64_decode (
+	return rrr_base64url_decode (
 			str,
 			len,
 			result_len
@@ -747,8 +779,8 @@ int rrr_http_application_http2_response_submit (
 		goto out;
 	}
 
-	// Misc. callbacks will product the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submit_request(http2->http2_session, stream_id)) != 0) {
+	// Misc. callbacks will produce the actual response during ticking, if any
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id)) != 0) {
 		goto out;
 	}
 

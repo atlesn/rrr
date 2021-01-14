@@ -51,9 +51,9 @@ int rrr_instance_check_threads_stopped (
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance *instance = node;
 		if (
-				rrr_thread_get_state(instance->thread) == RRR_THREAD_STATE_STOPPED ||
+				rrr_thread_state_get(instance->thread) == RRR_THREAD_STATE_STOPPED ||
 	//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
-				rrr_thread_is_ghost(instance->thread)
+				rrr_thread_ghost_check(instance->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", INSTANCE_M_NAME(instance));
 			ret = 1;
@@ -406,18 +406,25 @@ static int __rrr_instance_add_senders (
 	return ret;
 }
 
-void rrr_instance_collection_clear (struct rrr_instance_collection *target) {
+void rrr_instance_collection_clear (
+		struct rrr_instance_collection *target
+) {
 	RRR_LL_DESTROY(target, struct rrr_instance, __rrr_instance_destroy(node));
 }
 
-unsigned int rrr_instance_collection_count (struct rrr_instance_collection *collection) {
+unsigned int rrr_instance_collection_count (
+		struct rrr_instance_collection *collection
+) {
 	if (RRR_LL_COUNT(collection) < 0) {
 		RRR_BUG("BUG: Count was <0 in rrr_instance_metadata_collection_count\n");
 	}
 	return (RRR_LL_COUNT(collection));
 }
 
-static int __rrr_instace_runtime_data_destroy_callback (struct rrr_thread *thread, void *arg) {
+static int __rrr_instace_runtime_data_destroy_callback (
+		struct rrr_thread *thread,
+		void *arg
+) {
 	(void)(arg);
 
 	struct rrr_instance_runtime_data *data = thread->private_data;
@@ -427,13 +434,17 @@ static int __rrr_instace_runtime_data_destroy_callback (struct rrr_thread *threa
 	return 0;
 }
 
-static void __rrr_instace_runtime_data_destroy_intermediate (void *arg) {
+static void __rrr_instace_runtime_data_destroy_intermediate (
+		void *arg
+) {
 	struct rrr_instance_runtime_data *data = arg;
 	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", data->thread);
 	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
 }
 
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (struct rrr_instance_runtime_init_data *init_data) {
+struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
+		struct rrr_instance_runtime_init_data *init_data
+) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
 	struct rrr_instance_runtime_data *data = malloc(sizeof(*data));

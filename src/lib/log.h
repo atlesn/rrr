@@ -29,10 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /*
  * About debug levels, ORed together:
  * 0 - Only errors are printed. Critical errors to STDERR, other errors to STDOUT.
- * 1 - Info about loading and closing of modules and threads. Detailed errors about incorrect data from outside. (low rate)
+ * 1 - Info about loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside. (low rate)
  * 2 - Runtime information in modules, they tell what they do. Log messages between modules. (high rate)
  * 3 - Some data debugging is printed (high rate)
- * 4 - Debug locking, thread states and buffers (very high rate)
+ * 4 - Debug locking and buffers (very high rate)
  * 5 - Debug cmodule worker fork and mmap channel communication
  * 6 - Not used
  * 7 - Debug sockets (high rate at initialization)
@@ -215,7 +215,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
 void rrr_log_cleanup(void);
-
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
@@ -226,9 +225,7 @@ void rrr_log_hook_register (
 		),
 		void *private_arg
 );
-
 void rrr_log_hook_unregister_all_after_fork (void);
-
 void rrr_log_hook_unregister (
 		int handle
 );
@@ -237,10 +234,32 @@ void rrr_log_hooks_call_raw (
 		const char *prefix,
 		const char *message
 );
-void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
-void rrr_log_printf_plain (const char *__restrict __format, ...);
-void rrr_log_printn_plain (const char *value, size_t value_size);
-void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
-void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
+void rrr_log_printf_nolock (
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
+void rrr_log_printf_plain (
+		const char *__restrict __format,
+		...
+);
+void rrr_log_printn_plain (
+		const char *value,
+		size_t value_size
+);
+void rrr_log_printf (
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
+void rrr_log_fprintf (
+		FILE *file,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+);
 
 #endif /* RRR_LOG_H */

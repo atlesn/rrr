@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_RRR_MESSAGE_H
-#define RRR_PYTHON3_RRR_MESSAGE_H
+#ifndef RRR_PYTHON3_MESSAGE_H
+#define RRR_PYTHON3_MESSAGE_H
 
 #include "python3_headers.h"
 
@@ -28,16 +28,16 @@ struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
-struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (
+struct rrr_msg_msg *rrr_python3_rrr_message_get_message (
 		struct rrr_msg_addr *message_addr,
 		PyObject *self
 );
-PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
+PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		const struct rrr_msg_msg *msg,
 		const struct rrr_msg_addr *message_addr
 );
-PyObject *rrr_python3_rrr_msg_msg_new_from_message (
+PyObject *rrr_python3_rrr_message_new_from_message (
 		const struct rrr_msg_msg *msg
 );
 
-#endif /* RRR_PYTHON3_RRR_MESSAGE_H */
+#endif /* RRR_PYTHON3_MESSAGE_H */

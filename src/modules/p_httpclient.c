@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_util.h"
-#include "../lib/http/http_client_target_collection.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/messages/msg_msg.h"
@@ -48,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
+#include "../lib/json/json.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S	5
+#define RRR_HTTPCLIENT_JSON_MAX_LEVELS			4
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -65,7 +66,11 @@ struct httpclient_data {
 	int do_drop_on_error;
 	int do_receive_raw_data;
 	int do_receive_part_data;
+	int do_receive_json_data;
 	int do_send_raw_data;
+
+	int do_endpoint_from_topic;
+	int do_endpoint_from_topic_force;
 
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
@@ -83,8 +88,8 @@ struct httpclient_data {
 
 	struct rrr_net_transport_config net_transport_config;
 
-	struct rrr_net_transport *keepalive_transport;
-	struct rrr_http_client_target_collection targets;
+	struct rrr_net_transport *keepalive_transport_plain;
+	struct rrr_net_transport *keepalive_transport_tls;
 
 	struct rrr_http_client_request_data request_data;
 
@@ -95,11 +100,13 @@ struct httpclient_data {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 
-	rrr_http_client_target_collection_clear(&data->targets, data->keepalive_transport);
-
-	if (data->keepalive_transport != NULL) {
-		rrr_net_transport_destroy(data->keepalive_transport);
+	if (data->keepalive_transport_plain != NULL) {
+		rrr_net_transport_destroy(data->keepalive_transport_plain);
 	}
+	if (data->keepalive_transport_tls != NULL) {
+		rrr_net_transport_destroy(data->keepalive_transport_tls);
+	}
+
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
@@ -181,17 +188,17 @@ static void httpclient_transaction_destroy_void_dbl_ptr (void *target) {
 	}
 }
 
-struct httpclient_create_message_nullsafe_callback_data {
+struct httpclient_create_message_from_response_data_nullsafe_callback_data {
 	struct rrr_msg_holder *new_entry;
 	const struct httpclient_transaction_data *transaction_data;
 };
 
-static int httpclient_create_message_nullsafe_callback (
+static int httpclient_create_message_from_response_data_nullsafe_callback (
 		const void *str,
 		rrr_length len,
 		void *arg
 ) {
-	struct httpclient_create_message_nullsafe_callback_data *callback_data = arg;
+	struct httpclient_create_message_from_response_data_nullsafe_callback_data *callback_data = arg;
 	return rrr_msg_msg_new_with_data (
 			(struct rrr_msg_msg **) &callback_data->new_entry->message,
 			MSG_TYPE_MSG,
@@ -204,17 +211,17 @@ static int httpclient_create_message_nullsafe_callback (
 	);
 }
 
-struct httpclient_create_message_callback_data {
+struct httpclient_create_message_from_response_data_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct httpclient_transaction_data *transaction_data;
 	const struct rrr_nullsafe_str *response_data;
 };
 
-static int httpclient_create_message_callback (
+static int httpclient_create_message_from_response_data_callback (
 		struct rrr_msg_holder *new_entry,
 		void *arg
 ) {
-	struct httpclient_create_message_callback_data *callback_data = arg;
+	struct httpclient_create_message_from_response_data_callback_data *callback_data = arg;
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -224,14 +231,14 @@ static int httpclient_create_message_callback (
 		goto out;
 	}
 
-	struct httpclient_create_message_nullsafe_callback_data nullsafe_callback_data = {
+	struct httpclient_create_message_from_response_data_nullsafe_callback_data nullsafe_callback_data = {
 			new_entry,
 			callback_data->transaction_data
 	};
 
 	if ((ret = rrr_nullsafe_str_with_raw_do_const (
 			callback_data->response_data,
-			httpclient_create_message_nullsafe_callback,
+			httpclient_create_message_from_response_data_nullsafe_callback,
 			&nullsafe_callback_data
 	)) != 0) {
 		RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
@@ -248,45 +255,161 @@ struct httpclient_final_callback_data {
 	struct httpclient_data *httpclient_data;
 };
 
+static int httpclient_final_callback_receive_data (
+		struct httpclient_data *httpclient_data,
+		const struct httpclient_transaction_data *transaction_data,
+		const struct rrr_nullsafe_str *response_data
+) {
+	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
+			httpclient_data,
+			transaction_data,
+			response_data
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_create_message_from_response_data_callback,
+			&callback_data_broker
+	);
+}
+
+struct httpclient_create_message_from_json_broker_callback_data {
+	struct httpclient_data *httpclient_data;
+	const struct httpclient_transaction_data *transaction_data;
+	const struct rrr_array *array;
+};
+
+static int httpclient_create_message_from_json_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_broker_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	if ((ret = rrr_array_new_message_from_collection (
+			(struct rrr_msg_msg **) &new_entry->message,
+			callback_data->array,
+			rrr_time_get_64(),
+			callback_data->transaction_data->msg_topic,
+			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0)
+	)) != 0) {
+		RRR_MSG_0("Failed to create array message in httpclient_create_message_from_json_callback of httpclient instance %s\n",
+				INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		goto out;
+	}
+
+	out:
+	rrr_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+struct httpclient_create_message_from_json_callback_data {
+	struct httpclient_data *httpclient_data;
+	const struct httpclient_transaction_data *transaction_data;
+};
+
+static int httpclient_create_message_from_json_array_callback (
+		const struct rrr_array *array,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_callback_data *callback_data = arg;
+
+	struct httpclient_create_message_from_json_broker_callback_data callback_data_broker = {
+			callback_data->httpclient_data,
+			callback_data->transaction_data,
+			array
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(callback_data->httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_create_message_from_json_callback,
+			&callback_data_broker
+	);
+}
+
+static int httpclient_create_message_from_json_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_json_to_arrays (
+			str,
+			len,
+			RRR_HTTPCLIENT_JSON_MAX_LEVELS,
+			httpclient_create_message_from_json_array_callback,
+			callback_data
+	)) != 0) {
+		// Let hard error only propagate
+		if (ret == RRR_JSON_PARSE_INCOMPLETE || ret == RRR_JSON_PARSE_ERROR) {
+			RRR_DBG_2("HTTP client instance %s: JSON parsing of data from server failed, possibly invalid data\n",
+					INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+			ret = 0;
+		}
+
+		if (ret != 0) {
+			RRR_MSG_0("HTTP client instance %s: JSON parsing of data from server failed with a hard error\n",
+					INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		}
+	}
+
+	return ret;
+}
+
+static int httpclient_final_callback_receive_json (
+		struct httpclient_data *httpclient_data,
+		const struct httpclient_transaction_data *transaction_data,
+		const struct rrr_nullsafe_str *response_data
+) {
+	struct httpclient_create_message_from_json_callback_data callback_data = {
+			httpclient_data,
+			transaction_data
+	};
+
+	return rrr_nullsafe_str_with_raw_do_const (
+			response_data,
+			httpclient_create_message_from_json_nullsafe_callback,
+			&callback_data
+	);
+}
+
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
 	struct httpclient_data *httpclient_data = arg;
 
 	int ret = RRR_HTTP_OK;
-/*
-	if (data->response_code < 200 || data->response_code > 299) {
-		RRR_BUG("BUG: Invalid response %i propagated from http framework to httpclient module\n", data->response_code);
-	}
-*/
-	RRR_DBG_3("HTTP response from server in httpclient instance %s: data size %" PRIrrrl "\n",
+
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl "\n",
+			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data)
 	);
 
-	if (!httpclient_data->do_receive_part_data) {
-		goto out;
+	if (httpclient_data->do_receive_part_data) {
+		RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
+				INSTANCE_D_NAME(httpclient_data->thread_data));
+
+		ret = httpclient_final_callback_receive_data(httpclient_data, transaction->application_data, response_data);
 	}
 
-	struct httpclient_create_message_callback_data callback_data_broker = {
-			httpclient_data,
-			transaction->application_data,
-			response_data
-	};
+	if (httpclient_data->do_receive_json_data) {
+		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
+				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-	RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
-			INSTANCE_D_NAME(httpclient_data->thread_data));
+		ret = httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
+	}
 
-	ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
-			NULL,
-			0,
-			0,
-			httpclient_create_message_callback,
-			&callback_data_broker
-	);
-
-	out:
 	return ret;
 }
 
@@ -397,7 +520,8 @@ static int httpclient_message_values_get (
 ) {
 	int ret = 0;
 
-	if (rrr_array_message_append_to_collection(target_array, message) != 0) {
+	uint16_t array_version_dummy;
+	if (rrr_array_message_append_to_collection(&array_version_dummy, target_array, message) != 0) {
 		RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -576,6 +700,50 @@ static int httpclient_connection_prepare_callback (
 	);
 }
 
+static int httpclient_session_query_prepare_callback_process_endpoint_from_topic_override (
+		char **target,
+		struct httpclient_data *data,
+		const struct rrr_msg_msg *message
+) {
+	int ret = 0;
+
+	struct rrr_string_builder *string_builder = NULL;
+
+	if (MSG_TOPIC_LENGTH(message) == 0) {
+		if (data->do_endpoint_from_topic_force) {
+			RRR_DBG_2("No topic was set in message received in httpclient instance %s while endpoint from topic force was enabled, dropping it\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+		}
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_new(&string_builder)) != 0) {
+		RRR_MSG_0("Could not create string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
+		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
+		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	*target = rrr_string_builder_buffer_takeover(string_builder);
+
+
+	printf("target: %s\n", *target);
+
+	out:
+	if (string_builder != NULL) {
+		rrr_string_builder_destroy(string_builder);
+	}
+	return ret;
+}
+
 static int httpclient_session_query_prepare_callback (
 		RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS
 ) {
@@ -594,8 +762,19 @@ static int httpclient_session_query_prepare_callback (
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
 	if (!callback_data->no_destination_override) {
-		const struct rrr_array *array_from_msg = callback_data->array_from_msg;
-		HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+		if (data->do_endpoint_from_topic) {
+			if ((ret = httpclient_session_query_prepare_callback_process_endpoint_from_topic_override (
+					&endpoint_to_free,
+					data,
+					message
+			)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			const struct rrr_array *array_from_msg = callback_data->array_from_msg;
+			HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+		}
 	}
 
 	if (data->do_no_data == 0) {
@@ -680,7 +859,7 @@ static int httpclient_session_query_prepare_callback (
 
 	{
 		const char *endpoint_to_print = (endpoint_to_free != NULL ? endpoint_to_free : data->http_client_config.endpoint);
-		RRR_DBG_2("httpclient instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
+		RRR_DBG_2("HTTP client instance %s sending request from message with timestamp %" PRIu64 " endpoint %s\n",
 				INSTANCE_D_NAME(data->thread_data),
 				message->timestamp,
 				endpoint_to_print
@@ -714,7 +893,7 @@ static int httpclient_raw_callback (
 		goto out;
 	}
 
-	struct httpclient_create_message_callback_data callback_data_broker = {
+	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
 			httpclient_data,
 			transaction->application_data,
 			data
@@ -728,7 +907,7 @@ static int httpclient_raw_callback (
 			NULL,
 			0,
 			0,
-			httpclient_create_message_callback,
+			httpclient_create_message_from_response_data_callback,
 			&callback_data_broker
 	);
 
@@ -783,8 +962,8 @@ static int httpclient_request_send (
 
 		ret = rrr_http_client_request_raw_send (
 				request_data,
-				&data->keepalive_transport,
-				&data->targets,
+				&data->keepalive_transport_plain,
+				&data->keepalive_transport_tls,
 				&data->net_transport_config,
 				remaining_redirects,
 				MSG_DATA_PTR(message),
@@ -809,10 +988,12 @@ static int httpclient_request_send (
 
 		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 
+		// Debug message for sending a request is in query prepare callback
+
 		ret = rrr_http_client_request_send (
 				request_data,
-				&data->keepalive_transport,
-				&data->targets,
+				&data->keepalive_transport_plain,
+				&data->keepalive_transport_tls,
 				&data->net_transport_config,
 				remaining_redirects,
 				httpclient_connection_prepare_callback,
@@ -887,11 +1068,11 @@ static int httpclient_redirect_callback (
 	// Overrides from redirect URI which may be multiple parameters
 	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data));
+				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
-	printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
+	// printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
 
 	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects.
 	// This function will incref the entry as needed.
@@ -919,21 +1100,32 @@ static int httpclient_redirect_callback (
 }
 
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-//	printf ("httpclient got entry %p\n", entry);
-
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
+	if (RRR_DEBUGLEVEL_3) {
+		char *topic_tmp = NULL;
+
+		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
+			RRR_MSG_0("Warning: Error while getting topic from message in httpclient_poll_callback\n");
+		}
+
+		RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data),
+				message->timestamp,
+				(topic_tmp != NULL ? topic_tmp : "(none)")
+		);
+
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
+	}
 
 	// Important : Set send_time for correct timeout behavior
 	entry->send_time = rrr_time_get_64();
 
 	int ret = RRR_FIFO_SEARCH_GIVE;
 
-	//rrr_msg_holder_incref_while_locked(entry);
+	// No incref, we return GIVE
 	RRR_LL_APPEND(&data->defer_queue, entry);
 	rrr_msg_holder_unlock(entry);
 	return ret;
@@ -987,6 +1179,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
 
 	// Deprecated option http_keepalive
@@ -999,6 +1192,9 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
+
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
@@ -1038,8 +1234,8 @@ static int httpclient_parse_config (
 					config->name);
 			ret = 1;
 		}
-		if (data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
-			RRR_MSG_0("http_{endpoint|server|port}_tag parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
+		if (data->do_endpoint_from_topic || data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
+			RRR_MSG_0("http_{endpoint|server|port}_tag and http_endpoint_from_topic parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
 					config->name);
 			ret = 1;
 		}
@@ -1060,6 +1256,22 @@ static int httpclient_parse_config (
 	) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	{
+		if (data->do_endpoint_from_topic_force && !data->do_endpoint_from_topic) {
+			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_from_topic was not in httpclient instance %s, this is an invalid configuration.\n",
+					config->name);
+			ret = 1;
+		}
+		if (data->do_endpoint_from_topic && RRR_INSTANCE_CONFIG_EXISTS("http_endpoint_tag")) {
+			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_tag was set in httpclient instance %s, this is an invalid configuration.\n",
+					config->name);
+			ret = 1;
+		}
+		if (ret != 0) {
+			goto out;
+		}
 	}
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
@@ -1143,8 +1355,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	unsigned int consecutive_nothing_happened = 0; // NO NOT use signed
 	uint64_t prev_bytes_total = 0;
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
@@ -1153,10 +1365,10 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 //			int pos = 0;
 			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
 //				printf("send loop %i/%i\n", pos++, RRR_LL_COUNT(&data->defer_queue));
-				if (rrr_thread_check_encourage_stop(thread)) {
+				if (rrr_thread_signal_encourage_stop_check(thread)) {
 					RRR_LL_ITERATE_BREAK();
 				}
-				rrr_thread_update_watchdog_time(thread);
+				rrr_thread_watchdog_time_update(thread);
 
 				rrr_msg_holder_lock(node);
 				pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
@@ -1170,17 +1382,23 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						&data->request_data,
 						node,
 						data->redirects_max,
-						0
+						0 // Destination override performed as needed
 				)) != RRR_HTTP_OK) {
-					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-						// Let soft error propagate
+					if (ret_tmp == RRR_HTTP_BUSY) {
+						// Try again
 					}
 					else {
-						RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s\n",
-								INSTANCE_D_NAME(thread_data));
-						ret_tmp = RRR_HTTP_HARD_ERROR;
+						if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
+							rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
+							// Try again
+						}
+						else {
+							RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",
+									INSTANCE_D_NAME(thread_data));
+							RRR_LL_ITERATE_SET_DESTROY();
+							// Delete message
+						}
 					}
-					RRR_LL_ITERATE_LAST(); // Don't break, unlock first
 				}
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
@@ -1194,36 +1412,30 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						send_timeout_count,
 						INSTANCE_D_NAME(data->thread_data));
 			}
-
-			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
-			}
 		}
 
-//		printf("TICK %p %i\n", data->keepalive_transport, RRR_LL_COUNT(&data->targets));
-
 		uint64_t bytes_total = 0;
-		if (data->keepalive_transport != NULL) {
-			if (rrr_http_client_tick (
-					&bytes_total,
-					data->keepalive_transport,
-					&data->targets,
-					RRR_HTTPCLIENT_READ_MAX_SIZE,
-					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S,
-					httpclient_final_callback,
-					data,
-					httpclient_redirect_callback,
-					data,
-					NULL,
-					NULL,
-					NULL,
-					NULL,
-					httpclient_raw_callback,
-					data
-			) != 0) {
-				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
-				goto out_message;
-			}
+
+		// We are allowed to pass NULL transport pointers
+		if (rrr_http_client_tick (
+				&bytes_total,
+				data->keepalive_transport_plain,
+				data->keepalive_transport_tls,
+				RRR_HTTPCLIENT_READ_MAX_SIZE,
+				RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
+				httpclient_final_callback,
+				data,
+				httpclient_redirect_callback,
+				data,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				httpclient_raw_callback,
+				data
+		) != 0) {
+			RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
+			goto out_message;
 		}
 
 		if (prev_bytes_total == bytes_total) {

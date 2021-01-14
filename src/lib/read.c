@@ -335,8 +335,8 @@ int rrr_read_message_using_callbacks (
 		// may change the read complete method. This function may called multiple times if it does
 		// not return OK the first time. In that case, we will read more data repeatedly time until
 		// OK is returned.
-		const int ret_from_get_target_size = function_get_target_size(read_session, functions_callback_arg);
-		if (ret_from_get_target_size != RRR_READ_OK && ret_from_get_target_size != RRR_READ_INCOMPLETE) {
+		ret = function_get_target_size(read_session, functions_callback_arg);
+		if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE) {
 			goto out;
 		}
 
@@ -365,10 +365,10 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
-			return (ret_from_get_target_size == RRR_READ_OK ? RRR_READ_INCOMPLETE : ret_from_get_target_size);
+			ret = RRR_READ_INCOMPLETE;
 		}
-		else if (ret_from_get_target_size != RRR_READ_OK) {
-			ret = ret_from_get_target_size;
+
+		if (ret != RRR_READ_OK) {
 			goto out;
 		}
 

@@ -217,11 +217,11 @@ static int __rrr_net_transport_openssl_new_ctx (
 	if (((certificate_file == NULL || *certificate_file == '\0') && (private_key_file != NULL && *private_key_file != '\0')) ||
 		((private_key_file == NULL || *private_key_file == '\0') && (certificate_file != NULL && *certificate_file != '\0'))
 	) {
-		RRR_BUG("BUG: Certificate file and private key file must both be either set or unset in __rrr_net_transport_tls_new_ctx\n");
+		RRR_BUG("BUG: Certificate file and private key file must both be either set or unset in __rrr_net_transport_openssl_new_ctx\n");
 	}
 
 	if ((ctx = SSL_CTX_new(method)) == NULL) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_new_ctx ");
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_new_ctx ");
 		ret = 1;
 		goto out;
 	}
@@ -416,7 +416,7 @@ int __rrr_net_transport_openssl_connect_callback (
 
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
-		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_tls_connect\n");
+		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_connect_callback\n");
 		ret = 1;
 		goto out_final;
 	}
@@ -431,13 +431,13 @@ int __rrr_net_transport_openssl_connect_callback (
 			tls->ca_path,
 			&tls->alpn
 	) != 0) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_connect_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
 
 	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 1)) == NULL) {
-		RRR_SSL_ERR("Could not get BIO in __rrr_net_transport_tls_connect");
+		RRR_SSL_ERR("Could not get BIO in __rrr_net_transport_openssl_connect_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -446,7 +446,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	BIO_get_ssl(ssl_data->web, &ssl);
 
 	if (SSL_set_fd(ssl, callback_data->accept_data->ip_data.fd) != 1) {
-		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept\n");
+		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_openssl_connect_callback\n");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -462,8 +462,6 @@ int __rrr_net_transport_openssl_connect_callback (
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
-
-	ret = 0;
 
 	// Not used for TLSv1.3
 	//const char* const PREFERRED_CIPHERS = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4";
@@ -548,7 +546,7 @@ static int __rrr_net_transport_openssl_connect (
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	if (*socklen < sizeof(accept_data->addr)) {
-		RRR_BUG("BUG: socklen too small in __rrr_net_transport_tls_connect\n");
+		RRR_BUG("BUG: socklen too small in __rrr_net_transport_openssl_connect\n");
 	}
 
 	*handle = 0;
@@ -576,7 +574,7 @@ static int __rrr_net_transport_openssl_connect (
 			__rrr_net_transport_openssl_connect_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_connect return was %i\n", ret);
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_openssl_connect return was %i\n", ret);
 		ret = 1;
 		goto out_destroy_ip;
 	}
@@ -611,7 +609,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
 	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
-		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_tls_bind_and_listen\n");
+		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -619,7 +617,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	ssl_data->ip_data.port = callback_data->port;
 
 	if (rrr_ip_network_start_tcp (&ssl_data->ip_data, 10, callback_data->do_ipv6) != 0) {
-		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
+		RRR_DBG_1("Note: Could not start IP listening in __rrr_net_transport_openssl_bind_and_listen_callback\n");
 		ret = 1;
 		goto out_free_ssl_data;
 	}
@@ -634,7 +632,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 			tls->ca_path,
 			&tls->alpn
 	) != 0) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_bind_and_listen");
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_bind_and_listen_callback");
 		ret = 1;
 		goto out_destroy_ip;
 	}
@@ -713,7 +711,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
 	if ((ssl_data = __rrr_net_transport_openssl_ssl_data_new()) == NULL) {
-		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_tls_accept\n");
+		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_openssl_accept_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -728,13 +726,13 @@ static int __rrr_net_transport_openssl_accept_callback (
 			tls->ca_path,
 			&tls->alpn
 	) != 0) {
-		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_accept");
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
 
 	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 0)) == NULL) {
-		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_tls_accept");
+		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -743,7 +741,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	BIO_get_ssl(ssl_data->web, &ssl);
 
 	if (SSL_set_fd(ssl, callback_data->accept_data->ip_data.fd) != 1) {
-		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept");
+		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_openssl_accept_callback");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
@@ -817,7 +815,7 @@ int __rrr_net_transport_openssl_accept (
 			__rrr_net_transport_openssl_accept_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not get handle in __rrr_net_transport_tls_accept return was %i\n", ret);
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_openssl_accept return was %i\n", ret);
 		goto out_destroy_ip;
 	}
 
@@ -868,7 +866,7 @@ static int __rrr_net_transport_openssl_read_raw (
 		}
 	}
 	else if (ERR_peek_error() != 0) {
-		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_raw");
+		RRR_SSL_ERR("Error while reading in __rrr_net_transport_openssl_read_raw");
 		return RRR_READ_SOFT_ERROR;
 	}
 
@@ -930,7 +928,7 @@ static int __rrr_net_transport_openssl_read_message (
 			break;
 		}
 		else {
-			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_tls_read_message\n", ret);
+			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_openssl_read_message\n", ret);
 			goto out;
 		}
 	}
@@ -955,7 +953,7 @@ static int __rrr_net_transport_openssl_read (
 	ret = __rrr_net_transport_openssl_read_raw(buf, &bytes_read_s, handle->submodule_private_ptr, buf_size);
 
 	if (bytes_read_s < 0) {
-		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
+		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_openssl_read\n");
 	}
 
 	*bytes_read = bytes_read_s;
@@ -974,18 +972,19 @@ static int __rrr_net_transport_openssl_send (
 
 	*sent_bytes = 0;
 
-	if (BIO_write(ssl_data->web, data, size) <= 0) {
+	int sent_bytes_tmp;
+	if ((sent_bytes_tmp = BIO_write(ssl_data->web, data, size)) <= 0) {
 		if (BIO_should_retry(ssl_data->web)) {
-			return 0;
+			return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 		}
-		RRR_MSG_0("Write failure in __rrr_net_transport_tls_send\n");
-		return 1;
+		RRR_DBG_7("Write failure in __rrr_net_transport_openssl_send, maybe remote has closed the connection\n");
+		return RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 	}
 	else {
-		*sent_bytes = (size > 0 ? size : 0);
+		*sent_bytes = sent_bytes_tmp;
 	}
 
-	return 0;
+	return RRR_NET_TRANSPORT_SEND_OK;
 }
 
 static int __rrr_net_transport_openssl_poll (

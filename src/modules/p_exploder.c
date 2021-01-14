@@ -172,7 +172,8 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
-	if ((ret = rrr_array_message_append_to_collection(&array_tmp, message)) != 0) {
+	uint16_t array_version_dummy;
+	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message)) != 0) {
 		RRR_MSG_0("Failed to get array values from message in exploder instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_drop;
@@ -263,8 +264,8 @@ static void *thread_entry_exploder (struct rrr_thread *thread) {
 
 
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, exploder_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in exploder instance %s\n",

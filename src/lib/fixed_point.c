@@ -58,7 +58,10 @@ static const double decimal_fractions_base2[24] = {
 		1.0/16777216.0
 };
 
-int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source) {
+int rrr_fixp_ldouble_to_fixp (
+		rrr_fixp *target,
+		long double source
+) {
 	long double integer = 0;
 	long double fraction = modfl(source, &integer);
 
@@ -98,7 +101,10 @@ int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	return 0;
 }
 
-int rrr_fixp_to_ldouble (long double *target, rrr_fixp source) {
+int rrr_fixp_to_ldouble (
+		long double *target,
+		rrr_fixp source
+) {
 	long double result = 0;
 	uint64_t sign = ((uint64_t) source) >> 63;
 	source &= ~(sign<<63);
@@ -124,7 +130,11 @@ int rrr_fixp_to_ldouble (long double *target, rrr_fixp source) {
 	return 0;
 }
 
-int rrr_fixp_to_str_16 (char *target, ssize_t target_size, rrr_fixp source) {
+int rrr_fixp_to_str_16 (
+		char *target,
+		ssize_t target_size,
+		rrr_fixp source
+) {
 	unsigned char buf[8];
 
 	source = rrr_htobe64(source);
@@ -155,7 +165,11 @@ int rrr_fixp_to_str_16 (char *target, ssize_t target_size, rrr_fixp source) {
 	return 0;
 }
 
-int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) {
+int rrr_fixp_to_str_double (
+		char *target,
+		ssize_t target_size,
+		rrr_fixp source
+) {
 	char buf[512];
 	long double intermediate = 0;
 
@@ -180,7 +194,10 @@ int rrr_fixp_to_str_double (char *target, ssize_t target_size, rrr_fixp source) 
 	return 0;
 }
 
-int rrr_fixp_to_new_str_double (char **target, rrr_fixp fixp) {
+int rrr_fixp_to_new_str_double (
+		char **target,
+		rrr_fixp fixp
+) {
 	int ret = 0;
 
 	*target = NULL;
@@ -323,7 +340,12 @@ static int __rrr_fixp_str_preliminary_parse (
 	return 0;
 }
 
-int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr) {
+int rrr_fixp_str_to_fixp (
+		rrr_fixp *target,
+		const char *str,
+		ssize_t str_length,
+		const char **endptr
+) {
 	*target = 0;
 
 	int ret = 0;

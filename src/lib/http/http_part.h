@@ -176,7 +176,10 @@ int rrr_http_part_chunks_iterate (
 		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
-int rrr_http_part_post_and_query_fields_extract (
+int rrr_http_part_fields_from_uri_extract (
+		struct rrr_http_part *target
+);
+int rrr_http_part_fields_from_post_extract (
 		struct rrr_http_part *target,
 		const char *data_ptr
 );

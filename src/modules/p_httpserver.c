@@ -50,7 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_types.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
+#endif
 #define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
 
@@ -65,7 +67,10 @@ struct httpserver_data {
 	struct rrr_net_transport_config net_transport_config;
 
 	rrr_setting_uint port_plain;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	rrr_setting_uint port_tls;
+#endif
 
 	struct rrr_map http_fields_accept;
 
@@ -121,9 +126,8 @@ static int httpserver_parse_config (
 		goto out;
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_tls", port_tls, RRR_HTTPSERVER_DEFAULT_PORT_TLS);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
-
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_tls",
 			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
 				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
@@ -134,7 +138,9 @@ static int httpserver_parse_config (
 				goto out;
 			}
 	);
+#endif
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_plain",
 			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
 				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
@@ -228,6 +234,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		}
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS ||
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
@@ -243,6 +250,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 			goto out;
 		}
 	}
+#endif
 
 	out:
 	return ret;
@@ -563,8 +571,8 @@ static int httpserver_receive_get_raw_response (
 	// We may spend some time in this loop. This is not a problem as each request
 	// is processed by a dedicated thread.
 	uint64_t time_begin = rrr_time_get_64();
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		uint64_t max_time = (rrr_time_get_64() + 10 * 1000);
 		while (rrr_time_get_64() < max_time) {
@@ -701,10 +709,11 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	struct httpserver_write_message_callback_data write_callback_data = {
-			&array_tmp,
-			request_topic
-	};
+	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+		// Don't receive fields, let server framework send default reply
+		RRR_DBG_3("Not processing fields from OPTIONS request, server will send default response.\n");
+		goto out;
+	}
 
 	if (data->do_receive_full_request) {
 		if ((RRR_HTTP_PART_BODY_LENGTH(transaction->request_part) == 0 && !data->do_allow_empty_messages)) {
@@ -720,17 +729,18 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (transaction->request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
-		// Don't receive fields, let server framework send default reply
-		RRR_DBG_3("Not processing fields from OPTIONS request\n");
-	}
-	else if ((ret = httpserver_receive_callback_get_fields (
+	if ((ret = httpserver_receive_callback_get_fields (
 			&array_tmp,
 			data,
 			transaction->request_part
 	)) != 0) {
 		goto out;
 	}
+
+	struct httpserver_write_message_callback_data write_callback_data = {
+			&array_tmp,
+			request_topic
+	};
 
 	if (RRR_LL_COUNT(&array_tmp) == 0 && data->do_allow_empty_messages == 0) {
 		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");
@@ -863,7 +873,7 @@ static int httpserver_receive_raw_broker_callback (
 
 		msg_to_free = NULL;
 
-		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %li topic '%s'\n",
+		RRR_DBG_3("httpserver instance %s created RRR message from httpserver data of size %" PRIrrr_nullsafe_len " topic '%s'\n",
 				INSTANCE_D_NAME(write_callback_data->parent_data->thread_data),
 				rrr_nullsafe_str_len(write_callback_data->data),
 				write_callback_data->topic
@@ -1224,8 +1234,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			&callback_data
 	};
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		int accept_count = 0;
 

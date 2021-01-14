@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_defines.h"
 #include "../util/linked_list.h"
-#include "../message_holder/message_holder_collection.h"
 
 struct rrr_mmap_channel;
 struct rrr_instance_settings;
@@ -57,13 +56,13 @@ struct rrr_cmodule_worker {
 
 	int config_complete;
 
-	struct rrr_msg_holder_collection queue_to_fork;
-
 	struct rrr_mmap_channel *channel_to_fork;
 	struct rrr_mmap_channel *channel_to_parent;
 
 	uint64_t total_msg_mmap_to_fork;
 	uint64_t total_msg_mmap_to_parent;
+
+	unsigned int ping_counter;
 
 	unsigned long long int to_fork_write_retry_counter;
 	unsigned long long int to_parent_write_retry_counter;

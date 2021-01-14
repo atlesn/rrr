@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_SETTING_H
-#define RRR_PYTHON3_SETTING_H
+#ifndef RRR_PYTHON3_CONFIG_H
+#define RRR_PYTHON3_CONFIG_H
 
 #include "python3_headers.h"
 
@@ -28,4 +28,4 @@ struct rrr_instance_settings;
 
 PyObject *rrr_python3_config_new (struct rrr_instance_settings *settings);
 
-#endif /* RRR_PYTHON3_SETTING_H */
+#endif /* RRR_PYTHON3_CONFIG_H */

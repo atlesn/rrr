@@ -163,20 +163,12 @@ int rrr_cmodule_worker_new (
 		return ret;
 }
 
-// Parent need not to call this explicitly, done in destroy function.
-void rrr_cmodule_worker_clear_queue_to_fork (
-		struct rrr_cmodule_worker *worker
-) {
-	rrr_msg_holder_collection_clear(&worker->queue_to_fork);
-}
-
 // Child MUST NOT call this when exiting
 void rrr_cmodule_worker_destroy (
 		struct rrr_cmodule_worker *worker
 ) {
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
-	rrr_cmodule_worker_clear_queue_to_fork(worker);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
 	free(worker);

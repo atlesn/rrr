@@ -33,7 +33,10 @@ struct rrr_net_transport_config;
 
 struct rrr_http_server {
 	struct rrr_net_transport *transport_http;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	struct rrr_net_transport *transport_https;
+#endif
 
 	struct rrr_thread_collection *threads;
 
@@ -54,12 +57,14 @@ int rrr_http_server_start_plain (
 		struct rrr_http_server *server,
 		uint16_t port
 );
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		uint16_t port,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 );
+#endif
 int rrr_http_server_tick (
 		int *accept_count_final,
 		struct rrr_http_server *server,

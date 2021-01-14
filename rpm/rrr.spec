@@ -55,6 +55,7 @@ useradd -r rrr -g rrr || true
 /usr/lib/rrr/raw.*
 /usr/lib/rrr/socket.*
 /usr/lib/rrr/voltmonitor.*
+/usr/lib/rrr/python.*
 
 %package devel
 Summary:	Development headers for RRR
@@ -71,15 +72,6 @@ Group:		rrr
 RRR library
 %files -n librrr1
 %{_libdir}/librrr.*
-
-%package mod-python3
-Summary:	Python3 bindings.
-Group:		rrr
-%description mod-python3
-Python3 bindings.
-%files mod-python3
-%{_libdir}/librrrpython*
-/usr/lib/rrr/python*
 
 %package mod-mysql
 Summary:	MySQL/MariaDB bindings.

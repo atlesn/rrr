@@ -95,6 +95,12 @@ int rrr_http_transaction_response_reset (
 	return rrr_http_part_prepare(&transaction->response_part);
 }
 
+int rrr_http_transaction_request_reset (
+		struct rrr_http_transaction *transaction
+) {
+	return rrr_http_part_prepare(&transaction->request_part);
+}
+
 void rrr_http_transaction_decref_if_not_null (
 		struct rrr_http_transaction *transaction
 ) {

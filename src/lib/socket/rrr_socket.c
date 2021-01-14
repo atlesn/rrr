@@ -484,7 +484,7 @@ int rrr_socket_open_and_read_file (
 	*result_bytes = 0;
 
 	char *contents_tmp = NULL;
-	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file", 0);
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);
 
 	if (fd <= 0) {
 		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
@@ -493,11 +493,11 @@ int rrr_socket_open_and_read_file (
 		goto out;
 	}
 
-	ssize_t bytes = ret = lseek(fd, 0, SEEK_END);
-	if (ret == 0) {
+	ssize_t bytes = lseek(fd, 0, SEEK_END);
+	if (bytes == 0) {
 		goto out;
 	}
-	else if (ret < 0) {
+	else if (bytes < 0) {
 		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
@@ -512,19 +512,18 @@ int rrr_socket_open_and_read_file (
 	}
 
 	if ((contents_tmp = malloc(bytes + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_full_file\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_file\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = read(fd, contents_tmp, bytes)) != bytes) {
-		RRR_MSG_0("Could not read all bytes from file '%s', return was %i: %s\n",
-				filename, ret, rrr_strerror(errno));
+	ssize_t bytes_read;
+	if ((bytes_read = read(fd, contents_tmp, bytes)) != bytes) {
+		RRR_MSG_0("Could not read all bytes from file '%s', return was %lli: %s\n",
+				filename, (long long int) bytes_read, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
-
-	ret = 0;
 
 	// Make sure we allocate bytes + 1 above
 	contents_tmp[bytes] = '\0';

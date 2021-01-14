@@ -43,6 +43,12 @@ static int __rrr_cmodule_mmap_channel_write_simple_callback (void *target, void 
 	return 0;
 }
 
+int rrr_cmodule_channel_count (
+		struct rrr_mmap_channel *channel
+) {
+	return rrr_mmap_channel_count(channel);
+}
+
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		const struct rrr_msg *message

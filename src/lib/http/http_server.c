@@ -32,21 +32,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_application.h"
 
 #include "../threads.h"
+#include "../ip/ip_util.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
 void rrr_http_server_destroy (struct rrr_http_server *server) {
-	rrr_thread_stop_and_join_all_no_unlock (
+	rrr_thread_collection_stop_and_join_all_no_unlock (
 			server->threads
 	);
-	rrr_thread_destroy_collection(server->threads);
+	rrr_thread_collection_destroy(server->threads);
 
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
 	}
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https != NULL) {
 		rrr_net_transport_destroy(server->transport_https);
 	}
+#endif
 
 	free(server);
 }
@@ -72,7 +76,7 @@ int rrr_http_server_new (
 
 	memset(server, '\0', sizeof(*server));
 
-	if (rrr_thread_new_collection(&server->threads) != 0) {
+	if (rrr_thread_collection_new(&server->threads) != 0) {
 		RRR_MSG_0("Could not create thread collection in rrr_http_server_new\n");
 		ret = 1;
 		goto out_free;
@@ -186,6 +190,7 @@ int rrr_http_server_start_plain (
 	return ret;
 }
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		uint16_t port,
@@ -206,6 +211,7 @@ int rrr_http_server_start_tls (
 
 	return ret;
 }
+#endif
 
 static void __rrr_http_server_accept_create_http_session_callback (
 		struct rrr_net_transport_handle *handle,
@@ -238,9 +244,10 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		goto out;
 	}
 
-/*	char buf[256];
+	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
-	printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
+	RRR_DBG_3("HTTP accept for %s family %i using worker %i\n",
+			buf, sockaddr->sa_family, handle->handle);
 
 	// DO NOT STORE HANDLE POINTER
 
@@ -342,7 +349,7 @@ static int __rrr_http_server_accept_if_free_thread (
 
 	*accept_count = 0;
 
-	if ((ret = rrr_thread_iterate_non_wd_and_not_signalled_by_state (
+	if ((ret = rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
 			threads,
 			RRR_THREAD_STATE_INITIALIZED,
 			__rrr_http_server_accept_if_free_thread_callback,
@@ -355,8 +362,8 @@ static int __rrr_http_server_accept_if_free_thread (
 
 			// Thread is locked in callback so we must start it here outside the iteration
 			// The thread which received the start signal will not be iterated again
-			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_BEFOREFORK);
-			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_AFTERFORK);
+			rrr_thread_signal_set(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+			rrr_thread_signal_set(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_AFTERFORK);
 			ret = 0;
 
 			(*accept_count)++;
@@ -399,7 +406,7 @@ static int __rrr_http_server_threads_allocate (
 			goto out;
 		}
 
-		struct rrr_thread *thread = rrr_thread_allocate_preload_and_register (
+		struct rrr_thread *thread = rrr_thread_collection_thread_allocate_preload_and_register (
 				threads,
 				rrr_http_server_worker_thread_entry_intermediate,
 				NULL,
@@ -465,6 +472,7 @@ int rrr_http_server_tick (
 		accept_count += accept_count_tmp;
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https != NULL) {
 		int accept_count_tmp = 0;
 		if ((ret = __rrr_http_server_accept_if_free_thread (
@@ -476,9 +484,10 @@ int rrr_http_server_tick (
 		}
 		accept_count += accept_count_tmp;
 	}
+#endif
 
 	int count_dummy = 0;
-	rrr_thread_join_and_destroy_stopped_threads(&count_dummy, server->threads);
+	rrr_thread_collection_join_and_destroy_stopped_threads(&count_dummy, server->threads);
 
 	*accept_count_final = accept_count;
 
