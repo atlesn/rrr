@@ -16,6 +16,8 @@ sub source {
 
 	$message->push_tag_str("endpoint", "/json.php");
 
+	$message->{'topic'} = "json.php"; 
+
 	$message->send();
 
 	return 1;

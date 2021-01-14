@@ -1286,6 +1286,15 @@ parameter.
 
 Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string.
 
+.It http_endpoint_from_topic={yes|no}
+.It http_endpoint_from_topic_force={yes|no}
+If
+.B http_endpoint_from_topic
+is set to yes, the MQTT topic of received messaged will be used as the HTTP endpoint. A slash / will be prepended to the topic.
+If force is set to yes, messages without a topic will be dropped.
+May not be used together with
+.B http_endpoint_tag.
+
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,

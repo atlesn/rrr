@@ -69,6 +69,9 @@ struct httpclient_data {
 	int do_receive_json_data;
 	int do_send_raw_data;
 
+	int do_endpoint_from_topic;
+	int do_endpoint_from_topic_force;
+
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
 
@@ -697,6 +700,50 @@ static int httpclient_connection_prepare_callback (
 	);
 }
 
+static int httpclient_session_query_prepare_callback_process_endpoint_from_topic_override (
+		char **target,
+		struct httpclient_data *data,
+		const struct rrr_msg_msg *message
+) {
+	int ret = 0;
+
+	struct rrr_string_builder *string_builder = NULL;
+
+	if (MSG_TOPIC_LENGTH(message) == 0) {
+		if (data->do_endpoint_from_topic_force) {
+			RRR_DBG_2("No topic was set in message received in httpclient instance %s while endpoint from topic force was enabled, dropping it\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+		}
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_new(&string_builder)) != 0) {
+		RRR_MSG_0("Could not create string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_append(string_builder, "/")) != 0) {
+		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	if ((ret = rrr_string_builder_append_raw(string_builder, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message))) != 0) {
+		RRR_MSG_0("Failed to append to string builder in httpclient_session_query_prepare_callback_process_endpoint_from_topic_override\n");
+		goto out;
+	}
+
+	*target = rrr_string_builder_buffer_takeover(string_builder);
+
+
+	printf("target: %s\n", *target);
+
+	out:
+	if (string_builder != NULL) {
+		rrr_string_builder_destroy(string_builder);
+	}
+	return ret;
+}
+
 static int httpclient_session_query_prepare_callback (
 		RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS
 ) {
@@ -715,8 +762,19 @@ static int httpclient_session_query_prepare_callback (
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
 	if (!callback_data->no_destination_override) {
-		const struct rrr_array *array_from_msg = callback_data->array_from_msg;
-		HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+		if (data->do_endpoint_from_topic) {
+			if ((ret = httpclient_session_query_prepare_callback_process_endpoint_from_topic_override (
+					&endpoint_to_free,
+					data,
+					message
+			)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			const struct rrr_array *array_from_msg = callback_data->array_from_msg;
+			HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+		}
 	}
 
 	if (data->do_no_data == 0) {
@@ -1042,21 +1100,32 @@ static int httpclient_redirect_callback (
 }
 
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-//	printf ("httpclient got entry %p\n", entry);
-
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
+	if (RRR_DEBUGLEVEL_3) {
+		char *topic_tmp = NULL;
+
+		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
+			RRR_MSG_0("Warning: Error while getting topic from message in httpclient_poll_callback\n");
+		}
+
+		RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data),
+				message->timestamp,
+				(topic_tmp != NULL ? topic_tmp : "(none)")
+		);
+
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
+	}
 
 	// Important : Set send_time for correct timeout behavior
 	entry->send_time = rrr_time_get_64();
 
 	int ret = RRR_FIFO_SEARCH_GIVE;
 
-	//rrr_msg_holder_incref_while_locked(entry);
+	// No incref, we return GIVE
 	RRR_LL_APPEND(&data->defer_queue, entry);
 	rrr_msg_holder_unlock(entry);
 	return ret;
@@ -1124,6 +1193,8 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
 
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
@@ -1163,8 +1234,8 @@ static int httpclient_parse_config (
 					config->name);
 			ret = 1;
 		}
-		if (data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
-			RRR_MSG_0("http_{endpoint|server|port}_tag parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
+		if (data->do_endpoint_from_topic || data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
+			RRR_MSG_0("http_{endpoint|server|port}_tag and http_endpoint_from_topic parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
 					config->name);
 			ret = 1;
 		}
@@ -1185,6 +1256,22 @@ static int httpclient_parse_config (
 	) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	{
+		if (data->do_endpoint_from_topic_force && !data->do_endpoint_from_topic) {
+			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_from_topic was not in httpclient instance %s, this is an invalid configuration.\n",
+					config->name);
+			ret = 1;
+		}
+		if (data->do_endpoint_from_topic && RRR_INSTANCE_CONFIG_EXISTS("http_endpoint_tag")) {
+			RRR_MSG_0("http_endpoint_from_topic_force was 'yes' while http_endpoint_tag was set in httpclient instance %s, this is an invalid configuration.\n",
+					config->name);
+			ret = 1;
+		}
+		if (ret != 0) {
+			goto out;
+		}
 	}
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
@@ -1295,7 +1382,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 						&data->request_data,
 						node,
 						data->redirects_max,
-						0
+						0 // Destination override performed as needed
 				)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_BUSY) {
 						// Try again
