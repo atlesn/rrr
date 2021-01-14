@@ -222,7 +222,7 @@ int rrr_json_to_arrays (
 			goto out;
 		}
 
-		RRR_MSG_0("Failed to parse JSON data: %s\n",
+		RRR_DBG_2("Failed to parse JSON data: %s\n",
 				json_tokener_error_desc(err));
 		ret = RRR_JSON_PARSE_ERROR;
 		goto out;

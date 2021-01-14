@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
+#include "../lib/json/json.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -54,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S	5
+#define RRR_HTTPCLIENT_JSON_MAX_LEVELS			4
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -64,6 +66,7 @@ struct httpclient_data {
 	int do_drop_on_error;
 	int do_receive_raw_data;
 	int do_receive_part_data;
+	int do_receive_json_data;
 	int do_send_raw_data;
 
 	char *endpoint_tag;
@@ -182,17 +185,17 @@ static void httpclient_transaction_destroy_void_dbl_ptr (void *target) {
 	}
 }
 
-struct httpclient_create_message_nullsafe_callback_data {
+struct httpclient_create_message_from_response_data_nullsafe_callback_data {
 	struct rrr_msg_holder *new_entry;
 	const struct httpclient_transaction_data *transaction_data;
 };
 
-static int httpclient_create_message_nullsafe_callback (
+static int httpclient_create_message_from_response_data_nullsafe_callback (
 		const void *str,
 		rrr_length len,
 		void *arg
 ) {
-	struct httpclient_create_message_nullsafe_callback_data *callback_data = arg;
+	struct httpclient_create_message_from_response_data_nullsafe_callback_data *callback_data = arg;
 	return rrr_msg_msg_new_with_data (
 			(struct rrr_msg_msg **) &callback_data->new_entry->message,
 			MSG_TYPE_MSG,
@@ -205,17 +208,17 @@ static int httpclient_create_message_nullsafe_callback (
 	);
 }
 
-struct httpclient_create_message_callback_data {
+struct httpclient_create_message_from_response_data_callback_data {
 	struct httpclient_data *httpclient_data;
 	const struct httpclient_transaction_data *transaction_data;
 	const struct rrr_nullsafe_str *response_data;
 };
 
-static int httpclient_create_message_callback (
+static int httpclient_create_message_from_response_data_callback (
 		struct rrr_msg_holder *new_entry,
 		void *arg
 ) {
-	struct httpclient_create_message_callback_data *callback_data = arg;
+	struct httpclient_create_message_from_response_data_callback_data *callback_data = arg;
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -225,14 +228,14 @@ static int httpclient_create_message_callback (
 		goto out;
 	}
 
-	struct httpclient_create_message_nullsafe_callback_data nullsafe_callback_data = {
+	struct httpclient_create_message_from_response_data_nullsafe_callback_data nullsafe_callback_data = {
 			new_entry,
 			callback_data->transaction_data
 	};
 
 	if ((ret = rrr_nullsafe_str_with_raw_do_const (
 			callback_data->response_data,
-			httpclient_create_message_nullsafe_callback,
+			httpclient_create_message_from_response_data_nullsafe_callback,
 			&nullsafe_callback_data
 	)) != 0) {
 		RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
@@ -249,6 +252,134 @@ struct httpclient_final_callback_data {
 	struct httpclient_data *httpclient_data;
 };
 
+static int httpclient_final_callback_receive_data (
+		struct httpclient_data *httpclient_data,
+		const struct httpclient_transaction_data *transaction_data,
+		const struct rrr_nullsafe_str *response_data
+) {
+	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
+			httpclient_data,
+			transaction_data,
+			response_data
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_create_message_from_response_data_callback,
+			&callback_data_broker
+	);
+}
+
+struct httpclient_create_message_from_json_broker_callback_data {
+	struct httpclient_data *httpclient_data;
+	const struct httpclient_transaction_data *transaction_data;
+	const struct rrr_array *array;
+};
+
+static int httpclient_create_message_from_json_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_broker_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	if ((ret = rrr_array_new_message_from_collection (
+			(struct rrr_msg_msg **) &new_entry->message,
+			callback_data->array,
+			rrr_time_get_64(),
+			callback_data->transaction_data->msg_topic,
+			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0)
+	)) != 0) {
+		RRR_MSG_0("Failed to create array message in httpclient_create_message_from_json_callback of httpclient instance %s\n",
+				INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		goto out;
+	}
+
+	out:
+	rrr_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+struct httpclient_create_message_from_json_callback_data {
+	struct httpclient_data *httpclient_data;
+	const struct httpclient_transaction_data *transaction_data;
+};
+
+static int httpclient_create_message_from_json_array_callback (
+		const struct rrr_array *array,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_callback_data *callback_data = arg;
+
+	struct httpclient_create_message_from_json_broker_callback_data callback_data_broker = {
+			callback_data->httpclient_data,
+			callback_data->transaction_data,
+			array
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(callback_data->httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_create_message_from_json_callback,
+			&callback_data_broker
+	);
+}
+
+static int httpclient_create_message_from_json_nullsafe_callback (
+		const void *str,
+		rrr_nullsafe_len len,
+		void *arg
+) {
+	struct httpclient_create_message_from_json_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_json_to_arrays (
+			str,
+			len,
+			RRR_HTTPCLIENT_JSON_MAX_LEVELS,
+			httpclient_create_message_from_json_array_callback,
+			callback_data
+	)) != 0) {
+		// Let hard error only propagate
+		if (ret == RRR_JSON_PARSE_INCOMPLETE || ret == RRR_JSON_PARSE_ERROR) {
+			RRR_DBG_2("HTTP client instance %s: JSON parsing of data from server failed, possibly invalid data\n",
+					INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+			ret = 0;
+		}
+
+		if (ret != 0) {
+			RRR_MSG_0("HTTP client instance %s: JSON parsing of data from server failed with a hard error\n",
+					INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		}
+	}
+
+	return ret;
+}
+
+static int httpclient_final_callback_receive_json (
+		struct httpclient_data *httpclient_data,
+		const struct httpclient_transaction_data *transaction_data,
+		const struct rrr_nullsafe_str *response_data
+) {
+	struct httpclient_create_message_from_json_callback_data callback_data = {
+			httpclient_data,
+			transaction_data
+	};
+
+	return rrr_nullsafe_str_with_raw_do_const (
+			response_data,
+			httpclient_create_message_from_json_nullsafe_callback,
+			&callback_data
+	);
+}
+
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
@@ -262,29 +393,20 @@ static int httpclient_final_callback (
 			rrr_nullsafe_str_len(response_data)
 	);
 
-	if (!httpclient_data->do_receive_part_data) {
-		goto out;
+	if (httpclient_data->do_receive_part_data) {
+		RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
+				INSTANCE_D_NAME(httpclient_data->thread_data));
+
+		ret = httpclient_final_callback_receive_data(httpclient_data, transaction->application_data, response_data);
 	}
 
-	struct httpclient_create_message_callback_data callback_data_broker = {
-			httpclient_data,
-			transaction->application_data,
-			response_data
-	};
+	if (httpclient_data->do_receive_json_data) {
+		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
+				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-	RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
-			INSTANCE_D_NAME(httpclient_data->thread_data));
+		ret = httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
+	}
 
-	ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
-			NULL,
-			0,
-			0,
-			httpclient_create_message_callback,
-			&callback_data_broker
-	);
-
-	out:
 	return ret;
 }
 
@@ -713,7 +835,7 @@ static int httpclient_raw_callback (
 		goto out;
 	}
 
-	struct httpclient_create_message_callback_data callback_data_broker = {
+	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
 			httpclient_data,
 			transaction->application_data,
 			data
@@ -727,7 +849,7 @@ static int httpclient_raw_callback (
 			NULL,
 			0,
 			0,
-			httpclient_create_message_callback,
+			httpclient_create_message_from_response_data_callback,
 			&callback_data_broker
 	);
 
@@ -988,6 +1110,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
 
 	// Deprecated option http_keepalive
@@ -1000,6 +1123,7 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
+
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
