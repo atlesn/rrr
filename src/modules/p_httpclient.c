@@ -199,7 +199,10 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 		void *arg
 ) {
 	struct httpclient_create_message_from_response_data_nullsafe_callback_data *callback_data = arg;
-	return rrr_msg_msg_new_with_data (
+
+	int ret = 0;
+
+	if ((ret = rrr_msg_msg_new_with_data (
 			(struct rrr_msg_msg **) &callback_data->new_entry->message,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -208,7 +211,14 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
 			str,
 			len
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	callback_data->new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) callback_data->new_entry->message);
+
+	out:
+	return ret;
 }
 
 struct httpclient_create_message_from_response_data_callback_data {
@@ -301,6 +311,8 @@ static int httpclient_create_message_from_json_callback (
 				INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
 		goto out;
 	}
+
+	new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) new_entry->message);
 
 	out:
 	rrr_msg_holder_unlock(new_entry);
