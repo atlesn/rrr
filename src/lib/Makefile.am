@@ -126,7 +126,7 @@ librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
-librrr_conversion_warning_la_SOURCES = type.c
+librrr_conversion_warning_la_SOURCES = type.c type_conversion.c
 librrr_conversion_warning_la_CFLAGS = -Wconversion ${AM_CFLAGS}
 librrr_conversion_warning_la_LDFLAGS = -lpthread -ldl -lm
 

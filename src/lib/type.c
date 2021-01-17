@@ -1361,6 +1361,16 @@ int rrr_type_value_new (
 	return ret;
 }
 
+int rrr_type_value_new_simple (
+		struct rrr_type_value **result,
+		const struct rrr_type_definition *type,
+		rrr_type_flags flags,
+		rrr_length tag_length,
+		const char *tag
+) {
+	return rrr_type_value_new (result, type, flags, tag_length, tag, 0, NULL, 0, NULL, 0);
+}
+
 int rrr_type_value_clone (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,

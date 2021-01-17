@@ -209,23 +209,38 @@ struct rrr_type_value {
 	char *data;
 };
 
-#define RRR_TYPE_DEFINE_EXTERN(name) \
+#define RRR_TYPE_DECLARE_EXTERN(name) \
 	extern const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name)
 
-RRR_TYPE_DEFINE_EXTERN(be);
-RRR_TYPE_DEFINE_EXTERN(h);
-RRR_TYPE_DEFINE_EXTERN(le);
-RRR_TYPE_DEFINE_EXTERN(blob);
-RRR_TYPE_DEFINE_EXTERN(ustr);
-RRR_TYPE_DEFINE_EXTERN(istr);
-RRR_TYPE_DEFINE_EXTERN(sep);
-RRR_TYPE_DEFINE_EXTERN(msg);
-RRR_TYPE_DEFINE_EXTERN(fixp);
-RRR_TYPE_DEFINE_EXTERN(str);
-RRR_TYPE_DEFINE_EXTERN(nsep);
-RRR_TYPE_DEFINE_EXTERN(stx);
-RRR_TYPE_DEFINE_EXTERN(err);
-RRR_TYPE_DEFINE_EXTERN(null);
+RRR_TYPE_DECLARE_EXTERN(be);
+RRR_TYPE_DECLARE_EXTERN(h);
+RRR_TYPE_DECLARE_EXTERN(le);
+RRR_TYPE_DECLARE_EXTERN(blob);
+RRR_TYPE_DECLARE_EXTERN(ustr);
+RRR_TYPE_DECLARE_EXTERN(istr);
+RRR_TYPE_DECLARE_EXTERN(sep);
+RRR_TYPE_DECLARE_EXTERN(msg);
+RRR_TYPE_DECLARE_EXTERN(fixp);
+RRR_TYPE_DECLARE_EXTERN(str);
+RRR_TYPE_DECLARE_EXTERN(nsep);
+RRR_TYPE_DECLARE_EXTERN(stx);
+RRR_TYPE_DECLARE_EXTERN(err);
+RRR_TYPE_DECLARE_EXTERN(null);
+
+#define RRR_TYPE_DEFINITION_BE     rrr_type_definition_be
+#define RRR_TYPE_DEFINITION_H      rrr_type_definition_h
+#define RRR_TYPE_DEFINITION_LE     rrr_type_definition_le
+#define RRR_TYPE_DEFINITION_BLOB   rrr_type_definition_blob
+#define RRR_TYPE_DEFINITION_USTR   rrr_type_definition_ustr
+#define RRR_TYPE_DEFINITION_ISTR   rrr_type_definition_istr
+#define RRR_TYPE_DEFINITION_SEP    rrr_type_definition_sep
+#define RRR_TYPE_DEFINITION_MSG    rrr_type_definition_msg
+#define RRR_TYPE_DEFINITION_FIXP   rrr_type_definition_fixp
+#define RRR_TYPE_DEFINITION_STR    rrr_type_definition_str
+#define RRR_TYPE_DEFINITION_NSEP   rrr_type_definition_nsep
+#define RRR_TYPE_DEFINITION_STX    rrr_type_definition_stx
+#define RRR_TYPE_DEFINITION_ERR    rrr_type_definition_err
+#define RRR_TYPE_DEFINITION_NULL   rrr_type_definition_null
 
 int rrr_type_import_ustr_raw (
 		uint64_t *target,
@@ -266,6 +281,13 @@ int rrr_type_value_new (
 		rrr_length element_count,
 		const char *element_count_ref,
 		rrr_length stored_length
+);
+int rrr_type_value_new_simple (
+		struct rrr_type_value **result,
+		const struct rrr_type_definition *type,
+		rrr_type_flags flags,
+		rrr_length tag_length,
+		const char *tag
 );
 int rrr_type_value_clone (
 		struct rrr_type_value **target,
