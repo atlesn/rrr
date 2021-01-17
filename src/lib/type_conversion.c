@@ -43,10 +43,30 @@ struct rrr_type_conversion_definition {
 
 struct rrr_type_conversion_collection {
 	size_t item_count;
-	const struct rrr_type_conversion_definition **items;
+	const struct rrr_type_conversion_definition *items[1];
 };
 
+static int __rrr_type_convert_clone_set_new_definition (
+		RRR_TYPE_CONVERT_ARGS,
+		const struct rrr_type_definition *new_definition
+) {
+	int ret = 0;
+
+	if ((ret = rrr_type_value_clone(target, source, 1)) != 0) {
+		goto out;
+	}
+
+	(*target)->definition = new_definition;
+
+	out:
+	return ret;
+}
+
 static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
+	if (!RRR_TYPE_IS_64(source->definition->type)) {
+		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	}
+
 	int ret = 0;
 
 	char *buf = NULL;
@@ -140,6 +160,20 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	return ret;
 }
 
+static int __rrr_type_convert_blob2str (RRR_TYPE_CONVERT_ARGS) {
+	if (!RRR_TYPE_IS_BLOB(source->definition->type)) {
+		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	}
+	return __rrr_type_convert_clone_set_new_definition(target, source, &rrr_type_definition_str);
+}
+
+static int __rrr_type_convert_blob2blob (RRR_TYPE_CONVERT_ARGS) {
+	if (!RRR_TYPE_IS_BLOB(source->definition->type)) {
+		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	}
+	return __rrr_type_convert_clone_set_new_definition(target, source, &rrr_type_definition_blob);
+}
+
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
 		const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
 				RRR_PASTE(RRR_TYPE_NAME_,from_uc) "2" RRR_PASTE(RRR_TYPE_NAME_,to_uc),           \
@@ -151,28 +185,33 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 
 enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_NONE,
-	RRR_TYPE_CONVERSION_H2STR
+	RRR_TYPE_CONVERSION_H2STR,
+	RRR_TYPE_CONVERSION_BLOB2STR,
+	RRR_TYPE_CONVERSION_BLOB2BLOB
 };
 
 RRR_TYPE_CONVERSION_DEFINE(h2str,H,STR);
+RRR_TYPE_CONVERSION_DEFINE(blob2str,BLOB,STR);
+RRR_TYPE_CONVERSION_DEFINE(blob2blob,BLOB,BLOB);
 
 static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_h2str,
-		NULL
+		&rrr_type_conversion_blob2str,
+		&rrr_type_conversion_blob2blob
 };
 
-const struct rrr_type_conversion_definition *rrr_type_convert_definition_get_from_str (
+static const struct rrr_type_conversion_definition *__rrr_type_convert_definition_get_from_str (
 		const char *str
 ) {
-	for (const struct rrr_type_conversion_definition *method = *rrr_type_conversions; method != NULL; method += sizeof(method)) {
-		if (strcmp(str, method->name) == 0) {
-			return method;
+	for (size_t i = 0; i < sizeof(rrr_type_conversions) / sizeof(*rrr_type_conversions); i++) {
+		if (strcmp(str, rrr_type_conversions[i]->name) == 0) {
+			return rrr_type_conversions[i];
 		}
 	}
 	return NULL;
 }
 
-int rrr_type_convert (
+static int __rrr_type_convert (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,
 		const struct rrr_type_conversion_definition *method
@@ -181,23 +220,93 @@ int rrr_type_convert (
 
 	*target = NULL;
 
-	if (source->definition != method->from) {
-		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	if (source->definition == method->to) {
+		ret = rrr_type_value_clone(target, source, 1);
+	}
+	else {
+		ret = method->convert(target, source);
+	}
+
+	return ret;
+}
+
+static int __rrr_type_convert_using_list (
+		struct rrr_type_value **target,
+		const struct rrr_type_value *source,
+		const struct rrr_type_conversion_collection *list,
+		const size_t pos,
+		const int on_error_try_next
+) {
+	if (pos > list->item_count) {
+		RRR_BUG("BUG: Position out of bounds in __rrr_type_convert_using_list\n");
+	}
+
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_type_value *result_local = NULL;
+
+	if (pos == list->item_count) {
+		ret = RRR_TYPE_CONVERSION_DONE;
 		goto out;
 	}
 
-	ret = method->convert(target, source);
+	const struct rrr_type_conversion_definition *method = list->items[pos];
+
+	const struct rrr_type_value *next_source = NULL;
+
+	RRR_DBG_3(" >> %llu/%llu %s->%s\n",
+			(unsigned long long) pos + 1,
+			(unsigned long long) list->item_count,
+			source->definition->identifier,
+			method->name
+	);
+
+	if ((ret = __rrr_type_convert(&result_local, source, method)) != 0) {
+		RRR_DBG_3("  X type %s\n", source->definition->identifier);
+		if (ret == RRR_TYPE_CONVERSION_NOT_POSSIBLE && on_error_try_next) {
+			next_source = source;
+		}
+		else {
+			RRR_DBG_3("Conversion failure in list at position %llu, could not convert value of type '%s' using method '%s'\n",
+					(long long unsigned) pos, source->definition->identifier, method->name);
+			goto out;
+		}
+	}
+	else {
+		RRR_DBG_3("  > type %s\n", result_local->definition->identifier);
+		next_source = result_local;
+	}
+
+	// The innermost function eventually writes to target
+	if ((ret = __rrr_type_convert_using_list (target, next_source, list, pos + 1, on_error_try_next)) != 0) {
+		if (ret == RRR_TYPE_CONVERSION_DONE) {
+			if (result_local == NULL) {
+				ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+				goto out;
+			}
+
+			*target = result_local;
+			result_local = NULL;
+			ret = 0;
+		}
+	}
 
 	out:
+	if (result_local != NULL) {
+		rrr_type_value_destroy(result_local);
+	}
 	return ret;
 }
 
 int rrr_type_convert_using_list (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,
-		struct rrr_type_conversion_collection *list
+		const struct rrr_type_conversion_collection *list,
+		const int on_error_try_next
 ) {
-
+	return __rrr_type_convert_using_list (target, source, list, 0, on_error_try_next);
 }
 
 void rrr_type_conversion_collection_destroy (
@@ -237,7 +346,7 @@ int rrr_type_conversion_collection_new_from_map (
 			RRR_BUG("BUG: wpos out of bounds in rrr_type_conversion_collection_new_from_map, the map must not change while we use it\n");
 		}
 
-		if ((result->items[wpos++] = rrr_type_convert_definition_get_from_str(node_tag)) == NULL) {
+		if ((result->items[wpos++] = __rrr_type_convert_definition_get_from_str(node_tag)) == NULL) {
 			RRR_MSG_0("Unknown conversion method '%s' while parsing conversion method list at position %llu\n",
 					node_tag, (unsigned long long) wpos - 1);
 			ret = RRR_TYPE_CONVERSION_SOFT_ERROR;

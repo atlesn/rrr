@@ -39,10 +39,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
 #include "../lib/map.h"
+#include "../lib/type.h"
+#include "../lib/type_conversion.h"
 
 struct mangler_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_map convertions;
+
+	struct rrr_map conversions_map;
+	struct rrr_type_conversion_collection *conversions;
+
 	int do_non_array_passthrough;
 };
 
@@ -53,7 +58,10 @@ static void mangler_data_init(struct mangler_data *data, struct rrr_instance_run
 
 static void mangler_data_cleanup(void *arg) {
 	struct mangler_data *data = arg;
-	RRR_MAP_CLEAR(&data->convertions);
+	RRR_MAP_CLEAR(&data->conversions_map);
+	if (data->conversions != NULL) {
+		rrr_type_conversion_collection_destroy(data->conversions);
+	}
 }
 
 static int mangler_process_value (
@@ -63,10 +71,32 @@ static int mangler_process_value (
 ) {
 	int ret = 0;
 
+	struct rrr_type_value *new_value = NULL;
 
+	if ((ret = rrr_type_convert_using_list (
+			&new_value,
+			value,
+			data->conversions,
+			1 // Try next method on conversion error
+	)) != 0) {
+		if (ret == RRR_TYPE_CONVERSION_NOT_POSSIBLE) {
+			if ((ret = rrr_type_value_clone(&new_value, value, 1)) != 0) {
+				RRR_MSG_0("Failed to clone value in mangler_process_value\n");
+				goto out;
+			}
+		}
+		else {
+			goto out;
+		}
+	}
 
+	RRR_LL_APPEND(array_target, new_value);
+	new_value = NULL;
 
 	out:
+	if (new_value != NULL) {
+		rrr_type_value_destroy(new_value);
+	}
 	return ret;
 }
 
@@ -80,7 +110,8 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
-	struct rrr_array array_tmp = {0};
+	struct rrr_array array_from_message = {0};
+	struct rrr_array array_new = {0};
 
 	RRR_DBG_3("mangler instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(thread_data),
@@ -99,22 +130,28 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	uint16_t array_version_dummy;
-	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message)) != 0) {
+	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_from_message, message)) != 0) {
 		RRR_MSG_0("Failed to get array values from message in mangler instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_drop;
 	}
 
-	RRR_LL_ITERATE_BEGIN(&array_tmp, const struct rrr_type_value);
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
+		RRR_DBG_3("Mangler instance %s CONVERT idx %i type %s\n",
+				INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
 		if ((ret = mangler_process_value (
-				&array_tmp,
+				&array_new,
 				data,
 				node
 		)) != 0) {
-			RRR_MSG_0("Error while processing values in mangler instance %s\n",
-					INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("mangler instance %s dropping message following error %i\n",
+					INSTANCE_D_NAME(thread_data), ret);
+			// Let only hard error propagate
+			ret &= ~(1);
 			goto out_drop;
 		}
+		i++;
 	RRR_LL_ITERATE_END();
 
 	out_write:
@@ -124,7 +161,8 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	);
 
 	out_drop:
-	rrr_array_clear(&array_tmp);
+	rrr_array_clear(&array_new);
+	rrr_array_clear(&array_from_message);
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -134,13 +172,19 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_non_array_passthrough", do_non_array_passthrough, 0);
 
-	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->convertions, config, "manger_conversions")) != 0) {
+	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->conversions_map, config, "mangler_conversions")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Failed to parse setting 'mangler_conversions' of mangler instance %s\n",
+			RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
 					config->name);
 			goto out;
 		}
 		ret = 0;
+	}
+
+	if ((ret = rrr_type_conversion_collection_new_from_map(&data->conversions, &data->conversions_map)) != 0) {
+		RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
+				config->name);
+		goto out;
 	}
 
 	out:
