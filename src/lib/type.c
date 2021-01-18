@@ -640,6 +640,16 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
+static int __rrr_type_import_vain (RRR_TYPE_IMPORT_ARGS) {
+	(void)(node);
+	(void)(start);
+	(void)(end);
+
+	*parsed_bytes = 0;
+
+	return 0;
+}
+
 static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
 	if (node->total_stored_length % sizeof(rrr_type_be) != 0) {
 		RRR_MSG_0("Size of 64 type was not 8 bytes in __rrr_type_64_unpack\n");
@@ -1066,6 +1076,30 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
+static int __rrr_type_vain_unpack (RRR_TYPE_UNPACK_ARGS) {
+	(void)(node);
+	return 0;
+}
+
+static int __rrr_type_vain_export (RRR_TYPE_EXPORT_ARGS) {
+	(void)(target);
+	(void)(node);
+
+	*written_bytes = 0;
+
+	return 0;
+}
+
+static int __rrr_type_vain_pack (RRR_TYPE_PACK_ARGS) {
+	(void)(node);
+	(void)(target);
+
+	*written_bytes = 0;
+	*new_type_id = RRR_TYPE_VAIN;
+
+	return 0;
+}
+
 static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
@@ -1142,6 +1176,19 @@ static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 	return 0;
 }
 
+static int __rrr_type_vain_to_str (RRR_TYPE_TO_STR_ARGS) {
+	(void)(node);
+
+	char *tmp = malloc(1);
+	if (tmp == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_type_vain_to_str\n");
+		return 1;
+	}
+	*tmp = '\0';
+	*target = tmp;
+	return 0;
+}
+
 static uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
 	const char *end = node->data + node->total_stored_length;
 	rrr_length get_length = node->total_stored_length > sizeof(uint64_t) ? sizeof(uint64_t) : node->total_stored_length;
@@ -1155,6 +1202,11 @@ static uint64_t __rrr_type_blob_to_64 (RRR_TYPE_TO_64_ARGS) {
 
 static uint64_t __rrr_type_64_to_64 (RRR_TYPE_TO_64_ARGS) {
 	return *((uint64_t *) node->data);
+}
+
+static uint64_t __rrr_type_vain_to_64 (RRR_TYPE_TO_64_ARGS) {
+	(void)(node);
+	return 0;
 }
 
 #define RRR_TYPE_DEFINE(name,type,max,import,export_length,export,unpack,pack,to_str,to_64,name_str) \
@@ -1173,6 +1225,7 @@ RRR_TYPE_DEFINE(str,  RRR_TYPE_STR,  RRR_TYPE_MAX_STR,  __rrr_type_import_str,  
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP, RRR_TYPE_MAX_NSEP, __rrr_type_import_nsep, NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_NSEP);
 RRR_TYPE_DEFINE(stx,  RRR_TYPE_STX,  RRR_TYPE_MAX_STX,  __rrr_type_import_stx,  NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_STX);
 RRR_TYPE_DEFINE(err,  RRR_TYPE_ERR,  RRR_TYPE_MAX_ERR,  __rrr_type_import_err,  NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  RRR_TYPE_NAME_ERR);
+RRR_TYPE_DEFINE(vain, RRR_TYPE_VAIN, RRR_TYPE_MAX_VAIN, __rrr_type_import_vain, NULL,                             __rrr_type_vain_export, __rrr_type_vain_unpack, __rrr_type_vain_pack, __rrr_type_vain_to_str, __rrr_type_vain_to_64, RRR_TYPE_NAME_VAIN);
 RRR_TYPE_DEFINE(null, 0,             0,                 NULL,                   NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array
@@ -1191,6 +1244,7 @@ static const struct rrr_type_definition *type_templates[] = {
 		&rrr_type_definition_nsep,
 		&rrr_type_definition_stx,
 		&rrr_type_definition_err,
+		&rrr_type_definition_vain,
 		&rrr_type_definition_null
 };
 

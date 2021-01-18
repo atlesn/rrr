@@ -1377,7 +1377,7 @@ int __rrr_array_tree_import_value_callback (
 		goto out;
 	}
 
-	if (parsed_bytes == 0) {
+	if (parsed_bytes == 0 && !RRR_TYPE_IS_VAIN(new_value->definition->type)) {
 		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 	}
 

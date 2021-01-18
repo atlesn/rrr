@@ -59,7 +59,8 @@ static const union type_system_endian {
 #define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
 #define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
 #define RRR_TYPE_ERR		14 // Always produces soft error when being parsed, used to abort branched parsing
-#define RRR_TYPE_MAX		14
+#define RRR_TYPE_VAIN		15 // The useless type, indicates NULL or void. Will parse 0 bytes.
+#define RRR_TYPE_MAX		15
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -74,6 +75,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_NSEP	"nsep"
 #define RRR_TYPE_NAME_STX	"stx"
 #define RRR_TYPE_NAME_ERR	"err"
+#define RRR_TYPE_NAME_VAIN	"vain"
 
 // Alias for string
 #define RRR_TYPE_NAME_HEX	"hex"
@@ -91,6 +93,7 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_NSEP	0
 #define RRR_TYPE_MAX_STX	64
 #define RRR_TYPE_MAX_ERR	0
+#define RRR_TYPE_MAX_VAIN	0
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
@@ -105,6 +108,7 @@ static const union type_system_endian {
 #define RRR_TYPE_IS_SEP(type)         ((type) == RRR_TYPE_SEP)
 #define RRR_TYPE_IS_NSEP(type)        ((type) == RRR_TYPE_NSEP)
 #define RRR_TYPE_IS_STX(type)         ((type) == RRR_TYPE_STX)
+#define RRR_TYPE_IS_VAIN(type)        ((type) == RRR_TYPE_VAIN)
 #define RRR_TYPE_ALLOWS_SIGN(type)    ((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)             ((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
@@ -230,6 +234,7 @@ RRR_TYPE_DECLARE_EXTERN(str);
 RRR_TYPE_DECLARE_EXTERN(nsep);
 RRR_TYPE_DECLARE_EXTERN(stx);
 RRR_TYPE_DECLARE_EXTERN(err);
+RRR_TYPE_DECLARE_EXTERN(vain);
 RRR_TYPE_DECLARE_EXTERN(null);
 
 #define RRR_TYPE_DEFINITION_BE     rrr_type_definition_be
@@ -246,6 +251,7 @@ RRR_TYPE_DECLARE_EXTERN(null);
 #define RRR_TYPE_DEFINITION_NSEP   rrr_type_definition_nsep
 #define RRR_TYPE_DEFINITION_STX    rrr_type_definition_stx
 #define RRR_TYPE_DEFINITION_ERR    rrr_type_definition_err
+#define RRR_TYPE_DEFINITION_VAIN    rrr_type_definition_vain
 #define RRR_TYPE_DEFINITION_NULL   rrr_type_definition_null
 
 int rrr_type_import_ustr_raw (
