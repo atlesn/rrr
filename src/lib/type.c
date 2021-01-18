@@ -66,10 +66,10 @@ static int __rrr_type_convert_unsigned_integer_10 (
 	return 0;
 }
 
-#define CHECK_END_AND_RETURN(length)		\
-	if (start + length > end) {				\
-		return RRR_TYPE_PARSE_INCOMPLETE;	\
-	}
+#define CHECK_END_AND_RETURN(length)                           \
+    if (start + length > end) {                                \
+        return RRR_TYPE_PARSE_INCOMPLETE;                      \
+    }
 
 static uint64_t __rrr_type_expand_be (
 		rrr_length import_length,

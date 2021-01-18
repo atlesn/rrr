@@ -132,51 +132,51 @@ static const union type_system_endian {
 #define RRR_TYPE_CHAR_IS_SEP_F(c) \
 	(c == 0 || (c >= 3 &&c <= 4))     // NULL, ETX, EOT
 
-#define RRR_TYPE_CHAR_IS_SEP(c) (		\
-		RRR_TYPE_CHAR_IS_SEP_A(c)||		\
-		RRR_TYPE_CHAR_IS_SEP_B(c)||		\
-		RRR_TYPE_CHAR_IS_SEP_C(c)||		\
-		RRR_TYPE_CHAR_IS_SEP_D(c)||		\
-		RRR_TYPE_CHAR_IS_SEP_E(c)||		\
-		RRR_TYPE_CHAR_IS_SEP_F(c)		\
-	)
+#define RRR_TYPE_CHAR_IS_SEP(c) (                              \
+        RRR_TYPE_CHAR_IS_SEP_A(c)||                            \
+        RRR_TYPE_CHAR_IS_SEP_B(c)||                            \
+        RRR_TYPE_CHAR_IS_SEP_C(c)||                            \
+        RRR_TYPE_CHAR_IS_SEP_D(c)||                            \
+        RRR_TYPE_CHAR_IS_SEP_E(c)||                            \
+        RRR_TYPE_CHAR_IS_SEP_F(c)                              \
+    )
 
-#define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
-		rrr_length *import_length,			\
-		const struct rrr_type_value *node,	\
-		const char *buf,					\
-		rrr_length buf_size
+#define RRR_TYPE_GET_IMPORT_LENGTH_ARGS                        \
+        rrr_length *import_length,                             \
+        const struct rrr_type_value *node,                     \
+        const char *buf,                                       \
+        rrr_length buf_size
 
-#define RRR_TYPE_IMPORT_ARGS				\
-		struct rrr_type_value *node,		\
-		rrr_length *parsed_bytes,			\
-		const char *start,					\
-		const char *end
+#define RRR_TYPE_IMPORT_ARGS                                   \
+        struct rrr_type_value *node,                           \
+        rrr_length *parsed_bytes,                              \
+        const char *start,                                     \
+        const char *end
 
-#define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
-		rrr_length *bytes,					\
-		const struct rrr_type_value *node
+#define RRR_TYPE_GET_EXPORT_LENGTH_ARGS                        \
+        rrr_length *bytes,                                     \
+        const struct rrr_type_value *node
 
-#define RRR_TYPE_EXPORT_ARGS				\
-		char *target,						\
-		rrr_length *written_bytes,			\
-		const struct rrr_type_value *node
+#define RRR_TYPE_EXPORT_ARGS                                   \
+        char *target,                                          \
+        rrr_length *written_bytes,                             \
+        const struct rrr_type_value *node
 
-#define RRR_TYPE_UNPACK_ARGS				\
-		struct rrr_type_value *node
+#define RRR_TYPE_UNPACK_ARGS                                   \
+        struct rrr_type_value *node
 
-#define RRR_TYPE_PACK_ARGS					\
-		char *target,						\
-		rrr_length *written_bytes,			\
-		uint8_t *new_type_id,				\
-		const struct rrr_type_value *node
+#define RRR_TYPE_PACK_ARGS                                     \
+        char *target,                                          \
+        rrr_length *written_bytes,                             \
+        uint8_t *new_type_id,                                  \
+        const struct rrr_type_value *node
 
-#define RRR_TYPE_TO_STR_ARGS				\
-		char **target,						\
-		const struct rrr_type_value *node
+#define RRR_TYPE_TO_STR_ARGS                                   \
+        char **target,                                         \
+        const struct rrr_type_value *node
 
-#define RRR_TYPE_TO_64_ARGS					\
-		const struct rrr_type_value *node
+#define RRR_TYPE_TO_64_ARGS                                    \
+        const struct rrr_type_value *node
 
 struct rrr_type_value;
 
