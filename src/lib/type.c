@@ -1424,15 +1424,19 @@ int rrr_type_value_clone (
 
 	struct rrr_type_value *new_value;
 	if ((new_value = malloc(sizeof(*new_value))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_array_definition_collection_clone\n");
+		RRR_MSG_0("Could not allocate memory in rrr_type_value_clone\n");
 		ret = 1;
 		goto out;
 	}
 
+	// Use memcpy to ensure that flags, type etc. are cloned
 	memcpy(new_value, source, sizeof(*new_value));
 
+	// Ensure that pointers to allocated values are NULL
 	new_value->import_length_ref = NULL;
 	new_value->element_count_ref = NULL;
+	new_value->tag = NULL;
+	new_value->data = NULL;
 
 	if (source->import_length_ref != NULL && (new_value->import_length_ref = strdup(source->import_length_ref)) == NULL) {
 		RRR_MSG_0("Could not duplicate string in rrr_type_value_clone\n");
@@ -1446,31 +1450,32 @@ int rrr_type_value_clone (
 		goto out;
 	}
 
-	if (do_clone_data && new_value->data != NULL) {
-		if ((new_value->data = malloc(new_value->total_stored_length)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for data in __rrr_array_clone\n");
+	if (do_clone_data && source->data != NULL) {
+		if ((new_value->data = malloc(source->total_stored_length)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for data in rrr_type_value_clone\n");
 			ret = 1;
 			goto out;
 		}
-		memcpy(new_value->data, source->data, new_value->total_stored_length);
+		memcpy(new_value->data, source->data, source->total_stored_length);
+		new_value->total_stored_length = source->total_stored_length;
 	}
 	else {
 		new_value->data = NULL;
 	}
 
-	new_value->tag = NULL;
-	if (new_value->tag_length > 0) {
+	if (source->tag_length > 0) {
 		// Do not use strdup, no \0 at the end
-		if ((new_value->tag = malloc(new_value->tag_length + 1)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
+		if ((new_value->tag = malloc(source->tag_length + 1)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for tag in rrr_type_value_clone\n");
 			ret = 1;
 			goto out;
 		}
 		memcpy(new_value->tag, source->tag, new_value->tag_length);
-		new_value->tag[new_value->tag_length] = '\0';
+		new_value->tag[source->tag_length] = '\0';
+		new_value->tag_length = source->tag_length;
 	}
 	else if (new_value->tag != NULL) {
-		RRR_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
+		RRR_BUG("tag was not NULL but tag length was >0 in rrr_type_value_clone\n");
 	}
 
 	*target = new_value;
