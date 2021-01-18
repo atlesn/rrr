@@ -63,6 +63,11 @@ int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
 );
+void rrr_msg_holder_set_data_unlocked (
+		struct rrr_msg_holder *target,
+		void *message,
+		ssize_t message_data_length
+);
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,

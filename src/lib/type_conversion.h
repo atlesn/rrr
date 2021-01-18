@@ -32,6 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TYPE_CONVERSION_NOT_POSSIBLE	RRR_READ_INCOMPLETE
 #define RRR_TYPE_CONVERSION_DONE			RRR_READ_EOF
 
+#define RRR_TYPE_CONVERT_F_ON_ERROR_TRY_NEXT    1
+#define RRR_TYPE_CONVERT_F_STRICT_BLOBS         2
+#define RRR_TYPE_CONVERT_F_STRICT_STRINGS       4
+
 struct rrr_map;
 struct rrr_type_value;
 struct rrr_type_conversion_collection;
@@ -40,7 +44,7 @@ int rrr_type_convert_using_list (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,
 		const struct rrr_type_conversion_collection *list,
-		const int on_error_try_next
+		const int flags
 );
 void rrr_type_conversion_collection_destroy (
 		struct rrr_type_conversion_collection *target

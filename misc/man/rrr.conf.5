@@ -1,4 +1,4 @@
-.Dd 2021-01-14
+.Dd 2021-01-18
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -193,6 +193,9 @@ Handles IP communication, UDP and TCP.
 
 .It exploder (PA)
 Splits RRR array messages into multiple messages. 
+
+.It mangler (PA)
+Converts between data types in RRR arrays. 
 
 .It buffer (P)
 Buffers messages, may be used to duplicate messages to multiple readers.
@@ -406,7 +409,7 @@ the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
 .El
 .PP
-.SS exploder (P)
+.SS exploder (PA)
 The exploder takes individual values from array messages and creates individual messages for each value.
 .PP
 .Bl -tag -width -indent
@@ -442,6 +445,74 @@ If none of those options are use, the tag will become the whole topic.
 If set to 'no', the tag will not be appended to the message topic.
 
 .El
+
+.SS mangler (PA)
+The mangler takes values from RRR arrays and converts them to different types. One RRR message with
+converted values is generated for every received RRR message. Non-RRR array messages are by default
+dropped.
+.PP
+.Bl -tag -width -indent
+.It mangler_conversions={h2str|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob}[,...]
+A comma separated list of conversion methods which provides a conversion recipe.
+For every value of input arrays, all conversions are applied from left to right.
+If a conversion fails or is not possible, it is skipped and the next method is attempted.
+
+For instance if
+.B h2str,str2h
+is specifed, any numeric values are converted to strings and then back again.
+Should the input array contain any string values, these will fail the first conversion,
+but the second conversion will convert them to to numbers. A recipe like
+.B str2h
+would give the same result in which case any numbers would fail to convert and would
+be left as numbers in the output.
+
+Debuglevel 4 will generate step-by-step information during conversion, and debuglevel 2 will
+cause the resulting arrays to be dumped (both of these combines to debuglevel 6).
+
+By default,
+.B str
+values will be quoted using double quotes when exported in modules like
+.B ip (PAI)
+and
+.B mqttclient (PA)
+to allow separation.
+If strings instead are converted to blobs using
+.B str2blob,
+they will be exported without quotes.
+
+Refer to the
+.B CONVERSION METHODS
+section for descriptions of all conversions and type compatibility.
+
+.It mangler_non_array_passthrough={yes|no}
+If set to 'yes', non RRR-array messages are passed through to readers. Defaults to 'no' which will cause
+such messages to be dropped.
+
+.It mangler_convert_tolerant_blobs={yes|no}
+If set to 'yes', any types compatible with the
+.B blob
+type will be accepted in any
+.B blob2*
+conversions. The conversion method
+.B blob2blob
+will have no effect unless this parameter is used.
+Defaults to 'no' which means that only values of the excact type
+.B blob
+are accepted.
+
+.It mangler_convert_tolerant_strings={yes|no}
+If set to 'yes', any types compatible with the
+.B str
+type will be accepted in any
+.B str2*
+conversions. The conversion method
+.B str2str
+will have no effect unless this parameter is used.
+Defaults to 'no' which means that only values of the excact type
+.B str
+are accepted.
+.El
+
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by other instances.
 .PP
@@ -2065,9 +2136,60 @@ An alternative directory in which to search for CA certificates used when valida
 .It X_tls_ca_file=FILENAME
 A CA certificate file to use when validating certificates. Optional.
 .El
+.SH CONVERSION METHODS
+The list below describes the conversion methods available in the
+.B mangler (PA)
+module.
+
+Note that
+.B blob2*
+and
+.B str2*
+may accept compatible types depending on configuration.
+
+\(bu Types compatible with
+.B blob : blob, sep, msg, str
+
+\(bu Types compatible with
+.B str : str, sep, stx
+
+.TP 10
+.B h2str
+Converts any numbers to strings. If an array field contains multiple values, the resulting strings will be space-prefixed to a total length of 20 characters.
+
+.TP 10
+.B blob2str
+Converts blob or blob-ish fields to strings. No data manipulation is performed.
+
+.TP 10
+.B blob2blob
+Converts blob or blob-ish fields to blobs. No data manipulation is performed.
+
+.TP 10
+.B blob2hex
+Converts blob or blob-ish fields to hexadecimal ASCII stored in str types. The output size will be exactly double the input size. 
+
+.TP 10
+.B str2str
+Converts str or str-ish fields to strings. No data manipulation is performed.
+
+.TP 10
+.B str2blob
+Converts str or str-ish fields to blobs. No data manipulation is performed.
+
+.TP 10
+.B str2h
+Converts str or str-ish fields to numbers, if possible.
+Input numbers may be prefixed with spaces.
+Unsigned are used unless one or more values are negative, in which case all values of the fields will be signed.
+Overflow is not handled, and numbers may become truncated.
+
+.TP 10
+.B msg2blob       
+Converts msg fields to blobs. No data manipulation is performed.
+.PP
 .SH SEE ALSO
 .Xr rrr(1),
 .Xr rrr_post(1),
 .Xr rrr_stats(1),
 .Xr rrr_python3(5)
-	

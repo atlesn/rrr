@@ -252,6 +252,16 @@ int rrr_msg_holder_clone_no_data (
 	return ret;
 }
 
+void rrr_msg_holder_set_data_unlocked (
+		struct rrr_msg_holder *target,
+		void *message,
+		ssize_t message_data_length
+) {
+	RRR_FREE_IF_NOT_NULL(target->message);
+	target->message = message;
+	target->data_length = message_data_length;
+}
+
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
@@ -260,10 +270,7 @@ void rrr_msg_holder_set_unlocked (
 		socklen_t addr_len,
 		int protocol
 ) {
-	RRR_FREE_IF_NOT_NULL(target->message);
-
-	target->message = message;
-	target->data_length = message_data_length;
+	rrr_msg_holder_set_data_unlocked (target, message, message_data_length);
 	memcpy(&target->addr, addr, addr_len);
 	target->addr_len = addr_len;
 	target->protocol = protocol;

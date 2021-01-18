@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
 #include "util/gnu.h"
+#include "util/hex.h"
 
 static int __rrr_type_convert_integer_10 (
 		char **end,
@@ -1077,7 +1078,7 @@ static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	char *result = malloc(output_size);
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in__rrr_type_bin_to_str\n");
+		RRR_MSG_0("Could not allocate memory in__rrr_type_h_to_str\n");
 		return 1;
 	}
 
@@ -1118,38 +1119,13 @@ static int __rrr_type_fixp_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 static int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
-	int ret = 0;
-
 	if (node->total_stored_length == 0) {
 		RRR_BUG("BUG: Length was 0 in __rrr_type_bin_to_str\n");
 	}
 
-	rrr_length output_size = node->total_stored_length * 2 + 1;
+	rrr_biglength target_length_dummy = 0;
 
-	// Valgrind complains about invalid writes for some reason
-	if (output_size < 32) {
-		output_size = 32;
-	}
-
-	char *result = malloc(output_size);
-	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memory in__rrr_type_bin_to_str\n");
-		return 1;
-	}
-
-	char *wpos = result;
-	for (int i = 0; i < (int) node->total_stored_length; i++) {
-		// Must pass in unsigned to sprintf or else extra FFFF might
-		// be printed if value char is negative
-		unsigned char c = (unsigned char) *(node->data + i);
-		sprintf(wpos, "%02x", c);
-		wpos += 2;
-	}
-	result[output_size - 1] = '\0';
-
-	*target = result;
-
-	return ret;
+	return rrr_hex_bin_to_hex(target, &target_length_dummy, node->data, node->total_stored_length);
 }
 
 static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
@@ -1264,6 +1240,9 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
 ) {
+	if (template == NULL) {
+		return;
+	}
 	RRR_FREE_IF_NOT_NULL(template->import_length_ref);
 	RRR_FREE_IF_NOT_NULL(template->element_count_ref);
 	RRR_FREE_IF_NOT_NULL(template->tag);
@@ -1288,6 +1267,20 @@ int rrr_type_value_set_tag (
 	}
 	value->tag_length = tag_length;
 	return 0;
+}
+
+void rrr_type_value_set_data (
+		struct rrr_type_value *value,
+		char *data,
+		rrr_length data_length
+) {
+	if (value->element_count == 0 || data_length % value->element_count != 0) {
+		RRR_BUG("BUG: Data length not divisible by element count in rrr_type_value_set_data or element count was 0\n");
+	}
+
+	RRR_FREE_IF_NOT_NULL(value->data);
+	value->total_stored_length = data_length;
+	value->data = data;
 }
 
 int rrr_type_value_new (

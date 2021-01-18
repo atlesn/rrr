@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -55,6 +55,7 @@ static const union type_system_endian {
 #define RRR_TYPE_MSG		9  // Type which holds an RRR message
 #define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
+#define RRR_TYPE_HEX		RRR_TYPE_STR // Alias, used when converting blobs to ascii hex
 #define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
 #define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
 #define RRR_TYPE_ERR		14 // Always produces soft error when being parsed, used to abort branched parsing
@@ -74,6 +75,9 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_STX	"stx"
 #define RRR_TYPE_NAME_ERR	"err"
 
+// Alias for string
+#define RRR_TYPE_NAME_HEX	"hex"
+
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
 #define RRR_TYPE_MAX_H		sizeof(rrr_type_h)
@@ -92,16 +96,17 @@ static const union type_system_endian {
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
-#define RRR_TYPE_IS_FIXP(type)		((type) == RRR_TYPE_FIXP)
-#define RRR_TYPE_IS_MSG(type)		((type) == RRR_TYPE_MSG)
-#define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
-#define RRR_TYPE_IS_STR_EXCACT(type)((type) == RRR_TYPE_STR)
-#define RRR_TYPE_IS_SEP(type)		((type) == RRR_TYPE_SEP)
-#define RRR_TYPE_IS_NSEP(type)		((type) == RRR_TYPE_NSEP)
-#define RRR_TYPE_IS_STX(type)		((type) == RRR_TYPE_STX)
-#define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
-#define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
+#define RRR_TYPE_IS_BLOB(type)        ((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+#define RRR_TYPE_IS_BLOB_EXCACT(type) ((type) == RRR_TYPE_BLOB)
+#define RRR_TYPE_IS_FIXP(type)        ((type) == RRR_TYPE_FIXP)
+#define RRR_TYPE_IS_MSG(type)         ((type) == RRR_TYPE_MSG)
+#define RRR_TYPE_IS_STR(type)         ((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
+#define RRR_TYPE_IS_STR_EXCACT(type)  ((type) == RRR_TYPE_STR)
+#define RRR_TYPE_IS_SEP(type)         ((type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_NSEP(type)        ((type) == RRR_TYPE_NSEP)
+#define RRR_TYPE_IS_STX(type)         ((type) == RRR_TYPE_STX)
+#define RRR_TYPE_ALLOWS_SIGN(type)    ((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
+#define RRR_TYPE_OK(type)             ((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_FLAG_SIGNED ((uint8_t) (1<<0))
 
@@ -237,6 +242,7 @@ RRR_TYPE_DECLARE_EXTERN(null);
 #define RRR_TYPE_DEFINITION_MSG    rrr_type_definition_msg
 #define RRR_TYPE_DEFINITION_FIXP   rrr_type_definition_fixp
 #define RRR_TYPE_DEFINITION_STR    rrr_type_definition_str
+#define RRR_TYPE_DEFINITION_HEX    RRR_TYPE_DEFINITION_STR
 #define RRR_TYPE_DEFINITION_NSEP   rrr_type_definition_nsep
 #define RRR_TYPE_DEFINITION_STX    rrr_type_definition_stx
 #define RRR_TYPE_DEFINITION_ERR    rrr_type_definition_err
@@ -269,6 +275,11 @@ int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,
 		rrr_length tag_length
+);
+void rrr_type_value_set_data (
+		struct rrr_type_value *value,
+		char *data,
+		rrr_length data_length
 );
 int rrr_type_value_new (
 		struct rrr_type_value **result,

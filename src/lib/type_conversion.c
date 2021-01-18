@@ -29,9 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_types.h"
 #include "map.h"
 #include "util/macro_utils.h"
+#include "util/hex.h"
 
 #define RRR_TYPE_CONVERT_ARGS \
-		struct rrr_type_value **target, const struct rrr_type_value *source
+		struct rrr_type_value **target, const struct rrr_type_value *source, const int flags
 
 struct rrr_type_conversion_definition {
 	const char *name;
@@ -47,12 +48,14 @@ struct rrr_type_conversion_collection {
 };
 
 static int __rrr_type_convert_clone_set_new_definition (
-		RRR_TYPE_CONVERT_ARGS,
-		const struct rrr_type_definition *new_definition
+		struct rrr_type_value **target,
+		const struct rrr_type_value *source,
+		const struct rrr_type_definition *new_definition,
+		int with_data
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_type_value_clone(target, source, 1)) != 0) {
+	if ((ret = rrr_type_value_clone(target, source, with_data)) != 0) {
 		goto out;
 	}
 
@@ -62,10 +65,40 @@ static int __rrr_type_convert_clone_set_new_definition (
 	return ret;
 }
 
+static int __rrr_type_convert_clone_set_new_definition_with_data (
+		struct rrr_type_value **target,
+		const struct rrr_type_value *source,
+		const struct rrr_type_definition *new_definition
+) {
+	return __rrr_type_convert_clone_set_new_definition (target, source, new_definition, 1);
+}
+
+static int __rrr_type_convert_clone_set_new_definition_no_data (
+		struct rrr_type_value **target,
+		const struct rrr_type_value *source,
+		const struct rrr_type_definition *new_definition
+) {
+	return __rrr_type_convert_clone_set_new_definition (target, source, new_definition, 0);
+}
+
+#define TYPE_H_ENSURE()                                                                                            \
+    (void)(flags);                                                                                                 \
+    do {if (!RRR_TYPE_IS_64(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
+
+#define TYPE_BLOB_ENSURE()                                                                                         \
+    do {if (((flags & RRR_TYPE_CONVERT_F_STRICT_BLOBS) && !RRR_TYPE_IS_BLOB_EXCACT(source->definition->type)) ||   \
+        !RRR_TYPE_IS_BLOB(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
+
+#define TYPE_STR_ENSURE()                                                                                          \
+    do {if (((flags & RRR_TYPE_CONVERT_F_STRICT_STRINGS) && !RRR_TYPE_IS_STR_EXCACT(source->definition->type)) ||  \
+        !RRR_TYPE_IS_STR(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
+
+#define TYPE_MSG_ENSURE()                                                                                          \
+    (void)(flags);                                                                                                 \
+    do {if (!RRR_TYPE_IS_MSG(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
+
 static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
-	if (!RRR_TYPE_IS_64(source->definition->type)) {
-		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
-	}
+	 TYPE_H_ENSURE();
 
 	int ret = 0;
 
@@ -114,15 +147,17 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 		memset (buf, ' ', new_size); // Set whole buffer to spaces
 
 		for (size_t i = 0; i < source->element_count; i++) {
-			const rrr_biglength rpos = i * (source->total_stored_length / source->element_count);
+			const rrr_biglength rpos = i * sizeof(uint64_t);
 			const rrr_biglength wpos = max_out_length * i;
 
 			char tmp[max_out_length + 1];
 
 			const int number_length = (
 					RRR_TYPE_FLAG_IS_SIGNED(source->flags)
-					? snprintf(tmp, sizeof(tmp), "%" PRIi64, *((int64_t *) source->data + rpos))
-					: snprintf(tmp, sizeof(tmp), "%" PRIu64, *((uint64_t *) source->data + rpos))
+					// Add parentheses around pointer addition to avoid compiler converting
+					// it to array subscripting (multiplying rpos with 8)
+					? snprintf(tmp, sizeof(tmp), "%" PRIi64, *((int64_t *) (source->data + rpos)))
+					: snprintf(tmp, sizeof(tmp), "%" PRIu64, *((uint64_t *) (source->data + rpos)))
 			);
 
 			if (number_length <= 0) {
@@ -131,11 +166,10 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 				goto out;
 			}
 
-			tmp[sizeof(tmp) - 1] = '\0';
-
 			// Write right justified in the slot
 			const size_t wpos_with_offset = wpos + max_out_length - (unsigned int) number_length;
-			memcpy(buf + wpos_with_offset, buf, (unsigned int) number_length);
+
+			memcpy(buf + wpos_with_offset, tmp, (unsigned int) number_length);
 		}
 	}
 
@@ -152,6 +186,7 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	// Length of new_size must be checked prior to allocation
 	(*target)->data = buf;
 	(*target)->total_stored_length = (rrr_length) new_size;
+	(*target)->element_count = source->element_count;
 
 	buf = NULL;
 
@@ -161,17 +196,169 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 }
 
 static int __rrr_type_convert_blob2str (RRR_TYPE_CONVERT_ARGS) {
-	if (!RRR_TYPE_IS_BLOB(source->definition->type)) {
-		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
-	}
-	return __rrr_type_convert_clone_set_new_definition(target, source, &rrr_type_definition_str);
+	TYPE_BLOB_ENSURE();
+	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_str);
 }
 
 static int __rrr_type_convert_blob2blob (RRR_TYPE_CONVERT_ARGS) {
-	if (!RRR_TYPE_IS_BLOB(source->definition->type)) {
-		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	TYPE_BLOB_ENSURE();
+	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_blob);
+}
+
+static int __rrr_type_convert_blob2hex (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_BLOB_ENSURE();
+
+	int ret = 0;
+
+	char *data_new = NULL;
+
+	rrr_biglength data_length_new = 0;
+
+	if ((ret = rrr_hex_bin_to_hex(&data_new, &data_length_new, source->data, source->total_stored_length)) != 0) {
+		goto out;
 	}
-	return __rrr_type_convert_clone_set_new_definition(target, source, &rrr_type_definition_blob);
+
+	if (data_length_new > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Resulting data too long in while converting blob tpye of size %" PRIrrrl "to hex\n",
+				source->total_stored_length);
+		ret = RRR_TYPE_CONVERSION_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = __rrr_type_convert_clone_set_new_definition_no_data(target, source, &rrr_type_definition_str)) != 0) {
+		goto out;
+	}
+
+	rrr_type_value_set_data(*target, data_new, (rrr_length) data_length_new);
+	data_new = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
+	return ret;
+}
+
+static int __rrr_type_convert_str2str (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_STR_ENSURE();
+	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_str);
+}
+
+static int __rrr_type_convert_str2blob (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_STR_ENSURE();
+	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_blob);
+}
+
+static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_STR_ENSURE();
+
+	if (source->element_count == 0) {
+		RRR_BUG("BUG: Element count was 0 in __rrr_type_convert_str2h\n");
+	}
+	if (source->total_stored_length % source->element_count != 0) {
+		RRR_BUG("BUG: Stored length not divisible by element count in __rrr_type_convert_str2h\n");
+	}
+
+	int ret = 0;
+
+	char *data_new = NULL;
+	struct rrr_type_value *value_new = NULL;
+
+	int found_sign = 0;
+	for (const char *pos = source->data; pos < source->data + source->total_stored_length; pos++) {
+		if ((*pos >= '0' && *pos <= '9') || (*pos == ' ') || (*pos == '+')) {
+			// OK
+		}
+		else if (*pos == '-') {
+			// OK, some values are signed
+			found_sign = 1;
+		}
+		else {
+			RRR_DBG_3("  E str2h not possible, non numeric character %c encountered\n", *pos);
+			ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+			goto out;
+		}
+	}
+
+	const rrr_biglength size_new = source->element_count * sizeof(uint64_t);
+	if ((data_new = malloc(size_new)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_type_convert_str2h\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Maximum number size is 20 characters, allow some more
+	// in case input data begins with spaces or zeros
+	// 2^63 =  9,223,372,036,854,775,808
+	// 2^64 = 18,446,744,073,709,551,616
+
+	const rrr_length source_element_size_max = 64;
+	const rrr_length source_element_size = source->total_stored_length / source->element_count;
+	if (source_element_size > source_element_size_max) {
+		RRR_DBG_3("  E str2h refusing to convert input > 64 bytes (is %" PRIrrrl ")\n", source_element_size);
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
+	char *wpos = data_new;
+	const char *end = source->data + source->total_stored_length;
+	for (const char *rpos = source->data; rpos < end; rpos += source_element_size) {
+		char tmp_buf[source_element_size_max + 1];
+		memcpy(tmp_buf, rpos, source_element_size);
+		tmp_buf[source_element_size] = '\0';
+
+		union {
+			long long int i;
+			unsigned long long int u;
+		} tmp_num;
+
+		if (found_sign) {
+			const char *endptr = NULL;
+			tmp_num.i = strtoll(tmp_buf, (char **) &endptr, 10);
+			if (*endptr != '\0') {
+				RRR_DBG_3("  E str2h strtoll failed for input data '%s'\n", tmp_buf);
+				ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+				goto out;
+			}
+		}
+		else {
+			const char *endptr = NULL;
+			tmp_num.u = strtoull(tmp_buf, (char **) &endptr, 10);
+			if (*endptr != '\0') {
+				RRR_DBG_3("  E str2h strtoull failed for input data '%s'\n", tmp_buf);
+				ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+				goto out;
+			}
+		}
+
+		memcpy(wpos, &tmp_num, sizeof(uint64_t));
+		wpos += sizeof(uint64_t);
+	}
+
+	if ((ret = rrr_type_value_new_simple (
+			&value_new,
+			&rrr_type_definition_h,
+			(found_sign ? RRR_TYPE_FLAG_SIGNED : 0),
+			source->tag_length,
+			source->tag
+	)) != 0) {
+		goto out;
+	}
+
+	value_new->element_count = source->element_count;
+	rrr_type_value_set_data(value_new, data_new, (rrr_length) size_new);
+	data_new = NULL;
+
+	*target = value_new;
+	value_new = NULL;
+
+	out:
+	rrr_type_value_destroy(value_new);
+	RRR_FREE_IF_NOT_NULL(data_new);
+	return ret;
+}
+
+static int __rrr_type_convert_msg2blob (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_MSG_ENSURE();
+	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_blob);
 }
 
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
@@ -187,17 +374,32 @@ enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_NONE,
 	RRR_TYPE_CONVERSION_H2STR,
 	RRR_TYPE_CONVERSION_BLOB2STR,
-	RRR_TYPE_CONVERSION_BLOB2BLOB
+	RRR_TYPE_CONVERSION_BLOB2BLOB,
+	RRR_TYPE_CONVERSION_BLOB2HEX,
+	RRR_TYPE_CONVERSION_STR2STR,
+	RRR_TYPE_CONVERSION_STR2BLOB,
+	RRR_TYPE_CONVERSION_STR2H,
+	RRR_TYPE_CONVERSION_MSG2BLOB
 };
 
 RRR_TYPE_CONVERSION_DEFINE(h2str,H,STR);
 RRR_TYPE_CONVERSION_DEFINE(blob2str,BLOB,STR);
 RRR_TYPE_CONVERSION_DEFINE(blob2blob,BLOB,BLOB);
+RRR_TYPE_CONVERSION_DEFINE(blob2hex,BLOB,HEX);
+RRR_TYPE_CONVERSION_DEFINE(str2str,STR,STR);
+RRR_TYPE_CONVERSION_DEFINE(str2blob,STR,BLOB);
+RRR_TYPE_CONVERSION_DEFINE(str2h,STR,H);
+RRR_TYPE_CONVERSION_DEFINE(msg2blob,MSG,BLOB);
 
 static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_h2str,
 		&rrr_type_conversion_blob2str,
-		&rrr_type_conversion_blob2blob
+		&rrr_type_conversion_blob2blob,
+		&rrr_type_conversion_blob2hex,
+		&rrr_type_conversion_str2str,
+		&rrr_type_conversion_str2blob,
+		&rrr_type_conversion_str2h,
+		&rrr_type_conversion_msg2blob
 };
 
 static const struct rrr_type_conversion_definition *__rrr_type_convert_definition_get_from_str (
@@ -214,7 +416,8 @@ static const struct rrr_type_conversion_definition *__rrr_type_convert_definitio
 static int __rrr_type_convert (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,
-		const struct rrr_type_conversion_definition *method
+		const struct rrr_type_conversion_definition *method,
+		const int flags
 ) {
 	int ret = 0;
 
@@ -224,7 +427,7 @@ static int __rrr_type_convert (
 		ret = rrr_type_value_clone(target, source, 1);
 	}
 	else {
-		ret = method->convert(target, source);
+		ret = method->convert(target, source, flags);
 	}
 
 	return ret;
@@ -235,7 +438,7 @@ static int __rrr_type_convert_using_list (
 		const struct rrr_type_value *source,
 		const struct rrr_type_conversion_collection *list,
 		const size_t pos,
-		const int on_error_try_next
+		const int flags
 ) {
 	if (pos > list->item_count) {
 		RRR_BUG("BUG: Position out of bounds in __rrr_type_convert_using_list\n");
@@ -263,9 +466,9 @@ static int __rrr_type_convert_using_list (
 			method->name
 	);
 
-	if ((ret = __rrr_type_convert(&result_local, source, method)) != 0) {
+	if ((ret = __rrr_type_convert(&result_local, source, method, flags)) != 0) {
 		RRR_DBG_3("  X type %s\n", source->definition->identifier);
-		if (ret == RRR_TYPE_CONVERSION_NOT_POSSIBLE && on_error_try_next) {
+		if (ret == RRR_TYPE_CONVERSION_NOT_POSSIBLE && (flags & RRR_TYPE_CONVERT_F_ON_ERROR_TRY_NEXT)) {
 			next_source = source;
 		}
 		else {
@@ -280,7 +483,7 @@ static int __rrr_type_convert_using_list (
 	}
 
 	// The innermost function eventually writes to target
-	if ((ret = __rrr_type_convert_using_list (target, next_source, list, pos + 1, on_error_try_next)) != 0) {
+	if ((ret = __rrr_type_convert_using_list (target, next_source, list, pos + 1, flags)) != 0) {
 		if (ret == RRR_TYPE_CONVERSION_DONE) {
 			if (result_local == NULL) {
 				ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
@@ -304,9 +507,9 @@ int rrr_type_convert_using_list (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,
 		const struct rrr_type_conversion_collection *list,
-		const int on_error_try_next
+		const int flags
 ) {
-	return __rrr_type_convert_using_list (target, source, list, 0, on_error_try_next);
+	return __rrr_type_convert_using_list (target, source, list, 0, flags);
 }
 
 void rrr_type_conversion_collection_destroy (
