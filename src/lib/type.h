@@ -266,7 +266,7 @@ const struct rrr_type_definition *rrr_type_parse_from_string (
 		const char *end
 );
 const struct rrr_type_definition *rrr_type_get_from_id (
-		uint8_t type_in
+		const uint8_t type_in
 );
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
