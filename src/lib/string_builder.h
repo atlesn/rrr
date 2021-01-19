@@ -30,22 +30,22 @@ struct rrr_string_builder {
 	char *buf;
 };
 
-#define RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder,str,err_str)		\
-		do {if (rrr_string_builder_append((string_builder), str) != 0) {	\
-			RRR_MSG_0("%s", err_str);										\
-			ret = 1;														\
-			goto out;														\
-		}} while(0)
+#define RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder,str,err_str)                \
+        do {if (rrr_string_builder_append((string_builder), str) != 0) {               \
+  RRR_MSG_0("%s", err_str);                                                            \
+  ret = 1;                                                                             \
+  goto out;                                                                            \
+        }} while(0)
 
-#define RRR_STRING_BUILDER_RESERVE_AND_CHECK(string_builder,bytes,err_str)	\
-		do {if (rrr_string_builder_reserve((string_builder), bytes) != 0) {	\
-			RRR_MSG_0("%s", err_str);										\
-			ret = 1;														\
-			goto out;														\
-		}} while(0)
+#define RRR_STRING_BUILDER_RESERVE_AND_CHECK(string_builder,bytes,err_str)             \
+        do {if (rrr_string_builder_reserve((string_builder), bytes) != 0) {            \
+  RRR_MSG_0("%s", err_str);                                                            \
+  ret = 1;                                                                             \
+  goto out;                                                                            \
+        }} while(0)
 
-#define RRR_STRING_BUILDER_UNCHECKED_APPEND(string_builder,str)				\
-	rrr_string_builder_unchecked_append(string_builder,str)
+#define RRR_STRING_BUILDER_UNCHECKED_APPEND(string_builder,str)                        \
+    rrr_string_builder_unchecked_append(string_builder,str)
 
 void rrr_string_builder_unchecked_append (
 		struct rrr_string_builder *string_builder,
