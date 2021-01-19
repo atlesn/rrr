@@ -226,3 +226,10 @@ int rrr_string_builder_append_format (
 	return ret;
 }
 
+void rrr_string_builder_chop (
+		struct rrr_string_builder *string_builder
+) {
+	if (string_builder->wpos > 0) {
+		string_builder->wpos -= 1;
+	}
+}

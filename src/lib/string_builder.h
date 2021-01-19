@@ -97,5 +97,8 @@ int rrr_string_builder_append_format (
 		const char *format,
 		...
 );
+void rrr_string_builder_chop (
+		struct rrr_string_builder *string_builder
+);
 
 #endif /* RRR_STRING_BUILDER_H */

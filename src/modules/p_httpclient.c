@@ -492,9 +492,12 @@ static int httpclient_transaction_field_add (
 		);
 	}
 	else {
+		int value_was_empty_dummy = 0;
+
 		// BLOB and STR must be treated as special case above, this
 		// function would otherwise modify the data by escaping
 		if ((ret = rrr_http_query_builder_append_type_value_as_escaped_string (
+				&value_was_empty_dummy,
 				&query_builder,
 				value,
 				0
