@@ -870,8 +870,13 @@ static int __convert_blob (CONVERT_DEF) {
 static int __convert_vain (CONVERT_DEF) {
 	(void)(target);
 	(void)(item);
-	(void)(index);
 	(void)(size);
+
+	if (index > 0) {
+		RRR_MSG_0("Multiple values not supported for Py_None/vain type\n");
+		return 1;
+	}
+
 	return 0;
 }
 

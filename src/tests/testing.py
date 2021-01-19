@@ -129,6 +129,16 @@ def process(socket: rrr_socket, message: rrr_message):
 		for value in item:
 			print ("    " + str(value));
 
+	# Test for vain and empty string adding, leave them in the result array
+	vain = rrr_array_value()
+	vain.append(None)
+
+	strempty = rrr_array_value()
+	strempty.append("")
+
+	array_new.append(vain)
+	array_new.append(strempty)
+
 	message.set_array(array_new)
 
 	socket.send(message)
