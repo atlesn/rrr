@@ -730,13 +730,7 @@ static int __rrr_type_blob_unpack (RRR_TYPE_UNPACK_ARGS) {
 }
 
 static int __rrr_type_blob_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
-	if (node->total_stored_length == 0) {
-		RRR_MSG_0("Length of blob type was 0 in __rrr_type_blob_export_or_pack\n");
-		return 1;
-	}
-
 	memcpy(target, node->data, node->total_stored_length);
-
 
 	*written_bytes = node->total_stored_length;
 
@@ -744,11 +738,30 @@ static int __rrr_type_blob_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
 }
 
 static int __rrr_type_blob_pack (RRR_TYPE_PACK_ARGS) {
+	if (node->total_stored_length == 0) {
+		RRR_MSG_0("Length of blob type was 0 in __rrr_type_blob_pack\n");
+		return 1;
+	}
+
 	*new_type_id = node->definition->type;
 	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
 }
 
 static int __rrr_type_blob_export (RRR_TYPE_EXPORT_ARGS) {
+	if (node->total_stored_length == 0) {
+		RRR_MSG_0("Length of blob type was 0 in __rrr_type_blob_export\n");
+		return 1;
+	}
+	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
+}
+
+static int __rrr_type_str_unpack (RRR_TYPE_UNPACK_ARGS) {
+	(void)(node);
+	return 0;
+}
+
+static int __rrr_type_str_pack (RRR_TYPE_PACK_ARGS) {
+	*new_type_id = node->definition->type;
 	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
 }
 
@@ -1221,7 +1234,7 @@ RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR, RRR_TYPE_MAX_ISTR, __rrr_type_import_istr, 
 RRR_TYPE_DEFINE(sep,  RRR_TYPE_SEP,  RRR_TYPE_MAX_SEP,  __rrr_type_import_sep,  NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_SEP);
 RRR_TYPE_DEFINE(msg,  RRR_TYPE_MSG,  RRR_TYPE_MAX_MSG,  __rrr_type_import_msg,  NULL,                             __rrr_type_msg_export,  __rrr_type_msg_unpack,  __rrr_type_msg_pack,  __rrr_type_bin_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_MSG);
 RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP, RRR_TYPE_MAX_FIXP, __rrr_type_import_fixp, NULL,                             __rrr_type_fixp_export, __rrr_type_fixp_unpack, __rrr_type_fixp_pack, __rrr_type_fixp_to_str, __rrr_type_blob_to_64, RRR_TYPE_NAME_FIXP);
-RRR_TYPE_DEFINE(str,  RRR_TYPE_STR,  RRR_TYPE_MAX_STR,  __rrr_type_import_str,  __rrr_type_str_get_export_length, __rrr_type_str_export,  __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_STR);
+RRR_TYPE_DEFINE(str,  RRR_TYPE_STR,  RRR_TYPE_MAX_STR,  __rrr_type_import_str,  __rrr_type_str_get_export_length, __rrr_type_str_export,  __rrr_type_str_unpack,  __rrr_type_str_pack,  __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_STR);
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP, RRR_TYPE_MAX_NSEP, __rrr_type_import_nsep, NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_NSEP);
 RRR_TYPE_DEFINE(stx,  RRR_TYPE_STX,  RRR_TYPE_MAX_STX,  __rrr_type_import_stx,  NULL,                             __rrr_type_blob_export, __rrr_type_blob_unpack, __rrr_type_blob_pack, __rrr_type_str_to_str,  __rrr_type_blob_to_64, RRR_TYPE_NAME_STX);
 RRR_TYPE_DEFINE(err,  RRR_TYPE_ERR,  RRR_TYPE_MAX_ERR,  __rrr_type_import_err,  NULL,                             NULL,                   NULL,                   NULL,                 NULL,                   NULL,                  RRR_TYPE_NAME_ERR);
