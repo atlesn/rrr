@@ -92,7 +92,7 @@ void test_data_init (struct test_data *data) {
 	sprintf(data->blob_b, "gfedcba");
 
 	data->msg.data[0] = '\0';
-	data->msg.msg_size = sizeof(struct rrr_msg_msg) - 7;
+	data->msg.msg_size = sizeof(struct rrr_msg_msg);
 	data->msg.msg_type = RRR_MSG_TYPE_MESSAGE;
 	data->msg.topic_length = 0;
 	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);

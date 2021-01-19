@@ -493,8 +493,8 @@ static int __rrr_type_msg_to_host_single (
 				msg,
 				max_size
 		) != 0) {
-			RRR_MSG_0("Invalid header for message in __rrr_type_convert_msg_to_host_single\n");
-			ret = 1;
+			RRR_MSG_0("Invalid header for message in __rrr_type_msg_to_host_single\n");
+			ret = RRR_TYPE_PARSE_SOFT_ERR;
 			goto out;
 		}
 
@@ -502,26 +502,26 @@ static int __rrr_type_msg_to_host_single (
 	}
 
 	if (max_size < target_size) {
-		RRR_MSG_0("Invalid size for message in __rrr_type_convert_msg_to_host_single\n");
-		ret = 1;
+		RRR_MSG_0("Invalid size for message in __rrr_type_msg_to_host_single\n");
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 
 	if (rrr_msg_head_to_host_and_verify(msg, target_size) != 0) {
-		RRR_MSG_0("Error while verifying message in  __rrr_type_convert_msg_to_host_single\n");
-		ret = 1;
+		RRR_MSG_0("Error while verifying message in  __rrr_type_msg_to_host_single\n");
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 
 	if (rrr_msg_check_data_checksum_and_length(msg, target_size) != 0) {
-		RRR_MSG_0("Invalid checksum for message data in __rrr_type_convert_msg_to_host_single\n");
-		ret = 1;
+		RRR_MSG_0("Invalid checksum for message data in __rrr_type_msg_to_host_single\n");
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 
 	if (rrr_msg_msg_to_host_and_verify(msg_msg, target_size) != 0) {
-		RRR_MSG_0("Message was invalid in __rrr_type_convert_msg_to_host_single\n");
-		ret = 1;
+		RRR_MSG_0("Message was invalid in __rrr_type_msg_to_host_single\n");
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 
@@ -543,9 +543,7 @@ static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 
 		rrr_length max_size = node->total_stored_length - pos;
 
-		if (__rrr_type_msg_to_host_single (msg_msg, max_size) != 0) {
-			RRR_MSG_0("Could not convert message in __rrr_type_msg_to_host\n");
-			ret = 1;
+		if ((ret = __rrr_type_msg_to_host_single (msg_msg, max_size)) != 0) {
 			goto out;
 		}
 
@@ -628,9 +626,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	node->total_stored_length = (rrr_length) target_size_total;
 	memcpy(node->data, start, (rrr_length) target_size_total);
 
-	if (__rrr_type_msg_unpack(node) != 0) {
-		RRR_MSG_0("Could not convert message in __rrr_type_import_msg\n");
-		ret = 1;
+	if ((ret = __rrr_type_msg_unpack(node)) != 0) {
 		goto out;
 	}
 
