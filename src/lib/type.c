@@ -1167,10 +1167,6 @@ static int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
-	if (node->total_stored_length == 0) {
-		RRR_BUG("BUG: Length was 0 in __rrr_type_str_to_str\n");
-	}
-
 	char *result = malloc(node->total_stored_length + 1);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_str_to_str\n");

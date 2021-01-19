@@ -262,6 +262,12 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	char *data_new = NULL;
 	struct rrr_type_value *value_new = NULL;
 
+	if (source->total_stored_length == 0) {
+		RRR_DBG_3("  E str2h not possible for empty string\n");
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
 	int found_sign = 0;
 	for (const char *pos = source->data; pos < source->data + source->total_stored_length; pos++) {
 		if ((*pos >= '0' && *pos <= '9') || (*pos == ' ') || (*pos == '+')) {
