@@ -65,6 +65,10 @@ int rrr_array_append_from (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
+int rrr_array_push_value_vain_with_tag (
+		struct rrr_array *collection,
+		const char *tag
+);
 int rrr_array_push_value_u64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,

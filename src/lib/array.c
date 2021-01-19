@@ -99,6 +99,41 @@ int rrr_array_append_from (
 	return ret;
 }
 
+int rrr_array_push_value_vain_with_tag (
+		struct rrr_array *collection,
+		const char *tag
+) {
+	struct rrr_type_value *new_value = NULL;
+
+	int ret = 0;
+
+	if ((ret = rrr_type_value_new (
+			&new_value,
+			&rrr_type_definition_vain,
+			0,
+			strlen(tag),
+			tag,
+			0,
+			NULL,
+			1,
+			NULL,
+			0 
+	)) != 0) {
+		RRR_MSG_0("Could not create value in __rrr_array_push_value_vain_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_LL_APPEND(collection, new_value);
+	new_value = NULL;
+
+	out:
+	if (new_value != NULL) {
+		rrr_type_value_destroy(new_value);
+	}
+	return ret;
+}
+
 static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
