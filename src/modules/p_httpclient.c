@@ -474,15 +474,13 @@ static int httpclient_transaction_field_add (
 			buf_size--;
 		}
 
-		if (buf_size > 0) {
-			ret = rrr_http_transaction_query_field_add (
-					transaction,
-					tag_to_use,
-					buf,
-					buf_size,
-					"text/plain"
-			);
-		}
+		ret = rrr_http_transaction_query_field_add (
+				transaction,
+				tag_to_use,
+				buf,
+				buf_size,
+				"text/plain"
+		);
 	}
 	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
 		ret = rrr_http_transaction_query_field_add (

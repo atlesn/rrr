@@ -341,7 +341,7 @@ int test_averager (
 	return ret;
 }
 
-#define TEST_DATA_ELEMENTS 12
+#define TEST_DATA_ELEMENTS 13
 
 struct rrr_test_type_array_callback_data {
 	const struct rrr_test_function_data *config;
@@ -413,7 +413,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		final_length += node->total_stored_length;
 	RRR_LL_ITERATE_END();
 
-	const struct rrr_type_value *types[12];
+	const struct rrr_type_value *types[13];
 
 	// After the array has been assembled and then disassembled again, all
 	// short numbers become full length 8 bytes numbers
@@ -434,6 +434,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	types[10] = rrr_array_value_get_by_index(&collection, 10);
 
 	types[11] = rrr_array_value_get_by_index(&collection, 11);
+
+	types[12] = rrr_array_value_get_by_index(&collection, 12);
 
 	// In some tests chains, the integers become text strings
 	if (config->do_array_str_to_h_conversion) {
@@ -529,6 +531,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	for (int i = 11; i < 12; i++) {
 		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_MSG ? "OK" : "NOT OK"));
 	}
+	for (int i = 12; i < 13; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_STR ? "OK" : "NOT OK"));
+	}
 
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
@@ -541,7 +546,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		!RRR_TYPE_IS_64(types[8]->definition->type) ||
 
 		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
-		types[11]->definition->type != RRR_TYPE_MSG
+		types[11]->definition->type != RRR_TYPE_MSG ||
+		types[12]->definition->type != RRR_TYPE_STR
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -598,23 +604,20 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
+	if (types[12]->total_stored_length != 0) {
+		char *tmp = NULL;
+		types[12]->definition->to_str(&tmp, types[12]);
+		RRR_MSG_0("Returned empty string was not empty, value was '%s'\n",
+			(tmp != NULL ? tmp : "(conversion failed)")
+		);
+		ret = 1;
+		goto out;
+	}
+
 	strcpy(final_data_raw->blob_a, blob_a);
 	strcpy(final_data_raw->blob_b, blob_b);
 
 	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
-
-	if (RRR_DEBUGLEVEL_3) {
-		// TODO : This needs to be put in a buffer then written out
-/*		RRR_DBG("dump final_data_raw: 0x");
-		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
-			char c = ((char*)final_data_raw)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
 
 	if (final_data_raw->le1 == final_data_raw->le3 ||
 		final_data_raw->le3 == final_data_raw->le4 ||

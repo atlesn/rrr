@@ -347,7 +347,7 @@ static int httpserver_worker_process_field_callback (
 		RRR_LL_APPEND(callback_data->array, value_tmp);
 		value_tmp = NULL;
 	}
-	else if (rrr_nullsafe_str_isset(field->value)) {
+	else if (field->value != NULL) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,name_to_use);
 		ret = rrr_array_push_value_str_with_tag_nullsafe (
 				callback_data->array,
@@ -357,10 +357,10 @@ static int httpserver_worker_process_field_callback (
 	}
 	else {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,name_to_use);
-		ret = rrr_array_push_value_u64_with_tag (
+		ret = rrr_array_push_value_str_with_tag (
 				callback_data->array,
 				name,
-				0
+				""
 		);
 	}
 

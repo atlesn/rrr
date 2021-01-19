@@ -55,8 +55,6 @@ struct test_data {
 
 	struct rrr_msg_msg msg;
 
-	// May not used by all tests, may cause parse warnings which
-	// is OK as long as a message is produced from the above values
 	char empty_string_dummy[2];
 } __attribute__((packed));
 
