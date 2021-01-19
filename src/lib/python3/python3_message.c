@@ -1561,12 +1561,6 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			goto out_err;
 		}
 
-		/* XXX  : This division to get the length of each element does not work
-		 *        for RRR message and string nodes with multiple values, array
-		 *        framework disallows these definition. If we for some strange reason do
-		 *        receive these types as arrays, it is still possible to
-		 *        handle them.
-		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
 			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
