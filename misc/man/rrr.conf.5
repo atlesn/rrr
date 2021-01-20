@@ -2158,6 +2158,10 @@ may accept compatible types depending on configuration.
 Converts any numbers to strings. If an array field contains multiple values, the resulting strings will be space-prefixed to a total length of 20 characters.
 
 .TP 10
+.B h2vain
+Converts integer types which are zero to vain.
+
+.TP 10
 .B blob2str
 Converts blob or blob-ish fields to strings. No data manipulation is performed.
 
@@ -2185,8 +2189,21 @@ Unsigned are used unless one or more values are negative, in which case all valu
 Overflow is not handled, and numbers may become truncated.
 
 .TP 10
+.B str2vain
+Converts str fields which are empty to vain.
+
+.TP 10
 .B msg2blob       
 Converts msg fields to blobs. No data manipulation is performed.
+
+.TP 10
+.B vain2h
+Converts vain fields to unsigned integers with value 0.
+
+.TP 10
+.B vain2str
+Converts vain fields to empty str fields.
+
 .PP
 .SH SEE ALSO
 .Xr rrr(1),
