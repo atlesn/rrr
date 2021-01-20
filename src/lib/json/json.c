@@ -121,9 +121,10 @@ static int __rrr_json_to_array_recurse_object (
 		}
 		else if (type == json_type_null) {
 			RRR_DBG_3("        => NULL\n", cur_level, max_levels);
-			RRR_MSG_0("NULL data type encountered in JSON, this is not supported.\n");
-			ret = RRR_JSON_PARSE_ERROR;
-			goto out;
+
+			if ((ret = rrr_array_push_value_vain_with_tag(&array_tmp, key)) != 0) {
+				goto out;
+			}
 		}
 		else {
 			if ((ret = __rrr_json_to_array_recurse (
