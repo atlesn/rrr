@@ -97,6 +97,10 @@ static int __rrr_type_convert_clone_set_new_definition_no_data (
     (void)(flags);                                                                                                 \
     do {if (!RRR_TYPE_IS_MSG(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
 
+#define TYPE_VAIN_ENSURE()                                                                                          \
+    (void)(flags);                                                                                                 \
+    do {if (!RRR_TYPE_IS_VAIN(source->definition->type)) { return RRR_TYPE_CONVERSION_NOT_POSSIBLE; }} while (0)
+
 static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	 TYPE_H_ENSURE();
 
@@ -194,6 +198,29 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 	RRR_FREE_IF_NOT_NULL(buf);
 	return ret;
 }
+
+static int __rrr_type_convert_h2vain (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_H_ENSURE();
+	int ret = 0;
+
+	if (source->element_count > 1) {
+		RRR_DBG_3("  E h2vain refusing to convert multiple values\n");
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
+	if (*((int64_t*) source->data) != 0) {
+		RRR_DBG_3("  E h2vain source value was not zero, not converting\n");
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
+	ret = rrr_type_new_vain(target, source->tag_length, source->tag);
+
+	out:
+	return ret;
+}
+
 
 static int __rrr_type_convert_blob2str (RRR_TYPE_CONVERT_ARGS) {
 	TYPE_BLOB_ENSURE();
@@ -362,9 +389,54 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	return ret;
 }
 
+static int __rrr_type_convert_str2vain (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_STR_ENSURE();
+
+	int ret = 0;
+
+	if (source->element_count > 1) {
+		RRR_DBG_3("  E str2vain refusing to convert multiple values\n");
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
+	if (source->total_stored_length != 0) {
+		RRR_DBG_3("  E str2vain refusing to convert value with non-zero length\n");
+		ret = RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+		goto out;
+	}
+
+	ret = rrr_type_new_vain(target, source->tag_length, source->tag);
+
+	out:
+	return ret;
+}
+
 static int __rrr_type_convert_msg2blob (RRR_TYPE_CONVERT_ARGS) {
 	TYPE_MSG_ENSURE();
 	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_blob);
+}
+
+static int __rrr_type_convert_vain2h (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_VAIN_ENSURE();
+	return rrr_type_new_h(target, source->tag_length, source->tag, 1);
+}
+
+static int __rrr_type_convert_vain2str (RRR_TYPE_CONVERT_ARGS) {
+	TYPE_VAIN_ENSURE();
+
+	return rrr_type_value_new (
+		target,
+		&rrr_type_definition_str,
+		0,
+		source->tag_length,
+		source->tag,
+		0,
+		NULL,
+		1,
+		NULL,
+		0
+	);
 }
 
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
@@ -379,33 +451,46 @@ static int __rrr_type_convert_msg2blob (RRR_TYPE_CONVERT_ARGS) {
 enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_NONE,
 	RRR_TYPE_CONVERSION_H2STR,
+	RRR_TYPE_CONVERSION_H2VAIN,
 	RRR_TYPE_CONVERSION_BLOB2STR,
 	RRR_TYPE_CONVERSION_BLOB2BLOB,
 	RRR_TYPE_CONVERSION_BLOB2HEX,
 	RRR_TYPE_CONVERSION_STR2STR,
 	RRR_TYPE_CONVERSION_STR2BLOB,
 	RRR_TYPE_CONVERSION_STR2H,
-	RRR_TYPE_CONVERSION_MSG2BLOB
+	RRR_TYPE_CONVERSION_STR2VAIN,
+	RRR_TYPE_CONVERSION_MSG2BLOB,
+	RRR_TYPE_CONVERSION_VAIN2H,
+	RRR_TYPE_CONVERSION_VAIN2STR
 };
 
 RRR_TYPE_CONVERSION_DEFINE(h2str,H,STR);
+RRR_TYPE_CONVERSION_DEFINE(h2vain,H,VAIN);
 RRR_TYPE_CONVERSION_DEFINE(blob2str,BLOB,STR);
 RRR_TYPE_CONVERSION_DEFINE(blob2blob,BLOB,BLOB);
 RRR_TYPE_CONVERSION_DEFINE(blob2hex,BLOB,HEX);
 RRR_TYPE_CONVERSION_DEFINE(str2str,STR,STR);
 RRR_TYPE_CONVERSION_DEFINE(str2blob,STR,BLOB);
 RRR_TYPE_CONVERSION_DEFINE(str2h,STR,H);
+RRR_TYPE_CONVERSION_DEFINE(str2vain,STR,VAIN);
+RRR_TYPE_CONVERSION_DEFINE(vain2h,VAIN,H);
+RRR_TYPE_CONVERSION_DEFINE(vain2str,VAIN,STR);
 RRR_TYPE_CONVERSION_DEFINE(msg2blob,MSG,BLOB);
 
 static const struct rrr_type_conversion_definition *rrr_type_conversions[] = {
 		&rrr_type_conversion_h2str,
+		&rrr_type_conversion_h2vain,
 		&rrr_type_conversion_blob2str,
 		&rrr_type_conversion_blob2blob,
 		&rrr_type_conversion_blob2hex,
 		&rrr_type_conversion_str2str,
 		&rrr_type_conversion_str2blob,
 		&rrr_type_conversion_str2h,
-		&rrr_type_conversion_msg2blob
+		&rrr_type_conversion_str2vain,
+		&rrr_type_conversion_msg2blob,
+		&rrr_type_conversion_vain2h,
+		&rrr_type_conversion_vain2str
+
 };
 
 static const struct rrr_type_conversion_definition *__rrr_type_convert_definition_get_from_str (

@@ -1418,6 +1418,63 @@ int rrr_type_value_new_simple (
 	return rrr_type_value_new (result, type, flags, tag_length, tag, 0, NULL, 0, NULL, 0);
 }
 
+int rrr_type_new_vain (
+		struct rrr_type_value **target,
+		rrr_length tag_length,
+		const char *tag
+) {
+	return rrr_type_value_new (
+			target,
+			&rrr_type_definition_vain,
+			0,
+			tag_length,
+			tag,
+			0,
+			NULL,
+			1,
+			NULL,
+			0
+	);
+}
+
+int rrr_type_new_h (
+		struct rrr_type_value **target,
+		rrr_length tag_length,
+		const char *tag,
+		rrr_length element_count
+) {
+	int ret = 0;
+
+	rrr_biglength stored_length = sizeof(uint64_t) * element_count;
+
+	if (stored_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Requested length exceeded maximum in rrr_type_new_h (%" PRIrrrbl ">%u)",
+			stored_length, RRR_LENGTH_MAX);
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	if ((ret = rrr_type_value_new (
+			target,
+			&rrr_type_definition_h,
+			0,
+			tag_length,
+			tag,
+			0,
+			NULL,
+			element_count,
+			NULL,
+			(rrr_length) stored_length
+	)) != 0) {
+		goto out;
+	}
+
+	memset((*target)->data, '\0', stored_length);
+
+	out:
+	return ret;
+}
+
 int rrr_type_value_clone (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,

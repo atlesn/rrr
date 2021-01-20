@@ -306,6 +306,17 @@ int rrr_type_value_new_simple (
 		rrr_length tag_length,
 		const char *tag
 );
+int rrr_type_new_vain (
+		struct rrr_type_value **target,
+		rrr_length tag_length,
+		const char *tag
+);
+int rrr_type_new_h (
+		struct rrr_type_value **target,
+		rrr_length tag_length,
+		const char *tag,
+		rrr_length element_count
+);
 int rrr_type_value_clone (
 		struct rrr_type_value **target,
 		const struct rrr_type_value *source,

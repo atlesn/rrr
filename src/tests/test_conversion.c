@@ -46,7 +46,7 @@ static int __rrr_test_conversion_convert (
 	}
 
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);
-		if ((ret = rrr_type_convert_using_list(&value_new_tmp, node, conversion_list, 0)) != 0) {
+		if ((ret = rrr_type_convert_using_list(&value_new_tmp, node, conversion_list, RRR_TYPE_CONVERT_F_ON_ERROR_TRY_NEXT)) != 0) {
 			TEST_MSG("Conversion failed in rrr_test_conversion\n");
 			goto out;
 		}
@@ -90,6 +90,39 @@ static int __rrr_test_conversion_push_field_h (
 	memcpy(value_new->data, values, sizeof(*values) * values_count);
 	value_new->total_stored_length = sizeof(*values) * values_count;
 	value_new->element_count = values_count;
+
+	RRR_LL_APPEND(target, value_new);
+	value_new = NULL;
+
+	out:
+	rrr_type_value_destroy(value_new);
+	return ret;
+}
+
+static int __rrr_test_conversion_push_field_str (
+		struct rrr_array *target,
+		const char *str
+) {
+	int ret = 0;
+
+	struct rrr_type_value *value_new = NULL;
+
+	if ((ret = rrr_type_value_new (
+			&value_new,
+			&rrr_type_definition_str,
+			0,
+			0,
+			NULL,
+			0,
+			NULL,
+			1,
+			NULL,
+			strlen(str)
+	)) != 0) {
+		goto out;
+	}
+
+	memcpy(value_new->data, str, strlen(str));
 
 	RRR_LL_APPEND(target, value_new);
 	value_new = NULL;
@@ -143,8 +176,17 @@ int rrr_test_conversion(void) {
 	};
 	const char values_single_as_str[] = "18446744073709551615";
 
+	uint64_t values_single_zero[] = {
+		0
+	};
+	const char values_single_zero_as_str[] = "0";
+
+	const char value_empty_str[] = "";
+
 	ret |= __rrr_test_conversion_push_field_h(&array_input, (uint64_t *) values_multi, sizeof(values_multi) / sizeof(*values_multi), 1);
 	ret |= __rrr_test_conversion_push_field_h(&array_input, values_single, sizeof(values_single) / sizeof(*values_single), 0);
+	ret |= __rrr_test_conversion_push_field_h(&array_input, values_single_zero, sizeof(values_single_zero) / sizeof(*values_single_zero), 0);
+	ret |= __rrr_test_conversion_push_field_str(&array_input, value_empty_str);
 
 	if (ret != 0) {
 		goto out;
@@ -154,7 +196,11 @@ int rrr_test_conversion(void) {
 	ret |= rrr_map_item_add_new(&conversion_map, "str2blob", NULL);
 	ret |= rrr_map_item_add_new(&conversion_map, "blob2str", NULL);
 	ret |= rrr_map_item_add_new(&conversion_map, "str2h", NULL);
+	ret |= rrr_map_item_add_new(&conversion_map, "h2vain", NULL);
+	ret |= rrr_map_item_add_new(&conversion_map, "vain2h", NULL);
 	ret |= rrr_map_item_add_new(&conversion_map, "h2str", NULL);
+	ret |= rrr_map_item_add_new(&conversion_map, "str2vain", NULL);
+	ret |= rrr_map_item_add_new(&conversion_map, "vain2str", NULL);
 
 	if (ret != 0) {
 		TEST_MSG("Creation of map elements failed in rrr_test_conversion\n");
@@ -167,7 +213,9 @@ int rrr_test_conversion(void) {
 
 	const char *expected_results[] = {
 			values_multi_as_str,
-			values_single_as_str
+			values_single_as_str,
+			values_single_zero_as_str,
+			value_empty_str
 	};
 
 	int i = 0;
