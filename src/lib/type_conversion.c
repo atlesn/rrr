@@ -368,13 +368,13 @@ static int __rrr_type_convert_msg2blob (RRR_TYPE_CONVERT_ARGS) {
 }
 
 #define RRR_TYPE_CONVERSION_DEFINE(name_lc,from_uc,to_uc)                                        \
-		const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
-				RRR_PASTE(RRR_TYPE_NAME_,from_uc) "2" RRR_PASTE(RRR_TYPE_NAME_,to_uc),           \
-				RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
-				&RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
-				&RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
-				RRR_PASTE(__rrr_type_convert_,name_lc)                                           \
-		}
+        const struct rrr_type_conversion_definition RRR_PASTE(rrr_type_conversion_,name_lc) = {  \
+                RRR_PASTE(RRR_TYPE_NAME_,from_uc) "2" RRR_PASTE(RRR_TYPE_NAME_,to_uc),           \
+                RRR_PASTE_4(RRR_TYPE_CONVERSION_,from_uc,2,to_uc),                               \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,from_uc),                                        \
+                &RRR_PASTE(RRR_TYPE_DEFINITION_,to_uc),                                          \
+                RRR_PASTE(__rrr_type_convert_,name_lc)                                           \
+        }
 
 enum rrr_type_conversion {
 	RRR_TYPE_CONVERSION_NONE,
