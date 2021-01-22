@@ -388,7 +388,7 @@ void rrr_thread_collection_destroy (
 
 	// OK if already locked, stop_and_join all leaves the collection locked
 	// in case caller wishes to do something with lock held in between the calls
-	pthread_mutex_trylock(&collection->threads_mutex);
+	(void)(pthread_mutex_trylock(&collection->threads_mutex));
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
