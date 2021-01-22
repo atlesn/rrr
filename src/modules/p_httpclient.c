@@ -724,7 +724,8 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 
 	if (MSG_TOPIC_LENGTH(message) == 0) {
 		if (data->do_endpoint_from_topic_force) {
-			RRR_DBG_2("No topic was set in message received in httpclient instance %s while endpoint from topic force was enabled, dropping it\n");
+			RRR_DBG_2("No topic was set in message received in httpclient instance %s while endpoint from topic force was enabled, dropping it\n",
+				INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_HTTP_SOFT_ERROR;
 		}
 		goto out;
