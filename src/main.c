@@ -83,7 +83,7 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 //   thread will free it if it wakes up
 
 int rrr_main_create_and_start_threads (
-		struct rrr_thread_collection **thread_collection,
+		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
@@ -93,7 +93,9 @@ int rrr_main_create_and_start_threads (
 ) {
 	int ret = 0;
 
-	struct rrr_instance_runtime_data **runtime_data = NULL;
+	struct rrr_thread_collection *thread_collection = NULL;
+
+	struct rrr_instance_runtime_data *runtime_data_tmp = NULL;
 
 	if (RRR_LL_COUNT(instances) == 0) {
 		RRR_MSG_0("No instances started, exiting\n");
@@ -101,10 +103,8 @@ int rrr_main_create_and_start_threads (
 		goto out;
 	}
 
-	runtime_data = malloc(sizeof(*runtime_data) * RRR_LL_COUNT(instances)); // Size of pointer
-
 	// Create thread collection
-	if (rrr_thread_collection_new (thread_collection) != 0) {
+	if (rrr_thread_collection_new (&thread_collection) != 0) {
 		RRR_MSG_0("Could not create thread collection\n");
 		ret = 1;
 		goto out;
@@ -134,27 +134,32 @@ int rrr_main_create_and_start_threads (
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		if ((runtime_data[threads_total] = rrr_instance_runtime_data_new(&init_data)) == NULL) {
-			RRR_BUG("Error while creating runtime data for instance %s, can't proceed\n",
+		if ((runtime_data_tmp = rrr_instance_runtime_data_new(&init_data)) == NULL) {
+			RRR_MSG_0("Error while creating runtime data for instance %s\n",
 					INSTANCE_M_NAME(instance));
+			ret = 1;
+			goto out_destroy_collection;
 		}
 
-		struct rrr_thread *thread = rrr_thread_collection_thread_allocate_preload_and_register (
-				*thread_collection,
+		struct rrr_thread *thread = rrr_thread_collection_thread_new (
+				thread_collection,
 				rrr_instance_thread_entry_intermediate,
 				instance->module_data->operations.preload,
 				instance->module_data->operations.poststop,
 				instance->module_data->operations.cancel_function,
 				instance->module_data->instance_name,
 				RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
-				runtime_data[threads_total]
+				runtime_data_tmp
 		);
 
 		if (thread == NULL) {
-			// This might actually not be a bug but we cannot recover from preload failure
-			RRR_BUG("Error while preloading thread for instance %s, can't proceed\n",
+			RRR_MSG_0("Error while starting instance %s\n",
 					instance->module_data->instance_name);
+			ret = 1;
+			goto out_destroy_collection;
 		}
+
+		runtime_data_tmp = NULL;
 
 		// Set shortcuts
 		node->thread = thread;
@@ -162,33 +167,31 @@ int rrr_main_create_and_start_threads (
 		threads_total++;
 	RRR_LL_ITERATE_END();
 
-	for (int i = 0; i < threads_total; i++) {
-		RRR_DBG_1 ("Starting thread %s\n", INSTANCE_M_NAME(runtime_data[i]->init_data.instance));
-		if (rrr_thread_start(INSTANCE_M_THREAD(runtime_data[i]->init_data.instance)) != 0) {
-			RRR_BUG ("Error while starting thread for instance %s, can't proceed\n",
-					INSTANCE_M_NAME(runtime_data[i]->init_data.instance));
-		}
-	}
-
 	struct rrr_main_check_wait_for_data callback_data = { instances };
 
 	if (rrr_thread_collection_start_all_after_initialized (
-			*thread_collection,
+			thread_collection,
 			__rrr_main_start_threads_check_wait_for_callback,
 			&callback_data
 	) != 0) {
 		RRR_MSG_0("Error while waiting for threads to initialize\n");
 		ret = 1;
-		goto out;
+		goto out_destroy_collection;
 	}
 
+	*thread_collection_target = thread_collection;
+
+	goto out;
+	out_destroy_collection:
+		rrr_thread_collection_destroy(thread_collection);
 	out:
-	RRR_FREE_IF_NOT_NULL(runtime_data);
-	return ret;
+		if (runtime_data_tmp != NULL) {
+			rrr_instance_runtime_data_destroy_hard(runtime_data_tmp);
+		}
+		return ret;
 }
 
 void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection) {
-	rrr_thread_collection_stop_and_join_all_no_unlock(collection);
 	rrr_thread_collection_destroy (collection);
 }
 

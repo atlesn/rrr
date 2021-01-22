@@ -37,9 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport_config.h"
 
 void rrr_http_server_destroy (struct rrr_http_server *server) {
-	rrr_thread_collection_stop_and_join_all_no_unlock (
-			server->threads
-	);
 	rrr_thread_collection_destroy(server->threads);
 
 	if (server->transport_http != NULL) {
@@ -362,8 +359,7 @@ static int __rrr_http_server_accept_if_free_thread (
 
 			// Thread is locked in callback so we must start it here outside the iteration
 			// The thread which received the start signal will not be iterated again
-			rrr_thread_signal_set(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_BEFOREFORK);
-			rrr_thread_signal_set(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START_AFTERFORK);
+			rrr_thread_start_now_with_watchdog(callback_data.result_thread_to_start);
 			ret = 0;
 
 			(*accept_count)++;
@@ -406,7 +402,7 @@ static int __rrr_http_server_threads_allocate (
 			goto out;
 		}
 
-		struct rrr_thread *thread = rrr_thread_collection_thread_allocate_preload_and_register (
+		struct rrr_thread *thread = rrr_thread_collection_thread_new (
 				threads,
 				rrr_http_server_worker_thread_entry_intermediate,
 				NULL,
@@ -424,11 +420,6 @@ static int __rrr_http_server_threads_allocate (
 
 		// Now managed by worker thread
 		worker_data = NULL;
-
-		if ((ret = rrr_thread_start(thread)) != 0) {
-			// Unsafe state of worker_data struct
-			RRR_BUG("Could not start thread in __rrr_http_server_allocate_threads, cannot recover from this.\n");
-		}
 	}
 
 	out:

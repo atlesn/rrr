@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -61,11 +61,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * We only check for this if thread is started with INSTANCE_START_PRIORITY_FORK */
 #define RRR_THREAD_STATE_RUNNING_FORKED 5
 
-/* Thread has to do a few cleanup operations before stopping */
-// #define RRR_THREAD_STATE_STOPPING 6
+/* Thread may set this if it has to do a few cleanup operations before stopping, WD will
+ * be more patient when waiting for STOPPED (KILLTIME_PAPATIENTT_LIMIT will be used). Thread must set
+ * this within the ordinary KILLTIME_LIMIT */
+#define RRR_THREAD_STATE_STOPPING 6
 
 // Milliseconds
 #define RRR_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
+#define RRR_THREAD_WATCHDOG_KILLTIME_PATIENT_LIMIT 5000
 
 #define RRR_THREAD_NAME_MAX_LENGTH 64
 
@@ -201,10 +204,7 @@ int rrr_thread_collection_start_all_after_initialized (
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-void rrr_thread_collection_stop_and_join_all_no_unlock (
-		struct rrr_thread_collection *collection
-);
-int rrr_thread_start (
+void rrr_thread_start_now_with_watchdog (
 		struct rrr_thread *thread
 );
 int rrr_thread_with_lock_do (
@@ -212,7 +212,7 @@ int rrr_thread_with_lock_do (
 		int (*callback)(struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-struct rrr_thread *rrr_thread_collection_thread_allocate_preload_and_register (
+struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),

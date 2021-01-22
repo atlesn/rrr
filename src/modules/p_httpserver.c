@@ -1278,11 +1278,14 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 	}
 
+	RRR_DBG_1 ("Thread httpserver %p instance %s looping ended\n", thread, INSTANCE_D_NAME(thread_data));
+
 	out_cleanup_httpserver:
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 	pthread_cleanup_pop(1);
 
 	out_message:
-	RRR_DBG_1 ("Thread httpserver %p exiting\n", thread);
+	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

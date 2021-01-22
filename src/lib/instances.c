@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -421,6 +421,13 @@ unsigned int rrr_instance_collection_count (
 	return (RRR_LL_COUNT(collection));
 }
 
+void rrr_instance_runtime_data_destroy_hard (
+		struct rrr_instance_runtime_data *data
+) {
+	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
+	free(data);
+}
+
 static int __rrr_instace_runtime_data_destroy_callback (
 		struct rrr_thread *thread,
 		void *arg
@@ -428,8 +435,7 @@ static int __rrr_instace_runtime_data_destroy_callback (
 	(void)(arg);
 
 	struct rrr_instance_runtime_data *data = thread->private_data;
-	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
-	free(data);
+	rrr_instance_runtime_data_destroy_hard(data);
 	thread->private_data = NULL;
 	return 0;
 }
