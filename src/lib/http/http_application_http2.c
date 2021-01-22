@@ -79,7 +79,7 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
 
-	if ((ret = rrr_http2_header_submit(callback_data->app->http2_session, 1, name, value)) != 0) {
+	if ((ret = rrr_http2_header_submit(callback_data->app->http2_session, callback_data->stream_id, name, value)) != 0) {
 		goto out;
 	}
 

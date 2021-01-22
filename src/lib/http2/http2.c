@@ -3,7 +3,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,6 +54,9 @@ struct rrr_http2_stream {
 
 	void (*application_data_destroy_function)(void *);
 	struct rrr_map headers_to_send;
+
+	// Used for debugging purposes
+	uint64_t creation_time;
 };
 
 struct rrr_http2_stream_collection {
@@ -95,6 +98,16 @@ void __rrr_http2_stream_destroy (
 void __rrr_http2_stream_collection_destroy (
 		struct rrr_http2_stream_collection *collection
 ) {
+	if (RRR_DEBUGLEVEL_3) {
+		// This is useful to detect usage of invalid stream IDs. There
+		// is no checks when for instance header fields are pushed if a
+		// stream ID is correct and will actually be sent.
+		RRR_LL_ITERATE_BEGIN(collection, struct rrr_http2_stream);
+			uint64_t age_ms = (rrr_time_get_64() - node->creation_time) / 1000;
+			RRR_DBG_3("http2 stream id %i late destroy (upon collection destruction), age is %" PRIu64 "ms\n",
+					node->stream_id, age_ms);
+		RRR_LL_ITERATE_END();
+	}
 	RRR_LL_DESTROY(collection, struct rrr_http2_stream, __rrr_http2_stream_destroy(node));
 }
 
@@ -129,6 +142,7 @@ struct rrr_http2_stream *__rrr_http2_stream_collection_maintain_and_find_or_crea
 	}
 	memset(new_stream, '\0', sizeof(*new_stream));
 	new_stream->stream_id = stream_id;
+	new_stream->creation_time = rrr_time_get_64();
 
 	RRR_LL_PUSH(collection, new_stream);
 
@@ -181,8 +195,6 @@ static ssize_t __rrr_http2_send_callback (
 		// Truncate
 		length = SSIZE_MAX;
 	}
-
-//	printf("send %u\n", length);
 
 	uint64_t bytes_written = 0;
 	int ret = 0;
@@ -244,8 +256,6 @@ static ssize_t __rrr_http2_recv_callback (
 	if (bytes_read > SSIZE_MAX) {
 		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_recv_callback, this should not be possible\n");
 	}
-
-//	printf("recv %u\n", bytes_read);
 
 	return (bytes_read > 0 ? bytes_read : NGHTTP2_ERR_WOULDBLOCK);
 }
@@ -329,6 +339,19 @@ static int __rrr_http2_on_frame_send_callback (
 	struct rrr_http2_session *session = user_data;
 
 	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
+
+	/* TODO : This seems not to be needed. If it needs to be used, the callback
+	 * must always be set and not only when debuglevel is active.
+	if (	(frame->hd.type == NGHTTP2_DATA || frame->hd.type == NGHTTP2_HEADERS) &&
+		(frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
+	) {
+		int tmp = nghttp2_submit_rst_stream(nghttp2_session, 0, frame->hd.stream_id, 0);
+		if (tmp != 0) {
+			RRR_MSG_0("http2 failed to send stream close in __rrr_http2_on_frame_send_callback: %s\n",
+					nghttp2_strerror(tmp));
+			return NGHTTP2_ERR_CALLBACK_FAILURE;
+		}
+	}*/
 
 	return 0;
 }
@@ -985,8 +1008,6 @@ int rrr_http2_transport_ctx_tick (
 			goto out;
 		}
 	}
-
-//	printf ("WR: %i, WW %i\n", nghttp2_session_want_read(session->session), nghttp2_session_want_write(session->session));
 
 	if (nghttp2_session_want_read(session->session) == 0 && nghttp2_session_want_write(session->session) == 0) {
 		RRR_DBG_7("http2 done\n");
