@@ -346,7 +346,7 @@ static int __rrr_http_server_accept_if_free_thread (
 
 	*accept_count = 0;
 
-	if ((ret = rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
+	if ((ret = rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 			threads,
 			RRR_THREAD_STATE_INITIALIZED,
 			__rrr_http_server_accept_if_free_thread_callback,
@@ -420,6 +420,8 @@ static int __rrr_http_server_threads_allocate (
 
 		// Now managed by worker thread
 		worker_data = NULL;
+
+		rrr_thread_initialize_now_with_watchdog(thread);
 	}
 
 	out:

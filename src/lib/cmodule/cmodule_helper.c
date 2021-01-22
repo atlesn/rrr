@@ -662,7 +662,7 @@ static int __rrr_cmodule_helper_threads_start (
 		goto out_destroy_collection;
 	}
 
-	if ((ret = rrr_thread_collection_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
+	if ((ret = rrr_thread_collection_start_all(data->thread_collection, NULL, NULL)) != 0) {
 		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		ret = 1;

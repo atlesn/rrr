@@ -34,19 +34,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
-// #define RRR_THREADS_MAX 32
+/* Tell a thread to start initialization */
+#define RRR_THREAD_SIGNAL_START_INITIALIZE	(1<<0)
 
 /* Tell a thread to start after initializing */
-#define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<0)
-
-/* Tell a thread to cancel */
-#define RRR_THREAD_SIGNAL_KILL_				(1<<1)
-
-/* Tell a thread politely to cancel */
-#define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
+#define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<1)
 
 /* Tell a thread to proceed after all forking threads have reached RUNNING_FORKED */
-#define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<3)
+#define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<2)
+
+/* Tell a thread politely to cancel */
+#define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<3)
 
 /* Can only be set in thread control */
 #define RRR_THREAD_STATE_NEW 0
@@ -164,7 +162,6 @@ void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
 );
-
 int rrr_thread_ghost_check (
 		struct rrr_thread *thread
 );
@@ -199,12 +196,15 @@ int rrr_thread_start_condition_helper_fork (
 		int (*fork_callback)(void *arg),
 		void *callback_arg
 );
-int rrr_thread_collection_start_all_after_initialized (
+int rrr_thread_collection_start_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
 void rrr_thread_start_now_with_watchdog (
+		struct rrr_thread *thread
+);
+void rrr_thread_initialize_now_with_watchdog (
 		struct rrr_thread *thread
 );
 int rrr_thread_with_lock_do (
@@ -229,7 +229,7 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 		int *count,
 		struct rrr_thread_collection *collection
 );
-int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
+int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),

@@ -413,7 +413,7 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 		else {
 			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 		}
-		node->signal |= RRR_THREAD_SIGNAL_ENCOURAGE_STOP|RRR_THREAD_SIGNAL_START_AFTERFORK|RRR_THREAD_SIGNAL_START_BEFOREFORK;
+		node->signal |= RRR_THREAD_SIGNAL_ENCOURAGE_STOP|RRR_THREAD_SIGNAL_START_INITIALIZE|RRR_THREAD_SIGNAL_START_AFTERFORK|RRR_THREAD_SIGNAL_START_BEFOREFORK;
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
@@ -563,7 +563,7 @@ int rrr_thread_start_condition_helper_fork (
 	return ret;
 }
 
-int rrr_thread_collection_start_all_after_initialized (
+int rrr_thread_collection_start_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
@@ -571,6 +571,13 @@ int rrr_thread_collection_start_all_after_initialized (
 	int ret = 0;
 
 	pthread_mutex_lock(&collection->threads_mutex);
+
+	/* Signal threads to proceed to initialization stage. This is needed as some
+	 * threads might need data from each other, and we ensure here that the downstream
+	 * modules functions are not started untill all threads have been started */
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_INITIALIZE);
+	RRR_LL_ITERATE_END();
 
 	/* Wait for all threads to initialize */
 	if ((ret = __rrr_thread_collection_start_all_wait_for_state (
@@ -659,12 +666,28 @@ void rrr_thread_start_now_with_watchdog (
 	rrr_thread_unlock(thread);
 
 	RRR_DBG_8("START thread %p '%s'\n", thread, thread->name);
+	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 
 	RRR_DBG_8("START watchdog %p '%s'\n", wd, wd->name);
+	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_AFTERFORK);
+}
+
+void rrr_thread_initialize_now_with_watchdog (
+		struct rrr_thread *thread
+) {
+	rrr_thread_lock(thread);
+	struct rrr_thread *wd = thread->watchdog;
+	rrr_thread_unlock(thread);
+
+	RRR_DBG_8("INITIALIZE thread %p '%s'\n", thread, thread->name);
+	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
+
+	RRR_DBG_8("INITIALIZE watchdog %p '%s'\n", wd, wd->name);
+	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_INITIALIZE);
 }
 
 static void __rrr_thread_collection_add_thread (
@@ -713,6 +736,7 @@ static void *__rrr_thread_watchdog_entry (
 
 	RRR_DBG_8 ("Watchdog %p for %s/%p started, waiting for start signals\n", self_thread, thread->name, thread);
 
+	rrr_thread_signal_wait_busy(self_thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	rrr_thread_state_set(self_thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait_busy(self_thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_state_set(self_thread, RRR_THREAD_STATE_RUNNING_FORKED);
@@ -902,12 +926,18 @@ static void *__rrr_thread_start_routine_intermediate (
 
 	__rrr_thread_self_set(thread);
 
-	// STOPPED must be set at the very end, allows
-	// data structures to be freed
+	// STOPPED must be set at the very end, a  data structures to be freed
 	pthread_cleanup_push(__rrr_thread_state_set_stopped, thread);
 	pthread_cleanup_push(__rrr_thread_cleanup, thread);
 
-	thread->start_routine(thread);
+	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
+	if (!rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
+		RRR_DBG_8("Thread %p/%s received initialize signal, proceeding\n", thread, thread->name);
+		thread->start_routine(thread);
+	}
+	else {
+		RRR_DBG_8("Thread %p/%s received encourage stop before initializing, exiting\n", thread, thread->name);
+	}
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -1219,7 +1249,7 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
-int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
+int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),
@@ -1231,7 +1261,7 @@ int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
-		if (node->is_watchdog == 0 && node->signal == 0) {
+		if (node->is_watchdog == 0 && (node->signal & ~(RRR_THREAD_SIGNAL_START_INITIALIZE)) == 0) {
 			if (node->state == state) {
 				ret = callback(node, callback_data);
 			}

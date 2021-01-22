@@ -169,7 +169,7 @@ int rrr_main_create_and_start_threads (
 
 	struct rrr_main_check_wait_for_data callback_data = { instances };
 
-	if (rrr_thread_collection_start_all_after_initialized (
+	if (rrr_thread_collection_start_all (
 			thread_collection,
 			__rrr_main_start_threads_check_wait_for_callback,
 			&callback_data

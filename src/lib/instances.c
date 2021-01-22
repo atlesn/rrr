@@ -579,7 +579,7 @@ void *rrr_instance_thread_entry_intermediate (
 	struct rrr_instance *faulty_instance = NULL;
 	if (rrr_poll_add_from_thread_senders(&faulty_instance, &thread_data->poll, thread_data) != 0) {
 		RRR_MSG_0("Failed to add senders to poll collection of instance %s. Faulty sender was %s.\n",
-				INSTANCE_D_NAME(thread_data), INSTANCE_M_NAME(faulty_instance));
+				INSTANCE_D_NAME(thread_data), (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
 		goto out;
 	}
 
