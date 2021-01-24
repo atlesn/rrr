@@ -2,6 +2,8 @@ SUBDIRS = lib modules tests python cmodules
 bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth
 noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb
 
+datadir = @RRR_DATA_DIR@
+
 # We must include Perl5 rpath when linking the binaries
 if RRR_WITH_PERL5
 perl5_ldflags=$(PERL5_LDFLAGS)
@@ -62,5 +64,5 @@ endif
 # install-exec-local is run prior to install-exec, hence the "old" version might be installed
 # rrr_msgdb is currently a non-installed binary
 install-exec-local:
-	chmod +x ./make-paths.sh && ./make-paths.sh paths.c @RRR_DATA_DIR@ && \
+	chmod +x ./make-paths.sh && ./make-paths.sh paths.c ${DESTDIR}${datadir} && \
 	make rrr_msgdb 
