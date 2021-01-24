@@ -11,6 +11,6 @@ if test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x"; then
 	systemd-tmpfiles --create || true
 fi
 
-chown -R $RRR_DAEMON_USERNAME:$RRR_DAEMON_USERNAME /var/lib/rrr
+chown -R rrr:rrr /var/lib/rrr
 
 #DEBHELPER#
