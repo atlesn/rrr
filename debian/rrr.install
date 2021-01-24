@@ -2,7 +2,6 @@ etc/*
 usr/bin/*
 usr/lib/*/perl5/*
 usr/share/man/*
-usr/lib/tmpfiles.d/rrr.conf
 usr/lib/rrr/cmodules/*
 usr/lib/rrr/python3.la
 usr/lib/rrr/python3.so
