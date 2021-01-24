@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_inet.h"
 #include "test_json.h"
 #include "test_conversion.h"
+#include "test_msgdb.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -144,6 +145,12 @@ int rrr_test_library_functions (void) {
 
 	TEST_BEGIN("type conversion") {
 		ret_tmp = rrr_test_conversion();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("message database") {
+		ret_tmp = rrr_test_msgdb();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

@@ -96,6 +96,8 @@ messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/ms
 
 helpers = helpers/nullsafe_str.c
 
+msgdb = msgdb/msgdb_client.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
@@ -117,7 +119,8 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
-                    ${input} ${input_system} ${helpers} ${websocket}
+                    ${input} ${input_system} ${helpers} ${websocket} \
+		    ${msgdb}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
