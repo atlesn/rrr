@@ -31,15 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/posix.h"
 
-struct rrr_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
-	struct rrr_msg *ret = (struct rrr_msg *) setting;
-	ret->msg_type = RRR_MSG_TYPE_SETTING;
-	ret->msg_size = sizeof(*setting);
-	ret->msg_value = 0;
-	return ret;
-}
-
-void rrr_settings_list_destroy (struct rrr_settings_list *list) {
+static void __rrr_settings_list_destroy (
+		struct rrr_settings_list *list
+) {
 	if (list->data != NULL) {
 		free(list->data);
 	}
@@ -49,7 +43,10 @@ void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	free(list);
 }
 
-int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
+static int __rrr_settings_init (
+		struct rrr_instance_settings *target,
+		const int count
+) {
 	int ret = 0;
 
 	memset(target, '\0', sizeof(*target));
@@ -78,7 +75,9 @@ int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
 		return ret;
 }
 
-struct rrr_instance_settings *rrr_settings_new(const int count) {
+struct rrr_instance_settings *rrr_settings_new (
+		const int count
+) {
 	struct rrr_instance_settings *ret = malloc(sizeof(*ret));
 
 	if (ret == NULL) {
@@ -94,11 +93,15 @@ struct rrr_instance_settings *rrr_settings_new(const int count) {
 	return ret;
 }
 
-void __rrr_settings_destroy_setting(struct rrr_setting *setting) {
+static void __rrr_settings_destroy_setting (
+		struct rrr_setting *setting
+) {
 	free(setting->data);
 }
 
-void rrr_settings_destroy(struct rrr_instance_settings *target) {
+void rrr_settings_destroy (
+		struct rrr_instance_settings *target
+) {
 	pthread_mutex_lock(&target->mutex);
 
 	if (target->initialized != 1) {
@@ -120,23 +123,28 @@ void rrr_settings_destroy(struct rrr_instance_settings *target) {
 	free(target);
 }
 
-void __rrr_settings_lock(struct rrr_instance_settings *settings) {
+static void __rrr_settings_lock (
+		struct rrr_instance_settings *settings
+) {
 	if (settings->initialized != 1) {
 		RRR_BUG("BUG: Tried to lock destroyed settings structure\n");
 	}
-//	RRR_DBG_4 ("Settings %p lock\n", settings);
 	pthread_mutex_lock(&settings->mutex);
 }
 
-void __rrr_settings_unlock(struct rrr_instance_settings *settings) {
+static void __rrr_settings_unlock (
+		struct rrr_instance_settings *settings
+) {
 	if (settings->initialized != 1) {
 		RRR_BUG("BUG: Tried to unlock destroyed settings structure\n");
 	}
-//	RRR_DBG_4 ("Settings %p unlock\n", settings);
 	pthread_mutex_unlock(&settings->mutex);
 }
 
-struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_settings *source, const char *name) {
+static struct rrr_setting *__rrr_settings_find_setting_nolock (
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	for (unsigned int i = 0; i < source->settings_count; i++) {
 		struct rrr_setting *test = &source->settings[i];
 
@@ -149,7 +157,11 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_sett
 	return NULL;
 }
 
-struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name, int return_existing) {
+static struct rrr_setting *__rrr_settings_reserve_nolock (
+		struct rrr_instance_settings *target,
+		const char *name,
+		int return_existing
+) {
 	struct rrr_setting *ret = NULL;
 
 	if ((ret = __rrr_settings_find_setting_nolock(target, name)) != NULL) {
@@ -179,7 +191,10 @@ struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings 
 	return ret;
 }
 
-int __rrr_settings_set_setting_name(struct rrr_setting *setting, const char *name) {
+static int __rrr_settings_set_setting_name (
+		struct rrr_setting *setting,
+		const char *name
+) {
 	if (strlen(name) + 1 > RRR_SETTINGS_MAX_NAME_SIZE) {
 		RRR_MSG_0("Settings name %s was longer than maximum %d\n", name, RRR_SETTINGS_MAX_NAME_SIZE);
 		return 1;
@@ -190,7 +205,7 @@ int __rrr_settings_set_setting_name(struct rrr_setting *setting, const char *nam
 	return 0;
 }
 
-int __rrr_settings_add_raw (
+static int __rrr_settings_add_raw (
 		struct rrr_instance_settings *target,
 		const char *name,
 		const void *old_data,
@@ -241,7 +256,12 @@ int __rrr_settings_add_raw (
 	return ret;
 }
 
-int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name, int silent_not_found) {
+static int __rrr_settings_get_string_noconvert (
+		char **target,
+		struct rrr_instance_settings *source,
+		const char *name,
+		int silent_not_found
+) {
 	int ret = 0;
 	*target = NULL;
 
@@ -289,7 +309,10 @@ int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_sett
 	return ret;
 }
 
-int rrr_settings_exists (struct rrr_instance_settings *source, const char *name) {
+int rrr_settings_exists (
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	int ret = 0;
 
 	__rrr_settings_lock(source);
@@ -304,15 +327,25 @@ int rrr_settings_exists (struct rrr_instance_settings *source, const char *name)
 	return ret;
 }
 
-int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
+int rrr_settings_get_string_noconvert (
+		char **target,
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	return __rrr_settings_get_string_noconvert(target, source, name, 0);
 }
-int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name) {
+
+int rrr_settings_get_string_noconvert_silent (
+		char **target,
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	return __rrr_settings_get_string_noconvert(target, source, name, 1);
 }
 
-int __rrr_settings_traverse_split_commas (
-		struct rrr_instance_settings *source, const char *name,
+static int __rrr_settings_traverse_split_commas (
+		struct rrr_instance_settings *source,
+		const char *name,
 		int (*callback)(const char *value, void *arg), void *arg,
 		int silent_fail
 ) {
@@ -355,16 +388,17 @@ int __rrr_settings_traverse_split_commas (
 	return ret;
 }
 
-
 int rrr_settings_traverse_split_commas (
-		struct rrr_instance_settings *source, const char *name,
+		struct rrr_instance_settings *source,
+		const char *name,
 		int (*callback)(const char *value, void *arg), void *arg
 ) {
 	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 0);
 }
 
 int rrr_settings_traverse_split_commas_silent_fail (
-		struct rrr_instance_settings *source, const char *name,
+		struct rrr_instance_settings *source,
+		const char *name,
 		int (*callback)(const char *value, void *arg), void *arg
 ) {
 	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 1);
@@ -446,7 +480,7 @@ int rrr_settings_split_commas_to_array (
 	}
 
 	if (ret != 0 && target != NULL) {
-		rrr_settings_list_destroy(target);
+		__rrr_settings_list_destroy(target);
 	}
 	else {
 		*target_ptr = target;
@@ -455,35 +489,54 @@ int rrr_settings_split_commas_to_array (
 	return ret;
 }
 
-int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value) {
+int rrr_settings_replace_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value
+) {
 	const void *data = value;
 	int size = strlen(value) + 1;
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 1);
 }
 
-int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value) {
+int rrr_settings_add_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value
+) {
 	const void *data = value;
 	int size = strlen(value) + 1;
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 0);
 }
 
-int rrr_settings_replace_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
+int rrr_settings_replace_unsigned_integer (
+		struct rrr_instance_settings *target,
+		const char *name,
+		rrr_setting_uint value
+) {
 	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 1);
 }
 
-int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
+int rrr_settings_add_unsigned_integer (
+		struct rrr_instance_settings *target,
+		const char *name,
+		rrr_setting_uint value
+) {
 	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 0);
 }
 
-int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_string_nolock (
+		char **target,
+		struct rrr_setting *setting
+) {
 	int ret = 0;
 	*target = NULL;
 
@@ -513,7 +566,10 @@ int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *se
 	return RRR_SETTING_ERROR;
 }
 
-int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_uint_nolock (
+		rrr_setting_uint *target,
+		struct rrr_setting *setting
+) {
 	int ret = 0;
 	char *tmp_string = NULL;
 	*target = 0;
@@ -564,7 +620,11 @@ int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_se
 	return ret;
 }
 
-int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name) {
+int rrr_settings_read_string (
+		char **target,
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
 	int ret = 0;
 	*target = NULL;
 
@@ -584,7 +644,11 @@ int rrr_settings_read_string (char **target, struct rrr_instance_settings *setti
 	return ret;
 }
 
-int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name) {
+int rrr_settings_read_unsigned_integer (
+		rrr_setting_uint *target,
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
 	int ret = 0;
 	*target = 0;
 
@@ -604,7 +668,11 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 	return ret;
 }
 
-int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name) {
+int rrr_settings_check_yesno (
+		int *result,
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
 	*result = -1;
 	int ret = 0;
 
@@ -633,7 +701,9 @@ int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *setting
 	return ret;
 }
 
-int rrr_settings_check_all_used (struct rrr_instance_settings *settings) {
+int rrr_settings_check_all_used (
+		struct rrr_instance_settings *settings
+) {
 	int ret = 0;
 
 	__rrr_settings_lock(settings);
@@ -650,7 +720,9 @@ int rrr_settings_check_all_used (struct rrr_instance_settings *settings) {
 	return ret;
 }
 
-int rrr_settings_dump (struct rrr_instance_settings *settings) {
+int rrr_settings_dump (
+		struct rrr_instance_settings *settings
+) {
 	int ret = 0;
 
 	__rrr_settings_lock(settings);
@@ -718,7 +790,10 @@ struct rrr_settings_update_used_callback_data {
 	int did_update;
 };
 
-int __rrr_settings_update_used_callback (struct rrr_setting *settings, void *callback_args) {
+static int __rrr_settings_update_used_callback (
+		struct rrr_setting *settings,
+		void *callback_args
+) {
 	struct rrr_settings_update_used_callback_data *data = callback_args;
 
 	if (strcmp (settings->name, data->name) == 0) {
@@ -753,7 +828,7 @@ void rrr_settings_update_used (
 	}
 }
 
-int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
+static int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
 	int ret = 0;
 	struct rrr_setting_packed *result = NULL;
 
@@ -830,20 +905,26 @@ int rrr_settings_iterate_packed (
 	return ret;
 }
 
-void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed) {
+void rrr_settings_packed_to_host (
+		struct rrr_setting_packed *setting_packed
+) {
 	setting_packed->type = rrr_be32toh(setting_packed->type);
 	setting_packed->was_used = rrr_be32toh(setting_packed->was_used);
 	setting_packed->data_size = rrr_be32toh(setting_packed->data_size);
 }
 
-void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message) {
+void rrr_settings_packed_prepare_for_network (
+		struct rrr_setting_packed *message
+) {
 	message->type = rrr_htobe32(message->type);
 	message->was_used = rrr_htobe32(message->was_used);
 	message->data_size = rrr_htobe32(message->data_size);
 }
 
 
-int rrr_settings_packed_validate (const struct rrr_setting_packed *setting) {
+int rrr_settings_packed_validate (
+		const struct rrr_setting_packed *setting
+) {
 	int ret = 0;
 
 	const char *end = setting->name + sizeof(setting->name) - 1;

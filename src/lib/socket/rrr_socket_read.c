@@ -54,7 +54,7 @@ struct rrr_socket_read_message_default_callback_data {
 	void *complete_callback_arg;
 };
 
-static int __rrr_socket_read_message_poll (
+static int __rrr_socket_read_poll (
 		int *got_pollhup_pollerr,
 		int fd
 ) {
@@ -192,7 +192,7 @@ int rrr_socket_read (
 			if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
 				goto out;
 			}
-			RRR_MSG_0("Error from poll in rrr_socket_read: %s\n", rrr_strerror(errno));
+			RRR_DBG_7("Note: Error from poll in rrr_socket_read: %s\n", rrr_strerror(errno));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -248,14 +248,20 @@ int rrr_socket_read (
 			}
 			goto out;
 		}
-		RRR_MSG_0("Error from read in rrr_socket_read: %s\n", rrr_strerror(errno));
+		if (errno == ECONNRESET) {
+			RRR_DBG_7("Socket %i recvfrom/recv/read connection reset by remote\n", fd);
+			if (flags & (RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_CHECK_POLLHUP)) {
+				goto out_emit_eof;
+			}
+		}
+		RRR_DBG_7("Note: Error from read in rrr_socket_read: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if (bytes == 0) {
 		int got_pollhup_pollerr = 0;
 
-		ret = __rrr_socket_read_message_poll(&got_pollhup_pollerr, fd);
+		ret = __rrr_socket_read_poll(&got_pollhup_pollerr, fd);
 		if (ret & (RRR_READ_INCOMPLETE|RRR_READ_HARD_ERROR)) {
 			goto out;
 		}
@@ -266,9 +272,7 @@ int rrr_socket_read (
 		if ( (flags & RRR_SOCKET_READ_CHECK_EOF) ||
 			((flags & RRR_SOCKET_READ_CHECK_POLLHUP) && got_pollhup_pollerr)
 		) {
-			RRR_DBG_7("Socket %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
-			ret = RRR_READ_EOF;
-			goto out;
+			goto out_emit_eof;
 		}
 		else if (ret != 0) {
 			goto out;
@@ -277,8 +281,12 @@ int rrr_socket_read (
 
 	*read_bytes = bytes;
 
+	goto out;
+	out_emit_eof:
+		RRR_DBG_7("Socket %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
+		ret = RRR_READ_EOF;
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_socket_read_message_input_device (

@@ -460,7 +460,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	// Don't require arguments here, separate check in parse_config
-	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 0) != 0) {
 		goto out;
 	}
 

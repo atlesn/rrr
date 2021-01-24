@@ -7,4 +7,8 @@ else
 	echo "Not restarting RRR as it is currently not running"
 fi
 
+if test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x"; then
+	systemd-tmpfiles --create || true
+fi
+
 #DEBHELPER#

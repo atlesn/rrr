@@ -399,8 +399,8 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	uint64_t prev_delivery_queue_sleep_event_count = 0;
 
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (data->error_in_hook) {
 			RRR_MSG_0("Error encountered inside log hook of journal instance %s, exiting\n",

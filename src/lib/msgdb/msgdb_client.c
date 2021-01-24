@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,25 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_RRR_MESSAGE_H
-#define RRR_PYTHON3_RRR_MESSAGE_H
+#include <stdlib.h>
 
-#include "python3_headers.h"
+#include "../log.h"
+#include "msgdb_client.h"
+#include "../messages/msg_msg.h"
 
-struct rrr_msg;
-struct rrr_msg_msg;
-struct rrr_msg_addr;
-
-struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (
-		struct rrr_msg_addr *message_addr,
-		PyObject *self
-);
-PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
-		const struct rrr_msg_msg *msg,
-		const struct rrr_msg_addr *message_addr
-);
-PyObject *rrr_python3_rrr_msg_msg_new_from_message (
-		const struct rrr_msg_msg *msg
-);
-
-#endif /* RRR_PYTHON3_RRR_MESSAGE_H */
+int rrr_msgdb_client_put(const struct rrr_msg_msg *msg) {
+	return 0;
+}

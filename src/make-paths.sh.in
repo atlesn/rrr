@@ -1,0 +1,8 @@
+#!/bin/sh
+
+OUTPUT=$1
+DATA_DIR=$2
+
+rm -f $OUTPUT
+
+echo "const char rrr_paths_data_dir[] = \"$DATA_DIR\";" >> $OUTPUT

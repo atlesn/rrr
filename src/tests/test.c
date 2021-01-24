@@ -44,6 +44,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
+#include "test_json.h"
+#include "test_conversion.h"
+#include "test_msgdb.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -134,6 +137,24 @@ int rrr_test_library_functions (void) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("JSON parsing") {
+		ret_tmp = rrr_test_json();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("type conversion") {
+		ret_tmp = rrr_test_conversion();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("message database") {
+		ret_tmp = rrr_test_msgdb();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
 }
 
@@ -195,7 +216,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -214,17 +235,9 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	TEST_BEGIN("non-existent config file") {
-		config = rrr_config_parse_file("nonexistent_file");
-	} TEST_RESULT(config == NULL);
-
-	if (config != NULL) {
-		goto out_cleanup_config;
-	}
-
-	TEST_BEGIN("true configuration loading") {
-		config = rrr_config_parse_file(config_file);
-	} TEST_RESULT(config != NULL);
+	TEST_BEGIN("configuration loading") {
+		ret = rrr_config_parse_file(&config, config_file);
+	} TEST_RESULT(ret == 0);
 
 	if (config == NULL) {
 		ret = 1;

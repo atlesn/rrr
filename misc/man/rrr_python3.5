@@ -1,4 +1,4 @@
-.Dd 2019-10-04
+..Dd 2021-01-13
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -33,12 +33,6 @@ Below follows detailed description of methods and members of the RRR objects.
 Structure which contain a single RRR messsage which it is possible to mangle. A message may or may not contain a data
 array.
 .PP
-The type
-.B CLASS_ARRAY
-is automatically set if the message contains an array, and any other data set in the message apart from in the header
-is deleted. If there is no array in the message,
-.B CLASS_POINT
-is used.
 .TP
 .B rrr_message.set_data(data : bytearray|str)
 Set the body of a message. If the message contains an array,
@@ -67,6 +61,41 @@ Set the MQTT topic of a message.
 .TP
 .B rrr_message.get_topic()
 Return the MQTT topic of a message. If there is no topic, return an empty string.
+.TP
+.B rrr_message.get_ip()
+Returns the IP and port of a message as a tuple. If no address is set, NULL is returned.
+.TP
+.B rrr_message.clear_ip()
+Clear any IP address information of a message.
+.TP
+.B rrr_message.set_ip(ip : str, port : str|long)
+Set the IP address and port of the message, may be either IPv4 or IPv6.
+.TP
+.B rrr_message.get_ip_proto()
+Get the protocol of a message, returns TCP, UDP or empty string.
+.TP
+.B rrr_message.set_ip_proto(str)
+Set the protocol of a message, the argument may be one of the values returned by
+.B rrr_message.get_ip_proto().
+.TP
+.B rrr_message.type_and_class
+The lower four bits contain the message class, and the upper four bits contain the message type. The class of a message
+will be chosen automatically when a message leaves python3 depending on wether array data has been set or not. The four
+constants below can be checked against
+.B type_and_class
+using bitwise AND (&).
+.TP
+.B rrr_message.TYPE_MSG
+Constant value for normal message.
+.TP
+.B rrr_message.TYPE_TAG
+Same as a normal message, but indicates acknowledgement. (Not commonly used)
+.TP
+.B rrr_message.CLASS_DATA
+Constant value for a raw data message.
+.TP
+.B rrr_message.CLASS_ARRAY
+Constant value for a message with an RRR array.
 .SS rrr_array
 This class allows for modification of the array part of a message, or creation of a new one. An array consist
 of multiple members, optionally with a tag to identify them. Each member may itself have multiple values, but these

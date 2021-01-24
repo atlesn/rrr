@@ -27,24 +27,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 
-//extern pthread_mutex_t rrr_ip_buffer_master_lock;
-
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 );
 void rrr_msg_holder_unlock (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_unlock_void (
+		void *entry
+);
 void rrr_msg_holder_incref_while_locked (
 		struct rrr_msg_holder *entry
 );
-static inline void rrr_msg_holder_incref (
+void rrr_msg_holder_incref (
 		struct rrr_msg_holder *entry
-) {
-	rrr_msg_holder_lock(entry);
-	rrr_msg_holder_incref_while_locked (entry);
-	rrr_msg_holder_unlock(entry);
-}
+);
 void rrr_msg_holder_decref (
 		struct rrr_msg_holder *entry
 );
@@ -65,6 +62,11 @@ int rrr_msg_holder_new (
 int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
+);
+void rrr_msg_holder_set_data_unlocked (
+		struct rrr_msg_holder *target,
+		void *message,
+		ssize_t message_data_length
 );
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,

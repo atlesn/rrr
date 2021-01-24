@@ -36,6 +36,7 @@ struct rrr_http_client_config {
 
 	char *method_str;
 	enum rrr_http_method method;
+	int do_plain_http2;
 
 	rrr_setting_uint server_port;
 

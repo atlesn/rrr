@@ -29,23 +29,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 
 #define RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RAW_RECEIVE_CALLBACK_ARGS
+	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
-	struct rrr_http_client_request_data *data, 		\
-	int response_code,								\
-	const struct rrr_nullsafe_str *response_arg,	\
-	int chunk_idx,									\
-	int chunk_total,								\
-	const char *chunk_data_start,					\
-	size_t chunk_data_size,							\
-	size_t part_data_size,							\
+	const struct rrr_http_transaction *transaction,	\
+	const struct rrr_nullsafe_str *response_data,	\
+	void *arg
+
+#define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS		\
+	const struct rrr_http_transaction *transaction,	\
+	const struct rrr_http_uri *uri,					\
 	void *arg
 
 #define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\
 	char **endpoint_override,						\
 	char **query_string,							\
-	struct rrr_http_session *session,				\
+	struct rrr_http_transaction *transaction,		\
 	void *arg
 
 #define RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS	\
@@ -53,12 +52,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	uint16_t *port_override,								\
 	void *arg
 
-#define RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
-	RRR_HTTP_SESSION_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS
+#define RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
+	RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS \
 	RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
+#define RRR_HTTP_CLIENT_HTTP2_RECEIVE_CALLBACK_ARGS \
+	RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
+
+struct rrr_http_uri;
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
 struct rrr_http_client_config;
@@ -73,110 +76,111 @@ struct rrr_http_client_request_data {
 	char *endpoint;
 	char *user_agent;
 
+	enum rrr_http_method method;
+	enum rrr_http_upgrade_mode upgrade_mode;
+	int do_plain_http2;
+
 	int ssl_no_cert_verify;
 
 	ssize_t read_max_size;
-
-	int do_retry;
 };
 
 struct rrr_http_client_request_callback_data {
-	enum rrr_http_method method;
-
-	int response_code;
-	struct rrr_nullsafe_str *response_argument;
-
-	// Errors do not propagate through net transport framework. Return
-	// value of http callbacks is saved here.
-	int http_receive_ret;
-
-	struct rrr_http_client_request_data *data;
-
-	struct rr_net_transport *transport;
-	int transport_handle;
+	const struct rrr_http_client_request_data *data;
 
 	const char *raw_request_data;
 	size_t raw_request_data_size;
 
 	const char *request_header_host;
 
+	enum rrr_http_application_type application_type;
+	rrr_biglength remaining_redirects;
+
 	int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS);
 	void *query_prepare_callback_arg;
-	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
-	void *raw_callback_arg;
-	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
-	void *final_callback_arg;
+
+	void *application_data;
+	void (*application_data_destroy)(void *arg);
 };
 
-int rrr_http_client_data_init (
+void rrr_http_client_request_data_init (
+		struct rrr_http_client_request_data *target
+);
+int rrr_http_client_request_data_reset_from_request_data (
+		struct rrr_http_client_request_data *target,
+		const struct rrr_http_client_request_data *source
+);
+int rrr_http_client_request_data_reset (
 		struct rrr_http_client_request_data *data,
+		enum rrr_http_transport transport_force,
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		int do_plain_http2,
 		const char *user_agent
 );
-int rrr_http_client_data_reset (
+int rrr_http_client_request_data_reset_from_config (
 		struct rrr_http_client_request_data *data,
-		const struct rrr_http_client_config *config,
-		enum rrr_http_transport transport_force
+		const struct rrr_http_client_config *config
+);
+int rrr_http_client_request_data_reset_from_uri (
+		struct rrr_http_client_request_data *data,
+		const struct rrr_http_uri *uri
+);
+int rrr_http_client_request_data_reset_from_raw (
+		struct rrr_http_client_request_data *data,
+		const char *server,
+		uint16_t port
 );
 void rrr_http_client_request_data_cleanup (
 		struct rrr_http_client_request_data *data
 );
-
-// Note that data in the struct may change if there are any redirects
-int rrr_http_client_send_request (
+void rrr_http_client_request_data_cleanup_void (
+		void *data
+);
+void rrr_http_client_terminate_if_open (
+		struct rrr_net_transport *transport_keepalive,
+		int transport_keepalive_handle
+);
+int rrr_http_client_request_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_net_transport **transport_keepalive_plain,
+		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
 		void *connection_prepare_callback_arg,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_args,
 		int (*query_perpare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
 		void *query_prepare_callback_arg,
-		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
 );
-int rrr_http_client_send_raw_request (
+int rrr_http_client_request_raw_send (
 		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
+		struct rrr_net_transport **transport_keepalive_plain,
+		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
+		rrr_biglength remaining_redirects,
 		const char *raw_request_data,
 		size_t raw_request_data_size,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
-		void *connection_prepare_callback_arg,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_args,
-		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
+		void *connection_prepare_callback_arg
 );
-int rrr_http_client_send_request_simple (
-		struct rrr_http_client_request_data *data,
-		enum rrr_http_method method,
-		const struct rrr_net_transport_config *net_transport_config,
-		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
-);
-int rrr_http_client_start_websocket_simple (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive,
-		int *transport_keepalive_handle,
-		const struct rrr_net_transport_config *net_transport_config,
-		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
-);
-int rrr_http_client_websocket_tick (
+int rrr_http_client_tick (
 		uint64_t *bytes_total,
-		int timeout_s,
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport *transport_keepalive,
-		int transport_keepalive_handle,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS),
+		struct rrr_net_transport *transport_keepalive_plain,
+		struct rrr_net_transport *transport_keepalive_tls,
+		ssize_t read_max_size,
+		unsigned int idle_timeout_ms,
+		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg,
+		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
+		void *redirect_callback_arg,
+		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
+		void *frame_callback_arg,
+		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
+		void *raw_callback_arg
 );
 
 #endif /* RRR_HTTP_CLIENT_H */

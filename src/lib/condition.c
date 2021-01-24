@@ -168,9 +168,6 @@ void __rrr_condition_shunting_yard_carrier_free_if_not_null (
 		return;
 	}
 
-//	printf ("Free carrier %p op %s value size %lu\n",
-//			carrier, (carrier->op != NULL ? carrier->op->op : "(null)"), carrier->value_length);
-
 	free(carrier);
 }
 
@@ -215,7 +212,10 @@ int rrr_condition_clone (
 		struct rrr_condition *target,
 		const struct rrr_condition *source
 ) {
-	return __rrr_condition_shunting_yard_clone (&target->shunting_yard, &source->shunting_yard);
+	return __rrr_condition_shunting_yard_clone (
+			&target->shunting_yard,
+			&source->shunting_yard
+	);
 }
 
 static const struct rrr_condition_op *__rrr_condition_parse_op (struct rrr_parse_pos *pos) {
@@ -234,19 +234,7 @@ static const struct rrr_condition_op *__rrr_condition_parse_op (struct rrr_parse
 static int __rrr_condition_shunting_yard_finalize (
 		struct rrr_condition_shunting_yard *shunting_yard
 ) {
-
-	/* The closing ) should clear out the operator stack
-	while (RRR_LL_COUNT(&shunting_yard->op_stack) > 0) {
-		struct rrr_condition_shunting_yard_carrier *carrier = RRR_LL_SHIFT(&shunting_yard->op_stack);
-		if (carrier->op == operator_par_open) {
-			RRR_MSG_0("One or more end paranthesis ) missing in condition\n");
-			free(carrier);
-			return 1;
-		}
-		RRR_LL_APPEND(shunting_yard, carrier);
-	}
-	*/
-
+	// The closing ) should clear out the operator stack
 	if (RRR_LL_COUNT(&shunting_yard->op_stack) != 0) {
 		RRR_BUG("BUG: Operator stack was not empty in __rrr_condition_shunting_yard_finalize\n");
 	}
@@ -287,12 +275,9 @@ static int __rrr_condition_shunting_yard_shunt_op (
 		goto out;
 	}
 
-//	printf("Shunting operator %s\n", op->op);
-
 	if (op == operator_par_open) {
 		(*par_level)++;
 		RRR_LL_UNSHIFT(&shunting_yard->op_stack, carrier_new);
-//		printf("Pushed open par, stack length is %i\n", RRR_LL_COUNT(&shunting_yard->op_stack));
 		carrier_new = NULL;
 	}
 	else if (op == operator_par_close) {
@@ -305,9 +290,7 @@ static int __rrr_condition_shunting_yard_shunt_op (
 
 		while (RRR_LL_COUNT(&shunting_yard->op_stack) > 0) {
 			struct rrr_condition_shunting_yard_carrier *carrier = RRR_LL_SHIFT(&shunting_yard->op_stack);
-//			printf("Checking op on stack %s\n", carrier->op->op);
 			if (carrier->op == operator_par_open) {
-//				printf("Found open par, free %p\n", carrier);
 				__rrr_condition_shunting_yard_carrier_free_if_not_null(carrier);
 				break;
 			}
@@ -315,7 +298,6 @@ static int __rrr_condition_shunting_yard_shunt_op (
 		}
 	}
 	else if (RRR_LL_COUNT(&shunting_yard->op_stack) == 0) {
-//		printf("Pushed op %s, stack length is %i\n", carrier_new->op->op, RRR_LL_COUNT(&shunting_yard->op_stack));
 		RRR_LL_UNSHIFT(&shunting_yard->op_stack, carrier_new);
 		carrier_new = NULL;
 	}
@@ -352,8 +334,6 @@ static int __rrr_condition_shunting_yard_shunt_value (
 		goto out;
 	}
 
-//	printf("Shunting a value %.*s\n", (int) size, value);
-
 	RRR_LL_APPEND(shunting_yard, carrier_new);
 
 	out:
@@ -382,7 +362,6 @@ void rrr_condition_dump (
 }
 
 static const char *rrr_condition_str_false = "0";
-//static const char *rrr_condition_str_true = "1";
 
 int rrr_condition_interpret (
 		struct rrr_condition *target,
@@ -514,9 +493,6 @@ int rrr_condition_interpret (
 	if ((ret = __rrr_condition_shunting_yard_finalize(shunting_yard)) != 0) {
 		goto out_clear;
 	}
-
-//	 __rrr_condition_shunting_yard_dump(shunting_yard);
-//	printf("\n");
 
 	goto out;
 	out_clear:
@@ -794,6 +770,7 @@ static int __rrr_condition_evalute_value (
 	) {
 		const char *value_start = position->carrier->value + 2;
 		char *endptr = NULL;
+
 		position->result = strtoull(value_start, &endptr, 16);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
@@ -804,6 +781,7 @@ static int __rrr_condition_evalute_value (
 	}
 	else if (*(position->carrier->value) == '-') {
 		char *endptr = NULL;
+
 		int64_t tmp = strtoll(position->carrier->value, &endptr, 10);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
@@ -811,11 +789,13 @@ static int __rrr_condition_evalute_value (
 			ret = RRR_CONDITION_SOFT_ERROR;
 			goto out;
 		}
+
 		position->result = *((uint64_t*) &tmp);
 		position->is_signed = 1;
 	}
 	else {
 		char *endptr = NULL;
+
 		position->result = strtoull(position->carrier->value, &endptr, 10);
 		if (endptr == NULL || *endptr != '\0') {
 			// This might be a bug, parser should validate the numbers
@@ -824,6 +804,7 @@ static int __rrr_condition_evalute_value (
 			goto out;
 		}
 	}
+
 	position->carrier = NULL;
 	position->is_evaluated = 1;
 
