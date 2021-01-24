@@ -627,7 +627,6 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	AC_CONFIG_FILES([misc/systemd/make-tmpfiles.sh])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
 
-
 	AC_MSG_CHECKING([for systemd service file no installation command])
 	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
 		AC_MSG_RESULT([yes])
@@ -653,6 +652,13 @@ AC_MSG_CHECKING([for RRR run directory])
 AC_MSG_RESULT([${RRR_RUN_DIR}])
 AC_SUBST(RRR_RUN_DIR)
 AC_DEFINE_UNQUOTED([RRR_RUN_DIR], ["${RRR_RUN_DIR}"], [Default run directory for sockets])
+
+AC_MSG_CHECKING([for RRR data directory])
+RRR_DATA_DIR="${localstatedir}/lib/rrr"
+AC_MSG_RESULT([${RRR_DATA_DIR}])
+AC_SUBST(RRR_DATA_DIR)
+
+AC_CONFIG_FILES([src/make-paths.sh])
 
 AC_MSG_CHECKING([for daemon username])
 AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
