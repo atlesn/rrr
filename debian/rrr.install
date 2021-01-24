@@ -1,4 +1,5 @@
 etc/*
+var/lib/rrr/.placeholder
 usr/bin/*
 usr/lib/*/perl5/*
 usr/share/man/*
