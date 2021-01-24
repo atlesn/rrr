@@ -1,9 +1,13 @@
 systemd_unitdir = @RRR_SYSTEMD_UNIT_DIR@
 systemd_tmpfilesdir = @RRR_TMPFILES_DIR@
 
-if RRR_SYSTEMD_NO_INSTALL
+if RRR_SYSTEMD_NO_UNIT_INSTALL
 else
 systemd_unit_DATA = rrr.service
+endif
+
+if RRR_SYSTEMD_NO_TMPFILES_INSTALL
+else
 systemd_tmpfiles_DATA = rrr.conf
 endif
 

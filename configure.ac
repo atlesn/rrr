@@ -606,7 +606,8 @@ AS_IF([test "x$enable_confdir" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
-AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_UNIT_INSTALL], [test "x$RRR_SYSTEMD_NO_UNIT_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_TMPFILES_INSTALL], [test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x1"])
 
 AC_MSG_CHECKING([for systemd usage])
 AS_IF([test "x$enable_systemd" = xyes], [
