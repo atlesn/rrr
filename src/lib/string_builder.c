@@ -154,7 +154,7 @@ int rrr_string_builder_append_from (
 		goto out;
 	}
 
-	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos + 1);
+	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos);
 
 	out:
 	return ret;
