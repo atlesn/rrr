@@ -103,10 +103,12 @@ void rrr_msgdb_server_destroy (
 
 struct rrr_msgdb_server_client {
 	int prev_ctrl_msg_type;
+	int fd;
 };
 
 static int __rrr_msgdb_server_client_new (
 	struct rrr_msgdb_server_client **target,
+	int fd,
 	void *arg
 ) {
 	(void)(arg);
@@ -121,16 +123,19 @@ static int __rrr_msgdb_server_client_new (
 
 	memset (client, '\0', sizeof(*client));
 
+	client->fd = fd;
+
 	*target = client;
 
 	return 0;
 }
 
 static int __rrr_msgdb_server_client_new_void (
-	void **target,
-	void *arg
+		void **target,
+		int fd,
+		void *arg
 ) {
-	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, arg);
+	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, fd, arg);
 }
 
 static void __rrr_msgdb_server_client_destroy (
@@ -145,24 +150,39 @@ static void __rrr_msgdb_server_client_destroy_void (
 	return __rrr_msgdb_server_client_destroy(arg);
 }
 
+static int __rrr_msgdb_server_send_msg_ack (
+	int fd
+) {
+	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
+
+	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_ACK);
+}
+
 static int __rrr_msgdb_server_read_msg_msg_callback (
 		struct rrr_msg_msg **msg,
-		void *arg,
-		void *private_data
+		void *private_data,
+		void *arg
 ) {
-	RRR_DBG_3("msgdb recv MSG size %" PRIrrrl "\n", MSG_TOTAL_SIZE(*msg));
-	return 0;
+	struct rrr_msgdb_server_client *client = private_data;
+
+	(void)(arg);
+
+	RRR_DBG_3("msgdb fd %i recv MSG size %" PRIrrrl "\n", client->fd, MSG_TOTAL_SIZE(*msg));
+
+	return __rrr_msgdb_server_send_msg_ack(client->fd);
 }
 
 static int __rrr_msgdb_server_read_msg_ctrl_callback (
 		const struct rrr_msg *msg,
-		void *arg,
-		void *private_data
+		void *private_data,
+		void *arg
 ) {
 	struct rrr_msgdb_server_client *client = private_data;
 
+	(void)(arg);
+
 	if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSGDB_CTRL_F_PUT)) {
-		RRR_DBG_3("msgdb recv PUT\n");
+		RRR_DBG_3("msgdb fd %i recv PUT\n", client->fd);
 	}
 	else {
 		RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));

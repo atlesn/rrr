@@ -68,7 +68,7 @@ int rrr_socket_client_collection_count (
 );
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
-		int (*private_data_new)(void **target, void *private_arg),
+		int (*private_data_new)(void **target, int fd, void *private_arg),
 		void *private_arg,
 		void (*private_data_destroy)(void *private_data)
 );

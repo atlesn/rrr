@@ -149,6 +149,7 @@ static int __rrr_msgdb_common_msg_send (
 	;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
 

@@ -56,7 +56,7 @@ static int __rrr_socket_client_new (
 		int fd,
 		struct sockaddr *addr,
 		socklen_t addr_len,
-		int (*private_data_new)(void **target, void *private_arg),
+		int (*private_data_new)(void **target, int fd, void *private_arg),
 		void *private_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
@@ -87,7 +87,7 @@ static int __rrr_socket_client_new (
 			RRR_BUG("BUG: A new function was defined but no destroy function in __rrr_socket_client_new\n");
 		}
 
-		if ((ret = private_data_new(&client->private_data, private_arg)) != 0) {
+		if ((ret = private_data_new(&client->private_data, fd, private_arg)) != 0) {
 			RRR_MSG_0("Error while initializing private data in __rrr_socket_client_new\n");
 			ret = 1;
 			goto out_free;
@@ -139,7 +139,7 @@ int rrr_socket_client_collection_count (
 
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
-		int (*private_data_new)(void **target, void *private_arg),
+		int (*private_data_new)(void **target, int fd, void *private_arg),
 		void *private_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
@@ -202,7 +202,7 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 }
 
 struct rrr_socket_client_collection_read_raw_complete_callback_data {
-		void *private_data;
+		struct rrr_socket_client *client;
 		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg);
 		void *complete_callback_arg;
 };
@@ -215,7 +215,7 @@ static int __rrr_socket_client_collection_read_raw_complete_callback (
 
 	return callback_data->complete_callback (
 		read_session,
-		callback_data->private_data,
+		callback_data->client->private_data,
 		callback_data->complete_callback_arg
 	);
 }

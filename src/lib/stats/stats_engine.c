@@ -138,8 +138,11 @@ static void __rrr_stats_engine_log_listener (
 
 static int __rrr_stats_client_new (
 		struct rrr_stats_client **target,
+		int fd,
 		struct rrr_stats_engine *engine
 ) {
+	(void)(fd);
+
 	struct rrr_stats_client *client = malloc(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
@@ -161,8 +164,8 @@ static void __rrr_stats_client_destroy (
 	free(client);
 }
 
-static int __rrr_stats_client_new_void (void **target, void *private_data) {
-	return __rrr_stats_client_new ((struct rrr_stats_client **) target, private_data);
+static int __rrr_stats_client_new_void (void **target, int fd, void *private_data) {
+	return __rrr_stats_client_new ((struct rrr_stats_client **) target, fd, private_data);
 }
 
 static void __rrr_stats_client_destroy_void (void *client) {
