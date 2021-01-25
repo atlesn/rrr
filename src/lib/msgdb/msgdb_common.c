@@ -20,11 +20,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "msgdb_common.h"
 #include "../log.h"
 #include "../rrr_strerror.h"
 #include "../messages/msg.h"
+#include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 
 static int __rrr_msgdb_common_msg_send_raw_blocking (
@@ -117,4 +119,49 @@ int rrr_msgdb_common_ctrl_msg_send_blocking (
 	int flags
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, flags, 0);
+}
+
+static int __rrr_msgdb_common_msg_send (
+	int fd,
+	const struct rrr_msg_msg *msg,
+	int do_nonblock
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	RRR_DBG_3("msgdb fd %i send MSG size %" PRIrrrl " %s\n", fd, MSG_TOTAL_SIZE(msg), (do_nonblock ? "nonblock" : "blocking"));
+
+	if ((msg_tmp = malloc(MSG_TOTAL_SIZE(msg))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_msg_send\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(msg_tmp, msg, MSG_TOTAL_SIZE(msg));
+
+	rrr_msg_msg_prepare_for_network(msg_tmp);
+	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_tmp);
+
+	ret = do_nonblock
+		? __rrr_msgdb_common_msg_send_raw_nonblock(fd, (const struct rrr_msg *) msg_tmp, MSG_TOTAL_SIZE(msg))
+		: __rrr_msgdb_common_msg_send_raw_blocking(fd, (const struct rrr_msg *) msg_tmp, MSG_TOTAL_SIZE(msg))
+	;
+
+	out:
+	return ret;
+}
+
+int rrr_msgdb_common_msg_send_nonblock (
+	int fd,
+	const struct rrr_msg_msg *msg
+) {
+	return __rrr_msgdb_common_msg_send(fd, msg, 1);
+}
+
+int rrr_msgdb_common_msg_send_blocking (
+	int fd,
+	const struct rrr_msg_msg *msg
+) {
+	return __rrr_msgdb_common_msg_send(fd, msg, 0);
 }

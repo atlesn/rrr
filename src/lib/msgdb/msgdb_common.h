@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MSGDB_CTRL_F_PUT     RRR_MSG_CTRL_F_USR_A
 
+struct rrr_msg_msg;
+
 int rrr_msgdb_common_ctrl_msg_send_blocking (
 	int fd,
 	int flags
@@ -38,6 +40,14 @@ int rrr_msgdb_common_ctrl_msg_send_blocking (
 int rrr_msgdb_common_ctrl_msg_send_nonblock (
 	int fd,
 	int flags
+);
+int rrr_msgdb_common_msg_send_nonblock (
+	int fd,
+	const struct rrr_msg_msg *msg
+);
+int rrr_msgdb_common_msg_send_blocking (
+	int fd,
+	const struct rrr_msg_msg *msg
 );
 
 #endif /* RRR_MSGDB_COMMON_H */

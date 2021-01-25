@@ -150,6 +150,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		void *arg,
 		void *private_data
 ) {
+	RRR_DBG_3("msgdb recv MSG size %" PRIrrrl "\n", MSG_TOTAL_SIZE(*msg));
 	return 0;
 }
 
@@ -161,7 +162,7 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 	struct rrr_msgdb_server_client *client = private_data;
 
 	if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSGDB_CTRL_F_PUT)) {
-		RRR_DBG_3("Received control message PUT\n");
+		RRR_DBG_3("msgdb recv PUT\n");
 	}
 	else {
 		RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));

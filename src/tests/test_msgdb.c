@@ -136,6 +136,8 @@ int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
 
 	ret = __rrr_test_msgdb();
 
+	rrr_posix_usleep(500000);
+
 	out:
 	if (msgserver_pid > 0) {
 		rrr_fork_send_sigusr1_to_pid(msgserver_pid);

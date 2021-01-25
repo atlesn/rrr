@@ -75,6 +75,10 @@ int rrr_msgdb_client_put (
 		goto out;
 	}
 
+	if ((ret = rrr_msgdb_common_msg_send_blocking (conn->fd, msg)) != 0) {
+		goto out;
+	}
+
 	out:
 	return ret;
 }
