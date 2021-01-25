@@ -22,8 +22,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MSGDB_CLIENT_H
 #define RRR_MSGDB_CLIENT_H
 
+struct rrr_msgdb_client_conn {
+	int fd;
+};
+
 struct rrr_msg_msg;
 
-int rrr_msgdb_client_put(const struct rrr_msg_msg *msg);
+int rrr_msgdb_client_open (
+	struct rrr_msgdb_client_conn *conn,
+	const char *path
+);
+void rrr_msgdb_client_close (
+	struct rrr_msgdb_client_conn *conn
+);
+void rrr_msgdb_client_close_void (
+	void *conn
+);
+int rrr_msgdb_client_put (
+	struct rrr_msgdb_client_conn *conn,
+	const struct rrr_msg_msg *msg
+);
 
 #endif /* RRR_MSGDB_CLIENT_H */

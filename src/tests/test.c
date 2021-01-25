@@ -107,7 +107,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,							'\0',	NULL, 					""}
 };
 
-int rrr_test_library_functions (void) {
+int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret = 0;
 	int ret_tmp = 0;
 
@@ -150,7 +150,7 @@ int rrr_test_library_functions (void) {
 	ret |= ret_tmp;
 
 	TEST_BEGIN("message database") {
-		ret_tmp = rrr_test_msgdb();
+		ret_tmp = rrr_test_msgdb(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -224,7 +224,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
-		ret = rrr_test_library_functions();
+		ret = rrr_test_library_functions(fork_handler);
 		goto out_cleanup_cmd;
 	}
 

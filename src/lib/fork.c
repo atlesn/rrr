@@ -251,6 +251,13 @@ static void __rrr_fork_wait_loop (
 	} while (*active_forks_found != 0);
 }
 
+void rrr_fork_send_sigusr1_to_pid (
+		pid_t pid
+) {
+	RRR_DBG_1("SIGUSR1 to fork %i\n", pid);
+	kill(pid, SIGUSR1);
+}
+
 // Call from main() only
 void rrr_fork_send_sigusr1_and_wait (
 		struct rrr_fork_handler *handler

@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TEST_MSGDB_H
 #define RRR_TEST_MSGDB_H
 
-int rrr_test_msgdb(void);
+struct rrr_fork_handler;
+
+int rrr_test_msgdb(struct rrr_fork_handler *fork_handler);
 
 #endif /* RRR_TEST_MSGDB_H */

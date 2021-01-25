@@ -11,7 +11,7 @@ SUBDIRS = modules
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
 
 test_LDFLAGS = ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
-test_LDADD = -ldl -lpthread -lm -L../lib -L../lib/.libs -lrrr libtest_msgdb.la
+test_LDADD = -ldl -lpthread -lm -L../lib -L../lib/.libs -lrrr 
 test_SOURCES = test.c \
 	../main.c \
 	test_usleep.c \
@@ -19,19 +19,14 @@ test_SOURCES = test.c \
 	test_inet.c \
 	test_condition.c \
 	test_json.c \
-	test_conversion.c
+	test_conversion.c \
+	test_msgdb.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
-
-noinst_LTLIBRARIES = libtest_msgdb.la
-
-libtest_msgdb_la_SOURCES = test_msgdb.c
-libtest_msgdb_la_CFLAGS = ${test_CFLAGS} \
-	-DRRR_INTERCEPT_ALLOW_FORK
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
 make_test_data_CFLAGS = 

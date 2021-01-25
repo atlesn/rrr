@@ -24,7 +24,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "msgdb_client.h"
 #include "../messages/msg_msg.h"
+#include "../socket/rrr_socket_client.h"
 
-int rrr_msgdb_client_put(const struct rrr_msg_msg *msg) {
-	return 0;
+int rrr_msgdb_client_open (
+	struct rrr_msgdb_client_conn *conn,
+	const char *path
+) {
+	int ret = 0;
+
+	if (conn->fd != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 0)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+void rrr_msgdb_client_close (
+	struct rrr_msgdb_client_conn *conn
+) {
+	if (conn->fd > 0) {
+		rrr_socket_close_no_unlink(conn->fd);
+		conn->fd = 0;
+	}
+}
+
+void rrr_msgdb_client_close_void (
+	void *conn
+) {
+	rrr_msgdb_client_close(conn);
+}
+
+int rrr_msgdb_client_put (
+	struct rrr_msgdb_client_conn *conn,
+	const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	out:
+	return ret;
 }

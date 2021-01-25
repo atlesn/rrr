@@ -34,17 +34,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/util/posix.h"
+#include "../lib/fork.h"
 #include "test.h"
 
-#define MSGDB_CMD "../.libs/rrr_msgdb"
+#define MSGDB_CMD        "../.libs/rrr_msgdb"
+#define MSGDB_SOCKET     "/tmp/rrr_test_msgdb.sock"
+#define MSGDB_DIRECTORY  "/tmp/rrr_test_msgdb/"
 
-int rrr_test_msgdb(void) {
+static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 	int ret = 0;
 
-	pid_t msgserver_pid = 0;
-	struct rrr_msg_msg *msg = NULL;
+	*result = NULL;
 
 	const char msg_topic[] = "a/b/c";
+	struct rrr_msg_msg *msg = NULL;
 
 	if ((ret = rrr_msg_msg_new_empty (
 		&msg,
@@ -57,43 +60,85 @@ int rrr_test_msgdb(void) {
 		goto out;
 	}
 
+	memcpy(MSG_TOPIC_PTR(msg), msg_topic, sizeof(msg_topic) - 1);
+
+	*result = msg;
+	msg = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+static int __rrr_test_msgdb_put(struct rrr_msgdb_client_conn *conn) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_client_put(conn, msg)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+static int __rrr_test_msgdb(void) {
+	int ret = 0;
+
+	struct rrr_msgdb_client_conn conn = {0};
+
+	if ((ret = rrr_msgdb_client_open(&conn, MSGDB_SOCKET)) != 0) {
+		goto out;
+	}
+
+	ret |= __rrr_test_msgdb_put(&conn);
+
+	out:
+	rrr_msgdb_client_close(&conn);
+	return ret;
+}
+
+static void __rrr_test_msgdb_fork_exit_notify(pid_t pid, void *arg) {
+	(void)(arg);
+	(void)(pid);
+	RRR_DBG_1("Message database server has exited\n");
+}
+
+int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
+	int ret = 0;
+
+	pid_t msgserver_pid = 0;
+
 	RRR_DBG_1("Forking to start message database service '" MSGDB_CMD "'...\n");
 
-	if ((msgserver_pid = fork()) < 0) {
+	if ((msgserver_pid = rrr_fork(fork_handler, __rrr_test_msgdb_fork_exit_notify, NULL)) < 0) {
 		TEST_MSG("Could not fork: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 	else if (msgserver_pid == 0) {
 		// Child code
-		execl(MSGDB_CMD, "", "-s", "/tmp/rrr_test_msgdb.sock", "-d", "/tmp/rrr_test_msgdb/", (char *) NULL);
-		TEST_MSG("Could not execute message database command " MSGDB_CMD ": %s\n", rrr_strerror(errno));
+		char debuglevel[64];
+		sprintf(debuglevel, "%llu", (long long unsigned) RRR_DEBUGLEVEL);
+		execl(MSGDB_CMD, "", MSGDB_DIRECTORY, "-s", MSGDB_SOCKET, "-d", debuglevel, (char *) NULL);
+		TEST_MSG("Could not start message database sever " MSGDB_CMD ": %s\n", rrr_strerror(errno));
 		exit(1);
 	}
 
-	memcpy(MSG_TOPIC_PTR(msg), msg_topic, sizeof(msg_topic) - 1);
+	// Wait for server to start listening on socket
+	rrr_posix_usleep(500000);
 
-	if ((ret = rrr_msgdb_client_put(msg)) != 0) {
-		goto out;
-	}
+	ret = __rrr_test_msgdb();
 
 	out:
 	if (msgserver_pid > 0) {
-		rrr_posix_usleep(500000);
-		if (kill(msgserver_pid, SIGTERM) < 0) {
-			TEST_MSG("Failed while sending SIGTERM to message database server: %s\n", rrr_strerror(errno));
-			ret |= 1;
-		}
-		int status;
-		if (waitpid(msgserver_pid, &status, 0) < 0) {
-			TEST_MSG("Failed while waiting on message database server: %s\n", rrr_strerror(errno));
-			ret |= 1;
-		}
-		else if (WEXITSTATUS(status) != 0) {
-			TEST_MSG("Non-zero exit status %i from message database server\n", WEXITSTATUS(status));
-			ret |= 1;
-		}
+		rrr_fork_send_sigusr1_to_pid(msgserver_pid);
 	}
-	RRR_FREE_IF_NOT_NULL(msg);
 	return ret;
 }

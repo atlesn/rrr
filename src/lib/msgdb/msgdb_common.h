@@ -19,18 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_MSGDB_SERVER_H
-#define RRR_MSGDB_SERVER_H
+#ifndef RRR_MSGDB_COMMON_H
+#define RRR_MSGDB_COMMON_H
 
-struct rrr_msgdb_server;
+#include "../messages/msg_head.h"
 
-int rrr_msgdb_server_new (
-	struct rrr_msgdb_server **result,
-	const char *directory,
-	const char *socket
-);
-void rrr_msgdb_server_destroy (
-	struct rrr_msgdb_server *server
-);
+#define RRR_MSGDB_CTRL_F_PUT     RRR_MSG_CTRL_F_USR_A
 
-#endif /* RRR_MSGDB_SERVER_H */
+#endif /* RRR_MSGDB_COMMON_H */
