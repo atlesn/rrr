@@ -28,9 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
 
+#include "../read.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
-#include "../read.h"
+#include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
@@ -177,12 +178,6 @@ int rrr_socket_client_collection_accept (
 	return 0;
 }
 
-int rrr_socket_client_collection_accept_simple (
-		struct rrr_socket_client_collection *collection
-) {
-	return rrr_socket_client_collection_accept (collection, NULL, NULL, NULL);
-}
-
 int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		struct rrr_socket_client_collection *collection,
 		void *data,
@@ -206,16 +201,33 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 	return ret;
 }
 
-// TODO : Add disconnect notification callback for debug purposes
+struct rrr_socket_client_collection_read_raw_complete_callback_data {
+		void *private_data;
+		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg);
+		void *complete_callback_arg;
+};
 
-int rrr_socket_client_collection_read (
+static int __rrr_socket_client_collection_read_raw_complete_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_socket_client_collection_read_raw_complete_callback_data *callback_data = arg;
+
+	return callback_data->complete_callback (
+		read_session,
+		callback_data->private_data,
+		callback_data->complete_callback_arg
+	);
+}
+
+int rrr_socket_client_collection_read_raw (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
 		void *complete_callback_arg
 ) {
 	int ret = 0;
@@ -227,6 +239,11 @@ int rrr_socket_client_collection_read (
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		struct rrr_socket_client_collection_read_raw_complete_callback_data complete_callback_data = {
+			node,
+			complete_callback,
+			complete_callback_arg
+		};
 		uint64_t bytes_read = 0;
 		ret = rrr_socket_read_message_default (
 				&bytes_read,
@@ -238,8 +255,8 @@ int rrr_socket_client_collection_read (
 				read_flags_socket,
 				get_target_size,
 				get_target_size_arg,
-				complete_callback,
-				complete_callback_arg
+				__rrr_socket_client_collection_read_raw_complete_callback,
+				&complete_callback_data
 		);
 
 		if (ret == RRR_SOCKET_OK) {
@@ -261,4 +278,77 @@ int rrr_socket_client_collection_read (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_client_destroy(node));
 
 	return ret;
+}
+
+struct rrr_socket_client_collection_read_message_complete_callback_data {
+		int (*callback_msg)(struct rrr_msg_msg **message, void *private_data, void *arg);
+		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *private_data, void *arg);
+		int (*callback_log_msg)(const struct rrr_msg_log *message, void *private_data, void *arg);
+		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *private_data, void *arg);
+		void *callback_arg;
+};
+
+static int __rrr_socket_client_collection_read_message_complete_callback (
+	struct rrr_read_session *read_session,
+	void *private_data,
+	void *arg
+) {
+	int ret = 0;
+
+	struct rrr_socket_client_collection_read_message_complete_callback_data *callback_data = arg;
+
+	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Message was too long in __rrr_socket_client_collection_read_message_complete_callback\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
+	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
+
+	ret = rrr_msg_to_host_and_verify_with_callback (
+			(struct rrr_msg **) &read_session->rx_buf_ptr,
+			(rrr_length) read_session->rx_buf_wpos,
+			callback_data->callback_msg,
+			callback_data->callback_addr_msg,
+			callback_data->callback_log_msg,
+			callback_data->callback_ctrl_msg,
+			private_data,
+			callback_data->callback_arg
+	);
+
+	out:
+	return ret;
+}
+
+// TODO : Add disconnect notification callback for debug purposes
+
+int rrr_socket_client_collection_read_message (
+		struct rrr_socket_client_collection *collection,
+		ssize_t read_step_max_size,
+		int read_flags_socket,
+		int (*callback_msg)(struct rrr_msg_msg **message, void *private_data, void *arg),
+		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *private_data, void *arg),
+		int (*callback_log_msg)(const struct rrr_msg_log *message, void *private_data, void *arg),
+		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *private_data, void *arg),
+		void *callback_arg
+) {
+	struct rrr_socket_client_collection_read_message_complete_callback_data complete_callback_data = {
+		callback_msg,
+		callback_addr_msg,
+		callback_log_msg,
+		callback_ctrl_msg,
+		callback_arg
+	};
+
+	return rrr_socket_client_collection_read_raw (
+		collection,
+		sizeof(struct rrr_msg),
+		read_step_max_size,
+		read_flags_socket,
+		rrr_read_common_get_session_target_length_from_message_and_checksum,
+		NULL,
+		__rrr_socket_client_collection_read_message_complete_callback,
+		&complete_callback_data
+	);
 }

@@ -32,6 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_READ_SOFT_ERROR		RRR_READ_SOFT_ERROR
 #define RRR_MSG_READ_HARD_ERROR		RRR_READ_HARD_ERROR
 
+struct rrr_msg_msg;
+struct rrr_msg_addr;
+struct rrr_msg_log;
+
 void rrr_msg_populate_head (
 		struct rrr_msg *message,
 		rrr_u16 type,
@@ -58,6 +62,16 @@ int rrr_msg_get_target_size_and_check_checksum (
 int rrr_msg_check_data_checksum_and_length (
 		struct rrr_msg *message,
 		rrr_length data_size
+);
+int rrr_msg_to_host_and_verify_with_callback (
+		struct rrr_msg **msg,
+		rrr_length expected_size,
+		int (*callback_msg)(struct rrr_msg_msg **message, void *arg1, void *arg2),
+		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *arg1, void *arg2),
+		int (*callback_log_msg)(const struct rrr_msg_log *message, void *arg1, void *arg2),
+		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *arg1, void *arg2),
+		void *callback_arg1,
+		void *callback_arg2
 );
 
 #endif /* RRR_MSG_H */

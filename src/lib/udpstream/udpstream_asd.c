@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket_constants.h"
 #include "messages/msg_checksum.h"
 #include "messages/msg_msg.h"
+#include "messages/msg.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
@@ -936,10 +937,12 @@ int rrr_udpstream_asd_default_allocator (
 }
 */
 
-static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_msg **message, void *arg) {
+static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_msg **message, void *arg1, void *arg2) {
+	(void)(arg2);
+
 	int ret = 0;
 
-	struct rrr_asd_receive_messages_callback_data *receive_data = arg;
+	struct rrr_asd_receive_messages_callback_data *receive_data = arg1;
 	struct rrr_udpstream_asd *session = receive_data->session;
 	struct rrr_msg_holder *entry = receive_data->udpstream_receive_data->allocation_handle;
 
@@ -990,17 +993,22 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	callback_data->udpstream_receive_data = receive_data;
 
-	struct rrr_read_common_receive_message_callback_data socket_callback_data = {
+	if (receive_data->data_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Received message too big in __rrr_udpstream_asd_receive_messages_callback\n");
+		ret = RRR_UDPSTREAM_ASD_ERR;
+		goto out;
+	}
+
+
+	if ((ret = rrr_msg_to_host_and_verify_with_callback (
+			(struct rrr_msg **) joined_data,
+			receive_data->data_size,
 			__rrr_udpstream_asd_receive_messages_callback_final,
 			NULL,
 			NULL,
-			callback_data
-	};
-
-	if ((ret = rrr_read_common_receive_message_raw_callback (
-			joined_data,
-			receive_data->data_size,
-			&socket_callback_data
+			NULL,
+			callback_data,
+			NULL
 	)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_MSG_0("Invalid message received in __rrr_udpstream_asd_receive_messages_callback, application data was %" PRIu64 "\n",

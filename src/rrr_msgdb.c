@@ -112,7 +112,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	while (main_running) {
-		rrr_posix_usleep(250000); // 250 ms
+		if ((ret = rrr_msgdb_server_tick(server)) != 0) {
+			break;
+		}
+		rrr_posix_usleep(1000);
 	}
 
 	rrr_config_set_debuglevel_on_exit();

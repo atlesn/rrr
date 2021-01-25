@@ -48,7 +48,6 @@ struct rrr_socket_options {
 	int protocol;
 };
 
-struct rrr_read_session;
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd

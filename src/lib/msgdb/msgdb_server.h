@@ -32,5 +32,8 @@ int rrr_msgdb_server_new (
 void rrr_msgdb_server_destroy (
 	struct rrr_msgdb_server *server
 );
+int rrr_msgdb_server_tick (
+	struct rrr_msgdb_server *server
+);
 
 #endif /* RRR_MSGDB_SERVER_H */

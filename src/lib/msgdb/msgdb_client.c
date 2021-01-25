@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "msgdb_client.h"
+#include "msgdb_common.h"
+#include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket_client.h"
 
@@ -39,6 +41,8 @@ int rrr_msgdb_client_open (
 	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 0)) != 0) {
 		goto out;
 	}
+
+	RRR_DBG_2("msgdb open '%s' fd is %i\n", path, conn->fd);
 
 	out:
 	return ret;
@@ -64,6 +68,12 @@ int rrr_msgdb_client_put (
 	const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
+
+	RRR_DBG_2("msgdb fd %i PUT msg size %li\n", conn->fd, MSG_TOTAL_SIZE(msg));
+
+	if ((ret = rrr_msgdb_common_ctrl_msg_send_blocking (conn->fd, RRR_MSGDB_CTRL_F_PUT)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

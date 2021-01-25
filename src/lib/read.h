@@ -149,27 +149,9 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 );
 
-struct rrr_msg_log;
-struct rrr_msg_addr;
-struct rrr_msg_msg;
 struct rrr_array;
 struct rrr_array_tree;
 
-struct rrr_read_common_receive_message_callback_data {
-	int (*callback_msg)(struct rrr_msg_msg **message, void *arg);
-	int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *arg);
-	int (*callback_log_msg)(const struct rrr_msg_log *message, void *arg);
-	void *callback_arg;
-};
-int rrr_read_common_receive_message_raw_callback (
-		void **data,
-		ssize_t data_size,
-		struct rrr_read_common_receive_message_callback_data *callback_data
-);
-int rrr_read_common_receive_message_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-);
 int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
 );

@@ -23,7 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "msgdb_common.h"
 #include "msgdb_server.h"
+#include "../read.h"
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
@@ -97,4 +99,107 @@ void rrr_msgdb_server_destroy (
 	rrr_socket_close(server->fd);
 	rrr_socket_client_collection_clear(&server->clients);
 	free(server);
+}
+
+struct rrr_msgdb_server_client {
+	int prev_ctrl_msg_type;
+};
+
+static int __rrr_msgdb_server_client_new (
+	struct rrr_msgdb_server_client **target,
+	void *arg
+) {
+	(void)(arg);
+
+	*target = NULL;
+
+	struct rrr_msgdb_server_client *client = malloc(sizeof(*client));
+	if (client == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_server_client_new\n");
+		return 1;
+	}
+
+	memset (client, '\0', sizeof(*client));
+
+	*target = client;
+
+	return 0;
+}
+
+static int __rrr_msgdb_server_client_new_void (
+	void **target,
+	void *arg
+) {
+	return __rrr_msgdb_server_client_new((struct rrr_msgdb_server_client **) target, arg);
+}
+
+static void __rrr_msgdb_server_client_destroy (
+	struct rrr_msgdb_server_client *client
+) {
+	free(client);
+}
+
+static void __rrr_msgdb_server_client_destroy_void (
+	void *arg
+) {
+	return __rrr_msgdb_server_client_destroy(arg);
+}
+
+static int __rrr_msgdb_server_read_msg_msg_callback (
+		struct rrr_msg_msg **msg,
+		void *arg,
+		void *private_data
+) {
+	return 0;
+}
+
+static int __rrr_msgdb_server_read_msg_ctrl_callback (
+		const struct rrr_msg *msg,
+		void *arg,
+		void *private_data
+) {
+	struct rrr_msgdb_server_client *client = private_data;
+
+	if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSGDB_CTRL_F_PUT)) {
+		RRR_DBG_3("Received control message PUT\n");
+	}
+	else {
+		RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
+		return RRR_MSGDB_SOFT_ERROR;
+	}
+
+	client->prev_ctrl_msg_type = RRR_MSG_CTRL_FLAGS(msg);
+
+	return 0;
+}
+
+int rrr_msgdb_server_tick (
+	struct rrr_msgdb_server *server
+) {
+	int ret = 0;
+
+	if ((ret = rrr_socket_client_collection_accept (
+		&server->clients,
+		__rrr_msgdb_server_client_new_void,
+		NULL,
+		__rrr_msgdb_server_client_destroy_void
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_socket_client_collection_read_message (
+			&server->clients,
+			4096,
+			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+			__rrr_msgdb_server_read_msg_msg_callback,
+			NULL,
+			NULL,
+			__rrr_msgdb_server_read_msg_ctrl_callback,
+			server
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
 }

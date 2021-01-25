@@ -23,7 +23,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_COMMON_H
 
 #include "../messages/msg_head.h"
+#include "../read_constants.h"
+
+#define RRR_MSGDB_OK             RRR_READ_OK
+#define RRR_MSGDB_HARD_ERROR     RRR_READ_HARD_ERROR
+#define RRR_MSGDB_SOFT_ERROR     RRR_READ_SOFT_ERROR
 
 #define RRR_MSGDB_CTRL_F_PUT     RRR_MSG_CTRL_F_USR_A
+
+int rrr_msgdb_common_ctrl_msg_send_blocking (
+	int fd,
+	int flags
+);
+int rrr_msgdb_common_ctrl_msg_send_nonblock (
+	int fd,
+	int flags
+);
 
 #endif /* RRR_MSGDB_COMMON_H */
