@@ -21,6 +21,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "../log.h"
 #include "msgdb_common.h"
@@ -30,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
 #include "../string_builder.h"
+#include "../rrr_strerror.h"
 
 struct rrr_msgdb_server {
 	char *directory;
@@ -103,7 +108,6 @@ void rrr_msgdb_server_destroy (
 }
 
 struct rrr_msgdb_server_client {
-	int prev_ctrl_msg_type;
 	int fd;
 };
 
@@ -151,6 +155,47 @@ static void __rrr_msgdb_server_client_destroy_void (
 	return __rrr_msgdb_server_client_destroy(arg);
 }
 
+static int __rrr_msgdb_server_chdir_base (
+		struct rrr_msgdb_server *server
+) {
+	int ret = 0;
+
+	if (mkdir(server->directory, 0777) != 0) {
+		if (errno != EEXIST) {
+			RRR_MSG_0("Could not create base directory '%s' in message db server: %s\n",
+				server->directory, rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (chdir(server->directory) != 0) {
+		RRR_MSG_0("Could not change to base directory '%s' in message db server: %s\n",
+			server->directory, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_3("msgdb chdir '%s'\n", server->directory);
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_put (
+		struct rrr_msgdb_server *server,
+		const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_msgdb_server_send_msg_ack (
 		int fd
 ) {
@@ -173,8 +218,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		void *arg
 ) {
 	struct rrr_msgdb_server_client *client = private_data;
-
-	(void)(arg);
+	struct rrr_msgdb_server *server = arg;
 
 	int ret = 0;
 
@@ -194,13 +238,17 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	switch (MSG_TYPE(*msg)) {
 		case MSG_TYPE_PUT:
-			printf("PUT\n");
+			ret = __rrr_msgdb_server_put(server, *msg);
 			break;
 		default:
 			RRR_MSG_0("msgdb fd %i unknown message type %i received in message db server\n", client->fd, MSG_TYPE(*msg));
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 	};
+
+	if (ret != 0) {
+		goto out_negative_ack;
+	}
 
 	goto out_positive_ack;
 	out_negative_ack:
