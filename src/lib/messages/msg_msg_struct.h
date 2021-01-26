@@ -48,15 +48,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_SET_TYPE(message,n)       (message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
 #define MSG_SET_CLASS(message,n)      (message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
 
+#define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
+#define MSG_IS_TAG(message)           (MSG_TYPE(message) == MSG_TYPE_TAG)
+#define MSG_IS_GET(message)           (MSG_TYPE(message) == MSG_TYPE_GET)
+#define MSG_IS_PUT(message)           (MSG_TYPE(message) == MSG_TYPE_PUT)
+#define MSG_IS_DEL(message)           (MSG_TYPE(message) == MSG_TYPE_DEL)
+
+#define MSG_TYPE_NAME(message) \
+	(MSG_IS_MSG(message) ? MSG_TYPE_MSG_STRING : \
+	(MSG_IS_TAG(message) ? MSG_TYPE_TAG_STRING : \
+	(MSG_IS_GET(message) ? MSG_TYPE_GET_STRING : \
+	(MSG_IS_PUT(message) ? MSG_TYPE_PUT_STRING : \
+	(MSG_IS_DEL(message) ? MSG_TYPE_DEL_STRING : \
+	"(unknown)" )))))
+
 #define MSG_CLASS_OK(message) \
     ((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
 
 #define MSG_TYPE_OK(message) \
-    (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_TAG)
-
-#define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
-//#define MSG_IS_ACK(message)         ((message)->type == MSG_TYPE_ACK)
-#define MSG_IS_TAG(message)           (MSG_TYPE(message) == MSG_TYPE_TAG)
+    (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_DEL)
 
 #define MSG_IS_DATA(message)          (MSG_CLASS(message) == MSG_CLASS_DATA)
 #define MSG_IS_ARRAY(message)         (MSG_CLASS(message) == MSG_CLASS_ARRAY)

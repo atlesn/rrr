@@ -24,17 +24,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <util/utf8.h>
 
-#include "log.h"
+#include "../log.h"
 
 #include "msg.h"
 #include "msg_msg.h"
-#include "rrr_types.h"
-#include "util/rrr_endian.h"
-#include "util/macro_utils.h"
-#include "util/rrr_time.h"
-#include "helpers/nullsafe_str.h"
+#include "../rrr_types.h"
+#include "../util/utf8.h"
+#include "../util/rrr_endian.h"
+#include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,

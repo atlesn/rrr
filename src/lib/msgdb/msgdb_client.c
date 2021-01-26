@@ -118,17 +118,13 @@ int rrr_msgdb_client_await_ack (
 	return ret;
 }
 
-int rrr_msgdb_client_put (
+int rrr_msgdb_client_send (
 	struct rrr_msgdb_client_conn *conn,
 	const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
 	RRR_DBG_2("msgdb fd %i PUT msg size %li\n", conn->fd, MSG_TOTAL_SIZE(msg));
-
-	if ((ret = rrr_msgdb_common_ctrl_msg_send_blocking (conn->fd, RRR_MSGDB_CTRL_F_PUT)) != 0) {
-		goto out;
-	}
 
 	if ((ret = rrr_msgdb_common_msg_send_blocking (conn->fd, msg)) != 0) {
 		goto out;

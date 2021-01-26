@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_HARD_ERROR     RRR_READ_HARD_ERROR
 #define RRR_MSGDB_SOFT_ERROR     RRR_READ_SOFT_ERROR
 
-#define RRR_MSGDB_CTRL_F_PUT     RRR_MSG_CTRL_F_USR_A
 #define RRR_MSGDB_CTRL_F_ACK     RRR_MSG_CTRL_F_USR_B
 #define RRR_MSGDB_CTRL_F_NACK    RRR_MSG_CTRL_F_USR_C
 

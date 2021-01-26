@@ -41,12 +41,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSGDB_SOCKET     "/tmp/rrr_test_msgdb.sock"
 #define MSGDB_DIRECTORY  "/tmp/rrr_test_msgdb/"
 
+#define RRR_TEST_MSGDB_SERVER_USE_VALGRIND
+
 static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 	int ret = 0;
 
 	*result = NULL;
 
-	const char msg_topic[] = "a/b/c";
 	struct rrr_msg_msg *msg = NULL;
 
 	if ((ret = rrr_msg_msg_new_empty (
@@ -54,13 +55,11 @@ static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 		MSG_TYPE_MSG,
 		MSG_CLASS_DATA,
 		rrr_time_get_64(),
-		sizeof(msg_topic) - 1,
+		0,
 		0
 	)) != 0) {
 		goto out;
 	}
-
-	memcpy(MSG_TOPIC_PTR(msg), msg_topic, sizeof(msg_topic) - 1);
 
 	*result = msg;
 	msg = NULL;
@@ -70,18 +69,11 @@ static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 	return ret;
 }
 
-static int __rrr_test_msgdb_await_ack(struct rrr_msgdb_client_conn *conn) {
+static int __rrr_test_msgdb_await_ack(int *positive_ack, struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
-	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0) {
+	if ((ret = rrr_msgdb_client_await_ack(positive_ack, conn)) != 0) {
 		TEST_MSG("Non-zero return %i from await ACK\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if (!positive_ack) {
-		TEST_MSG("Non-positive ack from message db server\n");
 		ret = 1;
 		goto out;
 	}
@@ -90,7 +82,73 @@ static int __rrr_test_msgdb_await_ack(struct rrr_msgdb_client_conn *conn) {
 	return ret;
 }
 
-static int __rrr_test_msgdb_put(struct rrr_msgdb_client_conn *conn) {
+static int __rrr_test_msgdb_await_positive_ack(struct rrr_msgdb_client_conn *conn) {
+	int ret = 0;
+
+	int positive_ack;
+	if ((ret = __rrr_test_msgdb_await_ack(&positive_ack, conn)) != 0) {
+		goto out;
+	}
+
+	if (positive_ack != 1) {
+		TEST_MSG("Expected positive ACK, but negative was received\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_test_msgdb_await_negative_ack(struct rrr_msgdb_client_conn *conn) {
+	int ret = 0;
+
+	int positive_ack;
+	if ((ret = __rrr_test_msgdb_await_ack(&positive_ack, conn)) != 0) {
+		goto out;
+	}
+
+	if (positive_ack != 0) {
+		TEST_MSG("Expected negative ACK, but positive was received\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_test_msgdb_put_empty_with_topic(struct rrr_msgdb_client_conn *conn) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	const char topic[] = "a/b/c";
+
+	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_await_positive_ack(conn)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+static int __rrr_test_msgdb_put_empty_no_topic(struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg = NULL;
@@ -99,11 +157,13 @@ static int __rrr_test_msgdb_put(struct rrr_msgdb_client_conn *conn) {
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_client_put(conn, msg)) != 0) {
+	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_test_msgdb_await_ack(conn)) != 0) {
+	if ((ret = __rrr_test_msgdb_await_negative_ack(conn)) != 0) {
 		goto out;
 	}
 
@@ -121,7 +181,11 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	if ((ret = __rrr_test_msgdb_put(&conn)) != 0) {
+	if ((ret = __rrr_test_msgdb_put_empty_no_topic(&conn)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_put_empty_with_topic(&conn)) != 0) {
 		goto out;
 	}
 
@@ -152,7 +216,11 @@ int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
 		// Child code
 		char debuglevel[64];
 		sprintf(debuglevel, "%llu", (long long unsigned) RRR_DEBUGLEVEL);
+#ifdef RRR_TEST_MSGDB_SERVER_USE_VALGRIND
+		execl("/usr/bin/valgrind", "", MSGDB_CMD, MSGDB_DIRECTORY, "-s", MSGDB_SOCKET, "-d", debuglevel, (char *) NULL);
+#else
 		execl(MSGDB_CMD, "", MSGDB_DIRECTORY, "-s", MSGDB_SOCKET, "-d", debuglevel, (char *) NULL);
+#endif
 		TEST_MSG("Could not start message database sever " MSGDB_CMD ": %s\n", rrr_strerror(errno));
 		exit(1);
 	}

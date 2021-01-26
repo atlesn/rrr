@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
+#include "../string_builder.h"
 
 struct rrr_msgdb_server {
 	char *directory;
@@ -158,6 +159,14 @@ static int __rrr_msgdb_server_send_msg_ack (
 	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_ACK);
 }
 
+static int __rrr_msgdb_server_send_msg_nack (
+	int fd
+) {
+	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
+
+	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_NACK);
+}
+
 static int __rrr_msgdb_server_read_msg_msg_callback (
 		struct rrr_msg_msg **msg,
 		void *private_data,
@@ -167,9 +176,44 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	(void)(arg);
 
-	RRR_DBG_3("msgdb fd %i recv MSG size %" PRIrrrl "\n", client->fd, MSG_TOTAL_SIZE(*msg));
+	int ret = 0;
 
-	return __rrr_msgdb_server_send_msg_ack(client->fd);
+	struct rrr_string_builder topic = {0};
+
+	if ((ret = rrr_string_builder_append_raw(&topic, MSG_TOPIC_PTR(*msg), MSG_TOPIC_LENGTH(*msg))) != 0) {
+		goto out;
+	}
+
+	RRR_DBG_3("msgdb fd %i recv MSG command %s topic '%s' size %" PRIrrrl "\n",
+			client->fd, MSG_TYPE_NAME(*msg), rrr_string_builder_buf(&topic), MSG_TOPIC_LENGTH(*msg));
+
+	if (MSG_TOPIC_LENGTH(*msg) == 0) {
+		RRR_DBG_3("msgdb fd %i received message with zero-length topic\n", client->fd);
+		goto out_negative_ack;
+	}
+
+	switch (MSG_TYPE(*msg)) {
+		case MSG_TYPE_PUT:
+			printf("PUT\n");
+			break;
+		default:
+			RRR_MSG_0("msgdb fd %i unknown message type %i received in message db server\n", client->fd, MSG_TYPE(*msg));
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+	};
+
+	goto out_positive_ack;
+	out_negative_ack:
+		ret = __rrr_msgdb_server_send_msg_nack(client->fd);
+		goto out;
+
+	out_positive_ack:
+		ret = __rrr_msgdb_server_send_msg_ack(client->fd);
+		goto out;
+
+	out:
+		rrr_string_builder_clear(&topic);
+		return ret;
 }
 
 static int __rrr_msgdb_server_read_msg_ctrl_callback (
@@ -180,18 +224,13 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 	struct rrr_msgdb_server_client *client = private_data;
 
 	(void)(arg);
+	(void)(client);
 
-	if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSGDB_CTRL_F_PUT)) {
-		RRR_DBG_3("msgdb fd %i recv PUT\n", client->fd);
-	}
-	else {
-		RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
-		return RRR_MSGDB_SOFT_ERROR;
-	}
+	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
+	return RRR_MSGDB_SOFT_ERROR;
 
-	client->prev_ctrl_msg_type = RRR_MSG_CTRL_FLAGS(msg);
-
-	return 0;
+//	client->prev_ctrl_msg_type = RRR_MSG_CTRL_FLAGS(msg);
+//	return 0;
 }
 
 int rrr_msgdb_server_tick (
