@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,12 +26,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MSG_TYPE_MSG 1
 #define MSG_TYPE_TAG 2
+#define MSG_TYPE_GET 3
+#define MSG_TYPE_PUT 4
+#define MSG_TYPE_DEL 5
 
 #define MSG_CLASS_DATA 1
 #define MSG_CLASS_ARRAY 11
 
 #define MSG_TYPE_MSG_STRING "MSG"
 #define MSG_TYPE_TAG_STRING "TAG"
+#define MSG_TYPE_GET_STRING "GET"
+#define MSG_TYPE_PUT_STRING "PUT"
+#define MSG_TYPE_DEL_STRING "DEL"
 
 #define MSG_CLASS_DATA_STRING "DATA"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
