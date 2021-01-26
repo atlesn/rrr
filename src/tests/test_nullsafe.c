@@ -32,13 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static int __rrr_test_nullsafe_split_callback (
 	const void *start,
 	size_t chunk_len,
+	int is_last,
 	void *arg
 ) {
 	int *counter = arg;
 
 	(void)(start);
 
-	if (chunk_len != 0 && chunk_len != 3) {
+	if (is_last && chunk_len == 5) {
+		// OK
+	}
+	else if (chunk_len != 0 && chunk_len != 3) {
 		TEST_MSG("Wrong size failure in split result %llu<>0 AND %llu<>3\n",
 		(long long unsigned) chunk_len, (long long unsigned) chunk_len);
 		return 1;
@@ -93,6 +97,8 @@ int rrr_test_nullsafe(void) {
 	SPLIT_CHECK_AND_RESET_COUNTER(3, "single value split with two separators at the end");
 	APPEND("aaa");
 	SPLIT_CHECK_AND_RESET_COUNTER(3, "two value split with two separators in the middle");
+	APPEND("aa");
+	SPLIT_CHECK_AND_RESET_COUNTER(3, "two value split with two separators in the middle, last value is longer");
 
 	out:
 	rrr_nullsafe_str_destroy_if_not_null(&str);

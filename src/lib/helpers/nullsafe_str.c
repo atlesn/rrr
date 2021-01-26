@@ -331,7 +331,7 @@ int rrr_nullsafe_str_chr (
 int rrr_nullsafe_str_split (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
-		int (*callback)(const void *start, size_t len_remaining, void *arg),
+		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -343,13 +343,13 @@ int rrr_nullsafe_str_split (
 	rrr_nullsafe_len start_pos = 0;
 	for (rrr_nullsafe_len i = 0; i < nullsafe->len; i++) {
 		if (*((const char *)(nullsafe->str + i)) == c) {
-			if ((ret = callback(nullsafe->str + start_pos, i - start_pos, callback_arg)) != 0) {
+			if ((ret = callback(nullsafe->str + start_pos, i - start_pos, 0, callback_arg)) != 0) {
 				goto out;
 			}
 			start_pos = i + 1;
 		}
 		if (nullsafe->len - 1 == i) {
-			if ((ret = callback(nullsafe->str + start_pos, i - start_pos + 1, callback_arg)) != 0) {
+			if ((ret = callback(nullsafe->str + start_pos, i - start_pos + 1, 1, callback_arg)) != 0) {
 				goto out;
 			}
 		}
