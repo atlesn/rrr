@@ -25,29 +25,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 
 struct rrr_msgdb_client_conn {
-	int fd;
-	struct rrr_read_session_collection read_sessions;
+		int fd;
+		struct rrr_read_session_collection read_sessions;
 };
 
 struct rrr_msg_msg;
 
 int rrr_msgdb_client_open (
-	struct rrr_msgdb_client_conn *conn,
-	const char *path
+		struct rrr_msgdb_client_conn *conn,
+		const char *path
 );
 void rrr_msgdb_client_close (
-	struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn
 );
 void rrr_msgdb_client_close_void (
-	void *conn
+		void *conn
 );
 int rrr_msgdb_client_await_ack (
-	int *positive_ack,
-	struct rrr_msgdb_client_conn *conn
+		int *positive_ack,
+		struct rrr_msgdb_client_conn *conn
 );
 int rrr_msgdb_client_send (
-	struct rrr_msgdb_client_conn *conn,
-	const struct rrr_msg_msg *msg
+		struct rrr_msgdb_client_conn *conn,
+		const struct rrr_msg_msg *msg
 );
 
 #endif /* RRR_MSGDB_CLIENT_H */

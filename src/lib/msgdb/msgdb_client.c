@@ -30,8 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_read.h"
 
 int rrr_msgdb_client_open (
-	struct rrr_msgdb_client_conn *conn,
-	const char *path
+		struct rrr_msgdb_client_conn *conn,
+		const char *path
 ) {
 	int ret = 0;
 
@@ -50,7 +50,7 @@ int rrr_msgdb_client_open (
 }
 
 void rrr_msgdb_client_close (
-	struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn
 ) {
 	if (conn->fd > 0) {
 		rrr_socket_close_no_unlink(conn->fd);
@@ -60,15 +60,15 @@ void rrr_msgdb_client_close (
 }
 
 void rrr_msgdb_client_close_void (
-	void *conn
+		void *conn
 ) {
 	rrr_msgdb_client_close(conn);
 }
 
 static int __rrr_msgdb_client_await_ack_callback (
-	const struct rrr_msg *message,
-	void *arg1,
-	void *arg2
+		const struct rrr_msg *message,
+		void *arg1,
+		void *arg2
 ) {
 	struct rrr_msgdb_client_conn *conn = arg1;
 	int *positive_ack = arg2;
@@ -90,8 +90,8 @@ static int __rrr_msgdb_client_await_ack_callback (
 }
 
 int rrr_msgdb_client_await_ack (
-	int *positive_ack,
-	struct rrr_msgdb_client_conn *conn
+		int *positive_ack,
+		struct rrr_msgdb_client_conn *conn
 ) {
 	int ret = 0;
 
@@ -119,8 +119,8 @@ int rrr_msgdb_client_await_ack (
 }
 
 int rrr_msgdb_client_send (
-	struct rrr_msgdb_client_conn *conn,
-	const struct rrr_msg_msg *msg
+		struct rrr_msgdb_client_conn *conn,
+		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 

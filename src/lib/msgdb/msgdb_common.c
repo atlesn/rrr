@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 
 static int __rrr_msgdb_common_msg_send_raw_blocking (
-	int fd,
-	const struct rrr_msg *msg_network,
-	ssize_t msg_size
+		int fd,
+		const struct rrr_msg *msg_network,
+		ssize_t msg_size
 ) {
 	return rrr_socket_sendto_blocking (
 			fd,
@@ -44,9 +44,9 @@ static int __rrr_msgdb_common_msg_send_raw_blocking (
 }
 
 static int __rrr_msgdb_common_msg_send_raw_nonblock (
-	int fd,
-	const struct rrr_msg *msg_network,
-	ssize_t msg_size
+		int fd,
+		const struct rrr_msg *msg_network,
+		ssize_t msg_size
 ) {
 	int ret = 0;
 
@@ -83,9 +83,9 @@ static int __rrr_msgdb_common_msg_send_raw_nonblock (
 }
 
 static int __rrr_msgdb_common_ctrl_msg_send (
-	int fd,
-	int flags,
-	int do_nonblock
+		int fd,
+		int flags,
+		int do_nonblock
 ) {
 	struct rrr_msg msg = {0};
 
@@ -108,23 +108,23 @@ static int __rrr_msgdb_common_ctrl_msg_send (
 }
 
 int rrr_msgdb_common_ctrl_msg_send_nonblock (
-	int fd,
-	int flags
+		int fd,
+		int flags
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, flags, 1);
 }
 
 int rrr_msgdb_common_ctrl_msg_send_blocking (
-	int fd,
-	int flags
+		int fd,
+		int flags
 ) {
 	return __rrr_msgdb_common_ctrl_msg_send(fd, flags, 0);
 }
 
 static int __rrr_msgdb_common_msg_send (
-	int fd,
-	const struct rrr_msg_msg *msg,
-	int do_nonblock
+		int fd,
+		const struct rrr_msg_msg *msg,
+		int do_nonblock
 ) {
 	int ret = 0;
 
@@ -154,15 +154,15 @@ static int __rrr_msgdb_common_msg_send (
 }
 
 int rrr_msgdb_common_msg_send_nonblock (
-	int fd,
-	const struct rrr_msg_msg *msg
+		int fd,
+		const struct rrr_msg_msg *msg
 ) {
 	return __rrr_msgdb_common_msg_send(fd, msg, 1);
 }
 
 int rrr_msgdb_common_msg_send_blocking (
-	int fd,
-	const struct rrr_msg_msg *msg
+		int fd,
+		const struct rrr_msg_msg *msg
 ) {
 	return __rrr_msgdb_common_msg_send(fd, msg, 0);
 }

@@ -38,9 +38,9 @@ struct rrr_msgdb_server {
 };
 
 int rrr_msgdb_server_new (
-	struct rrr_msgdb_server **result,
-	const char *directory,
-	const char *socket
+		struct rrr_msgdb_server **result,
+		const char *directory,
+		const char *socket
 ) {
 	int ret = 0;
 
@@ -94,7 +94,7 @@ int rrr_msgdb_server_new (
 }
 
 void rrr_msgdb_server_destroy (
-	struct rrr_msgdb_server *server
+		struct rrr_msgdb_server *server
 ) {
 	RRR_FREE_IF_NOT_NULL(server->directory);
 	rrr_socket_close(server->fd);
@@ -108,9 +108,9 @@ struct rrr_msgdb_server_client {
 };
 
 static int __rrr_msgdb_server_client_new (
-	struct rrr_msgdb_server_client **target,
-	int fd,
-	void *arg
+		struct rrr_msgdb_server_client **target,
+		int fd,
+		void *arg
 ) {
 	(void)(arg);
 
@@ -140,19 +140,19 @@ static int __rrr_msgdb_server_client_new_void (
 }
 
 static void __rrr_msgdb_server_client_destroy (
-	struct rrr_msgdb_server_client *client
+		struct rrr_msgdb_server_client *client
 ) {
 	free(client);
 }
 
 static void __rrr_msgdb_server_client_destroy_void (
-	void *arg
+		void *arg
 ) {
 	return __rrr_msgdb_server_client_destroy(arg);
 }
 
 static int __rrr_msgdb_server_send_msg_ack (
-	int fd
+		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
 
@@ -160,7 +160,7 @@ static int __rrr_msgdb_server_send_msg_ack (
 }
 
 static int __rrr_msgdb_server_send_msg_nack (
-	int fd
+		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
 

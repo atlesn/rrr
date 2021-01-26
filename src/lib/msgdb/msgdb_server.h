@@ -25,15 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msgdb_server;
 
 int rrr_msgdb_server_new (
-	struct rrr_msgdb_server **result,
-	const char *directory,
-	const char *socket
+		struct rrr_msgdb_server **result,
+		const char *directory,
+		const char *socket
 );
 void rrr_msgdb_server_destroy (
-	struct rrr_msgdb_server *server
+		struct rrr_msgdb_server *server
 );
 int rrr_msgdb_server_tick (
-	struct rrr_msgdb_server *server
+		struct rrr_msgdb_server *server
 );
 
 #endif /* RRR_MSGDB_SERVER_H */
