@@ -30,10 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/macro_utils.h"
 
 static int __rrr_test_nullsafe_split_callback (
-	const void *start,
-	size_t chunk_len,
-	int is_last,
-	void *arg
+		const void *start,
+		size_t chunk_len,
+		int is_last,
+		void *arg
 ) {
 	int *counter = arg;
 
@@ -53,9 +53,9 @@ static int __rrr_test_nullsafe_split_callback (
 	return 0;
 }
 
-#define SPLIT()                                                                                                 \
-	do { if ((ret = rrr_nullsafe_str_split(str, '/', __rrr_test_nullsafe_split_callback, &counter)) != 0) { \
-		TEST_MSG("Failure from nullsafe split\n"); goto out;                                            \
+#define SPLIT()                                                                                                      \
+	do { if ((ret = rrr_nullsafe_str_split_raw(str, '/', __rrr_test_nullsafe_split_callback, &counter)) != 0) {  \
+		TEST_MSG("Failure from nullsafe split\n"); goto out;                                                 \
 	}} while (0)
 
 #define CHECK_AND_RESET_COUNTER(target,error_msg)                                        \

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_client.h"
 #include "../string_builder.h"
 #include "../rrr_strerror.h"
+#include "../helpers/nullsafe_str.h"
 
 struct rrr_msgdb_server {
 	char *directory;
@@ -155,31 +156,111 @@ static void __rrr_msgdb_server_client_destroy_void (
 	return __rrr_msgdb_server_client_destroy(arg);
 }
 
-static int __rrr_msgdb_server_chdir_base (
-		struct rrr_msgdb_server *server
+static int __rrr_msgdb_server_chdir (
+		const char *directory
 ) {
 	int ret = 0;
 
-	if (mkdir(server->directory, 0777) != 0) {
+	if (mkdir(directory, 0777) != 0) {
 		if (errno != EEXIST) {
-			RRR_MSG_0("Could not create base directory '%s' in message db server: %s\n",
-				server->directory, rrr_strerror(errno));
+			RRR_MSG_0("Could not create directory '%s' in message db server: %s\n",
+				directory, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 	}
 
-	if (chdir(server->directory) != 0) {
-		RRR_MSG_0("Could not change to base directory '%s' in message db server: %s\n",
-			server->directory, rrr_strerror(errno));
+	if (chdir(directory) != 0) {
+		RRR_MSG_0("Could not change to directory '%s' in message db server: %s\n",
+			directory, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
-	RRR_DBG_3("msgdb chdir '%s'\n", server->directory);
+	RRR_DBG_3("msgdb chdir '%s'\n", directory);
 
 	out:
 	return ret;
+}
+
+static int __rrr_msgdb_server_chdir_base (
+		struct rrr_msgdb_server *server
+) {
+	return __rrr_msgdb_server_chdir(server->directory);
+}
+
+struct rrr_msgdb_server_path_iterate_callback_data {
+	int (*callback)(const char *str, int is_last, void *arg);
+	void *callback_arg;
+	int is_last;
+};
+
+static int __rrr_msgdb_server_path_iterate_str_callback (
+	const char *str,
+	void *arg
+) {
+	struct rrr_msgdb_server_path_iterate_callback_data *callback_data = arg;
+	return callback_data->callback(str, callback_data->is_last, callback_data->callback_arg);
+}
+
+static int __rrr_msgdb_server_path_iterate_split_callback (
+		const struct rrr_nullsafe_str *str,
+		int is_last,
+		void *arg
+) {
+	struct rrr_msgdb_server_path_iterate_callback_data *callback_data = arg;
+
+	callback_data->is_last = is_last;
+
+	return rrr_nullsafe_str_with_raw_null_terminated_do (
+		str,
+		__rrr_msgdb_server_path_iterate_str_callback,
+		arg
+	);
+}
+
+static int __rrr_msgdb_server_path_iterate (
+		const struct rrr_msg_msg *msg,
+		int (*callback)(const char *str, int is_last, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_nullsafe_str *path_tmp = NULL;
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&path_tmp, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg))) != 0) {
+		goto out;
+	}
+
+	struct rrr_msgdb_server_path_iterate_callback_data callback_data = {
+		callback,
+		callback_arg,
+		0
+	};
+
+	if ((ret = rrr_nullsafe_str_split(path_tmp, '/', __rrr_msgdb_server_path_iterate_split_callback, &callback_data)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_nullsafe_str_destroy_if_not_null(&path_tmp);
+	return ret;
+}
+
+struct rrr_msgdb_server_put_path_split_callback_data {
+	const struct rrr_msg_msg *msg;
+};
+
+int __rrr_msgdb_server_put_path_split_callback (
+		const char *str,
+		int is_last,
+		void *arg
+) {
+	struct rrr_msgdb_server_put_path_split_callback_data *callback_data = arg;
+
+	const struct rrr_msg_msg *msg;
+	printf("Path: %s is last: %i\n", str, is_last);
+	return 0;
 }
 
 static int __rrr_msgdb_server_put (
@@ -189,6 +270,18 @@ static int __rrr_msgdb_server_put (
 	int ret = 0;
 
 	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
+	struct rrr_msgdb_server_put_path_split_callback_data callback_data = {
+		msg
+	};
+
+	if ((ret = __rrr_msgdb_server_path_iterate (
+			msg,
+			__rrr_msgdb_server_put_path_split_callback,
+			&callback_data
+	)) != 0) {
 		goto out;
 	}
 

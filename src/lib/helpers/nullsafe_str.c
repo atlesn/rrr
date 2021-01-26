@@ -328,7 +328,7 @@ int rrr_nullsafe_str_chr (
 	return 0;
 }
 
-int rrr_nullsafe_str_split (
+int rrr_nullsafe_str_split_raw (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
 		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
@@ -357,6 +357,46 @@ int rrr_nullsafe_str_split (
 
 	out:
 	return ret;
+}
+
+struct rrr_nullsafe_str_split_callback_data {
+	int (*callback)(const struct rrr_nullsafe_str *str, int is_last, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_nullsafe_str_split_callback (
+	const void *data,
+	size_t len,
+	int is_last,
+	void *arg
+) {
+	struct rrr_nullsafe_str_split_callback_data *callback_data = arg;
+
+	struct rrr_nullsafe_str tmp = {
+		(void *) data, // Cast away const OK
+		len
+	};
+
+	return callback_data->callback(&tmp, is_last, callback_data->callback_arg);
+}
+
+int rrr_nullsafe_str_split (
+		const struct rrr_nullsafe_str *nullsafe,
+		char c,
+		int (*callback)(const struct rrr_nullsafe_str *str, int is_last, void *arg),
+		void *callback_arg
+) {
+	struct rrr_nullsafe_str_split_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return rrr_nullsafe_str_split_raw (
+		nullsafe,
+		c,
+		__rrr_nullsafe_str_split_callback,
+		&callback_data
+	);
 }
 
 int rrr_nullsafe_str_str (

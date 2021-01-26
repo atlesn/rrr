@@ -106,10 +106,16 @@ int rrr_nullsafe_str_chr (
 		int (*callback)(const void *start, size_t len_remaining, void *arg),
 		void *callback_arg
 );
-int rrr_nullsafe_str_split (
+int rrr_nullsafe_str_split_raw (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
 		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
+		void *callback_arg
+);
+int rrr_nullsafe_str_split (
+		const struct rrr_nullsafe_str *nullsafe,
+		char c,
+		int (*callback)(const struct rrr_nullsafe_str *str, int is_last, void *arg),
 		void *callback_arg
 );
 int rrr_nullsafe_str_str (
