@@ -20,7 +20,8 @@ test_SOURCES = test.c \
 	test_condition.c \
 	test_json.c \
 	test_conversion.c \
-	test_msgdb.c
+	test_msgdb.c \
+	test_nullsafe.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
