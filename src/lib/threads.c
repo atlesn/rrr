@@ -68,6 +68,12 @@ static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
 #define RRR_PTHREAD_T_TO_LLU(t) \
 	__rrr_pthread_t_to_llu(t)
 
+#ifdef RRR_THREAD_DEBUG_MUTEX
+#	define RRR_THREAD_MUTEX_INIT_FLAGS RRR_POSIX_MUTEX_IS_ERRORCHECK
+#else
+#	define RRR_THREAD_MUTEX_INIT_FLAGS 0
+#endif
+
 struct rrr_thread_postponed_cleanup_node {
 	RRR_LL_NODE(struct rrr_thread_postponed_cleanup_node);
 	struct rrr_thread *thread;
@@ -325,7 +331,7 @@ static int __rrr_thread_new (
 
 	RRR_DBG_8 ("Allocate thread %p\n", thread);
 
-	if (rrr_posix_mutex_init(&thread->mutex, 0) != 0) {
+	if (rrr_posix_mutex_init(&thread->mutex, RRR_THREAD_MUTEX_INIT_FLAGS) != 0) {
 		RRR_MSG_0("Could not create mutex in __rrr_thread_allocate_thread\n");
 		ret = 1;
 		goto out_free;

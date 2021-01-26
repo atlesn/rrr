@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -76,8 +76,9 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 
 	int is_recursive = (flags & RRR_POSIX_MUTEX_IS_RECURSIVE);
 	int is_pshared = (flags & RRR_POSIX_MUTEX_IS_PSHARED);
+	int is_errorcheck = (flags & RRR_POSIX_MUTEX_IS_ERRORCHECK);
 
-	flags &= ~(RRR_POSIX_MUTEX_IS_RECURSIVE|RRR_POSIX_MUTEX_IS_PSHARED);
+	flags &= ~(RRR_POSIX_MUTEX_IS_RECURSIVE|RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ERRORCHECK);
 
 	if (flags != 0) {
 		RRR_BUG("BUG: Unsupported flags %i to rrr_posix_mutex_init\n", flags);
@@ -89,6 +90,15 @@ int rrr_posix_mutex_init (pthread_mutex_t *mutex, int flags) {
 		RRR_MSG_0("Could not initialize mutexattr in rrr_posix_mutex_init\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (is_errorcheck) {
+		if (pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) != 0){
+			RRR_MSG_0("settype(ERRORCHECK) failed in rrr_posix_mutex_init, not supported on this platform: %s\n",
+					rrr_strerror(errno));
+			ret = 1;
+			goto out_destroy_mutexattr;
+		}
 	}
 
 	if (is_pshared) {

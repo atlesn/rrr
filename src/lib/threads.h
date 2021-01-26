@@ -34,6 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
+/* Uncomment to enable errorchecking on mutexes */
+#define RRR_THREAD_DEBUG_MUTEX
+
 /* Tell a thread to start initialization */
 #define RRR_THREAD_SIGNAL_START_INITIALIZE	(1<<0)
 
@@ -117,16 +120,36 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
+#ifdef RRR_THREAD_DEBUG_MUTEX
+#	include "rrr_strerror.h"
+#endif
+
 static inline void rrr_thread_lock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_lock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Locking failed in rrr_thread_lock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_lock(&thread->mutex);
+#endif
 }
 
 static inline void rrr_thread_unlock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_unlock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Unlocking failed in rrr_thread_unlock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_unlock(&thread->mutex);
+#endif
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
