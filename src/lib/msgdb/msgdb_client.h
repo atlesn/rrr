@@ -22,8 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MSGDB_CLIENT_H
 #define RRR_MSGDB_CLIENT_H
 
+#include "../read.h"
+
 struct rrr_msgdb_client_conn {
 	int fd;
+	struct rrr_read_session_collection read_sessions;
 };
 
 struct rrr_msg_msg;
@@ -37,6 +40,10 @@ void rrr_msgdb_client_close (
 );
 void rrr_msgdb_client_close_void (
 	void *conn
+);
+int rrr_msgdb_client_await_ack (
+	int *positive_ack,
+	struct rrr_msgdb_client_conn *conn
 );
 int rrr_msgdb_client_put (
 	struct rrr_msgdb_client_conn *conn,

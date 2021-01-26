@@ -91,10 +91,7 @@ int rrr_socket_client_collection_read_message (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_max_size,
 		int read_flags_socket,
-		int (*callback_msg)(struct rrr_msg_msg **message, void *private_data, void *arg),
-		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *private_data, void *arg),
-		int (*callback_log_msg)(const struct rrr_msg_log *message, void *private_data, void *arg),
-		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *private_data, void *arg),
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 );
 

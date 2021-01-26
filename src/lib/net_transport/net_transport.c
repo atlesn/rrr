@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
+#include "../log.h"
+
 #include "net_transport.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
@@ -36,7 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "net_transport_tls.h"
 #endif
 
-#include "../log.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"

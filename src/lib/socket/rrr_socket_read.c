@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -388,5 +388,76 @@ int rrr_socket_read_message_default (
 				: NULL
 			),
 			&callback_data
+	);
+}
+
+struct rrr_socket_read_message_split_callbacks_complete_callback_data {
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
+		void *callback_arg1;
+		void *callback_arg2;
+};
+
+static int __rrr_socket_read_message_split_callbacks_complete_callback (
+	struct rrr_read_session *read_session,
+	void *arg
+) {
+	int ret = 0;
+
+	struct rrr_socket_read_message_split_callbacks_complete_callback_data *callback_data = arg;
+
+	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Message was too long in __rrr_socket_read_message_split_callbacks_complete_callback\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
+	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
+
+	ret = rrr_msg_to_host_and_verify_with_callback (
+			(struct rrr_msg **) &read_session->rx_buf_ptr,
+			(rrr_length) read_session->rx_buf_wpos,
+			callback_data->callback_msg,
+			callback_data->callback_addr_msg,
+			callback_data->callback_log_msg,
+			callback_data->callback_ctrl_msg,
+			callback_data->callback_arg1,
+			callback_data->callback_arg2
+	);
+
+	out:
+	return ret;
+}
+
+int rrr_socket_read_message_split_callbacks (
+		uint64_t *bytes_read,
+		struct rrr_read_session_collection *read_session_collection,
+		int fd,
+		int read_flags_socket,
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
+		void *callback_arg1,
+		void *callback_arg2
+) {
+	struct rrr_socket_read_message_split_callbacks_complete_callback_data complete_callback_data = {
+			callback_msg,
+			callback_addr_msg,
+			callback_log_msg,
+			callback_ctrl_msg,
+			callback_arg1,
+			callback_arg2
+	};
+
+	return rrr_socket_read_message_default (
+			bytes_read,
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_msg),
+			4096,
+			0, // No max size
+			read_flags_socket,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_socket_read_message_split_callbacks_complete_callback,
+			&complete_callback_data
 	);
 }

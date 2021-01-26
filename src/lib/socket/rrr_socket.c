@@ -36,9 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 
+#include "../log.h"
+
 #include "rrr_socket.h"
 
-#include "../log.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"

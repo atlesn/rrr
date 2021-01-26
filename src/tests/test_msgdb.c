@@ -70,6 +70,26 @@ static int __rrr_test_msgdb_msg_create (struct rrr_msg_msg **result) {
 	return ret;
 }
 
+static int __rrr_test_msgdb_await_ack(struct rrr_msgdb_client_conn *conn) {
+	int ret = 0;
+
+	int positive_ack = 0;
+	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0) {
+		TEST_MSG("Non-zero return %i from await ACK\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (!positive_ack) {
+		TEST_MSG("Non-positive ack from message db server\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_test_msgdb_put(struct rrr_msgdb_client_conn *conn) {
 	int ret = 0;
 
@@ -80,6 +100,10 @@ static int __rrr_test_msgdb_put(struct rrr_msgdb_client_conn *conn) {
 	}
 
 	if ((ret = rrr_msgdb_client_put(conn, msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_await_ack(conn)) != 0) {
 		goto out;
 	}
 
@@ -97,7 +121,9 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	ret |= __rrr_test_msgdb_put(&conn);
+	if ((ret = __rrr_test_msgdb_put(&conn)) != 0) {
+		goto out;
+	}
 
 	out:
 	rrr_msgdb_client_close(&conn);

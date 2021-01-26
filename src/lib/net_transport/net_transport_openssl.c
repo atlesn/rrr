@@ -30,11 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
+#include "../log.h"
+
 #include "net_transport.h"
 #include "net_transport_openssl.h"
 #include "net_transport_tls_common.h"
 
-#include "../log.h"
 #include "../socket/rrr_socket.h"
 #include "../rrr_openssl.h"
 #include "../rrr_strerror.h"

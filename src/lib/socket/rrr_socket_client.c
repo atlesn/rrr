@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,9 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
+
+#include "../log.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_client.h"
@@ -30,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../rrr_strerror.h"
-#include "../log.h"
 #include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
@@ -281,10 +283,7 @@ int rrr_socket_client_collection_read_raw (
 }
 
 struct rrr_socket_client_collection_read_message_complete_callback_data {
-		int (*callback_msg)(struct rrr_msg_msg **message, void *private_data, void *arg);
-		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *private_data, void *arg);
-		int (*callback_log_msg)(const struct rrr_msg_log *message, void *private_data, void *arg);
-		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *private_data, void *arg);
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
 		void *callback_arg;
 };
 
@@ -327,28 +326,25 @@ int rrr_socket_client_collection_read_message (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_max_size,
 		int read_flags_socket,
-		int (*callback_msg)(struct rrr_msg_msg **message, void *private_data, void *arg),
-		int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *private_data, void *arg),
-		int (*callback_log_msg)(const struct rrr_msg_log *message, void *private_data, void *arg),
-		int (*callback_ctrl_msg)(const struct rrr_msg *message, void *private_data, void *arg),
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 ) {
 	struct rrr_socket_client_collection_read_message_complete_callback_data complete_callback_data = {
-		callback_msg,
-		callback_addr_msg,
-		callback_log_msg,
-		callback_ctrl_msg,
-		callback_arg
+			callback_msg,
+			callback_addr_msg,
+			callback_log_msg,
+			callback_ctrl_msg,
+			callback_arg
 	};
 
 	return rrr_socket_client_collection_read_raw (
-		collection,
-		sizeof(struct rrr_msg),
-		read_step_max_size,
-		read_flags_socket,
-		rrr_read_common_get_session_target_length_from_message_and_checksum,
-		NULL,
-		__rrr_socket_client_collection_read_message_complete_callback,
-		&complete_callback_data
+			collection,
+			sizeof(struct rrr_msg),
+			read_step_max_size,
+			read_flags_socket,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_socket_client_collection_read_message_complete_callback,
+			&complete_callback_data
 	);
 }
