@@ -19,7 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -251,16 +253,63 @@ struct rrr_msgdb_server_put_path_split_callback_data {
 	const struct rrr_msg_msg *msg;
 };
 
-int __rrr_msgdb_server_put_path_split_callback (
+static int __rrr_msgdb_server_put_path_split_callback (
 		const char *str,
 		int is_last,
 		void *arg
 ) {
 	struct rrr_msgdb_server_put_path_split_callback_data *callback_data = arg;
 
-	const struct rrr_msg_msg *msg;
-	printf("Path: %s is last: %i\n", str, is_last);
-	return 0;
+	int ret = 0;
+	int fd = 0;
+	struct rrr_msg *msg_tmp = NULL;
+
+	if (strlen(str) == 0) {
+		if (is_last) {
+			ret = 1;
+			RRR_MSG_0("File component of a path in message db server had zero length (topic ends with a /), this is and error\n");
+			goto out;
+		}
+		// Ignore empty path component
+		goto out;
+	}
+
+	if (is_last) {
+		if ((fd = rrr_socket_open(str, O_CREAT|O_TRUNC|O_RDWR, 0777, "msgdb_server_put", 0)) <= 0) {
+			RRR_MSG_0("Could not open file '%s' for writing in message db server\n", str);
+		}
+		RRR_DBG_3("msgdb write to '%s' size %llu\n", str, (long long unsigned) MSG_TOTAL_SIZE(callback_data->msg));
+
+		if ((msg_tmp = malloc(MSG_TOTAL_SIZE(callback_data->msg))) == NULL) {
+			RRR_MSG_0("Could not allocate memory for temporary message in __rrr_msgdb_server_put_path_split_callback\n");
+			ret = 1;
+			goto out;
+		}
+
+		memcpy(msg_tmp, callback_data->msg, MSG_TOTAL_SIZE(callback_data->msg));
+
+		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg_tmp);
+		rrr_msg_checksum_and_to_network_endian(msg_tmp);
+
+		// Note: Do not attempt to use size from the endian-converted message
+		if (write(fd, msg_tmp, MSG_TOTAL_SIZE(callback_data->msg)) != MSG_TOTAL_SIZE(callback_data->msg)) {
+			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if ((ret = __rrr_msgdb_server_chdir(str)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	if (fd != 0) {
+		rrr_socket_close(fd);
+	}
+	return ret;
 }
 
 static int __rrr_msgdb_server_put (
