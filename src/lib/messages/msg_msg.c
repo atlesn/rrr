@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
+#include "../string_builder.h"
 #include "../helpers/nullsafe_str.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
@@ -263,6 +264,17 @@ int rrr_msg_msg_to_host_and_verify (struct rrr_msg_msg *message, rrr_biglength e
 		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
+
+	if (RRR_DEBUGLEVEL_6) {
+		struct rrr_string_builder str_tmp = {0};
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
+			unsigned char *buf = (unsigned char *) message;
+			rrr_string_builder_append_format(&str_tmp, "%02x-", *(buf + i));
+		}
+		RRR_DBG("Message from network: %s\n", rrr_string_builder_buf(&str_tmp));
+		rrr_string_builder_clear(&str_tmp);
+	}
+
 	message->timestamp = rrr_be64toh(message->timestamp);
 	message->topic_length = rrr_be16toh(message->topic_length);
 
@@ -279,12 +291,13 @@ void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message) {
 	MSG_TO_BE(message);
 
 	if (RRR_DEBUGLEVEL_6) {
-		RRR_DBG("Message prepared for network: ");
-		for (unsigned int i = 0; i < sizeof(*message); i++) {
+		struct rrr_string_builder str_tmp = {0};
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			unsigned char *buf = (unsigned char *) message;
-			RRR_DBG("%x-", *(buf + i));
+			rrr_string_builder_append_format(&str_tmp, "%02x-", *(buf + i));
 		}
-		RRR_DBG("\n");
+		RRR_DBG("Message prepared for network: %s\n", rrr_string_builder_buf(&str_tmp));
+		rrr_string_builder_clear(&str_tmp);
 	}
 /*
 	if (message_to_string (message, buf+1, buf_size) != 0) {

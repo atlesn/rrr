@@ -85,10 +85,11 @@ int rrr_map_item_add (
 	return 0;
 }
 
-int rrr_map_item_add_new (
+static int __rrr_map_item_add_new (
 		struct rrr_map *map,
 		const char *tag,
-		const char *value
+		const char *value,
+		int do_prepend
 ) {
 	int ret = 0;
 
@@ -110,7 +111,12 @@ int rrr_map_item_add_new (
 		memcpy(item_new->value, value, value_size);
 	}
 
-	RRR_LL_APPEND(map, item_new);
+	if (do_prepend) {
+		RRR_LL_UNSHIFT(map, item_new);
+	}
+	else {
+		RRR_LL_APPEND(map, item_new);
+	}
 	item_new = NULL;
 
 	out:
@@ -118,6 +124,22 @@ int rrr_map_item_add_new (
 		rrr_map_item_destroy(item_new);
 	}
 	return ret;
+}
+
+int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 0);
+}
+
+int rrr_map_item_prepend_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 1);
 }
 
 int rrr_map_parse_pair (

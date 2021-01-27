@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../string_builder.h"
 #include "../rrr_strerror.h"
 #include "../helpers/nullsafe_str.h"
+#include "../map.h"
 
 struct rrr_msgdb_server {
 	char *directory;
@@ -163,6 +164,24 @@ static int __rrr_msgdb_server_chdir (
 ) {
 	int ret = 0;
 
+	if (chdir(directory) != 0) {
+		RRR_MSG_0("Could not change to directory '%s' in message db server: %s\n",
+			directory, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_3("msgdb chdir '%s'\n", directory);
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_mkdir_chdir (
+		const char *directory
+) {
+	int ret = 0;
+
 	if (mkdir(directory, 0777) != 0) {
 		if (errno != EEXIST) {
 			RRR_MSG_0("Could not create directory '%s' in message db server: %s\n",
@@ -179,8 +198,6 @@ static int __rrr_msgdb_server_chdir (
 		goto out;
 	}
 
-	RRR_DBG_3("msgdb chdir '%s'\n", directory);
-
 	out:
 	return ret;
 }
@@ -188,7 +205,7 @@ static int __rrr_msgdb_server_chdir (
 static int __rrr_msgdb_server_chdir_base (
 		struct rrr_msgdb_server *server
 ) {
-	return __rrr_msgdb_server_chdir(server->directory);
+	return __rrr_msgdb_server_mkdir_chdir(server->directory);
 }
 
 struct rrr_msgdb_server_path_iterate_callback_data {
@@ -202,6 +219,21 @@ static int __rrr_msgdb_server_path_iterate_str_callback (
 	void *arg
 ) {
 	struct rrr_msgdb_server_path_iterate_callback_data *callback_data = arg;
+
+	if (strlen(str) == 0) {
+		if (callback_data->is_last) {
+			RRR_MSG_0("File component of a path in message db server had zero length (topic ends with a /), this is an error\n");
+			return RRR_MSGDB_SOFT_ERROR;
+		}
+		// Ignore empty path component
+		return 0;
+	}
+
+	if ((strlen(str) >= 2 && strncmp(str, "..", 2) == 0) || strncmp(str, ".", 1) == 0) {
+		RRR_MSG_0("Illegal path component name '%s' in message db server\n", str);
+		return RRR_MSGDB_SOFT_ERROR;
+	}
+
 	return callback_data->callback(str, callback_data->is_last, callback_data->callback_arg);
 }
 
@@ -264,19 +296,12 @@ static int __rrr_msgdb_server_put_path_split_callback (
 	int fd = 0;
 	struct rrr_msg *msg_tmp = NULL;
 
-	if (strlen(str) == 0) {
-		if (is_last) {
-			ret = 1;
-			RRR_MSG_0("File component of a path in message db server had zero length (topic ends with a /), this is and error\n");
-			goto out;
-		}
-		// Ignore empty path component
-		goto out;
-	}
-
 	if (is_last) {
 		if ((fd = rrr_socket_open(str, O_CREAT|O_TRUNC|O_RDWR, 0777, "msgdb_server_put", 0)) <= 0) {
-			RRR_MSG_0("Could not open file '%s' for writing in message db server\n", str);
+			RRR_MSG_0("Could not open file '%s' for writing in message db server: %s\n",
+				str, rrr_strerror(errno));
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
 		}
 		RRR_DBG_3("msgdb write to '%s' size %llu\n", str, (long long unsigned) MSG_TOTAL_SIZE(callback_data->msg));
 
@@ -287,6 +312,9 @@ static int __rrr_msgdb_server_put_path_split_callback (
 		}
 
 		memcpy(msg_tmp, callback_data->msg, MSG_TOTAL_SIZE(callback_data->msg));
+
+		// Don't save the message with PUT type, would be silly, innit?
+		MSG_SET_TYPE((struct rrr_msg_msg *) msg_tmp, MSG_TYPE_MSG);
 
 		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) msg_tmp);
 		rrr_msg_checksum_and_to_network_endian(msg_tmp);
@@ -299,14 +327,15 @@ static int __rrr_msgdb_server_put_path_split_callback (
 		}
 	}
 	else {
-		if ((ret = __rrr_msgdb_server_chdir(str)) != 0) {
+		if ((ret = __rrr_msgdb_server_mkdir_chdir(str)) != 0) {
+			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	if (fd != 0) {
+	if (fd > 0) {
 		rrr_socket_close(fd);
 	}
 	return ret;
@@ -338,6 +367,90 @@ static int __rrr_msgdb_server_put (
 	return ret;
 }
 
+struct rrr_msgdb_server_del_path_split_callback_data {
+	struct rrr_map path_elements_reverse;
+};
+
+static int __rrr_msgdb_server_del_path_split_callback (
+		const char *str,
+		int is_last,
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_msgdb_server_del_path_split_callback_data *callback_data = arg;
+
+	if (is_last) {
+		if (unlink(str) != 0) {
+			RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
+				str, rrr_strerror(errno));
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+	}
+	else {
+		if ((ret = rrr_map_item_prepend_new(&callback_data->path_elements_reverse, str, NULL)) != 0) {
+			goto out;
+		}
+		if (__rrr_msgdb_server_chdir(str)) {
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_msgdb_server_del (
+		struct rrr_msgdb_server *server,
+		const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
+	struct rrr_msgdb_server_del_path_split_callback_data callback_data = {0};
+
+	if ((ret = __rrr_msgdb_server_path_iterate (
+			msg,
+			__rrr_msgdb_server_del_path_split_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_MAP_ITERATE_BEGIN(&callback_data.path_elements_reverse);
+		if (chdir("..") != 0) {
+			RRR_MSG_0("Could not chdir while ascending in message db server: %s\n",
+				rrr_strerror(errno));
+			// Do not return NACK, file has been deleted. Return success.
+			goto out;
+		}
+		if (rmdir(node_tag) != 0) {
+			if (errno == ENOTEMPTY || errno == EEXIST) {
+				// OK, not deleting directory as files are still present in it
+			}
+			else {
+				RRR_MSG_0("Warning: Could not remove directory '%s' in message db server: %s\n",
+					node_tag, rrr_strerror(errno));
+				// Do not return NACK, file has been deleted. Return success.
+				goto out;
+			}
+			RRR_MAP_ITERATE_BREAK();
+		}
+		else {
+			RRR_DBG_3("msgdb rmdir '%s'\n", node_tag);
+		}
+	RRR_MAP_ITERATE_END();
+
+	out:
+	RRR_MAP_CLEAR(&callback_data.path_elements_reverse);
+	return ret;
+}
+
 static int __rrr_msgdb_server_send_msg_ack (
 		int fd
 ) {
@@ -354,6 +467,95 @@ static int __rrr_msgdb_server_send_msg_nack (
 	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_NACK);
 }
 
+struct rrr_msgdb_server_get_path_split_callback_data {
+	int response_fd;
+};
+
+static int __rrr_msgdb_server_get_path_split_callback (
+		const char *str,
+		int is_last,
+		void *arg
+) {
+	struct rrr_msgdb_server_get_path_split_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_msg *msg_tmp = NULL;
+
+	if (is_last) {
+		ssize_t file_size = 0;
+
+		if ((ret = rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0)) != 0) {
+			RRR_MSG_0("Could not read file '%s' in message db server\n",
+				str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((ret = rrr_msg_head_to_host_and_verify(msg_tmp, file_size)) != 0) {
+			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if (!RRR_MSG_IS_RRR_MESSAGE(msg_tmp)) {
+			RRR_MSG_0("Message type of '%s' was not RRR message in message db server\n");
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((ret = rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size)) != 0) {
+			RRR_MSG_0("Head 2/2 verification of '%s' failed in message db server\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		RRR_DBG_3("msgdb fd %i read from '%s' size %llu\n", callback_data->response_fd, str, (long long unsigned) MSG_TOTAL_SIZE(msg_tmp));
+
+		if ((ret = rrr_msgdb_common_msg_send_blocking (callback_data->response_fd, (struct rrr_msg_msg *) msg_tmp)) != 0) {
+			ret = RRR_MSGDB_EOF;
+			goto out;
+		}
+	}
+	else {
+		if ((ret = __rrr_msgdb_server_chdir(str)) != 0) {
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
+static int __rrr_msgdb_server_get (
+		struct rrr_msgdb_server *server,
+		const struct rrr_msg_msg *msg,
+		int response_fd
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
+	struct rrr_msgdb_server_get_path_split_callback_data callback_data = {
+		response_fd
+	};
+
+	if ((ret = __rrr_msgdb_server_path_iterate (
+			msg,
+			__rrr_msgdb_server_get_path_split_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_msgdb_server_read_msg_msg_callback (
 		struct rrr_msg_msg **msg,
 		void *private_data,
@@ -363,6 +565,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 	struct rrr_msgdb_server *server = arg;
 
 	int ret = 0;
+	int no_ack = 0;
 
 	struct rrr_string_builder topic = {0};
 
@@ -370,11 +573,11 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("msgdb fd %i recv MSG command %s topic '%s' size %" PRIrrrl "\n",
-			client->fd, MSG_TYPE_NAME(*msg), rrr_string_builder_buf(&topic), MSG_TOPIC_LENGTH(*msg));
+	RRR_DBG_2("msgdb fd %i %s size %" PRIrrrl " topic '%s'\n",
+			client->fd, MSG_TYPE_NAME(*msg), MSG_TOTAL_SIZE(*msg), rrr_string_builder_buf(&topic));
 
 	if (MSG_TOPIC_LENGTH(*msg) == 0) {
-		RRR_DBG_3("msgdb fd %i received message with zero-length topic\n", client->fd);
+		RRR_MSG_0("Zero-length topic in message db server, this is an error\n");
 		goto out_negative_ack;
 	}
 
@@ -382,23 +585,49 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		case MSG_TYPE_PUT:
 			ret = __rrr_msgdb_server_put(server, *msg);
 			break;
+		case MSG_TYPE_DEL:
+			ret = __rrr_msgdb_server_del(server, *msg);
+			break;
+		case MSG_TYPE_GET:
+			if ((ret = __rrr_msgdb_server_get(server, *msg, client->fd)) == 0) {
+				// GET responds with a message upon success, not need for ACK
+				// unless we failed
+				no_ack = 1;
+			}
+			break;
 		default:
 			RRR_MSG_0("msgdb fd %i unknown message type %i received in message db server\n", client->fd, MSG_TYPE(*msg));
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 	};
 
-	if (ret != 0) {
+	// Note that any errors produced while processing the
+	// client request should be masked by setting ret value while
+	// sending ACK. Only fail soft/hard if the sending of the ACK
+	// message fails or if the client sends corrupt messages.
+
+	if (ret == 0) {
+		goto out_positive_ack;
+	}
+	else if (ret == RRR_MSGDB_SOFT_ERROR) {
 		goto out_negative_ack;
 	}
 
-	goto out_positive_ack;
+	// Any other errors => close connection
+	RRR_DBG_2("msgdb fd %i close following error\n", client->fd);
+	ret = RRR_MSGDB_EOF;
+	goto out;
+
 	out_negative_ack:
-		ret = __rrr_msgdb_server_send_msg_nack(client->fd);
+		if (!no_ack) {
+			ret = __rrr_msgdb_server_send_msg_nack(client->fd) ? RRR_MSGDB_EOF : 0;
+		}
 		goto out;
 
 	out_positive_ack:
-		ret = __rrr_msgdb_server_send_msg_ack(client->fd);
+		if (!no_ack) {
+			ret = __rrr_msgdb_server_send_msg_ack(client->fd) ? RRR_MSGDB_EOF : 0;
+		}
 		goto out;
 
 	out:

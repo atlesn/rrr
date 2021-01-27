@@ -45,6 +45,10 @@ int rrr_msgdb_client_await_ack (
 		int *positive_ack,
 		struct rrr_msgdb_client_conn *conn
 );
+int rrr_msgdb_client_await_msg (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn
+);
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
 		const struct rrr_msg_msg *msg

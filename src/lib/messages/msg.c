@@ -166,7 +166,14 @@ int rrr_msg_check_data_checksum_and_length (
 	rrr_u32 checksum = message->data_crc32;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	return rrr_crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
+	if (rrr_crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0) {
+		return 1;
+	}
+
+	message->data_crc32 = 0;
+	message->header_crc32 = 0;
+
+	return 0;
 }
 
 int rrr_msg_to_host_and_verify_with_callback (

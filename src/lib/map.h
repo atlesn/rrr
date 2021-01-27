@@ -46,6 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MAP_ITERATE_IS_FIRST()									\
 	RRR_LL_ITERATE_IS_FIRST()
 
+#define RRR_MAP_ITERATE_BREAK() \
+	RRR_LL_ITERATE_BREAK()
+
 #define RRR_MAP_COUNT(map)											\
 	RRR_LL_COUNT(map)
 
@@ -106,8 +109,13 @@ int rrr_map_item_new (
 int rrr_map_item_add (
 		struct rrr_map *map,
 		struct rrr_map_item *item
-	);
+);
 int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+);
+int rrr_map_item_prepend_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value

@@ -65,6 +65,18 @@ void rrr_msgdb_client_close_void (
 	rrr_msgdb_client_close(conn);
 }
 
+static int __rrr_msgdb_client_await_ack_callback_silent (
+		const struct rrr_msg *message,
+		void *arg1,
+		void *arg2
+) {
+	(void)(message);
+	(void)(arg1);
+	(void)(arg2);
+
+	return 0;
+}
+
 static int __rrr_msgdb_client_await_ack_callback (
 		const struct rrr_msg *message,
 		void *arg1,
@@ -118,18 +130,79 @@ int rrr_msgdb_client_await_ack (
 	return ret;
 }
 
+static int __rrr_msgdb_client_await_msg_callback (
+		struct rrr_msg_msg **message,
+		void *arg1,
+		void *arg2
+) {
+	struct rrr_msgdb_client_conn *conn = arg1;
+	struct rrr_msg_msg **result_msg = arg2;
+
+	RRR_DBG_3("msgdb fd %i recv MSG\n", conn->fd);
+
+	*result_msg = *message;
+	*message = NULL;
+
+	return 0;
+}
+
+int rrr_msgdb_client_await_msg (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn
+) {
+	int ret = 0;
+
+	*result_msg = NULL;
+
+	uint64_t bytes_read;
+	if ((ret = rrr_socket_read_message_split_callbacks (
+			&bytes_read,
+			&conn->read_sessions,
+			conn->fd,
+			RRR_SOCKET_READ_METHOD_RECV,
+			__rrr_msgdb_client_await_msg_callback,
+			NULL,
+			NULL,
+			__rrr_msgdb_client_await_ack_callback_silent,
+			conn,
+			result_msg
+	)) != 0) {
+		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
+		goto out;
+	}
+
+	if (*result_msg == NULL) {
+		RRR_MSG_0("msgdb fd %i request failed\n", conn->fd);
+		ret = RRR_MSGDB_SOFT_ERROR;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
 		const struct rrr_msg_msg *msg
 ) {
 	int ret = 0;
 
-	RRR_DBG_2("msgdb fd %i PUT msg size %li\n", conn->fd, MSG_TOTAL_SIZE(msg));
+	char *topic_tmp = NULL;
+
+	if (RRR_DEBUGLEVEL_2) {
+		if (rrr_msg_msg_topic_get(&topic_tmp, msg) == 0) {
+			RRR_DBG_2("msgdb fd %i %s size %li topic '%s'\n",
+				conn->fd, MSG_TYPE_NAME(msg), MSG_TOTAL_SIZE(msg), topic_tmp);
+		}
+		else {
+			RRR_MSG_0("Warning: Failed to allocate memory for debug message in rrr_msgdb_client_send\n");
+		}
+	}
 
 	if ((ret = rrr_msgdb_common_msg_send_blocking (conn->fd, msg)) != 0) {
 		goto out;
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	return ret;
 }
