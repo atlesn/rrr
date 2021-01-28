@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_CLIENT_H
 
 #include "../read.h"
+#include "../messages/msg_msg.h"
 
 struct rrr_msgdb_client_conn {
 		int fd;
@@ -52,6 +53,25 @@ int rrr_msgdb_client_await_msg (
 int rrr_msgdb_client_send (
 		struct rrr_msgdb_client_conn *conn,
 		const struct rrr_msg_msg *msg
+);
+int rrr_msgdb_client_send_empty (
+		struct rrr_msgdb_client_conn *conn,
+		rrr_u8 type,
+		const char *topic
+);
+int rrr_msgdb_client_cmd_idx (
+		struct rrr_array *target_paths,
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+);
+int rrr_msgdb_client_cmd_get (
+		struct rrr_msg_msg **target,
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+);
+int rrr_msgdb_client_cmd_del (
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
 );
 
 #endif /* RRR_MSGDB_CLIENT_H */

@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "../log.h"
 #include "msgdb_client.h"
@@ -28,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket_client.h"
 #include "../socket/rrr_socket_read.h"
+#include "../util/rrr_time.h"
+#include "../array.h"
 
 int rrr_msgdb_client_open (
 		struct rrr_msgdb_client_conn *conn,
@@ -204,5 +207,116 @@ int rrr_msgdb_client_send (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	return ret;
+}
+
+int rrr_msgdb_client_send_empty (
+		struct rrr_msgdb_client_conn *conn,
+		rrr_u8 type,
+		const char *topic
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = rrr_msg_msg_new_empty (
+		&msg,
+		MSG_TYPE_MSG,
+		MSG_CLASS_DATA,
+		rrr_time_get_64(),
+		0,
+		0
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg, type);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+int rrr_msgdb_client_cmd_idx (
+		struct rrr_array *target_paths,
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, topic)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_client_await_msg (
+		&msg_tmp,
+		conn
+	)) != 0 || msg_tmp == NULL) {
+		goto out;
+	}
+
+	uint16_t array_version_dummy;
+	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, target_paths, msg_tmp)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
+int rrr_msgdb_client_cmd_get (
+		struct rrr_msg_msg **target,
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+) {
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_client_await_msg (
+		target,
+		conn
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_msgdb_client_cmd_del (
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+) {
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
+		goto out;
+	}
+
+	int positive_ack;
+	if ((ret = rrr_msgdb_client_await_ack (
+		&positive_ack,
+		conn
+	)) != 0) {
+		goto out;
+	}
+
+	ret = positive_ack ? 0 : 1;
+
+	out:
 	return ret;
 }
