@@ -47,6 +47,7 @@ struct rrr_msgdb_server {
 	char *directory;
 	int fd;
 	struct rrr_socket_client_collection clients;
+	uint64_t recv_count;
 };
 
 int rrr_msgdb_server_new (
@@ -112,6 +113,12 @@ void rrr_msgdb_server_destroy (
 	rrr_socket_close(server->fd);
 	rrr_socket_client_collection_clear(&server->clients);
 	free(server);
+}
+
+void rrr_msgdb_server_destroy_void (
+		void *server
+) {
+	rrr_msgdb_server_destroy(server);
 }
 
 struct rrr_msgdb_server_client {
@@ -775,6 +782,8 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 	RRR_DBG_2("msgdb fd %i %s size %" PRIrrrl " topic '%s'\n",
 			client->fd, MSG_TYPE_NAME(*msg), MSG_TOTAL_SIZE(*msg), rrr_string_builder_buf(&topic));
 
+	server->recv_count++;
+
 	if (MSG_TOPIC_LENGTH(*msg) == 0) {
 		RRR_MSG_0("Zero-length topic in message db server, this is an error\n");
 		goto out_negative_ack;
@@ -887,4 +896,10 @@ int rrr_msgdb_server_tick (
 
 	out:
 	return ret;
+}
+
+uint64_t rrr_msgdb_server_recv_count_get (
+	struct rrr_msgdb_server *server
+) {
+	return server->recv_count;
 }

@@ -35,6 +35,7 @@ lib_LTLIBRARIES = dummy.la raw.la \
 	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
+	msgdb.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
@@ -42,6 +43,9 @@ module_ldflags=-module -avoid-version -shared -L../lib
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
+
+msgdb_la_LDFLAGS = ${module_ldflags}
+msgdb_la_SOURCES = d_msgdb.c
 
 mqttclient_la_LDFLAGS = ${module_ldflags}
 mqttclient_la_SOURCES = p_mqttclient.c
