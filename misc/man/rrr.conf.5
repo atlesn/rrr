@@ -223,6 +223,9 @@ Spins up a TLS-capable HTTP server which can parse POST and GET data into RRR me
 .It httpclient (PAI)
 Sends records to any HTTP server using GET or POST, TLS-capable.
 
+.It msgdb (N)
+Filesystem storage engine for RRR messages (message DB).
+
 .It mqttbroker (N)
 A TLS-capable V5/V3.1(.1) MQTT broker supporting TLS, authentication, ACL.
 
@@ -1399,24 +1402,24 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_msgdb_socket=PATH
 If this parameter is set with a path to the listening socket of the
 .B msgdb
-module (Message DB), on-disk storage of any failed PUT requests will be activated. The
-.B msgdb
-must also be enabled in the confiuration and listen on the same socket, but it is not
-a requirement that it is run by the same instance of RRR.
+module (message DB), filesystem storage of any failed PUT requests will be activated.
+The message DB module must also have an instance in the confiuration and listen on the same socket,
+but it is not a requirement that it is run by the same instance of RRR.
 
-The failed PUT requests will not be deleted from the database until a successful request has been achieved.
+Any stored messages will not be deleted from the database until a successful request has been performed.
 
-The messages will be indexed by using the HTTP endpoint of the messages. If a message is to be stored in
-.B msgdb
-while a message with the same endpoint already exists, the old message will be overwritten.
+The messages will be indexed by using the mqtt topic of the messages, and messages without topics cannot be stored.
+If a message is to be stored in the message DB while a message with the same topic already exists, the old message will be overwritten.
 
 Note that if the same msgdb is used for multiple
 .B httpclient
-instances, these instances will find messages in the
-.B msgdb
-from other instances.
+instances, an instance will find messages from the others.
 
-.It http_msgdb_retry_interval_s=SECONDS
+Refer to the
+.B msgdb
+section for more details.
+
+.It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
@@ -1456,6 +1459,17 @@ If there is any error while sending a message, drop it instead of deferring it a
 
 .It http_message_timeout_ms=MILLISECONDS
 Timeout for deferred messages, defaults to 0 which means no timeout.
+Messages being defered to fhe message DB (see
+.Xr http_msgdb_socket
+) will not get affected by this parameter, as the timer is reset every time they are read back from the DB.
+Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
+
+.It http_ttl_seconds=SECONDS
+When the time timestamp of a message in the send queue becomes older than the specified amount of seconds, it is dropped.
+The message will also get deleted from the message DB if used (see
+.Xr http_msgdb_socket
+).
+Defaults to 0 which means TTL check is performed.
 
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
@@ -1502,6 +1516,36 @@ part of the
 .B COMMON CONFIGURATION PARAMETERS
 section for descriptions of TLS parameters. All TLS parameters are optional.
 .El
+.SS msgdb (N)
+The message DB saves messages on the file system for persistence across program restarts.
+Clients may connect to the message DB using a UNIX socket and perform REST-like (REpresentional State Transfer) queries to save and retrieve messages.
+
+Messages are stored in a file hirarchy based on their topics, and due to this, there are restrictions on valid topics:
+
+.Bl -width 
+.It - Topics with dots ('.', '..' etc.) might get rejected as they have special meaning for the filesystem
+.It - Topics cannot end with a slash /
+.It - While a message 'a/b' is stored, a message 'a' cannot be stored because 'a' is now a directroy (and vice versa)
+.It - Empty topics cannot be used
+.El
+
+Using the socket is the only way to communicate with the message DB, it cannot read from other modules nor can it be read from.
+
+Currently only internal modules may use the message DB, and the methods GET, PUT, DEL and IDX are available to them. 
+
+Messages are stored with all fields in network byte order. They are checksummed, and any modifications will stop the message DB from reading them.
+
+Messages may be deleted manually from the database directory at any time, or moved out and back in.
+They should however not be renamed or moved inside the hirarchy as their location would then no longer match the topic set inside the message.
+
+.Bl -tag -width -indent
+.It msgdb_directory=DIRECTORY
+The directroy to store files in. Defaults to '/var/lib/rrr/msgdb'.
+Multiple instances of the Message DB should not use the same directory.
+
+.It msgdb_socket=FILENAME
+The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
+
 .SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5.
 .PP

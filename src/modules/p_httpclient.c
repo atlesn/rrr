@@ -87,12 +87,13 @@ struct httpclient_data {
 	int do_port_tag_force;
 
 	rrr_setting_uint message_timeout_us;
+	rrr_setting_uint message_ttl_us;
 
 	rrr_setting_uint redirects_max;
 	rrr_setting_uint keepalive_s_max;
 
 	char *msgdb_socket;
-	rrr_setting_uint msgdb_retry_interval_us;
+	rrr_setting_uint msgdb_poll_interval_us;
 
 	struct rrr_net_transport_config net_transport_config;
 
@@ -759,8 +760,6 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 	*target = rrr_string_builder_buffer_takeover(string_builder);
 
 
-	printf("target: %s\n", *target);
-
 	out:
 	if (string_builder != NULL) {
 		rrr_string_builder_destroy(string_builder);
@@ -1210,17 +1209,18 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_keepalive",
 			RRR_MSG_0("Warning: Parameter http_keepalive is deprecated and has no effect. Use http_max_keepalive_s to control connection lifetime.\n"));
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);
+	data->message_ttl_us *= 1000 * 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
-	// Remember to mulitply to get useconds. Zero means no timeout.
 	data->message_timeout_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_retry_interval_s", msgdb_retry_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
 
-	data->msgdb_retry_interval_us *= 1000 * 1000;
+	data->msgdb_poll_interval_us *= 1000 * 1000;
 
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
@@ -1373,6 +1373,8 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 
 	msg_tmp = NULL;
 
+	entry->send_time = rrr_time_get_64();
+
 	rrr_msg_holder_incref(entry);
 	RRR_LL_APPEND(&data->defer_queue, entry);
 
@@ -1477,24 +1479,34 @@ static void httpclient_msgdb_queue_process (struct httpclient_data *data) {
 }
 
 #define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE() \
-	do { if (data->msgdb_socket == NULL || data->http_client_config.method != RRR_HTTP_METHOD_PUT) return;  } while(0)
+	if (data->msgdb_socket == NULL || data->http_client_config.method != RRR_HTTP_METHOD_PUT) return
 
-// Call this method ONLY when the entry is guaranteed to be removed imminently from
-// the defer queue, as it otherwise would be part of two lists at the same time
-// causing corruption.
+#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC() \
+	if (MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) == 0) return
+
 static void httpclient_msgdb_notify_failure(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
+	// Call this method ONLY when the entry is guaranteed to be removed imminently from
+	// the defer queue, as it otherwise would be part of two lists at the same time
+	// causing corruption.
+
 	rrr_msg_holder_incref_while_locked(entry_locked);
 	RRR_LL_APPEND(&data->msgdb_queue, entry_locked);
 }
 
 static void httpclient_msgdb_notify_timeout(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
 	httpclient_msgdb_delete(data, entry_locked->message);
 }
 
 static void httpclient_msgdb_notify_complete(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
 	httpclient_msgdb_delete(data, entry_locked->message);
 }
 
@@ -1515,7 +1527,9 @@ static void httpclient_defer_queue_process (struct httpclient_data *data) {
 		rrr_msg_holder_lock(node);
 		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
 
-		if (data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) {
+		if ((data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) ||
+		    (data->message_ttl_us != 0 && rrr_time_get_64() > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us)
+		) {
 				send_timeout_count++;
 				httpclient_msgdb_notify_timeout(data, node);
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -1644,8 +1658,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 		if (data->msgdb_socket != NULL) {
 			httpclient_msgdb_queue_process(data);
-
-			if (prev_msgdb_index_time + data->msgdb_retry_interval_us < time_now) {
+			if (prev_msgdb_index_time + data->msgdb_poll_interval_us < time_now) {
 				httpclient_msgdb_poll(data);
 				prev_msgdb_index_time = time_now;
 			}
