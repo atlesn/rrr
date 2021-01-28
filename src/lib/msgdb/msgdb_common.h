@@ -30,8 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSGDB_SOFT_ERROR     RRR_READ_SOFT_ERROR
 #define RRR_MSGDB_EOF            RRR_READ_EOF
 
-#define RRR_MSGDB_CTRL_F_ACK     RRR_MSG_CTRL_F_USR_B
-#define RRR_MSGDB_CTRL_F_NACK    RRR_MSG_CTRL_F_USR_C
+#define RRR_MSGDB_CTRL_F_ACK     RRR_MSG_CTRL_F_ACK
+#define RRR_MSGDB_CTRL_F_NACK    RRR_MSG_CTRL_F_NACK
 
 struct rrr_msg_msg;
 

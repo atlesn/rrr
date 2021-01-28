@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,9 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // This bit is reserved for holding the type=control number
 #define RRR_MSG_CTRL_F_RESERVED    (1<<0)
-#define RRR_MSG_CTRL_F_ACK         (1<<1)
+
 #define RRR_MSG_CTRL_F_PING        (1<<2)
 #define RRR_MSG_CTRL_F_PONG        (1<<3)
+#define RRR_MSG_CTRL_F_ACK         (1<<4)
+#define RRR_MSG_CTRL_F_NACK        (1<<5)
 
 // These bits are used by higher level structures. If more flags are needed,
 // reserve more USR-bits here to avoid collisions and only refer to them by
@@ -46,7 +48,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_CTRL_F_USR_C      (1<<13)
 #define RRR_MSG_CTRL_F_USR_D      (1<<12)
 
-#define RRR_MSG_CTRL_F_ALL              (RRR_MSG_CTRL_F_RESERVED|RRR_MSG_CTRL_F_ACK|0xF000)
+#define RRR_MSG_CTRL_F_ALL              ( RRR_MSG_CTRL_F_RESERVED |  \
+                                          RRR_MSG_CTRL_F_PING |      \
+					  RRR_MSG_CTRL_F_PONG |      \
+					  RRR_MSG_CTRL_F_ACK |       \
+					  RRR_MSG_CTRL_F_NACK |      \
+					  0xF000)
 #define RRR_MSG_CTRL_F_HAS(msg,flag)    (((msg)->msg_type & (flag)) == (flag))
 #define RRR_MSG_CTRL_F_CLEAR(msg,flag)  ((msg)->msg_type &= ~(flag))
 #define RRR_MSG_CTRL_FLAGS(msg)         ((msg)->msg_type & RRR_MSG_CTRL_F_ALL)
