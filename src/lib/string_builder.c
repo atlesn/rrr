@@ -174,7 +174,7 @@ int rrr_string_builder_append (
 		struct rrr_string_builder *string_builder,
 		const char *str
 ) {
-	if (*str == '\0') {
+	if (*str == '\0' && string_builder->buf != NULL) {
 		return 0;
 	}
 

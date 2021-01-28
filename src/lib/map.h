@@ -46,6 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MAP_ITERATE_IS_FIRST()									\
 	RRR_LL_ITERATE_IS_FIRST()
 
+#define RRR_MAP_ITERATE_IS_LAST()									\
+	RRR_LL_ITERATE_IS_LAST()
+
 #define RRR_MAP_ITERATE_BREAK() \
 	RRR_LL_ITERATE_BREAK()
 

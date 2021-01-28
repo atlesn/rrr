@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fork.h"
 #include "../lib/array.h"
 #include "../lib/random.h"
+#include "../lib/string_builder.h"
 #include "test.h"
 
 #define MSGDB_CMD        "../.libs/rrr_msgdb"
@@ -130,7 +131,7 @@ static int __rrr_test_msgdb_await_and_check_msg (
 	struct rrr_msg_msg *result_msg = NULL;
 
 	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
-		TEST_MSG("Non-zero return %i from await ACK\n", ret);
+		TEST_MSG("Non-zero return %i from await msg\n", ret);
 		ret = 1;
 		goto out;
 	}
@@ -196,6 +197,109 @@ static int __rrr_test_msgdb_send_empty (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+static int __rrr_test_msgdb_get_msg (
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+	struct rrr_msg_msg *result_msg = NULL;
+
+	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg, MSG_TYPE_GET);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
+		TEST_MSG("Non-zero return %i from await msg\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result_msg);
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
+static int __rrr_test_msgdb_get_index (
+		struct rrr_msgdb_client_conn *conn,
+		const char *path,
+		int expected_paths_length
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+	struct rrr_msg_msg *result_msg = NULL;
+	struct rrr_array array_tmp = {0};
+	struct rrr_string_builder value_tmp = {0};
+
+	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, path, strlen(path))) != 0) {
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg, MSG_TYPE_IDX);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
+		TEST_MSG("Non-zero return %i from await msg\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	uint16_t array_version_dummy;
+	if ((ret = rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, result_msg)) != 0) {
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_array_dump(&array_tmp);
+	}
+
+	if (RRR_LL_COUNT(&array_tmp) != expected_paths_length) {
+		TEST_MSG("Wrong number of paths returned from server\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(&array_tmp, const struct rrr_type_value);
+		if (strcmp(node->tag, "dir") == 0) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if ((ret = rrr_string_builder_append_raw(&value_tmp, node->data, node->total_stored_length)) != 0) {
+			goto out;
+		}
+		if ((ret = __rrr_test_msgdb_get_msg (conn, rrr_string_builder_buf(&value_tmp))) != 0) {
+			goto out;
+		}
+		rrr_string_builder_clear(&value_tmp);
+	RRR_LL_ITERATE_END();
+
+	out:
+	rrr_string_builder_clear(&value_tmp);
+	rrr_array_clear(&array_tmp);
+	RRR_FREE_IF_NOT_NULL(msg);
+	RRR_FREE_IF_NOT_NULL(result_msg);
 	return ret;
 }
 
@@ -316,6 +420,9 @@ static int __rrr_test_msgdb(void) {
 	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/c", ACK_MODE_ANY)) != 0) {
 		goto out;
 	}
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/d", ACK_MODE_ANY)) != 0) {
+		goto out;
+	}
 	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_ANY)) != 0) {
 		goto out;
 	}
@@ -348,6 +455,19 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
+	// Valid
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b/d", ACK_MODE_OK)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_get_index (&conn, "/a/b/d", 1)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_test_msgdb_get_index (&conn, "/", 4)) != 0) {
+		goto out;
+	}
+
 	// Invalid, GET on directory
 	if ((ret = __rrr_test_msgdb_get_and_check_msg (&conn, "a/b", NULL)) != 0) {
 		goto out;
@@ -370,6 +490,11 @@ static int __rrr_test_msgdb(void) {
 
 	// Valid, delete message
 	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/c", ACK_MODE_OK)) != 0) {
+		goto out;
+	}
+
+	// Valid, delete message
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/d", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
@@ -425,7 +550,11 @@ int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
 	}
 
 	// Wait for server to start listening on socket
+#ifdef RRR_TEST_MSGDB_SERVER_USE_VALGRIND
+	rrr_posix_usleep(2000000);
+#else
 	rrr_posix_usleep(500000);
+#endif
 
 	ret = __rrr_test_msgdb();
 
