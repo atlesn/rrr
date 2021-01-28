@@ -1320,6 +1320,123 @@ static int httpclient_parse_config (
 	return ret;
 }
 
+static void httpclient_process_msgdb_queue (struct httpclient_data *data) {
+	// Note : For now, nothing returns failure
+
+	if (RRR_LL_COUNT(&data->msgdb_queue) == 0) {
+		return;
+	}
+
+	if (rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket) != 0) {
+		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed in httpclient instance %s\n",
+			data->msgdb_socket, INSTANCE_D_NAME(data->thread_data));
+		return;
+	}
+
+	int ret_tmp = RRR_HTTP_OK;
+
+	RRR_LL_ITERATE_BEGIN(&data->msgdb_queue, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
+
+		struct rrr_msg_msg *msg = node->message;
+		MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+		if ((ret_tmp = rrr_msgdb_client_send(&data->msgdb_conn, msg)) == 0) {
+			int positive_ack = 0;
+			if ((ret_tmp = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+			else if (positive_ack == 1) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+		else {
+			RRR_LL_ITERATE_LAST();
+		}
+
+		pthread_cleanup_pop(1); // Unlock
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->msgdb_queue, 0; rrr_msg_holder_decref(node));
+
+	if (ret_tmp != 0) {
+		rrr_msgdb_client_close(&data->msgdb_conn);
+	}
+}
+
+static void httpclient_process_defer_queue (struct httpclient_data *data) {
+	if (RRR_LL_COUNT(&data->defer_queue) ==  0) {
+		return;
+	}
+
+	int send_timeout_count = 0;
+	RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
+		int ret_tmp = RRR_HTTP_OK;
+
+		if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
+			RRR_LL_ITERATE_BREAK();
+		}
+		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
+		rrr_msg_holder_lock(node);
+		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
+
+		if (data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) {
+				send_timeout_count++;
+				RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if ((ret_tmp = httpclient_request_send (
+				data,
+				&data->request_data,
+				node,
+				data->redirects_max,
+				0 // Destination override performed as needed
+		)) != RRR_HTTP_OK) {
+			if (ret_tmp == RRR_HTTP_BUSY) {
+				// Try again
+			}
+			else if (data->msgdb_socket != NULL && data->http_client_config.method == RRR_HTTP_METHOD_PUT) {
+				RRR_MSG_2("httpclient instance %s deferring failed PUT-message to msgdb on-disk storage\n",
+					INSTANCE_D_NAME(data->thread_data));
+				RRR_LL_APPEND(&data->msgdb_queue, node);
+				rrr_msg_holder_incref_while_locked(node);
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+			else {
+				if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
+					rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
+					// Try again
+					/*
+					* TODO : Implement, was removed by mistake during refactoring
+					-               if (data->do_drop_on_error) {
+					-                       RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",
+					-                                       INSTANCE_D_NAME(data->thread_data));
+					-                       ret = RRR_HTTP_OK;
+					-               }
+					*/
+
+				}
+				else {
+					RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",
+							INSTANCE_D_NAME(data->thread_data));
+					RRR_LL_ITERATE_SET_DESTROY();
+					// Delete message
+				}
+			}
+		}
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		pthread_cleanup_pop(1); // Unlock
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_holder_decref(node));
+
+	if (send_timeout_count > 0) {
+		RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
+				send_timeout_count,
+				INSTANCE_D_NAME(data->thread_data));
+	}
+}
+
 static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1384,112 +1501,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
 
-		if (RRR_LL_COUNT(&data->msgdb_queue) > 0) {
-			rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket);
-
-			if (data->msgdb_conn.fd > 0) {
-				int ret_tmp = RRR_HTTP_OK;
-
-				RRR_LL_ITERATE_BEGIN(&data->msgdb_queue, struct rrr_msg_holder);
-					rrr_msg_holder_lock(node);
-					pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
-
-					struct rrr_msg_msg *msg = node->message;
-					MSG_SET_TYPE(msg, MSG_TYPE_PUT);
-
-					if ((ret_tmp = rrr_msgdb_client_send(&data->msgdb_conn, msg)) == 0) {
-						int positive_ack = 0;
-						if ((ret_tmp = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0) {
-							RRR_LL_ITERATE_LAST();
-						}
-						else if (positive_ack == 1) {
-							RRR_LL_ITERATE_SET_DESTROY();
-						}
-					}
-					else {
-						RRR_LL_ITERATE_LAST();
-					}
-
-					pthread_cleanup_pop(1); // Unlock
-				RRR_LL_ITERATE_END_CHECK_DESTROY(&data->msgdb_queue, 0; rrr_msg_holder_decref(node));
-
-				if (ret_tmp != 0) {
-					rrr_msgdb_client_close(&data->msgdb_conn);
-				}
-			}
+		if (data->msgdb_socket != NULL) {
+			httpclient_process_msgdb_queue(data);
 		}
 
-		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
-			int ret_tmp = RRR_HTTP_OK;
-
-			int send_timeout_count = 0;
-//			int pos = 0;
-			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_holder);
-//				printf("send loop %i/%i\n", pos++, RRR_LL_COUNT(&data->defer_queue));
-				if (rrr_thread_signal_encourage_stop_check(thread)) {
-					RRR_LL_ITERATE_BREAK();
-				}
-				rrr_thread_watchdog_time_update(thread);
-
-				rrr_msg_holder_lock(node);
-				pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
-
-				if (data->message_timeout_us != 0 && rrr_time_get_64() > node->send_time + data->message_timeout_us) {
-						send_timeout_count++;
-						RRR_LL_ITERATE_SET_DESTROY();
-				}
-				else if ((ret_tmp = httpclient_request_send (
-						data,
-						&data->request_data,
-						node,
-						data->redirects_max,
-						0 // Destination override performed as needed
-				)) != RRR_HTTP_OK) {
-					if (ret_tmp == RRR_HTTP_BUSY) {
-						// Try again
-					}
-					else if (data->msgdb_socket != NULL && data->http_client_config.method == RRR_HTTP_METHOD_PUT) {
-						RRR_MSG_2("httpclient instance %s deferring failed PUT-message to msgdb on-disk storage\n",
-							INSTANCE_D_NAME(thread_data));
-						RRR_LL_APPEND(&data->msgdb_queue, node);
-						rrr_msg_holder_incref_while_locked(node);
-						RRR_LL_ITERATE_SET_DESTROY();
-					}
-					else {
-						if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-							rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
-							// Try again
-							/*
-							* TODO : Implement, was removed by mistake during refactoring
-							-               if (data->do_drop_on_error) {
-							-                       RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",
-							-                                       INSTANCE_D_NAME(data->thread_data));
-							-                       ret = RRR_HTTP_OK;
-							-               }
-							*/
-
-						}
-						else {
-							RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",
-									INSTANCE_D_NAME(thread_data));
-							RRR_LL_ITERATE_SET_DESTROY();
-							// Delete message
-						}
-					}
-				}
-				else {
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-
-				pthread_cleanup_pop(1); // Unlock
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_holder_decref(node));
-
-			if (send_timeout_count > 0) {
-				RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
-						send_timeout_count,
-						INSTANCE_D_NAME(data->thread_data));
-			}
-		}
+		httpclient_process_defer_queue(data);
 
 		uint64_t bytes_total = 0;
 
