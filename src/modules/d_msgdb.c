@@ -39,12 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/stats/stats_instance.h"
-/*#include "../lib/buffer.h"
-#include "../lib/messages/msg_msg.h"
-#include "../lib/ip/ip.h"
-#include "../lib/net_transport/net_transport_config.h"
-#include "../lib/util/rrr_time.h"
-#include "../lib/util/macro_utils.h"*/
+#include "../lib/util/macro_utils.h"
 
 #define RRR_MSGDB_DEFAULT_DIRECTORY  "/var/lib/rrr/msgdb"
 #define RRR_MSGDB_DEFAULT_SOCKET     "/var/run/rrr/msgdb.sock"
@@ -57,7 +52,8 @@ struct msgdb_data {
 
 static void msgdb_data_cleanup(void *arg) {
 	struct msgdb_data *data = arg;
-	(void)(data);
+	RRR_FREE_IF_NOT_NULL(data->directory);
+	RRR_FREE_IF_NOT_NULL(data->socket);
 }
 
 static int msgdb_data_init (

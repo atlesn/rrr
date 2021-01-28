@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/json/json.h"
+#include "../lib/msgdb/msgdb_client.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -56,10 +57,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S	5
 #define RRR_HTTPCLIENT_JSON_MAX_LEVELS			4
+#define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S 30
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection defer_queue;
+	struct rrr_msg_holder_collection msgdb_queue;
+
+	struct rrr_msgdb_client_conn msgdb_conn;
 
 	int do_no_data;
 	int do_rrr_msg_to_array;
@@ -86,6 +91,9 @@ struct httpclient_data {
 	rrr_setting_uint redirects_max;
 	rrr_setting_uint keepalive_s_max;
 
+	char *msgdb_socket;
+	rrr_setting_uint msgdb_retry_interval;
+
 	struct rrr_net_transport_config net_transport_config;
 
 	struct rrr_net_transport *keepalive_transport_plain;
@@ -106,14 +114,16 @@ static void httpclient_data_cleanup(void *arg) {
 	if (data->keepalive_transport_tls != NULL) {
 		rrr_net_transport_destroy(data->keepalive_transport_tls);
 	}
-
+	rrr_msgdb_client_close(&data->msgdb_conn);
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	rrr_msg_holder_collection_clear(&data->defer_queue);
+	rrr_msg_holder_collection_clear(&data->msgdb_queue);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
+	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 }
 
 struct httpclient_transaction_data {
@@ -1207,6 +1217,9 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_retry_interval", msgdb_retry_interval, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
+
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
@@ -1330,7 +1343,6 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpclient started thread %p\n", thread_data);
 
-
 	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
 
 	switch (data->net_transport_config.transport_type) {
@@ -1372,6 +1384,41 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
 
+		if (RRR_LL_COUNT(&data->msgdb_queue) > 0) {
+			rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket);
+
+			if (data->msgdb_conn.fd > 0) {
+				int ret_tmp = RRR_HTTP_OK;
+
+				RRR_LL_ITERATE_BEGIN(&data->msgdb_queue, struct rrr_msg_holder);
+					rrr_msg_holder_lock(node);
+					pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
+
+					struct rrr_msg_msg *msg = node->message;
+					MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+					if ((ret_tmp = rrr_msgdb_client_send(&data->msgdb_conn, msg)) == 0) {
+						int positive_ack = 0;
+						if ((ret_tmp = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0) {
+							RRR_LL_ITERATE_LAST();
+						}
+						else if (positive_ack == 1) {
+							RRR_LL_ITERATE_SET_DESTROY();
+						}
+					}
+					else {
+						RRR_LL_ITERATE_LAST();
+					}
+
+					pthread_cleanup_pop(1); // Unlock
+				RRR_LL_ITERATE_END_CHECK_DESTROY(&data->msgdb_queue, 0; rrr_msg_holder_decref(node));
+
+				if (ret_tmp != 0) {
+					rrr_msgdb_client_close(&data->msgdb_conn);
+				}
+			}
+		}
+
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
@@ -1401,10 +1448,26 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 					if (ret_tmp == RRR_HTTP_BUSY) {
 						// Try again
 					}
+					else if (data->msgdb_socket != NULL && data->http_client_config.method == RRR_HTTP_METHOD_PUT) {
+						RRR_MSG_2("httpclient instance %s deferring failed PUT-message to msgdb on-disk storage\n",
+							INSTANCE_D_NAME(thread_data));
+						RRR_LL_APPEND(&data->msgdb_queue, node);
+						rrr_msg_holder_incref_while_locked(node);
+						RRR_LL_ITERATE_SET_DESTROY();
+					}
 					else {
 						if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 							rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors
 							// Try again
+							/*
+							* TODO : Implement, was removed by mistake during refactoring
+							-               if (data->do_drop_on_error) {
+							-                       RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",
+							-                                       INSTANCE_D_NAME(data->thread_data));
+							-                       ret = RRR_HTTP_OK;
+							-               }
+							*/
+
 						}
 						else {
 							RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",

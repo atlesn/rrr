@@ -1380,7 +1380,7 @@ If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
 
-.It http_method={get|post_urlencoded|post_multipart}
+.It http_method={get|put|post_urlencoded|post_multipart}
 Which method to use when sending data to the server. Defaults to
 .B get.
 .br
@@ -1395,7 +1395,30 @@ is used, any fields will be made into a query string and sent in the POST body o
 \(bu If
 .B post_multipart
 is used, any fields will be made into separate mime parts and sent in the POST body of type 'multipart/form-data'. This method is recommended for large data fields.
- 
+
+.It http_msgdb_socket=PATH
+If this parameter is set with a path to the listening socket of the
+.B msgdb
+module (Message DB), on-disk storage of any failed PUT requests will be activated. The
+.B msgdb
+must also be enabled in the confiuration and listen on the same socket, but it is not
+a requirement that it is run by the same instance of RRR.
+
+The failed PUT requests will not be deleted from the database until a successful request has been achieved.
+
+The messages will be indexed by using the HTTP endpoint of the messages. If a message is to be stored in
+.B msgdb
+while a message with the same endpoint already exists, the old message will be overwritten.
+
+Note that if the same msgdb is used for multiple
+.B httpclient
+instances, these instances will find messages in the
+.B msgdb
+from other instances.
+
+.It http_msgdb_retry_interval=SECONDS
+Number of seconds between each index request to the message db server, defaults to 30.
+
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
 A comma separated list of array tags to find in RRR messages from other modules.
 If left unspecified, all array values found will be sent to the HTTP server.

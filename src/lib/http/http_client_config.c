@@ -87,6 +87,10 @@ int rrr_http_client_config_parse (
 	) {
 		data->method = RRR_HTTP_METHOD_GET;
 	}
+	else if (	strcasecmp(data->method_str, "put") == 0
+	) {
+		data->method = RRR_HTTP_METHOD_PUT;
+	}
 	else if (	strcasecmp(data->method_str, "post_multipart") == 0 ||
 				strcasecmp(data->method_str, "post_multipart_form_data") == 0 ||
 				strcasecmp(data->method_str, "multipart/form-data") == 0
