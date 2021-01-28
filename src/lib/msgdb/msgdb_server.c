@@ -485,6 +485,14 @@ static int __rrr_msgdb_server_get_path_split_callback (
 	if (is_last) {
 		ssize_t file_size = 0;
 
+		// Note that successful return is an error
+		if ((ret = __rrr_msgdb_server_chdir(str)) == 0) {
+			RRR_MSG_0("Could not read file '%s' in message db server, it was a directory\n",
+				str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
 		if ((ret = rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0)) != 0) {
 			RRR_MSG_0("Could not read file '%s' in message db server\n",
 				str);

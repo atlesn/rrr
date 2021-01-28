@@ -199,6 +199,45 @@ static int __rrr_test_msgdb_send_empty (
 	return ret;
 }
 
+static int __rrr_test_msgdb_get_and_check_msg (
+		struct rrr_msgdb_client_conn *conn,
+		const char *topic,
+		const struct rrr_msg_msg *expected_msg
+) {
+	int ret = 0;
+
+	struct rrr_msg_msg *msg = NULL;
+
+	if ((ret = __rrr_test_msgdb_msg_create(&msg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+		goto out;
+	}
+
+	MSG_SET_TYPE(msg, MSG_TYPE_GET);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
+		goto out;
+	}
+
+	if (expected_msg != NULL) {
+		if ((ret = __rrr_test_msgdb_await_and_check_msg(conn, expected_msg)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		if ((ret = __rrr_test_msgdb_await_negative_ack(conn)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg);
+	return ret;
+}
+
 static int __rrr_test_msgdb_send_and_get_array (
 		struct rrr_msgdb_client_conn *conn,
 		const char *topic
@@ -306,6 +345,11 @@ static int __rrr_test_msgdb(void) {
 
 	// Valid
 	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b/c", ACK_MODE_OK)) != 0) {
+		goto out;
+	}
+
+	// Invalid, GET on directory
+	if ((ret = __rrr_test_msgdb_get_and_check_msg (&conn, "a/b", NULL)) != 0) {
 		goto out;
 	}
 
