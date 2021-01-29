@@ -84,6 +84,10 @@ int rrr_http_transaction_keepalive_set (
 		struct rrr_http_transaction *transaction,
 		int set
 );
+void rrr_http_transaction_method_set (
+		struct rrr_http_transaction *transaction,
+		enum rrr_http_method method
+);
 int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
