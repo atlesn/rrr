@@ -406,7 +406,193 @@ static int httpclient_final_callback_receive_json (
 	);
 }
 
-static void httpclient_msgdb_notify_complete(struct httpclient_data *data, struct rrr_msg_holder *entry_locked);
+static void httpclient_msgdb_conn_ensure_with_callback (
+		struct httpclient_data *data,
+		int (*callback)(struct httpclient_data *data, void *arg),
+		void *callback_arg
+) {
+	if (rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket) != 0) {
+		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed in httpclient instance %s\n",
+			data->msgdb_socket, INSTANCE_D_NAME(data->thread_data));
+		return;
+	}
+
+	if (callback(data, callback_arg) != 0) {
+		rrr_msgdb_client_close(&data->msgdb_conn);
+	}
+}
+
+static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
+	int ret = 0;
+
+	struct rrr_msg_holder *entry = NULL;
+	char *topic_tmp = NULL;
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	if ((ret = path->definition->to_str(&topic_tmp, path)) != 0) {
+		goto out;
+	}
+
+	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp)) {
+		// Don't return failure on this error
+		goto out;
+	}
+
+	RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
+			INSTANCE_D_NAME(data->thread_data),
+			msg_tmp->timestamp,
+			topic_tmp
+	);
+
+	if ((ret = rrr_msg_holder_new (
+			&entry,
+			MSG_TOTAL_SIZE(msg_tmp),
+			NULL,
+			0,
+			0,
+			msg_tmp
+	)) != 0) {
+		goto out;
+	}
+
+	msg_tmp = NULL;
+
+	entry->send_time = rrr_time_get_64();
+
+	rrr_msg_holder_incref(entry);
+	RRR_LL_APPEND(&data->defer_queue, entry);
+
+	out:
+	if (entry != NULL) {
+		rrr_msg_holder_decref(entry);
+	}
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	return ret;
+}
+
+static int httpclient_msgdb_poll_callback (struct httpclient_data *data, void *callback_arg) {
+	(void)(callback_arg);
+
+	int ret = 0;
+
+	struct rrr_array paths = {0};
+
+	if ((ret = rrr_msgdb_client_cmd_idx(&paths, &data->msgdb_conn, "/")) != 0) {
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
+		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if ((ret = httpclient_msgdb_poll_callback_get_msg (data, node)) != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	rrr_array_clear(&paths);
+	return ret;
+}
+
+static void httpclient_msgdb_poll (struct httpclient_data *data) {
+	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_poll_callback, NULL);
+}
+
+static int httpclient_msgdb_delete_callback (struct httpclient_data *data, void *callback_arg) {
+	const struct rrr_msg_msg *msg = callback_arg;
+
+	int ret = 0;
+
+	char *topic_tmp = NULL;
+
+	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, msg)) != 0) {
+		goto out;
+	}
+
+	ret = rrr_msgdb_client_cmd_del(&data->msgdb_conn, topic_tmp);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	return ret;
+}
+
+static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
+	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_delete_callback, (void *) msg); // Cast away const OK
+}
+
+static int httpclient_msgdb_queue_process_callback (struct httpclient_data *data, void *callback_arg) {
+	(void)(callback_arg);
+
+	int ret = RRR_HTTP_OK;
+
+	RRR_LL_ITERATE_BEGIN(&data->msgdb_queue, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
+
+		struct rrr_msg_msg *msg = node->message;
+		MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+		if ((ret = rrr_msgdb_client_send(&data->msgdb_conn, msg)) == 0) {
+			int positive_ack = 0;
+			if ((ret = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+			else if (positive_ack == 1) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+		else {
+			RRR_LL_ITERATE_LAST();
+		}
+
+		pthread_cleanup_pop(1); // Unlock
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->msgdb_queue, 0; rrr_msg_holder_decref(node));
+
+	return ret;
+}
+
+static void httpclient_msgdb_queue_process (struct httpclient_data *data) {
+	if (RRR_LL_COUNT(&data->msgdb_queue) == 0) {
+		return;
+	}
+
+	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_queue_process_callback, NULL);
+}
+
+#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE() \
+	if (data->msgdb_socket == NULL || data->http_client_config.method != RRR_HTTP_METHOD_PUT) return
+
+#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC() \
+	if (MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) == 0) return
+
+static void httpclient_msgdb_notify_remove_from_queue(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
+	// Call this method ONLY when the entry is guaranteed to be removed imminently from
+	// the defer queue, as it otherwise would be part of two lists at the same time
+	// causing corruption.
+
+	rrr_msg_holder_incref_while_locked(entry_locked);
+	RRR_LL_APPEND(&data->msgdb_queue, entry_locked);
+}
+
+static void httpclient_msgdb_notify_timeout(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
+	httpclient_msgdb_delete(data, entry_locked->message);
+}
+
+static void httpclient_msgdb_notify_complete(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
+	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+
+	httpclient_msgdb_delete(data, entry_locked->message);
+}
 
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
@@ -1338,194 +1524,6 @@ static int httpclient_parse_config (
 
 	out:
 	return ret;
-}
-
-static void httpclient_msgdb_conn_ensure_with_callback (
-		struct httpclient_data *data,
-		int (*callback)(struct httpclient_data *data, void *arg),
-		void *callback_arg
-) {
-	if (rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket) != 0) {
-		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed in httpclient instance %s\n",
-			data->msgdb_socket, INSTANCE_D_NAME(data->thread_data));
-		return;
-	}
-
-	if (callback(data, callback_arg) != 0) {
-		rrr_msgdb_client_close(&data->msgdb_conn);
-	}
-}
-
-static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
-	int ret = 0;
-
-	struct rrr_msg_holder *entry = NULL;
-	char *topic_tmp = NULL;
-	struct rrr_msg_msg *msg_tmp = NULL;
-
-	if ((ret = path->definition->to_str(&topic_tmp, path)) != 0) {
-		goto out;
-	}
-
-	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp)) {
-		// Don't return failure on this error
-		goto out;
-	}
-
-	RRR_DBG_3("httpclient instance %s retrieved message with timestamp %" PRIu64 " topic '%s' from msgdb\n",
-			INSTANCE_D_NAME(data->thread_data),
-			msg_tmp->timestamp,
-			topic_tmp
-	);
-
-	if ((ret = rrr_msg_holder_new (
-			&entry,
-			MSG_TOTAL_SIZE(msg_tmp),
-			NULL,
-			0,
-			0,
-			msg_tmp
-	)) != 0) {
-		goto out;
-	}
-
-	msg_tmp = NULL;
-
-	entry->send_time = rrr_time_get_64();
-
-	rrr_msg_holder_incref(entry);
-	RRR_LL_APPEND(&data->defer_queue, entry);
-
-	out:
-	if (entry != NULL) {
-		rrr_msg_holder_decref(entry);
-	}
-	RRR_FREE_IF_NOT_NULL(msg_tmp);
-	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
-}
-
-static int httpclient_msgdb_poll_callback (struct httpclient_data *data, void *callback_arg) {
-	(void)(callback_arg);
-
-	int ret = 0;
-
-	struct rrr_array paths = {0};
-
-	if ((ret = rrr_msgdb_client_cmd_idx(&paths, &data->msgdb_conn, "/")) != 0) {
-		goto out;
-	}
-
-	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
-		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		if ((ret = httpclient_msgdb_poll_callback_get_msg (data, node)) != 0) {
-			RRR_LL_ITERATE_BREAK();
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	rrr_array_clear(&paths);
-	return ret;
-}
-
-static void httpclient_msgdb_poll (struct httpclient_data *data) {
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_poll_callback, NULL);
-}
-
-static int httpclient_msgdb_delete_callback (struct httpclient_data *data, void *callback_arg) {
-	const struct rrr_msg_msg *msg = callback_arg;
-
-	int ret = 0;
-
-	char *topic_tmp = NULL;
-
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, msg)) != 0) {
-		goto out;
-	}
-
-	ret = rrr_msgdb_client_cmd_del(&data->msgdb_conn, topic_tmp);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(topic_tmp);
-	return ret;
-}
-
-static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_delete_callback, (void *) msg); // Cast away const OK
-}
-
-static int httpclient_msgdb_queue_process_callback (struct httpclient_data *data, void *callback_arg) {
-	(void)(callback_arg);
-
-	int ret = RRR_HTTP_OK;
-
-	RRR_LL_ITERATE_BEGIN(&data->msgdb_queue, struct rrr_msg_holder);
-		rrr_msg_holder_lock(node);
-		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
-
-		struct rrr_msg_msg *msg = node->message;
-		MSG_SET_TYPE(msg, MSG_TYPE_PUT);
-
-		if ((ret = rrr_msgdb_client_send(&data->msgdb_conn, msg)) == 0) {
-			int positive_ack = 0;
-			if ((ret = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0) {
-				RRR_LL_ITERATE_LAST();
-			}
-			else if (positive_ack == 1) {
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-		}
-		else {
-			RRR_LL_ITERATE_LAST();
-		}
-
-		pthread_cleanup_pop(1); // Unlock
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->msgdb_queue, 0; rrr_msg_holder_decref(node));
-
-	return ret;
-}
-
-static void httpclient_msgdb_queue_process (struct httpclient_data *data) {
-	if (RRR_LL_COUNT(&data->msgdb_queue) == 0) {
-		return;
-	}
-
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_queue_process_callback, NULL);
-}
-
-#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE() \
-	if (data->msgdb_socket == NULL || data->http_client_config.method != RRR_HTTP_METHOD_PUT) return
-
-#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC() \
-	if (MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) == 0) return
-
-static void httpclient_msgdb_notify_remove_from_queue(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
-
-	// Call this method ONLY when the entry is guaranteed to be removed imminently from
-	// the defer queue, as it otherwise would be part of two lists at the same time
-	// causing corruption.
-
-	rrr_msg_holder_incref_while_locked(entry_locked);
-	RRR_LL_APPEND(&data->msgdb_queue, entry_locked);
-}
-
-static void httpclient_msgdb_notify_timeout(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
-
-	httpclient_msgdb_delete(data, entry_locked->message);
-}
-
-static void httpclient_msgdb_notify_complete(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
-
-	httpclient_msgdb_delete(data, entry_locked->message);
 }
 
 static void httpclient_defer_queue_process (struct httpclient_data *data) {
