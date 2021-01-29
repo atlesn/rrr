@@ -302,11 +302,11 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	struct rrr_perl5_settings_hv *settings_hv = NULL;
 
 	if (cmodule_config_data->config_function == NULL || *(cmodule_config_data->config_function) == '\0') {
-		RRR_DBG_2("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_DBG_1("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_DBG_2("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
+	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
 
 	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",

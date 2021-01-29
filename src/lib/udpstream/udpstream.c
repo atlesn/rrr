@@ -25,19 +25,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
-#include <read.h>
 
-#include "log.h"
 #include "udpstream.h"
-#include "random.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_read.h"
-#include "util/macro_utils.h"
-#include "util/linked_list.h"
-#include "util/rrr_time.h"
-#include "util/crc32.h"
-#include "util/posix.h"
-#include "ip/ip_util.h"
+#include "../log.h"
+#include "../read.h"
+#include "../random.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_read.h"
+#include "../util/macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../util/crc32.h"
+#include "../util/posix.h"
+#include "../ip/ip_util.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -470,7 +470,7 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-		RRR_DBG_2("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
+		RRR_DBG_3("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
 
 		struct rrr_udpstream_frame_packed frame = {0};
 		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
@@ -483,7 +483,7 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-		RRR_DBG_2("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
+		RRR_DBG_3("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
 
 		struct rrr_udpstream_frame_packed frame = {0};
 
@@ -689,19 +689,19 @@ static int __rrr_udpstream_handle_received_connect (
 
 		struct rrr_udpstream_stream *stream_test = __rrr_udpstream_find_stream_by_stream_id(data, frame->stream_id);
 		if (stream_test != NULL) {
-			RRR_DBG_2("Stream ID collision for connect with handle %u, connection must be closed\n", frame->connect_handle);
+			RRR_DBG_3("Stream ID collision for connect with handle %u, connection must be closed\n", frame->connect_handle);
 			__rrr_udpstream_stream_invalidate(stream);
 			goto out;
 		}
 
 		stream->stream_id = frame->stream_id;
 
-		RRR_DBG_2("Outbound UDP-stream connection established with stream id %u connect handle was %u\n",
+		RRR_DBG_3("Outbound UDP-stream connection established with stream id %u connect handle was %u\n",
 				stream->stream_id, frame->connect_handle);
 	}
 	else if (stream != NULL && stream->stream_id != 0 && frame->stream_id != 0) {
 		// Already connected
-		RRR_DBG_2("Incoming UDP-stream duplicate CONNECT (response or old unknown stream) stream_id local %" PRIu32 " stream id remote %" PRIu32 "\n",
+		RRR_DBG_3("Incoming UDP-stream duplicate CONNECT (response or old unknown stream) stream_id local %" PRIu32 " stream id remote %" PRIu32 "\n",
 				stream->stream_id,
 				frame->stream_id
 		);
@@ -732,7 +732,7 @@ static int __rrr_udpstream_handle_received_connect (
 
 		if (stream != NULL) {
 			// Already connected, send new response
-			RRR_DBG_2("Incoming UDP-stream duplicate CONNECT\n");
+			RRR_DBG_3("Incoming UDP-stream duplicate CONNECT\n");
 			stream_id = stream->stream_id;
 			goto send_response;
 		}
@@ -751,17 +751,17 @@ static int __rrr_udpstream_handle_received_connect (
 			stream->stream_id = stream_id;
 			stream->connect_handle = frame->connect_handle;
 
-			RRR_DBG_2("Incoming UDP-stream connection established with stream id %u connect handle %u\n",
+			RRR_DBG_3("Incoming UDP-stream connection established with stream id %u connect handle %u\n",
 					stream_id, stream->connect_handle);
 		}
 		else {
 			// This is not considered an error
-			RRR_DBG_2("Incoming UDP-stream connection rejected\n");
+			RRR_DBG_3("Incoming UDP-stream connection rejected\n");
 			goto send_response;
 		}
 
 		send_response:
-		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %u\n",
+		RRR_DBG_3("Sending UDP-stream CONNECT response stream id %u connect handle %u address length %u\n",
 				stream_id, (stream != NULL ? stream->connect_handle : 0), addr_len);
 
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
@@ -903,7 +903,7 @@ static int __rrr_udpstream_handle_received_frame (
 	if (stream == NULL) {
 		// Check that unknown packet is not a reset, if not we would keep sending resets back and forward
 		if (!RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
-			RRR_DBG_2("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
+			RRR_DBG_3("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
 			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, new_frame->connect_handle) != 0) {
 				RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 				ret = RRR_SOCKET_HARD_ERROR;
@@ -932,7 +932,7 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (new_frame->stream_id == 0) {
-		RRR_DBG_2("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
+		RRR_DBG_3("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
 				new_frame->flags_and_type);
 		goto out;
 	}
@@ -964,7 +964,7 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (new_frame->frame_id == 0) {
-		RRR_DBG_2("Received data frame with flags %u and zero frame id in __rrr_udpstream_handle_received_frame_control\n",
+		RRR_DBG_3("Received data frame with flags %u and zero frame id in __rrr_udpstream_handle_received_frame_control\n",
 				new_frame->flags_and_type);
 		goto out;
 	}
@@ -982,7 +982,7 @@ static int __rrr_udpstream_handle_received_frame (
 		// which might be retained if we are offline for a bit. If this happens, we must also
 		// reset the whole stream and the sender must connect again and obtain a new ID.
 
-		RRR_DBG_2("udpstream id %u dropping frame ID %u as we expect first frame id 1\n",
+		RRR_DBG_3("udpstream id %u dropping frame ID %u as we expect first frame id 1\n",
 				new_frame->stream_id, new_frame->frame_id);
 
 		if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
@@ -1372,7 +1372,7 @@ static int __rrr_udpstream_process_receive_buffer (
 	RRR_LL_ITERATE_BEGIN(&stream->receive_buffer, struct rrr_udpstream_frame);
 		if (node->frame_id > stream->receive_buffer.frame_id_prev_boundary_pos) {
 			if (node->frame_id - stream->receive_buffer.frame_id_prev_boundary_pos > 1 + accumulated_frame_count) {
-				RRR_DBG_2("UDP-stream stream-id %u frame-id %u hole in the buffer detected, cannot deliver frames yet\n",
+				RRR_DBG_3("UDP-stream stream-id %u frame-id %u hole in the buffer detected, cannot deliver frames yet\n",
 						stream->stream_id, node->frame_id);
 				// Hole in the buffer
 				RRR_LL_ITERATE_BREAK();
@@ -1382,7 +1382,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			if (accumulated_data_size != 0) {
 				RRR_BUG("Data accumulation started with already delivered frames in __rrr_udpstream_process_receive_buffer\n");
 			}
-			RRR_DBG_2("udpstream stream-id %u frame-id %u set destroy as already delivered\n",
+			RRR_DBG_3("udpstream stream-id %u frame-id %u set destroy as already delivered\n",
 					stream->stream_id, node->frame_id);
 			// Already delivered
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -1493,15 +1493,15 @@ static int __rrr_udpstream_maintain (
 		uint64_t diff = time_now - node->last_seen;
 
 		if (diff > RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS * 1000 && node->invalidated == 0) {
-			RRR_DBG_2("UDP-stream connection with id %u timed out, invalidating\n", node->stream_id);
+			RRR_DBG_3("UDP-stream connection with id %u timed out, invalidating\n", node->stream_id);
 			__rrr_udpstream_stream_invalidate(node);
 		}
 		else if (diff > RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS * 1000) {
-			RRR_DBG_2("UDP-stream connection with id %u timed out after being invalid\n", node->stream_id);
+			RRR_DBG_3("UDP-stream connection with id %u timed out after being invalid\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (node->hard_reset_received != 0) {
-			RRR_DBG_2("UDP-stream connection with id %u removing after hard reset\n", node->stream_id);
+			RRR_DBG_3("UDP-stream connection with id %u removing after hard reset\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
@@ -1855,7 +1855,7 @@ int rrr_udpstream_queue_outbound_data (
 	}
 
 	if (stream->send_buffer.frame_id_counter + ((data_size / RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) + 1) > stream->send_buffer.frame_id_max) {
-		RRR_DBG_2("UDP-stream frame IDs exhausted for stream-id %u\n", stream->stream_id);
+		RRR_DBG_3("UDP-stream frame IDs exhausted for stream-id %u\n", stream->stream_id);
 		ret = RRR_UDPSTREAM_IDS_EXHAUSTED;
 		goto out;
 	}

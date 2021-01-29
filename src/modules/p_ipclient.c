@@ -173,7 +173,7 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_3 ("ipclient instance %s: Result from buffer timestamp %" PRIu64 "\n",
+	RRR_DBG_2 ("ipclient instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
 	rrr_msg_holder_incref_while_locked(entry);
@@ -303,7 +303,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_queue_intermediate, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if ((*send_count) > 0) {
-		RRR_DBG_3 ("ipclient instance %s queued %i packets for transmission\n",
+		RRR_DBG_2 ("ipclient instance %s queued %i packets for transmission\n",
 				INSTANCE_D_NAME(data->thread_data), (*send_count));
 	}
 
@@ -456,7 +456,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
 	network_restart:
-	RRR_DBG_2 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
+	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
 
 	// TODO : Does the following comment still apply?
 	//     Only close here and not when shutting down the thread (might cause
