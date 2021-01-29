@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
 #define RRR_HTTPCLIENT_JSON_MAX_LEVELS                   4
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
+#define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            100
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -516,12 +517,16 @@ static int httpclient_msgdb_poll_callback (struct httpclient_data *data, void *c
 		goto out;
 	}
 
+	int max = RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX;
+
 	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
 		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
 			RRR_LL_ITERATE_NEXT();
 		}
 		if ((ret = httpclient_msgdb_poll_callback_get_msg (data, node)) != 0) {
-			printf("Break, ret was %i\n", ret);
+			RRR_LL_ITERATE_BREAK();
+		}
+		if (--max == 0) {
 			RRR_LL_ITERATE_BREAK();
 		}
 	RRR_LL_ITERATE_END();
