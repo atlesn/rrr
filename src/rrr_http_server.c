@@ -330,7 +330,7 @@ int main (int argc, const char **argv, const char **env) {
 	int accept_count_total = 0;
 
 	struct rrr_http_server_callbacks callbacks = {
-			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 	};
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
