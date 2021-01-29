@@ -50,8 +50,7 @@ int rrr_http_client_config_parse (
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint,
-		int do_raw_mode
+		int enable_endpoint
 ) {
 	int ret = 0;
 
@@ -166,22 +165,6 @@ int rrr_http_client_config_parse (
 				ret = 1;
 				goto out;
 			}
-		}
-	}
-
-	if (do_raw_mode) {
-		const char *check[] = { "_tags", "_fields", "_fixed_tags", "_fixed_fields", "_endpoint", "_method" };
-
-		for (size_t i = 0; i < sizeof(check) / sizeof(check[0]); i++) {
-			RRR_INSTANCE_CONFIG_STRING_SET(check[i]);
-			if (RRR_INSTANCE_CONFIG_EXISTS(config_string)) {
-				RRR_MSG_0("%s cannot be specified while raw send mode is active in instance %s\n", config_string, config->name);
-				ret = 1;
-			}
-		}
-
-		if (ret != 0) {
-			goto out;
 		}
 	}
 

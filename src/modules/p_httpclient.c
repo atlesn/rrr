@@ -1391,8 +1391,7 @@ static int httpclient_parse_config (
 			RRR_HTTPCLIENT_DEFAULT_SERVER,
 			RRR_HTTPCLIENT_DEFAULT_PORT,
 			0, // <-- Disable fixed tags and fields
-			1, // <-- Enable endpoint
-			0  // No raw data
+			1 // <-- Enable endpoint
 	) != 0) {
 		ret = 1;
 		goto out;
