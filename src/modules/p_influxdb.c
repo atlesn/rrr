@@ -54,9 +54,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define INFLUXDB_MAX_REDIRECTS 5
 
 // Standardized return values, HTTP-framework compatible
-#define INFLUXDB_OK		 	RRR_READ_OK
-#define INFLUXDB_HARD_ERR	RRR_READ_HARD_ERROR
-#define INFLUXDB_SOFT_ERR	RRR_READ_SOFT_ERROR
+#define INFLUXDB_OK          RRR_READ_OK
+#define INFLUXDB_HARD_ERR    RRR_READ_HARD_ERROR
+#define INFLUXDB_SOFT_ERR    RRR_READ_SOFT_ERROR
 
 struct influxdb_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -94,20 +94,19 @@ static void influxdb_data_destroy (void *arg) {
 	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
 }
 
-#define CHECK_RET()																			\
-		do {if (ret != 0) {																	\
-			if (ret == RRR_HTTP_SOFT_ERROR) {												\
-				RRR_MSG_0("Soft error in influxdb instance %s, discarding message\n",		\
-					INSTANCE_D_NAME(data->thread_data));									\
-				ret = 0;																	\
-				goto out;																	\
-			}																				\
-			RRR_MSG_0("Hard error in influxdb instance %s\n",								\
-				INSTANCE_D_NAME(data->thread_data));										\
-			ret = 1;																		\
-			goto out;																		\
-		}} while(0)
-
+#define CHECK_RET()                                                                         \
+        do {if (ret != 0) {                                                                 \
+            if (ret == RRR_HTTP_SOFT_ERROR) {                                               \
+                RRR_MSG_0("Soft error in influxdb instance %s, discarding message\n",       \
+                    INSTANCE_D_NAME(data->thread_data));                                    \
+                ret = 0;                                                                    \
+                goto out;                                                                   \
+            }                                                                               \
+            RRR_MSG_0("Hard error in influxdb instance %s\n",                               \
+                INSTANCE_D_NAME(data->thread_data));                                        \
+            ret = 1;                                                                        \
+            goto out;                                                                       \
+        }} while(0)
 
 struct response_callback_data {
 	struct influxdb_data *data;
@@ -124,7 +123,6 @@ static int influxdb_receive_http_response (
 	(void)(overshoot_bytes);
 	(void)(unique_id);
 	(void)(next_protocol_version);
-
 
 	int ret = 0;
 
