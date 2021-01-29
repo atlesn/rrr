@@ -50,14 +50,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/json/json.h"
 #include "../lib/msgdb/msgdb_client.h"
 
-#define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
-#define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
-#define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX	5
-#define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
-#define RRR_HTTPCLIENT_READ_MAX_SIZE			1 * 1024 * 1024 * 1024 // 1 GB
-#define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S	5
-#define RRR_HTTPCLIENT_JSON_MAX_LEVELS			4
-#define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S 30
+#define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
+#define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
+#define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX             5
+#define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX               500
+#define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
+#define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
+#define RRR_HTTPCLIENT_JSON_MAX_LEVELS                   4
+#define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -661,16 +661,16 @@ struct httpclient_prepare_callback_data {
 	int no_destination_override;
 };
 
-#define HTTPCLIENT_PREPARE_OVERRIDE(name)												\
-	do {if (	data->RRR_PASTE(name,_tag) != NULL &&									\
-				(ret = httpclient_session_query_prepare_callback_process_override (		\
-						&RRR_PASTE(name,_to_free),										\
-						data,															\
-						array_from_msg,													\
-						data->RRR_PASTE(name,_tag),										\
-						data->RRR_PASTE_3(do_,name,_tag_force),							\
-						RRR_QUOTE(name)													\
-				)) != 0) { goto out; }} while (0)
+#define HTTPCLIENT_PREPARE_OVERRIDE(name)                                                \
+  do {if (  data->RRR_PASTE(name,_tag) != NULL &&                                        \
+        (ret = httpclient_session_query_prepare_callback_process_override (              \
+            &RRR_PASTE(name,_to_free),                                                   \
+            data,                                                                        \
+            array_from_msg,                                                              \
+            data->RRR_PASTE(name,_tag),                                                  \
+            data->RRR_PASTE_3(do_,name,_tag_force),                                      \
+            RRR_QUOTE(name)                                                              \
+        )) != 0) { goto out; }} while (0)
 
 static int httpclient_overrides_server_and_port_get_from_message (
 		char **server_override,
@@ -1173,23 +1173,23 @@ static int httpclient_data_init (
 		return ret;
 }
 
-#define HTTPCLIENT_OVERRIDE_TAG_GET(parameter) 																					\
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));		\
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0)
+#define HTTPCLIENT_OVERRIDE_TAG_GET(parameter)                                                                                    \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));         \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0) \
 
-#define HTTPCLIENT_OVERRIDE_TAG_VALIDATE(parameter)						\
-	do {if (data->RRR_PASTE_3(do_,parameter,_tag_force) != 0) {			\
-		if (data->RRR_PASTE(parameter,_tag) == NULL) {					\
-			RRR_MSG_0("http_" RRR_QUOTE(parameter) " was 'yes' in httpclient instance %s but no tag was specified in http_" RRR_QUOTE(parameter) "_tag\n",\
-					config->name);										\
-			ret = 1;													\
-		}																\
-		if (RRR_INSTANCE_CONFIG_EXISTS("http_" RRR_QUOTE(parameter))) {	\
-			RRR_MSG_0("http_" RRR_QUOTE(parameter) "_tag_force was 'yes' in httpclient instance %s while http_" RRR_QUOTE(parameter) " was also set, this is a configuration error\n",\
-					config->name);										\
-			ret = 1;													\
-		}																\
-		if (ret != 0) { goto out; }}} while(0)
+#define HTTPCLIENT_OVERRIDE_TAG_VALIDATE(parameter)                                                                               \
+    do {if (data->RRR_PASTE_3(do_,parameter,_tag_force) != 0) {                                                                   \
+        if (data->RRR_PASTE(parameter,_tag) == NULL) {                                                                            \
+            RRR_MSG_0("http_" RRR_QUOTE(parameter) " was 'yes' in httpclient instance %s but no tag was specified in http_" RRR_QUOTE(parameter) "_tag\n", \
+                    config->name);                                                                                                \
+            ret = 1;                                                                                                              \
+        }                                                                                                                         \
+        if (RRR_INSTANCE_CONFIG_EXISTS("http_" RRR_QUOTE(parameter))) {                                                           \
+            RRR_MSG_0("http_" RRR_QUOTE(parameter) "_tag_force was 'yes' in httpclient instance %s while http_" RRR_QUOTE(parameter) " was also set, this is a configuration error\n", \
+                    config->name);                                                                                                \
+            ret = 1;                                                                                                              \
+        }                                                                                                                         \
+        if (ret != 0) { goto out; }}} while(0)
 
 static int httpclient_parse_config (
 		struct httpclient_data *data,
@@ -1222,8 +1222,8 @@ static int httpclient_parse_config (
 
 	data->msgdb_poll_interval_us *= 1000 * 1000;
 
-    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
-    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
