@@ -324,7 +324,12 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
 	// only (includes statistics engine)
-	rrr_log_hooks_call_raw(msg_log->loglevel, msg_log->prefix_and_message, RRR_MSG_LOG_MSG_POS(msg_log));
+	rrr_log_hooks_call_raw (
+		msg_log->loglevel_translated,
+		msg_log->loglevel_orig,
+		msg_log->prefix_and_message,
+		RRR_MSG_LOG_MSG_POS(msg_log)
+	);
 
 	return 0;
 }

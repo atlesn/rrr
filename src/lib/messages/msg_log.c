@@ -64,7 +64,8 @@ void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size
 
 int rrr_msg_msg_log_new (
 		struct rrr_msg_log **target,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
 ) {
@@ -101,7 +102,8 @@ int rrr_msg_msg_log_new (
 
 	memcpy(RRR_MSG_LOG_MSG_POS(result), message, message_size);
 
-	result->loglevel = loglevel;
+	result->loglevel_translated = loglevel_translated;
+	result->loglevel_orig = loglevel_orig;
 
 	*target = result;
 

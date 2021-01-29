@@ -177,11 +177,14 @@ static int journal_preload (struct rrr_thread *thread) {
 // Note : Context here is ANY thread
 static void journal_log_hook (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
 ) {
 	struct journal_data *data = private_arg;
+
+	(void)(loglevel_orig);
 
 	// Make the calling thread pause a bit to reduce the amount of messages
 	// coming in. This is done if we are unable to handle request due to

@@ -85,11 +85,15 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 
 static void __rrr_stats_engine_log_listener (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
 ) {
 	struct rrr_stats_engine *stats = private_arg;
+
+	(void)(loglevel_orig);
+
 	struct rrr_stats_message *new_message = NULL;
 
 	if (stats->initialized == 0) {

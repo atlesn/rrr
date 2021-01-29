@@ -219,6 +219,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
 				unsigned short loglevel_translated,
+				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
@@ -231,6 +232,7 @@ void rrr_log_hook_unregister (
 );
 void rrr_log_hooks_call_raw (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message
 );
