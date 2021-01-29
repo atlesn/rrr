@@ -309,8 +309,6 @@ static void influxdb_send_data_callback (
 				NULL,
 				NULL,
 				NULL,
-				NULL,
-				NULL,
 				NULL
 		)) != 0 && ret != RRR_READ_INCOMPLETE) {
 			RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",

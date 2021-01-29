@@ -131,9 +131,7 @@ int rrr_http_session_transport_ctx_tick (
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*raw_callback)(RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS),
-		void *raw_callback_arg
+		void *frame_callback_arg
 );
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,

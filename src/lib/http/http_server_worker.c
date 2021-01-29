@@ -204,27 +204,6 @@ static int __rrr_http_server_worker_receive_callback (
 	return ret;
 }
 
-static int __rrr_http_server_worker_receive_raw_callback (
-		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
-) {
-	struct rrr_http_server_worker_data *worker_data = arg;
-
-	if (worker_data->config_data.callbacks.final_callback_raw) {
-		return worker_data->config_data.callbacks.final_callback_raw (
-				(const struct sockaddr *) &worker_data->config_data.addr,
-				worker_data->config_data.addr_len,
-				data,
-				transaction,
-				unique_id,
-				next_protocol_version,
-				worker_data->config_data.callbacks.final_callback_raw_arg
-		);
-	}
-
-
-	return 0;
-}
-
 static int __rrr_http_server_worker_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -344,8 +323,6 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			__rrr_http_server_worker_websocket_get_response_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_frame_callback,
-			worker_data,
-			__rrr_http_server_worker_receive_raw_callback,
 			worker_data
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {

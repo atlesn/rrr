@@ -237,9 +237,7 @@ int rrr_http_session_transport_ctx_tick (
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*raw_callback)(RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS),
-		void *raw_callback_arg
+		void *frame_callback_arg
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 
@@ -271,9 +269,7 @@ int rrr_http_session_transport_ctx_tick (
 			frame_callback,
 			frame_callback_arg,
 			callback,
-			callback_arg,
-			raw_callback,
-			raw_callback_arg
+			callback_arg
 	)) != 0) {
 		goto out;
 	}

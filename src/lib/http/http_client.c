@@ -234,8 +234,6 @@ struct rrr_http_client_tick_callback_data {
 	void *get_response_callback_arg;
 	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *frame_callback_arg;
-	int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS);
-	void *raw_callback_arg;
 };
 
 static int __rrr_http_client_chunks_iterate_callback (
@@ -973,9 +971,7 @@ static int __rrr_http_client_tick_handle_callback (
 			callback_data->get_response_callback,
 			callback_data->get_response_callback_arg,
 			callback_data->frame_callback,
-			callback_data->frame_callback_arg,
-			callback_data->raw_callback,
-			callback_data->raw_callback_arg
+			callback_data->frame_callback_arg
 	);
 
 	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
@@ -996,9 +992,7 @@ int rrr_http_client_tick (
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_arg
+		void *frame_callback_arg
 ) {
 	int ret = 0;
 
@@ -1018,9 +1012,7 @@ int rrr_http_client_tick (
 			get_response_callback,
 			get_response_callback_arg,
 			frame_callback,
-			frame_callback_arg,
-			raw_callback,
-			raw_callback_arg
+			frame_callback_arg
 	};
 
 

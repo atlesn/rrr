@@ -1605,8 +1605,6 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				NULL,
 				NULL,
 				NULL,
-				NULL,
-				NULL,
 				NULL
 		) != 0) {
 			RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));

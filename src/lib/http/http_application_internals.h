@@ -57,9 +57,7 @@ enum rrr_http_method;
     int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),                   \
     void *frame_callback_arg,                                                                    \
     int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),                                 \
-    void *callback_arg,                                                                          \
-    int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS),                         \
-    void *raw_callback_arg
+    void *callback_arg
 
 #define RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS              \
     const char **target,                                       \

@@ -178,9 +178,7 @@ int rrr_http_client_tick (
 		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg,
-		int (*raw_callback)(RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS),
-		void *raw_callback_arg
+		void *frame_callback_arg
 );
 
 #endif /* RRR_HTTP_CLIENT_H */

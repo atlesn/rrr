@@ -271,8 +271,6 @@ struct rrr_http_application_http1_receive_data {
 	void *websocket_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
-	int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS);
-	void *raw_callback_arg;
 };
 
 static int __rrr_http_application_http1_websocket_make_accept_string (
@@ -376,57 +374,6 @@ static int __rrr_http_application_http1_websocket_response_check_headers (
 	return ret;
 }
 
-struct rrr_http_application_http1_receive_raw_nullsafe_callback_data {
-	struct rrr_http_application_http1_receive_data *receive_data;
-	struct rrr_http_transaction *transaction;
-};
-
-static int __rrr_http_application_http1_receive_raw_nullsafe_callback (
-		const struct rrr_nullsafe_str *str,
-		void *arg
-) {
-	struct rrr_http_application_http1_receive_raw_nullsafe_callback_data *callback_data = arg;
-
-	return callback_data->receive_data->raw_callback (
-			str,
-			callback_data->transaction,
-			0,
-			callback_data->transaction->response_part->parsed_protocol_version,
-			callback_data->receive_data->raw_callback_arg
-	);
-}
-
-
-static int __rrr_http_application_http1_receive_raw_if_required (
-		struct rrr_http_application_http1_receive_data *receive_data,
-		struct rrr_http_transaction *transaction,
-		struct rrr_read_session *read_session
-) {
-	int ret = 0;
-
-	if (receive_data->raw_callback == NULL) {
-		goto out;
-	}
-
-	struct rrr_http_application_http1_receive_raw_nullsafe_callback_data callback_data = {
-			receive_data,
-			transaction
-	};
-	if ((ret = rrr_nullsafe_str_with_tmp_str_do (
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			__rrr_http_application_http1_receive_raw_nullsafe_callback,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_0("Error %i from raw callback in __rrr_http_application_http1_receive_raw_if_required\n", ret);
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-
 static int __rrr_http_application_http1_response_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -447,10 +394,6 @@ static int __rrr_http_application_http1_response_receive_callback (
 			transaction->response_part->headroom_length,
 			transaction->response_part->header_length
 	);
-
-	if ((ret = __rrr_http_application_http1_receive_raw_if_required(receive_data, transaction, read_session)) != 0) {
-		goto out;
-	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 
@@ -878,10 +821,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 			transaction->request_part->headroom_length,
 			transaction->request_part->header_length
 	);
-
-	if ((ret = __rrr_http_application_http1_receive_raw_if_required(receive_data, transaction, read_session)) != 0) {
-		goto out;
-	}
 
 	if ((ret = rrr_http_part_chunks_merge(&merged_chunks, transaction->request_part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
@@ -1537,9 +1476,7 @@ int __rrr_http_application_http1_tick (
 				websocket_callback,
 				websocket_callback_arg,
 				callback,
-				callback_arg,
-				raw_callback,
-				raw_callback_arg
+				callback_arg
 		};
 
 		ret = rrr_net_transport_ctx_read_message (

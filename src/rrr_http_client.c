@@ -610,9 +610,7 @@ int main (int argc, const char **argv, const char **env) {
 				__rrr_http_client_send_websocket_frame_callback,
 				&data,
 				__rrr_http_client_receive_websocket_frame_callback,
-				&data,
-				NULL,
-				NULL
+				&data
 		)) != 0) {
 			break;
 		}
