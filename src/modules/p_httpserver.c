@@ -49,18 +49,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/rrr_types.h"
 
-#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
+#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN                     80
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-#define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
+#    define RRR_HTTPSERVER_DEFAULT_PORT_TLS                   443
 #endif
-#define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
-#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
+#define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS        1500
+#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                 5
 
-#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX					"httpserver/request/"
-#define RRR_HTTPSERVER_RAW_TOPIC_PREFIX						"httpserver/raw/"
-#define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX				"httpserver/websocket/"
-#define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS				2000
-#define RRR_HTTPSERVER_WORKER_THREADS_MAX					1024
+#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
+#define RRR_HTTPSERVER_RAW_TOPIC_PREFIX                       "httpserver/raw/"
+#define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
+#define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS                2000
+#define RRR_HTTPSERVER_WORKER_THREADS_MAX                     1024
 
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -131,27 +131,27 @@ static int httpserver_parse_config (
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_tls", port_tls, RRR_HTTPSERVER_DEFAULT_PORT_TLS);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_tls",
-			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
-				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-			) {
-				RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
-						config->name);
-				ret = 1;
-				goto out;
-			}
+		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
+			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
+		) {
+			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
 	);
 #endif
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_plain",
-			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
-				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-			) {
-				RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
-						config->name);
-				ret = 1;
-				goto out;
-			}
+		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
+			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
+		) {
+			RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
 	);
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
@@ -208,12 +208,12 @@ static int httpserver_parse_config (
 
 	if (data->do_receive_websocket_rrr_message) {
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_accept_websocket_binary",
-				if (data->do_accept_websocket_binary == 0) {
-					RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
-							config->name);
-					ret = 1;
-					goto out;
-				}
+			if (data->do_accept_websocket_binary == 0) {
+				RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
+						config->name);
+				ret = 1;
+				goto out;
+			}
 		);
 		data->do_accept_websocket_binary = 1;
 	}
@@ -1236,18 +1236,18 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	};
 
 	struct rrr_http_server_callbacks callbacks = {
-			httpserver_unique_id_generator_callback,
-			&callback_data,
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
-			(data->do_receive_raw_data ? &callback_data : NULL),
-			httpserver_receive_callback,
-			&callback_data
+		httpserver_unique_id_generator_callback,
+		&callback_data,
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
+		(data->do_receive_raw_data ? &callback_data : NULL),
+		httpserver_receive_callback,
+		&callback_data
 	};
 
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
