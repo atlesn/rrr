@@ -28,29 +28,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_common.h"
 #include "http_session.h"
 
-#define RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
+#define RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS              \
+    RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
-#define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS			\
-	const struct rrr_http_transaction *transaction,	\
-	const struct rrr_nullsafe_str *response_data,	\
-	void *arg
+#define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS                    \
+    const struct rrr_http_transaction *transaction,            \
+    const struct rrr_nullsafe_str *response_data,              \
+    void *arg
 
-#define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS		\
-	const struct rrr_http_transaction *transaction,	\
-	const struct rrr_http_uri *uri,					\
-	void *arg
+#define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS                 \
+    const struct rrr_http_transaction *transaction,            \
+    const struct rrr_http_uri *uri,                            \
+    void *arg
 
-#define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS	\
-	char **endpoint_override,						\
-	char **query_string,							\
-	struct rrr_http_transaction *transaction,		\
-	void *arg
+#define RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS            \
+    char **endpoint_override,                                  \
+    char **query_string,                                       \
+    struct rrr_http_transaction *transaction,                  \
+    void *arg
 
-#define RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS	\
-	char **server_override,									\
-	uint16_t *port_override,								\
-	void *arg
+#define RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS       \
+    char **server_override,                                    \
+    uint16_t *port_override,                                   \
+    void *arg
 
 #define RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
 	RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
