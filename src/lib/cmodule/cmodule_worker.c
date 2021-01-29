@@ -491,8 +491,9 @@ static int __rrr_cmodule_worker_loop (
 
 //		printf("%" PRIu64 " - %" PRIu64 "\n", prev_total_msg_mmap_from_parent, prev_total_processed_msg);
 
-		if (	prev_total_msg_mmap_from_parent != worker->total_msg_mmap_to_fork ||
-				prev_total_processed_msg != worker->total_msg_processed
+		if (	custom_tick_something_happened ||
+			prev_total_msg_mmap_from_parent != worker->total_msg_mmap_to_fork ||
+			prev_total_processed_msg != worker->total_msg_processed
 		) {
 			consecutive_nothing_happened = 0;
 		}

@@ -97,6 +97,8 @@ static int msgdb_fork_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
 
 	int ret = 0;
 
+	*something_happened = 0;
+
 	if ((ret = rrr_msgdb_server_tick(msgdb)) != 0) {
 		RRR_MSG_0("Error from message db server while ticking in msgdb instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
