@@ -30,16 +30,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_CHANNEL_SLOTS 1024
 
-#define RRR_MMAP_CHANNEL_OK				RRR_READ_OK
-#define RRR_MMAP_CHANNEL_ERROR			RRR_READ_HARD_ERROR
-#define RRR_MMAP_CHANNEL_FULL_OR_EMPTY	RRR_READ_SOFT_ERROR
-#define RRR_MMAP_CHANNEL_FULL			RRR_READ_SOFT_ERROR
-#define RRR_MMAP_CHANNEL_EMPTY			RRR_READ_SOFT_ERROR
+#define RRR_MMAP_CHANNEL_OK               RRR_READ_OK
+#define RRR_MMAP_CHANNEL_ERROR           RRR_READ_HARD_ERROR
+#define RRR_MMAP_CHANNEL_FULL_OR_EMPTY   RRR_READ_SOFT_ERROR
+#define RRR_MMAP_CHANNEL_FULL            RRR_READ_SOFT_ERROR
+#define RRR_MMAP_CHANNEL_EMPTY           RRR_READ_SOFT_ERROR
 
 // These are used to filter out debug messages generated
 // by the mmap channel as they  are attempted to be sent on
 // the same channel (causes recursion attempt and error message)
-#define RRR_MMAP_DEBUGLEVEL  4
+#define RRR_MMAP_DEBUGLEVEL   __RRR_LOG_PREFIX_4
 #define RRR_MMAP_DBG(...)    RRR_DBG_4(__VA_ARGS__)
 
 struct rrr_mmap;

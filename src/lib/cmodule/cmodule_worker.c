@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,12 +38,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 
-#define ALLOCATE_TMP_NAME(target, name1, name2)							\
-	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {			\
-		RRR_MSG_0("Could not allocate temporary string for name\n");	\
-		ret = 1;														\
-		goto out;														\
-	}
+#define ALLOCATE_TMP_NAME(target, name1, name2)                              \
+    if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {                 \
+        RRR_MSG_0("Could not allocate temporary string for name\n");         \
+        ret = 1;                                                             \
+        goto out;                                                            \
+    }
 
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
