@@ -28,38 +28,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /*
  * About debug levels, ORed together:
- * 0 - Severe errors only
- * 1 - Info about loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside. (low rate)
- * 2 - Information about messages between modules and requests sent/received by modules (high rate)
- * 3 - Detailed information about message and value processing in modules (high rate)
- * 4 - Debug mmap channel messages as well as buffer searhing/ratelimiting/cleanup
- * 5 - Debug cmodule worker fork 
- * 6 - Not used
- * 7 - Debug sockets (high rate)
- * 8 - Internal thread debug. Usually low rate, but high rates with modules like http server.
+ * 0 /   0 - Severe errors
+ * 1 /   1 - Loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside
+ * 2 /   2 - Messages between modules and requests sent/received by modules
+ * 3 /   4 - Details about message and value processing in modules
+ * 4 /   8 - MMAP channel messages as well as buffer searhing/ratelimiting/cleanup
+ * 5 /  16 - Cmodule worker fork processing
+ * 6 /  32 - Hex dumps of RRR messages when converted to/from host endianess
+ * 7 /  64 - Socket open/close/read/write
+ * 8 / 128- Thread handling
  */
 
-#define __RRR_DEBUGLEVEL_0	(0)		// 0 - 0
-#define __RRR_DEBUGLEVEL_1	(1<<0)	// 1 - 1
-#define __RRR_DEBUGLEVEL_2	(1<<1)	// 2 - 2
-#define __RRR_DEBUGLEVEL_3	(1<<2)	// 3 - 4
-#define __RRR_DEBUGLEVEL_4	(1<<3)	// 4 - 8
-#define __RRR_DEBUGLEVEL_5	(1<<4)	// 5 - 16
-#define __RRR_DEBUGLEVEL_6	(1<<5)	// 6 - 32
-#define __RRR_DEBUGLEVEL_7	(1<<6)	// 7 - 64
-#define __RRR_DEBUGLEVEL_8	(1<<7)	// 8 - 128
-#define __RRR_DEBUGLEVEL_ALL	(__RRR_DEBUGLEVEL_1|__RRR_DEBUGLEVEL_2|__RRR_DEBUGLEVEL_3|__RRR_DEBUGLEVEL_4| \
-		__RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8)
+#define __RRR_DEBUGLEVEL_0  (0)     // 0
+#define __RRR_DEBUGLEVEL_1  (1<<0)  // 1
+#define __RRR_DEBUGLEVEL_2  (1<<1)  // 2
+#define __RRR_DEBUGLEVEL_3  (1<<2)  // 4
+#define __RRR_DEBUGLEVEL_4  (1<<3)  // 8
+#define __RRR_DEBUGLEVEL_5  (1<<4)  // 16
+#define __RRR_DEBUGLEVEL_6  (1<<5)  // 32
+#define __RRR_DEBUGLEVEL_7  (1<<6)  // 64
+#define __RRR_DEBUGLEVEL_8  (1<<7)  // 128
 
-#define __RRR_LOG_PREFIX_0	0
-#define __RRR_LOG_PREFIX_1	1
-#define __RRR_LOG_PREFIX_2	2
-#define __RRR_LOG_PREFIX_3	3
-#define __RRR_LOG_PREFIX_4	4
-#define __RRR_LOG_PREFIX_5	5
-#define __RRR_LOG_PREFIX_6	6
-#define __RRR_LOG_PREFIX_7	7
-#define __RRR_LOG_PREFIX_8	8
+#define __RRR_DEBUGLEVEL_ALL (                                                            \
+             __RRR_DEBUGLEVEL_1|__RRR_DEBUGLEVEL_2|__RRR_DEBUGLEVEL_3|__RRR_DEBUGLEVEL_4| \
+             __RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8)
+
+#define __RRR_LOG_PREFIX_0  0
+#define __RRR_LOG_PREFIX_1  1
+#define __RRR_LOG_PREFIX_2  2
+#define __RRR_LOG_PREFIX_3  3
+#define __RRR_LOG_PREFIX_4  4
+#define __RRR_LOG_PREFIX_5  5
+#define __RRR_LOG_PREFIX_6  6
+#define __RRR_LOG_PREFIX_7  7
+#define __RRR_LOG_PREFIX_8  8
 
 #define RRR_DEBUGLEVEL_OK(x) \
 	(x >= __RRR_LOG_PREFIX_0 && x <= __RRR_LOG_PREFIX_8)
