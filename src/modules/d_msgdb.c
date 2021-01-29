@@ -153,6 +153,7 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 
 	out:
 	if (msgdb != NULL) {
+		rrr_msgdb_server_destroy(msgdb);
 	}
 	return ret;
 }
