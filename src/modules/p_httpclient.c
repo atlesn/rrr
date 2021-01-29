@@ -69,10 +69,8 @@ struct httpclient_data {
 	int do_no_data;
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
-	int do_receive_raw_data;
 	int do_receive_part_data;
 	int do_receive_json_data;
-	int do_send_raw_data;
 
 	int do_endpoint_from_topic;
 	int do_endpoint_from_topic_force;
@@ -1102,46 +1100,6 @@ static int httpclient_session_query_prepare_callback (
 		return ret;
 }
 
-struct httpclient_raw_callback_data {
-	struct httpclient_data *httpclient_data;
-};
-
-static int httpclient_raw_callback (
-		RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS
-)  {
-	struct httpclient_data *httpclient_data = arg;
-
-	(void)(unique_id);
-	(void)(next_protocol_version);
-
-	int ret = 0;
-
-	if (!httpclient_data->do_receive_raw_data) {
-		goto out;
-	}
-
-	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
-			httpclient_data,
-			transaction->application_data,
-			data
-	};
-
-	RRR_DBG_3("httpclient instance %s creating message with raw HTTP response size %" PRIrrrl "\n",
-			INSTANCE_D_NAME(httpclient_data->thread_data), rrr_nullsafe_str_len(data));
-
-	ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
-			NULL,
-			0,
-			0,
-			httpclient_create_message_from_response_data_callback,
-			&callback_data_broker
-	);
-
-	out:
-	return ret;
-}
-
 static int httpclient_request_send (
 		struct httpclient_data *data,
 		struct rrr_http_client_request_data *request_data,
@@ -1173,64 +1131,36 @@ static int httpclient_request_send (
 
 	pthread_cleanup_push(httpclient_transaction_destroy_void_dbl_ptr, &transaction_data);
 
-	if (data->do_send_raw_data) {
-		if (MSG_DATA_LENGTH(message) == 0) {
-			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had 0 length data. Dropping it.\n",
-					INSTANCE_D_NAME(data->thread_data));
+	if (MSG_IS_ARRAY(message)) {
+		if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
 			goto out_cleanup_transaction_data;
 		}
-		if (MSG_CLASS(message) != MSG_CLASS_DATA) {
-			RRR_DBG_1("httpclient instance %s has http_send_raw_data set, but a received message had wrong class (%u). Note that only raw data messages can be sent, not arrays.\n",
-					INSTANCE_D_NAME(data->thread_data), MSG_CLASS(message));
-			goto out_cleanup_transaction_data;
-		}
-
-		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-
-		ret = rrr_http_client_request_raw_send (
-				request_data,
-				&data->keepalive_transport_plain,
-				&data->keepalive_transport_tls,
-				&data->net_transport_config,
-				remaining_redirects,
-				MSG_DATA_PTR(message),
-				MSG_DATA_LENGTH(message),
-				NULL,
-				NULL
-		);
 	}
-	else {
-		if (MSG_IS_ARRAY(message)) {
-			if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
-				goto out_cleanup_transaction_data;
-			}
-		}
 
-		struct httpclient_prepare_callback_data prepare_callback_data = {
-				data,
-				message,
-				&array_from_msg_tmp,
-				no_destination_override
-		};
+	struct httpclient_prepare_callback_data prepare_callback_data = {
+			data,
+			message,
+			&array_from_msg_tmp,
+			no_destination_override
+	};
 
-		request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+	request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
 
-		// Debug message for sending a request is in query prepare callback
+	// Debug message for sending a request is in query prepare callback
 
-		ret = rrr_http_client_request_send (
-				request_data,
-				&data->keepalive_transport_plain,
-				&data->keepalive_transport_tls,
-				&data->net_transport_config,
-				remaining_redirects,
-				httpclient_connection_prepare_callback,
-				&prepare_callback_data,
-				httpclient_session_query_prepare_callback,
-				&prepare_callback_data,
-				(void **) &transaction_data,
-				httpclient_transaction_destroy_void
-		);
-	}
+	ret = rrr_http_client_request_send (
+			request_data,
+			&data->keepalive_transport_plain,
+			&data->keepalive_transport_tls,
+			&data->net_transport_config,
+			remaining_redirects,
+			httpclient_connection_prepare_callback,
+			&prepare_callback_data,
+			httpclient_session_query_prepare_callback,
+			&prepare_callback_data,
+			(void **) &transaction_data,
+			httpclient_transaction_destroy_void
+	);
 
 	// Do not add anything here, let return value from last function call propagate
 
@@ -1404,10 +1334,8 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_send_raw_data", do_send_raw_data, 0);
 
 	// Deprecated option http_keepalive
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_keepalive",
@@ -1456,27 +1384,6 @@ static int httpclient_parse_config (
 		}
 	}
 
-	if (data->do_send_raw_data) {
-		if (data->do_no_data) {
-			RRR_MSG_0("Both http_send_raw_data and http_no_data was yes in httpclient instance %s. The first implies the latter, it is an error to specify both.\n",
-					config->name);
-			ret = 1;
-		}
-		if (data->do_rrr_msg_to_array) {
-			RRR_MSG_0("http_rrr_msg_to_array as well as http_send_raw_data were yes in httpclient instance %s, this is an invalid combination.\n",
-					config->name);
-			ret = 1;
-		}
-		if (data->do_endpoint_from_topic || data->endpoint_tag != NULL || data->server_tag || data->port_tag) {
-			RRR_MSG_0("http_{endpoint|server|port}_tag and http_endpoint_from_topic parameters cannot be set while http_send_raw_data is yes in httpclient instance %s, check configuration.\n",
-					config->name);
-			ret = 1;
-		}
-		if (ret != 0) {
-			goto out;
-		}
-	}
-
 	if (rrr_http_client_config_parse (
 			&data->http_client_config,
 			config,
@@ -1485,7 +1392,7 @@ static int httpclient_parse_config (
 			RRR_HTTPCLIENT_DEFAULT_PORT,
 			0, // <-- Disable fixed tags and fields
 			1, // <-- Enable endpoint
-			data->do_send_raw_data // Check raw consisitency based on this option
+			0  // No raw data
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -1699,8 +1606,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				NULL,
 				NULL,
 				NULL,
-				httpclient_raw_callback,
-				data
+				NULL,
+				NULL
 		) != 0) {
 			RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
