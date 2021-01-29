@@ -201,7 +201,7 @@ int averager_process_message (
 
 	int ret = 0;
 
-	RRR_DBG_4("averager instance %s callback got a message from buffer with timestamp %" PRIu64 "\n",
+	RRR_DBG_2("averager instance %s callback got a message from buffer with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(averager_data->thread_data), message->timestamp);
 
 	// NOTE : Not all errors are critical, some are user caused

@@ -754,7 +754,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 
 	int ret = 0;
 
-	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
+	RRR_DBG_2("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	test_result->result = 2;
 

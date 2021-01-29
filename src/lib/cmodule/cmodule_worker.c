@@ -298,11 +298,10 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 	if (RRR_MSG_IS_CTRL(msg)) {
 		RRR_DBG_5("cmodule worker %s received control message\n", callback_data->worker->name);
 		if (RRR_MSG_CTRL_F_HAS(msg, RRR_MSG_CTRL_F_PING)) {
-			RRR_DBG_4("cmodule worker %s pid %ld received PING\n", callback_data->worker->name, (long) getpid());
 			callback_data->worker->ping_received = 1;
 		}
 		else {
-			RRR_DBG_4("Warning: cmodule worker %s pid %ld received unknown control message %u\n",
+			RRR_MSG_0("Warning: cmodule worker %s pid %ld received unknown control message %u\n",
 					callback_data->worker->name, (long) getpid(), RRR_MSG_CTRL_FLAGS(msg));
 		}
 	}
