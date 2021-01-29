@@ -14,32 +14,17 @@ bless $debug, rrr::rrr_helper::rrr_debug;
 my $global_settings = undef;
 
 sub process {
-	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
 	my $protocol = ($message->get_tag_all("http_protocol"))[0];
 
 	if ($protocol == 2) {
-#		print "Request is HTTP2, not generating response.\n";
-		return 1;
+		print "Got HTTP2 request\n";
+	}
+	else {
+		print "Got HTTP1 request\n";
 	}
 
-	$message->{'topic'} =~ s/request/raw/;
-	$message->clear_array();
-
-	my $body = "blabla\n";
-
-	$message->{'data'} = "";
-
-	$message->{'data'} .= "HTTP/1.1 200 OK\r\nContent-Length: " . (length $body) . "\r\n\r\n";
-
-	$message->{'data'} .= $body;
-
-	$message->send();
-
-#	print "Send reply protocol \"$protocol\" topic \"$message->{'topic'}\" data \"$message->{'data'}\"\n";
-
-	# Return 1 for success and 0 for error
 	return 1;
 }
 

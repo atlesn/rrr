@@ -19,12 +19,16 @@ sub source {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	my $port =  (++$count % 2 == 0 ? "443" : "8888");
+	$message->{'topic'} = "http/blabla/" . time();
+
+#	my $port =  (++$count % 2 == 0 ? "443" : "80");
+	my $method =  (++$count % 2 == 0 ? "GET" : "PUT");
 
 	$message->push_tag("http_server", "localhost");
-	$message->push_tag("http_endpoint", "/redirect.php");
-	$message->push_tag("http_port", $port);
-	#$message->push_tag("http_port", "443");
+	$message->push_tag("http_endpoint", "/redirect.php?c=$count");
+	$message->push_tag("http_method", $method);
+#	$message->push_tag("http_port", $port);
+	$message->push_tag("http_port", "443");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
 

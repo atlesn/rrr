@@ -433,11 +433,11 @@ static int __rrr_msgdb_server_del (
 ) {
 	int ret = 0;
 
+	struct rrr_msgdb_server_del_path_split_callback_data callback_data = {0};
+
 	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
 		goto out;
 	}
-
-	struct rrr_msgdb_server_del_path_split_callback_data callback_data = {0};
 
 	if ((ret = __rrr_msgdb_server_path_iterate (
 			msg,

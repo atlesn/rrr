@@ -377,6 +377,8 @@ static int __rrr_http_client_redirect_callback (
 			NULL,
 			NULL,
 			NULL,
+			NULL,
+			NULL,
 			NULL
 	) != 0) {
 		goto out;
@@ -580,6 +582,8 @@ int main (int argc, const char **argv, const char **env) {
 			&data.net_transport_keepalive_tls,
 			&data.net_transport_config,
 			5, // Max redirects
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

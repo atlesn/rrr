@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len) \
 	char name[256]; rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok(name, sizeof(name), str, len)
 
+enum rrr_http_method;
 struct rrr_nullsafe_str;
 
 struct rrr_http_uri_flags {
@@ -131,6 +132,9 @@ void rrr_http_util_nprintf (
 );
 void rrr_http_util_dbl_ptr_free (
 		void *ptr
+);
+enum rrr_http_method rrr_http_util_method_str_to_enum (
+		const char *method_str
 );
 
 #endif /* RRR_HTTP_UTIL_H */

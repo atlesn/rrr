@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,12 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <stdarg.h>
 
 #include "../log.h"
 
 #include "http_util.h"
+#include "http_common.h"
 
 #include "../util/posix.h"
 #include "../util/gnu.h"
@@ -1103,4 +1105,52 @@ void rrr_http_util_nprintf (
 void rrr_http_util_dbl_ptr_free (void *ptr) {
 	void *to_free = *((void **) ptr);
 	RRR_FREE_IF_NOT_NULL(to_free);
+}
+
+enum rrr_http_method rrr_http_util_method_str_to_enum (
+		const char *method_str
+) {
+	enum rrr_http_method method = RRR_HTTP_METHOD_GET;
+
+	/*
+	 * DO NOT REMOVE THIS COMMENT
+	 * Default method when user only specifies POST is RRR_HTTP_METHOD_POST_URLENCODED
+	 */
+
+	if (method_str == NULL || *(method_str) == '\0') {
+		// Default to GET
+	}
+	else if ( strcasecmp(method_str, "get") == 0) {
+		method = RRR_HTTP_METHOD_GET;
+	}
+	else if ( strcasecmp(method_str, "put") == 0) {
+		method = RRR_HTTP_METHOD_PUT;
+	}
+	else if ( strcasecmp(method_str, "post_multipart") == 0 ||
+	          strcasecmp(method_str, "post_multipart_form_data") == 0 ||
+	          strcasecmp(method_str, "multipart/form-data") == 0
+	) {
+		method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
+	}
+	else if ( strcasecmp(method_str, "post_urlencoded") == 0 ||
+	          strcasecmp(method_str, "post") == 0 ||
+	          strcasecmp(method_str, "application/x-www-urlencoded") == 0
+	) {
+		method = RRR_HTTP_METHOD_POST_URLENCODED;
+		// RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING only used by influxdb, not configurable
+	}
+	else if ( strcasecmp(method_str, "post_binary") == 0 ||
+	          strcasecmp(method_str, "post_application_octet_stream") == 0 ||
+	          strcasecmp(method_str, "application/octet-stream") == 0
+	) {
+		method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
+	}
+	else if ( strcasecmp(method_str, "post_text_plain") == 0) {
+		method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown value '%s' for HTTP method in rrr_http_util_method_str_to_enum, defaulting to GET\n", method_str);
+	}
+
+	return method;
 }

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "http_client_config.h"
+#include "http_util.h"
 
 #include "../instance_config.h"
 #include "../map.h"
@@ -74,50 +75,7 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
 
-	/*
-	 * DO NOT REMOVE THIS COMMENT
-	 * Default method when user only specifies POST is RRR_HTTP_METHOD_POST_URLENCODED
-	 */
-
-	if (data->method_str == NULL || *(data->method_str) == '\0') {
-		data->method = RRR_HTTP_METHOD_GET;
-	}
-	else if (	strcasecmp(data->method_str, "get") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_GET;
-	}
-	else if (	strcasecmp(data->method_str, "put") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_PUT;
-	}
-	else if (	strcasecmp(data->method_str, "post_multipart") == 0 ||
-				strcasecmp(data->method_str, "post_multipart_form_data") == 0 ||
-				strcasecmp(data->method_str, "multipart/form-data") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
-	}
-	else if (	strcasecmp(data->method_str, "post_urlencoded") == 0 ||
-				strcasecmp(data->method_str, "post") == 0 ||
-				strcasecmp(data->method_str, "application/x-www-urlencoded") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_URLENCODED;
-		// RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING only used by influxdb, not configurable
-	}
-	else if (	strcasecmp(data->method_str, "post_binary") == 0 ||
-				strcasecmp(data->method_str, "post_application_octet_stream") == 0 ||
-				strcasecmp(data->method_str, "application/octet-stream") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
-	}
-	else if (	strcasecmp(data->method_str, "post_text_plain") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
-	}
-	else {
-		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", data->method_str, config->name);
-		ret = 1;
-		goto out;
-	}
+	data->method = rrr_http_util_method_str_to_enum(data->method_str); // Any value allowed, also NULL
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_tags");
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_arrow, &data->tags)) != 0) {
