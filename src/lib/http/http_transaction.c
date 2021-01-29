@@ -319,6 +319,11 @@ int rrr_http_transaction_form_data_generate_if_needed (
 			goto out;
 		}
 	}
+	else if (transaction->method == RRR_HTTP_METHOD_PUT) {
+		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
+			goto out;
+		}
+	}
 
 	// TODO : If we use plain text or octet stream method, simply concatenate and encode all fields
 
