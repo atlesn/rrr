@@ -78,7 +78,6 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
 	rrr_http_field_collection_clear(&part->fields);
 	RRR_FREE_IF_NOT_NULL(part->response_str);
-	rrr_nullsafe_str_destroy_if_not_null(&part->response_raw_data_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_method_str_nullsafe);
 	free (part);
@@ -124,35 +123,6 @@ int rrr_http_part_prepare (struct rrr_http_part **part) {
 	return ret;
 }
 
-int rrr_http_part_raw_response_set_allocated (
-		struct rrr_http_part *part,
-		char **raw_data_source,
-		size_t raw_data_size
-) {
-	int ret = 0;
-
-	if (part->response_raw_data_nullsafe != NULL) {
-		RRR_BUG("BUG: rrr_http_part_set_allocated_raw_response called while raw data was already set\n");
-	}
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
-		goto out;
-	}
-	rrr_nullsafe_str_set_allocated(part->response_raw_data_nullsafe, (void **) raw_data_source, raw_data_size);
-
-	out:
-	return ret;
-}
-
-/*
-void rrr_http_part_raw_request_set_ptr (
-		struct rrr_http_part *part,
-		const char *raw_data,
-		size_t raw_data_size
-) {
-	part->request_raw_data = raw_data;
-	part->request_raw_data_size = raw_data_size;
-}
-*/
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name
@@ -637,11 +607,7 @@ int rrr_http_part_post_x_www_form_body_make (
 	if ((ret = rrr_http_part_header_field_push(part, "content-type", "application/x-www-form-urlencoded")) != 0) {
 		goto out;
 	}
-/*
-	if ((ret = chunk_callback(header_buf, strlen(header_buf), chunk_callback_arg)) != 0) {
-		goto out;
-	}
-*/
+
 	if ((ret = chunk_callback(body_buf_nullsafe, chunk_callback_arg)) != 0) {
 		goto out;
 	}

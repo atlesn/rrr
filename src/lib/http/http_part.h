@@ -86,19 +86,10 @@ struct rrr_http_part {
 	int response_code;
 	char *response_str;
 
-	// Setting this causes everything else in a response
-	// struct to be ignored when sending
-	struct rrr_nullsafe_str *response_raw_data_nullsafe;
-
 	struct rrr_nullsafe_str *request_method_str_nullsafe;
 	enum rrr_http_method request_method;
 
 	struct rrr_nullsafe_str *request_uri_nullsafe;
-
-	// Setting this causes raw data to be sent as opposed to
-	// generating headers and body
-	const char *request_raw_data;
-	size_t request_raw_data_size;
 
 	int parse_complete;
 	int header_complete;
@@ -126,11 +117,6 @@ void rrr_http_part_destroy_void (void *part);
 void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
 int rrr_http_part_prepare (struct rrr_http_part **part);
-int rrr_http_part_raw_response_set_allocated (
-		struct rrr_http_part *part,
-		char **raw_data_source,
-		size_t raw_data_size
-);
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name

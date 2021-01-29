@@ -186,17 +186,6 @@ static int __rrr_http_application_http1_response_send (
 
 	struct rrr_http_part *response_part = transaction->response_part;
 
-	if (response_part->response_raw_data_nullsafe != NULL) {
-		if ((ret = rrr_nullsafe_str_with_raw_do_const (
-				response_part->response_raw_data_nullsafe,
-				__rrr_http_application_http1_blocking_send_callback,
-				handle
-		)) != 0) {
-			goto out_err;
-		}
-		goto out;
-	}
-
 	if (response_part->response_code == 0) {
 		RRR_BUG("BUG: Response code was not set in rrr_http_application_http1_send_response\n");
 	}

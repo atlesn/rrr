@@ -729,10 +729,6 @@ int rrr_http_application_http2_response_submit (
 
 	int ret = 0;
 
-	if (rrr_nullsafe_str_len(transaction->response_part->response_raw_data_nullsafe) > 0) {
-		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->response_part->response_raw_data_nullsafe);
-	}
-
 	int response_code = transaction->response_part->response_code;
 
 	if (response_code == 0) {
