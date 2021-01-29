@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <netinet/in.h>
 
-#include "udpstream.h"
 #include "../log.h"
+#include "udpstream.h"
 #include "../read.h"
 #include "../random.h"
 #include "../socket/rrr_socket.h"
