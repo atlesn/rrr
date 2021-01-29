@@ -953,12 +953,36 @@ int rrr_cmodule_helper_worker_forks_start (
 					configuration_callback,
 					configuration_callback_arg,
 					process_callback,
-					process_callback_arg
+					process_callback_arg,
+					NULL,
+					NULL
 		) != 0) {
 			return 1;
 		}
 	}
 	return 0;
+}
+
+int rrr_cmodule_helper_worker_custom_fork_start (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
+) {
+	return rrr_cmodule_main_worker_fork_start (
+			INSTANCE_D_CMODULE(thread_data),
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_SETTINGS(thread_data),
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			custom_tick_callback,
+			custom_tick_callback_arg
+	);
 }
 
 static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (

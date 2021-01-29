@@ -113,7 +113,9 @@ int rrr_cmodule_main_worker_fork_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
 
@@ -175,7 +177,9 @@ int rrr_cmodule_main_worker_fork_start (
 			configuration_callback,
 			configuration_callback_arg,
 			process_callback,
-			process_callback_arg
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	);
 
 	exit(ret);

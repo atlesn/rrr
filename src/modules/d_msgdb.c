@@ -40,6 +40,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
+#include "../lib/cmodule/cmodule_helper.h"
+#include "../lib/cmodule/cmodule_main.h"
+#include "../lib/cmodule/cmodule_worker.h"
 
 #define RRR_MSGDB_DEFAULT_DIRECTORY  "/var/lib/rrr/msgdb"
 #define RRR_MSGDB_DEFAULT_SOCKET     "/var/run/rrr/msgdb.sock"
@@ -68,7 +71,6 @@ static int msgdb_data_init (
 	return ret;
 }
 
-// TODO : Provide more configuration arguments
 static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -77,6 +79,110 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 
 	out:
 	return ret;
+}
+
+struct msgdb_fork_tick_callback_data {
+	struct msgdb_data *data;
+	struct rrr_msgdb_server *msgdb;
+	uint64_t prev_recv_count;
+};
+
+static int msgdb_fork_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
+	struct msgdb_fork_tick_callback_data *callback_data = private_arg;
+
+	struct rrr_msgdb_server *msgdb = callback_data->msgdb;
+	struct msgdb_data *data = callback_data->data;
+
+	(void)(worker);
+
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_server_tick(msgdb)) != 0) {
+		RRR_MSG_0("Error from message db server while ticking in msgdb instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	const uint64_t recv_count = rrr_msgdb_server_recv_count_get(msgdb);
+
+	if (recv_count != callback_data->prev_recv_count) {
+		*something_happened = 1;
+	}
+	callback_data->prev_recv_count = recv_count;
+
+	out:
+	return ret;
+}
+
+static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
+	struct rrr_instance_runtime_data *thread_data = private_arg;
+	struct msgdb_data *data = thread_data->private_data;
+
+	(void)(custom_tick_callback_arg);
+
+	int ret = 0;
+
+	struct rrr_msgdb_server *msgdb = NULL;
+
+	if (rrr_msgdb_server_new(&msgdb, data->directory, data->socket) != 0) {
+		RRR_MSG_0("Could not start message db server in msgdb instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	struct msgdb_fork_tick_callback_data tick_callback_data = {
+		data,
+		msgdb,
+		0
+	};
+
+	if ((ret = rrr_cmodule_worker_loop_start (
+			worker,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg,
+			custom_tick_callback,
+			&tick_callback_data
+	)) != 0) {
+		RRR_MSG_0("Error from worker loop in msgdb_fork_tick_callback\n");
+		goto out;
+	}
+
+	out:
+	if (msgdb != NULL) {
+	}
+	return ret;
+}
+
+static int msgdb_fork (void *arg) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct msgdb_data *data = thread_data->private_data;
+
+	int ret = 0;
+
+	if ((ret = msgdb_parse_config(data, thread_data->init_data.instance_config)) != 0) {
+		RRR_MSG_0("Configuration parse failed for msgdb instance '%s'\n", INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	// Don't parse cmodule config, not used
+
+        if (rrr_cmodule_helper_worker_custom_fork_start (
+                        thread_data,
+			msgdb_fork_init_wrapper_callback,
+			thread_data,
+			msgdb_fork_tick_callback,
+			NULL
+	) != 0) {
+		RRR_MSG_0("Error while starting cmodule worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+
 }
 
 static void *thread_entry_msgdb (struct rrr_thread *thread) {
@@ -94,10 +200,7 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(msgdb_data_cleanup, data);
 
-	rrr_thread_start_condition_helper_nofork(thread);
-
-	if (msgdb_parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_0("Configuration parse failed for msgdb instance '%s'\n", INSTANCE_D_NAME(thread_data));
+	if (rrr_thread_start_condition_helper_fork(thread, msgdb_fork, thread_data) != 0) {
 		goto out_message;
 	}
 
@@ -105,61 +208,11 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("msgdb started thread %p\n", thread_data);
 
-	struct rrr_msgdb_server *msgdb = NULL;
-
-	if (rrr_msgdb_server_new(&msgdb, data->directory, data->socket) != 0) {
-		RRR_MSG_0("Could not start message db server in msgdb instance %s\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
-
-	pthread_cleanup_push(rrr_msgdb_server_destroy_void, msgdb);
-
-	// DO NOT use signed, let it overflow
-	unsigned long int consecutive_nothing_happened = 0;
-
-	uint64_t prev_recv_count = 0;
-	uint64_t prev_second_recv_count = 0;
-	uint64_t prev_stats_time = rrr_time_get_64();
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_watchdog_time_update(thread);
-
-		if (rrr_msgdb_server_tick(msgdb) != 0) {
-			RRR_MSG_0("Error from message db server while ticking in msgdb instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		const uint64_t recv_count = rrr_msgdb_server_recv_count_get(msgdb);
-
-		if (recv_count != prev_recv_count) {
-			consecutive_nothing_happened++;
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		prev_recv_count = recv_count;
-
-		if (consecutive_nothing_happened > 5000) {
-			rrr_posix_usleep(50000); // 50 ms
-		}
-		if (consecutive_nothing_happened > 50) {
-			rrr_posix_usleep(2000); // 2ms
-		}
-
-		if (time_now > (prev_stats_time + 1 * 1000 * 1000)) {
-			RRR_DBG_1("msgdb instance %s messages per second %i total %" PRIu64 "\n",
-					INSTANCE_D_NAME(thread_data), recv_count - prev_second_recv_count, recv_count);
-
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "recv_rate", recv_count - prev_second_recv_count);
-
-			prev_second_recv_count = recv_count;
-			prev_stats_time = rrr_time_get_64();
-		}
-	}
-
-	pthread_cleanup_pop(1);
+	rrr_cmodule_helper_loop (
+			thread_data,
+			INSTANCE_D_STATS(thread_data),
+			&thread_data->poll
+	);
 
 	out_message:
 		RRR_DBG_1 ("Thread msgdb %p exiting\n", thread);

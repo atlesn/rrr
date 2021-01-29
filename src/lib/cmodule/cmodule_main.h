@@ -87,7 +87,9 @@ int rrr_cmodule_main_worker_fork_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*init_custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *init_custom_tick_callback_arg
 );
 void rrr_cmodule_main_workers_stop (
 		struct rrr_cmodule *cmodule

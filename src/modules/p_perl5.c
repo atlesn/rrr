@@ -272,7 +272,9 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 			configuration_callback,
 			&child_data,
 			process_callback,
-			&child_data
+			&child_data,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in perl5_init_wrapper_callback\n");
 		// Don't goto out, run cleanup functions

@@ -297,6 +297,9 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 		RRR_MSG_0("Warning: Received a message in worker %s but no processor function is defined in configuration, dropping message\n",
 				callback_data->worker->name);
 	}
+	else if (callback_data->process_callback == NULL) {
+		RRR_BUG("BUG: Received a message in cmodule worker while no process callback was set\n");
+	}
 	else {
 		const struct rrr_msg_msg *msg_msg = data;
 		const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg_msg);
@@ -397,7 +400,9 @@ int __rrr_cmodule_worker_send_pong (
 static int __rrr_cmodule_worker_loop (
 		struct rrr_cmodule_worker *worker,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
 
@@ -420,8 +425,8 @@ static int __rrr_cmodule_worker_loop (
 
 	uint64_t prev_stats_time = 0;
 
-	if (worker->do_spawning == 0 && worker->do_processing == 0) {
-		RRR_BUG("BUG: Spawning nor processing mode not set in __rrr_cmodule_worker_loop\n");
+	if (worker->do_spawning == 0 && worker->do_processing == 0 && custom_tick_callback == NULL) {
+		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
 	}
 
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
@@ -470,6 +475,20 @@ static int __rrr_cmodule_worker_loop (
 			worker->ping_received = 0;
 		}
 
+		int custom_tick_something_happened = 0;
+		if (custom_tick_callback != NULL) {
+			if (custom_tick_callback (
+					&custom_tick_something_happened,
+					worker,
+					custom_tick_callback_arg
+			) != 0) {
+				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
+						worker->name, (long) getpid());
+				ret = 1;
+				goto loop_out;
+			}
+		}
+
 //		printf("%" PRIu64 " - %" PRIu64 "\n", prev_total_msg_mmap_from_parent, prev_total_processed_msg);
 
 		if (	prev_total_msg_mmap_from_parent != worker->total_msg_mmap_to_fork ||
@@ -514,27 +533,35 @@ int rrr_cmodule_worker_loop_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback)(RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
 
 	RRR_DBG_5("cmodule worker %s running configure function\n",
 			worker->name);
 
-	if ((ret = configuration_callback(worker, configuration_callback_arg)) != 0) {
-		RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
-		goto out;
-	}
+	if (configuration_callback != NULL) {
+		if ((ret = configuration_callback(worker, configuration_callback_arg)) != 0) {
+			RRR_MSG_0("Error from configuration in __rrr_cmodule_worker_loop_start\n");
+			goto out;
+		}
 
-	if (rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker) != 0) {
-		RRR_MSG_0("Error while sending back settings to parent in rrr_cmodule_worker_loop_start of worker %s\n",
+		if (rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker) != 0) {
+			RRR_MSG_0("Error while sending back settings to parent in rrr_cmodule_worker_loop_start of worker %s\n",
+					worker->name);
+			ret = 1;
+			goto out;
+		}
+
+		RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
 				worker->name);
-		ret = 1;
-		goto out;
 	}
-
-	RRR_DBG_5("cmodule worker %s configuration complete, notification to parent\n",
-			worker->name);
+	else {
+		RRR_DBG_5("cmodule worker %s no configuration callback set, notification to parent\n",
+				worker->name);
+	}
 
 	struct rrr_msg control_msg = {0};
 	rrr_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
@@ -550,7 +577,13 @@ int rrr_cmodule_worker_loop_start (
 		return 1;
 	}
 
-	if ((ret = __rrr_cmodule_worker_loop(worker, process_callback, process_callback_arg)) != 0) {
+	if ((ret = __rrr_cmodule_worker_loop (
+			worker,
+			process_callback,
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
+	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_start\n");
 		goto out;
 	}
@@ -559,7 +592,7 @@ int rrr_cmodule_worker_loop_start (
 	return ret;
 }
 
-/* Example code for init wrapper */
+/* Use as template when making init wrappers */
 int rrr_cmodule_worker_loop_init_wrapper_default (
 		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 ) {
@@ -579,7 +612,9 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 			configuration_callback,
 			configuration_callback_arg,
 			process_callback,
-			process_callback_arg
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions
@@ -602,7 +637,9 @@ int rrr_cmodule_worker_main (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
 
@@ -642,6 +679,8 @@ int rrr_cmodule_worker_main (
 			configuration_callback_arg,
 			process_callback,
 			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg,
 			init_wrapper_arg
 	);
 
