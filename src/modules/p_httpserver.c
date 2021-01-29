@@ -86,6 +86,8 @@ struct httpserver_data {
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
+	rrr_setting_uint startup_delay_us;
+
 	struct rrr_map websocket_topic_filters;
 
 	pthread_mutex_t oustanding_responses_lock;
@@ -215,6 +217,10 @@ static int httpserver_parse_config (
 		);
 		data->do_accept_websocket_binary = 1;
 	}
+
+	// Undocumented, used to test failures in clients
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
+	data->startup_delay_us *= 1000 * 1000;
 
 	out:
 	return ret;
@@ -1194,6 +1200,16 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	RRR_DBG_1 ("httpserver started thread %p\n", thread_data);
 
 	struct rrr_http_server *http_server = NULL;
+
+	{
+		uint64_t startup_time = rrr_time_get_64() + data->startup_delay_us;
+		while (rrr_thread_signal_encourage_stop_check(thread) != 1 && startup_time > rrr_time_get_64()) {
+			rrr_thread_watchdog_time_update(thread);
+			RRR_DBG_1("httpserver instance %s startup delay configured, waiting...\n",
+				INSTANCE_D_NAME(thread_data));
+			rrr_posix_usleep(500000);
+		}
+	}
 
 	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
