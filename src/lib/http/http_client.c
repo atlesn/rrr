@@ -262,7 +262,6 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	struct rrr_http_part *request_part = transaction->request_part;
 	struct rrr_http_part *response_part = transaction->response_part;
 	struct rrr_nullsafe_str *chunks_merged = NULL;
 
@@ -295,17 +294,6 @@ static int __rrr_http_client_receive_http_part_callback (
 		}
 		rrr_http_transaction_incref(transaction);
 
-		goto out;
-	}
-	else if (response_part->response_code < 200 || response_part->response_code > 299) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,request_part->request_method_str_nullsafe);
-		RRR_MSG_0("Error while fetching HTTP: %i %s (request was %s %s)\n",
-				response_part->response_code,
-				(response_part->response_str != NULL ? response_part->response_str : "-"),
-				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-				transaction->endpoint_str
-		);
-		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 

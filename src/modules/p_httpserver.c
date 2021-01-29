@@ -86,11 +86,13 @@ struct httpserver_data {
 	rrr_setting_uint raw_response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
-	rrr_setting_uint startup_delay_us;
-
 	struct rrr_map websocket_topic_filters;
 
 	pthread_mutex_t oustanding_responses_lock;
+
+	// Settings for test suite
+	rrr_setting_uint startup_delay_us;
+	int do_fail_once;
 };
 
 static void httpserver_data_cleanup(void *arg) {
@@ -221,6 +223,7 @@ static int httpserver_parse_config (
 	// Undocumented, used to test failures in clients
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
 	data->startup_delay_us *= 1000 * 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_fail_once", do_fail_once, 0);
 
 	out:
 	return ret;
@@ -589,7 +592,7 @@ static int httpserver_receive_get_raw_response (
 					&callback_data,
 					2
 			)) != 0) {
-				RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
+				RRR_MSG_0("Error from poll in httpserver_receive_get_raw_response\n");
 				goto out;
 			}
 
@@ -705,6 +708,15 @@ static int httpserver_receive_callback (
 
 	char *request_topic = NULL;
 	struct rrr_array array_tmp = {0};
+
+	static int fail_once = 1;
+
+	if (data->do_fail_once && fail_once) {
+		RRR_MSG_0("Fail once debug is active in httpserver, sending 500 to client\n");
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+		fail_once = 0;
+		goto out;
+	}
 
 	if ((ret = httpserver_generate_unique_topic (
 			&request_topic,

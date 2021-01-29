@@ -406,10 +406,13 @@ static int httpclient_final_callback_receive_json (
 	);
 }
 
+static void httpclient_msgdb_notify_complete(struct httpclient_data *data, struct rrr_msg_holder *entry_locked);
+
 static int httpclient_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
 	struct httpclient_data *httpclient_data = arg;
+	struct httpclient_transaction_data *transaction_data = transaction->application_data;
 
 	int ret = RRR_HTTP_OK;
 
@@ -419,18 +422,33 @@ static int httpclient_final_callback (
 			rrr_nullsafe_str_len(response_data)
 	);
 
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
+		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)\n",
+				transaction->response_part->response_code,
+				(transaction->response_part->response_str != NULL ? transaction->response_part->response_str : "-"),
+				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+				transaction->endpoint_str
+		);
+	}
+	else if (transaction->method == RRR_HTTP_METHOD_PUT) {
+		rrr_msg_holder_lock(transaction_data->entry);
+		httpclient_msgdb_notify_complete(httpclient_data, transaction_data->entry);
+		rrr_msg_holder_unlock(transaction_data->entry);
+	}
+
 	if (httpclient_data->do_receive_part_data) {
 		RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-		ret = httpclient_final_callback_receive_data(httpclient_data, transaction->application_data, response_data);
+		ret |= httpclient_final_callback_receive_data(httpclient_data, transaction->application_data, response_data);
 	}
 
 	if (httpclient_data->do_receive_json_data) {
 		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-		ret = httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
+		ret |= httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
 	}
 
 	return ret;
@@ -1484,7 +1502,7 @@ static void httpclient_msgdb_queue_process (struct httpclient_data *data) {
 #define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC() \
 	if (MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) == 0) return
 
-static void httpclient_msgdb_notify_failure(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
+static void httpclient_msgdb_notify_remove_from_queue(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
 
@@ -1547,7 +1565,7 @@ static void httpclient_defer_queue_process (struct httpclient_data *data) {
 			else if (data->msgdb_socket != NULL && data->http_client_config.method == RRR_HTTP_METHOD_PUT) {
 //				RRR_MSG_2("httpclient instance %s deferring failed PUT-message to msgdb on-disk storage\n",
 //					INSTANCE_D_NAME(data->thread_data));
-				httpclient_msgdb_notify_failure(data, node);
+				httpclient_msgdb_notify_remove_from_queue(data, node);
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			else {
@@ -1567,14 +1585,14 @@ static void httpclient_defer_queue_process (struct httpclient_data *data) {
 				else {
 					RRR_MSG_0("Hard error while iterating defer queue in httpclient instance %s, deleting message\n",
 							INSTANCE_D_NAME(data->thread_data));
-					httpclient_msgdb_notify_failure(data, node);
+					httpclient_msgdb_notify_remove_from_queue(data, node);
 					RRR_LL_ITERATE_SET_DESTROY();
 					// Delete message
 				}
 			}
 		}
 		else {
-			httpclient_msgdb_notify_complete(data, node);
+			httpclient_msgdb_notify_remove_from_queue(data, node);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 

@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
 #include "lib/http/http_client.h"
+#include "lib/http/http_transaction.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -302,8 +303,6 @@ static int __rrr_http_client_final_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(transaction);
-
 	int ret = 0;
 
 	rrr_length data_start = 0;
@@ -316,6 +315,13 @@ static int __rrr_http_client_final_callback (
 	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
 	http_client_data->final_callback_count++;
+
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+		RRR_MSG_0("Error response from server: %i %s\n",
+				transaction->response_part->response_code,
+				transaction->response_part->response_str
+		);
+	}
 
 	if (http_client_data->no_output) {
 		goto out;
