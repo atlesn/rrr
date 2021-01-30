@@ -1308,34 +1308,6 @@ will detect whether a query string already exists in the URL and prefix the firs
 Defaults to
 .B /.
 
-.It http_endpoint_tag=ARRAY TAG
-.It http_server_tag=ARRAY TAG
-.It http_port_tag=ARRAY TAG
-.It http_endpoint_tag_force={yes|no}
-.It http_server_tag_force={yes|no}
-.It http_port_tag_force={yes|no}
-These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
-identified by the tag of the value.
-If the
-.B force
-options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
-
-If the HTTP server responds with a redirect, the redirection will be followed and values from the messages will not be used.
-To disallow redirection, use the
-.B http_max_redirects
-parameter.
-
-Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string.
-
-.It http_endpoint_from_topic={yes|no}
-.It http_endpoint_from_topic_force={yes|no}
-If
-.B http_endpoint_from_topic
-is set to yes, the MQTT topic of received messaged will be used as the HTTP endpoint. A slash / will be prepended to the topic.
-If force is set to yes, messages without a topic will be dropped.
-May not be used together with
-.B http_endpoint_tag.
-
 .It http_transport_type={tls|plain|both}
 If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 .B enforced,
@@ -1358,6 +1330,39 @@ is used, any fields will be made into a query string and sent in the POST body o
 .B post_multipart
 is used, any fields will be made into separate mime parts and sent in the POST body of type 'multipart/form-data'. This method is recommended for large data fields.
 
+.It http_endpoint_tag=ARRAY TAG
+.It http_method_tag=ARRAY TAG
+.It http_server_tag=ARRAY TAG
+.It http_port_tag=ARRAY TAG
+.It http_endpoint_tag_force={yes|no}
+.It http_method_tag_force={yes|no}
+.It http_server_tag_force={yes|no}
+.It http_port_tag_force={yes|no}
+These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
+identified by the tag of the value.
+If the
+.B force
+options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+If the HTTP server responds with a redirect, the redirection will be followed and values from the messages will not be used except from the HTTP method.
+To disallow redirection, use the
+.B http_max_redirects
+parameter.
+
+Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string if GET method is used with array values.
+
+The possible values in for HTTP method are the same as for the option
+.B http_method.
+
+.It http_endpoint_from_topic={yes|no}
+.It http_endpoint_from_topic_force={yes|no}
+If
+.B http_endpoint_from_topic
+is set to yes, the MQTT topic of received messaged will be used as the HTTP endpoint. A slash / will be prepended to the topic.
+If force is set to yes, messages without a topic will be dropped.
+May not be used together with
+.B http_endpoint_tag.
+
 .It http_msgdb_socket=PATH
 If this parameter is set with a path to the listening socket of the
 .B msgdb
@@ -1369,6 +1374,10 @@ Any stored messages will not be deleted from the database until a successful req
 
 The messages will be indexed by using the mqtt topic of the messages, and messages without topics cannot be stored.
 If a message is to be stored in the message DB while a message with the same topic already exists, the old message will be overwritten.
+
+Messages are guaranteed to be sent to the server
+.B at least once
+, and it is possible under certain server failure conditions and/or high load that some  messages may be sent twice to the server.
 
 Note that if the same msgdb is used for multiple
 .B httpclient
@@ -1414,7 +1423,12 @@ and
 , if specified, will be sent to the server. Defaults to 'no'.
 
 .It http_drop_on_error={yes|no}
-If there is any error while sending a message, drop it instead of deferring it and trying again later. Errors will be logged regardless of this setting. Defaults to 'no'.
+If there is any error while connecting to the server, drop it.
+Errors will be logged regardless of this setting.
+PUT messages which are stored in the message DB will be retried at the next message DB poll should they be dropped as a result of a connection error (see
+.Xr http_msgdb_socket
+).
+Defaults to 'no' which means that connecting will be retried until a timeout is reached or indefinitely.
 
 .It http_message_timeout_ms=MILLISECONDS
 Timeout for deferred messages, defaults to 0 which means no timeout.
@@ -1432,9 +1446,6 @@ Defaults to 0 which means TTL check is performed.
 
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
-
-.It http_keepalive={yes|no}
-Keep connection to server open across multiple requests. When the server finally closes the connection, the client re-connects. Defaults to no.
 
 .It http_receive_part_data={yes|no}
 .It http_receive_json_data={yes|no}

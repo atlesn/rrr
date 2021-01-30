@@ -93,7 +93,6 @@ struct httpclient_data {
 	rrr_setting_uint message_ttl_us;
 
 	rrr_setting_uint redirects_max;
-	rrr_setting_uint keepalive_s_max;
 
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
@@ -1409,17 +1408,12 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
 
-	// Deprecated option http_keepalive
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_keepalive",
-			RRR_MSG_0("Warning: Parameter http_keepalive is deprecated and has no effect. Use http_max_keepalive_s to control connection lifetime.\n"));
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);
 	data->message_ttl_us *= 1000 * 1000;
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
 	data->message_timeout_us *= 1000;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_keepalive_s", keepalive_s_max, RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
@@ -1546,16 +1540,11 @@ static void httpclient_queue_process (
 			}
 			else {
 				if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-					// Try again
-					/*
-					* TODO : Implement, was removed by mistake during refactoring
-					-               if (data->do_drop_on_error) {
-					-                       RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",
-					-                                       INSTANCE_D_NAME(data->thread_data));
-					-                       ret = RRR_HTTP_OK;
-					-               }
-					*/
-
+					if (data->do_drop_on_error) {
+						RRR_MSG_0("Dropping message per configuration after connection error in httpclient instance %s\n",
+								INSTANCE_D_NAME(data->thread_data));
+						RRR_LL_ITERATE_SET_DESTROY();
+					}
 				}
 				else {
 					RRR_MSG_0("Hard error from request send while iterating queue in httpclient instance %s, deleting message\n",
