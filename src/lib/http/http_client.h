@@ -82,6 +82,7 @@ struct rrr_http_client_request_data {
 	char *user_agent;
 
 	enum rrr_http_method method;
+	enum rrr_http_body_format body_format;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	int do_plain_http2;
 
@@ -114,6 +115,7 @@ int rrr_http_client_request_data_reset (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
+		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		int do_plain_http2,
 		const char *user_agent

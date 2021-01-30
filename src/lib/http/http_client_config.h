@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,9 @@ struct rrr_http_client_config {
 	enum rrr_http_method method;
 	int do_plain_http2;
 
+	char *body_format_str;
+	enum rrr_http_body_format body_format;
+
 	rrr_setting_uint server_port;
 
 	struct rrr_map tags;
@@ -56,7 +59,8 @@ int rrr_http_client_config_parse (
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint
+		int enable_endpoint,
+		int enable_body_format
 );
 
 #endif /* RRR_HTTP_CLIENT_CONFIG_H */

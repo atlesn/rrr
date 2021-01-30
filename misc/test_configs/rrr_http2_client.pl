@@ -33,11 +33,12 @@ sub source {
 #	$message->push_tag("http_port", $port);
 #	$message->push_tag("http_port", "443");
 	$message->push_tag("http_method", "PUT");
+	$message->push_tag("http_format", "urlencoded");
 	$message->push_tag("http_port", "80");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
 
-	if ($count % 4 == 0) {
+	if (++$count % 4 == 0) {
 		$message->push_tag("http_body", "BODY BODY\0BODY\0BODY");
 		$message->push_tag("http_content_type", "content/type");
 	}

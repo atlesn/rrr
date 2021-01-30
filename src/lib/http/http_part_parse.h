@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_HTTP_PART_PARSE_H
 #define RRR_HTTP_PART_PARSE_H
+
+#include <stdlib.h>
 
 #include "http_common.h"
 
@@ -41,8 +43,7 @@ int rrr_http_part_parse_request_data_set (
 		size_t data_length,
 		enum rrr_http_application_type protocol_version,
 		const struct rrr_nullsafe_str *request_method,
-		const struct rrr_nullsafe_str *uri,
-		const struct rrr_nullsafe_str *content_type_or_null
+		const struct rrr_nullsafe_str *uri
 );
 int rrr_http_part_parse_response_data_set (
 		struct rrr_http_part *part,

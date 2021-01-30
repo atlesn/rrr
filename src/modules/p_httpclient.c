@@ -1494,7 +1494,8 @@ static int httpclient_parse_config (
 			RRR_HTTPCLIENT_DEFAULT_SERVER,
 			RRR_HTTPCLIENT_DEFAULT_PORT,
 			0, // <-- Disable fixed tags and fields
-			1 // <-- Enable endpoint
+			1, // <-- Enable endpoint
+			1  // <-- Enable body format
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -1665,6 +1666,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			&data->request_data,
 			http_transport_force,
 			data->http_client_config.method,
+			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			RRR_HTTP_UPGRADE_MODE_HTTP2,
 			data->http_client_config.do_plain_http2,
 			RRR_HTTP_CLIENT_USER_AGENT

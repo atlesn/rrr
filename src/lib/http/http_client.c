@@ -129,6 +129,7 @@ int rrr_http_client_request_data_reset (
 		struct rrr_http_client_request_data *data,
 		enum rrr_http_transport transport_force,
 		enum rrr_http_method method,
+		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		int do_plain_http2,
 		const char *user_agent
@@ -140,6 +141,7 @@ int rrr_http_client_request_data_reset (
 	}
 
 	data->method = method;
+	data->body_format = body_format;
 	data->upgrade_mode = upgrade_mode;
 	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
@@ -665,6 +667,7 @@ static int __rrr_http_client_request_send (
 	if ((ret = rrr_http_transaction_new (
 			&transaction,
 			data->method,
+			data->body_format,
 			remaining_redirects,
 			application_data,
 			application_data_destroy

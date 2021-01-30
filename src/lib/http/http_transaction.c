@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,
+		enum rrr_http_body_format format,
 		rrr_biglength remaining_redirects,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
@@ -71,6 +72,7 @@ int rrr_http_transaction_new (
 	}
 
 	result->method = method;
+	result->request_body_format = format;
 	result->usercount = 1;
 	result->remaining_redirects = remaining_redirects;
 
@@ -212,7 +214,7 @@ void rrr_http_transaction_body_format_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_body_format body_format
 ) {
-	transaction->body_format = body_format;
+	transaction->request_body_format = body_format;
 }
 
 int rrr_http_transaction_request_body_set_allocated (
@@ -321,6 +323,8 @@ int rrr_http_transaction_form_data_generate_if_needed (
 
 	*form_data_was_made = 0;
 
+	printf("Field count: %i\n", RRR_LL_COUNT(&transaction->request_part->fields));
+
 	if ( (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) ||
 	     (RRR_LL_COUNT(&transaction->request_part->fields)) == 0) {
 		goto out;
@@ -331,32 +335,26 @@ int rrr_http_transaction_form_data_generate_if_needed (
 		goto out;
 	}
 
-	if (transaction->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
+	printf("Request body format %s\n", RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format));
+
+	if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA) {
 		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}
-	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED) {
+	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_URLENCODED) {
 		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 0, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}
-	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
+	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING) {
 		// Application may choose to quote by itself (influxdb has special quoting)
 		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}
-	else if (transaction->method == RRR_HTTP_METHOD_PUT) {
-		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
-			goto out;
-		}
-	}
-
-	// TODO : If we use plain text or octet stream method, simply concatenate and encode all fields
-
 	else {
-		RRR_MSG_0("Unknown HTTP request method %s for request with fields set\n", RRR_HTTP_METHOD_TO_STR(transaction->method));
+		RRR_MSG_0("Unknown HTTP request body format %s for request with fields set\n", RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format));
 		ret = 1;
 		goto out;
 	}

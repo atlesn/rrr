@@ -85,6 +85,7 @@ struct rrr_http_part {
 
 	struct rrr_nullsafe_str *request_method_str_nullsafe;
 	enum rrr_http_method request_method;
+	enum rrr_http_body_format body_format;
 
 	struct rrr_nullsafe_str *request_uri_nullsafe;
 

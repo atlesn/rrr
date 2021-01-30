@@ -1123,34 +1123,51 @@ enum rrr_http_method rrr_http_util_method_str_to_enum (
 	else if ( strcasecmp(method_str, "get") == 0) {
 		method = RRR_HTTP_METHOD_GET;
 	}
+	else if ( strcasecmp(method_str, "head") == 0) {
+		method = RRR_HTTP_METHOD_HEAD;
+	}
+	else if ( strcasecmp(method_str, "options") == 0) {
+		method = RRR_HTTP_METHOD_OPTIONS;
+	}
+	else if ( strcasecmp(method_str, "delete") == 0) {
+		method = RRR_HTTP_METHOD_DELETE;
+	}
 	else if ( strcasecmp(method_str, "put") == 0) {
 		method = RRR_HTTP_METHOD_PUT;
 	}
-	else if ( strcasecmp(method_str, "post_multipart") == 0 ||
-	          strcasecmp(method_str, "post_multipart_form_data") == 0 ||
-	          strcasecmp(method_str, "multipart/form-data") == 0
-	) {
-		method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
-	}
-	else if ( strcasecmp(method_str, "post_urlencoded") == 0 ||
-	          strcasecmp(method_str, "post") == 0 ||
-	          strcasecmp(method_str, "application/x-www-urlencoded") == 0
-	) {
-		method = RRR_HTTP_METHOD_POST_URLENCODED;
-		// RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING only used by influxdb, not configurable
-	}
-	else if ( strcasecmp(method_str, "post_binary") == 0 ||
-	          strcasecmp(method_str, "post_application_octet_stream") == 0 ||
-	          strcasecmp(method_str, "application/octet-stream") == 0
-	) {
-		method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
-	}
-	else if ( strcasecmp(method_str, "post_text_plain") == 0) {
-		method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
+	else if ( strcasecmp(method_str, "post") == 0) {
+		method = RRR_HTTP_METHOD_POST;
 	}
 	else {
 		RRR_MSG_0("Warning: Unknown value '%s' for HTTP method in rrr_http_util_method_str_to_enum, defaulting to GET\n", method_str);
 	}
 
 	return method;
+}
+
+enum rrr_http_body_format rrr_http_util_format_str_to_enum (
+		const char *format_str
+) {
+	enum rrr_http_body_format format = RRR_HTTP_BODY_FORMAT_URLENCODED;
+
+	if (format_str == NULL || *(format_str) == '\0') {
+		// Default to URLENCODED
+	}
+	else if (strcasecmp(format_str, "multipart") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
+	}
+	else if (strcasecmp(format_str, "urlencoded") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_URLENCODED;
+	}
+	else if (strcasecmp(format_str, "json") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_JSON;
+	}
+	else if (strcasecmp(format_str, "raw") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_RAW;
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown value '%s' for HTTP format in rrr_http_util_format_str_to_enum, defaulting to URLENCODED\n", format_str);
+	}
+
+	return format;
 }

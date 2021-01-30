@@ -319,7 +319,14 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 
 		if (transaction == NULL) {
-			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, 0, NULL, NULL)) != 0) {
+			if ((ret = rrr_http_transaction_new (
+					&transaction_to_destroy,
+					0,
+					0,
+					0,
+					NULL,
+					NULL
+			)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
 				goto out;
 			}
@@ -338,7 +345,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
-		const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(transaction->request_part, "content-type");
 
 		if (method == NULL) {
 			RRR_DBG_3("http2 field :method missing in request\n");
@@ -366,8 +372,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 				data_size,
 				RRR_HTTP_APPLICATION_HTTP2,
 				method->value,
-				path->value,
-				(content_type != NULL ? content_type->value : NULL)
+				path->value
 		)) != 0) {
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;

@@ -69,11 +69,6 @@ enum rrr_http_transport {
 enum rrr_http_method {
 	RRR_HTTP_METHOD_UNKNOWN,
 	RRR_HTTP_METHOD_GET,
-	RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA,
-	RRR_HTTP_METHOD_POST_URLENCODED,
-	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
-	RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM,
-	RRR_HTTP_METHOD_POST_TEXT_PLAIN,
 	RRR_HTTP_METHOD_OPTIONS,
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
@@ -122,23 +117,14 @@ extern const char *rrr_http_method_str_head;
 extern const char *rrr_http_method_str_put;
 extern const char *rrr_http_method_str_delete;
 extern const char *rrr_http_method_str_post;
-extern const char *rrr_http_method_str_post_multipart_form_data;
-extern const char *rrr_http_method_str_post_urlencoded;
-extern const char *rrr_http_method_str_post_urlencoded_no_quoting;
-extern const char *rrr_http_method_str_post_application_octet_stream;
-extern const char *rrr_http_method_str_post_application_text_plain;
 
 #define RRR_HTTP_METHOD_TO_STR(method)                                                                                         \
     (method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :                                                                 \
     (method == RRR_HTTP_METHOD_HEAD ? rrr_http_method_str_head :                                                               \
     (method == RRR_HTTP_METHOD_PUT ? rrr_http_method_str_put :                                                                 \
     (method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :                                                           \
-    (method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA ? rrr_http_method_str_post_multipart_form_data :                       \
-    (method == RRR_HTTP_METHOD_POST_URLENCODED ? rrr_http_method_str_post_urlencoded :                                         \
-    (method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING ? rrr_http_method_str_post_urlencoded_no_quoting :                   \
-    (method == RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM ? rrr_http_method_str_post_application_octet_stream :             \
-    (method == RRR_HTTP_METHOD_POST_TEXT_PLAIN ? rrr_http_method_str_post_application_text_plain : ("unknown")                 \
-    )))))))))
+    (method == RRR_HTTP_METHOD_POST ? rrr_http_method_str_post :                                                               \
+    ("unknown") )))))
 
 #define RRR_HTTP_METHOD_TO_STR_CONFORMING(method)                                                                              \
     (method == RRR_HTTP_METHOD_GET ? rrr_http_method_str_get :                                                                 \
@@ -147,6 +133,21 @@ extern const char *rrr_http_method_str_post_application_text_plain;
     (method == RRR_HTTP_METHOD_DELETE ? rrr_http_method_str_delete :                                                           \
     rrr_http_method_str_post                                                                                                   \
     ))))
+
+extern const char *rrr_http_body_format_str_multipart_form_data;
+extern const char *rrr_http_body_format_str_urlencoded;
+extern const char *rrr_http_body_format_str_urlencoded_no_quoting;
+extern const char *rrr_http_body_format_str_json;
+extern const char *rrr_http_body_format_str_raw;
+
+#define RRR_HTTP_BODY_FORMAT_TO_STR(format)                                                                                    \
+    (format == RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA ? rrr_http_body_format_str_multipart_form_data :                       \
+    (format == RRR_HTTP_BODY_FORMAT_URLENCODED ? rrr_http_body_format_str_urlencoded :                                         \
+    (format == RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING ? rrr_http_body_format_str_urlencoded_no_quoting :                   \
+    (format == RRR_HTTP_BODY_FORMAT_JSON ? rrr_http_body_format_str_json :                                                     \
+    (format == RRR_HTTP_BODY_FORMAT_RAW ? rrr_http_body_format_str_raw :                                                       \
+    "(unknown)"                                                                                                                \
+    )))))
 
 extern const char *rrr_http_upgrade_mode_str_none;
 extern const char *rrr_http_upgrade_mode_str_websocket;

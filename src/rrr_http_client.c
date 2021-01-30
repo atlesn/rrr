@@ -566,6 +566,7 @@ int main (int argc, const char **argv, const char **env) {
 			&data.request_data,
 			RRR_HTTP_TRANSPORT_ANY,
 			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
 			0, // No plain HTTP2
 			RRR_HTTP_CLIENT_USER_AGENT

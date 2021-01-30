@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@ void rrr_http_client_config_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->method_str);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
+	RRR_FREE_IF_NOT_NULL(data->body_format_str);
 	RRR_MAP_CLEAR(&data->tags);
 	RRR_MAP_CLEAR(&data->fixed_tags);
 	RRR_MAP_CLEAR(&data->fields);
@@ -51,7 +52,8 @@ int rrr_http_client_config_parse (
 		const char *default_server,
 		uint16_t default_port,
 		int enable_fixed,
-		int enable_endpoint
+		int enable_endpoint,
+		int enable_body_format
 ) {
 	int ret = 0;
 
@@ -102,6 +104,12 @@ int rrr_http_client_config_parse (
 			ret = 1;
 			goto out;
 		}
+	}
+
+	if (enable_body_format) {
+		RRR_INSTANCE_CONFIG_STRING_SET("_body_format");
+		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, body_format_str);
+		data->body_format = rrr_http_util_format_str_to_enum(data->body_format_str); // Any value allowed, also NULL
 	}
 
 	if (enable_fixed) {
