@@ -96,8 +96,6 @@ struct rrr_http_part {
 	int is_chunked;
 	enum rrr_http_application_type parsed_protocol_version;
 
-//	const void *data_ptr;
-
 	size_t headroom_length;
 	size_t header_length;
 	size_t data_length;

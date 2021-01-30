@@ -49,6 +49,11 @@ int rrr_nullsafe_str_new_or_replace_raw (
 		const void *str,
 		rrr_nullsafe_len len
 );
+int rrr_nullsafe_str_new_or_replace_raw_allocated (
+		struct rrr_nullsafe_str **result,
+		void **str,
+		rrr_nullsafe_len len
+);
 int rrr_nullsafe_str_new_or_replace (
 		struct rrr_nullsafe_str **result,
 		const struct rrr_nullsafe_str *source

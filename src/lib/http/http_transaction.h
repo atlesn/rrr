@@ -99,9 +99,9 @@ void rrr_http_transaction_body_format_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_body_format body_format
 );
-int rrr_http_transaction_request_body_set (
+int rrr_http_transaction_request_body_set_allocated (
 		struct rrr_http_transaction *transaction,
-		void *data,
+		void **data,
 		rrr_length data_size
 );
 int rrr_http_transaction_endpoint_path_get (

@@ -1334,15 +1334,24 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_method_tag=ARRAY TAG
 .It http_server_tag=ARRAY TAG
 .It http_port_tag=ARRAY TAG
+.It http_body_tag=ARRAY TAG
 .It http_endpoint_tag_force={yes|no}
 .It http_method_tag_force={yes|no}
 .It http_server_tag_force={yes|no}
 .It http_port_tag_force={yes|no}
+.It http_body_tag_force={yes|no}
 These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
 identified by the tag of the value.
 If the
 .B force
 options are set to yes, the specified tags are required to be present in all messages and non-conforming messages will be dropped.
+
+Values from the message, although they will be attempted converted, should be of the
+.B str
+type, event binary data. The
+.Xt mangler (PA)
+module can be used to convery values if needed.
+The endpoint, method, server or port must not contain any NULL characters.
 
 If the HTTP server responds with a redirect, the redirection will be followed and values from the messages will not be used except from the HTTP method.
 To disallow redirection, use the
@@ -1353,6 +1362,12 @@ Any endpoint from the message may contain a query string, in which any other par
 
 The possible values in for HTTP method are the same as for the option
 .B http_method.
+
+If
+.B http_body_tag
+is used and an HTTP body is found in the message, any array tags specified will be ignored.
+If the HTTP method being used does not have a body, like GET, the body data parameter is ignored silently.
+The content-type of the resulting request will be 'application/octet-stream'.
 
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
@@ -1423,7 +1438,7 @@ and
 , if specified, will be sent to the server. Defaults to 'no'.
 
 .It http_drop_on_error={yes|no}
-If there is any error while connecting to the server, drop it.
+If there is any error with sending a message while connecting to the server, drop it.
 Errors will be logged regardless of this setting.
 PUT messages which are stored in the message DB will be retried at the next message DB poll should they be dropped as a result of a connection error (see
 .Xr http_msgdb_socket
@@ -1436,13 +1451,14 @@ Messages being defered to fhe message DB (see
 .Xr http_msgdb_socket
 ) will not get affected by this parameter, as the timer is reset every time they are read back from the DB.
 Note that the timeout, if set too low, might cause messages to get dropped before any request has been produced.
+If the timeout is set too high or is not set, messages may accumulate in memory.
 
 .It http_ttl_seconds=SECONDS
 When the time timestamp of a message in the send queue becomes older than the specified amount of seconds, it is dropped.
 The message will also get deleted from the message DB if used (see
 .Xr http_msgdb_socket
 ).
-Defaults to 0 which means TTL check is performed.
+Defaults to 0 which means that TTL check is not performed.
 
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1371,10 +1371,18 @@ static int __rrr_http_application_http1_request_send (
 
 	rrr_string_builder_clear(header_builder);
 
-	// Note : Might add more headers to request part
-	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
-		goto out;
+	if (rrr_nullsafe_str_len(transaction->request_body_raw)) {
+		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->request_body_raw);
+		if ((ret = rrr_http_part_header_field_push(request_part, "content-type", "application/octet-stream")) != 0) {
+				goto out;
+		}
+	}
+	else {
+		// Note : Might add more headers to request part
+		int form_data_was_made_dummy = 0;
+		if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made_dummy, transaction)) != 0) {
+			goto out;
+		}
 	}
 
 	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {

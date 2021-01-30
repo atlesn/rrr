@@ -89,6 +89,9 @@ struct httpclient_data {
 	char *port_tag;
 	int do_port_tag_force;
 
+	char *body_tag;
+	int do_body_tag_force;
+
 	rrr_setting_uint message_timeout_us;
 	rrr_setting_uint message_ttl_us;
 
@@ -526,30 +529,6 @@ static void httpclient_msgdb_poll (struct httpclient_data *data) {
 	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_poll_callback, NULL);
 }
 
-/*
-static int httpclient_msgdb_poll_count_callback (struct httpclient_data *data, void *callback_arg) {
-	int *message_count = callback_arg;
-
-	int ret = 0;
-
-	struct rrr_array paths = {0};
-
-	if ((ret = rrr_msgdb_client_cmd_idx(&paths, &data->msgdb_conn, "/")) != 0) {
-		goto out;
-	}
-
-	*message_count = RRR_LL_COUNT(&paths);
-
-	out:
-	rrr_array_clear(&paths);
-	return ret;
-}
-
-static void httpclient_msgdb_poll_count (int *message_count, struct httpclient_data *data) {
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_poll_count_callback, message_count);
-}
-*/
-
 static int httpclient_msgdb_delete_callback (struct httpclient_data *data, void *callback_arg) {
 	const struct rrr_msg_msg *msg = callback_arg;
 
@@ -839,6 +818,7 @@ static int httpclient_get_metadata_from_message (
 
 static int httpclient_session_query_prepare_callback_process_override (
 		char **result,
+		rrr_length *result_length,
 		struct httpclient_data *data,
 		const struct rrr_array *array,
 		const char *tag,
@@ -848,12 +828,25 @@ static int httpclient_session_query_prepare_callback_process_override (
 	int ret = RRR_HTTP_OK;
 
 	*result = NULL;
+	*result_length = 0;
 
 	char *data_to_free = NULL;
+	rrr_length data_length = 0;
 
 	const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(array, tag);
 	if (value == NULL) {
 		// Use default if force is not enabled
+	}
+	else if (RRR_TYPE_IS_STR_EXCACT(value->definition->type)) {
+		if (value->total_stored_length > 0) {
+			if ((data_to_free = malloc(value->total_stored_length + 1)) == NULL) {
+				RRR_MSG_0("Warning: Failed to allocate memory for data in httpclient_session_query_prepare_callback_process_override\n");
+				goto out_check_force;
+			}
+			memcpy(data_to_free, value->data, value->total_stored_length);
+			data_to_free[value->total_stored_length] = '\0';
+			data_length = value->total_stored_length;
+		}
 	}
 	else {
 		if (value->definition->to_str == NULL) {
@@ -863,16 +856,21 @@ static int httpclient_session_query_prepare_callback_process_override (
 					tag,
 					value->definition->identifier
 			);
+			goto out_check_force;
 		}
-		else if (value->definition->to_str(&data_to_free, value) != 0) {
+		if (value->definition->to_str(&data_to_free, value) != 0) {
 			RRR_MSG_0("Warning: Failed to convert array value tagged '%s' to string for use as %s in httpserver instance %s\n",
 					tag,
 					debug_name,
 					INSTANCE_D_NAME(data->thread_data)
 			);
+			goto out_check_force;
 		}
+
+		data_length = strlen(data_to_free);
 	}
 
+	out_check_force:
 	if (data_to_free == NULL && do_force) {
 		RRR_MSG_0("Warning: Received message in httpclient instance %s with missing/unusable %s tag '%s' (which is enforced in configuration), dropping it\n",
 				INSTANCE_D_NAME(data->thread_data),
@@ -883,6 +881,7 @@ static int httpclient_session_query_prepare_callback_process_override (
 		goto out;
 	}
 
+	*result_length = data_length;
 	*result = data_to_free;
 	data_to_free = NULL;
 
@@ -899,16 +898,24 @@ struct httpclient_prepare_callback_data {
 	int no_msgdb_send_notify;
 };
 
-#define HTTPCLIENT_PREPARE_OVERRIDE(name)                                                \
+#define HTTPCLIENT_OVERRIDE_PREPARE(name)                                                \
   do {if (  data->RRR_PASTE(name,_tag) != NULL &&                                        \
         (ret = httpclient_session_query_prepare_callback_process_override (              \
             &RRR_PASTE(name,_to_free),                                                   \
+            &RRR_PASTE(name,_length),                                                    \
             data,                                                                        \
             array_from_msg,                                                              \
             data->RRR_PASTE(name,_tag),                                                  \
             data->RRR_PASTE_3(do_,name,_tag_force),                                      \
             RRR_QUOTE(name)                                                              \
         )) != 0) { goto out; }} while (0)
+
+// Use for values which should not contain NULL characters
+#define HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(name)                                                                                \
+    do {if (RRR_PASTE(name,_to_free) != NULL && strlen(RRR_PASTE(name,_to_free)) != RRR_PASTE(name,_length)) {                 \
+        RRR_MSG_0("HTTP override value '" RRR_QUOTE(name) "' from message contained NULL characters, this is an error\n");     \
+        ret = RRR_HTTP_SOFT_ERROR; goto out;                                                                                   \
+    }} while(0)
 
 static int httpclient_overrides_server_and_port_get_from_message (
 		char **server_override,
@@ -921,11 +928,17 @@ static int httpclient_overrides_server_and_port_get_from_message (
 	*server_override = NULL;
 	// DO NOT set *port_ovveride to zero here, leave it as is
 
+	rrr_length server_length = 0;
+	rrr_length port_length = 0;
+
 	char *server_to_free = NULL;
 	char *port_to_free = NULL;
 
-	HTTPCLIENT_PREPARE_OVERRIDE(server);
-	HTTPCLIENT_PREPARE_OVERRIDE(port);
+	HTTPCLIENT_OVERRIDE_PREPARE(server);
+	HTTPCLIENT_OVERRIDE_PREPARE(port);
+
+	HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(server);
+	HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(port);
 
 	if (port_to_free != NULL) {
 		char *end = NULL;
@@ -1011,13 +1024,15 @@ static int httpclient_session_method_prepare_callback (
 	struct httpclient_prepare_callback_data *callback_data = arg;
 	struct httpclient_data *data = callback_data->data;
 	struct httpclient_transaction_data *transaction_data = transaction->application_data;
+	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
 
 	int ret = 0;
 
+	rrr_length method_length = 0;
 	char *method_to_free = NULL;
 
-	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
-	HTTPCLIENT_PREPARE_OVERRIDE(method);
+	HTTPCLIENT_OVERRIDE_PREPARE(method);
+	HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(method);
 
 	if (method_to_free != NULL && *method_to_free != '\0') {
 		*chosen_method = rrr_http_util_method_str_to_enum(method_to_free);
@@ -1041,13 +1056,18 @@ static int httpclient_session_query_prepare_callback (
 	struct httpclient_prepare_callback_data *callback_data = arg;
 	struct httpclient_data *data = callback_data->data;
 	const struct rrr_msg_msg *message = callback_data->message;
+	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
 
 	*query_string = NULL;
 	*endpoint_override = NULL;
 
 	int ret = RRR_HTTP_OK;
 
+	rrr_length endpoint_length = 0;
+	rrr_length body_length = 0;
+
 	char *endpoint_to_free = NULL;
+	char *body_to_free = NULL;
 	struct rrr_array array_to_send_tmp = {0};
 
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
@@ -1063,20 +1083,34 @@ static int httpclient_session_query_prepare_callback (
 			}
 		}
 		else {
-			const struct rrr_array *array_from_msg = callback_data->array_from_msg;
-			HTTPCLIENT_PREPARE_OVERRIDE(endpoint);
+			HTTPCLIENT_OVERRIDE_PREPARE(endpoint);
+			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(endpoint);
 		}
 	}
 
 	if (data->do_no_data == 0) {
-		rrr_array_append_from(&array_to_send_tmp, callback_data->array_from_msg);
+		HTTPCLIENT_OVERRIDE_PREPARE(body);
+		// No verify strlen here, data may be binary which is fine
 
-		if (data->do_rrr_msg_to_array) {
-			if ((ret = httpclient_get_metadata_from_message(&array_to_send_tmp, message))) {
+		if ( (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) &&
+		     (body_to_free != NULL && body_length > 0)
+		) {
+			if ((ret = rrr_http_transaction_request_body_set_allocated(transaction, (void **) &body_to_free, body_length)) != 0) {
 				goto out;
 			}
 		}
+		else {
+			rrr_array_append_from(&array_to_send_tmp, callback_data->array_from_msg);
+
+			if (data->do_rrr_msg_to_array) {
+				if ((ret = httpclient_get_metadata_from_message(&array_to_send_tmp, message)) != 0) {
+					goto out;
+				}
+			}
+		}
 	}
+	
+	printf("Body length: %i\n", body_length);
 
 	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(&array_to_send_tmp) > 0)) {
 		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_query_prepare_callback\n");
@@ -1163,6 +1197,7 @@ static int httpclient_session_query_prepare_callback (
 	out:
 		rrr_array_clear(&array_to_send_tmp);
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
+		RRR_FREE_IF_NOT_NULL(body_to_free);
 		return ret;
 }
 
@@ -1427,6 +1462,7 @@ static int httpclient_parse_config (
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
 	HTTPCLIENT_OVERRIDE_TAG_GET(port);
+	HTTPCLIENT_OVERRIDE_TAG_GET(body);
 
 	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
 		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
@@ -1480,10 +1516,14 @@ static int httpclient_parse_config (
 		}
 	}
 
+	{
+	}
+
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(server);
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(port);
+	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(body);
 
 	if (rrr_net_transport_config_parse (
 			&data->net_transport_config,

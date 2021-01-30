@@ -215,12 +215,16 @@ void rrr_http_transaction_body_format_set (
 	transaction->body_format = body_format;
 }
 
-int rrr_http_transaction_request_body_set (
+int rrr_http_transaction_request_body_set_allocated (
 		struct rrr_http_transaction *transaction,
-		void *data,
+		void **data,
 		rrr_length data_size
 ) {
-	return rrr_nullsafe_str_new_or_replace_raw(&transaction->request_body_raw, data, data_size);
+	return rrr_nullsafe_str_new_or_replace_raw_allocated (
+			&transaction->request_body_raw,
+			data,
+			data_size
+	);
 }
 
 int rrr_http_transaction_endpoint_path_get (
@@ -317,7 +321,8 @@ int rrr_http_transaction_form_data_generate_if_needed (
 
 	*form_data_was_made = 0;
 
-	if (transaction->method == RRR_HTTP_METHOD_GET || RRR_LL_COUNT(&transaction->request_part->fields) == 0) {
+	if ( (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) ||
+	     (RRR_LL_COUNT(&transaction->request_part->fields)) == 0) {
 		goto out;
 	}
 
@@ -337,7 +342,7 @@ int rrr_http_transaction_form_data_generate_if_needed (
 		}
 	}
 	else if (transaction->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
-		// Application may choose to quote itself (influxdb has special quoting)
+		// Application may choose to quote by itself (influxdb has special quoting)
 		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}

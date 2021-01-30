@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -77,7 +77,16 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_OPTIONS,
 	RRR_HTTP_METHOD_HEAD,
 	RRR_HTTP_METHOD_DELETE,
-	RRR_HTTP_METHOD_PUT
+	RRR_HTTP_METHOD_PUT,
+	RRR_HTTP_METHOD_POST /* Remove the other POSTS and replace functionallity with format */
+};
+
+enum rrr_http_body_format {
+	RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA,
+	RRR_HTTP_BODY_FORMAT_URLENCODED,
+	RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING,
+	RRR_HTTP_BODY_FORMAT_JSON,
+	RRR_HTTP_BODY_FORMAT_RAW
 };
 
 enum rrr_http_upgrade_mode {

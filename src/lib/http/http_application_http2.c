@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -181,11 +181,18 @@ static int __rrr_http_application_http2_request_send (
 		}
 	}
 
-	int32_t stream_id_preliminary = 0;
-
-	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
-		goto out;
+	if (rrr_nullsafe_str_len(transaction->request_body_raw)) {
+		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->request_body_raw);
+		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "content-type", "application/octet-stream")) != 0) {
+			goto out;
+		}
+	}
+	else {
+		// Note : Might add more headers to request part
+		int form_data_was_made_dummy = 0;
+		if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made_dummy, transaction)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_nullsafe, transaction)) != 0) {
@@ -195,6 +202,7 @@ static int __rrr_http_application_http2_request_send (
 	RRR_DBG_7("http2 request submit send data length %" PRIrrrl "\n",
 			rrr_nullsafe_str_len(transaction->send_data_tmp));
 
+	int32_t stream_id_preliminary = 0;
 	if  ((ret = rrr_http2_request_start (
 			&stream_id_preliminary,
 			http2->http2_session
@@ -753,7 +761,7 @@ int rrr_http_application_http2_response_submit (
 		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-length", content_length_str)) != 0) {
 			goto out;
 		}
-		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-type", "text/plain")) != 0) {
+		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-type", "application/octet-stream")) != 0) {
 			goto out;
 		}
 	}

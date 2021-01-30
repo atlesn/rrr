@@ -24,18 +24,23 @@ sub source {
 
 	$message->{'topic'} = "http/blabla/" . $t . "-" . $r;
 
-	my $port = (++$count % 2 == 0 ? "443" : "80");
-	my $method = ($count % 2 == 0 ? "GET" : "PUT");
+#	my $port = (++$count % 2 == 0 ? "443" : "80");
+#	my $method = (++$count % 2 == 0 ? "GET" : "PUT");
 
 	$message->push_tag("http_server", "localhost");
 	$message->push_tag("http_endpoint", "/redirect.php?c=$r");
-	$message->push_tag("http_method", $method);
-	$message->push_tag("http_port", $port);
+#	$message->push_tag("http_method", $method);
+#	$message->push_tag("http_port", $port);
 #	$message->push_tag("http_port", "443");
-#	$message->push_tag("http_method", "POST");
-#	$message->push_tag("http_port", "80");
+	$message->push_tag("http_method", "PUT");
+	$message->push_tag("http_port", "80");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
+
+	if ($count % 4 == 0) {
+		$message->push_tag("http_body", "BODY BODY\0BODY\0BODY");
+		$message->push_tag("http_content_type", "content/type");
+	}
 
 	$message->send();
 

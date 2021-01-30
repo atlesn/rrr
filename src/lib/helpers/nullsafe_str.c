@@ -111,6 +111,22 @@ int rrr_nullsafe_str_new_or_replace_raw (
 		return ret;
 }
 
+int rrr_nullsafe_str_new_or_replace_raw_allocated (
+		struct rrr_nullsafe_str **result,
+		void **str,
+		rrr_nullsafe_len len
+) {
+	if (rrr_nullsafe_str_new_or_replace_raw(result, NULL, 0) != 0) {
+		return 1;
+	}
+
+	(*result)->str = *str;
+	(*result)->len = len;
+	*str = NULL;
+
+	return 0;
+}
+
 int rrr_nullsafe_str_new_or_replace (
 		struct rrr_nullsafe_str **result,
 		const struct rrr_nullsafe_str *source
