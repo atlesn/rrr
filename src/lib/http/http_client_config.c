@@ -53,7 +53,7 @@ int rrr_http_client_config_parse (
 		uint16_t default_port,
 		int enable_fixed,
 		int enable_endpoint,
-		int enable_body_format
+		int enable_format
 ) {
 	int ret = 0;
 
@@ -106,8 +106,8 @@ int rrr_http_client_config_parse (
 		}
 	}
 
-	if (enable_body_format) {
-		RRR_INSTANCE_CONFIG_STRING_SET("_body_format");
+	if (enable_format) {
+		RRR_INSTANCE_CONFIG_STRING_SET("_format");
 		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, body_format_str);
 		data->body_format = rrr_http_util_format_str_to_enum(data->body_format_str); // Any value allowed, also NULL
 	}

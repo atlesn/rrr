@@ -80,6 +80,9 @@ struct httpclient_data {
 	char *method_tag;
 	int do_method_tag_force;
 
+	char *format_tag;
+	int do_format_tag_force;
+
 	char *endpoint_tag;
 	int do_endpoint_tag_force;
 
@@ -127,6 +130,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_msg_holder_collection_clear(&data->from_senders_queue);
 	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
 	RRR_FREE_IF_NOT_NULL(data->method_tag);
+	RRR_FREE_IF_NOT_NULL(data->format_tag);
 	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
 	RRR_FREE_IF_NOT_NULL(data->server_tag);
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
@@ -1065,9 +1069,12 @@ static int httpclient_session_query_prepare_callback (
 
 	rrr_length endpoint_length = 0;
 	rrr_length body_length = 0;
+	rrr_length format_length = 0;
 
 	char *endpoint_to_free = NULL;
 	char *body_to_free = NULL;
+	char *format_to_free = NULL;
+
 	struct rrr_array array_to_send_tmp = {0};
 
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
@@ -1107,10 +1114,13 @@ static int httpclient_session_query_prepare_callback (
 					goto out;
 				}
 			}
+
+			HTTPCLIENT_OVERRIDE_PREPARE(format);
+			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(format);
+
+			rrr_http_transaction_body_format_set(transaction, rrr_http_util_format_str_to_enum(format_to_free));
 		}
 	}
-	
-	printf("Body length: %i\n", body_length);
 
 	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(&array_to_send_tmp) > 0)) {
 		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_query_prepare_callback\n");
@@ -1198,6 +1208,7 @@ static int httpclient_session_query_prepare_callback (
 		rrr_array_clear(&array_to_send_tmp);
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(body_to_free);
+		RRR_FREE_IF_NOT_NULL(format_to_free);
 		return ret;
 }
 
@@ -1459,6 +1470,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
+	HTTPCLIENT_OVERRIDE_TAG_GET(format);
 	HTTPCLIENT_OVERRIDE_TAG_GET(endpoint);
 	HTTPCLIENT_OVERRIDE_TAG_GET(server);
 	HTTPCLIENT_OVERRIDE_TAG_GET(port);
@@ -1515,9 +1527,6 @@ static int httpclient_parse_config (
 		if (ret != 0) {
 			goto out;
 		}
-	}
-
-	{
 	}
 
 	HTTPCLIENT_OVERRIDE_TAG_VALIDATE(method);

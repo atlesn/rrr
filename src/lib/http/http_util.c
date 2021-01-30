@@ -1153,11 +1153,11 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 	if (format_str == NULL || *(format_str) == '\0') {
 		// Default to URLENCODED
 	}
-	else if (strcasecmp(format_str, "multipart") == 0) {
-		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
-	}
 	else if (strcasecmp(format_str, "urlencoded") == 0) {
 		format = RRR_HTTP_BODY_FORMAT_URLENCODED;
+	}
+	else if (strcasecmp(format_str, "multipart") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
 	}
 	else if (strcasecmp(format_str, "json") == 0) {
 		format = RRR_HTTP_BODY_FORMAT_JSON;

@@ -1,4 +1,4 @@
-.Dd 2021-01-18
+.Dd 2021-01-30
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1314,10 +1314,19 @@ If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
 
-.It http_method={get|put|post_urlencoded|post_multipart}
+.It http_method={get|put|post|head|delete|options}
 Which method to use when sending data to the server. Defaults to
 .B get.
-.br
+
+.It http_format={urlencoded|multipart|json|raw}
+Control which body format to use for PUT and POST requests. If the
+.B raw
+mode is set, messages which does not contain a body (specified in the tag named in
+.B http_body_tag
+) will trigger an error as they are processed.
+Messages with a body are otherwise not affected by this parameter.
+Defaults to 'urlencoded'.
+
 \(bu If
 .B get
 is used, any fields will be appended to the endpoint after a questionmark ?. GET requests have no body.
@@ -1335,11 +1344,14 @@ is used, any fields will be made into separate mime parts and sent in the POST b
 .It http_server_tag=ARRAY TAG
 .It http_port_tag=ARRAY TAG
 .It http_body_tag=ARRAY TAG
+.It http_format_tag=ARRAY TAG
+
 .It http_endpoint_tag_force={yes|no}
 .It http_method_tag_force={yes|no}
 .It http_server_tag_force={yes|no}
 .It http_port_tag_force={yes|no}
 .It http_body_tag_force={yes|no}
+.It http_format_tag_force={yes|no}
 These options allow the default endpoint, server and/or port to be overridden by array values in messages from senders of httpclient,
 identified by the tag of the value.
 If the
@@ -1360,14 +1372,24 @@ parameter.
 
 Any endpoint from the message may contain a query string, in which any other parameters will be appended to this query string if GET method is used with array values.
 
-The possible values in for HTTP method are the same as for the option
-.B http_method.
-
 If
 .B http_body_tag
 is used and an HTTP body is found in the message, any array tags specified will be ignored.
 If the HTTP method being used does not have a body, like GET, the body data parameter is ignored silently.
 The content-type of the resulting request will be 'application/octet-stream'.
+
+The parameters
+.B http_method_tag
+and
+.B http_format_tag
+are used to override the request metod and body format of HTTP requests.
+They correspond to the configuration parameters
+.B http_method
+and
+.B http_format
+resectively, and the same values may be used in the messages.
+
+Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
 
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}

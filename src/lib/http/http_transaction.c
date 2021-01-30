@@ -323,8 +323,6 @@ int rrr_http_transaction_form_data_generate_if_needed (
 
 	*form_data_was_made = 0;
 
-	printf("Field count: %i\n", RRR_LL_COUNT(&transaction->request_part->fields));
-
 	if ( (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) ||
 	     (RRR_LL_COUNT(&transaction->request_part->fields)) == 0) {
 		goto out;
@@ -334,8 +332,6 @@ int rrr_http_transaction_form_data_generate_if_needed (
 	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&transaction->send_data_tmp, NULL, 0)) != 0) {
 		goto out;
 	}
-
-	printf("Request body format %s\n", RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format));
 
 	if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA) {
 		if ((ret = rrr_http_part_multipart_form_data_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {

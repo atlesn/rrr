@@ -31,10 +31,10 @@ sub source {
 	$message->push_tag("http_endpoint", "/redirect.php?c=$r");
 #	$message->push_tag("http_method", $method);
 #	$message->push_tag("http_port", $port);
-#	$message->push_tag("http_port", "443");
+	$message->push_tag("http_port", "443");
 	$message->push_tag("http_method", "PUT");
-	$message->push_tag("http_format", "urlencoded");
-	$message->push_tag("http_port", "80");
+	$message->push_tag("http_format", "raw");
+#	$message->push_tag("http_port", "80");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
 
