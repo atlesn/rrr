@@ -292,7 +292,7 @@ int rrr_nullsafe_str_set (
 		rrr_nullsafe_len len
 ) {
 	if (nullsafe == NULL) {
-		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set_allocated");
+		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set\n");
 	}
 
 	RRR_FREE_IF_NOT_NULL(nullsafe->str);
