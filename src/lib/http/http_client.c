@@ -225,6 +225,7 @@ struct rrr_http_client_tick_callback_data {
 	int idle_timeout_ms;
 	ssize_t read_max_size;
 	uint64_t bytes_total;
+	uint64_t active_transaction_count;
 
 	struct rrr_http_redirect_collection *redirects;
 
@@ -919,9 +920,11 @@ static int __rrr_http_client_tick_handle_callback (
 
 	ssize_t received_bytes_dummy = 0;
 	uint64_t complete_transactions_count_dummy = 0;
+	uint64_t active_transaction_count_tmp = 0;
 
 	int ret = rrr_http_session_transport_ctx_tick (
 			&received_bytes_dummy,
+			&active_transaction_count_tmp,
 			&complete_transactions_count_dummy,
 			handle,
 			callback_data->read_max_size,
@@ -941,11 +944,14 @@ static int __rrr_http_client_tick_handle_callback (
 
 	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
 
+	callback_data->active_transaction_count += active_transaction_count_tmp;
+
 	return ret;
 }
 
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
+		uint64_t *active_transaction_count,
 		struct rrr_net_transport *transport_keepalive_plain,
 		struct rrr_net_transport *transport_keepalive_tls,
 		ssize_t read_max_size,
@@ -971,6 +977,7 @@ int rrr_http_client_tick (
 			idle_timeout_ms,
 			read_max_size,
 			0,
+			0,
 			&redirects,
 			final_callback,
 			final_callback_arg,
@@ -979,7 +986,6 @@ int rrr_http_client_tick (
 			frame_callback,
 			frame_callback_arg
 	};
-
 
 	if (transport_keepalive_plain != NULL) {
 		if ((ret = rrr_net_transport_iterate_with_callback (
@@ -1015,6 +1021,9 @@ int rrr_http_client_tick (
 	)) != 0) {
 		goto out;
 	}
+
+	*bytes_total = callback_data.bytes_total;
+	*active_transaction_count = callback_data.active_transaction_count;
 
 	out:
 	pthread_cleanup_pop(1);

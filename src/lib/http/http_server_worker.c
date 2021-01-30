@@ -306,9 +306,11 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	int ret = 0;
 
 	ssize_t received_bytes = 0;
+	uint64_t active_transaction_count = 0;
 
 	if ((ret = rrr_http_session_transport_ctx_tick (
 			&received_bytes,
+			&active_transaction_count,
 			&worker_data->complete_transactions_total,
 			handle,
 			worker_data->config_data.read_max_size,

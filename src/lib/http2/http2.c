@@ -957,6 +957,7 @@ int rrr_http2_data_submission_request_set (
 }
 
 int rrr_http2_transport_ctx_tick (
+		uint64_t *active_stream_count,
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),
@@ -964,6 +965,11 @@ int rrr_http2_transport_ctx_tick (
 		void *callback_arg
 ) {
 	int ret = RRR_HTTP2_DONE;
+
+	// Just to clean up any streams needing deletion
+	__rrr_http2_stream_collection_maintain_and_find(&session->streams, 0);
+
+	*active_stream_count = RRR_LL_COUNT(&session->streams);
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function

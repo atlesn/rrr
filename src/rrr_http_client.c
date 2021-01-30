@@ -600,9 +600,11 @@ int main (int argc, const char **argv, const char **env) {
 	uint64_t prev_bytes_total = 0;
 	do {
 		uint64_t bytes_total = 0;
+		uint64_t active_transaction_count = 0;
 
 		if ((ret = rrr_http_client_tick (
 				&bytes_total,
+				&active_transaction_count,
 				data.net_transport_keepalive_plain,
 				data.net_transport_keepalive_tls,
 				1 * 1024 * 1024 * 1024, // 1 GB

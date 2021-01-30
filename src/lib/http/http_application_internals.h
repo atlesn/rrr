@@ -42,6 +42,7 @@ enum rrr_http_method;
 
 #define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
     ssize_t *received_bytes,                                                                     \
+    uint64_t *active_transaction_count,                                                          \
     struct rrr_http_application **upgraded_app,                                                  \
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \

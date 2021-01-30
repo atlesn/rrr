@@ -503,7 +503,6 @@ static int __rrr_http_application_http2_tick (
 
 	int ret = 0;
 
-
 	(void)(upgrade_verify_callback);
 	(void)(upgrade_verify_callback_arg);
 
@@ -517,6 +516,7 @@ static int __rrr_http_application_http2_tick (
 	};
 
 	if ((ret = rrr_http2_transport_ctx_tick (
+			active_transaction_count,
 			http2->http2_session,
 			handle,
 			__rrr_http_application_http2_data_receive_callback,
@@ -627,7 +627,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		void *arg
 ) {
 	size_t *result_len = arg;
-	return rrr_base64url_decode (
+	return (char *) rrr_base64url_decode (
 			str,
 			len,
 			result_len

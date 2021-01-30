@@ -158,6 +158,7 @@ int rrr_http_client_request_send (
 );
 int rrr_http_client_tick (
 		uint64_t *bytes_total,
+		uint64_t *active_transaction_count,
 		struct rrr_net_transport *transport_keepalive_plain,
 		struct rrr_net_transport *transport_keepalive_tls,
 		ssize_t read_max_size,

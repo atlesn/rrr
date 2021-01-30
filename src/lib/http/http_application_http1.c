@@ -1436,6 +1436,8 @@ int __rrr_http_application_http1_tick (
 
 	int ret = RRR_HTTP_OK;
 
+	*active_transaction_count = (http1->active_transaction != NULL ? 1 : 0);
+
 	*upgraded_app = NULL;
 
 	if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {

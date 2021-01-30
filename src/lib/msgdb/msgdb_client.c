@@ -46,7 +46,7 @@ int rrr_msgdb_client_open (
 		goto out;
 	}
 
-	RRR_DBG_2("msgdb open '%s' fd is %i\n", path, conn->fd);
+	RRR_DBG_3("msgdb open '%s' fd is %i\n", path, conn->fd);
 
 	out:
 	return ret;
@@ -214,7 +214,7 @@ int rrr_msgdb_client_send (
 
 	if (RRR_DEBUGLEVEL_2) {
 		if (rrr_msg_msg_topic_get(&topic_tmp, msg) == 0) {
-			RRR_DBG_2("msgdb fd %i %s size %li topic '%s'\n",
+			RRR_DBG_3("msgdb fd %i %s size %li topic '%s'\n",
 				conn->fd, MSG_TYPE_NAME(msg), MSG_TOTAL_SIZE(msg), topic_tmp);
 		}
 		else {

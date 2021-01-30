@@ -112,6 +112,7 @@ int rrr_http2_data_submission_request_set (
 		int32_t stream_id
 );
 int rrr_http2_transport_ctx_tick (
+		uint64_t *active_stream_count,
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),

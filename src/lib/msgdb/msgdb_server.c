@@ -816,7 +816,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 		goto out;
 	}
 
-	RRR_DBG_2("msgdb fd %i %s size %" PRIrrrl " topic '%s'\n",
+	RRR_DBG_3("msgdb fd %i %s size %" PRIrrrl " topic '%s'\n",
 			client->fd, MSG_TYPE_NAME(*msg), MSG_TOTAL_SIZE(*msg), rrr_string_builder_buf(&topic));
 
 	server->recv_count++;
@@ -866,7 +866,7 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 	}
 
 	// Any other errors => close connection
-	RRR_DBG_2("msgdb fd %i close following error\n", client->fd);
+	RRR_DBG_3("msgdb fd %i close following error\n", client->fd);
 	ret = RRR_MSGDB_EOF;
 	goto out;
 

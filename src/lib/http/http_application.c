@@ -88,6 +88,7 @@ int rrr_http_application_transport_ctx_request_send (
 
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
 		uint64_t *complete_transaction_count,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
@@ -110,6 +111,7 @@ int rrr_http_application_transport_ctx_tick (
 
 	return app->constants->tick (
 			received_bytes,
+			active_transaction_count,
 			upgraded_app,
 			app,
 			handle,
