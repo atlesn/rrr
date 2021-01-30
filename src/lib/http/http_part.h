@@ -32,38 +32,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../helpers/nullsafe_str.h"
 
-//#define RRR_HTTP_PARSE_UNTIL_CLOSE	RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
-//#define RRR_HTTP_PARSE_CHUNKED		RRR_SOCKET_READ_COMPLETE_METHOD_CHUNKED
+#define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS                    \
+        int chunk_idx,                                         \
+        int chunk_total,                                       \
+        const char *data_start,                                \
+        rrr_biglength chunk_data_size,                         \
+        rrr_biglength part_data_size,                          \
+        void *arg
 
-#define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
-		int chunk_idx,								\
-		int chunk_total,							\
-		const char *data_start,						\
-		rrr_biglength chunk_data_size,				\
-		rrr_biglength part_data_size,				\
-		void *arg
-
-#define RRR_HTTP_PART_DATA_LENGTH(part) \
+#define RRR_HTTP_PART_DATA_LENGTH(part)                        \
 	((part)->data_length)
 
-#define RRR_HTTP_PART_TOP_LENGTH(part) \
+#define RRR_HTTP_PART_TOP_LENGTH(part)                         \
 	((part)->headroom_length + (part)->header_length)
 
-#define RRR_HTTP_PART_BODY_LENGTH(part) \
+#define RRR_HTTP_PART_BODY_LENGTH(part)                        \
 	(RRR_HTTP_PART_DATA_LENGTH(part))
 
-#define RRR_HTTP_PART_BODY_PTR(data_ptr,part) \
+#define RRR_HTTP_PART_BODY_PTR(data_ptr,part)                  \
 	((data_ptr) + RRR_HTTP_PART_TOP_LENGTH(part))
 
-#define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
-		const char *data_start =								\
-				data_ptr +										\
-				part->headroom_length +							\
-				part->header_length								\
-		;														\
-		const char *data_end =									\
-				data_start +									\
-				part->data_length
+#define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)\
+        const char *data_start =                               \
+                data_ptr +                                     \
+                part->headroom_length +                        \
+                part->header_length                            \
+        ;                                                      \
+        const char *data_end =                                 \
+                data_start +                                   \
+                part->data_length
 
 struct rrr_http_chunk {
 	RRR_LL_NODE(struct rrr_http_chunk);
