@@ -123,6 +123,9 @@ void rrr_msgdb_server_destroy_void (
 
 struct rrr_msgdb_server_client {
 	int fd;
+	char *send_data;
+	size_t send_data_size;
+	size_t send_data_pos;
 };
 
 static int __rrr_msgdb_server_client_new (
@@ -160,6 +163,7 @@ static int __rrr_msgdb_server_client_new_void (
 static void __rrr_msgdb_server_client_destroy (
 		struct rrr_msgdb_server_client *client
 ) {
+	RRR_FREE_IF_NOT_NULL(client->send_data);
 	free(client);
 }
 
@@ -477,24 +481,40 @@ static int __rrr_msgdb_server_del (
 	return ret;
 }
 
+static int __rrr_msgdb_server_send_callback (
+	int fd,
+	void **data,
+	ssize_t data_size,
+	void *arg
+) {
+	struct rrr_msgdb_server *server = arg;
+	return rrr_socket_client_collection_send_push (
+			&server->clients,
+			fd,
+			data,
+			data_size
+	);
+}
+
 static int __rrr_msgdb_server_send_msg_ack (
+		struct rrr_msgdb_server *server,
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
-
-	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_ACK);
+	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_ACK, __rrr_msgdb_server_send_callback, server);
 }
 
 static int __rrr_msgdb_server_send_msg_nack (
+		struct rrr_msgdb_server *server,
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
-
-	return rrr_msgdb_common_ctrl_msg_send_blocking(fd, RRR_MSGDB_CTRL_F_NACK);
+	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_NACK, __rrr_msgdb_server_send_callback, server);
 }
 
 struct rrr_msgdb_server_get_path_split_callback_data {
 	int response_fd;
+	struct rrr_msgdb_server *server;
 };
 
 static int __rrr_msgdb_server_get_path_split_callback (
@@ -552,7 +572,12 @@ static int __rrr_msgdb_server_get_path_split_callback (
 
 		RRR_DBG_3("msgdb fd %i read from '%s' size %llu\n", callback_data->response_fd, str, (long long unsigned) MSG_TOTAL_SIZE(msg_tmp));
 
-		if ((ret = rrr_msgdb_common_msg_send_blocking (callback_data->response_fd, (struct rrr_msg_msg *) msg_tmp)) != 0) {
+		if ((ret = rrr_msgdb_common_msg_send (
+				callback_data->response_fd,
+				(struct rrr_msg_msg *) msg_tmp,
+				__rrr_msgdb_server_send_callback,
+				callback_data->server
+		)) != 0) {
 			ret = RRR_MSGDB_EOF;
 			goto out;
 		}
@@ -728,7 +753,12 @@ static int __rrr_msgdb_server_idx (
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_common_msg_send_blocking (response_fd, (struct rrr_msg_msg *) msg_tmp)) != 0) {
+	if ((ret = rrr_msgdb_common_msg_send (
+			response_fd,
+			(struct rrr_msg_msg *) msg_tmp,
+			__rrr_msgdb_server_send_callback,
+			server
+	)) != 0) {
 		ret = RRR_MSGDB_EOF;
 		goto out;
 	}
@@ -752,7 +782,8 @@ static int __rrr_msgdb_server_get (
 	}
 
 	struct rrr_msgdb_server_get_path_split_callback_data callback_data = {
-		response_fd
+		response_fd,
+		server
 	};
 
 	if ((ret = __rrr_msgdb_server_path_iterate (
@@ -841,13 +872,13 @@ static int __rrr_msgdb_server_read_msg_msg_callback (
 
 	out_negative_ack:
 		if (!no_ack) {
-			ret = __rrr_msgdb_server_send_msg_nack(client->fd) ? RRR_MSGDB_EOF : 0;
+			ret = __rrr_msgdb_server_send_msg_nack(server, client->fd) ? RRR_MSGDB_EOF : 0;
 		}
 		goto out;
 
 	out_positive_ack:
 		if (!no_ack) {
-			ret = __rrr_msgdb_server_send_msg_ack(client->fd) ? RRR_MSGDB_EOF : 0;
+			ret = __rrr_msgdb_server_send_msg_ack(server, client->fd) ? RRR_MSGDB_EOF : 0;
 		}
 		goto out;
 
@@ -899,6 +930,10 @@ int rrr_msgdb_server_tick (
 	)) != 0) {
 		goto out;
 	}
+
+	rrr_socket_client_collection_send_tick (
+			&server->clients
+	);
 
 	out:
 	return ret;

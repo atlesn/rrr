@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MSGDB_COMMON_H
 #define RRR_MSGDB_COMMON_H
 
+#include <stdio.h>
+
 #include "../messages/msg_head.h"
 #include "../read_constants.h"
 
@@ -35,21 +37,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_msg;
 
-int rrr_msgdb_common_ctrl_msg_send_blocking (
+int rrr_msgdb_common_ctrl_msg_send (
 		int fd,
-		int flags
+		int flags,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
 );
-int rrr_msgdb_common_ctrl_msg_send_nonblock (
+int rrr_msgdb_common_msg_send (
 		int fd,
-		int flags
-);
-int rrr_msgdb_common_msg_send_nonblock (
-		int fd,
-		const struct rrr_msg_msg *msg
-);
-int rrr_msgdb_common_msg_send_blocking (
-		int fd,
-		const struct rrr_msg_msg *msg
+		const struct rrr_msg_msg *msg,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_MSGDB_COMMON_H */

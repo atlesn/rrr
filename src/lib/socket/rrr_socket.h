@@ -156,7 +156,7 @@ int rrr_socket_sendto_nonblock_check_retry (
 		int fd,
 		const void *data,
 		ssize_t size,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_send_nonblock_check_retry (

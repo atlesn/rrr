@@ -29,108 +29,45 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 
-static int __rrr_msgdb_common_msg_send_raw_blocking (
+int rrr_msgdb_common_ctrl_msg_send (
 		int fd,
-		const struct rrr_msg *msg_network,
-		ssize_t msg_size
-) {
-	return rrr_socket_sendto_blocking (
-			fd,
-			msg_network,
-			msg_size,
-			NULL,
-			0
-	);
-}
-
-static int __rrr_msgdb_common_msg_send_raw_nonblock (
-		int fd,
-		const struct rrr_msg *msg_network,
-		ssize_t msg_size
+		int flags,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
-	int err = 0;
-	ssize_t written_bytes = 0;
+	struct rrr_msg *msg_tmp;
 
-	if ((ret = rrr_socket_sendto_nonblock (
-		&err,
-		&written_bytes,
-		fd,
-		msg_network,
-		msg_size,
-		NULL,
-		0
-	)) != 0) {
-		if (ret == RRR_SOCKET_WRITE_INCOMPLETE) {
-			if (written_bytes != 0) {
-				// Not OK, partial write
-				RRR_DBG_2("Partial write in __rrr_msgdb_common_msg_send_raw_nonblock, this cannot be handled. Triggering soft error.\n");
-				ret = RRR_SOCKET_SOFT_ERROR;
-			}
-			else {
-				// OK, no bytes were sent
-			}
-		}
-		else {
-			RRR_DBG_2("Failed to send message in __rrr_msgdb_common_msg_send_raw_nonblock, return was %i errno is '%s'\n", ret, rrr_strerror(err));
-		}
+	RRR_DBG_3("msgdb fd %i send CTRL flags %i\n", fd, flags);
+
+	if ((msg_tmp = malloc(sizeof(*msg_tmp)))== NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_ctrl_msg_send\n");
+		ret = 1;
 		goto out;
 	}
 
+	rrr_msg_populate_control_msg (msg_tmp, flags, 0);
+	rrr_msg_checksum_and_to_network_endian (msg_tmp);
+
+	ret = send_callback(fd, (void**) &msg_tmp, sizeof(*msg_tmp), callback_arg);
+
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
 }
 
-static int __rrr_msgdb_common_ctrl_msg_send (
-		int fd,
-		int flags,
-		int do_nonblock
-) {
-	struct rrr_msg msg = {0};
-
-	rrr_msg_populate_control_msg (
-		&msg,
-		flags,
-		0
-	);
-
-	rrr_msg_checksum_and_to_network_endian (
-		&msg
-	);
-
-	RRR_DBG_3("msgdb fd %i send CTRL flags %i %s\n", fd, flags, (do_nonblock ? "nonblock" : "blocking"));
-
-	return do_nonblock
-		? __rrr_msgdb_common_msg_send_raw_nonblock(fd, &msg, sizeof(msg))
-		: __rrr_msgdb_common_msg_send_raw_blocking(fd, &msg, sizeof(msg))
-	;
-}
-
-int rrr_msgdb_common_ctrl_msg_send_nonblock (
-		int fd,
-		int flags
-) {
-	return __rrr_msgdb_common_ctrl_msg_send(fd, flags, 1);
-}
-
-int rrr_msgdb_common_ctrl_msg_send_blocking (
-		int fd,
-		int flags
-) {
-	return __rrr_msgdb_common_ctrl_msg_send(fd, flags, 0);
-}
-
-static int __rrr_msgdb_common_msg_send (
+int rrr_msgdb_common_msg_send (
 		int fd,
 		const struct rrr_msg_msg *msg,
-		int do_nonblock
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *msg_tmp = NULL;
+	struct rrr_msg_msg *msg_tmp;
 
-	RRR_DBG_3("msgdb fd %i send MSG size %" PRIrrrl " %s\n", fd, MSG_TOTAL_SIZE(msg), (do_nonblock ? "nonblock" : "blocking"));
+	RRR_DBG_3("msgdb fd %i send MSG size %" PRIrrrl "\n", fd, MSG_TOTAL_SIZE(msg));
 
 	if ((msg_tmp = malloc(MSG_TOTAL_SIZE(msg))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_msg_send\n");
@@ -143,26 +80,9 @@ static int __rrr_msgdb_common_msg_send (
 	rrr_msg_msg_prepare_for_network(msg_tmp);
 	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) msg_tmp);
 
-	ret = do_nonblock
-		? __rrr_msgdb_common_msg_send_raw_nonblock(fd, (const struct rrr_msg *) msg_tmp, MSG_TOTAL_SIZE(msg))
-		: __rrr_msgdb_common_msg_send_raw_blocking(fd, (const struct rrr_msg *) msg_tmp, MSG_TOTAL_SIZE(msg))
-	;
+	ret = send_callback(fd, (void **) &msg_tmp, MSG_TOTAL_SIZE(msg), callback_arg);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
-}
-
-int rrr_msgdb_common_msg_send_nonblock (
-		int fd,
-		const struct rrr_msg_msg *msg
-) {
-	return __rrr_msgdb_common_msg_send(fd, msg, 1);
-}
-
-int rrr_msgdb_common_msg_send_blocking (
-		int fd,
-		const struct rrr_msg_msg *msg
-) {
-	return __rrr_msgdb_common_msg_send(fd, msg, 0);
 }

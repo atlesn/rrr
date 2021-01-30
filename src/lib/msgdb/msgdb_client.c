@@ -113,6 +113,8 @@ int rrr_msgdb_client_await_ack (
 	*positive_ack = 0;
 
 	uint64_t bytes_read;
+
+	retry:
 	if ((ret = rrr_socket_read_message_split_callbacks (
 			&bytes_read,
 			&conn->read_sessions,
@@ -125,6 +127,9 @@ int rrr_msgdb_client_await_ack (
 			conn,
 			positive_ack
 	)) != 0) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			goto retry;
+		}
 		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
 		goto out;
 	}
@@ -141,7 +146,7 @@ static int __rrr_msgdb_client_await_msg_callback (
 	struct rrr_msgdb_client_conn *conn = arg1;
 	struct rrr_msg_msg **result_msg = arg2;
 
-	RRR_DBG_3("msgdb fd %i recv MSG\n", conn->fd);
+	RRR_DBG_3("msgdb fd %i recv MSG size %" PRIrrrl "\n", conn->fd, MSG_TOTAL_SIZE(*message));
 
 	*result_msg = *message;
 	*message = NULL;
@@ -157,7 +162,10 @@ int rrr_msgdb_client_await_msg (
 
 	*result_msg = NULL;
 
+
 	uint64_t bytes_read;
+
+	retry:
 	if ((ret = rrr_socket_read_message_split_callbacks (
 			&bytes_read,
 			&conn->read_sessions,
@@ -170,6 +178,9 @@ int rrr_msgdb_client_await_msg (
 			conn,
 			result_msg
 	)) != 0) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			goto retry;
+		}
 		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
 		goto out;
 	}
@@ -181,6 +192,16 @@ int rrr_msgdb_client_await_msg (
 
 	out:
 	return ret;
+}
+
+static int __rrr_msgdb_client_send_callback (
+		int fd,
+		void **data,
+		ssize_t data_size,
+		void *arg
+) {
+	(void)(arg);
+	return rrr_socket_send_blocking (fd, *data, data_size);
 }
 
 int rrr_msgdb_client_send (
@@ -201,7 +222,7 @@ int rrr_msgdb_client_send (
 		}
 	}
 
-	if ((ret = rrr_msgdb_common_msg_send_blocking (conn->fd, msg)) != 0) {
+	if ((ret = rrr_msgdb_common_msg_send (conn->fd, msg, __rrr_msgdb_client_send_callback, NULL)) != 0) {
 		goto out;
 	}
 

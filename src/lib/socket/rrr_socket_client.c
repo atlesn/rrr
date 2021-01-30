@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_client.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
+#include "rrr_socket_send_chunk.h"
 
 #include "../read.h"
 #include "../rrr_strerror.h"
@@ -49,6 +50,7 @@ static int __rrr_socket_client_destroy (
 	if (client->private_data != NULL) {
 		client->private_data_destroy(client->private_data);
 	}
+	rrr_socket_send_chunk_collection_clear(&client->send_chunks);
 	free(client);
 	return 0;
 }
@@ -266,9 +268,6 @@ int rrr_socket_client_collection_read_raw (
 		}
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				// Don't print error as it will be printed when a remote client disconnects
-				// TODO : This error message is useless because we don't know which client has disconnected
-				RRR_DBG_1("A client was disconnected when reading in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;
@@ -347,4 +346,56 @@ int rrr_socket_client_collection_read_message (
 			__rrr_socket_client_collection_read_message_complete_callback,
 			&complete_callback_data
 	);
+}
+
+static struct rrr_socket_client *__rrr_socket_client_collection_find_by_fd (
+	struct rrr_socket_client_collection *collection,
+	int fd
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node->connected_fd == fd) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+int rrr_socket_client_collection_send_push (
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		void **data,
+		ssize_t data_size
+) {
+	int ret = 0;
+
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client == NULL) {
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = rrr_socket_send_chunk_collection_push (&client->send_chunks, data, data_size)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+void rrr_socket_client_collection_send_tick (
+		struct rrr_socket_client_collection *collection
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		int ret_tmp;
+		if ((ret_tmp = rrr_socket_send_chunk_collection_sendto (
+				&node->send_chunks,
+				node->connected_fd,
+				NULL,
+				0
+		)) != RRR_SOCKET_OK && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
+			RRR_DBG_7("");
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 }
