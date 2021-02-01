@@ -271,7 +271,8 @@ static void influxdb_send_data_callback (
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
 			rrr_http_query_builder_wpos_get(&query_builder),
-			NULL // <-- No content-type
+			NULL, // <-- No content-type
+			NULL  // <-- No original value
 	)) != 0) {
 		RRR_MSG_0("Could not add data to HTTP query in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

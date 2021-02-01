@@ -677,6 +677,10 @@ static int httpclient_transaction_field_add (
 	RRR_DBG_3("HTTP add array value with tag '%s' type '%s'\n",
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
 
+	// TODO : Move this logic to the library ?
+	//        We now pass in both text versions and original value (latter used by JSON only), the
+	//        library should convert the types itself as needed
+
 	if (RRR_TYPE_IS_MSG(value->definition->type)) {
 		rrr_length buf_size = 0;
 
@@ -691,7 +695,8 @@ static int httpclient_transaction_field_add (
 				tag_to_use,
 				buf_tmp,
 				buf_size,
-				RRR_MESSAGE_MIME_TYPE
+				RRR_MESSAGE_MIME_TYPE,
+				value
 		);
 	}
 	else if (RRR_TYPE_IS_STR(value->definition->type)) {
@@ -710,7 +715,8 @@ static int httpclient_transaction_field_add (
 				tag_to_use,
 				buf,
 				buf_size,
-				"text/plain"
+				"text/plain",
+				value
 		);
 	}
 	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
@@ -719,7 +725,8 @@ static int httpclient_transaction_field_add (
 				tag_to_use,
 				value->data,
 				value->total_stored_length,
-				"application/octet-stream"
+				"application/octet-stream",
+				value
 		);
 	}
 	else {
@@ -742,7 +749,8 @@ static int httpclient_transaction_field_add (
 				tag_to_use,
 				rrr_http_query_builder_buf_get(&query_builder),
 				rrr_http_query_builder_wpos_get(&query_builder),
-				"text/plain"
+				"text/plain",
+				value
 		);
 	}
 
@@ -1118,7 +1126,9 @@ static int httpclient_session_query_prepare_callback (
 			HTTPCLIENT_OVERRIDE_PREPARE(format);
 			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(format);
 
-			rrr_http_transaction_body_format_set(transaction, rrr_http_util_format_str_to_enum(format_to_free));
+			if (format_to_free != NULL && *format_to_free != '\0') {
+				rrr_http_transaction_body_format_set(transaction, rrr_http_util_format_str_to_enum(format_to_free));
+			}
 		}
 	}
 
@@ -1181,7 +1191,8 @@ static int httpclient_session_query_prepare_callback (
 				node_tag,
 				node_value,
 				strlen(node_value),
-				"text/plain"
+				"text/plain",
+				NULL
 		)) != RRR_HTTP_OK) {
 			goto out;
 		}
@@ -1555,7 +1566,7 @@ static void httpclient_queue_process (
 	struct httpclient_data *data,
 	int no_msgdb_send_notify
 ) {
-	if (RRR_LL_COUNT(&data->from_senders_queue) ==  0) {
+	if (RRR_LL_COUNT(queue) ==  0) {
 		return;
 	}
 
@@ -1675,7 +1686,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			&data->request_data,
 			http_transport_force,
 			data->http_client_config.method,
-			RRR_HTTP_BODY_FORMAT_URLENCODED,
+			data->http_client_config.body_format,
 			RRR_HTTP_UPGRADE_MODE_HTTP2,
 			data->http_client_config.do_plain_http2,
 			RRR_HTTP_CLIENT_USER_AGENT

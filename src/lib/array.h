@@ -146,6 +146,13 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 );
+int rrr_array_selected_tags_split (
+		int *found_tags,
+		const struct rrr_array *definition,
+		const struct rrr_map *tags,
+		int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg),
+		void *callback_arg
+);
 int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,

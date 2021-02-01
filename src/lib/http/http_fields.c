@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 
+#include "../array.h"
+#include "../type.h"
+#include "../json/json.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
@@ -37,6 +40,9 @@ void rrr_http_field_destroy(struct rrr_http_field *field) {
 	rrr_nullsafe_str_destroy_if_not_null(&field->name);
 	rrr_nullsafe_str_destroy_if_not_null(&field->content_type);
 	rrr_nullsafe_str_destroy_if_not_null(&field->value);
+	if (field->value_orig != NULL) {
+		rrr_type_value_destroy(field->value_orig);
+	}
 	free(field);
 }
 
@@ -198,7 +204,8 @@ int rrr_http_field_collection_add (
 		const char *value,
 		rrr_length value_length,
 		const char *content_type,
-		rrr_length content_type_length
+		rrr_length content_type_length,
+		const struct rrr_type_value *value_orig
 ) {
 	int ret = 0;
 
@@ -230,6 +237,12 @@ int rrr_http_field_collection_add (
 		if (rrr_nullsafe_str_new_or_replace_raw(&field->value, value, value_length) != 0) {
 			RRR_MSG_0("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
+			goto out;
+		}
+	}
+
+	if (value_orig != NULL) {
+		if ((ret = rrr_type_value_clone(&field->value_orig, value_orig, 1)) != 0) {
 			goto out;
 		}
 	}
@@ -270,6 +283,8 @@ static int __rrr_http_field_collection_to_form_data (
 	if ((ret = rrr_nullsafe_str_new_or_replace_empty(&nullsafe)) != 0) {
 		goto out;
 	}
+
+	// Note that original array values are not used in this function, only the strings
 
 	int count = 0;
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
@@ -336,4 +351,64 @@ int rrr_http_field_collection_to_raw_form_data (
 		struct rrr_http_field_collection *fields
 ) {
 	return __rrr_http_field_collection_to_form_data(target, fields, 1);
+}
+
+struct rrr_http_field_collection_to_json_value_callback_data {
+	struct rrr_array *target;
+	const struct rrr_nullsafe_str *value;
+};
+
+static int __rrr_http_field_collection_to_json_value_callback (const char *str, void *arg) {
+	struct rrr_http_field_collection_to_json_value_callback_data *callback_data = arg;
+	return rrr_array_push_value_str_with_tag_nullsafe(callback_data->target, str, callback_data->value);
+}
+
+int rrr_http_field_collection_to_json (
+		struct rrr_nullsafe_str **target,
+		const struct rrr_http_field_collection *fields
+) {
+	int ret = 0;
+
+	char *json_tmp = NULL;
+	struct rrr_array array_tmp = {0};
+
+	// Note that original array values take precedence over any string values
+
+	RRR_LL_ITERATE_BEGIN(fields, const struct rrr_http_field);
+		if (node->value_orig != NULL) {
+			struct rrr_type_value *value_tmp = NULL;
+			if ((ret = rrr_type_value_clone(&value_tmp, node->value_orig, 1)) != 0) {
+				goto out;
+			}
+			RRR_LL_APPEND(&array_tmp, value_tmp);
+		}
+		else {
+			struct rrr_http_field_collection_to_json_value_callback_data callback_data = {
+				&array_tmp,
+				node->value
+			};
+
+			if ((ret = rrr_nullsafe_str_with_raw_null_terminated_do (
+					node->name,
+					__rrr_http_field_collection_to_json_value_callback,
+					&callback_data
+			)) != 0) {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	int found_tags_dummy = 0;
+	if ((ret = rrr_json_from_array(&json_tmp, &found_tags_dummy, &array_tmp, NULL)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw_allocated(target, (void **) &json_tmp, strlen(json_tmp))) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(json_tmp);
+	rrr_array_clear(&array_tmp);
+	return ret;
 }

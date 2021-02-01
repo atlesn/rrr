@@ -685,7 +685,7 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 
 	char *tmp = NULL;
 
-	if (nullsafe->len == 0) {
+	if (nullsafe == NULL || nullsafe->len == 0) {
 		ret = callback("", callback_arg);
 		goto out;
 	}
@@ -710,7 +710,7 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 #define RRR_NULLSAFE_STR_WITH_STR_DO_STR_AND_LEN_TO_USE_SET(letter)						\
 	const void *RRR_PASTE_3(str_to_use, _, letter) = str_static;						\
 	rrr_nullsafe_len RRR_PASTE_3(len_to_use, _, letter) = 0;									\
-	do {if (RRR_PASTE_3(nullsafe, _, letter)->len > 0) {								\
+    do {if (RRR_PASTE_3(nullsafe, _, letter) != NULL && RRR_PASTE_3(nullsafe, _, letter)->len > 0) {                           \
 		RRR_PASTE_3(str_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->str;		\
 		RRR_PASTE_3(len_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->len;		\
 	}} while (0)

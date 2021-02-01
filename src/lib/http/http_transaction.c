@@ -148,7 +148,8 @@ int rrr_http_transaction_query_field_add (
 		const char *name,
 		const char *value,
 		ssize_t value_size,
-		const char *content_type
+		const char *content_type,
+		const struct rrr_type_value *value_orig
 ) {
 	return rrr_http_field_collection_add (
 			&transaction->request_part->fields,
@@ -157,7 +158,8 @@ int rrr_http_transaction_query_field_add (
 			value,
 			value_size,
 			content_type,
-			(content_type != NULL ? strlen(content_type) : 0)
+			(content_type != NULL ? strlen(content_type) : 0),
+			value_orig
 	);
 }
 
@@ -346,6 +348,11 @@ int rrr_http_transaction_form_data_generate_if_needed (
 	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING) {
 		// Application may choose to quote by itself (influxdb has special quoting)
 		if ((ret = rrr_http_part_post_x_www_form_body_make(transaction->request_part, 1, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
+			goto out;
+		}
+	}
+	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_JSON) {
+		if ((ret = rrr_http_part_json_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
 	}

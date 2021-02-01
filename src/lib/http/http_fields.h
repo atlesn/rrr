@@ -28,12 +28,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 struct rrr_nullsafe_str;
+struct rrr_type_value;
 
 struct rrr_http_field {
 	RRR_LL_NODE(struct rrr_http_field);
 	struct rrr_nullsafe_str *name;
 	struct rrr_nullsafe_str *content_type;
 	struct rrr_nullsafe_str *value;
+	struct rrr_type_value *value_orig;
 };
 
 struct rrr_http_field_collection {
@@ -79,7 +81,8 @@ int rrr_http_field_collection_add (
 		const char *value,
 		rrr_length value_length,
 		const char *content_type,
-		rrr_length content_type_length
+		rrr_length content_type_length,
+		const struct rrr_type_value *value_orig
 );
 rrr_length rrr_http_field_collection_get_total_length (
 		struct rrr_http_field_collection *fields
@@ -91,6 +94,10 @@ int rrr_http_field_collection_to_urlencoded_form_data (
 int rrr_http_field_collection_to_raw_form_data (
 		struct rrr_nullsafe_str **target,
 		struct rrr_http_field_collection *fields
+);
+int rrr_http_field_collection_to_json (
+		struct rrr_nullsafe_str **target,
+		const struct rrr_http_field_collection *fields
 );
 
 #endif /* RRR_HTTP_FIELDS_H */

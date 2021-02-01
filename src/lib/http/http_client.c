@@ -754,11 +754,12 @@ static int __rrr_http_client_request_send (
 		}
 	}
 
-	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' application '%s' upgrade mode '%s'\n",
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(transaction->method),
+			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
 			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);

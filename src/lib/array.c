@@ -224,7 +224,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			&new_value,
 			type,
 			0,
-			strlen(tag),
+			tag != NULL ? strlen(tag) : 0,
 			tag,
 			value_size,
 			NULL,
@@ -595,6 +595,73 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 
 	out:
 	return ret;
+}
+
+struct rrr_array_selected_tags_split_callback_data {
+	int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_array_selected_tags_split_callback (const struct rrr_type_value *node, void *arg) {
+	struct rrr_array_selected_tags_split_callback_data *callback_data = arg;
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	if (node->total_stored_length == 0) {
+		for (rrr_length i = 0; i < node->element_count; i++) {
+			struct rrr_type_value *node_new = NULL;
+			if ((ret = rrr_type_value_new (&node_new, node->definition, node->flags, 0, NULL, 0, NULL, 1, NULL, 0)) != 0) {
+				goto out;
+			}
+			RRR_LL_APPEND(&array_tmp, node_new);
+		}
+	}
+	else {
+		const rrr_length element_size = node->total_stored_length / node->element_count;
+
+		if (element_size * node->element_count != node->total_stored_length) {
+			RRR_MSG_0("Invalid total store length in array value in __rrr_array_collection_split_callback, not divisible by element size\n");
+			ret = 1;
+			goto out;
+		}
+
+		for (rrr_length pos = 0; pos < node->total_stored_length; pos += element_size) {
+			struct rrr_type_value *node_new = NULL;
+			if ((ret = rrr_type_value_new (&node_new, node->definition, node->flags, 0, NULL, 0, NULL, 1, NULL, element_size)) != 0) {
+				goto out;
+			}
+			memcpy(node_new->data, node->data + pos, element_size);
+			RRR_LL_APPEND(&array_tmp, node_new);
+		}
+	}
+
+	ret = callback_data->callback(node, &array_tmp, callback_data->callback_arg);
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
+int rrr_array_selected_tags_split (
+		int *found_tags,
+		const struct rrr_array *definition,
+		const struct rrr_map *tags,
+		int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg),
+		void *callback_arg
+) {
+	struct rrr_array_selected_tags_split_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return __rrr_array_collection_iterate_chosen_tags (
+			found_tags,
+			definition,
+			tags,
+			__rrr_array_selected_tags_split_callback,
+			&callback_data
+	);
 }
 
 static int __rrr_array_collection_export_callback (const struct rrr_type_value *node, void *arg) {
