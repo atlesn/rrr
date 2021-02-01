@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include "../log.h"
 #include "http_part_parse.h"
@@ -325,12 +324,6 @@ static int __rrr_http_part_multipart_field_make (
 	char *body_buf = NULL;
 	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf_full);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &content_type_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
-	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
-
 	if (rrr_nullsafe_str_isset(node->name)) {
 		if ((name_buf = rrr_http_util_header_value_quote_nullsafe(node->name, '"', '"')) == NULL) {
 			RRR_MSG_0("Could not quote field name_buf in __rrr_http_part_multipart_field_make\n");
@@ -389,11 +382,11 @@ static int __rrr_http_part_multipart_field_make (
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	RRR_FREE_IF_NOT_NULL(name_buf);
+	RRR_FREE_IF_NOT_NULL(name_buf_full);
+	RRR_FREE_IF_NOT_NULL(content_type_buf);
+	RRR_FREE_IF_NOT_NULL(body_buf);
+	rrr_nullsafe_str_destroy_if_not_null(&body_buf_nullsafe);
 	return ret;
 }
 
@@ -407,10 +400,6 @@ int rrr_http_part_multipart_form_data_make (
 	char *body_buf = NULL;
 	char *boundary_buf = NULL;
 	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
-
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &boundary_buf);
-	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
 
 	// RFC7578
 
@@ -461,9 +450,9 @@ int rrr_http_part_multipart_form_data_make (
 		}
 	}
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	RRR_FREE_IF_NOT_NULL(body_buf);
+	RRR_FREE_IF_NOT_NULL(boundary_buf);
+	rrr_nullsafe_str_destroy_if_not_null(&body_buf_nullsafe);
 
 	return ret;
 }
