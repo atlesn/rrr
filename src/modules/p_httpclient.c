@@ -431,25 +431,7 @@ static void httpclient_msgdb_conn_ensure_with_callback (
 		rrr_msgdb_client_close(&data->msgdb_conn);
 	}
 }
-/*
-static int httpclient_queue_has_topic (struct rrr_msg_holder_collection *queue, const char *topic) {
-	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
-		rrr_msg_holder_lock(node);
-		const struct rrr_msg_msg *msg = node->message;
-		if (strlen(topic) == MSG_TOPIC_LENGTH(msg)) {
-			if (strncmp(topic, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg)) == 0) {
-				ret = 1;
-				RRR_LL_ITERATE_LAST();
-			}
-		}
-		rrr_msg_holder_unlock(node);
-	RRR_LL_ITERATE_END();
-
-	return ret;
-}
-*/
 static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
 	int ret = 0;
 
@@ -677,84 +659,14 @@ static int httpclient_transaction_field_add (
 	RRR_DBG_3("HTTP add array value with tag '%s' type '%s'\n",
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
 
-	// TODO : Move this logic to the library ?
-	//        We now pass in both text versions and original value (latter used by JSON only), the
-	//        library should convert the types itself as needed
-
-	if (RRR_TYPE_IS_MSG(value->definition->type)) {
-		rrr_length buf_size = 0;
-
-		if (rrr_type_value_allocate_and_export(&buf_tmp, &buf_size, value) != 0) {
-			RRR_MSG_0("Error while exporting RRR message in httpclient_add_multipart_array_value\n");
-			ret = 1;
-			goto out_cleanup_query_builder;
-		}
-
-		ret = rrr_http_transaction_query_field_add (
-				transaction,
-				tag_to_use,
-				buf_tmp,
-				buf_size,
-				RRR_MESSAGE_MIME_TYPE,
-				value
-		);
-	}
-	else if (RRR_TYPE_IS_STR(value->definition->type)) {
-		// MUST be signed due to decrement counting. Also, do not get
-		// export length as it will add two bytes for quotes ""
-		int64_t buf_size = value->total_stored_length;
-		const char *buf = value->data;
-
-		// Remove trailing 0's
-		while (buf_size > 0 && buf[buf_size - 1] == '\0') {
-			buf_size--;
-		}
-
-		ret = rrr_http_transaction_query_field_add (
-				transaction,
-				tag_to_use,
-				buf,
-				buf_size,
-				"text/plain",
-				value
-		);
-	}
-	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
-		ret = rrr_http_transaction_query_field_add (
-				transaction,
-				tag_to_use,
-				value->data,
-				value->total_stored_length,
-				"application/octet-stream",
-				value
-		);
-	}
-	else {
-		int value_was_empty_dummy = 0;
-
-		// BLOB and STR must be treated as special case above, this
-		// function would otherwise modify the data by escaping
-		if ((ret = rrr_http_query_builder_append_type_value_as_escaped_string (
-				&value_was_empty_dummy,
-				&query_builder,
-				value,
-				0
-		)) != 0) {
-			RRR_MSG_0("Error while exporting non-BLOB in httpclient_add_multipart_array_value\n");
-			goto out_cleanup_query_builder;
-		}
-
-		ret = rrr_http_transaction_query_field_add (
-				transaction,
-				tag_to_use,
-				rrr_http_query_builder_buf_get(&query_builder),
-				rrr_http_query_builder_wpos_get(&query_builder),
-				"text/plain",
-				value
-		);
-	}
-
-	if (ret != 0) {
+	if ((ret = rrr_http_transaction_query_field_add (
+			transaction,
+			NULL,
+			NULL,
+			0,
+			NULL,
+			value
+	)) != 0) {
 		RRR_MSG_0("Could not add data to HTTP query in instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_cleanup_query_builder;
 	}

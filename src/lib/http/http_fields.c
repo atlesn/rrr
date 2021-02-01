@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_fields.h"
 #include "http_util.h"
+#include "http_query_builder.h"
 
 #include "../array.h"
 #include "../type.h"
@@ -197,6 +198,7 @@ void rrr_http_field_collection_clear (
 	RRR_LL_DESTROY(fields, struct rrr_http_field, rrr_http_field_destroy(node));
 }
 
+// When values are converyed to form data, the value_orig takes precedence over the others if present
 int rrr_http_field_collection_add (
 		struct rrr_http_field_collection *fields,
 		const char *name,
@@ -258,16 +260,185 @@ int rrr_http_field_collection_add (
 	return ret;
 }
 
-rrr_length rrr_http_field_collection_get_total_length (
-		struct rrr_http_field_collection *fields
-) {
-	RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(ret);
+#define REPLACE_STR_OR_OUT_LEN(target,str,len) \
+	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, len)) != 0) { goto out; }} while(0)
 
-	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
-		RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(ret, (node->name != NULL ? rrr_nullsafe_str_len(node->name) : 0));
-		RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(ret, (node->value != NULL ? rrr_nullsafe_str_len(node->value) : 0));
+#define REPLACE_STR_OR_OUT(target,str) \
+	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, strlen(str))) != 0) { goto out; }} while(0)
+
+static int __rrr_http_field_value_to_strings (
+		const struct rrr_type_value *value,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, const struct rrr_nullsafe_str *content_type, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	char *buf_tmp = NULL;
+	struct rrr_http_query_builder query_builder = {0};
+
+	struct rrr_nullsafe_str *name_to_callback = NULL;
+	struct rrr_nullsafe_str *value_to_callback = NULL;
+	struct rrr_nullsafe_str *content_type_to_callback = NULL;
+
+	if ((rrr_http_query_builder_init(&query_builder)) != 0) {
+		RRR_MSG_0("Could not initialize query builder in __rrr_http_field_collection_node_to_strings\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_TYPE_IS_MSG(value->definition->type)) {
+		rrr_length value_size = 0;
+		if (rrr_type_value_allocate_and_export(&buf_tmp, &value_size, value) != 0) {
+			RRR_MSG_0("Error while exporting RRR message in __rrr_http_field_collection_node_to_strings\n");
+			ret = 1;
+			goto out;
+		}
+
+		REPLACE_STR_OR_OUT(content_type_to_callback, RRR_MESSAGE_MIME_TYPE);
+		REPLACE_STR_OR_OUT_LEN(value_to_callback, buf_tmp, value_size);
+	}
+	else if (RRR_TYPE_IS_STR(value->definition->type)) {
+		REPLACE_STR_OR_OUT(content_type_to_callback, "text/plain");
+		REPLACE_STR_OR_OUT_LEN(value_to_callback, value->data, value->total_stored_length);
+	}
+	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
+		REPLACE_STR_OR_OUT(content_type_to_callback, "application/octet-stream");
+		REPLACE_STR_OR_OUT_LEN(value_to_callback, value->data, value->total_stored_length);
+	}
+	else {
+		int value_was_empty = 0;
+
+		// BLOB and STR must be treated as special case above, this
+		// function would otherwise modify the data by escaping
+		if ((ret = rrr_http_query_builder_append_type_value_as_escaped_string (
+				&value_was_empty,
+				&query_builder,
+				value,
+				0
+		)) != 0) {
+			RRR_MSG_0("Error while exporting non-BLOB in __rrr_http_field_collection_node_to_strings\n");
+			goto out;
+		}
+
+		if (!value_was_empty) {
+			rrr_biglength length_tmp = rrr_http_query_builder_wpos_get(&query_builder);
+			if (length_tmp > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Value was too long in __rrr_http_field_collection_node_to_strings\n");
+				ret = 1;
+				goto out;
+			}
+
+			REPLACE_STR_OR_OUT(value_to_callback, rrr_http_query_builder_buf_get(&query_builder));
+		}
+
+		REPLACE_STR_OR_OUT(content_type_to_callback, "text/plain");
+	}
+
+	if (value->tag != NULL) {
+		REPLACE_STR_OR_OUT(name_to_callback, value->tag);
+	}
+
+	ret = callback (
+		name_to_callback,
+		value_to_callback,
+		content_type_to_callback,
+		callback_arg
+	);
+
+	out:
+	rrr_nullsafe_str_destroy_if_not_null(&name_to_callback);
+	rrr_nullsafe_str_destroy_if_not_null(&value_to_callback);
+	rrr_nullsafe_str_destroy_if_not_null(&content_type_to_callback);
+	RRR_FREE_IF_NOT_NULL(buf_tmp);
+	rrr_http_query_builder_cleanup(&query_builder);
+	return ret;
+}
+
+int rrr_http_field_collection_iterate_as_strings (
+		const struct rrr_http_field_collection *fields,
+		int (*callback)(const struct rrr_nullsafe_str *name, const struct rrr_nullsafe_str *value, const struct rrr_nullsafe_str *content_type, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(fields, const struct rrr_http_field);
+		if (node->value_orig != NULL) {
+			if ((ret = __rrr_http_field_value_to_strings(node->value_orig, callback, callback_arg)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			if ((ret = callback(node->name, node->value, node->content_type, callback_arg)) != 0) {
+				goto out;
+			}
+		}
 	RRR_LL_ITERATE_END();
 
+	out:
+	return ret;
+}
+
+struct rrr_http_field_collection_to_form_data_callback_data {
+	struct rrr_nullsafe_str *target;
+	int count;
+	int no_urlencoding;
+};
+
+static int __rrr_http_field_collection_to_form_data_field_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		const struct rrr_nullsafe_str *content_type,
+		void *arg
+) {
+	(void)(content_type);
+
+	struct rrr_http_field_collection_to_form_data_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (++(callback_data->count) > 1) {
+		if ((ret = rrr_nullsafe_str_append_raw(callback_data->target, "&", 1)) != 0) {
+			goto out;
+		}
+	}
+
+	// We allow either name, value or both. If both are present, add = between.
+
+	if (rrr_nullsafe_str_isset(name)) {
+		if (callback_data->no_urlencoding == 0) {
+			if ((ret = rrr_nullsafe_str_append_with_converter(callback_data->target, name, rrr_http_util_uri_encode)) != 0) {
+				goto out;
+			}
+		}
+		else {
+			if ((ret = rrr_nullsafe_str_append(callback_data->target, name)) != 0) {
+				goto out;
+			}
+		}
+	}
+
+	if (rrr_nullsafe_str_isset(value)) {
+		if (rrr_nullsafe_str_isset(name)) {
+			if ((ret = rrr_nullsafe_str_append_raw(callback_data->target, "=", 1)) != 0) {
+				goto out;
+			}
+		}
+
+		if (callback_data->no_urlencoding == 0) {
+			if (rrr_nullsafe_str_len(value) > 0) {
+				if ((ret = rrr_nullsafe_str_append_with_converter(callback_data->target, value, rrr_http_util_uri_encode)) != 0) {
+					goto out;
+				}
+			}
+		}
+		else {
+			if ((ret = rrr_nullsafe_str_append(callback_data->target, value)) != 0) {
+				goto out;
+			}
+		}
+	}
+
+	out:
 	return ret;
 }
 
@@ -284,52 +455,19 @@ static int __rrr_http_field_collection_to_form_data (
 		goto out;
 	}
 
-	// Note that original array values are not used in this function, only the strings
+	struct rrr_http_field_collection_to_form_data_callback_data callback_data = {
+		nullsafe,
+		0,
+		no_urlencoding
+	};
 
-	int count = 0;
-	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
-		if (++count > 1) {
-			if ((ret = rrr_nullsafe_str_append_raw(nullsafe, "&", 1)) != 0) {
-				goto out;
-			}
-		}
-
-		// We allow either name, value or both. If both are present, add = between.
-
-		if (rrr_nullsafe_str_isset(node->name)) {
-			if (no_urlencoding == 0) {
-				if ((ret = rrr_nullsafe_str_append_with_converter(nullsafe, node->name, rrr_http_util_uri_encode)) != 0) {
-					goto out;
-				}
-			}
-			else {
-				if ((ret = rrr_nullsafe_str_append(nullsafe, node->name)) != 0) {
-					goto out;
-				}
-			}
-		}
-
-		if (rrr_nullsafe_str_isset(node->value)) {
-			if (rrr_nullsafe_str_isset(node->name)) {
-				if ((ret = rrr_nullsafe_str_append_raw(nullsafe, "=", 1)) != 0) {
-					goto out;
-				}
-			}
-
-			if (no_urlencoding == 0) {
-				if (rrr_nullsafe_str_len(node->value) > 0) {
-					if ((ret = rrr_nullsafe_str_append_with_converter(nullsafe, node->value, rrr_http_util_uri_encode)) != 0) {
-						goto out;
-					}
-				}
-			}
-			else {
-				if ((ret = rrr_nullsafe_str_append(nullsafe, node->value)) != 0) {
-					goto out;
-				}
-			}
-		}
-	RRR_LL_ITERATE_END();
+	if ((ret = rrr_http_field_collection_iterate_as_strings (
+			fields,
+			__rrr_http_field_collection_to_form_data_field_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
 
 	*target = nullsafe;
 	nullsafe = NULL;
