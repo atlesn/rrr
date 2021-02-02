@@ -71,6 +71,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((msg)->msg_type == RRR_MSG_TYPE_SETTING)
 #define RRR_MSG_IS_RRR_MESSAGE_LOG(msg) \
 	((msg)->msg_type == RRR_MSG_TYPE_MESSAGE_LOG)
+#define RRR_MSG_IS_TREE_DATA(msg) \
+	((msg)->msg_type == RRR_MSG_TYPE_TREE_DATA)
+
+#define RRR_MSG_TYPE_OK(msg)                                   \
+    (RRR_MSG_IS_CTRL(msg) ||                                   \
+     RRR_MSG_IS_RRR_MESSAGE(msg) ||                            \
+     RRR_MSG_IS_RRR_MESSAGE_ADDR(msg) ||                       \
+     RRR_MSG_IS_SETTING(msg) ||                                \
+     RRR_MSG_IS_RRR_MESSAGE_LOG(msg) ||                        \
+     RRR_MSG_IS_TREE_DATA(msg)                                 \
+    )
 
 // The header_crc32 is calculated AFTER conversion to network
 // byte order (big endian). The crc32 is then converted itself.

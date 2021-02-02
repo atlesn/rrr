@@ -1,6 +1,7 @@
 SUBDIRS = lib modules tests python cmodules
-bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth
+bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth rrr_msg
 noinst_PROGRAMS = rrr_http_client rrr_http_server rrr_msgdb
+TESTS = test.sh
 
 datadir = @RRR_DATA_DIR@
 
@@ -45,6 +46,10 @@ rrr_stats_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
 rrr_msgdb_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
+
+rrr_msg_SOURCES = rrr_msg.c main.c
+rrr_msg_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
+rrr_msg_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 
 if RRR_WITH_PERL5
 all-local:

@@ -89,7 +89,7 @@ static int __rrr_msg_head_validate (
 			goto out;
 		}
 	}
-	else if (RRR_MSG_IS_SETTING(message) || RRR_MSG_IS_RRR_MESSAGE(message) || RRR_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+	else if (RRR_MSG_TYPE_OK(message)) {
 		// OK
 	}
 	else {
@@ -151,8 +151,9 @@ int rrr_msg_check_data_checksum_and_length (
 	if (data_size < sizeof(*message)) {
 		RRR_BUG("rrr_msg_checksum_check called with too short message\n");
 	}
-	if ((int64_t) message->msg_size != data_size) {
-		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check\n");
+	if (message->msg_size != data_size) {
+		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check (%" PRIu32 "<>%" PRIrrrl ")\n",
+				message->msg_size, data_size);
 		return 1;
 	}
 	// HEX dumper

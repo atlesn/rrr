@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -56,6 +56,11 @@ int rrr_msg_msg_log_new (
 		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
+);
+int rrr_msg_msg_log_to_str (
+	char **target_prefix,
+	char **target_message,
+	const struct rrr_msg_log *msg
 );
 
 #endif /* RRR_MESSAGE_LOG_H */

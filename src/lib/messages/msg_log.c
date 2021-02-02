@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
+#include "../log.h"
 #include "msg_log.h"
 #include "msg.h"
 
@@ -38,7 +38,7 @@ int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg) {
 		return 1;
 	}
 
-	if (msg->prefix_size > 0 && *(msg->prefix_and_message - 1 + msg->prefix_size - 1) != '\0') {
+	if (msg->prefix_size > 0 && *(msg->prefix_and_message + msg->prefix_size - 1) != '\0') {
 		RRR_MSG_0("Prefix was not 0-terminated in rrr_msg_msg_log_to_host\n");
 		return 1;
 	}
@@ -71,20 +71,22 @@ int rrr_msg_msg_log_new (
 ) {
 	*target = NULL;
 
-	size_t prefix_size = strlen(prefix) + 1;
-	size_t message_size = strlen(message) + 1;
+	struct rrr_msg_log *result = NULL;
 
+	size_t prefix_size = strlen(prefix) + 1;
 	if (prefix_size > 0xffff) {
 		prefix_size = 0xffff;
 	}
+	size_t message_size = strlen(message) + 1;
 
-	size_t total_data_size = prefix_size + message_size;
+	const size_t allocation_size = sizeof(*result) - 1 + prefix_size + message_size;
 
-	struct rrr_msg_log *result = malloc(sizeof(*result) - 1 + total_data_size);
-	if (result == NULL) {
+	if ((result = malloc(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memorty in rrr_msg_msg_log_new");
 		return 1;
 	}
+
+	memset(result, '\0', allocation_size);
 
 	rrr_msg_msg_log_init_head(result, prefix_size, message_size);
 /*
@@ -98,8 +100,6 @@ int rrr_msg_msg_log_new (
 	);
 */
 	memcpy(result->prefix_and_message, prefix, prefix_size);
-	*(result->prefix_and_message + prefix_size - 1) = '\0';
-
 	memcpy(RRR_MSG_LOG_MSG_POS(result), message, message_size);
 
 	result->loglevel_translated = loglevel_translated;
@@ -108,4 +108,47 @@ int rrr_msg_msg_log_new (
 	*target = result;
 
 	return 0;
+}
+
+int rrr_msg_msg_log_to_str (
+	char **target_prefix,
+	char **target_message,
+	const struct rrr_msg_log *msg
+) {
+	int ret = 0;
+
+	*target_prefix = NULL;
+	*target_message = NULL;
+
+	char *prefix = NULL;
+	char *message = NULL;
+
+	if ((prefix = malloc(RRR_MSG_LOG_PREFIX_SIZE(msg) + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_log_to_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((message = malloc(RRR_MSG_LOG_MSG_SIZE(msg) + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_log_to_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(prefix, msg->prefix_and_message, RRR_MSG_LOG_PREFIX_SIZE(msg));
+	memcpy(message, RRR_MSG_LOG_MSG_POS(msg), RRR_MSG_LOG_MSG_SIZE(msg));
+
+	prefix[RRR_MSG_LOG_PREFIX_SIZE(msg)] = '\0';
+	message[RRR_MSG_LOG_MSG_SIZE(msg)] = '\0';
+
+	*target_prefix = prefix;
+	*target_message = message;
+
+	prefix = NULL;
+	message = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(prefix);
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
 }
