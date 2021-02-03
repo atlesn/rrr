@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -138,6 +138,9 @@ enum rrr_http_method rrr_http_util_method_str_to_enum (
 );
 enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 		const char *format_str
+);
+const char *rrr_http_util_iana_response_phrase_from_status_code (
+		unsigned int status_code
 );
 
 #endif /* RRR_HTTP_UTIL_H */

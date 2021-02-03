@@ -1171,3 +1171,101 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 
 	return format;
 }
+
+struct rrr_http_util_iana_response_code {
+	unsigned int code;	
+	const char *phrase;
+};
+
+static const struct rrr_http_util_iana_response_code rrr_http_util_iana_response_codes[] = {
+	// Common IANA codes
+	{200, "OK"},
+	{204, "No Content"},
+	{400, "Bad Request"},
+	{403, "Forbidden"},
+	{404, "Not Found"},
+	{500, "Internal Server Error"},
+
+	// Non-iana codes
+	{418, "I'm a teapot"}, // RFC2324/RFC7168
+
+	// Other IANA codes
+	{100, "Continue"},
+	{101, "Switching Protocols"},
+	{102, "Processing"},
+	{103, "Early Hints"},
+	{201, "Created"},
+	{202, "Accepted"},
+	{203, "Non-Authoritative Information"},
+	{205, "Reset Content"},
+	{206, "Partial Content"},
+	{207, "Multi-Status"},
+	{208, "Already Reported"},
+	{226, "IM Used"},
+	{300, "Multiple Choices"},
+	{301, "Moved Permanently"},
+	{302, "Found"},
+	{303, "See Other"},
+	{304, "Not Modified"},
+	{305, "Use Proxy"},
+	{307, "Temporary Redirect"},
+	{308, "Permanent Redirect"},
+	{401, "Unauthorized"},
+	{402, "Payment Required"},
+	{405, "Method Not Allowed"},
+	{406, "Not Acceptable"},
+	{407, "Proxy Authentication Required"},
+	{408, "Request Timeout"},
+	{409, "Conflict"},
+	{410, "Gone"},
+	{411, "Length Required"},
+	{412, "Precondition Failed"},
+	{413, "Payload Too Large"},
+	{414, "URI Too Long"},
+	{415, "Unsupported Media Type"},
+	{416, "Range Not Satisfiable"},
+	{417, "Expectation Failed"},
+	{421, "Misdirected Request"},
+	{422, "Unprocessable Entity"},
+	{423, "Locked"},
+	{424, "Failed Dependency"},
+	{425, "Too Early"},
+	{426, "Upgrade Required"},
+	{428, "Precondition Required"},
+	{429, "Too Many Requests"},
+	{431, "Request Header Fields Too Large"},
+	{451, "Unavailable For Legal Reasons"},
+	{501, "Not Implemented"},
+	{502, "Bad Gateway"},
+	{503, "Service Unavailable"},
+	{504, "Gateway Timeout"},
+	{505, "HTTP Version Not Supported"},
+	{506, "Variant Also Negotiates"},
+	{507, "Insufficient Storage"},
+	{508, "Loop Detected"},
+	{510, "Not Extended"},
+	{511, "Network Authentication Required"}
+};
+
+const char *rrr_http_util_iana_response_phrase_from_status_code (
+		unsigned int status_code
+) {
+	if (status_code < 100 || status_code > 599) {
+		goto out_unknown;
+	}
+
+	int retries = 1;
+	while (--retries >= 0) {
+		for (size_t i = 0; i < sizeof(rrr_http_util_iana_response_codes) / sizeof(rrr_http_util_iana_response_codes[0]); i++) {
+			const struct rrr_http_util_iana_response_code *code = &rrr_http_util_iana_response_codes[i];
+			if (code->code == status_code) {
+				return code->phrase;
+			}
+		}
+
+		status_code -= status_code % 100;
+	}
+
+	out_unknown:
+	return "Unknown status";
+}
