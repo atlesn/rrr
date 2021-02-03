@@ -505,7 +505,10 @@ AS_IF([test "x$enable_jsonc" = xno], [
 		AC_LANG_SOURCE([[
 			#include <json-c/json_object.h>
 			int main (int argc, char *argv[]) {
-				return json_object_object_add(NULL, NULL, NULL);
+				json_object *obj1 = json_object_new_object();
+				json_object *obj2 = json_object_new_object();
+				// Compilation fails if function is of void type
+				return json_object_object_add(obj1, "key", obj2);
 			}
 		]])
 	], [
