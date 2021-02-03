@@ -492,6 +492,29 @@ AS_IF([test "x$enable_jsonc" = xno], [
 	AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
 	AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
 
+	AC_CHECK_LIB(json-c, json_object_new_null, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
+	], [])
+
+	AC_CHECK_LIB(json-c, json_object_new_uint64, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
+	], [])
+
+	AC_MSG_CHECKING([json_object_object_add is of void type])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <json-c/json_object.h>
+			int main (int argc, char *argv[]) {
+				return json_object_object_add(NULL, NULL, NULL);
+			}
+		]])
+	], [
+		AC_MSG_RESULT([no])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
+	])
+
 	JSONC_CFLAGS=""
 	JSONC_LDFLAGS=""
 	JSONC_LIBS="-ljson-c"

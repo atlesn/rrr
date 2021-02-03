@@ -267,7 +267,11 @@ static int __rrr_json_type_to_object (
 	json_object *object_new = NULL;
 
 	if (RRR_TYPE_IS_VAIN(value->definition->type)) {
+#ifdef RRR_HAVE_JSONC_NEW_NULL
 		object_new = json_object_new_null(); // Note : Always returns NULL
+#else
+		object_new = NULL;
+#endif
 	}
 	else {
 		if (RRR_TYPE_IS_64(value->definition->type)) {
@@ -276,7 +280,20 @@ static int __rrr_json_type_to_object (
 				object_new = json_object_new_int64(*((int64_t *) &value_64));
 			}
 			else {
+#ifdef RRR_HAVE_JSONC_NEW_UINT64
 				object_new = json_object_new_uint64(value_64);
+#else
+				if (value_64 > INT64_MAX) {
+					RRR_DBG_3("JSON unsigned value '%" PRIu64 "' would overflow as signed integer, converting to string\n",
+							value_64);
+					char buf[64];
+					sprintf(buf, "%" PRIu64, value_64);
+					object_new = json_object_new_string(buf);
+				}
+				else {
+					object_new = json_object_new_int64(value_64);
+				}
+#endif
 			}
 		}
 		else {
@@ -305,11 +322,15 @@ static int __rrr_json_object_add (
 
 	const int length_old = json_object_object_length(target);
 
+#ifdef RRR_HAVE_JSONC_OBJECT_ADD_VOID
+	json_object_object_add(target, key, *value);
+#else
 	if ((ret = json_object_object_add(target, key, *value)) != 0) {
 		RRR_MSG_0("Failed to add value to JSON object in __rrr_json_object_add: %s\n", json_tokener_error_desc(ret));
 		ret = 1;
 		goto out;
 	}
+#endif
 	*value = NULL;
 
 	if (length_old == json_object_object_length(target)) {
