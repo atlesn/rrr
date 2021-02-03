@@ -4,7 +4,7 @@ TEST_COMPOSITE_FILE=./.test_composite.sh
 VARIABLES_FILE=../../variables.sh
 
 if test "x$TEST_VARIABLES_SET" != "x1"; then
-	echo "#!/bin/sh\n\nTEST_VARIABLES_SET=1\n" > $TEST_COMPOSITE_FILE
+	printf "#!/bin/sh\n\nTEST_VARIABLES_SET=1\n" > $TEST_COMPOSITE_FILE
 	cat $VARIABLES_FILE | grep '=' >> $TEST_COMPOSITE_FILE
 	cat test.sh | grep -v '/bin/sh' >> $TEST_COMPOSITE_FILE
 	chmod +x $TEST_COMPOSITE_FILE
