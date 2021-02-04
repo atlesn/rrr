@@ -1,4 +1,4 @@
-.Dd 2021-01-30
+.Dd 2021-02-04
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1293,10 +1293,18 @@ If set to 'no' or left unset,
 .B httpserver
 will generate default responses.
 
-.It http_serve_response_timeout={MILLISECONDS}
+.It http_serve_response_timeout=MILLISECONDS
 How long to wait for a response from senders before timing out and generating a
 .B 504 Gateway Timeout
 response.
+
+.It http_server_header_allow_origin=STRING
+If defined, httpserver will send an
+.B Access-Control-Allow-Origin
+header with the given string in all response headers.
+The header is mainly used by web browsers, look online for documentation on what it does.
+Using the header, in particualar setting it to * (which means to allow all origins), may have
+.B security implications.
 
 .It http_server_worker_threads=UNSIGNED INTEGER
 How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 

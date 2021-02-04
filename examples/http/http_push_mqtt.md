@@ -38,21 +38,20 @@ The setup consists of four parts:
 How it works:
 
 * The client (run by the browser) uses a Javascript to connect to the RRR HTTP server. Whenever a connection is complete, it reconnects.
-* **httpserver** receives HTTP requests and finds the `handle` parameter in the GET data
-* The timeouts in **httpserver** have been set high to allow for HTTP push
+* **httpserver** receives HTTP requests and finds the `handle` parameter in the GET data.
+* The timeouts in **httpserver** have been set high to allow for HTTP push.
 * The `http_server_get_response_from_senders` parameter prevents a response from being generated, and the connection is kept open as the HTTP server
-  waits for a reply from some other module (in this case Perl5)
-* The Perl5 program receives an RRR array message from the HTTP server containing the `handle` parameter and the topic to
-  use when a response is to be generated
-* The handle and topic are temporarily saved, but no response is immediately created.
-* Since the clients are identified using `handle`, any new connections with the same `handle` will replace existing ones.
-* Whenever the MQTT client receives a PUBLISH matching the topic `push/+`, the Perl5 will receive it.
+  waits for a reply from some other module (in this case Perl5).
+* The Perl5 program receives an RRR array message from the HTTP server with a unique topic containing a `handle` or ID.
+* The same topic is used for messages containing responses.
+* The topic is temporarily saved in Perl5, but no response is immediately created.
+* Whenever the MQTT client receives a PUBLISH matching the topic `push/+`, it will create a message which the Perl5 then receives.
 * The latter part of the MQTT topic (after `/`) is the handle of the client to which the message is destined for.
 * The messages are stored in a hash, and any new messages received with the same handle replace any old messages with matching handles.
-* The `sub source` subroutine in the Perl5 program is run on a regular basis and checks if an active connection has received any message
-* If a message matching the handle is found, an HTTP response with some JSON data is generated which the HTTP server then passes on to the client
-* The message is deleted from the Perl5 program and the HTTP client closes the connection and immediately opens a new one
-* If no message is found for a handle after five seconds, an empty response is sent to the client causing a new connection to be made
+* The `sub source` subroutine in the Perl5 program is run on a regular basis and checks if an active connection has received any message.
+* If a message matching a handle is found, an HTTP response with some JSON data is generated which the HTTP server then passes on to the client.
+* The message is deleted from the Perl5 program and the HTTP client closes the connection and immediately opens a new one.
+* If no message is found for a handle after five seconds, an empty response is sent to the client causing a new connection to be made.
 
 ## Run the example
 

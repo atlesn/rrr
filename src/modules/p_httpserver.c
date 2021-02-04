@@ -85,6 +85,8 @@ struct httpserver_data {
 
 	struct rrr_map websocket_topic_filters;
 
+	char *allow_origin_header;
+
 	pthread_mutex_t oustanding_responses_lock;
 
 	// Settings for test suite
@@ -97,6 +99,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 }
 
 static int httpserver_data_init (
@@ -220,6 +223,8 @@ static int httpserver_parse_config (
 		);
 		data->do_accept_websocket_binary = 1;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
 
 	// Undocumented, used to test failures in clients
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
@@ -638,7 +643,7 @@ static int httpserver_receive_callback_response_get (
 			&topic_filter,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
 			unique_id,
-			"#"
+			NULL
 	)) != 0) {
 		goto out;
 	}
@@ -950,6 +955,14 @@ static int httpserver_receive_callback (
 			goto out;
 		}
 		if ((ret = httpserver_receive_callback_response_process (data, transaction, &array_tmp)) != 0) {
+			goto out;
+		}
+	}
+
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
 			goto out;
 		}
 	}
