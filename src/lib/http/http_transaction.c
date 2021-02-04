@@ -378,6 +378,15 @@ int rrr_http_transaction_send_body_set_allocated (
 	);
 }
 
+static int __rrr_http_transaction_part_content_length_set (
+		struct rrr_http_transaction *transaction,
+		struct rrr_http_part *part
+) {
+	char content_length_str[64];
+	sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
+	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
+}
+
 static void __rrr_http_transaction_response_code_ensure (
 		struct rrr_http_transaction *transaction
 ) {
@@ -417,9 +426,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 	       transaction->response_part->response_code != 204
 	     )
 	) {
-		char content_length_str[64];
-		sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
-		if ((ret = rrr_http_part_header_field_push_and_replace (transaction->response_part, "content-length", content_length_str)) != 0) {
+		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
 			goto out;
 		}
 	}
@@ -463,5 +470,79 @@ int rrr_http_transaction_response_prepare_wrapper (
 	}
 
 	out:
+	return ret;
+}
+
+int rrr_http_transaction_request_prepare_wrapper (
+		struct rrr_http_transaction *transaction,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		const char *host,
+		const char *user_agent,
+		int (*preliminary_callback)(
+			enum rrr_http_method method,
+			enum rrr_http_upgrade_mode upgrade_mode,
+			struct rrr_http_part *request_part,
+			const struct rrr_nullsafe_str *request,
+			void *arg
+		),
+		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
+		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_nullsafe_str *request_nullsafe = NULL;
+
+	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&request_nullsafe, transaction)) != 0) {
+		goto out;
+	}
+
+	if ((ret = preliminary_callback(transaction->method, upgrade_mode, transaction->request_part, request_nullsafe, callback_arg)) != 0) {
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
+		if ((ret = rrr_http_part_header_field_push_if_not_exists(transaction->request_part, "content-type", "application/octet-stream")) != 0) {
+			goto out;
+		}
+	}
+	else {
+		// Note : Might add more headers to request part
+		int form_data_was_made_dummy = 0;
+		if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made_dummy, transaction)) != 0) {
+			goto out;
+		}
+	}
+
+	if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
+		goto out;
+	}
+
+	if (rrr_http_part_header_fields_iterate (
+			transaction->request_part,
+			headers_callback,
+			callback_arg
+	) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "host", host)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "user-agent", user_agent)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "accept-charset", "UTF-8")) != 0) {
+		goto out;
+	}
+
+	if ((ret = final_callback(transaction->request_part, transaction->send_body, callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	rrr_nullsafe_str_destroy_if_not_null(&request_nullsafe);
 	return ret;
 }

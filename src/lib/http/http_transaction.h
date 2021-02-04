@@ -130,5 +130,21 @@ int rrr_http_transaction_response_prepare_wrapper (
 		int (*final_callback)(struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
 		void *callback_arg
 );
+int rrr_http_transaction_request_prepare_wrapper (
+		struct rrr_http_transaction *transaction,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		const char *host,
+		const char *user_agent,
+		int (*preliminary_callback)(
+			enum rrr_http_method method,
+			enum rrr_http_upgrade_mode upgrade_mode,
+			struct rrr_http_part *request_part,
+			const struct rrr_nullsafe_str *request,
+			void *arg
+		),
+		int (*headers_callback)(struct rrr_http_header_field *field, void *arg),
+		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
+		void *callback_arg
+);
 
 #endif /* RRR_HTTP_TRANSACTION_H */

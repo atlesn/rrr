@@ -66,6 +66,12 @@ void rrr_string_builder_clear (
 	string_builder->wpos = 0;
 }
 
+void rrr_string_builder_clear_void (
+		void *string_builder
+) {
+	rrr_string_builder_clear(string_builder);
+}
+
 const char *rrr_string_builder_buf (
 		const struct rrr_string_builder *string_builder
 ) {

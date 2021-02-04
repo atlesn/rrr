@@ -82,27 +82,36 @@ static void __rrr_http_application_http1_transaction_set (
 	http1->active_transaction = transaction;
 }
 
-static int __rrr_http_application_http1_request_send_make_headers_callback (
-		struct rrr_http_header_field *field,
-		void *arg
+static int __rrr_http_application_http1_header_field_make (
+		struct rrr_string_builder *builder,
+		struct rrr_http_header_field *field
 ) {
-	struct rrr_string_builder *builder = arg;
+	int ret = 0;
 
-	// Note : Only plain values supported
-	if (!rrr_nullsafe_str_isset(field->value)) {
-		return 0;
+//	char *value_tmp = NULL;
+
+	if (!rrr_nullsafe_str_isset(field->value) || rrr_nullsafe_str_len(field->value) == 0) {
+		goto out;
 	}
 
-	int ret = 0;
+/*	if ((value_tmp = rrr_http_util_header_value_quote_nullsafe(field->value, '"', '"')) == NULL) {
+		ret = 1;
+		goto out;
+	}*/
+
+	// TODO : Smart escape of values
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,field->name);
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
 
 	ret |= rrr_string_builder_append(builder, name);
 	ret |= rrr_string_builder_append(builder, ": ");
+//	ret |= rrr_string_builder_append(builder, value_tmp);
 	ret |= rrr_string_builder_append(builder, value);
 	ret |= rrr_string_builder_append(builder, "\r\n");
 
+	out:
+//	RRR_FREE_IF_NOT_NULL(value_tmp);
 	return ret;
 }
 
@@ -115,8 +124,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 
 	int ret = 0;
 
-	char *send_data = NULL;
-	size_t send_data_length = 0;
+	struct rrr_string_builder string_builder = {0}; 
 
 	if (!rrr_nullsafe_str_isset(field->name) || !rrr_nullsafe_str_isset(field->value)) {
 		RRR_BUG("BUG: Name or value was NULL in __rrr_http_application_http1_send_header_field_callback\n");
@@ -125,34 +133,13 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 		RRR_BUG("BUG: Subvalues were present in __rrr_http_application_http1_send_header_field_callback, this is not supported\n");
 	}
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &send_data);
+	pthread_cleanup_push(rrr_string_builder_clear_void, &string_builder);
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, field->name);
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value, field->value);
-
-	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", name, value)) <= 0) {
-		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_application_http1_send_header_field_callback\n");
-		ret = 1;
+	if ((ret = __rrr_http_application_http1_header_field_make(&string_builder, field)) != 0) {
 		goto out;
 	}
 
-	// Hack to create Camel-Case header names (before : only)
-	int next_to_upper = 1;
-	for (size_t i = 0; i < send_data_length; i++) {
-		if (send_data[i] == ':' || send_data[i] == '\0') {
-			break;
-		}
-
-		if (next_to_upper) {
-			if (send_data[i] >= 'a' && send_data[i] <= 'z') {
-				send_data[i] -= ('a' - 'A');
-			}
-		}
-
-		next_to_upper = (send_data[i] == '-' ? 1 : 0);
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, send_data, send_data_length)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
 		RRR_DBG_1("Error: Send failed in __rrr_http_application_http1_send_header_field_callback\n");
 		goto out;
 	}
@@ -1257,66 +1244,37 @@ static int __rrr_http_application_http1_request_send_possible (
 	return 0;
 }
 
-static int __rrr_http_application_http1_request_send (
-		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
+struct rrr_http_application_http1_request_send_callback_data {
+	struct rrr_http_application_http1 *http1;
+	struct rrr_net_transport_handle *handle;
+	struct rrr_string_builder *header_builder;
+};
+
+int __rrr_http_application_http1_request_send_preliminary_callback (
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *request,
+		void *arg
 ) {
+	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
+
 	int ret = 0;
 
-	// DO NOT do any upgrades here, HTTP1 may do this during ticking only.
-	// Upgrades here may cause infinite recursion as HTTP2 upgrades in its request_send function.
-	*upgraded_app = NULL;
-
-	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
-	struct rrr_http_part *request_part = transaction->request_part;
-
-	char *host_buf = NULL;
-	char *user_agent_buf = NULL;
 	char *websocket_key_tmp = NULL;
 	char *http2_upgrade_settings_tmp = NULL;
-	struct rrr_nullsafe_str *request_nullsafe = NULL;
+	struct rrr_nullsafe_str *request_tmp = NULL;
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &host_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &user_agent_buf);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &websocket_key_tmp);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &http2_upgrade_settings_tmp);
-	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_nullsafe);
+	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &request_tmp);
 
-	struct rrr_string_builder *header_builder = NULL;
-
-	if (http1->active_transaction != NULL) {
-		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
-	}
-
-	__rrr_http_application_http1_transaction_set(http1, transaction);
-
-	if (rrr_string_builder_new(&header_builder) != 0) {
-		RRR_MSG_0("Failed to create string builder in __rrr_http_application_http1_request_send\n");
-		ret = 1;
-		goto out_final;
-	}
-
-	pthread_cleanup_push(rrr_string_builder_destroy_void, header_builder);
-
-	host_buf = rrr_http_util_header_value_quote(host, strlen(host), '"', '"');
-	if (host_buf == NULL) {
-		RRR_MSG_0("Invalid host '%s' in __rrr_http_application_http1_request_send\n", host);
-		ret = 1;
-		goto out;
-	}
-
-	user_agent_buf = rrr_http_util_header_value_quote(user_agent, strlen(user_agent), '"', '"');
-	if (user_agent_buf == NULL) {
-		RRR_MSG_0("Invalid user agent '%s' in __rrr_http_application_http1_request_send\n", user_agent);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&request_nullsafe, transaction)) != 0) {
+	if ((ret = rrr_nullsafe_str_dup(&request_tmp, request)) != 0) {
 		goto out;
 	}
 
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
-		if (transaction->method != RRR_HTTP_METHOD_GET) {
+		if (method != RRR_HTTP_METHOD_GET) {
 			RRR_BUG("BUG: HTTP method was not GET while upgrade mode was WebSocket\n");
 		}
 		if ((ret = rrr_http_part_header_field_push(request_part, "connection", "Upgrade")) != 0) {
@@ -1325,7 +1283,7 @@ static int __rrr_http_application_http1_request_send (
 		if ((ret = rrr_http_part_header_field_push(request_part, "upgrade", "websocket")) != 0) {
 			goto out;
 		}
-		if ((ret = rrr_websocket_state_get_key_base64 (&websocket_key_tmp, &http1->ws_state)) != 0) {
+		if ((ret = rrr_websocket_state_get_key_base64 (&websocket_key_tmp, &callback_data->http1->ws_state)) != 0) {
 			goto out;
 		}
 		if ((ret = rrr_http_part_header_field_push(request_part, "sec-websocket-key", websocket_key_tmp)) != 0) {
@@ -1335,11 +1293,11 @@ static int __rrr_http_application_http1_request_send (
 			goto out;
 		}
 
-		rrr_websocket_state_set_client_mode(&http1->ws_state);
+		rrr_websocket_state_set_client_mode(&callback_data->http1->ws_state);
 	}
 	else if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2) {
 #ifdef RRR_WITH_NGHTTP2
-		if (transaction->method != RRR_HTTP_METHOD_GET && transaction->method != RRR_HTTP_METHOD_HEAD) {
+		if (method != RRR_HTTP_METHOD_GET && method != RRR_HTTP_METHOD_HEAD) {
 			RRR_DBG_3("Note: HTTP1 upgrade to HTTP2 not possible, query is not GET or HEAD\n");
 		}
 		else {
@@ -1364,9 +1322,9 @@ static int __rrr_http_application_http1_request_send (
 
 	// Prepend "GET " etc. before endpoint
 	if ((ret = rrr_nullsafe_str_prepend_asprintf (
-			request_nullsafe,
+			request_tmp,
 			"%s ",
-			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method)
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(method)
 	)) < 0) {
 		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
@@ -1375,89 +1333,115 @@ static int __rrr_http_application_http1_request_send (
 
 	// Append the rest of the header after endpoint
 	if ((ret = rrr_nullsafe_str_append_asprintf (
-			request_nullsafe,
+			request_tmp,
 			" HTTP/1.1\r\n"
-			"Host: %s\r\n"
-			"User-Agent: %s\r\n"
-			"Accept-Charset: UTF-8\r\n",
-			host_buf,
-			user_agent_buf
 	)) < 0) {
 		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (handle, request_nullsafe)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (callback_data->handle, request_tmp)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
 
-	rrr_string_builder_clear(header_builder);
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	return ret;
+}
 
-	if (rrr_nullsafe_str_len(transaction->send_body)) {
-		if ((ret = rrr_http_part_header_field_push_if_not_exists(request_part, "content-type", "application/octet-stream")) != 0) {
+static int __rrr_http_application_http1_request_send_make_headers_callback (
+		struct rrr_http_header_field *field,
+		void *arg
+) {
+	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
+	return __rrr_http_application_http1_header_field_make(callback_data->header_builder, field);
+}
+
+int __rrr_http_application_http1_request_send_final_callback (
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *send_body,
+		void *arg
+) {
+	struct rrr_http_application_http1_request_send_callback_data *callback_data = arg;
+
+	(void)(request_part);
+
+	int ret = 0;
+
+	if (rrr_string_builder_length(callback_data->header_builder) > 0) {
+		if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
+			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
 	}
-	else {
-		// Note : Might add more headers to request part
-		int form_data_was_made_dummy = 0;
-		if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made_dummy, transaction)) != 0) {
-			goto out;
-		}
-	}
 
-	if (rrr_nullsafe_str_len(transaction->send_body)) {
-		char content_length[64];
-		sprintf(content_length, "%" PRIrrrl, rrr_nullsafe_str_len(transaction->send_body));
-		if ((ret = rrr_http_part_header_field_push(request_part, "content-length", content_length)) != 0) {
-			goto out;
-		}
-	}
-
-	if (rrr_http_part_header_fields_iterate (
-			request_part,
-			__rrr_http_application_http1_request_send_make_headers_callback,
-			header_builder
-	) != 0) {
-		RRR_MSG_0("Failed to make header fields in __rrr_http_application_http1_request_send\n");
-		ret = 1;
+	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, "\r\n", 2)) != 0) {
+		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send_final_callback\n");
 		goto out;
 	}
 
-	if (rrr_string_builder_length(header_builder) > 0) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (handle, header_builder->buf, header_builder->wpos)) != 0) {
-			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send\n");
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", 2)) != 0) {
-		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send\n");
-		goto out;
-	}
-
-	if (rrr_nullsafe_str_len(transaction->send_body)) {
+	if (rrr_nullsafe_str_len(send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
-				transaction->send_body,
+				send_body,
 				__rrr_http_application_http1_blocking_send_callback,
-				handle
+				callback_data->handle
 		)) != 0) {
-			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send\n");
+			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
+	}
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http1_request_send (
+		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) application;
+
+	int ret = 0;
+
+	// DO NOT do any upgrades here, HTTP1 may do this during ticking only.
+	// Upgrades here may cause infinite recursion as HTTP2 upgrades in its request_send function.
+	*upgraded_app = NULL;
+
+	struct rrr_string_builder header_builder = {0};
+
+	if (http1->active_transaction != NULL) {
+		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
+	}
+
+printf("Set active\n");
+	__rrr_http_application_http1_transaction_set(http1, transaction);
+
+	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
+
+	struct rrr_http_application_http1_request_send_callback_data callback_data = {
+		http1,
+		handle,
+		&header_builder
+	};
+
+	if ((ret = rrr_http_transaction_request_prepare_wrapper (
+			transaction,
+			upgrade_mode,
+			host,
+			user_agent,
+			__rrr_http_application_http1_request_send_preliminary_callback,
+			__rrr_http_application_http1_request_send_make_headers_callback,
+			__rrr_http_application_http1_request_send_final_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
 	}
 
 	out:
-		pthread_cleanup_pop(1);
-	out_final:
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		return ret;
+	pthread_cleanup_pop(1);
+	return ret;
 }
 
 int __rrr_http_application_http1_tick (
