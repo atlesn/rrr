@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
+#include "lib/http/http_util.h"
 #include "lib/http/http_client.h"
 #include "lib/http/http_transaction.h"
 #include "lib/net_transport/net_transport.h"
@@ -319,7 +320,7 @@ static int __rrr_http_client_final_callback (
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("Error response from server: %i %s\n",
 				transaction->response_part->response_code,
-				transaction->response_part->response_str
+				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
 		);
 	}
 

@@ -119,8 +119,7 @@ void rrr_http_transaction_decref_if_not_null (
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 	rrr_http_part_destroy(transaction->response_part);
 	rrr_http_part_destroy(transaction->request_part);
-	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_data_tmp);
-	rrr_nullsafe_str_destroy_if_not_null(&transaction->request_body_raw);
+	rrr_nullsafe_str_destroy_if_not_null(&transaction->send_body);
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
 	}
@@ -212,23 +211,11 @@ int rrr_http_transaction_endpoint_set (
 	return 0;
 }
 
-void rrr_http_transaction_body_format_set (
+void rrr_http_transaction_request_body_format_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_body_format body_format
 ) {
 	transaction->request_body_format = body_format;
-}
-
-int rrr_http_transaction_request_body_set_allocated (
-		struct rrr_http_transaction *transaction,
-		void **data,
-		rrr_length data_size
-) {
-	return rrr_nullsafe_str_new_or_replace_raw_allocated (
-			&transaction->request_body_raw,
-			data,
-			data_size
-	);
 }
 
 int rrr_http_transaction_endpoint_path_get (
@@ -314,7 +301,7 @@ int __rrr_http_transaction_form_data_make_if_needed_chunk_callback (
 		RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS
 ) {
 	struct rrr_http_transaction *transaction = arg;
-	return rrr_nullsafe_str_append(transaction->send_data_tmp, str);
+	return rrr_nullsafe_str_append(transaction->send_body, str);
 }
 
 int rrr_http_transaction_form_data_generate_if_needed (
@@ -330,8 +317,7 @@ int rrr_http_transaction_form_data_generate_if_needed (
 		goto out;
 	}
 
-	transaction->send_data_pos = 0;
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&transaction->send_data_tmp, NULL, 0)) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&transaction->send_body, NULL, 0)) != 0) {
 		goto out;
 	}
 
@@ -363,6 +349,118 @@ int rrr_http_transaction_form_data_generate_if_needed (
 	}
 
 	*form_data_was_made = 1;
+
+	out:
+	return ret;
+}
+
+int rrr_http_transaction_send_body_set (
+		struct rrr_http_transaction *transaction,
+		const void *data,
+		rrr_length data_size
+) {
+	return rrr_nullsafe_str_new_or_replace_raw (
+			&transaction->send_body,
+			data,
+			data_size
+	);
+}
+
+int rrr_http_transaction_send_body_set_allocated (
+		struct rrr_http_transaction *transaction,
+		void **data,
+		rrr_length data_size
+) {
+	return rrr_nullsafe_str_new_or_replace_raw_allocated (
+			&transaction->send_body,
+			data,
+			data_size
+	);
+}
+
+static void __rrr_http_transaction_response_code_ensure (
+		struct rrr_http_transaction *transaction
+) {
+	int response_code = transaction->response_part->response_code;
+
+	if (response_code < 100 || response_code > 599) {
+		response_code = rrr_nullsafe_str_len(transaction->send_body) > 0
+			? RRR_HTTP_RESPONSE_CODE_OK
+			: RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT
+		;
+	}
+
+	// Predict that we are going to send data later on stream 1 (during ticking)?
+	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(transaction->send_body) > 0) {
+		response_code = RRR_HTTP_RESPONSE_CODE_OK;
+	}
+
+	RRR_DBG_3("HTTP response code ensured %i => %i\n", transaction->response_part->response_code, response_code);
+
+	transaction->response_part->response_code = response_code;
+}
+
+static int __rrr_http_transaction_response_content_length_ensure (
+		struct rrr_http_transaction *transaction
+) {
+	int ret = 0;
+
+	if (rrr_nullsafe_str_len(transaction->send_body) > 0 && transaction->response_part->response_code == 204) {
+		RRR_MSG_0("HTTP response to send had a body while response code was 204 No Content, this is an error.\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if ( rrr_nullsafe_str_len(transaction->send_body) > 0 ||
+	     ( transaction->response_part->response_code >= 200 &&
+	       transaction->response_part->response_code <= 299 &&
+	       transaction->response_part->response_code != 204
+	     )
+	) {
+		char content_length_str[64];
+		sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
+		if ((ret = rrr_http_part_header_field_push_and_replace (transaction->response_part, "content-length", content_length_str)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_transaction_response_prepare_wrapper (
+		struct rrr_http_transaction *transaction,
+		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
+		int (*response_code_callback)(int response_code, void *arg),
+		int (*final_callback)(struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	// The order of the function calls matter
+
+	__rrr_http_transaction_response_code_ensure (transaction);
+
+	if ((ret = __rrr_http_transaction_response_content_length_ensure(transaction)) != 0) {
+		goto out;
+	}
+
+	if ((ret = response_code_callback (
+			transaction->response_part->response_code, callback_arg)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_fields_iterate (
+			transaction->response_part,
+			header_field_callback,
+			callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = final_callback(transaction->response_part, transaction->send_body, callback_arg)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

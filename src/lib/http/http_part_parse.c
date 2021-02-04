@@ -82,14 +82,8 @@ static int __rrr_http_part_parse_response_code (
 	start += rrr_http_util_count_whsp(start, end);
 
 	if (start < crlf) {
-		ssize_t response_str_len = crlf - start;
-		result->response_str = malloc(response_str_len + 1);
-		if (result->response_str == NULL) {
-			RRR_MSG_0("Could not allocate memory for response string in __rrr_http_parse_response_code\n");
-			goto out;
-		}
-		memcpy(result->response_str, start, response_str_len);
-		result->response_str[response_str_len] = '\0';
+		// ssize_t response_str_len = crlf - start;
+		// Response phrase ignored
 	}
 	else if (start > crlf) {
 		RRR_BUG("pos went beyond CRLF in __rrr_http_parse_response_code\n");

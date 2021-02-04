@@ -77,7 +77,6 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 	rrr_http_header_field_collection_clear(&part->headers);
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
 	rrr_http_field_collection_clear(&part->fields);
-	RRR_FREE_IF_NOT_NULL(part->response_str);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_method_str_nullsafe);
 	free (part);
@@ -189,6 +188,17 @@ struct rrr_http_chunk *rrr_http_part_chunk_new (
 	return new_chunk;
 }
 
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, field) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->headers, 0; rrr_http_header_field_destroy(node));
+}
+
 int rrr_http_part_header_field_push (
 		struct rrr_http_part *part,
 		const char *name,
@@ -206,6 +216,27 @@ int rrr_http_part_header_field_push (
 
 	out:
 	return ret;
+}
+
+int rrr_http_part_header_field_push_if_not_exists (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	if (rrr_http_part_header_field_get_raw (part, name) != NULL) {
+		return 0;
+	}
+
+	return rrr_http_part_header_field_push(part, name, value);
+}
+
+int rrr_http_part_header_field_push_and_replace (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	rrr_http_part_header_field_remove (part, name);
+	return rrr_http_part_header_field_push(part, name, value);
 }
 
 int rrr_http_part_fields_iterate_const (
@@ -230,17 +261,6 @@ int rrr_http_part_header_fields_iterate (
 	RRR_LL_ITERATE_END();
 
 	return ret;
-}
-
-void rrr_http_part_header_field_remove (
-		struct rrr_http_part *part,
-		const char *field
-) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, field) == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->headers, 0; rrr_http_header_field_destroy(node));
 }
 
 int rrr_http_part_chunks_iterate (

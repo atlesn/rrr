@@ -106,12 +106,12 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 	return ret;
 }
 
-struct rrr_http_application_http1_send_header_field_callback_data {
+struct rrr_http_application_http1_response_send_callback_data {
 	struct rrr_net_transport_handle *handle;
 };
 
 static int __rrr_http_application_http1_response_send_header_field_callback (struct rrr_http_header_field *field, void *arg) {
-	struct rrr_http_application_http1_send_header_field_callback_data *callback_data = arg;
+	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -175,76 +175,93 @@ static int __rrr_http_application_http1_blocking_send_callback (
 	);
 }
 
+static int __rrr_http_application_http1_response_send_response_code_callback (
+		int response_code,
+		void *arg
+) {
+	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *response_str_tmp = NULL;
+
+	if (rrr_asprintf (
+			&response_str_tmp,
+			"HTTP/1.1 %u %s\r\n",
+			response_code,
+			rrr_http_util_iana_response_phrase_from_status_code(response_code)
+	) <= 0) {
+		RRR_MSG_0("rrr_asprintf failed in __rrr_http_application_http1_response_send_response_code_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(response_str_tmp);
+	return ret;
+}
+
+static int __rrr_http_application_http1_response_send_final (
+	struct rrr_http_part *response_part,
+	const struct rrr_nullsafe_str *send_data,
+	void *arg
+) {
+	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
+
+	(void)(response_part);
+
+	int ret = 0;
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, "\r\n", 2)) != 0 ) {
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_len(send_data)) {
+		if ((ret = rrr_nullsafe_str_with_raw_do_const (
+				send_data,
+				__rrr_http_application_http1_blocking_send_callback,
+				callback_data->handle
+		)) != 0) {
+			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_response_send_final\n");
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http1_response_send (
 		struct rrr_http_application *application,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_http_transaction *transaction
 ) {
-	int ret = 0;
-
 	(void)(application);
 
-	struct rrr_http_part *response_part = transaction->response_part;
+	int ret = 0;
 
-	if (response_part->response_code == 0) {
-		RRR_BUG("BUG: Response code was not set in rrr_http_application_http1_send_response\n");
-	}
-
-	const char *response_str = NULL;
-
-	switch (response_part->response_code) {
-		case RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS:
-			response_str = "HTTP/1.1 101 Switching Protocols\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_OK:
-			response_str = "HTTP/1.1 200 OK\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT:
-			response_str = "HTTP/1.1 204 No Content\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST:
-			response_str = "HTTP/1.1 400 Bad Request\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND:
-			response_str = "HTTP/1.1 404 Not Found\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR:
-			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT:
-			response_str = "HTTP/1.1 504 Gateway Timeout\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_VERSION_NOT_SUPPORTED:
-			response_str = "HTTP/1.1 504 Version Not Supported\r\n";
-			break;
-		default:
-			RRR_BUG("BUG: Response code %i not implemented in rrr_http_application_http1_send_response\n",
-					response_part->response_code);
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str))) != 0) {
-		goto out_err;
-	}
-
-	struct rrr_http_application_http1_send_header_field_callback_data callback_data = {
+	struct rrr_http_application_http1_response_send_callback_data callback_data = {
 			handle
 	};
 
-	if ((ret = rrr_http_part_header_fields_iterate(response_part, __rrr_http_application_http1_response_send_header_field_callback, &callback_data)) != 0) {
-		goto out_err;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "\r\n", 2)) != 0 ) {
-		goto out_err;
-	}
-
-	goto out;
-	out_err:
+	if ((ret = rrr_http_transaction_response_prepare_wrapper (
+			transaction,
+			__rrr_http_application_http1_response_send_header_field_callback,
+			__rrr_http_application_http1_response_send_response_code_callback,
+			__rrr_http_application_http1_response_send_final,
+			&callback_data
+	)) != 0) {
 		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_application_http1_transport_ctx_send_response\n",
 				handle->handle);
-	out:
-		return ret;
+		goto out;
+	}
 
+	out:
+	return ret;
 }
 
 struct rrr_http_application_http1_receive_data {
@@ -1378,10 +1395,9 @@ static int __rrr_http_application_http1_request_send (
 
 	rrr_string_builder_clear(header_builder);
 
-	if (rrr_nullsafe_str_len(transaction->request_body_raw)) {
-		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->request_body_raw);
-		if ((ret = rrr_http_part_header_field_push(request_part, "content-type", "application/octet-stream")) != 0) {
-				goto out;
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
+		if ((ret = rrr_http_part_header_field_push_if_not_exists(request_part, "content-type", "application/octet-stream")) != 0) {
+			goto out;
 		}
 	}
 	else {
@@ -1392,11 +1408,11 @@ static int __rrr_http_application_http1_request_send (
 		}
 	}
 
-	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
 		char content_length[64];
-		sprintf(content_length, "%" PRIrrrl, rrr_nullsafe_str_len(transaction->send_data_tmp));
+		sprintf(content_length, "%" PRIrrrl, rrr_nullsafe_str_len(transaction->send_body));
 		if ((ret = rrr_http_part_header_field_push(request_part, "content-length", content_length)) != 0) {
-				goto out;
+			goto out;
 		}
 	}
 
@@ -1422,9 +1438,9 @@ static int __rrr_http_application_http1_request_send (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+	if (rrr_nullsafe_str_len(transaction->send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
-				transaction->send_data_tmp,
+				transaction->send_body,
 				__rrr_http_application_http1_blocking_send_callback,
 				handle
 		)) != 0) {

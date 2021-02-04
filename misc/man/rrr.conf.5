@@ -1247,25 +1247,17 @@ is expected to generate HTTP responses. Imples
 A module which receives the RRR message containing the response may generate a response structured in an RRR array message with the following fields of which all are optinal:
 .sp
 .Bl -tag -width -indent
-.It http_response_code / http_response_text
-The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present.
-.B http_response_text
-is optional and is the response phrase to send after the response code. It will be ignored if
-.B http_response_code
-is not defined.
-
-The
-.B http_response_code
-must be a value >= 100 and <= 599.
-If the particular response code used is not known to RRR and
-.B http_response_text
-is not defined, the response phrase corresponding to the code rounded down to the nearest 100-th number is used (e.g. for unusual code 466, the phrase "Bad Request" will be used.
+.It http_response_code
+The response code and text to use in the response, defaults to 200 or 204 depending on whether or not any data is present
+(httpserver will implicitly force use of 200 if the status is 204 and a body is present).
+Must be a value >= 100 and <= 599, 200 or 204 will be selected silently if the provided code is out of this range.
 .sp
 .It http_content_type
 The content type to use for the response. If it is defined but is an empty string, no content type header will be sent.
 If not defined, the content type sent will depend on the type of the
 .B http_data
 field.
+In any case, a content type header will not be sent if there is no request body.
 
 .It http_body
 The response body to send. The content type set in the response header, unless specified explititly in 

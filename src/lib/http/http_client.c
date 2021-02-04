@@ -275,7 +275,9 @@ static int __rrr_http_client_receive_http_part_callback (
 		const struct rrr_http_header_field *location = rrr_http_part_header_field_get(response_part, "location");
 		if (location == NULL || !rrr_nullsafe_str_isset(location->value)) {
 			RRR_MSG_0("Could not find Location-field in HTTP redirect response %i %s\n",
-					response_part->response_code, (response_part->response_str != NULL ? response_part->response_str : "-"));
+					response_part->response_code,
+					rrr_http_util_iana_response_phrase_from_status_code(response_part->response_code)
+			);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}

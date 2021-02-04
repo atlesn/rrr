@@ -81,7 +81,6 @@ struct rrr_http_part {
 	struct rrr_http_chunks chunks;
 
 	int response_code;
-	char *response_str;
 
 	struct rrr_nullsafe_str *request_method_str_nullsafe;
 	enum rrr_http_method request_method;
@@ -133,7 +132,21 @@ struct rrr_http_chunk *rrr_http_part_chunk_new (
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part
 );
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
+);
 int rrr_http_part_header_field_push (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+);
+int rrr_http_part_header_field_push_if_not_exists (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+);
+int rrr_http_part_header_field_push_and_replace (
 		struct rrr_http_part *part,
 		const char *name,
 		const char *value
@@ -147,10 +160,6 @@ int rrr_http_part_header_fields_iterate (
 		struct rrr_http_part *part,
 		int (*callback)(struct rrr_http_header_field *field, void *arg),
 		void *callback_arg
-);
-void rrr_http_part_header_field_remove (
-		struct rrr_http_part *part,
-		const char *field
 );
 int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,

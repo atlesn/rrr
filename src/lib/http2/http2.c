@@ -439,7 +439,7 @@ static int __rrr_http2_on_header_callback (
 	RRR_DBG_3("Received HTTP2 header %s=%s\n", name, value);
 
 	ssize_t parsed_bytes = 0;
-	if (rrr_http_header_field_parse_value(&stream->headers, &parsed_bytes, name, value) != 0) {
+	if (rrr_http_header_field_parse_value(&stream->headers, &parsed_bytes, (const char *) name, (const char *) value) != 0) {
 		RRR_MSG_0("HTTP2 header field parsing of field '%s' failed, parsed %lli of %llu bytes\n",
 				name, (long long int) parsed_bytes, (unsigned long long int) valuelen);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -1090,7 +1090,7 @@ int rrr_http2_upgrade_request_settings_pack (
 		return 1;
 	}
 
-	*target = result;
+	*target = (char *) result;
 
 	return 0;
 }

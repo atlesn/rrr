@@ -750,22 +750,17 @@ static int httpserver_receive_callback_response_process (
 	struct rrr_http_part *part = transaction->response_part;
 
 	const struct rrr_type_value *value_response_code = rrr_array_value_get_by_tag_const(array, "http_response_code");
-	const struct rrr_type_value *value_response_phrase = rrr_array_value_get_by_tag_const(array, "http_response_text");
 	const struct rrr_type_value *value_content_type = rrr_array_value_get_by_tag_const(array, "http_content_type");
 	const struct rrr_type_value *value_body = rrr_array_value_get_by_tag_const(array, "http_body");
 
 	int ret = 0;
 
-	char *response_phrase_to_free = NULL;
 	char *content_type_to_free = NULL;
 	char *body_to_free = NULL;
-
-	const char *content_type_to_use = NULL;
 
 	if (value_response_code != NULL) {
 		VERIFY_SINGLE_ELEMENT(value_response_code, "response code");
 
-		const char *response_phrase_to_use = NULL;
 		unsigned int response_code_to_use = 0;
 
 		uint64_t response_code = value_response_code->definition->to_64(value_response_code);
@@ -777,29 +772,13 @@ static int httpserver_receive_callback_response_process (
 		}
 		response_code_to_use = response_code;
 
-		if (value_response_phrase != 0) {
-			VERIFY_SINGLE_ELEMENT(value_response_phrase, "response phrase");
-			if ((ret = httpserver_receive_callback_response_process_string_value (&response_phrase_to_free, value_response_phrase)) != 0) {
-				RRR_MSG_0("Failed to process response phrase field in httpserver instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-				goto out;
-			}
-			response_phrase_to_use = response_phrase_to_free;
-		}
-
-		response_phrase_to_use = rrr_http_util_iana_response_phrase_from_status_code(response_code_to_use);
-		RRR_FREE_IF_NOT_NULL(part->response_str);
-		if ((part->response_str = strdup(response_phrase_to_use)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for response phrase in httpserver_receive_callback_response_process\n");
-			ret = 1;
-			goto out;
-		}
-
 		part->response_code = response_code_to_use;
 	}
 
 	if (value_body != NULL) {
 		VERIFY_SINGLE_ELEMENT(value_body, "body");
+
+		const char *content_type_to_use = NULL;
 
 		switch (value_body->definition->type) {
 			case RRR_TYPE_VAIN:
@@ -808,10 +787,10 @@ static int httpserver_receive_callback_response_process (
 			case RRR_TYPE_MSG:
 			case RRR_TYPE_STR:
 				if (value_body->total_stored_length > 0) {
-					if ((ret = rrr_nullsafe_str_new_or_replace_raw (
-							&transaction->send_data_tmp,
-							value_body->data,
-							value_body->total_stored_length
+					if ((ret = rrr_http_transaction_send_body_set (
+						transaction,
+						value_body->data,
+						value_body->total_stored_length
 					)) != 0) {
 						goto out;
 					}
@@ -837,26 +816,26 @@ static int httpserver_receive_callback_response_process (
 				content_type_to_use = "text/plain";
 				break;
 		};
-	}
 
-	if (value_content_type != 0) {
-		VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
-		if ((ret = httpserver_receive_callback_response_process_string_value (&response_phrase_to_free, value_content_type)) != 0) {
-			RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-			goto out;
+		if (value_content_type != 0) {
+			VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
+			if ((ret = httpserver_receive_callback_response_process_string_value (&content_type_to_free, value_content_type)) != 0) {
+				RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+			content_type_to_use = content_type_to_free;
 		}
-		content_type_to_use = content_type_to_free;
-	}
-	if (content_type_to_use != NULL) {
-		if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_free)) != 0) {
-			goto out;
+
+		if (content_type_to_use != NULL) {
+			if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_free)) != 0) {
+				goto out;
+			}
 		}
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(body_to_free);
-	RRR_FREE_IF_NOT_NULL(response_phrase_to_free);
 	RRR_FREE_IF_NOT_NULL(content_type_to_free);
 	return ret;
 }

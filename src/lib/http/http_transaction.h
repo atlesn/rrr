@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../string_builder.h"
 
 struct rrr_http_part;
+struct rrr_http_header_field;
 
 struct rrr_http_transaction {
 	int usercount;
@@ -37,13 +38,12 @@ struct rrr_http_transaction {
 	char *endpoint_str;
 
 	enum rrr_http_body_format request_body_format;
-	struct rrr_nullsafe_str *request_body_raw;
+
+	struct rrr_nullsafe_str *send_body;
+	rrr_length send_body_pos;
 
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
-
-	rrr_length send_data_pos;
-	struct rrr_nullsafe_str *send_data_tmp;
 
 	rrr_biglength remaining_redirects;
 
@@ -97,14 +97,9 @@ int rrr_http_transaction_endpoint_set (
 		struct rrr_http_transaction *transaction,
 		const char *endpoint
 );
-void rrr_http_transaction_body_format_set (
+void rrr_http_transaction_request_body_format_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_body_format body_format
-);
-int rrr_http_transaction_request_body_set_allocated (
-		struct rrr_http_transaction *transaction,
-		void **data,
-		rrr_length data_size
 );
 int rrr_http_transaction_endpoint_path_get (
 		char **result,
@@ -117,6 +112,23 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 int rrr_http_transaction_form_data_generate_if_needed (
 		int *form_data_was_made,
 		struct rrr_http_transaction *transaction
+);
+int rrr_http_transaction_send_body_set (
+		struct rrr_http_transaction *transaction,
+		const void *data,
+		rrr_length data_size
+);
+int rrr_http_transaction_send_body_set_allocated (
+		struct rrr_http_transaction *transaction,
+		void **data,
+		rrr_length data_size
+);
+int rrr_http_transaction_response_prepare_wrapper (
+		struct rrr_http_transaction *transaction,
+		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
+		int (*response_code_callback)(int response_code, void *arg),
+		int (*final_callback)(struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_HTTP_TRANSACTION_H */

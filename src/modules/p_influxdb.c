@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read_constants.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/http/http_util.h"
 #include "../lib/http/http_application.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
@@ -130,7 +131,10 @@ static int influxdb_receive_http_response (
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
-				INSTANCE_D_NAME(data->data->thread_data), transaction->response_part->response_code, transaction->response_part->response_str);
+				INSTANCE_D_NAME(data->data->thread_data),
+				transaction->response_part->response_code,
+				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+		);
 		ret = 1;
 		goto out;
 	}

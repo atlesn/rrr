@@ -610,7 +610,7 @@ static int httpclient_final_callback (
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
 		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)\n",
 				transaction->response_part->response_code,
-				(transaction->response_part->response_str != NULL ? transaction->response_part->response_str : "-"),
+				rrr_http_util_iana_response_phrase_from_status_code (transaction->response_part->response_code),
 				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 				transaction->endpoint_str
 		);
@@ -1022,7 +1022,7 @@ static int httpclient_session_query_prepare_callback (
 		if ( (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) &&
 		     (body_to_free != NULL && body_length > 0)
 		) {
-			if ((ret = rrr_http_transaction_request_body_set_allocated(transaction, (void **) &body_to_free, body_length)) != 0) {
+			if ((ret = rrr_http_transaction_send_body_set_allocated(transaction, (void **) &body_to_free, body_length)) != 0) {
 				goto out;
 			}
 		}
@@ -1039,7 +1039,7 @@ static int httpclient_session_query_prepare_callback (
 			HTTPCLIENT_OVERRIDE_VERIFY_STRLEN(format);
 
 			if (format_to_free != NULL && *format_to_free != '\0') {
-				rrr_http_transaction_body_format_set(transaction, rrr_http_util_format_str_to_enum(format_to_free));
+				rrr_http_transaction_request_body_format_set(transaction, rrr_http_util_format_str_to_enum(format_to_free));
 			}
 		}
 	}
