@@ -646,16 +646,6 @@ static int httpclient_transaction_field_add (
 ) {
 	int ret = 0;
 
-	struct rrr_http_query_builder query_builder;
-
-	char *buf_tmp = NULL;
-
-	if ((rrr_http_query_builder_init(&query_builder)) != 0) {
-		RRR_MSG_0("Could not initialize query builder in httpclient_add_multipart_array_value\n");
-		ret = 1;
-		goto out;
-	}
-
 	RRR_DBG_3("HTTP add array value with tag '%s' type '%s'\n",
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
 
@@ -668,13 +658,10 @@ static int httpclient_transaction_field_add (
 			value
 	)) != 0) {
 		RRR_MSG_0("Could not add data to HTTP query in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		goto out_cleanup_query_builder;
+		goto out;
 	}
 
-	out_cleanup_query_builder:
-		rrr_http_query_builder_cleanup(&query_builder);
 	out:
-		RRR_FREE_IF_NOT_NULL(buf_tmp);
 		return ret;
 }
 
