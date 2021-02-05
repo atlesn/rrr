@@ -706,6 +706,25 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 	RRR_FREE_IF_NOT_NULL(tmp);
 	return ret;
 }
+		
+static int __rrr_nullsafe_str_raw_null_terminated_dump_callback (
+		const char *str,
+		void *arg
+) {
+	(void)(arg);
+	RRR_MSG_3("%s\n", str);
+	return 0;
+}
+
+int rrr_nullsafe_str_raw_null_terminated_dump (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	return rrr_nullsafe_str_with_raw_null_terminated_do (
+			nullsafe,
+			__rrr_nullsafe_str_raw_null_terminated_dump_callback,
+			NULL
+	);
+}
 
 #define RRR_NULLSAFE_STR_WITH_STR_DO_STR_AND_LEN_TO_USE_SET(letter)						\
 	const void *RRR_PASTE_3(str_to_use, _, letter) = str_static;						\

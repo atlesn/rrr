@@ -1341,6 +1341,8 @@ int __rrr_http_application_http1_request_send_preliminary_callback (
 		goto out;
 	}
 
+	rrr_nullsafe_str_raw_null_terminated_dump(request_tmp);
+
 	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (callback_data->handle, request_tmp)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;

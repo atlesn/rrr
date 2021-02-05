@@ -211,6 +211,9 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 		int (*callback)(const char *str, void *arg),
 		void *callback_arg
 );
+int rrr_nullsafe_str_raw_null_terminated_dump (
+		const struct rrr_nullsafe_str *nullsafe
+);
 int rrr_nullsafe_str_with_raw_do_const (
 		const struct rrr_nullsafe_str *nullsafe,
 		int (*callback)(const void *str, rrr_nullsafe_len len, void *arg),
