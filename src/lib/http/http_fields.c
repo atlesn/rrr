@@ -170,9 +170,23 @@ void rrr_http_field_collection_dump (
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name, node->name);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(content_type, node->content_type);
 
-		RRR_MSG_3 ("%s=>", name);
+		RRR_MSG_3 ("%s =>", node->value_orig != NULL ? node->value_orig->tag : name);
+	
+		if (node->value_orig != NULL) {
+			char *tmp = NULL;
 
-		if (rrr_nullsafe_str_isset(node->value)) {
+			// Ignore errors
+			if (node->value_orig->definition->to_str(&tmp, node->value_orig) != 0) {
+				goto free_tmp;
+			}
+
+			RRR_MSG_PLAIN(" (%" PRIrrrl " bytes of type '%s') ", node->value_orig->total_stored_length, node->value_orig->definition->identifier);
+			RRR_MSG_PLAIN("%s", tmp);
+
+			free_tmp:
+			RRR_FREE_IF_NOT_NULL(tmp);
+		}
+		else if (rrr_nullsafe_str_isset(node->value)) {
 			if (rrr_http_util_uri_encode (
 					&urlencoded_nullsafe,
 					node->value
@@ -181,8 +195,11 @@ void rrr_http_field_collection_dump (
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			RRR_MSG_PLAIN("=(%" PRIrrrl " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
+			RRR_MSG_PLAIN(" (%" PRIrrrl " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
 			rrr_nullsafe_str_with_raw_do_const (node->value, __rrr_http_field_collection_dump_callback, NULL);
+		}
+		else {
+			RRR_MSG_PLAIN(" (no value)");
 		}
 
 		RRR_MSG_PLAIN("\n");
