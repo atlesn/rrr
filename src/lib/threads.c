@@ -59,6 +59,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // #define RRR_THREAD_SIMULATE_ALLOCATION_FAILURE_C
 // #define RRR_THREAD_SIMULATE_START_FAILURE_A
 // #define RRR_THREAD_SIMULATE_START_FAILURE_B
+		
+#define RRR_THREAD_WATCHDOG_SLEEPTIME_MS 500
 
 // On some systems pthread_t is an int and on others it's a pointer
 static unsigned long long int __rrr_pthread_t_to_llu (pthread_t t) {
@@ -793,7 +795,7 @@ static void *__rrr_thread_watchdog_entry (
 		else if (!rrr_config_global.no_watchdog_timers &&
 				(prevtime + freeze_limit * RRR_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
-			if (rrr_time_get_64() - prev_loop_time > 100000) { // 100 ms
+			if (nowtime - prev_loop_time > RRR_THREAD_WATCHDOG_SLEEPTIME_MS * 1000 * 1.1) {
 				RRR_MSG_0 ("Watchdog %p for %s/%p, thread has been frozen but so has the watchdog, maybe we are debugging?\n",
 					self_thread, thread->name, thread);
 			}
@@ -803,14 +805,14 @@ static void *__rrr_thread_watchdog_entry (
 			}
 		}
 
-		prev_loop_time = rrr_time_get_64();
+		prev_loop_time = nowtime;
 
 		if (RRR_THREAD_STATE_CHECK(state, RRR_THREAD_STATE_INITIALIZED)) {
 			// Waits for any signal change
 			__rrr_thread_signal_wait_cond_timed(thread);
 		}
 		else {
-			rrr_posix_usleep (500000); // 500 ms
+			rrr_posix_usleep (RRR_THREAD_WATCHDOG_SLEEPTIME_MS * 1000);
 		}
 	}
 
