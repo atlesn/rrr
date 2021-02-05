@@ -1341,8 +1341,6 @@ int __rrr_http_application_http1_request_send_preliminary_callback (
 		goto out;
 	}
 
-	rrr_nullsafe_str_raw_null_terminated_dump(request_tmp);
-
 	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (callback_data->handle, request_tmp)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
@@ -1417,7 +1415,6 @@ static int __rrr_http_application_http1_request_send (
 		RRR_BUG("BUG: Existing transaction was not clear in  __rrr_http_application_http1_request_send, caller must check with request_send_possible\n");
 	}
 
-printf("Set active\n");
 	__rrr_http_application_http1_transaction_set(http1, transaction);
 
 	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
