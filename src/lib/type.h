@@ -182,6 +182,9 @@ static const union type_system_endian {
 #define RRR_TYPE_TO_64_ARGS                                    \
         const struct rrr_type_value *node
 
+#define RRR_TYPE_TO_ULL_ARGS                                   \
+        const struct rrr_type_value *node
+
 struct rrr_type_value;
 
 struct rrr_type_definition {
@@ -201,6 +204,7 @@ struct rrr_type_definition {
 
 	int (*to_str)(RRR_TYPE_TO_STR_ARGS);
 	uint64_t (*to_64)(RRR_TYPE_TO_64_ARGS);
+	unsigned long long (*to_ull)(RRR_TYPE_TO_ULL_ARGS);
 	const char *identifier;
 };
 
