@@ -761,16 +761,13 @@ static int httpserver_receive_callback_response_process (
 	if (value_response_code != NULL) {
 		VERIFY_SINGLE_ELEMENT(value_response_code, "response code");
 
-		rrr_array_dump(array);
-
 		unsigned int response_code_to_use = 0;
 
 		unsigned long long response_code = value_response_code->definition->to_ull(value_response_code);
 		if (response_code < 100 || response_code > 599) {
-			RRR_MSG_0("Warning: Invalid response code %" PRIu64 " in response from senders in httpserver instance %s. Data type of array field was %s.\n",
+			RRR_MSG_0("Warning: Invalid response code %" PRIu64 " in response from senders in httpserver instance %s. Data type of array field was %s. Defaulting to 200.\n",
 				response_code, INSTANCE_D_NAME(data->thread_data), value_response_code->definition->identifier);
 			response_code = 200;
-			abort();
 		}
 		response_code_to_use = response_code;
 
