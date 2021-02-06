@@ -229,41 +229,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP (1<<1)
 #define RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE (1<<2)
 
-#define RRR_UDPSTREAM_HEADER_FIELDS 							\
-	uint8_t flags_and_type;										\
-	uint8_t version;											\
-	uint16_t stream_id;											\
-	union {														\
-		uint32_t frame_id;										\
-		uint32_t connect_handle;								\
-		uint32_t window_size;									\
-	};															\
-	union {														\
-		struct rrr_udpstream_ack_data ack_data; 				\
-		uint64_t application_data;								\
-	};															\
-	uint16_t data_size
+#define RRR_UDPSTREAM_HEADER_FIELDS                            \
+    uint8_t flags_and_type;                                    \
+    uint8_t version;                                           \
+    uint16_t stream_id;                                        \
+    union {                                                    \
+        uint32_t frame_id;                                     \
+        uint32_t connect_handle;                               \
+        uint32_t window_size;                                  \
+    };                                                         \
+    union {                                                    \
+        struct rrr_udpstream_ack_data ack_data;                \
+        uint64_t application_data;                             \
+    };                                                         \
+    uint16_t data_size
 
-#define RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS							\
-	void **joined_data,												\
-	void *allocation_handle,										\
-	void *udpstream_callback_arg
+#define RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS                    \
+    void **joined_data,                                        \
+    void *allocation_handle,                                   \
+    void *udpstream_callback_arg
 
-#define RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS						\
-	uint32_t size,													\
-	const struct sockaddr *remote_addr,								\
-	socklen_t remote_addr_len,										\
-	int (*receive_callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS),	\
-	void *udpstream_callback_arg,									\
-	void *arg
+#define RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS                  \
+    uint32_t size,                                             \
+    const struct sockaddr *remote_addr,                        \
+    socklen_t remote_addr_len,                                 \
+    int (*receive_callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS),\
+    void *udpstream_callback_arg,                              \
+    void *arg
 
-#define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS						\
-	RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
+#define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS                  \
+    RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
 
-#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS					\
-	void **joined_data,												\
-	const struct rrr_udpstream_receive_data *receive_data,			\
-	void *arg
+#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS              \
+    void **joined_data,                                        \
+    const struct rrr_udpstream_receive_data *receive_data,     \
+    void *arg
 
 struct rrr_udpstream_ack_data {
 	uint32_t ack_id_first;
