@@ -55,8 +55,6 @@ struct rrr_message_broker_costumer {
 	int no_buffer;
 	struct rrr_fifo_buffer main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
-	struct rrr_msg_holder *transfer_slot;
-	pthread_cond_t transfer_cond;
 	char *name;
 	int usercount;
 	uint64_t unique_counter;
@@ -120,11 +118,6 @@ int rrr_message_broker_clone_and_write_entry (
 		const struct rrr_msg_holder *entry
 );
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder *entry
-);
-int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_msg_holder *entry

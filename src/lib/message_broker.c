@@ -71,10 +71,6 @@ static void __rrr_message_broker_costumer_decref (
 		);
 		rrr_fifo_buffer_destroy(&costumer->main_queue);
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
-		if (costumer->transfer_slot != NULL) {
-			rrr_msg_holder_decref(costumer->transfer_slot);
-		}
-		pthread_cond_destroy(&costumer->transfer_cond);
 		// Do this at the end in case we need to read the name in a debugger
 		RRR_FREE_IF_NOT_NULL(costumer->name);
 		free(costumer);
@@ -132,12 +128,6 @@ static int __rrr_message_broker_costumer_new (
 
 	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
-		ret = 1;
-		goto out_destroy_fifo;
-	}
-
-	if (rrr_posix_cond_init(&costumer->transfer_cond, 0) != 0) {
-		RRR_MSG_0("Could not initialize condition in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_fifo;
 	}
@@ -430,6 +420,11 @@ static int __rrr_message_broker_transfer_slot_fill (
 	struct rrr_message_broker_costumer *costumer,
 	struct rrr_msg_holder *entry
 ) {
+	int ret = 0;
+
+
+	out:
+	return ret;
 }
 
 struct rrr_message_broker_write_entry_intermediate_callback_data {
@@ -729,34 +724,6 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			entry
 	)) != 0) {
 		RRR_MSG_0("Error while writing to buffer in rrr_message_broker_write_entry_unsafe\n");
-		ret = RRR_MESSAGE_BROKER_ERR;
-		goto out;
-	}
-
-	out:
-#ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
-	__rrr_message_broker_buffer_consistency_check(&costumer->main_queue, entry);
-#endif
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
-	return ret;
-}
-
-// Read comment above about unsafe
-int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder *entry
-) {
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_delayed_unsafe");
-
-	if ((ret = rrr_fifo_buffer_write_delayed (
-			&costumer->main_queue,
-			__rrr_message_broker_write_entry_unsafe_callback,
-			entry
-	)) != 0) {
-		RRR_MSG_0("Error while writing to buffer in rrr_message_broker_write_entry_delayed_unsafe\n");
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
 	}

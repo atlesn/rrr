@@ -119,7 +119,6 @@ struct rrr_fifo_buffer {
 
 	sem_t new_data_available;
 };
-
 int rrr_fifo_buffer_get_stats (
 		struct rrr_fifo_buffer_stats *stats,
 		struct rrr_fifo_buffer *buffer
@@ -129,6 +128,10 @@ void rrr_fifo_buffer_destroy (
 );
 int rrr_fifo_buffer_init (
 		struct rrr_fifo_buffer *buffer
+);
+void rrr_fifo_buffer_full_limit_set (
+		struct rrr_fifo_buffer *buffer,
+		int limit
 );
 int rrr_fifo_buffer_init_custom_free (
 		struct rrr_fifo_buffer *buffer,

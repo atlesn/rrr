@@ -113,7 +113,7 @@ static int __rrr_fifo_verify_counter(struct rrr_fifo_buffer *buffer) {
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK() \
 	do { } while (0)
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() \
-	do { } while (0)
+	do { } while (0)
 
 #endif
 
@@ -328,6 +328,8 @@ int rrr_fifo_buffer_init (
 	pthread_rwlock_unlock(&buffer->rwlock);
 
 	goto out;
+//	out_destroy_sem:
+//		sem_destroy(&buffer->new_data_available);
 	out_destroy_stats_mutex:
 		pthread_mutex_destroy(&buffer->stats_mutex);
 	out_destroy_ratelimit_mutex:
