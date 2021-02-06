@@ -178,10 +178,6 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&private_data->send_queue_intermediate, entry);
-	RRR_LL_VERIFY_HEAD(&private_data->send_queue_intermediate);
-	RRR_LL_ITERATE_BEGIN(&private_data->send_queue_intermediate, struct rrr_msg_holder);
-		RRR_LL_VERIFY_NODE(&private_data->send_queue_intermediate);
-	RRR_LL_ITERATE_END();
 
 	rrr_msg_holder_unlock(entry);
 	return 0;
@@ -263,10 +259,7 @@ int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *
 	int ret = 0;
 
 	if ((ret = rrr_udpstream_asd_queue_and_incref_message(ipclient_data->udpstream_asd, entry)) != 0) {
-		if (ret == RRR_UDPSTREAM_ASD_BUFFER_FULL) {
-/*			RRR_DEBUG_MSG_2("ASD-buffer full for ipclient instance %s\n",
-					INSTANCE_D_NAME(ipclient_data->thread_data));*/
-			ret = 0;
+		if (ret == RRR_UDPSTREAM_ASD_NOT_READY) {
 			goto out;
 		}
 		else {
@@ -294,6 +287,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 
 		if ((ret = data->queue_method(node, data)) != 0) {
 			rrr_msg_holder_unlock(node);
+			ret &= ~(RRR_UDPSTREAM_ASD_NOT_READY);
 			RRR_LL_ITERATE_BREAK();
 		}
 
@@ -479,21 +473,16 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		time_now = rrr_time_get_64();
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
-		do {
+		while ( RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
+		        rrr_time_get_64() < poll_timeout &&
+		        no_polling == 0
+		) {
 			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
 				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
-		} while (RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
-				rrr_time_get_64() < poll_timeout &&
-				no_polling == 0
-		);
-	//			RRR_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
-	//					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
-
-//		RRR_DEBUG_MSG_2("ipclient instance %s receive\n",
-//				INSTANCE_D_NAME(thread_data));
+		}
 
 		int queue_count = 0;
 		rrr_thread_watchdog_time_update(thread);
@@ -521,13 +510,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		receive_total += receive_count;
 
 		if (receive_count == 0 && send_count == 0) {
-			if (consecutive_zero_recv_and_send > 1000) {
+			if (consecutive_zero_recv_and_send > 1000 && RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX) {
 /*				RRR_DEBUG_MSG_2("ipclient instance %s long sleep send buffer %i\n",
 						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_queue_intermediate));*/
 				rrr_posix_usleep (100000); // 100 ms
 			}
 			else {
-				sched_yield();
 				if (consecutive_zero_recv_and_send++ > 10) {
 					rrr_posix_usleep(10);
 				}

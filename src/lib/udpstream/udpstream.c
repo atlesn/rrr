@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -521,7 +521,7 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-		RRR_DBG_3("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
+//		RRR_DBG_3("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
 
 		struct rrr_udpstream_frame_packed frame = {0};
 		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
@@ -534,7 +534,7 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-		RRR_DBG_3("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
+//		RRR_DBG_3("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
 
 		struct rrr_udpstream_frame_packed frame = {0};
 
@@ -1772,18 +1772,20 @@ int rrr_udpstream_connection_check (
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(data, connect_handle);
 	if (stream == NULL) {
-		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		ret = RRR_UDPSTREAM_SOFT_ERR;
 		goto out;
 	}
 
 	if (stream->stream_id == 0) {
-//		VL_DEBUG_MSG_2("Check connection stream id %u connect handle %u: Not ready\n",
-//			stream->stream_id, stream->connect_handle);
+		RRR_DBG_3("UDP-stream %u not ready yet\n", stream->stream_id);
 		ret = RRR_UDPSTREAM_NOT_READY;
+		goto out;
 	}
 
 	if (stream->send_buffer.frame_id_counter >= stream->send_buffer.frame_id_max) {
-		ret = RRR_UDPSTREAM_RESET;
+		RRR_DBG_3("UDP-stream %u IDs exhausted\n", stream->stream_id);
+		ret = RRR_UDPSTREAM_SOFT_ERR;
+		goto out;
 	}
 
 	out:
@@ -1806,7 +1808,7 @@ int rrr_udpstream_regulate_window_size (
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
-		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		ret = RRR_UDPSTREAM_SOFT_ERR;
 		goto out;
 	}
 	if (stream->stream_id == 0) {
@@ -1835,7 +1837,7 @@ int rrr_udpstream_send_control_frame (
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
-		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		ret = RRR_UDPSTREAM_SOFT_ERR;
 		goto out;
 	}
 
@@ -1875,7 +1877,7 @@ int rrr_udpstream_queue_outbound_data (
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
-		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		ret = RRR_UDPSTREAM_SOFT_ERR;
 		goto out;
 	}
 
@@ -1887,13 +1889,13 @@ int rrr_udpstream_queue_outbound_data (
 	if (RRR_LL_COUNT(&stream->send_buffer) >= RRR_UDPSTREAM_BUFFER_LIMIT) {
 //		VL_DEBUG_MSG_3("Buffer is full with %i items for udpstream stream-id %u\n",
 //				RRR_LL_COUNT(&stream->send_buffer), stream->stream_id);
-		ret = RRR_UDPSTREAM_BUFFER_FULL;
+		ret = RRR_UDPSTREAM_NOT_READY;
 		goto out;
 	}
 
 	if (stream->send_buffer.frame_id_counter + ((data_size / RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) + 1) > stream->send_buffer.frame_id_max) {
 		RRR_DBG_3("UDP-stream frame IDs exhausted for stream-id %u\n", stream->stream_id);
-		ret = RRR_UDPSTREAM_IDS_EXHAUSTED;
+		ret = RRR_UDPSTREAM_NOT_READY;
 		goto out;
 	}
 
@@ -1908,7 +1910,7 @@ int rrr_udpstream_queue_outbound_data (
 		new_frame = NULL;
 		if ((ret = __rrr_udpstream_frame_new_from_data(&new_frame, pos, chunk_size)) != 0) {
 			RRR_MSG_0("Could not allocate frame in rrr_udpstream_queue_outbound_data\n");
-			ret = RRR_UDPSTREAM_ERR;
+			ret = RRR_UDPSTREAM_HARD_ERR;
 			goto out;
 		}
 
@@ -2075,13 +2077,12 @@ int rrr_udpstream_connect (
 		if (RRR_DEBUGLEVEL_1) {
 			char buf[128];
 			rrr_ip_to_str(buf, sizeof(buf), result->ai_addr, result->ai_addrlen);
-			RRR_MSG_1("udpstream connection attempt to %s\n", buf);
+			RRR_MSG_1("UDP-stream connection attempt to %s\n", buf);
 		}
 		if ((ret = rrr_udpstream_connect_raw(connect_handle, data, result->ai_addr, result->ai_addrlen)) != 0) {
-			RRR_DBG_1("Note: Could not send connect packet in rrr_udpstream_connect\n");
+			RRR_DBG_1("UDP-stream failed to send connect packet to %s, return was %i\n", ret);
 		}
 		else {
-			RRR_DBG_1("Connection packet sucessfully sent in udpstream\n");
 			break;
 		}
 	}

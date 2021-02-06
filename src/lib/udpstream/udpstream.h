@@ -65,6 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../read.h"
+#include "../read_constants.h"
 #include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
@@ -101,14 +102,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
 // #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
 
-// Return values from API functions, not all of them use all values
-#define RRR_UDPSTREAM_OK 0
-#define RRR_UDPSTREAM_ERR 1
-#define RRR_UDPSTREAM_UNKNOWN_CONNECT_ID 2
-#define RRR_UDPSTREAM_NOT_READY 3
-#define RRR_UDPSTREAM_BUFFER_FULL 4
-#define RRR_UDPSTREAM_RESET 5
-#define RRR_UDPSTREAM_IDS_EXHAUSTED 6
+#define RRR_UDPSTREAM_OK                  RRR_READ_OK
+#define RRR_UDPSTREAM_HARD_ERR            RRR_READ_HARD_ERROR
+#define RRR_UDPSTREAM_SOFT_ERR            RRR_READ_SOFT_ERROR
+#define RRR_UDPSTREAM_NOT_READY           RRR_READ_INCOMPLETE
 
 // Flags and type are stored together, 4 bits each. Lower 4 are for type.
 
