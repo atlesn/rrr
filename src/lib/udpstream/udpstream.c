@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/crc32.h"
 #include "../util/posix.h"
+#include "../string_builder.h"
 #include "../ip/ip_util.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
@@ -515,24 +516,27 @@ static int __rrr_udpstream_send_reset_and_connect (
 static void __rrr_udpstream_frame_packed_dump (
 		const struct rrr_udpstream_frame_packed *frame
 ) {
+	struct rrr_string_builder string_builder = {0};
 	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
 	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
 	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
-	RRR_DBG ("Type	        : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
+	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
 	RRR_DBG ("Version      : %u\n", RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame));
 	RRR_DBG ("Stream-ID    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame));
 	RRR_DBG ("Frame-ID     : %u\n", RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame));
 
-	RRR_DBG("-- 0x");
+	rrr_string_builder_append(&string_builder, "-- 0x");
 	for (size_t i = 0; i < RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame); i++) {
 		char c = ((char *)frame)[i];
 		if (c < 0x10) {
-			RRR_DBG("0");
+			rrr_string_builder_append(&string_builder, "0");
 		}
-		RRR_DBG("%x", c);
+		rrr_string_builder_append_format(&string_builder, "%x", c);
 	}
-	RRR_DBG("\n------------\n");
+	rrr_string_builder_append(&string_builder, "\n------------\n");
+	RRR_DBG("%s", rrr_string_builder_buf(&string_builder));
+	rrr_string_builder_clear(&string_builder);
 }
 
 static int __rrr_udpstream_frame_packed_validate (
@@ -1068,7 +1072,10 @@ static int __rrr_udpstream_read_callback (
 	ssize_t data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
 	if (data_size > 0) {
 		if (rrr_crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
-			RRR_MSG_0("CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
+			RRR_MSG_0("Data CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
+			if (RRR_DEBUGLEVEL_2) {
+				__rrr_udpstream_frame_packed_dump(frame);
+			}
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
