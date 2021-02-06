@@ -521,8 +521,6 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-//		RRR_DBG_3("Send 3xRST with handle %" PRIu32 "\n", connect_handle);
-
 		struct rrr_udpstream_frame_packed frame = {0};
 		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
 		frame.connect_handle = rrr_htobe32(connect_handle);
@@ -534,8 +532,6 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
-//		RRR_DBG_3("Sent 3xCONNECT with handle %" PRIu32 "\n", connect_handle);
-
 		struct rrr_udpstream_frame_packed frame = {0};
 
 		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
@@ -567,9 +563,6 @@ static int __rrr_udpstream_frame_packed_validate (
 		const struct rrr_udpstream_frame_packed *frame
 ) {
 	uint32_t header_crc32 = RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame);
-
-//	printf ("packed crc32 receive: %" PRIu32 "\n", frame->header_crc32);
-//	printf ("packed crc32 receive bswapped: %" PRIu32 "\n", header_crc32);
 
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
@@ -606,7 +599,6 @@ static int __rrr_udpstream_read_get_target_size (
 		goto out;
 	}
 
-//	printf ("Data size: %u\n", frame->data_size);
 	ssize_t total_size = RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame);
 
 	if (RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) {
@@ -988,15 +980,7 @@ static int __rrr_udpstream_handle_received_frame (
 				new_frame->flags_and_type);
 		goto out;
 	}
-/*
-	VL_DEBUG_MSG_3("UDP-stream packet with data for stream ID %u frame id %u boundary %i flags %i type %i\n",
-			new_frame->stream_id,
-			new_frame->frame_id,
-			RRR_UDPSTREAM_FRAME_IS_BOUNDARY(new_frame),
-			RRR_UDPSTREAM_FRAME_FLAGS(new_frame),
-			RRR_UDPSTREAM_FRAME_TYPE(frame)
-	);
-*/
+
 	if (stream->receive_buffer.frame_id_counter == 0 && new_frame->frame_id != 1) {
 		// First frame must be ID 1, this to be able to filter out "old data" from lost streams
 		// which might be retained if we are offline for a bit. If this happens, we must also
@@ -1031,8 +1015,6 @@ static int __rrr_udpstream_handle_received_frame (
 			goto out;
 		}
 		if (new_frame->frame_id < node->frame_id) {
-//			VL_DEBUG_MSG_2("udpstream stream-id %u frame id %u insert in receive buffer before %u\n",
-//					stream->stream_id, new_frame->frame_id, node->frame_id);
 			RRR_LL_ITERATE_INSERT(&stream->receive_buffer, new_frame);
 			new_frame = NULL;
 			goto out;
@@ -1048,8 +1030,6 @@ static int __rrr_udpstream_handle_received_frame (
 	RRR_LL_ITERATE_END();
 
 	out_append:
-//		VL_DEBUG_MSG_2("udpstream stream-id %u frame id %u append to receive buffer\n",
-//				stream->stream_id, new_frame->frame_id);
 		RRR_LL_APPEND(&stream->receive_buffer, new_frame);
 		new_frame = NULL;
 
@@ -1548,7 +1528,7 @@ static int __rrr_udpstream_maintain (
 
 // Do all reading and store messages into the buffer. Control messages are
 // not buffered, but delivered directly to the application layer through
-// the receive_callback function.
+// the callback function.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
 		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
@@ -1691,9 +1671,6 @@ static int __rrr_udpstream_send_loop (
 			}
 		}
 	RRR_LL_ITERATE_END();
-
-//	VL_DEBUG_MSG_2("udpstream stream-id %u missing ACK count %i window size %i\n",
-//			stream->stream_id, missing_ack_count, stream->window_size);
 
 	*sent_count_return = sent_count;
 
@@ -1887,8 +1864,6 @@ int rrr_udpstream_queue_outbound_data (
 	}
 
 	if (RRR_LL_COUNT(&stream->send_buffer) >= RRR_UDPSTREAM_BUFFER_LIMIT) {
-//		VL_DEBUG_MSG_3("Buffer is full with %i items for udpstream stream-id %u\n",
-//				RRR_LL_COUNT(&stream->send_buffer), stream->stream_id);
 		ret = RRR_UDPSTREAM_NOT_READY;
 		goto out;
 	}
@@ -1898,10 +1873,6 @@ int rrr_udpstream_queue_outbound_data (
 		ret = RRR_UDPSTREAM_NOT_READY;
 		goto out;
 	}
-
-//	if (stream->send_buffer.frame_id_counter > RRR_UDPSTREAM_FRAME_ID_MAX) {
-//		VL_BUG("Frame IDs exhausted in __rrr_udpstream_send_loop\n");
-//	}
 
 	const void *pos = data;
 	struct rrr_udpstream_frame *new_frame = NULL;

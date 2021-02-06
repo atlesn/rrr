@@ -450,19 +450,6 @@ int rrr_udpstream_connection_check (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
 );
-
-// Nag about missing out release-ACK packet (sends new delivery ACK), possibly
-// with window size regulation. An API user calling this function must previously
-// have stored the original sender address and
-/*int rrr_udpstream_release_ack_urge (
-		struct rrr_udpstream *udpstream_data,
-		uint16_t stream_id,
-		uint64_t boundary_id,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int window_size_change
-);*/
-
 int rrr_udpstream_regulate_window_size (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,

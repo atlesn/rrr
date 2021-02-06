@@ -64,57 +64,6 @@ static int __rrr_udpstream_asd_queue_entry_destroy (
 	free(entry);
 	return 0;
 }
-/*
-static void __rrr_udpstream_asd_queue_remove_entry (
-		struct rrr_udpstream_asd_queue *queue,
-		uint32_t message_id
-) {
-	int iterations = 0;
-
-	if (RRR_LL_COUNT(queue) == 0) {
-		return;
-	}
-
-	if (message_id < RRR_LL_FIRST(queue)->message_id ||
-		message_id > RRR_LL_LAST(queue)->message_id
-	) {
-		return;
-	}
-
-	int64_t diff_to_last = RRR_LL_LAST(queue)->message_id - message_id;
-	int64_t diff_to_first = message_id - RRR_LL_FIRST(queue)->message_id;
-
-	RRR_LL_ITERATE_BEGIN_EITHER(queue, struct rrr_udpstream_asd_queue_entry, (diff_to_last < diff_to_first));
-		iterations++;
-//		printf ("cmp %" PRIu64 " vs %" PRIu64 "\n", boundary_id_combined, node->boundary_id_combined);
-		if (node->message_id == message_id) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __rrr_udpstream_asd_queue_entry_destroy(node));
-
-//	printf ("iterations to remove: %i\n", iterations);
-}
-
-static struct message_holder *__rrr_udpstream_asd_queue_remove_entry_and_get_data (
-		struct rrr_udpstream_asd_queue *queue,
-		uint32_t message_id
-) {
-	struct message_holder *ret = NULL;
-
-	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-//		VL_DEBUG_MSG("cmp boundary %" PRIu64 " vs %" PRIu64 "\n", boundary_id_combined, node->boundary_id_combined);
-		if (node->message_id == message_id) {
-			ret = node->message;
-			node->message = NULL;
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __rrr_udpstream_asd_queue_entry_destroy(node));
-
-	return ret;
-}
-*/
 
 static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entry (
 		struct rrr_udpstream_asd_queue_new *queue,
@@ -171,7 +120,6 @@ int __rrr_udpstream_asd_queue_collection_iterate (
 	return ret;
 }
 
-// TODO : Create cache for entry count
 int __rrr_udpstream_asd_queue_collection_count_entries (
 		struct rrr_udpstream_asd_queue_collection *collection
 ) {
@@ -190,8 +138,6 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 		struct rrr_udpstream_asd_queue_entry *entry
 ) {
 	if (RRR_LL_LAST(queue) == NULL || RRR_LL_LAST(queue)->message_id < entry->message_id) {
-//		VL_DEBUG_MSG("queue append entry with ip buf entry %p boundary %" PRIu64 "\n",
-//				entry->entry, entry->boundary_id);
 		RRR_LL_APPEND(queue, entry);
 		return;
 	}
@@ -199,8 +145,6 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
 		if (entry->message_id < node->message_id) {
 			RRR_LL_ITERATE_INSERT(queue, entry);
-//			VL_DEBUG_MSG("queue insert entry with ip buf entry %p boundary %" PRIu64 " before %" PRIu64 "\n",
-//					entry->entry, entry->boundary_id, node->boundary_id);
 			entry = NULL;
 			RRR_LL_ITERATE_BREAK();
 		}
@@ -214,7 +158,6 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 	}
 }
 
-// message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_new *queue,
 		struct rrr_msg_holder *ip_entry,
@@ -268,7 +211,6 @@ static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **t
 	return 0;
 }
 
-// message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_collection *collection,
 		struct rrr_msg_holder *entry,
@@ -660,8 +602,6 @@ static int __rrr_udpstream_asd_control_frame_listener (
 	return ret;
 }
 
-// Queue a message for transmission.
-// ip_message is set to NULL if memory is managed by new buffer
 int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
 		struct rrr_msg_holder *ip_message
@@ -675,9 +615,6 @@ int rrr_udpstream_asd_queue_and_incref_message (
 
 	pthread_mutex_lock(&session->queue_lock);
 	pthread_mutex_lock(&session->message_id_lock);
-
-//	struct rrr_msg_msg *message = (*ip_message)->message;
-//	printf ("type and class: %u\n", message->type_and_class);
 
 	if (RRR_LL_COUNT(&session->send_queue) >= RRR_UDPSTREAM_ASD_BUFFER_MAX) {
 		ret = RRR_UDPSTREAM_ASD_NOT_READY;
@@ -767,10 +704,6 @@ static int __rrr_udpstream_asd_do_release_queue_send_tasks (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-/*		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK) != 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else */
 		if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
 			// Always update send time to prevent hardcore looping upon error conditions
 			node->send_time = time_now;
@@ -970,7 +903,6 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_m
 	// The entry must be locked already at this location, allocator is responsible for ensuring that
 	// The allocator must unlock the entry after the callback chain is complete
 
-	// TODO : Make this a soft error?
 	if (receive_data->udpstream_receive_data->application_data > 0xffffffff) {
 		RRR_MSG_0("Application data/message ID out of range (%" PRIu64 ") in __rrr_udpstream_asd_receive_messages_callback_final connect handle %" PRIu32 ", message dropped\n",
 				receive_data->udpstream_receive_data->application_data,
@@ -1147,8 +1079,6 @@ int __rrr_udpstream_asd_queue_update_delivery_grace (
 			// entry might be delivered to application again
 			if (node->delivered_grace_counter <= 0) {
 				RRR_LL_ITERATE_SET_DESTROY();
-	//				VL_DEBUG_MSG_3("UDP-stream ASD grace time ended for message %u\n",
-	//						node->message_id);
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __rrr_udpstream_asd_queue_entry_destroy(node));
