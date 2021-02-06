@@ -231,6 +231,35 @@ void rrr_udpstream_set_flags (
 	pthread_mutex_unlock(&data->lock);
 }
 
+static void __rrr_udpstream_frame_packed_dump (
+		const struct rrr_udpstream_frame_packed *frame
+) {
+	struct rrr_string_builder string_builder = {0};
+	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
+	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
+	RRR_DBG ("Total size   : %u\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Data size    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame));
+	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
+	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
+	RRR_DBG ("Version      : %u\n", RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame));
+	RRR_DBG ("Stream-ID    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame));
+	RRR_DBG ("Frame-ID     : %u\n", RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame));
+
+	unsigned char *data = (unsigned char *) frame;
+
+	rrr_string_builder_append(&string_builder, "-- 0x");
+	for (size_t i = 0; i < RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame); i++) {
+		if (i == sizeof(*frame)) {
+			rrr_string_builder_append(&string_builder, " -- ");
+		}
+		rrr_string_builder_append_format(&string_builder, "%02x", *(data + i));
+	}
+	rrr_string_builder_append(&string_builder, "\n------------\n");
+	RRR_DBG("%s", rrr_string_builder_buf(&string_builder));
+	rrr_string_builder_clear(&string_builder);
+}
+
 static int __rrr_udpstream_checksum_and_send_packed_frame (
 		struct rrr_udpstream *udpstream_data,
 		const struct sockaddr *addr,
@@ -274,6 +303,10 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	RRR_DBG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
 			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
+
+	if (RRR_DEBUGLEVEL_6) {
+		__rrr_udpstream_frame_packed_dump(frame);
+	}
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
 	if (data_size > 0) {
@@ -511,32 +544,6 @@ static int __rrr_udpstream_send_reset_and_connect (
 
 	out:
 	return ret;
-}
-
-static void __rrr_udpstream_frame_packed_dump (
-		const struct rrr_udpstream_frame_packed *frame
-) {
-	struct rrr_string_builder string_builder = {0};
-	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
-	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
-	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
-	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
-	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
-	RRR_DBG ("Version      : %u\n", RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame));
-	RRR_DBG ("Stream-ID    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame));
-	RRR_DBG ("Frame-ID     : %u\n", RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame));
-
-	rrr_string_builder_append(&string_builder, "-- 0x");
-	for (size_t i = 0; i < RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame); i++) {
-		char c = ((char *)frame)[i];
-		if (c < 0x10) {
-			rrr_string_builder_append(&string_builder, "0");
-		}
-		rrr_string_builder_append_format(&string_builder, "%x", c);
-	}
-	rrr_string_builder_append(&string_builder, "\n------------\n");
-	RRR_DBG("%s", rrr_string_builder_buf(&string_builder));
-	rrr_string_builder_clear(&string_builder);
 }
 
 static int __rrr_udpstream_frame_packed_validate (
@@ -879,6 +886,10 @@ static int __rrr_udpstream_handle_received_frame (
 			rrr_be16toh(frame->data_size),
 			frame->flags_and_type, rrr_be32toh(frame->connect_handle)
 	);
+
+	if (RRR_DEBUGLEVEL_6) {
+		__rrr_udpstream_frame_packed_dump(frame);
+	}
 
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
 		RRR_MSG_0("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
