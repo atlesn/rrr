@@ -1352,6 +1352,11 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
 
+	if (thread_data->init_data.instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+		RRR_MSG_1("Note: httpserver instance %s has input buffer disabled, performance when data is retrieved from senders may be impacted.\n",
+			INSTANCE_D_NAME(thread_data));
+	}
+
 	if (httpserver_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);

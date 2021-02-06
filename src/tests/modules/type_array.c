@@ -154,6 +154,8 @@ int test_do_poll_loop (
 			break;
 		}
 
+		rrr_thread_watchdog_time_update(self->thread);
+
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
 				INSTANCE_M_NAME(output), i);
 

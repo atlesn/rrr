@@ -34,6 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_DROP		(1<<1)
 #define RRR_MESSAGE_BROKER_AGAIN	(1<<2)
 
+struct rrr_msg_holder;
+struct rrr_msg_holder_collection;
+
 // All costumers must be registered prior to starting any threads
 
 struct rrr_message_broker_split_buffer_node {
@@ -49,8 +52,11 @@ struct rrr_message_broker_split_buffer_collection {
 
 struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
+	int no_buffer;
 	struct rrr_fifo_buffer main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
+	struct rrr_msg_holder *transfer_slot;
+	pthread_cond_t transfer_cond;
 	char *name;
 	int usercount;
 	uint64_t unique_counter;
@@ -61,9 +67,6 @@ struct rrr_message_broker {
 	pthread_mutex_t lock;
 	pthread_t creator;
 };
-
-struct rrr_msg_holder;
-struct rrr_msg_holder_collection;
 
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
@@ -89,7 +92,8 @@ void rrr_message_broker_costumer_unregister (
 int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
 		struct rrr_message_broker *broker,
-		const char *name_unique
+		const char *name_unique,
+		int no_buffer
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker *broker,

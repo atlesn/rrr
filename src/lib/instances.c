@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -277,6 +277,29 @@ static int __rrr_instance_parse_topic_filter (
 	return ret;
 }
 
+static int __rrr_instance_parse_misc (
+		struct rrr_instance *data_final
+) {
+	int ret = 0;
+
+	struct rrr_instance_config_data *config = data_final->config;
+
+	struct data {
+		int do_disable_buffer;
+	} data_tmp;
+
+	struct data *data = &data_tmp;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_disable_buffer, 1);
+
+	if (!data->do_disable_buffer) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_instance_add_wait_for_instances (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance *instance
@@ -465,7 +488,8 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 	if (rrr_message_broker_costumer_register (
 			&data->message_broker_handle,
 			init_data->message_broker,
-			init_data->module->instance_name
+			init_data->module->instance_name,
+			init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER
 	) != 0) {
 		RRR_MSG_0("Could not register with message broker in rrr_instance_new_thread\n");
 		goto out_free;
@@ -635,6 +659,12 @@ int rrr_instance_create_from_config (
 		ret = __rrr_instance_parse_topic_filter(instance);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing topic filter failed for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			goto out;
+		}
+		ret = __rrr_instance_parse_misc(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing of misc parameters failed for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			goto out;
 		}

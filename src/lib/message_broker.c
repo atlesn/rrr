@@ -71,6 +71,10 @@ static void __rrr_message_broker_costumer_decref (
 		);
 		rrr_fifo_buffer_destroy(&costumer->main_queue);
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
+		if (costumer->transfer_slot != NULL) {
+			rrr_msg_holder_decref(costumer->transfer_slot);
+		}
+		pthread_cond_destroy(&costumer->transfer_cond);
 		// Do this at the end in case we need to read the name in a debugger
 		RRR_FREE_IF_NOT_NULL(costumer->name);
 		free(costumer);
@@ -98,7 +102,8 @@ static void __rrr_message_broker_costumer_lock_and_decref_void (void *arg) {
 
 static int __rrr_message_broker_costumer_new (
 		struct rrr_message_broker_costumer **result,
-		const char *name_unique
+		const char *name_unique,
+		int no_buffer
 ) {
 	int ret = 0;
 
@@ -131,6 +136,13 @@ static int __rrr_message_broker_costumer_new (
 		goto out_destroy_fifo;
 	}
 
+	if (rrr_posix_cond_init(&costumer->transfer_cond, 0) != 0) {
+		RRR_MSG_0("Could not initialize condition in __rrr_message_broker_costumer_new\n");
+		ret = 1;
+		goto out_destroy_fifo;
+	}
+
+	costumer->no_buffer = no_buffer;
 	costumer->usercount = 1;
 
 	*result = costumer;
@@ -266,7 +278,8 @@ void rrr_message_broker_costumer_unregister (
 int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
 		struct rrr_message_broker *broker,
-		const char *name_unique
+		const char *name_unique,
+		int no_buffer
 ) {
 	int ret = 0;
 
@@ -281,9 +294,11 @@ int rrr_message_broker_costumer_register (
 				name_unique);
 	}
 
-	if ((ret = __rrr_message_broker_costumer_new (&costumer, name_unique)) != 0) {
+	if ((ret = __rrr_message_broker_costumer_new (&costumer, name_unique, no_buffer)) != 0) {
 		goto out;
 	}
+
+	costumer->no_buffer = no_buffer;
 
 	RRR_LL_APPEND(broker, costumer);
 
@@ -411,6 +426,12 @@ static void __rrr_message_broker_buffer_consistency_check (
 }
 #endif
 
+static int __rrr_message_broker_transfer_slot_fill (
+	struct rrr_message_broker_costumer *costumer,
+	struct rrr_msg_holder *entry
+) {
+}
+
 struct rrr_message_broker_write_entry_intermediate_callback_data {
 	struct rrr_message_broker_costumer *costumer;
 	const struct sockaddr *addr;
@@ -430,6 +451,46 @@ static void __rrr_message_broker_free_message_holder_double_pointer (void *arg) 
 		return;
 	}
 	rrr_msg_holder_decref(*(ptr->entry));
+}
+
+static int __rrr_message_broker_write_entry_callback_handling (
+		int *write_again,
+		int *write_drop,
+		struct rrr_msg_holder *entry,
+		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	*write_again = 0;
+	*write_drop = 0;
+
+	// Callback must ALWAYS unlock
+	rrr_msg_holder_lock(entry);
+
+	if ((ret = callback(entry, callback_arg)) != 0) {
+		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
+			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN which was not DROP in __rrr_message_broker_write_entry_callback_handling\n", ret);
+			}
+			*write_again = 1;
+		}
+
+		if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
+			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP which was not AGAIN in __rrr_message_broker_write_entry_callback_handling\n", ret);
+			}
+			*write_drop = 1;
+		}
+
+		ret &= ~(RRR_MESSAGE_BROKER_DROP|RRR_MESSAGE_BROKER_AGAIN);
+
+		if ((ret & ~(RRR_MESSAGE_BROKER_ERR)) != 0) {
+			RRR_BUG("Unknown return values %i from callback to __rrr_message_broker_write_entry_callback_handling\n", ret);
+		}
+	}
+
+	return ret;
 }
 
 static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBACK_ARGS) {
@@ -455,50 +516,27 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 		goto out;
 	}
 
-	// Callback must ALWAYS unlock
-	rrr_msg_holder_lock(entry);
+	int write_again = 0;
+	int write_drop = 0;
 
-	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
-		int ret_tmp = 0;
-
-//		RRR_DBG_3("message broker costumer %s write non-zero from callback: %i\n", callback_data->costumer->name, ret);
-
-		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
-			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN which was not DROP in __rrr_message_broker_write_entry_intermediate\n", ret);
-			}
-			ret_tmp |= RRR_FIFO_WRITE_AGAIN;
-			// No goto
-		}
-
-		if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
-			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP which was not AGAIN in __rrr_message_broker_write_entry_intermediate\n", ret);
-			}
-			// Entry will be freed by pthread_cleanup_pop
-			ret_tmp |= RRR_FIFO_WRITE_DROP;
-			// No goto
-		}
-
-		ret &= ~(RRR_MESSAGE_BROKER_DROP|RRR_MESSAGE_BROKER_AGAIN);
-
-		if ((ret & ~(RRR_MESSAGE_BROKER_ERR)) != 0) {
-			RRR_BUG("Unknown return values %i from callback to __rrr_message_broker_write_entry_intermediate\n", ret);
-		}
-		else if (ret_tmp == 0) {
-			// Entry will be freed by pthread_cleanup_pop
-			ret = RRR_FIFO_GLOBAL_ERR;
-			goto out;
-		}
-
-		ret = ret_tmp;
-
-		if ((ret & RRR_FIFO_WRITE_DROP) != 0) {
-			goto out;
-		}
+	if ((ret = __rrr_message_broker_write_entry_callback_handling (
+			&write_again,
+			&write_drop,
+			entry,
+			callback_data->callback,
+			callback_data->callback_arg
+	)) != 0) {
+		ret = RRR_FIFO_GLOBAL_ERR;
+		goto out;
 	}
-	else {
-//		RRR_DBG_3("message broker costumer %s write return from callback was OK\n", callback_data->costumer->name);
+
+	if (write_again) {
+		ret |= RRR_FIFO_WRITE_AGAIN;
+	}
+
+	if (write_drop) {
+		ret |= RRR_FIFO_WRITE_DROP;
+		goto out;
 	}
 
 	{
