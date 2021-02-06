@@ -296,19 +296,19 @@ int rrr_message_broker_costumer_register (
 	return ret;
 }
 
-#define RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE(err_src)							\
-	do { if (__rrr_message_broker_costumer_find_by_handle_and_incref(broker, handle) == NULL) {	\
-		RRR_MSG_0("Could not find costumer handle %p in %s\n", handle, err_src);				\
-		ret = RRR_MESSAGE_BROKER_ERR;															\
-		break;																					\
-	} struct rrr_message_broker_costumer *costumer = handle;									\
-	struct rrr_message_broker_costumer_lock_and_decref_void_data costumer_decref_data =			\
-		{ broker, costumer };																	\
-	pthread_cleanup_push(__rrr_message_broker_costumer_lock_and_decref_void, &costumer_decref_data)
+#define RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE(err_src)                                                          \
+    do { if (__rrr_message_broker_costumer_find_by_handle_and_incref(broker, handle) == NULL) {                                \
+        RRR_MSG_0("Could not find costumer handle %p in %s\n", handle, err_src);                                               \
+        ret = RRR_MESSAGE_BROKER_ERR;                                                                                          \
+        break;                                                                                                                 \
+    } struct rrr_message_broker_costumer *costumer = handle;                                                                   \
+    struct rrr_message_broker_costumer_lock_and_decref_void_data costumer_decref_data =                                        \
+        { broker, costumer };                                                                                                  \
+    pthread_cleanup_push(__rrr_message_broker_costumer_lock_and_decref_void, &costumer_decref_data)
 
-#define RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK()		\
-		pthread_cleanup_pop(1);							\
-	} while(0)
+#define RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK()            \
+    pthread_cleanup_pop(1);                                    \
+    } while(0)
 
 static int __rrr_message_broker_split_output_buffer_new_and_add (
 		struct rrr_message_broker_split_buffer_collection *target
@@ -907,15 +907,15 @@ static int __rrr_message_broker_split_buffers_fill (
 		return ret;
 }
 
-#define RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING()									\
-		struct rrr_fifo_buffer *source_buffer = NULL;									\
-		do { 																			\
-			int source_buffer_is_main = 0;												\
-			__rrr_message_broker_get_source_buffer (									\
-					&source_buffer_is_main, &source_buffer, costumer					\
-			); if (source_buffer_is_main == 0 &&										\
-					(ret = __rrr_message_broker_split_buffers_fill(costumer)			\
-			) != 0) { goto out; }} while(0)
+#define RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING()                  \
+    struct rrr_fifo_buffer *source_buffer = NULL;                        \
+    do {                                                                 \
+        int source_buffer_is_main = 0;                                   \
+        __rrr_message_broker_get_source_buffer (                         \
+    	    &source_buffer_is_main, &source_buffer, costumer             \
+        ); if (source_buffer_is_main == 0 &&                             \
+    	    (ret = __rrr_message_broker_split_buffers_fill(costumer)     \
+        ) != 0) { goto out; }} while(0)
 
 struct rrr_message_broker_poll_discard_callback_data {
 	int count;
