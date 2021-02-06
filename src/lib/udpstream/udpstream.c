@@ -264,7 +264,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		struct rrr_udpstream *udpstream_data,
 		const struct sockaddr *addr,
 		socklen_t addrlen,
-		struct rrr_udpstream_frame_packed *frame,
+		const struct rrr_udpstream_frame_packed *frame,
 		void *data,
 		uint16_t data_size,
 		int copies
@@ -282,7 +282,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		udpstream_data->send_buffer_size = RRR_UDPSTREAM_MESSAGE_SIZE_MAX;
 	}
 
-	if (data_size > udpstream_data->send_buffer_size) {
+	if ((size_t) data_size + sizeof(*frame) - 1 > (size_t) udpstream_data->send_buffer_size) {
 		RRR_BUG("data size too big in __rrr_udpstream_checksum_and_send_packed_frame\n");
 	}
 
@@ -290,30 +290,47 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		RRR_BUG("addr was NULL in __rrr_udpstream_checksum_and_send_packed_frame\n");
 	}
 
+	struct rrr_udpstream_frame_packed *frame_new = udpstream_data->send_buffer;
+
+	*frame_new = *frame;
+
 	// A packed frame created locally has the payload stored separately
 	if (data_size > 0) {
-		frame->data_crc32 = rrr_htobe32(rrr_crc32buf((char *) data, data_size));
-		frame->data_size = rrr_htobe16(data_size);
+		frame_new->data_crc32 = rrr_htobe32(rrr_crc32buf((char *) data, data_size));
+		frame_new->data_size = rrr_htobe16(data_size);
+	}
+	else {
+		frame_new->data_crc32 = 0;
+		frame_new->data_size = 0;
 	}
 
-	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
-	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
+	char *crc32_start_pos = ((char *) frame_new) + sizeof(frame_new->header_crc32);
+	ssize_t crc32_size = sizeof(*frame_new) - sizeof(frame_new->header_crc32) - 1;
 
-	frame->header_crc32 = rrr_htobe32(rrr_crc32buf(crc32_start_pos, crc32_size));
+	frame_new->header_crc32 = rrr_htobe32(rrr_crc32buf(crc32_start_pos, crc32_size));
 
-	RRR_DBG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
-			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
-
-	if (RRR_DEBUGLEVEL_6) {
-		__rrr_udpstream_frame_packed_dump(frame);
-	}
-
-	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
 	if (data_size > 0) {
 		if (data == NULL) {
 			RRR_BUG("BUG: Data was NULL in __rrr_udpstream_checksum_and_send_packed_frame\n");
 		}
-		memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
+		memcpy(frame_new->data, data, data_size);
+	}
+	else {
+		frame_new->data[0] = '\0';
+	}
+
+	RRR_DBG_3("UDP-stream TX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+			rrr_be16toh(frame_new->stream_id),
+			rrr_be32toh(frame_new->frame_id),
+			rrr_be32toh(frame_new->header_crc32),
+			rrr_be32toh(frame_new->data_crc32),
+			rrr_be16toh(frame_new->data_size) + sizeof(*frame) - 1,
+			frame_new->flags_and_type,
+			rrr_be32toh(frame_new->connect_handle)
+	);
+
+	if (RRR_DEBUGLEVEL_6) {
+		__rrr_udpstream_frame_packed_dump(frame_new);
 	}
 
 	while (copies--) {
@@ -879,18 +896,6 @@ static int __rrr_udpstream_handle_received_frame (
 
 	struct rrr_udpstream_frame *new_frame = NULL;
 
-	RRR_DBG_3("UDP-stream RX %u-%u crc32: %" PRIu32 " S: %u F/T: %u CH: %u\n",
-			rrr_be16toh(frame->stream_id),
-			rrr_be32toh(frame->frame_id),
-			frame->header_crc32,
-			rrr_be16toh(frame->data_size),
-			frame->flags_and_type, rrr_be32toh(frame->connect_handle)
-	);
-
-	if (RRR_DEBUGLEVEL_6) {
-		__rrr_udpstream_frame_packed_dump(frame);
-	}
-
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
 		RRR_MSG_0("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
 		ret = RRR_SOCKET_HARD_ERROR;
@@ -1073,6 +1078,20 @@ static int __rrr_udpstream_read_callback (
 	struct rrr_udpstream_frame_packed *frame = (struct rrr_udpstream_frame_packed *) read_session->rx_buf_ptr;
 
 	callback_data->receive_count++;
+
+	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+			rrr_be16toh(frame->stream_id),
+			rrr_be32toh(frame->frame_id),
+			rrr_be32toh(frame->header_crc32),
+			rrr_be32toh(frame->data_crc32),
+			rrr_be16toh(frame->data_size) + sizeof(*frame) - 1,
+			frame->flags_and_type,
+			rrr_be32toh(frame->connect_handle)
+	);
+
+	if (RRR_DEBUGLEVEL_6) {
+		__rrr_udpstream_frame_packed_dump(frame);
+	}
 
 	if (read_session->rx_buf_wpos != (ssize_t) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame)) {
 		RRR_MSG_0("Size mismatch in __rrr_udpstream_read_callback, packet was invalid\n");
@@ -1558,8 +1577,8 @@ int rrr_udpstream_do_read_tasks (
 				&bytes_read,
 				&data->read_sessions,
 				data->ip.fd,
-				1024,
-				1024,
+				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
+				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
 				0, // No maximum size
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				__rrr_udpstream_read_get_target_size,

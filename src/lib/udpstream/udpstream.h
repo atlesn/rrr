@@ -125,21 +125,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // is closed. If frame id is zero, a hard reset is performed and sending should
 // stop immediately and a new stream must be used instead. This might happen
 // if a client restarts and gets ready again before the connection times out.
-#define RRR_UDPSTREAM_FRAME_TYPE_RESET				00
+#define RRR_UDPSTREAM_FRAME_TYPE_RESET				0
 
 // Used to initiate a new stream, both request and response
-#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			01
+#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			1
 
 // Used for data transmission
-#define RRR_UDPSTREAM_FRAME_TYPE_DATA				03
+#define RRR_UDPSTREAM_FRAME_TYPE_DATA				3
 
 // Used to acknowledge frames and to regulate window size
-#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			04
+#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			4
 
 // Used for control packets with no data. The application_data field may be used
 // by the application to exchange control data. Delivery is not guaranteed like
 // with data packets, control packets are just sent immediately.
-#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			05
+#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			5
 
 #define RRR_UDPSTREAM_FRAME_TYPE(frame) \
 	((frame)->flags_and_type & 0x0f)
