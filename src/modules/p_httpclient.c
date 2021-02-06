@@ -1308,12 +1308,11 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// Important : Set send_time for correct timeout behavior
 	entry->send_time = rrr_time_get_64();
 
-	int ret = RRR_FIFO_SEARCH_GIVE;
-
-	// No incref, we return GIVE
+	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->from_senders_queue, entry);
+
 	rrr_msg_holder_unlock(entry);
-	return ret;
+	return 0;
 }
 
 static int httpclient_data_init (
@@ -1651,7 +1650,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			prev_msgdb_index_time = time_now;
 		}
 
-		if (rrr_poll_do_poll_search(thread_data, &thread_data->poll, httpclient_poll_callback, thread_data, 0) != 0) {
+		if (rrr_poll_do_poll_delete(thread_data, &thread_data->poll, httpclient_poll_callback, 0) != 0) {
 			RRR_MSG_0("Error while polling in httpclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
