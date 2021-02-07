@@ -82,6 +82,7 @@ struct rrr_instance_module_data {
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
 #define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->module_name
+#define INSTANCE_D_MODULE(thread_data) thread_data->init_data.module
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
 
@@ -175,8 +176,14 @@ void rrr_instance_runtime_data_destroy_hard (
 struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 		struct rrr_instance_runtime_init_data *init_data
 );
-void *rrr_instance_thread_entry_intermediate (
-		struct rrr_thread *thread
+int rrr_instances_create_and_start_threads (
+		struct rrr_thread_collection **thread_collection_target,
+		struct rrr_instance_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
 );
 int rrr_instance_create_from_config (
 		struct rrr_instance_collection *instances,
