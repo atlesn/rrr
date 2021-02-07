@@ -29,7 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "util/linked_list.h"
 
-#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER (1<<0)
+#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER  (1<<0)
+#define RRR_INSTANCE_MISC_OPTIONS_DUPLICATE       (1<<1)
 
 struct rrr_stats_instance;
 struct rrr_cmodule;
@@ -85,6 +86,7 @@ struct rrr_instance_module_data {
 #define INSTANCE_D_MODULE(thread_data) thread_data->init_data.module
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
+#define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;

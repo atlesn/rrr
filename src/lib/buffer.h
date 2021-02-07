@@ -159,6 +159,18 @@ static inline int rrr_fifo_buffer_get_entry_count (
 	return ret;
 }
 
+static inline int rrr_fifo_buffer_get_entry_count_combined (
+		struct rrr_fifo_buffer *buffer
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	ret = buffer->entry_count + buffer->write_queue_entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	return ret;
+}
+
 static inline int rrr_fifo_buffer_get_ratelimit_active (
 		struct rrr_fifo_buffer *buffer
 ) {

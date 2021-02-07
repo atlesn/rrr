@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/slow_noop.h"
 #include "util/rrr_time.h"
 
+//#define RRR_FIFO_BUFFER_RATELIMIT_DEBUG 1
 //#define RRR_FIFO_BUFFER_DEBUG 1
 
 static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
@@ -545,8 +546,10 @@ int rrr_fifo_buffer_search (
 		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	__rrr_fifo_attempt_write_queue_merge(buffer);
-	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
+	if (combined_count == 0) {
+		rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	}
 
 	int err = 0;
 
@@ -811,8 +814,10 @@ int rrr_fifo_buffer_search_and_replace (
 		unsigned int wait_milliseconds,
 		int call_again_after_looping
 ) {
-	__rrr_fifo_attempt_write_queue_merge(buffer);
-	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
+	if (combined_count == 0) {
+		rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	}
 
 	int ret = 0;
 
@@ -941,7 +946,10 @@ int rrr_fifo_buffer_read_clear_forward (
 		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
+	if (combined_count == 0) {
+		rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	}
 
 	int ret = RRR_FIFO_OK;
 
@@ -1104,7 +1112,11 @@ int rrr_fifo_buffer_read (
 		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
+	if (combined_count == 0) {
+		rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	}
+
 	__rrr_fifo_attempt_write_queue_merge(buffer);
 
 	int ret = RRR_FIFO_OK;
@@ -1170,7 +1182,11 @@ int rrr_fifo_buffer_read_minimum (
 		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 ) {
-	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
+	if (combined_count == 0) {
+		rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+	}
+
 	__rrr_fifo_attempt_write_queue_merge(buffer);
 
 	int res = 0;
@@ -1226,6 +1242,10 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 	if (!buffer->buffer_do_ratelimit) {
 		return;
 	}
+
+#ifdef RRR_FIFO_BUFFER_RATELIMIT_DEBUG
+	uint64_t ratelimit_in = rrr_time_get_64();
+#endif
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 
@@ -1287,6 +1307,13 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 	}
 
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+#ifdef RRR_FIFO_BUFFER_RATELIMIT_DEBUG
+	uint64_t time = rrr_time_get_64() - ratelimit_in;
+	if (time > 0) {
+		printf("Ratelimit %p: %" PRIu64 "\n", buffer, time);
+	}
+#endif
 }
 
 static void __rrr_fifo_buffer_update_ratelimit(struct rrr_fifo_buffer *buffer) {

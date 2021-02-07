@@ -57,7 +57,7 @@ void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_lock_\n");
+		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_lock\n");
 	}
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	while (pthread_mutex_trylock(&entry->lock) != 0) {

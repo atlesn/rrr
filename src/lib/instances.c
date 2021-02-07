@@ -287,15 +287,24 @@ static int __rrr_instance_parse_misc (
 	struct rrr_instance_config_data *config = data_final->config;
 
 	struct data {
-		int do_disable_buffer;
+		int do_enable_buffer;
+		int do_duplicate;
 	} data_tmp;
 
 	struct data *data = &data_tmp;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_disable_buffer, 1);
+	// Note : Options are both default yes and default no, take care
 
-	if (!data->do_disable_buffer) {
+	// Default YES options
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_enable_buffer, 1);
+	if (!data->do_enable_buffer) {
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+	}
+
+	// Default NO options
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("duplicate", do_duplicate, 0);
+	if (data->do_duplicate) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DUPLICATE;
 	}
 
 	out:
@@ -487,6 +496,11 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
 
+	if (init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+		RRR_DBG_1("%s instance %s buffer is disabled, starting with one-slot buffer\n",
+				init_data->instance->module_data->module_name, init_data->instance->module_data->instance_name);
+	}
+
 	if (rrr_message_broker_costumer_register (
 			&data->message_broker_handle,
 			init_data->message_broker,
@@ -626,12 +640,42 @@ static void *__rrr_instance_thread_entry_intermediate (
 	return NULL;
 }
 
+static int __rrr_instance_thread_preload_enable_duplication_as_needed (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	int ret = 0;
+
+	if (INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DUPLICATE) {
+		int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
+
+		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %i readers detected\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), slots);
+
+		if ((ret = rrr_message_broker_setup_split_output_buffer (
+				INSTANCE_D_BROKER(thread_data),
+				INSTANCE_D_HANDLE(thread_data),
+				slots
+		)) != 0) {
+			RRR_MSG_0("Could not setup split buffer in buffer instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_instance_thread_preload (
 		struct rrr_thread *thread
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
 	int ret = 0;
+
+	if ((ret = __rrr_instance_thread_preload_enable_duplication_as_needed (thread_data)) != 0) {
+		goto out;
+	}
 
 	if (INSTANCE_D_MODULE(thread_data)->operations.preload != NULL) {
 		if ((ret = INSTANCE_D_MODULE(thread_data)->operations.preload(thread)) != 0) {

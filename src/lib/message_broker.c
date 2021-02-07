@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 #include "util/posix.h"
+#include "util/rrr_time.h"
 
 // Uncomment to disable buffers for test reasons 
 //#define RRR_MESSAGE_BROKER_NO_BUFFER_DEBUG 1
@@ -388,11 +389,19 @@ int rrr_message_broker_setup_split_output_buffer (
 	}
 
 	if (costumer->slot != NULL) {
+		// This function is safe to call multiple times
 		if ((ret = rrr_msg_holder_slot_reader_count_set(costumer->slot, slots)) != 0) {
 			goto out_unlock;
 		}
 	}
 	else {
+		// We can't create extra slots as they would fill up with messages
+		// Make this a bug trap after configuration option in buffer module has been removed
+		if (RRR_LL_COUNT(&costumer->split_buffers) > 0) {
+			RRR_MSG_0("Warning: rrr_message_broker_setup_split_output_buffer called more than once, ignoring successive calls\n");
+			goto out_unlock;
+		}
+
 		while (slots--) {
 			if ((ret = __rrr_message_broker_split_output_buffer_new_and_add(&costumer->split_buffers)) != 0) {
 				goto out_unlock;
