@@ -272,13 +272,8 @@ int rrr_msg_holder_slot_read (
 	int do_keep = 0;
 
 	{
-		// Unlock slot while in callback
-		pthread_mutex_unlock(&slot->lock);
-
 		// Callback must unlock entry
 		ret = callback(&do_keep, entry_new, callback_arg);
-
-		pthread_mutex_lock(&slot->lock);
 
 		if (ret != 0) {
 			goto out;
@@ -288,9 +283,6 @@ int rrr_msg_holder_slot_read (
 	if (!do_keep) {
 		int done_count = 0;
 
-		// Since we unlock whem in callback, the number of readers may
-		// have changed which would make our index invalid.
-		self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot);
 		if (self_index >= 0) {
 			slot->reader_has_read[self_index] = 1;
 			for (int i = 0; i < slot->reader_count; i++) {
