@@ -54,7 +54,7 @@ dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c
 
 raw_la_LDFLAGS = ${module_ldflags}
-raw_la_SOURCES = p_raw.c
+raw_la_SOURCES = d_raw.c
 
 averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
