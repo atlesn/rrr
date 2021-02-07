@@ -80,6 +80,8 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
 	drop:
 	rrr_msg_holder_unlock(entry);
 	return ret;

@@ -304,11 +304,13 @@ int rrr_msg_holder_slot_read (
 			slot->total_entries_deleted++;
 			rrr_msg_holder_decref(slot->entry);
 			slot->entry = NULL;
-			if ((ret = pthread_cond_signal(&slot->cond)) != 0) {
-				RRR_MSG_0("Failed while signalling condition in rrr_msg_holder_slot_write: %s\n", rrr_strerror(ret));
-				ret = 1;
-				goto out;
-			}
+		}
+
+		// Signal writers and other readers
+		if ((ret = pthread_cond_broadcast(&slot->cond)) != 0) {
+			RRR_MSG_0("Failed while signalling condition in rrr_msg_holder_slot_write: %s\n", rrr_strerror(ret));
+			ret = 1;
+			goto out;
 		}
 	}
 
@@ -398,7 +400,7 @@ static void __rrr_msg_holder_slot_unlock_void (void *arg) {
     slot->entry = entry_new;                                                                                                   \
     entry_new = NULL;                                                                                                          \
     slot->total_entries_written++;                                                                                             \
-    if ((ret = pthread_cond_signal(&slot->cond)) != 0) {                                                                       \
+    if ((ret = pthread_cond_broadcast(&slot->cond)) != 0) { /* Signal a reader */                                              \
         RRR_MSG_0("Failed while signalling condition while writing in rrr_msg_holder_slot: %s\n", rrr_strerror(ret));          \
         ret = 1;                                                                                                               \
         goto out;                                                                                                              \
