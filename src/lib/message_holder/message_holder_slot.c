@@ -371,10 +371,10 @@ static int __rrr_msg_holder_slot_write_wait (
 			}
 		}
 		if (check_cancel_callback != NULL && check_cancel_callback(check_cancel_callback_arg)) {
-			RRR_MSG_0("Cancel function returned true in __rrr_msg_holder_slot_write_wait\n");
 			ret = 1;
 			goto out;
 		}
+		ret = 0;
 	}
 
 	out:

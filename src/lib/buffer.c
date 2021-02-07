@@ -1027,7 +1027,15 @@ int rrr_fifo_buffer_read_clear_forward (
 			if ((ret_tmp & (RRR_FIFO_SEARCH_GIVE)) != 0) {
 				RRR_BUG("Bug: FIFO_SEARCH_GIVE returned to fifo_read_clear_forward, we always GIVE by default\n");
 			}
-			if ((ret_tmp & RRR_FIFO_SEARCH_STOP) != 0) {
+			if ((ret_tmp & RRR_FIFO_CALLBACK_ERR) != 0) {
+				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
+				ret |= RRR_FIFO_CALLBACK_ERR;
+			}
+			if ((ret_tmp & RRR_FIFO_GLOBAL_ERR) != 0) {
+				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
+				ret |= RRR_FIFO_GLOBAL_ERR;
+			}
+			if ((ret_tmp & (RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR|RRR_FIFO_GLOBAL_ERR)) != 0) {
 				// Stop processing and put the rest back into the buffer
 				{
 					rrr_fifo_write_lock(buffer);
@@ -1052,14 +1060,6 @@ int rrr_fifo_buffer_read_clear_forward (
 				}
 
 				break;
-			}
-			if ((ret_tmp & RRR_FIFO_CALLBACK_ERR) != 0) {
-				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
-				ret = RRR_FIFO_CALLBACK_ERR;
-			}
-			if ((ret_tmp & RRR_FIFO_GLOBAL_ERR) != 0) {
-				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
-				ret = RRR_FIFO_GLOBAL_ERR;
 			}
 			ret_tmp &= ~(RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE|RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR|RRR_FIFO_GLOBAL_ERR);
 			if (ret_tmp != 0) {
