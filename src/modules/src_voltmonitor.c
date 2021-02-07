@@ -473,7 +473,8 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 			0,
 			0,
 			voltmonitor_spawn_message_callback,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Could not spawn message in voltmonitor instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

@@ -102,7 +102,9 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			0,
 			0,
 			__rrr_cmodule_helper_read_final_callback,
-			callback_data
+			callback_data,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			INSTANCE_D_THREAD(callback_data->parent_thread_data)
 	) != 0) {
 		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
 				INSTANCE_D_NAME(callback_data->parent_thread_data));

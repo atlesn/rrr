@@ -649,7 +649,8 @@ static int ip_read_loop (
 			0,
 			0,
 			ip_read_array_intermediate,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -658,7 +659,8 @@ static int ip_read_loop (
 
 	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
-			&new_entries
+			&new_entries,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
 	}
@@ -1377,7 +1379,8 @@ static int ip_send_loop (
 
 				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 						INSTANCE_D_BROKER_ARGS(data->thread_data),
-						node
+						node,
+						INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
 							INSTANCE_D_NAME(data->thread_data));

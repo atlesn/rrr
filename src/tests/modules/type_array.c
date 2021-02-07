@@ -50,6 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
 
+// Set high to stop test from exiting. Set back to 200 when work is done.
+#define RRR_TEST_TYPE_ARRAY_LOOP_COUNT 200
+
 struct rrr_test_result {
 	int result;
 };
@@ -149,15 +152,15 @@ int test_do_poll_loop (
 	}
 
 	// Poll from output
-	for (int i = 1; i <= 200 && test_result->result != 2; i++) {
+	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
 		if (rrr_thread_signal_encourage_stop_check(self->thread) == 1) {
 			break;
 		}
 
 		rrr_thread_watchdog_time_update(self->thread);
 
-		TEST_MSG("Test result polling from %s try: %i of 200\n",
-				INSTANCE_M_NAME(output), i);
+		TEST_MSG("Test result polling from %s try: %i of %i\n",
+				INSTANCE_M_NAME(output), i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		ret = rrr_message_broker_poll_delete (
 				broker,

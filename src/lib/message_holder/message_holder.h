@@ -48,6 +48,9 @@ void rrr_msg_holder_decref (
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_decref_while_locked_and_unlock_void (
+		void *entry
+);
 void rrr_msg_holder_decref_void (
 		void *entry
 );

@@ -101,11 +101,13 @@ int signal_interrupt (int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",				"{CONFIGURATION FILE}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel DEBUGLEVEL]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"library-tests",		"[-l|--library-tests]"},
-		{0,							'\0',	NULL, 					""}
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
+        {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
+        {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel DEBUGLEVEL]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "library-tests",         "[-l|--library-tests]"},
+        {0,                           '\0',    NULL,                   ""}
 };
 
 int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {

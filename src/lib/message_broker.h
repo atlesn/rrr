@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "buffer.h"
+#include "poll_helper.h"
 #include "util/linked_list.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
@@ -36,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 struct rrr_msg_holder_collection;
+struct rrr_msg_holder_slot;
 
 // All costumers must be registered prior to starting any threads
 
@@ -52,9 +54,9 @@ struct rrr_message_broker_split_buffer_collection {
 
 struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
-	int no_buffer;
 	struct rrr_fifo_buffer main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
+	struct rrr_msg_holder_slot *slot;
 	char *name;
 	int usercount;
 	uint64_t unique_counter;
@@ -110,7 +112,9 @@ int rrr_message_broker_write_entry (
 		socklen_t socklen,
 		int protocol,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker *broker,
@@ -120,12 +124,16 @@ int rrr_message_broker_clone_and_write_entry (
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder *entry
+		struct rrr_msg_holder *entry,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_poll_discard (
 		int *discarded_count,

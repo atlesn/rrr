@@ -183,7 +183,8 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out_write:
 	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
 	out_drop:

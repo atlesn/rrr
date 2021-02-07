@@ -433,7 +433,8 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				0,
 				0,
 				journal_write_message_callback,
-				&callback_data
+				&callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		)) {
 			RRR_MSG_0("Could not create new message in journal instance %s\n",
 					INSTANCE_D_NAME(thread_data));

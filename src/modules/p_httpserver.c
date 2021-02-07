@@ -920,7 +920,8 @@ static int httpserver_receive_callback (
 				socklen,
 				RRR_IP_TCP,
 				httpserver_write_message_callback,
-				&write_callback_data
+				&write_callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 		)) != 0) {
 			RRR_MSG_0("Error while saving message in httpserver_receive_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
@@ -1307,7 +1308,8 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			addr_len,
 			RRR_IP_TCP,
 			httpserver_receive_raw_broker_callback,
-			&write_callback_data
+			&write_callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	);
 
 	out:

@@ -311,7 +311,8 @@ int socket_read_data(struct socket_data *data) {
 			0,
 			0,
 			read_data_receive_callback,
-			data
+			data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	);
 }
 

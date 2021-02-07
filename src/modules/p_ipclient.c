@@ -194,12 +194,15 @@ static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *a
 
 	int ret = 0;
 
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing to output buffer in ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -361,11 +364,15 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	) != 0) {
 		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
-		goto out;
+		goto out_no_unlock;
 	}
 
 	rrr_msg_holder_lock(entry);
 
+	pthread_cleanup_push(rrr_msg_holder_decref_while_locked_and_unlock_void, entry);
+
+	// The innermost callback will set joined_data when it has successfully
+	// filled a message into the entry, we use this for bugchecking
 	joined_data = entry->message;
 
 	if ((ret = callback_data->callback(&joined_data, entry, callback_data->udpstream_callback_data)) != 0) {
@@ -383,10 +390,11 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		}
 		ret = RRR_FIFO_GLOBAL_ERR;
 	out:
-		rrr_msg_holder_decref_while_locked_and_unlock(entry);
+		pthread_cleanup_pop(1);
 		if (joined_data != NULL && ret == 0) {
 			RRR_BUG("Callback returned non-error but still did not set joined_data to NULL in ipclient_udpstream_allocator_intermediate\n");
 		}
+	out_no_unlock:
 		return ret;
 }
 

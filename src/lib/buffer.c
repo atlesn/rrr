@@ -130,6 +130,15 @@ static inline void __rrr_fifo_buffer_stats_add_deleted (struct rrr_fifo_buffer *
 	RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_deleted += num);
 }
 
+void rrr_fifo_buffer_get_stats_populate (
+		struct rrr_fifo_buffer_stats *target,
+		uint64_t entries_written,
+		uint64_t entries_deleted
+) {
+	target->total_entries_written = entries_written;
+	target->total_entries_deleted = entries_deleted;
+}
+
 int rrr_fifo_buffer_get_stats (
 		struct rrr_fifo_buffer_stats *stats,
 		struct rrr_fifo_buffer *buffer
@@ -481,6 +490,47 @@ void rrr_fifo_buffer_clear (
 		struct rrr_fifo_buffer *buffer
 ) {
 	rrr_fifo_buffer_clear_with_callback(buffer, NULL, NULL);
+}
+
+// TODO : Use this in the search function
+int rrr_fifo_buffer_search_return_value_process (
+		unsigned char *do_keep,
+		unsigned char *do_give,
+		unsigned char *do_free,
+		unsigned char *do_stop,
+		int actions
+) {
+	int err = RRR_FIFO_OK;
+
+	*do_keep = 0;
+	*do_give = 0;
+	*do_free = 0;
+	*do_stop = 0;
+
+	if (actions == RRR_FIFO_SEARCH_KEEP) { // Just a 0
+		*do_keep = 1;
+		goto out;
+	}
+	if ((actions & RRR_FIFO_CALLBACK_ERR) != 0) {
+		err = RRR_FIFO_CALLBACK_ERR;
+		goto out;
+	}
+	if ((actions & RRR_FIFO_SEARCH_GIVE) != 0) {
+		*do_give = 1;
+		if ((actions & RRR_FIFO_SEARCH_FREE) != 0) {
+			*do_free = 1;
+		}
+	}
+	if ((actions & RRR_FIFO_SEARCH_STOP) != 0) {
+		*do_stop = 1;
+	}
+
+	if (*do_free == 0 && *do_stop == 0) {
+		RRR_BUG("Unknown return value %i to rrr_fifo_buffer_search_return_value_process\n");
+	}
+
+	out:
+	return err;
 }
 
 /*

@@ -304,7 +304,8 @@ static int httpclient_final_callback_receive_data (
 			0,
 			0,
 			httpclient_create_message_from_response_data_callback,
-			&callback_data_broker
+			&callback_data_broker,
+			INSTANCE_D_CANCEL_CHECK_ARGS(httpclient_data->thread_data)
 	);
 }
 
@@ -364,7 +365,8 @@ static int httpclient_create_message_from_json_array_callback (
 			0,
 			0,
 			httpclient_create_message_from_json_callback,
-			&callback_data_broker
+			&callback_data_broker,
+			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->httpclient_data->thread_data)
 	);
 }
 

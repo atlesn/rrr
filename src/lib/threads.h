@@ -169,6 +169,16 @@ static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thre
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
 }
 
+static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {
+	struct rrr_thread *thread = (struct rrr_thread *) arg;
+	int signal;
+	rrr_thread_lock(thread);
+	thread->watchdog_time = rrr_time_get_64();
+	signal = thread->signal;
+	rrr_thread_unlock(thread);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
+}
+
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
 		int signal

@@ -119,6 +119,11 @@ struct rrr_fifo_buffer {
 
 	sem_t new_data_available;
 };
+void rrr_fifo_buffer_get_stats_populate (
+		struct rrr_fifo_buffer_stats *target,
+		uint64_t entries_written,
+		uint64_t entries_deleted
+);
 int rrr_fifo_buffer_get_stats (
 		struct rrr_fifo_buffer_stats *stats,
 		struct rrr_fifo_buffer *buffer
@@ -195,6 +200,13 @@ void rrr_fifo_buffer_clear_with_callback (
 );
 void rrr_fifo_buffer_clear (
 		struct rrr_fifo_buffer *buffer
+);
+int rrr_fifo_buffer_search_return_value_process (
+		unsigned char *do_keep,
+		unsigned char *do_give,
+		unsigned char *do_free,
+		unsigned char *do_stop,
+		int actions
 );
 int rrr_fifo_buffer_search (
 		struct rrr_fifo_buffer *buffer,

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -211,6 +211,10 @@ static int __rrr_poll_do_poll (
 
 		callback_to_use = __rrr_poll_delete_topic_filtering_callback;
 		callback_arg = &filter_callback_data;
+	}
+
+	if (RRR_LL_COUNT(collection) == 0 && wait_milliseconds > 0) {
+		rrr_posix_usleep(wait_milliseconds * 1000);
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);

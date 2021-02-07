@@ -76,7 +76,8 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
 	drop:

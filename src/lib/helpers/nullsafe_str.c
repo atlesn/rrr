@@ -72,8 +72,6 @@ int rrr_nullsafe_str_new_or_replace_raw (
 ) {
 	int ret = 0;
 
-	*result = NULL;
-
 	if (len != 0 && str == NULL) {
 		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
@@ -435,9 +433,12 @@ int rrr_nullsafe_str_str (
 
 	const void *start = haystack->str;
 	const void *end = haystack->str + haystack->len;
-	
-	while (start + needle->len <= end) {
-		if (memcmp(start, needle->str, needle->len) == 0) {
+	const void *search_end = end - needle->len;
+
+	while (start <= search_end) {
+		if (*((const char *) start) == *((const char *) needle->str) &&
+		    memcmp(start, needle->str, needle->len) == 0
+		) {
 			const struct rrr_nullsafe_str tmp_at_needle = {
 					(void *) start, // Cast away const OK
 					end - start

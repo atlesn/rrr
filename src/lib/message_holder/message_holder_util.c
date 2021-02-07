@@ -22,14 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
+#include "../log.h"
 
+#include "message_holder.h"
 #include "message_holder_util.h"
 #include "message_holder_struct.h"
 
-#include "mqtt/mqtt_topic.h"
-#include "message_holder.h"
-#include "messages/msg_msg.h"
+#include "../mqtt/mqtt_topic.h"
+#include "../messages/msg_msg.h"
 
 int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,

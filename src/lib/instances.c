@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2022 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -489,7 +489,7 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 			&data->message_broker_handle,
 			init_data->message_broker,
 			init_data->module->instance_name,
-			init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER
+			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0
 	) != 0) {
 		RRR_MSG_0("Could not register with message broker in rrr_instance_new_thread\n");
 		goto out_free;
