@@ -387,7 +387,7 @@ static int __rrr_http2_on_frame_recv_callback (
 				(frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0,
 				0, // Is not stream close
 				stream->data,
-				stream->data_size,
+				stream->data_wpos,
 				stream->application_data,
 				session->callback_data.callback_arg
 		) != 0) {
