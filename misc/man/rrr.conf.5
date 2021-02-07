@@ -60,6 +60,11 @@ senders=INSTANCE NAME,...
 # On program startup, wait for these instances to start before starting (optional)
 wait_for=WAIT FOR,...
 
+# Enable or disable output buffer for this module (optional, buffer is by default enabled)
+# Disabling buffers may reduce latency for messages, but will decrease throughout. Use the
+# raw (DA) module to measure this.
+buffer=yes
+
 # Drop all messages from senders which do not match the set topic (optional)
 topic_filter=MQTT TOPIC FILTER
 
@@ -185,8 +190,8 @@ The following modules are available, they are discussed in detail further down.
 .It dummy (S)
 Dummy module which generates messages.
 
-.It raw (PAI)
-Dumps messages, used for debugging.
+.It raw (DA)
+Dumps messages, used for debugging and performance measurements.
 
 .It ip (PAI)
 Handles IP communication, UDP and TCP.
@@ -269,15 +274,19 @@ When generating messages, give them an empty payload with a random size in the r
 .It dummy_topic={TOPIC}
 Set an MQTT topic in generated messages.
 .El
-.SS raw (PAI)
-This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
-can read from both IP modules and non-IP.
+.SS raw (DA)
+This module reads messages from senders and drops them possibly after collection information from them.
 .PP
-
+If debuglevel 1 is active, statistics will be printed every second for performance measurement.
+The statistics will show the current throughput and the average message lifetime of all messages based on their timestamp.
+If per-message debugging is active, the lifetime will be printed for each message possibly along with array dumps and other information.
+.PP
+Debuglevel 3 will make a short summary of each message received be printed.
+.PP
 .Bl -tag -width -indent
 .It raw_print_data={yes|no}
 Print the timestamp of each received message and dump any arrays present in the messages. The global debuglevel 2 must
-be set for messages to actually be printed. This to avoid problems with the journal module.
+be set for messages to be printed.
 .El
 .SS ip (PAI)
 This module is capable of listening on an UDP or TCP port and read messages or arrays, as well as sending data to remote hosts.

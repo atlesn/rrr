@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/threads.h"
 #include "../lib/messages/msg_msg.h"
-#include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
@@ -55,10 +54,10 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *reading = entry->message;
 
-	uint64_t message_age = rrr_time_get_64() - reading->timestamp;
+	long double message_age = (long double) (rrr_time_get_64() - reading->timestamp);
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 " age %" PRIu64 " ms\n",
-			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp, message_age / 1000);
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 " age %Lg ms\n",
+			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp, message_age / 1000.0);
 
 	if (raw_data->print_data != 0) {
 		// Use high debuglevel to force suppression of messages in journal module
@@ -69,8 +68,8 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out;
 		}
 
-		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s' age %" PRIu64 " ms\n",
-				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp, message_age / 1000);
+		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s' age %Lg ms\n",
+				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp, message_age / 1000.0);
 
 		if (MSG_IS_ARRAY(reading)) {
 			uint16_t array_version_dummy;
@@ -89,7 +88,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	raw_data->total_message_age_us += (long double) message_age;
+	raw_data->total_message_age_us += message_age;
 	raw_data->total_message_count++;
 
 	out:
