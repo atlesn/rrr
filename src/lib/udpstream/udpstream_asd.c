@@ -1035,7 +1035,6 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 			}
 
 			struct rrr_msg_holder *message = node->message;
-			node->message = NULL;
 
 			RRR_DBG_3("ASD D %u:%u MSG timestamp %" PRIu64 ", grace started\n",
 					session->connect_handle, node->message_id, node->send_time);
