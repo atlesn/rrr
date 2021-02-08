@@ -492,6 +492,55 @@ enum rrr_thread_start_state_group {
 	RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED
 };
 
+static int __rrr_thread_wait_for_state (
+		struct rrr_thread *thread,
+		enum rrr_thread_start_state_group state_group
+) {
+	int ret = 0;
+
+	int was_ok = 0;
+	for (int j = 0; j < 100; j++)  {
+		int state = rrr_thread_state_get(thread);
+		RRR_DBG_8 ("Wait for thread %p name %s, state is now %i\n", thread, thread->name, state);
+
+		if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_INITIALIZED) {
+			if (state == RRR_THREAD_STATE_RUNNING_FORKED) {
+				RRR_BUG("BUG: Thread %p name %s started prior to receiving signal\n", thread, thread->name);
+			}
+			if (	state == RRR_THREAD_STATE_NEW ||
+					state == RRR_THREAD_STATE_INITIALIZED ||
+					state == RRR_THREAD_STATE_STOPPED
+			) {
+				was_ok = 1;
+				break;
+			}
+		}
+		else if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED) {
+			if (	state == RRR_THREAD_STATE_RUNNING_FORKED ||
+					state == RRR_THREAD_STATE_STOPPED
+			) {
+				was_ok = 1;
+				break;
+			}
+		}
+		else {
+			RRR_BUG("BUG: Unknown state group %i in __rrr_thread_start_all_wait_for_state\n", state_group);
+		}
+
+		rrr_posix_usleep (10000);
+	}
+	if (was_ok != 1) {
+		int state = rrr_thread_state_get(thread);
+		RRR_MSG_0 ("Thread %s did not transition to required state group %i in time state is now %i\n",
+				thread->name, state_group, state);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int  __rrr_thread_collection_start_all_wait_for_state (
 		struct rrr_thread_collection *collection,
 		enum rrr_thread_start_state_group state_group
@@ -499,45 +548,10 @@ static int  __rrr_thread_collection_start_all_wait_for_state (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
-		int was_ok = 0;
 		if (node->is_watchdog == 1) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		for (int j = 0; j < 100; j++)  {
-			int state = rrr_thread_state_get(node);
-			RRR_DBG_8 ("Wait for thread %p name %s, state is now %i\n", node, node->name, state);
-
-			if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_INITIALIZED) {
-				if (state == RRR_THREAD_STATE_RUNNING_FORKED) {
-					RRR_BUG("BUG: Thread %p name %s started prior to receiveing signal\n", node, node->name);
-				}
-				if (	state == RRR_THREAD_STATE_NEW ||
-						state == RRR_THREAD_STATE_INITIALIZED ||
-						state == RRR_THREAD_STATE_STOPPED
-				) {
-					was_ok = 1;
-					break;
-				}
-			}
-			else if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED) {
-				if (	state == RRR_THREAD_STATE_RUNNING_FORKED ||
-						state == RRR_THREAD_STATE_STOPPED
-				) {
-					was_ok = 1;
-					break;
-				}
-			}
-			else {
-				RRR_BUG("BUG: Unknown state group %i in __rrr_thread_start_all_wait_for_state\n", state_group);
-			}
-
-			rrr_posix_usleep (10000);
-		}
-		if (was_ok != 1) {
-			int state = rrr_thread_state_get(node);
-			RRR_MSG_0 ("Thread %s did not transition to required state group %i in time state is now %i\n",
-					node->name, state_group, state);
-			ret = 1;
+		if ((ret = __rrr_thread_wait_for_state(node, state_group)) != 0) {
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
@@ -595,24 +609,24 @@ int rrr_thread_collection_start_all (
 		goto out_unlock;
 	}
 
-	/* Signal threads to proceed to fork stage */
+	/* Signal threads to proceed to fork stage.
+	 * The threads must then fork one by one as there might be race conditions
+	 * if debug messages are printed in the fork helper functions. */
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog == 1) {
 			RRR_LL_ITERATE_NEXT();
 		}
-		RRR_DBG_8 ("START_BEFOREFORK signal to thread %p name %s with priority FORK\n", node, node->name);
+
+		RRR_DBG_8 ("START_BEFOREFORK signal to thread %p name %s and waiting for it to complete forking\n", node, node->name);
+
 		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+
+		if ((ret = __rrr_thread_wait_for_state(node, RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED)) != 0) {
+			goto out_unlock;
+		}
 	RRR_LL_ITERATE_END();
 
-	RRR_DBG_8 ("Waiting for threads to set RUNNNIG_FORKED\n");
-
-	/* Wait for forking threads to finish off their forking-business */
-	if ((ret = __rrr_thread_collection_start_all_wait_for_state (
-			collection,
-			RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED
-	)) != 0) {
-		goto out_unlock;
-	}
+	RRR_DBG_8 ("All threads are now RUNNNIG_FORKED\n");
 
 	/* Start all threads based on callback condition */
 	int must_retry = 0;

@@ -364,6 +364,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 	(void)(data_size);
 
 	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
+		RRR_DBG_8("Worker %s completed configuration\n", callback_data->worker->name);
 		if (callback_data->worker->config_complete != 0) {
 			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
 		}
@@ -511,9 +512,11 @@ static int __rrr_cmodule_helper_reader_thread_check_pong (
 			node->pong_receive_time = rrr_time_get_64();
 		}
 		else if (node->pong_receive_time < min_time) {
-			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
-					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
-			ret = 1;
+			while (rrr_posix_usleep(1000000)) {
+				RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
+						(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
+				ret = 1;
+			}
 		}
 	RRR_LL_ITERATE_END();
 
