@@ -46,6 +46,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
+#define RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS 10
+
 static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
 	void *ptr = *((void **) arg);
 	RRR_FREE_IF_NOT_NULL(ptr);
@@ -498,6 +500,13 @@ void __rrr_http_client_request_send_connect_callback (
 	*result = handle->handle;
 }
 
+uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
+		const uint16_t port,
+		const uint16_t index
+) {
+	return (port << 16 ) | index;
+}
+
 static int __rrr_http_client_request_send_intermediate_connect (
 		struct rrr_net_transport *transport_keepalive,
 		struct rrr_http_client_request_callback_data *callback_data,
@@ -506,31 +515,48 @@ static int __rrr_http_client_request_send_intermediate_connect (
 ) {
 	int ret = 0;
 
-	int keepalive_handle = rrr_net_transport_handle_get_by_match(transport_keepalive, server_to_use, port_to_use);
-
-	if (keepalive_handle == 0) {
-		if (rrr_net_transport_connect (
+	uint16_t concurrent_index = 0;
+	do {
+		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
+	
+		int keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
-				port_to_use,
 				server_to_use,
-				__rrr_http_client_request_send_connect_callback,
-				&keepalive_handle
-		) != 0) {
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
+				match_data
+		);
+
+		if (keepalive_handle == 0) {
+			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%i\n",
+					server_to_use, port_to_use, concurrent_index + 1, RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS);
+
+			if (rrr_net_transport_connect (
+					transport_keepalive,
+					port_to_use,
+					server_to_use,
+					__rrr_http_client_request_send_connect_callback,
+					&keepalive_handle
+			) != 0) {
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
+			if ((ret = rrr_net_transport_match_data_set (
+					transport_keepalive,
+					keepalive_handle,
+					server_to_use,
+					match_data
+			)) != 0) {
+				goto out;
+			}
 		}
 
-		if ((ret = rrr_net_transport_match_data_set(transport_keepalive, keepalive_handle, server_to_use, port_to_use)) != 0) {
-			goto out;
-		}
-	}
-
-	ret = rrr_net_transport_handle_with_transport_ctx_do (
-			transport_keepalive,
-			keepalive_handle,
-			__rrr_http_client_request_send_final_transport_ctx_callback,
-			callback_data
-	);
+		ret = rrr_net_transport_handle_with_transport_ctx_do (
+				transport_keepalive,
+				keepalive_handle,
+				__rrr_http_client_request_send_final_transport_ctx_callback,
+				callback_data
+		);
+	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS);
 
 	out:
 		return ret;
