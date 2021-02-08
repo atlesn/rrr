@@ -382,6 +382,9 @@ static int __rrr_http_transaction_part_content_length_set (
 		struct rrr_http_transaction *transaction,
 		struct rrr_http_part *part
 ) {
+	if (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) {
+		return 0;
+	}
 	char content_length_str[64];
 	sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
 	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
