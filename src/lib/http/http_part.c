@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 #include "http_header_fields.h"
+#include "../string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
@@ -666,27 +667,37 @@ int rrr_http_part_json_make (
 static void __rrr_http_part_header_field_dump (
 		struct rrr_http_header_field *field
 ) {
+	struct rrr_string_builder string_builder = {0};
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(parent_name,field->name);
 
-	RRR_MSG_3("%s: unsigned %llu - signed %lli - value length '%ld'\n",
+	RRR_DBG("%s: unsigned %llu - signed %lli - value length '%ld'\n",
 			parent_name,
 			field->value_unsigned,
 			field->value_signed,
 			(unsigned long) rrr_nullsafe_str_len(field->value)
 	);
 
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
+	RRR_DBG("\t = %s\n", value);
+
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-		RRR_MSG_3("\t%s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
+		rrr_string_builder_append_format(&string_builder, "\t |_ %s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
 	RRR_LL_ITERATE_END();
+
+	if (rrr_string_builder_length(&string_builder) > 0) {
+		RRR_DBG("%s", rrr_string_builder_buf(&string_builder));
+	}
+
+	rrr_string_builder_clear(&string_builder);
 }
 
 void rrr_http_part_header_dump (
 		struct rrr_http_part *part
 ) {
-	printf ("== DUMP HTTP PART HEADER ====================================\n");
+	RRR_DBG("== DUMP HTTP PART HEADER ====================================\n");
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		__rrr_http_part_header_field_dump(node);
 	RRR_LL_ITERATE_END();
-	printf ("== DUMP HTTP PART HEADER END ================================\n");
+	RRR_DBG("== DUMP HTTP PART HEADER END ================================\n");
 }
