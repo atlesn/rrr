@@ -667,7 +667,6 @@ int rrr_http_part_json_make (
 static void __rrr_http_part_header_field_dump (
 		struct rrr_http_header_field *field
 ) {
-	struct rrr_string_builder string_builder = {0};
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(parent_name,field->name);
 
 	RRR_DBG("%s: unsigned %llu - signed %lli - value length '%ld'\n",
@@ -677,19 +676,19 @@ static void __rrr_http_part_header_field_dump (
 			(unsigned long) rrr_nullsafe_str_len(field->value)
 	);
 
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
-	RRR_DBG("\t = %s\n", value);
+	if (rrr_nullsafe_str_len(field->value) > 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
+		RRR_DBG("\t = %s\n", value);
+	}
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-		rrr_string_builder_append_format(&string_builder, "\t |_ %s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		RRR_DBG("\t |_ %s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
+		if (rrr_nullsafe_str_len(node->value) > 0) {
+			RRR_DBG("\t      = %s\n", value);
+		}
 	RRR_LL_ITERATE_END();
-
-	if (rrr_string_builder_length(&string_builder) > 0) {
-		RRR_DBG("%s", rrr_string_builder_buf(&string_builder));
-	}
-
-	rrr_string_builder_clear(&string_builder);
 }
 
 void rrr_http_part_header_dump (
@@ -698,6 +697,7 @@ void rrr_http_part_header_dump (
 	RRR_DBG("== DUMP HTTP PART HEADER ====================================\n");
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		__rrr_http_part_header_field_dump(node);
+	
 	RRR_LL_ITERATE_END();
 	RRR_DBG("== DUMP HTTP PART HEADER END ================================\n");
 }

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -307,7 +307,8 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"content-length",         RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_unsigned_value},
         {"content-type",           0,                                       __rrr_http_header_parse_content_type_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
-        {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    NULL},
+        {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
+	                           RRR_HTTP_HEADER_FIELD_SQUARE_QUOTE_NAME, NULL},
         {"location",               RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"server",                 0,                                       __rrr_http_header_parse_single_string_value},
         {"server-timing",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_first_string_value},
@@ -518,7 +519,7 @@ static int __rrr_http_header_field_parse_subvalue (
 
 	const char *start = start_orig;
 
-	if (*start == ';' || *start == ',') {
+	while (start < end && (*start == ';' || *start == ',')) {
 		start++;
 	}
 
@@ -528,7 +529,8 @@ static int __rrr_http_header_field_parse_subvalue (
 		if (whitespace_count == 0) {
 			// No more values
 			*parsed_bytes = start - start_orig;
-			return RRR_HTTP_PARSE_OK;
+			ret = RRR_HTTP_PARSE_OK;
+			goto out;
 		}
 
 		start += whitespace_count;
@@ -537,20 +539,43 @@ static int __rrr_http_header_field_parse_subvalue (
 	const char *line_end = NULL;
 	FIND_LINE_END();
 
+	const char *quote_end = NULL;
 	const char *comma = NULL;
 	const char *equal = NULL;
 	const char *semicolon = NULL;
 
+	while (*start == ' ' && start < end) {
+		start++;
+	}
+
+	if (start == line_end) {
+		// Line ended with , or ; propably, assume we are done
+		ret = RRR_HTTP_PARSE_OK;
+		goto out;
+	}
+
+	const char *name_end = NULL;
+	const char *separator_search_start = start;
+
+	if (	(field_flags & RRR_HTTP_HEADER_FIELD_SQUARE_QUOTE_NAME) &&
+		*start == '<' &&
+		(quote_end = rrr_http_util_strchr(start, line_end, '>')) != NULL
+	) {
+		name_end = separator_search_start = quote_end + 1;
+	}
+
 	if ((field_flags & RRR_HTTP_HEADER_FIELD_NO_PAIRS) == 0) {
-		equal = rrr_http_util_strchr(start, line_end, '=');
-		semicolon = rrr_http_util_strchr(start, line_end, ';');
+		equal = rrr_http_util_strchr(separator_search_start, line_end, '=');
+		semicolon = rrr_http_util_strchr(separator_search_start, line_end, ';');
 	}
 
-	if ((field_flags & RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE) != 0) {
-		comma = rrr_http_util_strchr(start, line_end, ',');
+	if (field_flags & RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE) {
+		comma = rrr_http_util_strchr(separator_search_start, line_end, ',');
 	}
 
-	const char *name_end = __rrr_http_header_field_parse_get_first_position(comma, semicolon, equal, line_end);
+	if (name_end == NULL) {
+		name_end =  __rrr_http_header_field_parse_get_first_position(comma, semicolon, equal, line_end);
+	}
 
 	ssize_t name_length = name_end - start;
 	if (name_length <= 0) {
