@@ -1,4 +1,4 @@
-.Dd 2021-02-04
+.Dd 2021-02-08
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -60,9 +60,11 @@ senders=INSTANCE NAME,...
 # On program startup, wait for these instances to start before starting (optional)
 wait_for=WAIT FOR,...
 
-# Enable or disable output buffer for this module (optional, buffer is by default enabled)
-# Disabling buffers may reduce latency for messages, but will decrease throughout. Use the
-# raw (DA) module to measure this.
+# Enable or disable output duplication (optional). If set to yes, all readers of this instance will
+# receive all messages. If set to no, the readers will compete over the messages (default mode).
+duplicate=yes
+
+# Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
 
 # Drop all messages from senders which do not match the set topic (optional)
@@ -92,13 +94,6 @@ ELSE
 sep1#separator
 ;
 .fi
-.PP
-If an instance is specified as sender in more than one other instance, these will compete about messages from it.
-Use the
-.B buffer
-module and enable duplication if a message is to be processed by multiple modules,
-for instance when different modules should process messages with different topics.
-Instances may not use themselves as senders.
 .PP
 Named array tree definitions begin with {NAME} and end with a semicolon.
 In all module parameters for array definitions, it is possible to instead specify {NAME} to reference a definition
@@ -155,6 +150,65 @@ for the complete specification of all the types, and the specification for array
 .SS IP MESSAGES
 Some messages contain IP data, for instance messages created by a module which reads from the network. The address
 of the sender will be contained within the message. All modules may use IP-messages, but not all of them use the IP-data. 
+.SH BUFFERS
+.PP
+Each instance of a source or processor module has an output buffer from which other modules read. If buffer is
+disabled, a "slot" is used instead which fits a single message.
+.PP
+.nf
+                                     3 +------------+--------+
+                                     __|  INSTANCE  | Buffer |
+                Duplication off     |  |     B      | / Slot |
+            +------------+--------+_|  +------------+--------+
+ 4 messages |  INSTANCE  | Buffer |
+>---------->|     A      | / Slot |_ 1 +------------+--------+
+            +------------+--------+ |  |  INSTANCE  | Buffer |
+                                    |__|     C      | / Slot |
+                                       +------------+--------+
+.fi
+.PP
+If an instance is specified as sender in more than one other instance, these will compete about messages from it unless
+duplication is enabled. If duplication is enabled, each reader of the duplicated instance gets it's own buffer which
+is filled with copies of all messages. If the buffer is disabled, all readers must make a copy of the message in the slot
+after which it is deleted.
+.PP
+.nf
+                                       +------------+--------+
+                                    4 _|  INSTANCE  | Buffer |
+                Duplication on       / |     B      | / Slot |
+            +------------+--------+ /  +------------+--------+
+ 4 messages |  INSTANCE  | Buffer |-
+>---------->|            +--------| 4  +------------+--------+
+            |     A      | Buffer |----|  INSTANCE  | Buffer |
+            +------------+--------+    |     C      | / Slot |
+                                       +------------+--------+
+
+                                       +------------+--------+
+              Duplication without   4 _|  INSTANCE  | Buffer |
+                    buffer           / |     B      | / Slot |
+            +------------+--------+ /  +------------+--------+
+ 4 messages |  INSTANCE  |        |-
+>---------->|            |  Slot  | 4  +------------+--------+
+            |     A      |        |----|  INSTANCE  | Buffer |
+            +------------+--------+    |     C      | / Slot |
+                                       +------------+--------+
+.fi
+.PP
+If buffer is disabled, the instance will block if it has a new message to write to the output while the slot is busy,
+and it will proceed once a reader has picked up the message (or all readers if duplication is enabled).
+
+Disabling buffers may reduce latency for messages, but will decrease throughout.
+For very strict throughput and/or latency requirements,
+experiment with using different combinations of buffer on and off as well as duplication directly in instances or separately
+in intermediate
+.Xr buffer(P)
+instances.
+If there are not thousands of messsages per second and not high bursts, buffer may be disabled for all instances to achieve the best latency possible.
+
+The
+.Xr raw(DA)
+module may be used to measure performance.
+
 .SH MODULES AND CONFIGURATION PARAMETERS
 .PP
 Modules have different special capabilites, denoted by the following letters. The actual implementation may
@@ -164,15 +218,13 @@ vary between modules. Many modules can despite this handle all types of messages
 .It S
 Source module, can't read from other modules
 .It P
-Processor module, can have senders specified to read from (set with
-.B senders=
-) and may also be read from by other modules
+Processor module, can have senders specified to read from and may also be read from other modules
 .It D
 Dead-end module, can only read from other modules
 .It N
 Network-oriented module, cannot be used as sender nor have senders specified itself.
 .It A
-Module supports data arrays (see above)
+Module supports data arrays
 .It I
 Module supports IP messages
 .El
