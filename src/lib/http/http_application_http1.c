@@ -1419,6 +1419,10 @@ static int __rrr_http_application_http1_request_send (
 
 	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
 
+	if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
+		goto out;
+	}
+
 	struct rrr_http_application_http1_request_send_callback_data callback_data = {
 		http1,
 		handle,
