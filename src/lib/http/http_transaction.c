@@ -513,7 +513,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 		}
 	}
 
-	if (transaction->method == RRR_HTTP_METHOD_PUT && transaction->method == RRR_HTTP_METHOD_POST) {
+	if (transaction->method == RRR_HTTP_METHOD_PUT || transaction->method == RRR_HTTP_METHOD_POST) {
 		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->request_part)) != 0) {
 			goto out;
 		}
