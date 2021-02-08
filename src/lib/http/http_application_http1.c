@@ -1432,7 +1432,6 @@ static int __rrr_http_application_http1_request_send (
 	if ((ret = rrr_http_transaction_request_prepare_wrapper (
 			transaction,
 			upgrade_mode,
-			host,
 			user_agent,
 			__rrr_http_application_http1_request_send_preliminary_callback,
 			__rrr_http_application_http1_request_send_make_headers_callback,

@@ -382,9 +382,6 @@ static int __rrr_http_transaction_part_content_length_set (
 		struct rrr_http_transaction *transaction,
 		struct rrr_http_part *part
 ) {
-	if (transaction->method != RRR_HTTP_METHOD_PUT && transaction->method != RRR_HTTP_METHOD_POST) {
-		return 0;
-	}
 	char content_length_str[64];
 	sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
 	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
@@ -479,7 +476,6 @@ int rrr_http_transaction_response_prepare_wrapper (
 int rrr_http_transaction_request_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		const char *host,
 		const char *user_agent,
 		int (*preliminary_callback)(
 			enum rrr_http_method method,
@@ -517,7 +513,19 @@ int rrr_http_transaction_request_prepare_wrapper (
 		}
 	}
 
-	if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->request_part)) != 0) {
+	if (transaction->method == RRR_HTTP_METHOD_PUT && transaction->method == RRR_HTTP_METHOD_POST) {
+		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->request_part)) != 0) {
+			goto out;
+		}
+	}
+
+	// Don't push Host: here. HTTP1 must push Host: itself, and HTTP2 pushes autority:
+
+	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "user-agent", user_agent)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "accept-charset", "UTF-8")) != 0) {
 		goto out;
 	}
 
@@ -526,18 +534,6 @@ int rrr_http_transaction_request_prepare_wrapper (
 			headers_callback,
 			callback_arg
 	) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "host", host)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "user-agent", user_agent)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_part_header_field_push_and_replace (transaction->request_part, "accept-charset", "UTF-8")) != 0) {
 		goto out;
 	}
 

@@ -133,7 +133,6 @@ int rrr_http_transaction_response_prepare_wrapper (
 int rrr_http_transaction_request_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode,
-		const char *host,
 		const char *user_agent,
 		int (*preliminary_callback)(
 			enum rrr_http_method method,
