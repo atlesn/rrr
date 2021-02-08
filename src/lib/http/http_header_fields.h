@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE     (1<<0)
 #define RRR_HTTP_HEADER_FIELD_NO_PAIRS           (1<<1)
-#define RRR_HTTP_HEADER_FIELD_SQUARE_QUOTE_NAME  (1<<2)
+#define RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME  (1<<2)
 
 struct rrr_http_header_field_definition;
 

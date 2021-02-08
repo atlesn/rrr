@@ -308,7 +308,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
         {"content-type",           0,                                       __rrr_http_header_parse_content_type_value},
         {"date",                   RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"link",                   RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE |
-	                           RRR_HTTP_HEADER_FIELD_SQUARE_QUOTE_NAME, NULL},
+	                           RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME, NULL},
         {"location",               RRR_HTTP_HEADER_FIELD_NO_PAIRS,          __rrr_http_header_parse_single_string_value},
         {"server",                 0,                                       __rrr_http_header_parse_single_string_value},
         {"server-timing",          RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,    __rrr_http_header_parse_first_string_value},
@@ -557,7 +557,7 @@ static int __rrr_http_header_field_parse_subvalue (
 	const char *name_end = NULL;
 	const char *separator_search_start = start;
 
-	if (	(field_flags & RRR_HTTP_HEADER_FIELD_SQUARE_QUOTE_NAME) &&
+	if (	(field_flags & RRR_HTTP_HEADER_FIELD_ANGLED_QUOTE_NAME) &&
 		*start == '<' &&
 		(quote_end = rrr_http_util_strchr(start, line_end, '>')) != NULL
 	) {
