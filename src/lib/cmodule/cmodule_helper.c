@@ -512,11 +512,9 @@ static int __rrr_cmodule_helper_reader_thread_check_pong (
 			node->pong_receive_time = rrr_time_get_64();
 		}
 		else if (node->pong_receive_time < min_time) {
-			while (rrr_posix_usleep(1000000)) {
-				RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
-						(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
-				ret = 1;
-			}
+			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
+					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
+			ret = 1;
 		}
 	RRR_LL_ITERATE_END();
 
