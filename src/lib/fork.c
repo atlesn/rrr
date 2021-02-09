@@ -63,9 +63,11 @@ static void __rrr_fork_handler_lock (
 ) {
 	// Make sure that we actually wake up and take the lock while 
 	// other users sleep between unlock/lock
-	while (pthread_mutex_trylock (&handler->lock) != 0) {
-		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
-	}
+// XXX : This seems not to be needed anymore
+//	while (pthread_mutex_trylock (&handler->lock) != 0) {
+//		rrr_posix_usleep (RRR_FORK_TRYLOCK_LOOP_SLEEP_MS * 1000);
+//	}
+	pthread_mutex_lock (&handler->lock);
 }
 
 static void __rrr_fork_handler_unlock (
@@ -399,6 +401,7 @@ pid_t rrr_fork (
 ) {
 	pid_t ret = 0;
 
+	// XXX : This seems not to be needed anymore
 	/*
 	 * XXX : For some reason the perl5 module might sometimes hang during
 	 *       initialization when it forks out the worker. It will then hang

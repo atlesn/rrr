@@ -552,7 +552,7 @@ static int __rrr_thread_wait_for_state (
 		goto out;
 	}
 
-	RRR_MSG_1("Thread %p name %s waiting ticks: %llu\n", thread, thread->name, j);
+	RRR_DBG_8("Thread %p name %s waiting ticks: %llu\n", thread, thread->name, j);
 
 	out:
 	return ret;

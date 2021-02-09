@@ -745,6 +745,8 @@ void rrr_cmodule_helper_loop (
 	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1) {
 		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
+//		printf ("main tick %i\n", tick);
+
 		if (rrr_thread_collection_check_any_stopped(reader_thread_data.thread_collection)) {
 			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
 			break;
