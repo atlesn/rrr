@@ -1250,7 +1250,7 @@ struct rrr_http_application_http1_request_send_callback_data {
 	struct rrr_string_builder *header_builder;
 };
 
-int __rrr_http_application_http1_request_send_preliminary_callback (
+static int __rrr_http_application_http1_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
 		struct rrr_http_part *request_part,
@@ -1361,7 +1361,7 @@ static int __rrr_http_application_http1_request_send_make_headers_callback (
 	return __rrr_http_application_http1_header_field_make(callback_data->header_builder, field);
 }
 
-int __rrr_http_application_http1_request_send_final_callback (
+static int __rrr_http_application_http1_request_send_final_callback (
 		struct rrr_http_part *request_part,
 		const struct rrr_nullsafe_str *send_body,
 		void *arg
@@ -1446,7 +1446,7 @@ static int __rrr_http_application_http1_request_send (
 	return ret;
 }
 
-int __rrr_http_application_http1_tick (
+static int __rrr_http_application_http1_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
