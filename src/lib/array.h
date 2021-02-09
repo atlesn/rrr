@@ -169,13 +169,13 @@ int rrr_array_new_message_from_collection (
 );
 int rrr_array_message_iterate (
 		const struct rrr_msg_msg *message_orig,
+		int (*callback)(RRR_TYPE_RAW_FIELDS, void *arg),
+		void *callback_arg
+);
+int rrr_array_message_iterate_values (
+		const struct rrr_msg_msg *message_orig,
 		int (*callback)(
-				const char *data_start,
-				const struct rrr_type_definition *type,
-				rrr_type_flags flags,
-				rrr_length tag_length,
-				rrr_length total_length,
-				rrr_length element_count,
+				const struct rrr_type_value *value,
 				void *arg
 		),
 		void *callback_arg

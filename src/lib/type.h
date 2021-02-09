@@ -222,8 +222,21 @@ struct rrr_type_value {
 	char *data;
 };
 
+#define RRR_TYPE_VALUE_TMP_CREATE(name, data, tag, type, flags, tag_length, total_length, element_count)             \
+    const struct rrr_type_value name = {                                                                             \
+        NULL, NULL, type, flags, tag_length, 0, NULL, total_length, element_count, NULL, (char *) tag, (char *) data \
+    }
+
 #define RRR_TYPE_DECLARE_EXTERN(name) \
 	extern const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name)
+
+#define RRR_TYPE_RAW_FIELDS                            \
+	const char *data_start,                        \
+	const struct rrr_type_definition *type,        \
+	rrr_type_flags flags,                          \
+	rrr_length tag_length,                         \
+	rrr_length total_length,                       \
+	rrr_length element_count
 
 RRR_TYPE_DECLARE_EXTERN(be);
 RRR_TYPE_DECLARE_EXTERN(h);
@@ -343,6 +356,11 @@ int rrr_type_value_allocate_and_import_raw (
 		const char *tag,
 		rrr_length import_length,
 		rrr_length element_count
+);
+int rrr_type_value_raw_with_tmp_do (
+		RRR_TYPE_RAW_FIELDS,
+		int (*callback)(const struct rrr_type_value *value, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_TYPE_HEADER */

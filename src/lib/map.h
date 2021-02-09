@@ -64,6 +64,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MAP_ITERATOR_NEXT(iterator) \
 	rrr_map_iterator_next(iterator)
 
+#define RRR_MAP_MERGE_AND_CLEAR_SOURCE_HEAD(target,source) \
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)
+
 // Make sure this is EQUAL to rrr_linked_list_node. Different
 // pointer types are OK.
 struct rrr_map_item {

@@ -833,15 +833,7 @@ int rrr_array_new_message_from_collection (
 
 int rrr_array_message_iterate (
 		const struct rrr_msg_msg *message_orig,
-		int (*callback)(
-				const char *data_start,
-				const struct rrr_type_definition *type,
-				rrr_type_flags flags,
-				rrr_length tag_length,
-				rrr_length total_length,
-				rrr_length element_count,
-				void *arg
-		),
+		int (*callback)(RRR_TYPE_RAW_FIELDS, void *arg),
 		void *callback_arg
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
@@ -918,6 +910,44 @@ int rrr_array_message_iterate (
 
 	out:
 	return ret;
+}
+
+struct rrr_array_message_iterate_values_callback_data {
+	int (*callback)(const struct rrr_type_value *value, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_array_message_iterate_values_callback (
+		RRR_TYPE_RAW_FIELDS,
+		void *arg
+) {
+	struct rrr_array_message_iterate_values_callback_data *callback_data = arg;
+	return rrr_type_value_raw_with_tmp_do (
+		data_start,
+		type,
+		flags,
+		tag_length,
+		total_length,
+		element_count,
+		callback_data->callback,
+		callback_data->callback_arg
+	);
+}
+
+int rrr_array_message_iterate_values (
+		const struct rrr_msg_msg *message_orig,
+		int (*callback)(
+				const struct rrr_type_value *value,
+				void *arg
+		),
+		void *callback_arg
+) {
+	struct rrr_array_message_iterate_values_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return rrr_array_message_iterate (message_orig, __rrr_array_message_iterate_values_callback, &callback_data);
 }
 
 struct rrr_array_message_append_to_collection_callback_data {

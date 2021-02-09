@@ -1706,3 +1706,31 @@ int rrr_type_value_allocate_and_import_raw (
 	}
 	return ret;
 }
+
+int rrr_type_value_raw_with_tmp_do (
+		RRR_TYPE_RAW_FIELDS,
+		int (*callback)(const struct rrr_type_value *value, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	char *tag_tmp = NULL;
+
+	if (tag_length > 0) {
+		if ((tag_tmp = malloc(tag_length + 1)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for temporary tag in rrr_type_value_raw_with_tmp_do\n");
+			ret = 1;
+			goto out;
+		}
+		memcpy(tag_tmp, data_start, tag_length);
+		tag_tmp[tag_length] = '\0';
+	}
+
+	RRR_TYPE_VALUE_TMP_CREATE(value_tmp, data_start + tag_length, tag_tmp, type, flags, tag_length, total_length, element_count);
+
+	ret = callback(&value_tmp, callback_arg);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(tag_tmp);
+	return ret;
+}

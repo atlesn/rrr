@@ -393,6 +393,25 @@ int rrr_msg_msg_topic_get (
 	return 0;
 }
 
+int rrr_msg_msg_topic_equals (
+		const struct rrr_msg_msg *message,
+		const char *topic
+) {
+	const size_t len_a = MSG_TOPIC_LENGTH(message);
+	const size_t len_b = strlen(topic);
+
+	if (len_a != len_b) {
+		return 0;
+	}
+
+	if (len_a == 0) {
+		return 1;
+	}
+
+	// Return 1 for equals
+	return (memcmp(MSG_TOPIC_PTR(message), topic, len_a) == 0);
+}
+
 int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {
 	// Assume network order if crc32 is set
 	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);

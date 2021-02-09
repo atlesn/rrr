@@ -85,6 +85,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_DATA_LENGTH(message)      ((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
 #define MSG_DATA_PTR(message)         ((message)->data + (message)->topic_length)
 
+#define MSG_TOPIC_IS(message,topic)   (rrr_msg_msg_topic_equals(message,topic))
+
 #define MSG_TO_BE(message)                                          \
     (message)->timestamp = rrr_htobe64((message)->timestamp);       \
     (message)->topic_length = rrr_htobe16((message)->topic_length)
