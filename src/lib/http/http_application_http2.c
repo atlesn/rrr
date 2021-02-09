@@ -132,6 +132,41 @@ static int __rrr_http_application_http2_request_send_possible (
 	return 0;
 }
 
+static int __rrr_http_application_http2_request_send_preliminary_callback (
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *request,
+		void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
+}
+
+static int __rrr_http_application_http2_request_send_final_callback (
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *send_body,
+		void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	int ret = 0;
+
+	// Will detect that the stream ID is not allocated yet and pass ID -1 to library to trigger allocation
+	if ((ret = rrr_http2_headers_end(http2->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -142,7 +177,6 @@ static int __rrr_http_application_http2_request_send (
 	int ret = 0;
 
 	struct rrr_http_application *http1 = NULL;
-	struct rrr_nullsafe_str *endpoint_nullsafe = NULL;
 
 	if (rrr_net_transport_ctx_is_tls(handle)) {
 		const char *selected_proto = NULL;
@@ -181,26 +215,11 @@ static int __rrr_http_application_http2_request_send (
 		}
 	}
 
-	if (rrr_nullsafe_str_len(transaction->send_body)) {
-		if ((ret = rrr_http_part_header_field_push_if_not_exists(transaction->request_part, "content-type", "application/octet-stream")) != 0) {
-			goto out;
-		}
-	}
-	else {
-		// Note : Might add more headers to request part
-		int form_data_was_made_dummy = 0;
-		if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made_dummy, transaction)) != 0) {
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_nullsafe, transaction)) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_7("http2 request submit send data length %" PRIrrrl "\n",
+	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrrl "\n",
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
+	// The ID retrieved does not have a stream yet, stream is created in final_callback
 	int32_t stream_id_preliminary = 0;
 	if  ((ret = rrr_http2_request_start (
 			&stream_id_preliminary,
@@ -212,22 +231,8 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
-	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
 
 	if (ret != 0) {
-		goto out;
-	}
-
-	struct rrr_http_application_http2_send_prepare_callback_data callback_data = {
-			http2,
-			stream_id_preliminary
-	};
-
-	if ((ret = rrr_http_part_header_fields_iterate (
-			transaction->request_part,
-			__rrr_http_application_http2_header_fields_submit_callback,
-			&callback_data
-	)) != 0) {
 		goto out;
 	}
 
@@ -242,18 +247,25 @@ static int __rrr_http_application_http2_request_send (
 
 	rrr_http_transaction_incref(transaction);
 
-	// Will detect that the stream ID is not allocated yet and pass ID -1 to library to trigger allocation
-	if ((ret = rrr_http2_headers_end(http2->http2_session, stream_id_preliminary)) != 0) {
-		goto out;
-	}
+	struct rrr_http_application_http2_send_prepare_callback_data callback_data = {
+		http2,
+		stream_id_preliminary
+	};
 
-	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id_preliminary)) != 0) {
+	if ((ret = rrr_http_transaction_request_prepare_wrapper (
+			transaction,
+			upgrade_mode,
+			user_agent,
+			__rrr_http_application_http2_request_send_preliminary_callback,
+			__rrr_http_application_http2_header_fields_submit_callback,
+			__rrr_http_application_http2_request_send_final_callback,
+			&callback_data
+	)) != 0) {
 		goto out;
 	}
 
 	out:
 	rrr_http_application_destroy_if_not_null(&http1);
-	rrr_nullsafe_str_destroy_if_not_null(&endpoint_nullsafe);
 	return ret;
 }
 
