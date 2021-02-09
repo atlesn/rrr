@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util/rrr_time.h"
 #include "util/macro_utils.h"
+#include "util/slow_noop.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
 #include "rrr_strerror.h"
@@ -499,25 +500,38 @@ static int __rrr_thread_wait_for_state (
 	int ret = 0;
 
 	int was_ok = 0;
-	for (int j = 0; j < 100; j++)  {
-		int state = rrr_thread_state_get(thread);
-		RRR_DBG_8 ("Wait for thread %p name %s, state is now %i\n", thread, thread->name, state);
 
+	// THE THREAD WE ARE WAITING FOR MIGHT BE FORKING NOW
+
+	// - Do not perform any non async safe syscalls here as another thread might be forking.
+	// - Do not perform any logging except from when we want to crash or there is an error.
+	//   If there is an error, it does not matter if the fork deadlocks as we will kill it
+	//   off anyway.
+	// - Also, do not lock to read the thread state even though the fork should not use
+	//   existing thread structures. Don't do validation on the value, only check with ==
+	//   if it gets the value we want.
+
+	// We can only use the sleep() function which only has second resolution. We therefore
+	// busy-wait for many rounds before finally sleeping if the thread is slow to change
+	// state.
+	const unsigned long long max = 100000000; // 100 mill
+	unsigned long long int j;
+	for (j = 0; j <= max; j++)  {
 		if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_INITIALIZED) {
-			if (state == RRR_THREAD_STATE_RUNNING_FORKED) {
+			if (thread->state == RRR_THREAD_STATE_RUNNING_FORKED) {
 				RRR_BUG("BUG: Thread %p name %s started prior to receiving signal\n", thread, thread->name);
 			}
-			if (	state == RRR_THREAD_STATE_NEW ||
-					state == RRR_THREAD_STATE_INITIALIZED ||
-					state == RRR_THREAD_STATE_STOPPED
+			if (	thread->state == RRR_THREAD_STATE_NEW ||
+					thread->state == RRR_THREAD_STATE_INITIALIZED ||
+					thread->state == RRR_THREAD_STATE_STOPPED
 			) {
 				was_ok = 1;
 				break;
 			}
 		}
 		else if (state_group == RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED) {
-			if (	state == RRR_THREAD_STATE_RUNNING_FORKED ||
-					state == RRR_THREAD_STATE_STOPPED
+			if (	thread->state == RRR_THREAD_STATE_RUNNING_FORKED ||
+					thread->state == RRR_THREAD_STATE_STOPPED
 			) {
 				was_ok = 1;
 				break;
@@ -526,16 +540,19 @@ static int __rrr_thread_wait_for_state (
 		else {
 			RRR_BUG("BUG: Unknown state group %i in __rrr_thread_start_all_wait_for_state\n", state_group);
 		}
-
-		rrr_posix_usleep (10000);
+		if (j > max - 3) {
+			sleep(1);
+		}
+		rrr_slow_noop();
 	}
 	if (was_ok != 1) {
-		int state = rrr_thread_state_get(thread);
 		RRR_MSG_0 ("Thread %s did not transition to required state group %i in time state is now %i\n",
-				thread->name, state_group, state);
+				thread->name, state_group, thread->state);
 		ret = 1;
 		goto out;
 	}
+
+	RRR_MSG_1("Thread %p name %s waiting ticks: %llu\n", thread, thread->name, j);
 
 	out:
 	return ret;
@@ -620,6 +637,9 @@ int rrr_thread_collection_start_all (
 		RRR_DBG_8 ("START_BEFOREFORK signal to thread %p name %s and waiting for it to complete forking\n", node, node->name);
 
 		rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+
+		// FORKING IN PROGRESS, ONLY ASYNC SAFE LIBRARY FUNCTIONS ALLOWED UNTIL THREAD CHANGES STATE
+		// DEBUG MESSAGES ALSO NOT ALLOWED
 
 		if ((ret = __rrr_thread_wait_for_state(node, RRR_THREAD_START_ALL_WAIT_FOR_STATE_FORKED)) != 0) {
 			goto out_unlock;

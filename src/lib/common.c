@@ -185,6 +185,8 @@ void rrr_signal_default_signal_actions_register(void) {
 	sigaction (SIGUSR1, &action, NULL);
 	// Used to set main_running = 0;
 	sigaction (SIGTERM, &action, NULL);
+	// Used to wake up sleeps
+	sigaction (SIGCONT, &action, NULL);
 }
 
 int rrr_signal_default_handler (

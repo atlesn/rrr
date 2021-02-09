@@ -75,6 +75,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // arguments properly, use when coding.
 //#define RRR_WITH_PRINTF_LOGGING
 
+//#define RRR_WITH_SIGNAL_PRINTF
+
+#ifndef RRR_WITH_SIGNAL_PRINTF
+#	define RRR_DBG_SIGNAL(...) do { } while(0)
+#endif
+
 #ifdef RRR_WITH_PRINTF_LOGGING
 #	define RRR_MSG_PLAIN(...) printf(__VA_ARGS__)
 #	define RRR_MSG_PLAIN_N(a,b) do{ (void)(a); (void)(b); }while(0)
@@ -84,7 +90,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_3(...) printf(__VA_ARGS__)
 #	define RRR_MSG_4(...) printf(__VA_ARGS__)
 #	define RRR_MSG_ERR(...) printf(__VA_ARGS__)
-#	define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
+#	ifdef RRR_WITH_SIGNAL_PRINTF
+#		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
+#	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
@@ -125,9 +133,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_ERR(...) \
 	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
-	// Debug without holding the lock
-#	define RRR_DBG_SIGNAL(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	// Debug without holding the lock, by default disabled as printf is not async-safe
+#	ifdef RRR_WITH_SIGNAL_PRINTF
+#		define RRR_DBG_SIGNAL(...) \
+		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+#	endif
 
 // Zero may be passed to X functions
 #	define RRR_MSG_X(debuglevel_num, ...)													\

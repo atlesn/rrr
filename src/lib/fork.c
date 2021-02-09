@@ -426,6 +426,7 @@ pid_t rrr_fork (
 	else if (ret == 0) {
 		// Child code
 		// Only parent unlocks. This is a PSHARED lock.
+		RRR_DBG_1("=== FORK PID %i (child) ================================================================================\n", getpid());
 		goto out;
 	}
 
