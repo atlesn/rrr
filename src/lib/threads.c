@@ -499,7 +499,6 @@ static int __rrr_thread_wait_for_state_initialized (
 	const unsigned long long max = 120;
 	unsigned long long int j;
 	for (j = 0; j <= max; j++)  {
-		printf("Wait %s\n", thread->name);
 		int state = rrr_thread_state_get(thread);
 		if (state == RRR_THREAD_STATE_RUNNING_FORKED) {
 			RRR_BUG("BUG: Thread %p name %s started prior to receiving signal\n", thread, thread->name);
