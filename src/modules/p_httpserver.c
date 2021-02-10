@@ -504,8 +504,6 @@ static int httpserver_receive_get_response_callback (
 	struct receive_get_response_callback_data *callback_data = arg;
 	struct rrr_msg_msg *msg = entry->message;
 
-	(void)(source);
-
 	int ret = RRR_FIFO_SEARCH_KEEP;
 
 	if (MSG_TOPIC_LENGTH(msg) > 0) {
@@ -1333,8 +1331,6 @@ static int httpserver_unique_id_generator_callback (
 // If we receive messages from senders which no worker seem to want, we must delete them
 static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct httpserver_callback_data *callback_data = arg;
-
-	(void)(source);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
 

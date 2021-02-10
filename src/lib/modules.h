@@ -49,7 +49,6 @@ struct rrr_module_load_data {
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE                     \
     struct rrr_msg_holder *entry,                              \
-    rrr_message_broker_costumer_handle *source,                \
     void *arg
 
 #define RRR_MODULE_INJECT_SIGNATURE                            \

@@ -424,7 +424,6 @@ static int influxdb_common_callback (
 
 static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
-	(void)(source);
 	return influxdb_common_callback(entry, thread_data->private_data);
 }
 

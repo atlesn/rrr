@@ -848,7 +848,6 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 }
 
 struct rrr_message_broker_read_entry_intermediate_callback_data {
-	rrr_message_broker_costumer_handle *source;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
 	void *callback_arg;
 };
@@ -863,7 +862,7 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 
 	rrr_msg_holder_lock(entry);
 
-	ret = callback_data->callback(entry, callback_data->source, callback_data->callback_arg);
+	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock
 	rrr_msg_holder_decref(entry);
@@ -882,7 +881,7 @@ static int __rrr_message_broker_poll_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) 
 	rrr_msg_holder_incref(entry);
 	rrr_msg_holder_lock(entry);
 
-	ret = callback_data->callback(entry, callback_data->source, callback_data->callback_arg);
+	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock
 	rrr_msg_holder_decref(entry);
@@ -902,7 +901,7 @@ static int __rrr_message_broker_poll_slot_intermediate (
 	*do_keep = 0;
 
 	// Locking handled by mgs_holder_slot framework
-	int actions = callback_data->callback(entry, callback_data->source, callback_data->callback_arg);
+	int actions = callback_data->callback(entry, callback_data->callback_arg);
 
 	unsigned char do_keep_tmp = 0;
 	unsigned char do_give_tmp = 0;
@@ -947,7 +946,7 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 	*do_keep = 0;
 
 	// Locking handled by mgs_holder_slot framework
-	ret = callback_data->callback(entry, callback_data->source, callback_data->callback_arg);
+	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	return ret;
 }
@@ -1123,7 +1122,6 @@ int rrr_message_broker_poll_delete (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete");
 
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
-			handle,
 			callback,
 			callback_arg
 	};
@@ -1168,7 +1166,6 @@ int rrr_message_broker_poll (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll");
 
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
-			handle,
 			callback,
 			callback_arg
 	};

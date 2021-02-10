@@ -743,9 +743,8 @@ static int ip_udp_read_data (
 static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ip_data *data = thread_data->private_data;
-	struct rrr_msg_msg *message = entry->message;
 
-	(void)(source);
+	struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_2 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);

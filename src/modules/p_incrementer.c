@@ -127,10 +127,10 @@ static int incrementer_process_id (
 static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct incrementer_data *data = thread_data->private_data;
-	const struct rrr_msg_msg *message = entry->message;
 
-	(void)(source);
 	(void)(data);
+
+	const struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
 

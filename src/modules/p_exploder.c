@@ -147,10 +147,10 @@ static int exploder_process_value (
 static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct exploder_data *data = thread_data->private_data;
-	const struct rrr_msg_msg *message = entry->message;
 
 	(void)(data);
-	(void)(source);
+
+	const struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
 

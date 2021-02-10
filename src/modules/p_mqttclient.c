@@ -663,12 +663,9 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_mqtt_p_publish *publish = NULL;
 	struct rrr_msg_msg *reading = (struct rrr_msg_msg *) entry->message;
 
-	(void)(source);
-
-	int ret = 0;
-
 	char *payload = NULL;
 	ssize_t payload_size = 0;
+	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
 

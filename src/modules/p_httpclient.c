@@ -1291,8 +1291,6 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct httpclient_data *data = thread_data->private_data;
 	struct rrr_msg_msg *message = entry->message;
 
-	(void)(source);
-
 	if (RRR_DEBUGLEVEL_3) {
 		char *topic_tmp = NULL;
 
