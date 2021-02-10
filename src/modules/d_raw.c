@@ -153,15 +153,11 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
 
-		uint64_t time_in = rrr_time_get_64();
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 25) != 0) {
 			RRR_MSG_0("Error while polling in raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
 		}
-		uint64_t time_use = rrr_time_get_64() - time_in;
-
-		//printf("Time: %" PRIu64 "\n", time_use);
 
 		uint64_t timer_now = rrr_time_get_64();
 		if (timer_now - timer_start > 1000000) {
