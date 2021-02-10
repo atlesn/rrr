@@ -100,28 +100,28 @@ static int __rrr_fifo_verify_counter(struct rrr_fifo_buffer *buffer) {
 	return (counter != claimed_count);
 }
 
-#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK()				\
-	__rrr_fifo_consistency_check(buffer);				\
-	__rrr_fifo_verify_counter(buffer)
+#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK()                    \
+    __rrr_fifo_consistency_check(buffer);                      \
+    __rrr_fifo_verify_counter(buffer)
 
-#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() 	\
-	rrr_fifo_write_lock(buffer);						\
-	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();				\
-	rrr_fifo_unlock(buffer)
+#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK()         \
+    rrr_fifo_write_lock(buffer);                               \
+    RRR_FIFO_BUFFER_CONSISTENCY_CHECK();                       \
+    rrr_fifo_unlock(buffer)
 
 #else
 
-#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK() \
-	do { } while (0)
-#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() \
-	do { } while (0)
+#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK()                    \
+    do { } while (0)
+#define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK()         \
+    do { } while (0)
 
 #endif
 
-#define RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(action)		\
-	pthread_mutex_lock(&buffer->stats_mutex);					\
-	action;												\
-	pthread_mutex_unlock(&buffer->stats_mutex)
+#define RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(action)             \
+    pthread_mutex_lock(&buffer->stats_mutex);                  \
+    action;                                                    \
+    pthread_mutex_unlock(&buffer->stats_mutex)
 
 static inline void __rrr_fifo_buffer_stats_add_written (struct rrr_fifo_buffer *buffer, int num) {
 	RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_written += num);
