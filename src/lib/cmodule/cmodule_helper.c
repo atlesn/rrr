@@ -227,6 +227,8 @@ struct rrr_cmodule_helper_poll_callback_data {
 };
 
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	(void)(source);
+
 	int ret = 0;
 
 	struct rrr_instance_runtime_data *thread_data = arg;

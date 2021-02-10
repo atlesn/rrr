@@ -55,10 +55,10 @@ static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runti
 static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct buffer_data *data = thread_data->private_data;
+	const struct rrr_msg_msg *message = entry->message;
 
 	(void)(data);
-
-	const struct rrr_msg_msg *message = entry->message;
+	(void)(source);
 
 	int ret = 0;
 

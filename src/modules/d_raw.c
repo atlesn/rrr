@@ -47,12 +47,14 @@ struct raw_data {
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct raw_data *raw_data = thread_data->private_data;
-	struct rrr_array array_tmp = {0};
-	char *topic_tmp = NULL;
+	struct rrr_msg_msg *reading = entry->message;
+
+	(void)(source);
 
 	int ret = 0;
 
-	struct rrr_msg_msg *reading = entry->message;
+	char *topic_tmp = NULL;
+	struct rrr_array array_tmp = {0};
 
 	long double message_age = (long double) (rrr_time_get_64() - reading->timestamp);
 

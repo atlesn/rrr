@@ -72,6 +72,13 @@ int rrr_poll_do_poll_search (
 		void *callback_arg,
 		unsigned int wait_milliseconds
 );
+int rrr_poll_do_poll_search_backstop (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_poll_collection *collection,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
+);
 int rrr_poll_collection_count (
 		struct rrr_poll_collection *collection
 );

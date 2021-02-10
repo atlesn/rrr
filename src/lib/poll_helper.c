@@ -177,7 +177,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	if (does_match) {
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
-		return callback_data->callback(entry, callback_data->thread_data);
+		return callback_data->callback(entry, source, callback_data->thread_data);
 	}
 	else {
 		RRR_DBG_3("Topic filter for instance %s is: '%s'\n",

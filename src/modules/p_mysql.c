@@ -724,8 +724,9 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config_data *confi
 int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct mysql_data *mysql_data = thread_data->private_data;
-
 	struct rrr_msg_msg *message = entry->message;
+
+	(void)(source);
 
 	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
 

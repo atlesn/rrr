@@ -71,6 +71,8 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct averager_data *averager_data = thread_data->private_data;
 
+	(void)(source);
+
 	int ret = 0;
 
 	struct rrr_msg_holder *dup_entry = NULL;
