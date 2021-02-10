@@ -85,11 +85,28 @@ int rrr_map_item_add (
 	return 0;
 }
 
+static void __rrr_map_item_remove (
+		struct rrr_map *map,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(map, struct rrr_map_item);
+		if (tag == NULL && node->tag == NULL) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (tag != NULL && node->tag != NULL) {
+			if (strcmp(tag, node->tag) == 0) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(map, 0; rrr_map_item_destroy(node));
+}
+
 static int __rrr_map_item_add_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value,
-		int do_prepend
+		int do_prepend,
+		int do_unique
 ) {
 	int ret = 0;
 
@@ -111,6 +128,10 @@ static int __rrr_map_item_add_new (
 		memcpy(item_new->value, value, value_size);
 	}
 
+	if (do_unique) {
+		__rrr_map_item_remove(map, tag);
+	}
+
 	if (do_prepend) {
 		RRR_LL_UNSHIFT(map, item_new);
 	}
@@ -126,12 +147,20 @@ static int __rrr_map_item_add_new (
 	return ret;
 }
 
+int rrr_map_item_replace_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
 int rrr_map_item_add_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
 ) {
-	return __rrr_map_item_add_new(map, tag, value, 0);
+	return __rrr_map_item_add_new(map, tag, value, 0, 0);
 }
 
 int rrr_map_item_prepend_new (
@@ -139,7 +168,7 @@ int rrr_map_item_prepend_new (
 		const char *tag,
 		const char *value
 ) {
-	return __rrr_map_item_add_new(map, tag, value, 1);
+	return __rrr_map_item_add_new(map, tag, value, 1, 0);
 }
 
 int rrr_map_parse_pair (

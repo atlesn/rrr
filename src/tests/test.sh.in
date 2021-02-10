@@ -144,6 +144,7 @@ do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
 do_test_standalone test_file.conf
+do_test_standalone test_incrementer.conf
 
 do_test_websocket test_websocket.conf
 

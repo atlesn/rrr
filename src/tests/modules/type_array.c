@@ -133,19 +133,20 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
-	rrr_message_broker_costumer_handle *handle = NULL;
+
+	rrr_message_broker_costumer_handle *handle_self = NULL;
+	rrr_message_broker_costumer_handle *handle_output = NULL;
 
 	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
 
-	while (rrr_time_get_64() < limit) {
-		if ((handle = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output))) != NULL) {
-			break;
-		}
+	while (rrr_time_get_64() < limit && (handle_output == NULL || handle_self == NULL)) {
+		handle_output = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output));
+		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
 		rrr_posix_usleep(50000);
 	}
 
-	if (handle == NULL) {
-		TEST_MSG("Could not find message broker handle for output '%s' after 2 seconds in test_do_poll_loop\n",
+	if (handle_output == NULL || handle_self == NULL) {
+		TEST_MSG("Could not find message broker handle for output '%s' or self after 2 seconds in test_do_poll_loop\n",
 				INSTANCE_M_NAME(output));
 		ret = 1;
 		goto out;
@@ -164,7 +165,9 @@ int test_do_poll_loop (
 
 		ret = rrr_message_broker_poll_delete (
 				broker,
-				handle,
+				handle_output,
+				handle_self,
+				0,
 				callback,
 				callback_data,
 				150

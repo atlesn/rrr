@@ -116,6 +116,11 @@ int rrr_map_item_add (
 		struct rrr_map *map,
 		struct rrr_map_item *item
 );
+int rrr_map_item_replace_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+);
 int rrr_map_item_add_new (
 		struct rrr_map *map,
 		const char *tag,
