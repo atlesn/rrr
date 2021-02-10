@@ -67,6 +67,9 @@ duplicate=yes
 # Enable or disable output buffer for this instance (optional, buffer is by default enabled).
 buffer=yes
 
+# Enable or disable backstop check (optional, backstop is by default enabled).
+backstop=yes
+
 # Drop all messages from senders which do not match the set topic (optional)
 topic_filter=MQTT TOPIC FILTER
 
@@ -209,6 +212,73 @@ The
 .Xr raw(DA)
 module may be used to measure performance.
 
+.SS BUS OPERATION, CIRCULAR OPERATION AND BACKSTOP
+By default, RRR has a backstop mechanism enabled which stops messages originating from an instance to be read back into the same instance.
+This allows creation of a message bus and to some extent control the direction of messages in certain situations.
+.PP
+.nf
+     BUS            NODES
++----------+   +------------+
+|          |<--|  INSTANCE  |
+|          |-->| httpclient |
+|          |   +------------+
+|          |
+|          |   +------------+
+| INSTANCE |<--|  INSTANCE  |
+|  buffer  |-->|  python_1  |
+|          |   +------------+
+|          |
+|          |   +------------+
+|          |<--|  INSTANCE  |
+|          |-->|  python_2  |
++----------+   +------------+
+.fi
+.PP
+In the example above, the buffer instance has the other three instances set as it's senders, and the other three has the buffer
+set as their only sender. This setup allows nodes to be added and removed to the bus without the need for configuring senders on
+other nodes. The Python modules may then generate HTTP requests for the httpclient to perform, and httpclient generates
+responses. Backstopping prevents httpclient from receiving it's own responses back to itself. The Python will however receive
+HTTP requests from each other, and they must handle this in some way, possibly just ignoring them.
+.PP
+.nf
+     BAD BUS CONFIGURATION
++------------+   +------------+
+|  INSTANCE  |<--|            |
+| mqttclient |-->|  INSTANCE  |
++------------+   |   python   |
+                 |            |
++------------+   |            |
+|  INSTANCE  |<--|            |
+| httpclient |-->|            |
++------------+   +------------+
+.fi
+.PP
+Backstopping does not work through modules with internal buffers. In the example above, the python instance is supposed to receive
+requests from the mqttclient and then make HTTP requests and convert responses back to mqttclient for it to publish. When the python
+instance puts the modified message in it's output buffer, both mqttclient and httpclient will receive it even though it originated
+from mqttclient. The configuration can be modified to mitigate this problem, either ny using some clever topic filtering (which
+may or may not be difficult to maintain) or by using a circular configuration.
+.PP
+.nf
+   GOOD CIRCULAR CONFIGRATION
++------------+     +------------+
+|  INSTANCE  |---->|            |
+| mqttclient |<-+  |  INSTANCE  |
++------------+  |  |   python   |
+                |  |            |
++------------+  |  |            |
+|  INSTANCE  |--+  |            |
+| httpclient |<----|            |
++------------+     +------------+
+.fi
+.PP
+In the modified example, a circular configuration is used as opposed to a star configuration. When responses are generated in the
+httpclient, they are only received by the mqttclient. If the HTTP response still need to be modified before mqttclient receives it,
+a separate python instance may be used in between those two.
+.PP
+Some modules, like the buffer module, supports examining the timestamp of a message and checking this against a TTL configuration
+parameter. If modules ensure that timestamps are kept intact, which they usually are, this can mitigate any erronous loops
+of messages which cannot be detected by the backstop check.
 .SH MODULES AND CONFIGURATION PARAMETERS
 .PP
 Modules have different special capabilites, denoted by the following letters. The actual implementation may
