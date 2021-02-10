@@ -222,10 +222,18 @@ static int __rrr_poll_do_poll (
 
 		struct rrr_poll_collection_entry *entry = node;
 
+		int message_broker_flags = 0;
+
+		if (!(INSTANCE_D_INSTANCE(thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP)) {
+			message_broker_flags |= RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP;
+		}
+
 		if (do_poll_delete) {
 			ret_tmp = rrr_message_broker_poll_delete (
 					entry->message_broker,
 					entry->message_broker_handle,
+					INSTANCE_D_HANDLE(thread_data),
+					message_broker_flags,
 					callback_to_use,
 					callback_arg,
 					wait_milliseconds
@@ -235,6 +243,8 @@ static int __rrr_poll_do_poll (
 			ret_tmp = rrr_message_broker_poll (
 					entry->message_broker,
 					entry->message_broker_handle,
+					INSTANCE_D_HANDLE(thread_data),
+					message_broker_flags,
 					callback_to_use,
 					callback_arg,
 					wait_milliseconds

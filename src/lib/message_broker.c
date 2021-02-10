@@ -272,6 +272,28 @@ static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by
 
 	return result;
 }
+	
+void __rrr_message_broker_costumer_get_name (
+		char *buf,
+		size_t buf_size,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+) {
+
+	pthread_mutex_lock(&broker->lock);
+
+	struct rrr_message_broker_costumer *costumer = __rrr_message_broker_costumer_find_by_handle_unlocked(broker, handle);
+	if (costumer != NULL) {
+		strncpy(buf, costumer->name, buf_size);
+	}
+	else {
+		*buf = '\0';
+	}
+
+	pthread_mutex_unlock(&broker->lock);
+
+	buf[buf_size - 1]  = '\0';
+}
 
 void rrr_message_broker_costumer_unregister (
 		struct rrr_message_broker *broker,
@@ -848,9 +870,42 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 }
 
 struct rrr_message_broker_read_entry_intermediate_callback_data {
+	struct rrr_message_broker *broker;
+	struct rrr_message_broker_costumer *source;
+	rrr_message_broker_costumer_handle *self;
+	int broker_poll_flags;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
 	void *callback_arg;
 };
+
+static int __rrr_message_broker_poll_intermediate_backstop_handling (
+		int *backstop,
+		struct rrr_msg_holder *entry,
+		struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data
+) {
+	*backstop = 0;
+
+	if ( callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP &&
+	     entry->source == callback_data->self
+	) {
+		if (RRR_DEBUGLEVEL_2) {
+			char name[128];
+			 __rrr_message_broker_costumer_get_name (name, sizeof(name), callback_data->broker, callback_data->self);
+			RRR_DBG_2("Message broker backstop in %s: Message read from %s originates from self\n",
+					name, callback_data->source->name);
+		}
+		*backstop = 1;
+		rrr_msg_holder_unlock(entry);
+		return 0;
+	}
+
+	// Set regardless of flag, we don't know if the source wishes to check backstop or not
+	if (entry->source == NULL) {
+		entry->source = callback_data->source;
+	}
+
+	return callback_data->callback(entry, callback_data->callback_arg);
+}
 
 static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data = arg;
@@ -862,7 +917,12 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 
 	rrr_msg_holder_lock(entry);
 
-	ret = callback_data->callback(entry, callback_data->callback_arg);
+	int backstop_dummy = 0;
+	ret = __rrr_message_broker_poll_intermediate_backstop_handling (
+			&backstop_dummy,
+			entry,
+			callback_data
+	);
 
 	// Callback must unlock
 	rrr_msg_holder_decref(entry);
@@ -881,7 +941,17 @@ static int __rrr_message_broker_poll_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) 
 	rrr_msg_holder_incref(entry);
 	rrr_msg_holder_lock(entry);
 
-	ret = callback_data->callback(entry, callback_data->callback_arg);
+	int backstop = 0;
+	ret = __rrr_message_broker_poll_intermediate_backstop_handling (
+			&backstop,
+			entry,
+			callback_data
+	);
+
+	if (backstop) {
+		ret |= RRR_FIFO_SEARCH_FREE;
+		ret |= RRR_FIFO_SEARCH_GIVE;
+	}
 
 	// Callback must unlock
 	rrr_msg_holder_decref(entry);
@@ -900,22 +970,32 @@ static int __rrr_message_broker_poll_slot_intermediate (
 
 	*do_keep = 0;
 
-	// Locking handled by mgs_holder_slot framework
-	int actions = callback_data->callback(entry, callback_data->callback_arg);
+	int backstop = 0;
+	int actions = __rrr_message_broker_poll_intermediate_backstop_handling (
+			&backstop,
+			entry,
+			callback_data
+	);
 
 	unsigned char do_keep_tmp = 0;
 	unsigned char do_give_tmp = 0;
 	unsigned char do_free_tmp = 0;
 	unsigned char do_stop_tmp = 0;
 
-	if ((ret = rrr_fifo_buffer_search_return_value_process (
-			&do_keep_tmp,
-			&do_give_tmp,
-			&do_free_tmp,
-			&do_stop_tmp,
-			actions
-	)) != 0) {
-		goto out;
+	if (backstop) {
+		do_give_tmp = 1;
+		do_free_tmp = 1;
+	}
+	else {
+		if ((ret = rrr_fifo_buffer_search_return_value_process (
+				&do_keep_tmp,
+				&do_give_tmp,
+				&do_free_tmp,
+				&do_stop_tmp,
+				actions
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	if (do_keep_tmp) {
@@ -946,7 +1026,13 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 	*do_keep = 0;
 
 	// Locking handled by mgs_holder_slot framework
-	ret = callback_data->callback(entry, callback_data->callback_arg);
+
+	int backstop_dummy = 0;
+	ret = __rrr_message_broker_poll_intermediate_backstop_handling (
+			&backstop_dummy,
+			entry,
+			callback_data
+	);
 
 	return ret;
 }
@@ -1113,6 +1199,8 @@ int rrr_message_broker_poll_discard (
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
@@ -1122,6 +1210,10 @@ int rrr_message_broker_poll_delete (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete");
 
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
+			broker,
+			costumer,
+			self,
+			broker_poll_flags,
 			callback,
 			callback_arg
 	};
@@ -1157,6 +1249,8 @@ int rrr_message_broker_poll_delete (
 int rrr_message_broker_poll (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
@@ -1166,6 +1260,10 @@ int rrr_message_broker_poll (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll");
 
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
+			broker,
+			handle,
+			self,
+			broker_poll_flags,
 			callback,
 			callback_arg
 	};

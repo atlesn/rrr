@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_DROP		(1<<1)
 #define RRR_MESSAGE_BROKER_AGAIN	(1<<2)
 
+#define RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP    (1<<0)
+
 struct rrr_msg_holder;
 struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
@@ -59,6 +61,7 @@ struct rrr_message_broker_costumer {
 	struct rrr_msg_holder_slot *slot;
 	char *name;
 	int usercount;
+	int flags;
 	uint64_t unique_counter;
 };
 
@@ -143,6 +146,8 @@ int rrr_message_broker_poll_discard (
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
@@ -150,6 +155,8 @@ int rrr_message_broker_poll_delete (
 int rrr_message_broker_poll (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds

@@ -288,6 +288,7 @@ static int __rrr_instance_parse_misc (
 
 	struct data {
 		int do_enable_buffer;
+		int do_enable_backstop;
 		int do_duplicate;
 	} data_tmp;
 
@@ -299,6 +300,10 @@ static int __rrr_instance_parse_misc (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_enable_buffer, 1);
 	if (!data->do_enable_buffer) {
 		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("backstop", do_enable_backstop, 1);
+	if (!data->do_enable_backstop) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP;
 	}
 
 	// Default NO options

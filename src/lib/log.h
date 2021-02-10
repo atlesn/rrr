@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * About debug levels, ORed together:
  * 0 /   0 - Severe errors
  * 1 /   1 - Loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside
- * 2 /   2 - Messages between modules and requests sent/received by modules
+ * 2 /   2 - Messages between modules and requests sent/received by modules and message broker backstop
  * 3 /   4 - Details about message and value processing in modules
  * 4 /   8 - MMAP channel messages as well as buffer searhing/ratelimiting/cleanup
  * 5 /  16 - Cmodule worker fork processing
