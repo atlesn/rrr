@@ -49,13 +49,15 @@ int rrr_msg_holder_slot_count (
 );
 int rrr_msg_holder_slot_read (
 		struct rrr_msg_holder_slot *slot,
+		void *self,
 		int (*callback)(int *do_keep, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		unsigned int wait_ms
 );
 int rrr_msg_holder_slot_discard (
 		int *did_discard,
-		struct rrr_msg_holder_slot *slot
+		struct rrr_msg_holder_slot *slot,
+		void *self
 );
 int rrr_msg_holder_slot_write (
 		struct rrr_msg_holder_slot *slot,

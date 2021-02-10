@@ -46,7 +46,7 @@ struct rrr_msg_holder_slot;
 struct rrr_message_broker_split_buffer_node {
 	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
 	struct rrr_fifo_buffer queue;
-	pthread_t identifier;
+	rrr_message_broker_costumer_handle *owner;
 };
 
 struct rrr_message_broker_split_buffer_collection {
@@ -141,7 +141,8 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 int rrr_message_broker_poll_discard (
 		int *discarded_count,
 		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self
 );
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,

@@ -1040,7 +1040,8 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 static void __rrr_message_broker_get_source_buffer (
 		int *source_buffer_is_main,
 		struct rrr_fifo_buffer **use_buffer,
-		struct rrr_message_broker_costumer *costumer
+		struct rrr_message_broker_costumer *costumer,
+		rrr_message_broker_costumer_handle *self
 ) {
 	pthread_mutex_lock(&costumer->split_buffers.lock);
 
@@ -1055,16 +1056,14 @@ static void __rrr_message_broker_get_source_buffer (
 
 	struct rrr_fifo_buffer *found_buffer = NULL;
 
-	pthread_t tid = pthread_self();
-
 	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
-		if (node->identifier == tid) {
+		if (node->owner == self) {
 			found_buffer = &node->queue;
 			RRR_LL_ITERATE_LAST();
 		}
-		else if (node->identifier == 0) {
+		else if (node->owner == NULL) {
 			// Allocate
-			node->identifier = tid;
+			node->owner = self;
 			found_buffer = &node->queue;
 			RRR_LL_ITERATE_LAST();
 		}
@@ -1141,7 +1140,7 @@ static int __rrr_message_broker_split_buffers_fill (
     do {                                                                 \
         int source_buffer_is_main = 0;                                   \
         __rrr_message_broker_get_source_buffer (                         \
-    	    &source_buffer_is_main, &source_buffer, costumer             \
+    	    &source_buffer_is_main, &source_buffer, costumer, self       \
         ); if (source_buffer_is_main == 0 &&                             \
     	    (ret = __rrr_message_broker_split_buffers_fill(costumer)     \
         ) != 0) { goto out; }} while(0)
@@ -1168,7 +1167,8 @@ static int __rrr_message_broker_poll_discard_callback (
 int rrr_message_broker_poll_discard (
 		int *discarded_count,
 		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -1177,7 +1177,7 @@ int rrr_message_broker_poll_discard (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_discard");
 
 	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_discard (discarded_count, costumer->slot)) != 0) {
+		if ((ret = rrr_msg_holder_slot_discard (discarded_count, costumer->slot, self)) != 0) {
 			goto out;
 		}
 	}
@@ -1221,6 +1221,7 @@ int rrr_message_broker_poll_delete (
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_read (
 				costumer->slot,
+				self,
 				__rrr_message_broker_poll_delete_slot_intermediate,
 				&callback_data,
 				wait_milliseconds
@@ -1271,6 +1272,7 @@ int rrr_message_broker_poll (
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_read (
 				costumer->slot,
+				self,
 				__rrr_message_broker_poll_slot_intermediate,
 				&callback_data,
 				wait_milliseconds

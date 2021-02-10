@@ -45,7 +45,7 @@ struct rrr_msg_holder_slot {
 	pthread_mutex_t lock;
 
 	int reader_count;
-	pthread_t *readers;
+	const void **readers;
 	uint8_t *reader_has_read;
 
 	uint64_t total_entries_deleted;
@@ -178,17 +178,17 @@ int rrr_msg_holder_slot_count (
 }
 
 static int __rrr_msg_holder_slot_reader_index_get_unlocked (
-		struct rrr_msg_holder_slot *slot
+		struct rrr_msg_holder_slot *slot,
+		const void *self
 ) {
 	if (slot->reader_count == 0) {
 		return -1;
 	}
 
-	pthread_t self = pthread_self();
 	int self_index = -1;
 
 	for (int i = 0; i < slot->reader_count; i++) {
-		if (slot->readers[i] == self) {
+		if (slot->readers[i] == (void *) self) {
 			self_index = i;
 			break;
 		}
@@ -229,6 +229,7 @@ static int __rrr_msg_holder_slot_read_wait (
 
 int rrr_msg_holder_slot_read (
 		struct rrr_msg_holder_slot *slot,
+		void *self,
 		int (*callback)(int *do_keep, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		unsigned int wait_ms
@@ -253,7 +254,7 @@ int rrr_msg_holder_slot_read (
 		}
 	}
 
-	int self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot);
+	int self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot, self);
 	if (self_index >= 0 && slot->reader_has_read[self_index]) {
 		goto out;
 	}
@@ -330,11 +331,12 @@ static int __rrr_msg_holder_slot_discard_callback (
 
 int rrr_msg_holder_slot_discard (
 		int *did_discard,
-		struct rrr_msg_holder_slot *slot
+		struct rrr_msg_holder_slot *slot,
+		void *self
 ) {
 	*did_discard = 0;
 
-	return rrr_msg_holder_slot_read (slot, __rrr_msg_holder_slot_discard_callback, did_discard, 0);
+	return rrr_msg_holder_slot_read (slot, self, __rrr_msg_holder_slot_discard_callback, did_discard, 0);
 }
 
 static void __rrr_msg_holder_slot_holder_destroy_double_ptr (

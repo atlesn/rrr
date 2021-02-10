@@ -131,7 +131,8 @@ int rrr_poll_do_poll_discard (
 		ret_tmp = rrr_message_broker_poll_discard (
 				&discarded_count_tmp,
 				entry->message_broker,
-				entry->message_broker_handle
+				entry->message_broker_handle,
+				INSTANCE_D_HANDLE(thread_data)
 		);
 
 		(*discarded_count) += discarded_count_tmp;
