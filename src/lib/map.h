@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -120,6 +120,20 @@ int rrr_map_item_replace_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
+);
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
+);
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
 );
 int rrr_map_item_add_new (
 		struct rrr_map *map,

@@ -208,6 +208,7 @@ static int incrementer_update_id_msgdb_callback (
 	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
 		RRR_MSG_0("Warning: Failed to send message to msgdb in incrementer, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
+		ret = 1; // Ensure failure is returned upon negative ACK
 		goto out;
 	}
 
@@ -215,51 +216,50 @@ static int incrementer_update_id_msgdb_callback (
 	return ret;
 }
 
-static int incrementer_update_id (
-	struct incrementer_data *data,
-	const char *tag,
-	unsigned long long id
+struct incrementer_update_id_callback_data {
+	struct incrementer_data *data;
+	long long unsigned int id;
+	const char *tag;
+};
+
+static int incrementer_update_id_callback (
+	void *arg
 ) {
+	struct incrementer_update_id_callback_data *callback_data = arg;
+
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	char buf[64];
-	sprintf(buf, "%llu", id);
-
-	if ((ret = rrr_map_item_replace_new(&data->db_used_ids, tag, buf)) != 0) {
-		RRR_MSG_0("Failed to insert into map in incrementer_update_id\n");
-		ret = 1;
+	if (callback_data->data->msgdb_socket == NULL) {
 		goto out;
 	}
 
-	if (data->msgdb_socket != NULL) {
-		if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, "id", id)) != 0) {
-			RRR_MSG_0("Failed push ID to array in incrementer_update_id\n");
-			goto out;
-		}
+	if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, "id", callback_data->id)) != 0) {
+		RRR_MSG_0("Failed push ID to array in incrementer_update_id_callback\n");
+		goto out;
+	}
 
-		if ((ret = rrr_array_new_message_from_collection (
-				&msg_tmp,
-				&array_tmp,
-				rrr_time_get_64(),
-				tag,
-				strlen(tag)
-		)) != 0) {
-			RRR_MSG_0("Failed create new message in incrementer_update_id\n");
-			goto out;
-		}
+	if ((ret = rrr_array_new_message_from_collection (
+			&msg_tmp,
+			&array_tmp,
+			rrr_time_get_64(),
+			callback_data->tag,
+			strlen(callback_data->tag)
+	)) != 0) {
+		RRR_MSG_0("Failed create new message in incrementer_update_id_callback\n");
+		goto out;
+	}
 
-		if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
-				&data->msgdb_conn,
-				data->msgdb_socket,
-				incrementer_update_id_msgdb_callback,
-				msg_tmp
-		)) != 0) {
-			RRR_MSG_0("Failed to send message to message DB in incrementer_update_id\n");
-			goto out;
-		}
+	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
+			&callback_data->data->msgdb_conn,
+			callback_data->data->msgdb_socket,
+			incrementer_update_id_msgdb_callback,
+			msg_tmp
+	)) != 0) {
+		RRR_MSG_0("Failed to send message to message DB in incrementer_update_id_callback\n");
+		goto out;
 	}
 
 	out:
@@ -268,9 +268,34 @@ static int incrementer_update_id (
 	return ret;
 }
 
+static int incrementer_update_id (
+		struct incrementer_data *data,
+		const char *tag,
+		unsigned long long id
+) {
+	char buf[64];
+	sprintf(buf, "%llu", id);
+
+	struct incrementer_update_id_callback_data callback_data = {
+		data,
+		id,
+		tag
+	};
+
+	// This structure ensures that ID is either updated in both map and msgdb
+	// or in none of them. If msgdb is disabled, only map will get updated.
+	return rrr_map_item_replace_new_with_callback (
+			&data->db_used_ids,
+			tag,
+			buf,
+			incrementer_update_id_callback,
+			&callback_data
+	);
+}
+
 static int incrementer_process_subject (
-	struct incrementer_data *data,
-	struct rrr_msg_holder *entry
+		struct incrementer_data *data,
+		struct rrr_msg_holder *entry
 ) {
 	// Do not cache message pointer from entry, it gets updated
 
@@ -313,9 +338,9 @@ static int incrementer_process_subject (
 	}
 
 	if ((ret = rrr_msg_msg_topic_set (
-		(struct rrr_msg_msg **) &entry->message,
-		rrr_string_builder_buf(&topic_new),
-		rrr_string_builder_length(&topic_new)
+			(struct rrr_msg_msg **) &entry->message,
+			rrr_string_builder_buf(&topic_new),
+			rrr_string_builder_length(&topic_new)
 	)) != 0) {
 		RRR_MSG_0("Failed to set topic of message in incrementer_process_subject\n");
 		ret = 1;
@@ -411,7 +436,7 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
 	int does_match = 0;
-	if ((ret = rrr_msg_holder_util_message_topic_match(&does_match, entry, data->subject_topic_filter_token)) != 0) {
+	if ((ret = rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token)) != 0) {
 		RRR_MSG_0("Error while checking subject topic in incrementer_poll_callback of instance %s\n",
 			INSTANCE_D_NAME(thread_data));
 		goto out;
@@ -427,7 +452,7 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}*/
 
 	RRR_DBG_3("Incrementer instance %s forwarding message with timestamp %" PRIu64 " without processing\n",
-		INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg*) entry->message)->timestamp);
+		INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg *) entry->message)->timestamp);
 
 	// Unknown message, forward to output
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (

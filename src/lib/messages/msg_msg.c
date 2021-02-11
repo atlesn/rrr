@@ -30,12 +30,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg.h"
 #include "msg_msg.h"
 #include "../rrr_types.h"
+#include "../string_builder.h"
 #include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
-#include "../string_builder.h"
 #include "../helpers/nullsafe_str.h"
+#include "../mqtt/mqtt_topic.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
@@ -410,6 +411,48 @@ int rrr_msg_msg_topic_equals (
 
 	// Return 1 for equals
 	return (memcmp(MSG_TOPIC_PTR(message), topic, len_a) == 0);
+}
+
+int rrr_msg_msg_topic_match (
+		int *does_match,
+		const struct rrr_msg_msg *message,
+		const struct rrr_mqtt_topic_token *filter_first_token
+) {
+	int ret = 0;
+
+	char *topic_tmp = NULL;
+
+	*does_match = 0;
+
+	struct rrr_mqtt_topic_token *entry_first_token = NULL;
+
+	if (rrr_mqtt_topic_validate_name_with_end (
+			MSG_TOPIC_PTR(message),
+			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
+	) != 0) {
+		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic\n");
+		ret = 0;
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_tokenize_with_end (
+			&entry_first_token,
+			MSG_TOPIC_PTR(message),
+			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
+	) != 0) {
+		RRR_MSG_0("Tokenizing of topic failed in rrr_msg_msg_topic_match\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_match_tokens_recursively(filter_first_token, entry_first_token) == RRR_MQTT_TOKEN_MATCH) {
+		*does_match = 1;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	rrr_mqtt_topic_token_destroy(entry_first_token);
+	return ret;
 }
 
 int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {

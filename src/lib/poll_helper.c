@@ -27,8 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instances.h"
 #include "buffer.h"
 #include "message_broker.h"
-#include "message_holder/message_holder_util.h"
+#include "message_holder/message_holder_struct.h"
 #include "message_holder/message_holder.h"
+#include "messages/msg_msg.h"
 
 static int __poll_collection_entry_destroy (
 		struct rrr_poll_collection_entry *entry
@@ -164,11 +165,13 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
+	char topic_tmp[128];
+
 	int does_match = 0;
 
-	if (rrr_msg_holder_util_message_topic_match (
+	if (rrr_msg_msg_topic_match (
 			&does_match,
-			entry,
+			(const struct rrr_msg_msg *) entry->message,
 			INSTANCE_D_TOPIC(callback_data->thread_data)
 	) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
@@ -177,11 +180,13 @@ static int __rrr_poll_delete_topic_filtering_callback (
 		goto out;
 	}
 
-	RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
-			INSTANCE_D_NAME(callback_data->thread_data),
-			INSTANCE_D_TOPIC_STR(callback_data->thread_data),
-			(does_match ? "MATCH" : "MISMATCH/DROPPED")
-	);
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
+				INSTANCE_D_NAME(callback_data->thread_data),
+				INSTANCE_D_TOPIC_STR(callback_data->thread_data),
+				(does_match ? "MATCH" : "MISMATCH/DROPPED")
+		);
+	}
 
 	if (does_match) {
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!

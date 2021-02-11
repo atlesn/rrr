@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 
 struct rrr_nullsafe_str;
+struct rrr_mqtt_topic_token;
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
@@ -90,6 +91,11 @@ int rrr_msg_msg_topic_get (
 int rrr_msg_msg_topic_equals (
 		const struct rrr_msg_msg *message,
 		const char *topic
+);
+int rrr_msg_msg_topic_match (
+		int *does_match,
+		const struct rrr_msg_msg *message,
+		const struct rrr_mqtt_topic_token *filter_first_token
 );
 int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b);
 int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b);

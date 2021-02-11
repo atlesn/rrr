@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -77,15 +77,7 @@ int rrr_map_item_new (
 	return ret;
 }
 
-int rrr_map_item_add (
-		struct rrr_map *map,
-		struct rrr_map_item *item
-) {
-	RRR_LL_APPEND(map, item);
-	return 0;
-}
-
-static void __rrr_map_item_remove (
+static void __rrr_map_item_remove_by_tag (
 		struct rrr_map *map,
 		const char *tag
 ) {
@@ -101,14 +93,40 @@ static void __rrr_map_item_remove (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(map, 0; rrr_map_item_destroy(node));
 }
 
-static int __rrr_map_item_add_new (
+static void __rrr_map_item_add (
 		struct rrr_map *map,
-		const char *tag,
-		const char *value,
+		struct rrr_map_item *item,
 		int do_prepend,
 		int do_unique
 ) {
+	if (do_unique) {
+		__rrr_map_item_remove_by_tag(map, item->tag);
+	}
+
+	if (do_prepend) {
+		RRR_LL_UNSHIFT(map, item);
+	}
+	else {
+		RRR_LL_APPEND(map, item);
+	}
+}
+
+int rrr_map_item_add (
+		struct rrr_map *map,
+		struct rrr_map_item *item
+) {
+	__rrr_map_item_add(map, item, 0, 0);
+	return 0;
+}
+
+static int __rrr_map_item_new_with_values (
+		struct rrr_map_item **result,
+		const char *tag,
+		const char *value
+) {
 	int ret = 0;
+
+	*result = NULL;
 
 	struct rrr_map_item *item_new = NULL;
 
@@ -128,16 +146,7 @@ static int __rrr_map_item_add_new (
 		memcpy(item_new->value, value, value_size);
 	}
 
-	if (do_unique) {
-		__rrr_map_item_remove(map, tag);
-	}
-
-	if (do_prepend) {
-		RRR_LL_UNSHIFT(map, item_new);
-	}
-	else {
-		RRR_LL_APPEND(map, item_new);
-	}
+	*result = item_new;
 	item_new = NULL;
 
 	out:
@@ -147,12 +156,61 @@ static int __rrr_map_item_add_new (
 	return ret;
 }
 
+static int __rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int do_prepend,
+		int do_unique
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, value)) != 0) {
+		goto out;
+	}
+
+	__rrr_map_item_add(map, item_new, do_prepend, do_unique);
+
+	out:
+	return ret;
+}
+
 int rrr_map_item_replace_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value
 ) {
 	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, value)) != 0) {
+		goto out;
+	}
+
+	if ((ret = callback_confirm(callback_arg)) != 0) {
+		goto out_destroy_item;
+	}
+
+	__rrr_map_item_add(map, item_new, 0, 1);
+
+	goto out;
+	out_destroy_item:
+		rrr_map_item_destroy(item_new);
+	out:
+		return ret;
 }
 
 int rrr_map_item_add_new (
