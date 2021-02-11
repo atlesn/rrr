@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <unistd.h>
+
 #include <stdlib.h>
 
 #include "log.h"
@@ -31,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
+#include "util/gnu.h"
 
 #define RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
@@ -627,6 +630,9 @@ static void *__rrr_instance_thread_entry_intermediate (
 				INSTANCE_D_NAME(thread_data), (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
 		goto out;
 	}
+
+	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, instance %p\n",
+		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, thread_data);
 
 	// Ignore return value
 	thread_data->init_data.module->operations.thread_entry(thread);

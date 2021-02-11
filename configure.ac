@@ -151,6 +151,25 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+AC_MSG_CHECKING([precense of gettid()])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <unistd.h>
+		#include <sys/types.h>
+
+		int main (int argc, char *argv[]) {
+			pid_t tid = gettid();
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
 TLS_CFLAGS=
 TLS_LDFLAGS=
 TLS_LIBADD=

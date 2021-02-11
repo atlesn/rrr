@@ -82,8 +82,8 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
-# posix.c is in libadd further down
-util = util/gnu.c util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
+# posix.c and gnu.c is in libadd further down
+util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
@@ -130,6 +130,11 @@ librrr_posix_la_SOURCES = util/posix.c
 librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
+libadd_rrr_gnu = librrr_gnu.la
+librrr_gnu_la_SOURCES = util/gnu.c
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
+
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
 librrr_conversion_warning_la_SOURCES = type.c type_conversion.c
 librrr_conversion_warning_la_CFLAGS = -Wconversion ${AM_CFLAGS}
@@ -175,6 +180,7 @@ libadd_all =                         \
     ${libadd_rrr_umask}              \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
+    ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}

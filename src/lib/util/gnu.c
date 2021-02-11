@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,13 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define _GNU_SOURCE
 #define __BSD_VISIBLE 1
 
+#include <unistd.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <sys/types.h>
 
-#include "../../config.h"
-#include "log.h"
+#include "../../../config.h"
+#include "../log.h"
 #include "gnu.h"
+#include "macro_utils.h"
 
 int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	int ret = 0;
@@ -38,16 +42,25 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 #else
 	ssize_t size = strlen(format) * 2;
 	char *buf = NULL;
-	int retry_count = 0;
 
 	*resultp = NULL;
 
 	retry:
 	RRR_FREE_IF_NOT_NULL(buf);
-	buf = malloc(size);
+	if ((buf = malloc(size)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_vasprintf\n");
+		ret = -1;
+		goto out;
+	}
 
-	ret = vsnprintf(buf, size - 1, format, args);
-	if (ret > 0) {
+	int retry_count = 0;
+
+	va_list args_tmp;
+	va_copy(args_tmp, args);
+	ret = vsnprintf(buf, size, format, args_tmp);
+	va_end(args_tmp);
+
+	if (ret >= size) {
 		if (++retry_count > 1) {
 			RRR_MSG_0("More than two attempts to format string in rrr_asprintf\n");
 			ret = -1;
@@ -70,7 +83,6 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	out:
 	RRR_FREE_IF_NOT_NULL(buf);
 #endif
-
 	return ret;
 }
 
@@ -129,5 +141,13 @@ char *rrr_strcasestr (const char *haystack, const char *needle) {
 
 #endif
 	return ret;
+}
+
+pid_t rrr_gettid(void) {
+#ifdef RRR_HAVE_GETTID
+	return gettid();
+#else
+	return getpid();
+#endif
 }
 
