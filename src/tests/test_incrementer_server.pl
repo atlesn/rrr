@@ -53,7 +53,7 @@ sub process {
 
 	$endpoint =~ s/^\///;
 
-	$dbg->msg(1,  "Server received endpoint $endpoint\n");
+	$dbg->msg(1,  "Server received endpoint $endpoint topic $message->{'topic'}\n");
 
 	if ($endpoint =~ /^\Q$endpoint_prefix\E\/(\w+)\/(\d+)$/) {
 		if (!defined $results{$1}) {

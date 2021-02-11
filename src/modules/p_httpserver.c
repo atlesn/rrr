@@ -519,14 +519,15 @@ static int httpserver_receive_get_response_callback (
 			RRR_MSG_0("Error while matching topic in httpserver_receive_get_response_callback\n");
 			goto out;
 		}
-	}
+		else {
+			if (callback_data->entry != NULL) {
+				RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
+			}
 
-	if (callback_data->entry != NULL) {
-		RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
+			rrr_msg_holder_incref_while_locked(entry);
+			callback_data->entry = entry;
+		}
 	}
-
-	rrr_msg_holder_incref_while_locked(entry);
-	callback_data->entry = entry;
 
 	ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE|RRR_FIFO_SEARCH_STOP;
 
@@ -686,8 +687,8 @@ static int httpserver_receive_callback_response_get (
 		}
 	}
 
-	RRR_DBG_1("Timeout while waiting for response from senders in httpserver instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
+	RRR_DBG_1("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
+			topic_filter, INSTANCE_D_NAME(data->thread_data));
 	ret = RRR_HTTP_SOFT_ERROR;
 	goto out;
 
