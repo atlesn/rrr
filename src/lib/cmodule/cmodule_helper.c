@@ -106,8 +106,8 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
 			INSTANCE_D_THREAD(callback_data->parent_thread_data)
 	) != 0) {
-		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->parent_thread_data));
+		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s reader thread ID %lli\n",
+				INSTANCE_D_NAME(callback_data->parent_thread_data), (long long int) pthread_self());
 		return 1;
 	}
 
@@ -456,8 +456,8 @@ static int __rrr_cmodule_helper_read_from_forks (
 				break;
 			}
 			else {
-				RRR_MSG_0("Error while reading from worker fork %s\n",
-						node->name);
+				RRR_MSG_0("Error %i while reading from worker fork %s\n",
+						ret, node->name);
 				ret = 1;
 				goto out;
 			}
