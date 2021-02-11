@@ -10,8 +10,16 @@ use rrr::rrr_helper::rrr_debug;
 my $dbg = { };
 bless $dbg, rrr::rrr_helper::rrr_debug;
 
+my $loops = 0;
+
 sub source {
 	my $message = shift;
+
+	if ($loops == 3) {
+		return 1;
+	}
+
+	$loops++;
 
 	$message->{'topic'} = "rrr/increment/A";
 	$message->send();

@@ -25,7 +25,7 @@ sub source {
 			return 1;
 		}
 		my $id_check = 1;
-		foreach my $id (@{$results{$suffix}}) {
+		foreach my $id (sort @{$results{$suffix}}) {
 			if ($id != $id_check) {
 				$dbg->msg(1,  "Server - Endpoint $suffix id mismatch $id_check<>$id\n");
 				return 1;
