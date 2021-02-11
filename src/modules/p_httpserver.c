@@ -827,7 +827,7 @@ static int httpserver_receive_callback_response_process (
 		}
 
 		if (content_type_to_use != NULL) {
-			if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_free)) != 0) {
+			if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_use)) != 0) {
 				goto out;
 			}
 		}
