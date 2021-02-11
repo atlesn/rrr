@@ -166,23 +166,26 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int does_match = 0;
 
-	if (rrr_msg_holder_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
+	if (rrr_msg_holder_util_message_topic_match (
+			&does_match,
+			entry,
+			INSTANCE_D_TOPIC(callback_data->thread_data)
+	) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
 	}
 
-	RRR_DBG_3("Result of topic match while polling in instance %s: %s\n",
-			INSTANCE_D_NAME(callback_data->thread_data), (does_match ? "MATCH" : "MISMATCH/DROPPED"));
+	RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
+			INSTANCE_D_NAME(callback_data->thread_data),
+			INSTANCE_D_TOPIC_STR(callback_data->thread_data),
+			(does_match ? "MATCH" : "MISMATCH/DROPPED")
+	);
 
 	if (does_match) {
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
 		return callback_data->callback(entry, callback_data->thread_data);
-	}
-	else {
-		RRR_DBG_3("Topic filter for instance %s is: '%s'\n",
-				INSTANCE_D_NAME(callback_data->thread_data), INSTANCE_D_TOPIC_STR(callback_data->thread_data));
 	}
 
 	out:
