@@ -41,15 +41,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/string_builder.h"
 #include "../lib/map.h"
 #include "../lib/mqtt/mqtt_topic.h"
+#include "../lib/msgdb/msgdb_client.h"
 
 struct incrementer_data {
 	struct rrr_instance_runtime_data *thread_data;
+
+	struct rrr_msgdb_client_conn msgdb_conn;
 
 	char *subject_topic_filter;
 	struct rrr_mqtt_topic_token *subject_topic_filter_token;
 
 //	char *id_topic;
-//	char *msgdb_socket;
+	char *msgdb_socket;
 
 	struct rrr_map db_all_ids;
 	struct rrr_map db_used_ids;
@@ -62,25 +65,154 @@ static void incrementer_data_init(struct incrementer_data *data, struct rrr_inst
 
 static void incrementer_data_cleanup(void *arg) {
 	struct incrementer_data *data = arg;
+	rrr_msgdb_client_close(&data->msgdb_conn);
 	RRR_FREE_IF_NOT_NULL(data->subject_topic_filter);
 	rrr_mqtt_topic_token_destroy(data->subject_topic_filter_token);
 //	RRR_FREE_IF_NOT_NULL(data->id_topic);
-//	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
+	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	rrr_map_clear(&data->db_all_ids);
 	rrr_map_clear(&data->db_used_ids);
 }
 
-static const char *incrementer_get_id (
+struct incrementer_get_id_from_msgdb_callback_data {
+	unsigned long long int *result;
+	const char *tag;
+};
+
+static int incrementer_get_id_from_msgdb_callback (
+		struct rrr_msgdb_client_conn *conn,
+		void *arg
+) {
+	struct incrementer_get_id_from_msgdb_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_msg_msg *msg_tmp = NULL;
+
+	*(callback_data->result) = 0;
+
+	if (rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->tag)) {
+		// Don't return failure on this error
+		goto out;
+	}
+
+	if (msg_tmp != NULL) {
+		uint16_t version_dummy;
+		if ((ret = rrr_array_message_append_to_collection(&version_dummy, &array_tmp, msg_tmp)) != 0) {
+			RRR_MSG_0("Failed to extract array from message from message DB in incrementer\n");
+			goto out;
+		}
+		const struct rrr_type_value *value;
+		if ((value = rrr_array_value_get_by_tag_const (&array_tmp, "id")) == NULL) {
+			RRR_MSG_0("Failed to find value with tag 'id' in message from message DB in incrementer\n");
+			ret = 1;
+			goto out;
+		}
+		*(callback_data->result) = value->definition->to_ull(value);
+	}
+
+	out:
+	rrr_array_clear(&array_tmp);
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
+static int incrementer_get_id_from_msgdb (
+		unsigned long long int *result_llu,
+		struct incrementer_data *data,
+		const char *tag
+) {
+	int ret = 0;
+
+	struct incrementer_get_id_from_msgdb_callback_data callback_data = {
+		result_llu,
+		tag
+	};
+
+	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
+			&data->msgdb_conn,
+			data->msgdb_socket,
+			incrementer_get_id_from_msgdb_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_0("Failed to get message from  message DB in incrementer_get_id_from_msgdb\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int incrementer_get_id (
+	unsigned long long int *result_llu,
 	struct incrementer_data *data,
 	const char *tag
 ) {
-	const char *result = NULL;
+	int ret = 0;
 
+	*result_llu = 0;
+
+	RRR_DBG_3("Incrementer instance %s retrieving ID for tag '%s'...\n",
+			INSTANCE_D_NAME(data->thread_data), tag);
+
+	const char *result = NULL;
 	if ((result = rrr_map_get_value(&data->db_used_ids, tag)) == NULL) {
-		result = rrr_map_get_value(&data->db_all_ids, tag);
+		if ((ret = incrementer_get_id_from_msgdb(result_llu, data, tag)) != 0) {
+			goto out;
+		}
+		if (*result_llu != 0) {
+			RRR_DBG_3("=> Result from Message DB: %llu\n", *result_llu);
+			goto out;
+		}
+		if ((result = rrr_map_get_value(&data->db_all_ids, tag)) == NULL) {
+			RRR_DBG_3("=> No result\n");
+			goto out;
+		}
+		RRR_DBG_3("=> Result from unused ID initializer memory storage: %s\n", result);
+	}
+	else {
+		RRR_DBG_3("=> Result from used ID memory storage: %s\n", result);
 	}
 
-	return result;
+	char *end = NULL;
+	*result_llu = strtoull(result, &end, 10);
+	if (end == NULL || *end != '\0') {
+		RRR_MSG_0("Warning: Failed to parse stored ID in incrementer instance %s, value was '%s'\n",
+			INSTANCE_D_NAME(data->thread_data), result);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int incrementer_update_id_msgdb_callback (
+		struct rrr_msgdb_client_conn *conn,
+		void *arg
+) {
+	struct rrr_msg_msg *msg = arg;
+
+	int ret = 0;
+
+	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
+		RRR_MSG_0("Warning: Failed to send message to msgdb in incrementer, return from send was %i\n",
+			ret);
+		goto out;
+	}
+
+	int positive_ack = 0;
+	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
+		RRR_MSG_0("Warning: Failed to send message to msgdb in incrementer, return from await ack was %i positive ack was %i\n",
+			ret, positive_ack);
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int incrementer_update_id (
@@ -89,6 +221,9 @@ static int incrementer_update_id (
 	unsigned long long id
 ) {
 	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_msg_msg *msg_tmp = NULL;
 
 	char buf[64];
 	sprintf(buf, "%llu", id);
@@ -99,7 +234,37 @@ static int incrementer_update_id (
 		goto out;
 	}
 
+	if (data->msgdb_socket != NULL) {
+		if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, "id", id)) != 0) {
+			RRR_MSG_0("Failed push ID to array in incrementer_update_id\n");
+			goto out;
+		}
+
+		if ((ret = rrr_array_new_message_from_collection (
+				&msg_tmp,
+				&array_tmp,
+				rrr_time_get_64(),
+				tag,
+				strlen(tag)
+		)) != 0) {
+			RRR_MSG_0("Failed create new message in incrementer_update_id\n");
+			goto out;
+		}
+
+		if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
+				&data->msgdb_conn,
+				data->msgdb_socket,
+				incrementer_update_id_msgdb_callback,
+				msg_tmp
+		)) != 0) {
+			RRR_MSG_0("Failed to send message to message DB in incrementer_update_id\n");
+			goto out;
+		}
+	}
+
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
@@ -121,25 +286,20 @@ static int incrementer_process_subject (
 
 	unsigned long long old_id_llu = 0;
 
-	const char *old_id = incrementer_get_id(data, topic_tmp);
-	if (old_id != NULL) {
-
-		char *end = NULL;
-		old_id_llu = strtoull(old_id, &end, 10);
-
-		if (end == NULL || *end != '\0') {
-			RRR_MSG_0("Failed to parse stored ID for subject %s in incrementer instance %s, value was '%s'\n",
-				topic_tmp, INSTANCE_D_NAME(data->thread_data), old_id);
-			ret = 1;
-			goto out;
-		}
+	if ((ret = incrementer_get_id(&old_id_llu, data, topic_tmp)) != 0) {
+		goto out;
 	}
-	else {
+
+	if (old_id_llu == 0) {
+		// TODO : Error if id initializer topic is set
 /*		RRR_MSG_0("No ID stored for subject with topic %s in incrementer instance %s\n",
 			topic_tmp, INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;*/
+		RRR_DBG_2("Incrementer instance %s starting ID for tag %s at 0, not previously stored\n",
+				INSTANCE_D_NAME(data->thread_data), topic_tmp);
 	}
+
 
 	unsigned long long new_id_llu = old_id_llu;
 	if (++new_id_llu == 0) {
@@ -165,6 +325,9 @@ static int incrementer_process_subject (
 	entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
 
 	if ((ret = incrementer_update_id(data, topic_tmp, new_id_llu)) != 0) {
+		RRR_MSG_0("Warning: Failed to store ID of message in incrementer instance %s, dropping message\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 0;
 		goto out;
 	}
 
@@ -296,7 +459,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 
 */
 
-//	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_msgdb_socket", msgdb_socket);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_msgdb_socket", msgdb_socket);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_subject_topic_filter", subject_topic_filter);
 //	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_topic", id_topic);
 

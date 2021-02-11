@@ -68,6 +68,29 @@ void rrr_msgdb_client_close_void (
 	rrr_msgdb_client_close(conn);
 }
 
+int rrr_msgdb_client_conn_ensure_with_callback (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_client_open (conn, socket)) != 0) {
+		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed\n",
+			socket);
+		goto out;
+	}
+
+	if ((ret = callback(conn, callback_arg)) != 0) {
+		rrr_msgdb_client_close(conn);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_msgdb_client_await_ack_callback_silent (
 		const struct rrr_msg *message,
 		void *arg1,

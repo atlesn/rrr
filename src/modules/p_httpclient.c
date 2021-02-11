@@ -419,22 +419,6 @@ static int httpclient_final_callback_receive_json (
 	);
 }
 
-static void httpclient_msgdb_conn_ensure_with_callback (
-		struct httpclient_data *data,
-		int (*callback)(struct httpclient_data *data, void *arg),
-		void *callback_arg
-) {
-	if (rrr_msgdb_client_open (&data->msgdb_conn, data->msgdb_socket) != 0) {
-		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed in httpclient instance %s\n",
-			data->msgdb_socket, INSTANCE_D_NAME(data->thread_data));
-		return;
-	}
-
-	if (callback(data, callback_arg) != 0) {
-		rrr_msgdb_client_close(&data->msgdb_conn);
-	}
-}
-
 static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data, const struct rrr_type_value *path) {
 	int ret = 0;
 
@@ -484,14 +468,14 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 	return ret;
 }
 
-static int httpclient_msgdb_poll_callback (struct httpclient_data *data, void *callback_arg) {
-	(void)(callback_arg);
+static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
+	struct httpclient_data *data = callback_arg;
 
 	int ret = 0;
 
 	struct rrr_array paths = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx(&paths, &data->msgdb_conn, "/")) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx(&paths, conn, "/")) != 0) {
 		goto out;
 	}
 
@@ -515,21 +499,33 @@ static int httpclient_msgdb_poll_callback (struct httpclient_data *data, void *c
 }
 
 static void httpclient_msgdb_poll (struct httpclient_data *data) {
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_poll_callback, NULL);
+	if (rrr_msgdb_client_conn_ensure_with_callback (
+			&data->msgdb_conn,
+			data->msgdb_socket,
+			httpclient_msgdb_poll_callback,
+			data
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to poll message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
 }
 
-static int httpclient_msgdb_delete_callback (struct httpclient_data *data, void *callback_arg) {
-	const struct rrr_msg_msg *msg = callback_arg;
+struct httpclient_msgdb_delete_callback_data {
+	struct httpclient_data *data;
+	const struct rrr_msg_msg *msg;
+};
+
+static int httpclient_msgdb_delete_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
+	struct httpclient_msgdb_delete_callback_data *callback_data = callback_arg;
 
 	int ret = 0;
 
 	char *topic_tmp = NULL;
 
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, msg)) != 0) {
+	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, callback_data->msg)) != 0) {
 		goto out;
 	}
 
-	ret = rrr_msgdb_client_cmd_del(&data->msgdb_conn, topic_tmp);
+	ret = rrr_msgdb_client_cmd_del(conn, topic_tmp);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
@@ -537,27 +533,44 @@ static int httpclient_msgdb_delete_callback (struct httpclient_data *data, void 
 }
 
 static void httpclient_msgdb_delete (struct httpclient_data *data, const struct rrr_msg_msg *msg) {
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_delete_callback, (void *) msg); // Cast away const OK
+	struct httpclient_msgdb_delete_callback_data callback_data = {
+		data,
+		msg
+	};
+
+	if (rrr_msgdb_client_conn_ensure_with_callback (
+			&data->msgdb_conn,
+			data->msgdb_socket,
+			httpclient_msgdb_delete_callback,
+			&callback_data
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to delete from message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
 }
 
-static int httpclient_msgdb_notify_send_callback (struct httpclient_data *data, void *callback_arg) {
-	struct rrr_msg_holder *entry_locked = callback_arg;
+struct httpclient_msgdb_notify_send_callback_data {
+	struct httpclient_data *data;
+	struct rrr_msg_holder *entry_locked;
+};
 
-	struct rrr_msg_msg *msg = entry_locked->message;
+static int httpclient_msgdb_notify_send_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
+	struct httpclient_msgdb_notify_send_callback_data *callback_data = callback_arg;
+
+	struct rrr_msg_msg *msg = callback_data->entry_locked->message;
 	const uint8_t type_orig = MSG_TYPE(msg);
 
 	int ret = 0;
 
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(&data->msgdb_conn, msg)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
 		RRR_MSG_0("Warning: Failed to send message to msgdb in httpclient, return from send was %i\n",
 			ret);
 		goto out;
 	}
 
 	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, &data->msgdb_conn)) != 0 || positive_ack == 0) {
+	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
 		RRR_MSG_0("Warning: Failed to send message to msgdb in httpclient, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
 		goto out;
@@ -578,7 +591,19 @@ static void httpclient_msgdb_notify_send(struct httpclient_data *data, struct rr
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
 	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
 
-	httpclient_msgdb_conn_ensure_with_callback(data, httpclient_msgdb_notify_send_callback, entry_locked);
+	struct httpclient_msgdb_notify_send_callback_data callback_data = {
+		data,
+		entry_locked
+	};
+
+	if (rrr_msgdb_client_conn_ensure_with_callback (	
+			&data->msgdb_conn,
+			data->msgdb_socket,
+			httpclient_msgdb_notify_send_callback,
+			&callback_data
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to send notification to message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
 }
 
 static void httpclient_msgdb_notify_timeout(struct httpclient_data *data, const struct rrr_msg_holder *entry_locked) {

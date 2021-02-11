@@ -144,7 +144,10 @@ do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
 do_test_standalone test_file.conf
+
+rm -rf /tmp/rrr-test-msgdb/
 do_test_standalone test_incrementer.conf
+rm -rf /tmp/rrr-test-msgdb/ || exit 1
 
 do_test_websocket test_websocket.conf
 

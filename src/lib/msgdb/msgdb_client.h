@@ -42,6 +42,12 @@ void rrr_msgdb_client_close (
 void rrr_msgdb_client_close_void (
 		void *conn
 );
+int rrr_msgdb_client_conn_ensure_with_callback (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
+		void *callback_arg
+);
 int rrr_msgdb_client_await_ack (
 		int *positive_ack,
 		struct rrr_msgdb_client_conn *conn
