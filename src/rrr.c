@@ -295,7 +295,7 @@ static int main_loop (
 			// as the handle usercount will be > 1. This handle will not be destroyed untill the
 			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
 			// to find the handle as it will be removed from the costumer handle list.
-			rrr_message_broker_unregister_all_hard(&message_broker);
+			rrr_message_broker_unregister_all(&message_broker);
 
 			if (main_running && rrr_config_global.no_thread_restart == 0) {
 				rrr_posix_usleep(1000000); // 1s

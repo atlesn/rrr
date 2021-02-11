@@ -59,38 +59,63 @@ static void __rrr_message_broker_costumer_incref (
 	costumer->usercount++;
 }
 
-static void __rrr_message_broker_costumer_decref (
+static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	if (--(costumer->usercount) == 0) {
-		struct rrr_fifo_buffer_stats stats;
+	struct rrr_fifo_buffer_stats stats;
 
-		if (costumer->slot != NULL) {
-			uint64_t entries_deleted = 0;
-			uint64_t entries_written = 0;
-			rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
-			rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
+	if (costumer->slot != NULL) {
+		uint64_t entries_deleted = 0;
+		uint64_t entries_written = 0;
+		rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
+		rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
 
-			rrr_msg_holder_slot_destroy(costumer->slot);
-		}
-		else {
-			rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
-		}
-
-		RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
-				costumer->name, stats.total_entries_deleted, stats.total_entries_written);
-
-		RRR_LL_DESTROY (
-				&costumer->split_buffers,
-				struct rrr_message_broker_split_buffer_node,
-				__rrr_message_broker_split_buffer_node_destroy(node)
-		);
-		rrr_fifo_buffer_destroy(&costumer->main_queue);
-		pthread_mutex_destroy(&costumer->split_buffers.lock);
-		// Do this at the end in case we need to read the name in a debugger
-		RRR_FREE_IF_NOT_NULL(costumer->name);
-		free(costumer);
+		rrr_msg_holder_slot_destroy(costumer->slot);
 	}
+	else {
+		rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
+	}
+
+	RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
+			costumer->name, stats.total_entries_deleted, stats.total_entries_written);
+
+	RRR_LL_DESTROY (
+			&costumer->split_buffers,
+			struct rrr_message_broker_split_buffer_node,
+			__rrr_message_broker_split_buffer_node_destroy(node)
+	);
+	rrr_fifo_buffer_destroy(&costumer->main_queue);
+	pthread_mutex_destroy(&costumer->split_buffers.lock);
+	// Do this at the end in case we need to read the name in a debugger
+	RRR_FREE_IF_NOT_NULL(costumer->name);
+	free(costumer);
+}
+
+static void __rrr_message_broker_costumer_decref (
+		int *did_destroy,
+		struct rrr_message_broker_costumer *costumer
+) {
+	*did_destroy = 0;
+
+	if (--(costumer->usercount) > 0) {
+		return;
+	}
+
+	 __rrr_message_broker_costumer_destroy(costumer);
+
+	*did_destroy = 1;
+}
+
+// Only to be called by the thread which initially registered the handle
+void rrr_message_broker_costumer_unregister (
+		rrr_message_broker_costumer_handle *handle
+) {
+	struct rrr_message_broker_costumer *costumer = handle;
+
+	RRR_DBG_8("Message broker unregistering costumer %s\n", costumer->name);
+
+	int did_destroy;
+	__rrr_message_broker_costumer_decref (&did_destroy, costumer);
 }
 
 static void __rrr_message_broker_costumer_lock_and_decref (
@@ -98,7 +123,8 @@ static void __rrr_message_broker_costumer_lock_and_decref (
 		struct rrr_message_broker_costumer *costumer
 ) {
 	pthread_mutex_lock(&broker->lock);
-	__rrr_message_broker_costumer_decref(costumer);
+	int did_destroy = 0;
+	__rrr_message_broker_costumer_decref(&did_destroy, costumer);
 	pthread_mutex_unlock(&broker->lock);
 }
 
@@ -175,24 +201,30 @@ static int __rrr_message_broker_costumer_new (
 		return ret;
 }
 
-void rrr_message_broker_unregister_all_hard (
+void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
 ) {
 	pthread_mutex_lock(&broker->lock);
+
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
-			RRR_MSG_0("Message broker decref on costumer '%s' upon unregister_all_hard, usercount: %i\n",
-					node->name, node->usercount);
+			if (node->usercount > 1) {
+				RRR_MSG_0("Warning: Message broker costumer '%s' still present while unregistering all with %i users, memory may leak\n",
+						node->name, node->usercount - 1);
+			}
 		RRR_LL_ITERATE_END();
 	}
-	RRR_LL_DESTROY(broker, struct rrr_message_broker_costumer, __rrr_message_broker_costumer_decref(node));
+
+	int did_destroy;
+	RRR_LL_DESTROY(broker, struct rrr_message_broker_costumer, __rrr_message_broker_costumer_decref(&did_destroy, node));
+
 	pthread_mutex_unlock(&broker->lock);
 }
 
 void rrr_message_broker_cleanup (
 		struct rrr_message_broker *broker
 ) {
-	rrr_message_broker_unregister_all_hard(broker);
+	rrr_message_broker_unregister_all(broker);
 	pthread_mutex_destroy(&broker->lock);
 }
 
@@ -295,25 +327,6 @@ void __rrr_message_broker_costumer_get_name (
 	buf[buf_size - 1]  = '\0';
 }
 
-void rrr_message_broker_costumer_unregister (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
-) {
-	pthread_mutex_lock(&broker->lock);
-
-	RRR_DBG_8("Message broker unregistering handle %p\n", handle);
-
-	int count_before = RRR_LL_COUNT(broker);
-
-	RRR_LL_REMOVE_NODE_IF_EXISTS(broker, struct rrr_message_broker_costumer, handle, __rrr_message_broker_costumer_decref(node));
-
-	if (count_before == RRR_LL_COUNT(broker)) {
-		RRR_MSG_0("Warning: Attempted to remove broker costumer which was not registered in rrr_message_broker_costumer_unregister\n");
-	}
-
-	pthread_mutex_unlock(&broker->lock);
-}
-
 int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
 		struct rrr_message_broker *broker,
@@ -338,6 +351,11 @@ int rrr_message_broker_costumer_register (
 	}
 
 	RRR_LL_APPEND(broker, costumer);
+	__rrr_message_broker_costumer_incref(costumer);
+
+	// Usercount is now 2
+	// - 1 count owned by message broker linked list
+	// - 1 count owned by registrar
 
 	*result = costumer;
 

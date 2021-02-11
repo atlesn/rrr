@@ -100,12 +100,12 @@ static int incrementer_get_id_from_msgdb_callback (
 	if (msg_tmp != NULL) {
 		uint16_t version_dummy;
 		if ((ret = rrr_array_message_append_to_collection(&version_dummy, &array_tmp, msg_tmp)) != 0) {
-			RRR_MSG_0("Failed to extract array from message from message DB in incrementer\n");
+			RRR_MSG_0("Failed to extract array from message from message DB in incrementer_get_id_from_msgdb_callback\n");
 			goto out;
 		}
 		const struct rrr_type_value *value;
 		if ((value = rrr_array_value_get_by_tag_const (&array_tmp, "id")) == NULL) {
-			RRR_MSG_0("Failed to find value with tag 'id' in message from message DB in incrementer\n");
+			RRR_MSG_0("Failed to find value with tag 'id' in message from message DB in incrementer_get_id_from_msgdb_callback\n");
 			ret = 1;
 			goto out;
 		}
@@ -178,8 +178,8 @@ static int incrementer_get_id (
 	char *end = NULL;
 	*result_llu = strtoull(result, &end, 10);
 	if (end == NULL || *end != '\0') {
-		RRR_MSG_0("Warning: Failed to parse stored ID in incrementer instance %s, value was '%s'\n",
-			INSTANCE_D_NAME(data->thread_data), result);
+		RRR_MSG_0("Failed to parse stored ID in incrementer_get_id, value was '%s'\n",
+			result);
 		ret = 1;
 		goto out;
 	}
@@ -199,14 +199,14 @@ static int incrementer_update_id_msgdb_callback (
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
-		RRR_MSG_0("Warning: Failed to send message to msgdb in incrementer, return from send was %i\n",
+		RRR_MSG_0("Failed to send message to msgdb in incrementer_udpate_id_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
 	}
 
 	int positive_ack = 0;
 	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_MSG_0("Warning: Failed to send message to msgdb in incrementer, return from await ack was %i positive ack was %i\n",
+		RRR_MSG_0("Failed to send message to msgdb in incrementer_update_id_msgdb_callback, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
 		ret = 1; // Ensure failure is returned upon negative ACK
 		goto out;
@@ -322,7 +322,7 @@ static int incrementer_process_subject (
 		ret = 1;
 		goto out;*/
 		RRR_DBG_2("Incrementer instance %s starting ID for tag %s at 0, not previously stored\n",
-				INSTANCE_D_NAME(data->thread_data), topic_tmp);
+			INSTANCE_D_NAME(data->thread_data), topic_tmp);
 	}
 
 
@@ -333,7 +333,6 @@ static int incrementer_process_subject (
 
 	if ((ret = rrr_string_builder_append_format(&topic_new, "%s/%llu", topic_tmp, new_id_llu)) != 0) {
 		RRR_MSG_0("Failed to allocate new topic in incrementer_process_subject\n");
-		ret = 1;
 		goto out;
 	}
 
@@ -343,16 +342,13 @@ static int incrementer_process_subject (
 			rrr_string_builder_length(&topic_new)
 	)) != 0) {
 		RRR_MSG_0("Failed to set topic of message in incrementer_process_subject\n");
-		ret = 1;
 		goto out;
 	}
 
 	entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
 
 	if ((ret = incrementer_update_id(data, topic_tmp, new_id_llu)) != 0) {
-		RRR_MSG_0("Warning: Failed to store ID of message in incrementer instance %s, dropping message\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 0;
+		RRR_MSG_0("Failed to store ID of message in incrementer_process_subject\n");
 		goto out;
 	}
 
@@ -435,14 +431,26 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	// We check stuff with the watchdog in case we are slow to process messages
+	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
+		ret = RRR_FIFO_SEARCH_STOP;
+		goto out;
+	}
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
+	// Do not produce errors for message process failures, just drop them
+
 	int does_match = 0;
-	if ((ret = rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token)) != 0) {
-		RRR_MSG_0("Error while checking subject topic in incrementer_poll_callback of instance %s\n",
+	if (rrr_msg_msg_topic_match(&does_match, (const struct rrr_msg_msg *) entry->message, data->subject_topic_filter_token) != 0) {
+		RRR_MSG_0("Error while checking subject topic in incrementer_poll_callback of instance %s, dropping message\n",
 			INSTANCE_D_NAME(thread_data));
 		goto out;
 	}
 	else if (does_match) {
-		ret = incrementer_process_subject(data, entry);
+		if (incrementer_process_subject(data, entry) != 0) {
+			RRR_MSG_0("Warning: Failed to store ID of message in incrementer instance %s, dropping message\n",
+				INSTANCE_D_NAME(data->thread_data));
+		}
 		goto out;
 	}
 

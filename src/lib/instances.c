@@ -463,7 +463,7 @@ unsigned int rrr_instance_collection_count (
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
-	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
+	rrr_message_broker_costumer_unregister(data->message_broker_handle);
 	free(data);
 }
 

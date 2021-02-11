@@ -75,8 +75,11 @@ struct rrr_message_broker {
 // inside this framework, memory might become freed up at any time
 typedef void rrr_message_broker_costumer_handle;
 
-void rrr_message_broker_unregister_all_hard (
+void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
+);
+void rrr_message_broker_costumer_unregister (
+		rrr_message_broker_costumer_handle *handle
 );
 void rrr_message_broker_cleanup (
 		struct rrr_message_broker *broker
@@ -87,10 +90,6 @@ int rrr_message_broker_init (
 rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
 		struct rrr_message_broker *broker,
 		const char *name
-);
-void rrr_message_broker_costumer_unregister (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
 );
 int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
