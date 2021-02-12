@@ -50,6 +50,8 @@ struct rrr_http_transaction {
 	void *application_data;
 	void (*application_data_destroy)(void *arg);
 
+	rrr_http_unique_id unique_id;
+
 	uint64_t creation_time;
 };
 
@@ -58,6 +60,8 @@ int rrr_http_transaction_new (
 		enum rrr_http_method method,
 		enum rrr_http_body_format body_format,
 		rrr_biglength remaining_redirects,
+		int (*unique_id_generator_callback)(RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 );

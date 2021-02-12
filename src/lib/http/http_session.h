@@ -37,9 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
-#define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS	\
-	rrr_http_unique_id *result,								\
-	void *arg
+#define RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
 #define RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS		\
 	struct rrr_net_transport_handle *handle,				\
@@ -115,14 +114,29 @@ int rrr_http_session_transport_ctx_request_raw_send (
 		const char *raw_request_data,
 		size_t raw_request_size
 );
-int rrr_http_session_transport_ctx_tick (
+int rrr_http_session_transport_ctx_tick_client (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,
 		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
-		int is_client,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
+); 
+int rrr_http_session_transport_ctx_tick_server (
+		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
+		uint64_t *complete_transactions_total,
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),

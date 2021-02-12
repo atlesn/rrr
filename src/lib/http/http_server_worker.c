@@ -180,7 +180,6 @@ static int __rrr_http_server_worker_receive_callback (
 				transaction,
 				data_ptr,
 				overshoot_bytes,
-				unique_id,
 				next_protocol_version,
 				worker_data->config_data.callbacks.final_callback_arg
 		);
@@ -222,7 +221,6 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 			transaction,
 			data_ptr,
 			overshoot_bytes,
-			unique_id,
 			next_protocol_version,
 			worker_data->config_data.callbacks.final_callback_arg
 	)) != 0) {
@@ -248,10 +246,10 @@ static int __rrr_http_server_worker_websocket_get_response_callback (
 	if (worker_data->config_data.callbacks.websocket_get_response_callback) {
 		return worker_data->config_data.callbacks.websocket_get_response_callback (
 				&worker_data->websocket_application_data,
-				worker_data->unique_id,
 				data,
 				data_len,
 				is_binary,
+				unique_id,
 				worker_data->config_data.callbacks.websocket_get_response_callback_arg
 		);
 	}
@@ -308,14 +306,14 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 	ssize_t received_bytes = 0;
 	uint64_t active_transaction_count = 0;
 
-	if ((ret = rrr_http_session_transport_ctx_tick (
+	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes,
 			&active_transaction_count,
 			&worker_data->complete_transactions_total,
 			handle,
 			worker_data->config_data.read_max_size,
-			worker_data->unique_id,
-			0, // Is not client
+			worker_data->config_data.callbacks.unique_id_generator_callback,
+			worker_data->config_data.callbacks.unique_id_generator_callback_arg,
 			__rrr_http_server_worker_upgrade_verify_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_handshake_callback,
@@ -405,16 +403,6 @@ static void __rrr_http_server_worker_thread_entry (
 			worker_data.config_data.transport_handle,
 			thread
 	);
-
-	if (worker_data.config_data.callbacks.unique_id_generator_callback != NULL) {
-		if (worker_data.config_data.callbacks.unique_id_generator_callback (
-				&worker_data.unique_id,
-				worker_data.config_data.callbacks.unique_id_generator_callback_arg
-		) != 0) {
-			RRR_MSG_0("Failed to generate unique id in HTTP server worker thread\n");
-			goto out_cleanup;
-		}
-	}
 
 	uint64_t connection_start_time = rrr_time_get_64();
 	unsigned int consecutive_nothing_happened = 0; // Let it overflow
@@ -513,8 +501,7 @@ static void __rrr_http_server_worker_thread_entry (
 	);
 
 	// This cleans up HTTP data
-	out_cleanup:
-		pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	out:
 		return;
 }

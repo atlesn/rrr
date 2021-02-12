@@ -178,6 +178,9 @@ struct rrr_nullsafe_str;
     void *arg
 
 #define RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS                \
-	const struct rrr_nullsafe_str *str, void *arg
+    const struct rrr_nullsafe_str *str, void *arg
+
+#define RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
+    rrr_http_unique_id *unique_id, void *arg
 
 #endif /* RRR_HTTP_COMMON_H */

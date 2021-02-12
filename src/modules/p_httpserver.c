@@ -871,7 +871,7 @@ static int httpserver_receive_callback (
 	if ((ret = httpserver_generate_unique_topic (
 			&request_topic,
 			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
-			unique_id,
+			transaction->unique_id,
 			NULL
 	)) != 0) {
 		goto out;
@@ -931,7 +931,7 @@ static int httpserver_receive_callback (
 	}
 
 	if (data->do_get_response_from_senders) {
-		if ((ret = httpserver_receive_callback_response_get (&array_tmp, handle, thread, data, unique_id)) != 0) {
+		if ((ret = httpserver_receive_callback_response_get (&array_tmp, handle, thread, data, transaction->unique_id)) != 0) {
 			goto out;
 		}
 		if ((ret = httpserver_receive_callback_response_process (data, transaction, &array_tmp)) != 0) {
@@ -1090,7 +1090,6 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
 
 	int ret = 0;
@@ -1324,7 +1323,7 @@ static int httpserver_unique_id_generator_callback (
 	struct httpserver_callback_data *data = arg;
 
 	return rrr_message_broker_get_next_unique_id (
-			result,
+			unique_id,
 			INSTANCE_D_BROKER_ARGS(data->httpserver_data->thread_data)
 	);
 }

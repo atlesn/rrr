@@ -272,8 +272,8 @@ static int __rrr_http_application_http2_request_send (
 struct rrr_http_application_http2_callback_data {
 	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
-	uint64_t unique_id;
-	int is_client;
+	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -290,7 +290,11 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	if (callback_data->is_client) {
+	// TODO : Create separate functions for client and server
+
+	if (callback_data->unique_id_generator_callback == NULL) {
+		// Is client
+
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
 		if (!is_stream_close) {
@@ -325,6 +329,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 	else {
+		// Is server
+
 		if (is_stream_close) {
 			goto out;
 		}
@@ -335,6 +341,8 @@ static int __rrr_http_application_http2_data_receive_callback (
 					0,
 					0,
 					0,
+					callback_data->unique_id_generator_callback,
+					callback_data->unique_id_generator_callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
@@ -425,17 +433,16 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction,
 			data,
 			0,
-			callback_data->unique_id,
 			RRR_HTTP_APPLICATION_HTTP2,
 			callback_data->callback_arg
 	)) != 0) {
-		if (ret == RRR_HTTP_PARSE_SOFT_ERR && !callback_data->is_client) {
+		if (ret == RRR_HTTP_PARSE_SOFT_ERR && callback_data->unique_id_generator_callback != NULL) {
 			goto out_send_response_bad_request;
 		}
 		goto out;
 	}
 
-	if (!callback_data->is_client) {
+	if (callback_data->unique_id_generator_callback != NULL) {
 		goto out_send_response;
 	}
 
@@ -533,8 +540,8 @@ static int __rrr_http_application_http2_tick (
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
 			handle,
-			unique_id,
-			is_client,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
 			callback,
 			callback_arg
 	};

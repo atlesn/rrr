@@ -260,7 +260,6 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
 
 	int ret = RRR_HTTP_OK;
@@ -332,7 +331,6 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(transaction);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
 	(void)(callback_data);
 
@@ -672,6 +670,8 @@ static int __rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
+		int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
 		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -697,6 +697,8 @@ static int __rrr_http_client_request_send (
 			data->method,
 			data->body_format,
 			remaining_redirects,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
 			application_data,
 			application_data_destroy
 	)) != 0) {
@@ -858,6 +860,8 @@ int rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
+		int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
 		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -873,6 +877,8 @@ int rrr_http_client_request_send (
 			transport_keepalive_tls,
 			net_transport_config,
 			remaining_redirects,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
 			method_prepare_callback,
 			method_prepare_callback_arg,
 			connection_prepare_callback,
@@ -954,16 +960,12 @@ static int __rrr_http_client_tick_handle_callback (
 	uint64_t complete_transactions_count_dummy = 0;
 	uint64_t active_transaction_count_tmp = 0;
 
-	int ret = rrr_http_session_transport_ctx_tick (
+	int ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
 			&active_transaction_count_tmp,
 			&complete_transactions_count_dummy,
 			handle,
 			callback_data->read_max_size,
-			0, // No unique ID
-			1, // Is client
-			NULL,
-			NULL,
 			__rrr_http_client_websocket_handshake_callback,
 			callback_data,
 			__rrr_http_client_receive_http_part_callback,

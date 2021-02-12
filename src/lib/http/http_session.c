@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -146,7 +146,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		if ((ret = rrr_http_application_new (
 				&session->application,
 				application_type,
-				0 // Not server
+				0 // Is not server
 		)) != 0) {
 			goto out;
 		}
@@ -221,14 +221,14 @@ int rrr_http_session_transport_ctx_request_raw_send (
 	return rrr_net_transport_ctx_send_blocking (handle, raw_request_data, raw_request_size);
 }
 
-int rrr_http_session_transport_ctx_tick (
+static int __rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,
 		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
-		int is_client,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_args,
 		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -260,8 +260,8 @@ int rrr_http_session_transport_ctx_tick (
 			session->application,
 			handle,
 			read_max_size,
-			unique_id,
-			is_client,
+			unique_id_generator_callback,
+			unique_id_generator_callback_args,
 			upgrade_verify_callback,
 			upgrade_verify_callback_arg,
 			websocket_callback,
@@ -291,6 +291,83 @@ int rrr_http_session_transport_ctx_tick (
 	pthread_cleanup_pop(1);
 	return ret;
 }
+
+int rrr_http_session_transport_ctx_tick_client (
+		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
+		uint64_t *complete_transactions_total,
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
+) {
+	return __rrr_http_session_transport_ctx_tick (
+			received_bytes,
+			active_transaction_count,
+			complete_transactions_total,
+			handle,
+			read_max_size,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			websocket_callback,
+			websocket_callback_arg,
+			callback,
+			callback_arg,
+			get_response_callback,
+			get_response_callback_arg,
+			frame_callback,
+			frame_callback_arg
+	);
+}
+
+int rrr_http_session_transport_ctx_tick_server (
+		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
+		uint64_t *complete_transactions_total,
+		struct rrr_net_transport_handle *handle,
+		ssize_t read_max_size,
+		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
+		int (*upgrade_verify_callback)(RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS),
+		void *upgrade_verify_callback_arg,
+		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
+		void *websocket_callback_arg,
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *callback_arg,
+		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
+		void *get_response_callback_arg,
+		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
+		void *frame_callback_arg
+) {
+	return __rrr_http_session_transport_ctx_tick (
+			received_bytes,
+			active_transaction_count,
+			complete_transactions_total,
+			handle,
+			read_max_size,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
+			upgrade_verify_callback,
+			upgrade_verify_callback_arg,
+			websocket_callback,
+			websocket_callback_arg,
+			callback,
+			callback_arg,
+			get_response_callback,
+			get_response_callback_arg,
+			frame_callback,
+			frame_callback_arg
+	);
+}
+
 
 int rrr_http_session_transport_ctx_close_if_open (
 		struct rrr_net_transport_handle *handle,

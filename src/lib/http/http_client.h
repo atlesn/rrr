@@ -31,6 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_RAW_RECEIVE_CALLBACK_ARGS              \
     RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
+#define RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS      \
+    RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS                    \
     const struct rrr_http_transaction *transaction,            \
     const struct rrr_nullsafe_str *response_data,              \
@@ -149,6 +152,8 @@ int rrr_http_client_request_send (
 		struct rrr_net_transport **transport_keepalive_tls,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
+		int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
 		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),

@@ -47,8 +47,8 @@ enum rrr_http_method;
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \
     ssize_t read_max_size,                                                                       \
-    rrr_http_unique_id unique_id,                                                                \
-    int is_client,                                                                               \
+    int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS), \
+    void *unique_id_generator_callback_arg,                                                      \
     int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),           \
     void *upgrade_verify_callback_arg,                                                           \
     int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),           \

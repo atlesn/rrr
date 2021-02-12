@@ -35,6 +35,8 @@ int rrr_http_transaction_new (
 		enum rrr_http_method method,
 		enum rrr_http_body_format format,
 		rrr_biglength remaining_redirects,
+		int (*unique_id_generator_callback)(RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 ) {
@@ -64,6 +66,10 @@ int rrr_http_transaction_new (
 		RRR_MSG_0("Could not allocate memory for URI in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out_free_response;
+	}
+
+	if ((ret = unique_id_generator_callback(&result->unique_id, unique_id_generator_callback_arg)) != 0) {
+		goto out;
 	}
 
 	if (application_data != NULL) {

@@ -57,6 +57,7 @@ struct rrr_http_application_http1 {
 
 	// HTTP1 only has one active transaction at a time
 	struct rrr_http_transaction *active_transaction;
+	rrr_http_unique_id last_unique_id;
 };
 
 static void __rrr_http_application_http1_destroy (struct rrr_http_application *app) {
@@ -79,7 +80,11 @@ static void __rrr_http_application_http1_transaction_set (
 ) {
 	__rrr_http_application_http1_transaction_clear(http1);
 	rrr_http_transaction_incref(transaction);
+
 	http1->active_transaction = transaction;
+
+	// Websocket uses this after upgrade
+	http1->last_unique_id = transaction->unique_id;
 }
 
 static int __rrr_http_application_http1_header_field_make (
@@ -255,9 +260,9 @@ struct rrr_http_application_http1_receive_data {
 	struct rrr_net_transport_handle *handle;
 	struct rrr_http_application_http1 *http1;
 	ssize_t received_bytes; // Used only for stall timeout and sleeping
-	rrr_http_unique_id unique_id;
-	int is_client;
 	struct rrr_http_application **upgraded_application;
+	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
 	int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS);
 	void *upgrade_verify_callback_arg;
 	int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS);
@@ -424,7 +429,6 @@ static int __rrr_http_application_http1_response_receive_callback (
 					transaction,
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
-					0,
 					transaction->response_part->parsed_protocol_version,
 					receive_data->websocket_callback_arg
 			))) {
@@ -496,7 +500,6 @@ static int __rrr_http_application_http1_response_receive_callback (
 				transaction,
 				read_session->rx_buf_ptr,
 				read_session->rx_overshoot_size,
-				0,
 				transaction->response_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != 0) {
@@ -598,7 +601,6 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			transaction,
 			data_to_use,
 			read_session->rx_overshoot_size,
-			receive_data->unique_id,
 			transaction->response_part->parsed_protocol_version,
 			receive_data->websocket_callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
@@ -886,7 +888,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction,
 				data_to_use,
 				read_session->rx_overshoot_size,
-				receive_data->unique_id,
 				RRR_HTTP_APPLICATION_HTTP2, // Note, next protocol is HTTP2
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
@@ -910,7 +911,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction,
 				data_to_use,
 				read_session->rx_overshoot_size,
-				receive_data->unique_id,
 				transaction->request_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
@@ -943,7 +943,7 @@ static int __rrr_http_application_http1_receive_get_target_size_validate_request
 	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
 
 	if (part->request_method_str_nullsafe == NULL) {
-		RRR_BUG("BUF: Request method not set in rrr_http_part_parse after header completed\n");
+		RRR_BUG("BUG: Request method not set in rrr_http_part_parse after header completed\n");
 	}
 
 	if (part->request_method == 0) {
@@ -990,7 +990,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	struct rrr_http_part *part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
 
-	if (receive_data->is_client == 1) {
+	if (receive_data->unique_id_generator_callback == NULL) {
+		// Is client
 		if (receive_data->http1->active_transaction == NULL) {
 			RRR_MSG_0("Received unexpected data from HTTP server, no transaction was active\n");
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
@@ -1000,6 +1001,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		parse_type = RRR_HTTP_PARSE_RESPONSE;
 	}
 	else {
+		// Is server
 		if (read_session->parse_pos == 0) {
 			struct rrr_http_transaction *transaction = NULL;
 
@@ -1010,6 +1012,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 					RRR_HTTP_METHOD_GET,
 					0,
 					0,
+					receive_data->unique_id_generator_callback,
+					receive_data->unique_id_generator_callback_arg,
 					NULL,
 					NULL
 			)) != 0) {
@@ -1026,7 +1030,9 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 
 #ifdef RRR_WITH_NGHTTP2
-	if (read_session->parse_pos == 0 && !receive_data->is_client) {
+	if (read_session->parse_pos == 0 && receive_data->unique_id_generator_callback != NULL) {
+		// Is server
+
 		const char http2_magic[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
 				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1) == 0
@@ -1071,7 +1077,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
-		if (!receive_data->is_client) {
+		if (receive_data->unique_id_generator_callback != NULL) {
+			// Is server
 			if ((ret = __rrr_http_application_http1_receive_get_target_size_validate_request (
 					receive_data->http1->active_transaction->request_part
 			)) != 0) {
@@ -1138,6 +1145,7 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 
 static int __rrr_http_application_http1_websocket_responses_get (
 		struct rrr_websocket_state *ws_state,
+		rrr_http_unique_id unique_id,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *callback_arg
 ) {
@@ -1153,6 +1161,7 @@ static int __rrr_http_application_http1_websocket_responses_get (
 				&response_data,
 				&response_data_len,
 				&response_is_binary,
+				unique_id,
 				callback_arg
 		)) != 0) {
 			goto out;
@@ -1178,7 +1187,6 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
 		int ping_interval_s,
 		int timeout_s,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
@@ -1189,7 +1197,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	int ret = 0;
 
 	struct rrr_http_application_http1_frame_callback_data callback_data = {
-			unique_id,
+			http1->last_unique_id,
 			frame_callback,
 			frame_callback_arg
 	};
@@ -1206,6 +1214,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 
 	if ((ret = __rrr_http_application_http1_websocket_responses_get (
 			&http1->ws_state,
+			http1->last_unique_id,
 			callback,
 			get_response_callback_arg
 	)) != 0) {
@@ -1462,7 +1471,6 @@ static int __rrr_http_application_http1_tick (
 				http1,
 				handle,
 				read_max_size,
-				unique_id,
 				10,
 				15,
 				get_response_callback,
@@ -1476,9 +1484,9 @@ static int __rrr_http_application_http1_tick (
 				handle,
 				http1,
 				*received_bytes,
-				unique_id,
-				is_client,
 				upgraded_app,
+				unique_id_generator_callback,
+				unique_id_generator_callback_arg,
 				upgrade_verify_callback,
 				upgrade_verify_callback_arg,
 				websocket_callback,
@@ -1495,7 +1503,7 @@ static int __rrr_http_application_http1_tick (
 					read_max_size,
 					__rrr_http_application_http1_receive_get_target_size,
 					&callback_data,
-					is_client
+					unique_id_generator_callback == NULL // No generator indicates client
 						? __rrr_http_application_http1_response_receive_callback
 						: __rrr_http_application_http1_request_receive_callback,
 					&callback_data
@@ -1527,7 +1535,9 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 	__rrr_http_application_http1_polite_close
 };
 
-int rrr_http_application_http1_new (struct rrr_http_application **target) {
+int rrr_http_application_http1_new (
+		struct rrr_http_application **target
+) {
 	int ret = 0;
 
 	struct rrr_http_application_http1 *result = NULL;

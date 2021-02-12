@@ -69,6 +69,8 @@ struct influxdb_data {
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
 
+	rrr_http_unique_id unique_id_counter;
+
 	// NOT managed by cleanup function, separate cleanup_push/pop
 	struct rrr_net_transport *transport;
 };
@@ -122,7 +124,6 @@ static int influxdb_receive_http_response (
 	(void)(handle);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
 
 	int ret = 0;
@@ -150,6 +151,14 @@ struct send_data_callback_data {
 	struct rrr_array *array;
 	int ret;
 };
+
+static int influxdb_unique_id_generator (
+		RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct send_data_callback_data *callback_data = arg;
+	*unique_id = ++(callback_data->data->unique_id_counter);
+	return 0;
+}
 
 static void influxdb_send_data_callback (
 		struct rrr_net_transport_handle *handle,
@@ -199,6 +208,8 @@ static void influxdb_send_data_callback (
 			RRR_HTTP_METHOD_POST,
 			RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING,
 			INFLUXDB_MAX_REDIRECTS,
+			influxdb_unique_id_generator,
+			callback_data,
 			NULL,
 			NULL
 	)) != 0) {
@@ -306,16 +317,12 @@ static void influxdb_send_data_callback (
 	uint64_t active_transaction_count = 0;
 
 	do {
-		if ((ret = rrr_http_session_transport_ctx_tick (
+		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
 				&active_transaction_count,
 				&complete_transactions_count,
 				handle,
 				0, // No max read size
-				0, // No unique id
-				1, // Is client
-				NULL,
-				NULL,
 				NULL,
 				NULL,
 				influxdb_receive_http_response,

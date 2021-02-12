@@ -47,7 +47,6 @@ struct rrr_thread;
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS		\
 	void **websocket_application_data,									\
-	rrr_http_unique_id unique_id,										\
 	RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 struct rrr_http_server_callbacks {

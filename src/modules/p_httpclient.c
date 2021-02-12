@@ -110,6 +110,8 @@ struct httpclient_data {
 
 	struct rrr_http_client_request_data request_data;
 
+	rrr_http_unique_id unique_id_counter;
+
 	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
 };
@@ -1150,6 +1152,14 @@ static int httpclient_session_query_prepare_callback (
 		return ret;
 }
 
+static int httpclient_unique_id_generator (
+		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct httpclient_prepare_callback_data *callback_data = arg;
+	*unique_id = ++(callback_data->data->unique_id_counter);
+	return 0;
+}
+
 static int httpclient_request_send (
 		struct httpclient_data *data,
 		struct rrr_http_client_request_data *request_data,
@@ -1206,6 +1216,8 @@ static int httpclient_request_send (
 			&data->keepalive_transport_tls,
 			&data->net_transport_config,
 			remaining_redirects,
+			httpclient_unique_id_generator,
+			&prepare_callback_data,
 			httpclient_session_method_prepare_callback,
 			&prepare_callback_data,
 			httpclient_connection_prepare_callback,

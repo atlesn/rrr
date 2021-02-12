@@ -86,6 +86,7 @@ struct rrr_http_client_data {
 	struct rrr_net_transport *net_transport_keepalive_plain;
 	struct rrr_net_transport *net_transport_keepalive_tls;
 	int final_callback_count;
+	rrr_http_unique_id unique_id_counter;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -354,6 +355,14 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
+static int __rrr_http_client_unique_id_generator_callback (
+		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+	*unique_id = ++(http_client_data->unique_id_counter);
+	return 0;
+}
+
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -373,6 +382,8 @@ static int __rrr_http_client_redirect_callback (
 			&http_client_data->net_transport_keepalive_tls,
 			&http_client_data->net_transport_config,
 			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			http_client_data,
 			NULL,
 			NULL,
 			NULL,
@@ -412,6 +423,8 @@ static int __rrr_http_client_send_websocket_frame_final_callback (
 
 static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(unique_id);
 
 	int ret = 0;
 
@@ -584,6 +597,8 @@ int main (int argc, const char **argv, const char **env) {
 			&data.net_transport_keepalive_tls,
 			&data.net_transport_config,
 			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			&data,
 			NULL,
 			NULL,
 			NULL,

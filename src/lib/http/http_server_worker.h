@@ -62,7 +62,6 @@ struct rrr_http_server_worker_preliminary_data {
 struct rrr_http_server_worker_data {
 	struct rrr_http_server_worker_config_data config_data;
 	struct rrr_thread *thread;
-	rrr_http_unique_id unique_id;
 	int request_complete;
 	uint64_t bytes_total;
 	uint64_t complete_transactions_total;
