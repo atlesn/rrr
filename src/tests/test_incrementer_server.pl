@@ -24,7 +24,11 @@ sub source {
 			$dbg->msg(1,  "Server - Message for endpoint $suffix missing\n");
 			return 1;
 		}
-		my $id_check = 1;
+		my $id_check =
+			($suffix eq "A" ? 2 :
+			($suffix eq "B" ? 3 :
+			($suffix eq "C" ? 4 : 0)));
+
 		foreach my $id (sort @{$results{$suffix}}) {
 			if ($id != $id_check) {
 				$dbg->msg(1,  "Server - Endpoint $suffix id mismatch $id_check<>$id\n");

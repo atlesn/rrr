@@ -378,6 +378,11 @@ static int incrementer_process_id (
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
+	char *topic_tmp = NULL;
+
+	if ((ret = rrr_msg_msg_topic_get (&topic_tmp, (const struct rrr_msg_msg *) entry->message)) != 0) {
+		goto out;
+	}
 
 	uint16_t array_version_dummy;
 	if ((ret = rrr_array_message_append_to_collection (
@@ -398,11 +403,15 @@ static int incrementer_process_id (
 	char buf[64];
 	sprintf(buf, "%llu", id);
 
-	if ((ret = rrr_map_item_replace_new(&data->db_initial_ids, value->tag, buf)) != 0) {
+	if ((ret = rrr_map_item_replace_new(&data->db_initial_ids, topic_tmp, buf)) != 0) {
 		goto out;
 	}
 
+	RRR_DBG_3("Incrementer instance %s set initial ID of topic %s to %llu\n",
+			INSTANCE_D_NAME(data->thread_data), topic_tmp, id);
+
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
