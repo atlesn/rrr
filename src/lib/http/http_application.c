@@ -54,7 +54,6 @@ int rrr_http_application_new (
 		int is_server
 ) {
 	if (type == RRR_HTTP_APPLICATION_HTTP1) {
-		rrr_http_unique_id unique_id = 0;
 		return rrr_http_application_http1_new(target);
 	}
 #ifdef RRR_WITH_NGHTTP2
@@ -106,7 +105,9 @@ int rrr_http_application_transport_ctx_tick (
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg
+		void *callback_arg,
+		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg
 ) {
 	*complete_transaction_count = app->complete_transaction_count;
 
@@ -128,7 +129,9 @@ int rrr_http_application_transport_ctx_tick (
 			frame_callback,
 			frame_callback_arg,
 			callback,
-			callback_arg
+			callback_arg,
+			async_response_get_callback,
+			async_response_get_callback_arg
 	);
 }
 

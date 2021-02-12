@@ -34,6 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     ssize_t overshoot_bytes,                                   \
     enum rrr_http_application_type next_protocol_version
 
+#define RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS  \
+    struct rrr_http_transaction *transaction,                  \
+    void *arg
+
 #define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS      \
     int *do_upgrade,                                           \
     enum rrr_http_application_type from,                       \
@@ -109,7 +113,9 @@ int rrr_http_application_transport_ctx_tick (
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
-		void *callback_arg
+		void *callback_arg,
+		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg
 );
 int rrr_http_application_alpn_protos_with_all_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),

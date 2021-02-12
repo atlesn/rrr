@@ -320,6 +320,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			worker_data,
 			__rrr_http_server_worker_receive_callback,
 			worker_data,
+			NULL,
+			NULL,
 			__rrr_http_server_worker_websocket_get_response_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_frame_callback,

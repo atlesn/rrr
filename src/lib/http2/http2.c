@@ -956,6 +956,23 @@ int rrr_http2_data_submission_request_set (
 	return ret;
 }
 
+int rrr_http2_transport_ctx_streams_iterate (
+		struct rrr_http2_session *session,
+		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
+		if ((ret = callback(node->stream_id, node->application_data, callback_arg)) != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 int rrr_http2_transport_ctx_tick (
 		uint64_t *active_stream_count,
 		struct rrr_http2_session *session,

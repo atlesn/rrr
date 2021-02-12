@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_HTTP_APPLICATION_HTTP2_H
 #define RRR_HTTP_APPLICATION_HTTP2_H
+
+#include <inttypes.h>
+#include <stdlib.h>
 
 struct rrr_http_application;
 
@@ -47,6 +50,10 @@ int rrr_http_application_http2_response_submit (
 		int32_t stream_id
 );
 int rrr_http_application_http2_response_to_upgrade_submit (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+);
+void rrr_http_application_http2_response_to_upgrade_async_prepare (
 		struct rrr_http_application *app,
 		struct rrr_http_transaction *transaction
 );

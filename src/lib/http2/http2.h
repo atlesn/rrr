@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-201 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <nghttp2/nghttp2.h>
 
+#include "../http/http_common.h"
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
@@ -110,6 +111,11 @@ int rrr_http2_response_submit (
 int rrr_http2_data_submission_request_set (
 		struct rrr_http2_session *session,
 		int32_t stream_id
+);
+int rrr_http2_transport_ctx_streams_iterate (
+		struct rrr_http2_session *session,
+		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
+		void *callback_arg
 );
 int rrr_http2_transport_ctx_tick (
 		uint64_t *active_stream_count,

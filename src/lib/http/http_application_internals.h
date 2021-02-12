@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,11 +22,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_APPLICATION_INTERNALS_H
 #define RRR_HTTP_APPLICATION_INTERNALS_H
 
+#include "http_common.h"
+#include "http_application.h"
+
 struct rrr_http_application;
 struct rrr_net_transport_handle;
 struct rrr_http_transaction;
-enum rrr_http_method;
-	
+
 #define RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS        \
     int *is_possible,                                          \
     struct rrr_http_application *application
@@ -58,7 +60,9 @@ enum rrr_http_method;
     int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),                   \
     void *frame_callback_arg,                                                                    \
     int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),                                 \
-    void *callback_arg
+    void *callback_arg,                                                                          \
+    int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),   \
+    void *async_response_get_callback_arg
 
 #define RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS              \
     const char **target,                                       \

@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct rrr_http2_session *http2_session;
+	struct rrr_http_transaction *transaction_incomplete_upgrade;
 };
 
 static const char rrr_http_application_http2_alpn_protos[] = {
@@ -53,6 +54,7 @@ static const char rrr_http_application_http2_alpn_protos[] = {
 static void __rrr_http_application_http2_destroy (struct rrr_http_application *app) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
+	rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
 	free(http2);
 }
 
@@ -276,6 +278,8 @@ struct rrr_http_application_http2_callback_data {
 	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
+	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
+	void *async_response_get_callback_arg;
 };
 
 static int __rrr_http_application_http2_data_receive_callback (
@@ -436,8 +440,17 @@ static int __rrr_http_application_http2_data_receive_callback (
 			RRR_HTTP_APPLICATION_HTTP2,
 			callback_data->callback_arg
 	)) != 0) {
-		if (ret == RRR_HTTP_PARSE_SOFT_ERR && callback_data->unique_id_generator_callback != NULL) {
-			goto out_send_response_bad_request;
+		if (callback_data->unique_id_generator_callback != NULL) {
+			// Is server
+
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+
+			if (ret == RRR_HTTP_NO_RESULT) {
+				transaction->need_response = 1;
+				ret = 0;
+			}
 		}
 		goto out;
 	}
@@ -527,6 +540,33 @@ static int __rrr_http_application_http2_data_source_callback (
 	return ret;
 }
 
+static int __rrr_http_application_http2_streams_iterate_callback (
+		uint32_t stream_id,
+		void *application_data,
+		void *arg
+) {
+	struct rrr_http_application_http2_callback_data *callback_data = arg;
+	struct rrr_http_transaction *transaction = application_data;
+
+	int ret = 0;
+
+	printf ("Transaction %p stream %u need response %i\n", transaction, stream_id, transaction->need_response);
+
+	if (transaction->need_response) {
+		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
+			ret &= ~(RRR_HTTP_NO_RESULT);
+			goto out;
+		}
+
+		if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http2_tick (
 		RRR_HTTP_APPLICATION_TICK_ARGS
 ) {
@@ -543,8 +583,36 @@ static int __rrr_http_application_http2_tick (
 			unique_id_generator_callback,
 			unique_id_generator_callback_arg,
 			callback,
-			callback_arg
+			callback_arg,
+			async_response_get_callback,
+			async_response_get_callback_arg
 	};
+
+	if (http2->transaction_incomplete_upgrade != NULL) {
+		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) != 0) {
+			ret &= ~(RRR_HTTP_NO_RESULT);
+			goto out;
+		}
+
+		ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
+
+		rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
+		http2->transaction_incomplete_upgrade = NULL;
+
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	if (async_response_get_callback != NULL) {
+		if ((ret = rrr_http2_transport_ctx_streams_iterate (
+				http2->http2_session,
+				__rrr_http_application_http2_streams_iterate_callback,
+				http2
+		)) != 0) {
+			goto out;
+		}
+	}
 
 	if ((ret = rrr_http2_transport_ctx_tick (
 			active_transaction_count,
@@ -827,4 +895,14 @@ int rrr_http_application_http2_response_to_upgrade_submit (
 
 	out:
 	return ret;
+}
+
+void rrr_http_application_http2_response_to_upgrade_async_prepare (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	http2->transaction_incomplete_upgrade = transaction;
+	rrr_http_transaction_incref(transaction);
 }

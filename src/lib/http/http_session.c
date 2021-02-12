@@ -235,6 +235,8 @@ static int __rrr_http_session_transport_ctx_tick (
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*async_response_get_callback)(RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
@@ -271,7 +273,9 @@ static int __rrr_http_session_transport_ctx_tick (
 			frame_callback,
 			frame_callback_arg,
 			callback,
-			callback_arg
+			callback_arg,
+			async_response_get_callback,
+			async_response_get_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -321,6 +325,8 @@ int rrr_http_session_transport_ctx_tick_client (
 			websocket_callback_arg,
 			callback,
 			callback_arg,
+			NULL,
+			NULL,
 			get_response_callback,
 			get_response_callback_arg,
 			frame_callback,
@@ -342,6 +348,8 @@ int rrr_http_session_transport_ctx_tick_server (
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*async_response_get_callback)(RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
@@ -361,6 +369,8 @@ int rrr_http_session_transport_ctx_tick_server (
 			websocket_callback_arg,
 			callback,
 			callback_arg,
+			async_response_get_callback,
+			async_response_get_callback_arg,
 			get_response_callback,
 			get_response_callback_arg,
 			frame_callback,

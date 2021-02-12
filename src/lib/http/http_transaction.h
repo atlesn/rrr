@@ -52,6 +52,8 @@ struct rrr_http_transaction {
 
 	rrr_http_unique_id unique_id;
 
+	int need_response;
+
 	uint64_t creation_time;
 };
 

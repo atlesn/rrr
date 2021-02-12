@@ -891,17 +891,24 @@ static int __rrr_http_application_http1_request_receive_callback (
 				RRR_HTTP_APPLICATION_HTTP2, // Note, next protocol is HTTP2
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
-			goto out;
+			if (ret == RRR_HTTP_NO_RESULT) {
+				ret = 0;
+
+				rrr_http_application_http2_response_to_upgrade_async_prepare (
+						*(receive_data->upgraded_application),
+						transaction
+				);
+			}
+		}
+		else {
+			ret = rrr_http_application_http2_response_to_upgrade_submit (
+					*(receive_data->upgraded_application),
+					transaction
+			);
 		}
 
-		if ((ret = rrr_http_application_http2_response_to_upgrade_submit (
-				*(receive_data->upgraded_application),
-				transaction
-		)) != 0) {
-			goto out;
-		}
 
-		// HTTP2 application will send the actual response during the next tick
+		// HTTP2 application will send the actual response during the next tick (unless an error occured)
 		goto out;
 	}
 	else {
@@ -914,6 +921,10 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction->request_part->parsed_protocol_version,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
+			if (ret == RRR_HTTP_NO_RESULT) {
+				transaction->need_response = 1;
+				goto out;
+			}
 			goto out;
 		}
 #ifdef RRR_WITH_NGHTTP2
@@ -1480,36 +1491,47 @@ static int __rrr_http_application_http1_tick (
 		);
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
-		struct rrr_http_application_http1_receive_data callback_data = {
-				handle,
-				http1,
-				*received_bytes,
-				upgraded_app,
-				unique_id_generator_callback,
-				unique_id_generator_callback_arg,
-				upgrade_verify_callback,
-				upgrade_verify_callback_arg,
-				websocket_callback,
-				websocket_callback_arg,
-				callback,
-				callback_arg
-		};
+		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
+			if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
+				http1->active_transaction->need_response = 0;
 
-		ret = rrr_net_transport_ctx_read_message (
+				ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
+			}
+
+			ret &= ~(RRR_HTTP_NO_RESULT);
+		}
+		else {
+			struct rrr_http_application_http1_receive_data callback_data = {
 					handle,
-					100,
-					4096,
-					65535,
-					read_max_size,
-					__rrr_http_application_http1_receive_get_target_size,
-					&callback_data,
-					unique_id_generator_callback == NULL // No generator indicates client
-						? __rrr_http_application_http1_response_receive_callback
-						: __rrr_http_application_http1_request_receive_callback,
-					&callback_data
-		);
+					http1,
+					*received_bytes,
+					upgraded_app,
+					unique_id_generator_callback,
+					unique_id_generator_callback_arg,
+					upgrade_verify_callback,
+					upgrade_verify_callback_arg,
+					websocket_callback,
+					websocket_callback_arg,
+					callback,
+					callback_arg
+			};
 
-		*received_bytes = callback_data.received_bytes;
+			ret = rrr_net_transport_ctx_read_message (
+						handle,
+						100,
+						4096,
+						65535,
+						read_max_size,
+						__rrr_http_application_http1_receive_get_target_size,
+						&callback_data,
+						unique_id_generator_callback == NULL // No generator indicates client
+							? __rrr_http_application_http1_response_receive_callback
+							: __rrr_http_application_http1_request_receive_callback,
+						&callback_data
+			);
+
+			*received_bytes = callback_data.received_bytes;
+		}
 	}
 	else {
 		RRR_BUG("__rrr_http_application_http1_tick called while active upgrade was not NONE or WEBSOCKET but %i, maybe caller forgot to switch to HTTP2?\n", http1->upgrade_active);
