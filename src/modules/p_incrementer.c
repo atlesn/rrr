@@ -54,6 +54,11 @@ struct incrementer_data {
 	char *id_tag;
 	char *msgdb_socket;
 
+	rrr_setting_uint id_min;
+	rrr_setting_uint id_max;
+	rrr_setting_uint id_modulus;
+	rrr_setting_uint id_start;
+
 	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
 };
@@ -474,19 +479,6 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static int incrementer_parse_config (struct incrementer_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-/*
-
-  7 [instance_incrementer]
-    6 module=incrementer
-      5 senders=instance_perl5_generator,instance_httpclient
-        4 duplicate=yes
-	  3 incrementer_msgdb_socket=/tmp/rrr-test-msgdb.sock
-	    2 incrementer_subject_topic_filter=rrr/increment/+
-	      1 incrementer_id_topic=rrr/get-ids
-
-
-*/
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_msgdb_socket", msgdb_socket);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_subject_topic_filter", subject_topic_filter);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_tag", id_tag);
@@ -505,6 +497,11 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 		goto out;
 		
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_min", id_min, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_start", id_start, 0);
 
 	out:
 	return ret;
