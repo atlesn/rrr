@@ -950,6 +950,41 @@ int rrr_array_message_iterate_values (
 	return rrr_array_message_iterate (message_orig, __rrr_array_message_iterate_values_callback, &callback_data);
 }
 
+static int __rrr_array_message_has_tag_callback (
+		RRR_TYPE_RAW_FIELDS,
+		void *arg
+) {
+	const char *tag = arg;
+
+	(void)(type);
+	(void)(flags);
+	(void)(total_length);
+	(void)(element_count);
+
+	if (strlen(tag) != tag_length || strncmp(data_start, tag, tag_length) != 0) {
+		return 0;
+	}
+
+	// Iterator will break out and return 1 if the tag is found
+	return 1;
+}
+
+int rrr_array_message_has_tag (
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	if (!MSG_IS_ARRAY(message_orig)) {
+		return 0;
+	}
+
+	return rrr_array_message_iterate (
+			message_orig,
+			__rrr_array_message_has_tag_callback,
+			(void *) tag // Cast away const OK
+	);
+}
+
+
 struct rrr_array_message_append_to_collection_callback_data {
 	struct rrr_array *target_tmp;
 };

@@ -180,6 +180,10 @@ int rrr_array_message_iterate_values (
 		),
 		void *callback_arg
 );
+int rrr_array_message_has_tag (
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+);
 int rrr_array_message_append_to_collection (
 		uint16_t *array_version,
 		struct rrr_array *target,

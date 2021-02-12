@@ -51,10 +51,10 @@ struct incrementer_data {
 	char *subject_topic_filter;
 	struct rrr_mqtt_topic_token *subject_topic_filter_token;
 
-//	char *id_topic;
+	char *id_tag;
 	char *msgdb_socket;
 
-	struct rrr_map db_all_ids;
+	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
 };
 
@@ -68,9 +68,9 @@ static void incrementer_data_cleanup(void *arg) {
 	rrr_msgdb_client_close(&data->msgdb_conn);
 	RRR_FREE_IF_NOT_NULL(data->subject_topic_filter);
 	rrr_mqtt_topic_token_destroy(data->subject_topic_filter_token);
-//	RRR_FREE_IF_NOT_NULL(data->id_topic);
+	RRR_FREE_IF_NOT_NULL(data->id_tag);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
-	rrr_map_clear(&data->db_all_ids);
+	rrr_map_clear(&data->db_initial_ids);
 	rrr_map_clear(&data->db_used_ids);
 }
 
@@ -165,7 +165,7 @@ static int incrementer_get_id (
 			RRR_DBG_3("=> Result from Message DB: %llu\n", *result_llu);
 			goto out;
 		}
-		if ((result = rrr_map_get_value(&data->db_all_ids, tag)) == NULL) {
+		if ((result = rrr_map_get_value(&data->db_initial_ids, tag)) == NULL) {
 			RRR_DBG_3("=> No result\n");
 			goto out;
 		}
@@ -371,57 +371,39 @@ static int incrementer_process_subject (
 	return ret;
 }
 
-struct incrementer_process_id_callback_data {
-	struct incrementer_data *data;
-	struct rrr_map *target;
-};
-
-static int incrementer_process_id_callback (
-		const struct rrr_type_value *value,
-		void *arg
-) {
-	struct incrementer_process_id_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	if (value->tag_length == 0) {
-		goto out;
-	}
-
-	unsigned long long int value_ull = value->definition->to_ull(value);
-	char buf[64];
-	sprintf(buf, "%llu", value_ull);
-
-	if ((ret = rrr_map_item_add_new(callback_data->target, value->tag, buf)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int incrementer_process_id (
-	struct incrementer_data *data,
-	const struct rrr_msg_msg *message
+		struct incrementer_data *data,
+		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
-	struct rrr_map db_all_ids_new = {0};
+	struct rrr_array array_tmp = {0};
 
-	struct incrementer_process_id_callback_data callback_data = {
-		data,
-		&db_all_ids_new
-	};
-
-	if ((ret = rrr_array_message_iterate_values (message, incrementer_process_id_callback, &callback_data)) != 0) {
+	uint16_t array_version_dummy;
+	if ((ret = rrr_array_message_append_to_collection (
+			&array_version_dummy,
+			&array_tmp,
+			(const struct rrr_msg_msg *) entry->message
+	)) != 0) {
 		goto out;
 	}
 
-	rrr_map_clear(&data->db_all_ids);
-	RRR_MAP_MERGE_AND_CLEAR_SOURCE_HEAD(&data->db_all_ids, &db_all_ids_new);
+	const struct rrr_type_value *value = rrr_array_value_get_by_tag_const (&array_tmp, data->id_tag);
+	if (value == NULL) {
+		RRR_BUG("BUG: Value not found in incrementer_process_id, caller must check for this\n");
+	}
+
+	long long unsigned id = value->definition->to_ull(value);
+
+	char buf[64];
+	sprintf(buf, "%llu", id);
+
+	if ((ret = rrr_map_item_replace_new(&data->db_initial_ids, value->tag, buf)) != 0) {
+		goto out;
+	}
 
 	out:
-	rrr_map_clear(&db_all_ids_new);
+	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
@@ -446,30 +428,34 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_NAME(thread_data));
 		goto out;
 	}
-	else if (does_match) {
-		if (incrementer_process_subject(data, entry) != 0) {
-			RRR_MSG_0("Warning: Failed to store ID of message in incrementer instance %s, dropping message\n",
+	else if (!does_match) {
+		goto out_forward;
+	}
+
+	if (data->id_tag != NULL && rrr_array_message_has_tag((const struct rrr_msg_msg *) entry->message, data->id_tag)) {
+		if (incrementer_process_id(data, entry) != 0) {
+			RRR_MSG_0("Warning: Failed to store initial ID in incrementer instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		}
-		goto out;
+	}
+	else if (incrementer_process_subject(data, entry) != 0) {
+		RRR_MSG_0("Warning: Failed to apply ID to message in incrementer instance %s, dropping it\n",
+			INSTANCE_D_NAME(data->thread_data));
 	}
 
-/*	if (MSG_TOPIC_IS(message, data->id_topic)) {
-		ret = incrementer_process_id(data, message);
-		goto out;
-	}*/
+	goto out;
+	out_forward:
+		RRR_DBG_3("Incrementer instance %s forwarding message with timestamp %" PRIu64 " without processing\n",
+			INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg *) entry->message)->timestamp);
 
-	RRR_DBG_3("Incrementer instance %s forwarding message with timestamp %" PRIu64 " without processing\n",
-		INSTANCE_D_NAME(data->thread_data), ((const struct rrr_msg_msg *) entry->message)->timestamp);
-
-	// Unknown message, forward to output
-	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-			INSTANCE_D_BROKER_ARGS(data->thread_data),
-			entry,
-			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
-	)) != 0) {
-		goto out;
-	}
+		// Unknown message, forward to output
+		if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+		)) != 0) {
+			goto out;
+		}
 
 	out:
 		rrr_msg_holder_unlock(entry);
@@ -494,14 +480,7 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_msgdb_socket", msgdb_socket);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_subject_topic_filter", subject_topic_filter);
-//	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_topic", id_topic);
-
-/*	if (data->id_topic == NULL || *(data->id_topic) == '\0') {
-		RRR_MSG_0("Required parameter 'incrementer_id_topic' missing in incrementer instance %s\n",
-			config->name);
-		ret = 1;
-		goto out;
-	}*/
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("incrementer_id_tag", id_tag);
 
 	if (data->subject_topic_filter == NULL || *(data->subject_topic_filter) == '\0') {
 		RRR_MSG_0("Required parameter 'incrementer_subject_topic_filter' missing in incrementer instance %s\n",
