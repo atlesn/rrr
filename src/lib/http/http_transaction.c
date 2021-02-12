@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_part_multipart.h"
 #include "http_fields.h"
+#include "../util/rrr_time.h"
 
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
@@ -75,6 +76,7 @@ int rrr_http_transaction_new (
 	result->request_body_format = format;
 	result->usercount = 1;
 	result->remaining_redirects = remaining_redirects;
+	result->creation_time = rrr_time_get_64();
 
 	*target = result;
 
@@ -114,6 +116,11 @@ void rrr_http_transaction_decref_if_not_null (
 	}
 	if (--(transaction->usercount) > 0) {
 		return;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		uint64_t total_time = rrr_time_get_64() - transaction->creation_time;
+		RRR_MSG_3("HTTP Transaction lifetime at destruction: %" PRIu64 " ms\n", total_time / 1000);
 	}
 
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);

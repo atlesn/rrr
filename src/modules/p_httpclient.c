@@ -1687,13 +1687,13 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		httpclient_queue_process(&data->from_msgdb_queue, data, 1);
 		httpclient_queue_process(&data->from_senders_queue, data, 0);
 
-		if (prev_bytes_total == bytes_total && active_transaction_count == 0) {
+		if (prev_bytes_total == bytes_total) {
 			consecutive_nothing_happened++;
-			if (consecutive_nothing_happened > 200) {
+			if (consecutive_nothing_happened > 200 && active_transaction_count == 0) {
 				rrr_posix_usleep(30000); // 30 ms
 			}
 			else if (consecutive_nothing_happened > 100) {
-				rrr_posix_usleep(100); // 0.1 ms
+				rrr_posix_usleep(1000); // 1 ms
 			}
 		}
 		else {

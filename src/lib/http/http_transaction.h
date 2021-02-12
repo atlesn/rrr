@@ -49,6 +49,8 @@ struct rrr_http_transaction {
 
 	void *application_data;
 	void (*application_data_destroy)(void *arg);
+
+	uint64_t creation_time;
 };
 
 int rrr_http_transaction_new (
