@@ -27,39 +27,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS	\
-	struct rrr_net_transport_handle *handle,				\
-	struct rrr_http_transaction *transaction,				\
-	const char *data_ptr,									\
-	ssize_t overshoot_bytes,								\
-	enum rrr_http_application_type next_protocol_version	\
+#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS      \
+    struct rrr_net_transport_handle *handle,                   \
+    struct rrr_http_transaction *transaction,                  \
+    const char *data_ptr,                                      \
+    ssize_t overshoot_bytes,                                   \
+    enum rrr_http_application_type next_protocol_version
 
-#define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS	\
-	int *do_upgrade,										\
-	enum rrr_http_application_type from,					\
-	enum rrr_http_upgrade_mode to,							\
-	void *arg
+#define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS      \
+    int *do_upgrade,                                           \
+    enum rrr_http_application_type from,                       \
+    enum rrr_http_upgrade_mode to,                             \
+    void *arg
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
-	int *do_websocket,											\
-	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,			\
-	void *arg
+#define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS \
+    int *do_websocket,                                         \
+    RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
+    void *arg 
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
-	void **data, ssize_t *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
+    void **data, ssize_t *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS \
-	const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
+#define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS     \
+    const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
 
-#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS		\
-	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
-	void *arg
+#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS             \
+    RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
+    void *arg
 
-#define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
+#define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS         \
+    RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
 #define RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
-	RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+    RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
