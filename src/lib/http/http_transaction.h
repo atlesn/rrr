@@ -67,6 +67,11 @@ int rrr_http_transaction_new (
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
 );
+void rrr_http_transaction_application_data_set (
+		struct rrr_http_transaction *transaction,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
+);
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 );

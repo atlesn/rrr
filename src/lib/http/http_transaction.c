@@ -99,6 +99,19 @@ int rrr_http_transaction_new (
 		return ret;
 }
 
+void rrr_http_transaction_application_data_set (
+		struct rrr_http_transaction *transaction,
+		void **application_data,
+		void (*application_data_destroy)(void *arg)
+) {
+	if (transaction->application_data != NULL) {
+		transaction->application_data_destroy(transaction->application_data);
+	}
+	transaction->application_data = *application_data;
+	transaction->application_data_destroy = application_data_destroy;
+	*application_data = NULL;
+}
+
 int rrr_http_transaction_response_reset (
 		struct rrr_http_transaction *transaction
 ) {

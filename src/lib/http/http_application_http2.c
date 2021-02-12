@@ -446,8 +446,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;
 			}
-
-			if (ret == RRR_HTTP_NO_RESULT) {
+			else if (ret == RRR_HTTP_NO_RESULT) {
 				transaction->need_response = 1;
 				ret = 0;
 			}
@@ -549,8 +548,6 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 	struct rrr_http_transaction *transaction = application_data;
 
 	int ret = 0;
-
-	printf ("Transaction %p stream %u need response %i\n", transaction, stream_id, transaction->need_response);
 
 	if (transaction->need_response) {
 		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {

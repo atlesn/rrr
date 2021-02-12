@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,6 +35,9 @@ struct rrr_thread;
     socklen_t socklen,                                         \
     RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
+#define RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS     \
+    RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS
+
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS    \
     void **websocket_application_data,                              \
     RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
@@ -60,6 +63,8 @@ struct rrr_http_server_callbacks {
 	void *websocket_get_response_callback_arg;
 	int (*final_callback)(RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS);
 	void *final_callback_arg;
+	int (*async_response_get_callback)(RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
+	void *async_response_get_callback_arg;
 };
 
 #endif /* RRR_HTTP_SERVER_COMMON_H */

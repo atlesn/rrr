@@ -922,8 +922,9 @@ static int __rrr_http_application_http1_request_receive_callback (
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_NO_RESULT) {
+				ret = 0;
 				transaction->need_response = 1;
-				goto out;
+				goto out_no_clear;
 			}
 			goto out;
 		}
@@ -932,16 +933,16 @@ static int __rrr_http_application_http1_request_receive_callback (
 #endif /* RRR_WITH_NGHTTP2 */
 
 	out_send_response:
-	if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
-		goto out;
-	}
+		if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
+			goto out;
+		}
 
-	receive_data->http1->complete_transaction_count++;
-
+		receive_data->http1->complete_transaction_count++;
 	out:
-	__rrr_http_application_http1_transaction_clear(receive_data->http1);
-	RRR_FREE_IF_NOT_NULL(merged_chunks);
-	return ret;
+		__rrr_http_application_http1_transaction_clear(receive_data->http1);
+	out_no_clear:
+		RRR_FREE_IF_NOT_NULL(merged_chunks);
+		return ret;
 }
 
 static int __rrr_http_application_http1_receive_get_target_size_validate_request (
@@ -1493,9 +1494,9 @@ static int __rrr_http_application_http1_tick (
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
 			if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
-				http1->active_transaction->need_response = 0;
-
 				ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
+
+				__rrr_http_application_http1_transaction_clear(http1);
 			}
 
 			ret &= ~(RRR_HTTP_NO_RESULT);

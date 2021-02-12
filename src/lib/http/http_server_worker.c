@@ -172,7 +172,7 @@ static int __rrr_http_server_worker_receive_callback (
 	}
 
 	if (worker_data->config_data.callbacks.final_callback != NULL) {
-		ret = worker_data->config_data.callbacks.final_callback (
+		if ((ret = worker_data->config_data.callbacks.final_callback (
 				worker_data->thread,
 				(const struct sockaddr *) &worker_data->config_data.addr,
 				worker_data->config_data.addr_len,
@@ -182,7 +182,10 @@ static int __rrr_http_server_worker_receive_callback (
 				overshoot_bytes,
 				next_protocol_version,
 				worker_data->config_data.callbacks.final_callback_arg
-		);
+		)) == RRR_HTTP_NO_RESULT) {
+			// Return value propagates
+			goto out;
+		}
 	}
 
 	if (transaction->response_part->response_code == 0) {
@@ -320,8 +323,8 @@ static int __rrr_http_server_worker_net_transport_ctx_do_work (
 			worker_data,
 			__rrr_http_server_worker_receive_callback,
 			worker_data,
-			NULL,
-			NULL,
+			worker_data->config_data.callbacks.async_response_get_callback,
+			worker_data->config_data.callbacks.async_response_get_callback_arg,
 			__rrr_http_server_worker_websocket_get_response_callback,
 			worker_data,
 			__rrr_http_server_worker_websocket_frame_callback,
