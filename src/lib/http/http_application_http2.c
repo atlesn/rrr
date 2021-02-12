@@ -605,7 +605,7 @@ static int __rrr_http_application_http2_tick (
 		if ((ret = rrr_http2_transport_ctx_streams_iterate (
 				http2->http2_session,
 				__rrr_http_application_http2_streams_iterate_callback,
-				http2
+				&callback_data
 		)) != 0) {
 			goto out;
 		}
