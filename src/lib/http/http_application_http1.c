@@ -240,8 +240,6 @@ static int __rrr_http_application_http1_response_send (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_http_transaction *transaction
 ) {
-	(void)(application);
-
 	int ret = 0;
 
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
@@ -259,6 +257,8 @@ static int __rrr_http_application_http1_response_send (
 				handle->handle);
 		goto out;
 	}
+
+	((struct rrr_http_application_http1 *) application)->complete_transaction_count++;
 
 	out:
 	return ret;
@@ -944,8 +944,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 		if ((ret = __rrr_http_application_http1_response_send((struct rrr_http_application *) receive_data->http1, receive_data->handle, transaction)) != 0) {
 			goto out;
 		}
-
-		receive_data->http1->complete_transaction_count++;
 	out:
 		__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	out_no_clear:
