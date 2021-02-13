@@ -367,7 +367,7 @@ static void __rrr_http_server_worker_thread_entry (
 ) {
 	// DO NOT use private_data except from inside lock wrapper callback
 
-	rrr_thread_start_condition_helper_nofork(thread);
+	rrr_thread_start_condition_helper_nofork_nice(thread);
 
 	struct rrr_http_server_worker_data worker_data = {0};
 

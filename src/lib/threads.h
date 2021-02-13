@@ -224,6 +224,9 @@ void rrr_thread_collection_destroy (
 void rrr_thread_start_condition_helper_nofork (
 		struct rrr_thread *thread
 );
+void rrr_thread_start_condition_helper_nofork_nice (
+		struct rrr_thread *thread
+);
 int rrr_thread_start_condition_helper_fork (
 		struct rrr_thread *thread,
 		int (*fork_callback)(void *arg),

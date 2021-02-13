@@ -594,13 +594,34 @@ static int  __rrr_thread_collection_start_all_wait_for_state_initialized (
 	return ret;
 }
 
-void rrr_thread_start_condition_helper_nofork (
-		struct rrr_thread *thread
+static void __rrr_thread_start_condition_helper_nofork (
+		struct rrr_thread *thread,
+		int do_nice_wait
 ) {
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait_cond_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_RUNNING_FORKED);
-	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	if (do_nice_wait) {
+		// This is unsafe to call if other threads are forking !
+		rrr_thread_signal_wait_cond_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	}
+	else {
+		rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	}
+}
+
+void rrr_thread_start_condition_helper_nofork (
+		struct rrr_thread *thread
+) {
+	__rrr_thread_start_condition_helper_nofork(thread, 0);
+}
+
+// Only use when it's guaranteed that no other thread in
+// the collection will attempt a fork()
+void rrr_thread_start_condition_helper_nofork_nice (
+		struct rrr_thread *thread
+) {
+	__rrr_thread_start_condition_helper_nofork(thread, 1);
 }
 
 int rrr_thread_start_condition_helper_fork (
