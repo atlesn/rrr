@@ -410,10 +410,16 @@ static int __rrr_msgdb_server_del_path_split_callback (
 				}
 			}
 			else {
-				RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
-					str, rrr_strerror(errno));
+				if (errno == ENOENT) {
+					RRR_DBG_3("Note: Tried to delete file '%s' in message db server, but it had already been deleted.\n",
+						str, rrr_strerror(errno));
+				}
+				else {
+					RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
+						str, rrr_strerror(errno));
+					ret = RRR_MSGDB_SOFT_ERROR;
+				}
 			}
-			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 	}
