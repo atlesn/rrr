@@ -26,7 +26,7 @@ sub source {
 	my $t = time();
 	my $r = rand(10000);
 
-	$message->{'topic'} = "http/blabla/" . $t . "-" . $r;
+	$message->{'topic'} = "http/blabla/$count"; #" . $t . "-" . $r;
 
 #	my $port = (++$count % 2 == 0 ? "443" : "80");
 #	my $method = (++$count % 2 == 0 ? "GET" : "PUT");
@@ -35,8 +35,8 @@ sub source {
 	$message->push_tag("http_endpoint", "/$r");
 #	$message->push_tag("http_method", $method);
 #	$message->push_tag("http_port", $port);
-#	$message->push_tag("http_port", "4431");
-	$message->push_tag("http_port", "8001");
+	$message->push_tag("http_port", "4431");
+#	$message->push_tag("http_port", "8001");
 	$message->push_tag("http_method", "PUT");
 	$message->push_tag("http_format", "multipart");
 #	$message->push_tag("http_port", "80");
