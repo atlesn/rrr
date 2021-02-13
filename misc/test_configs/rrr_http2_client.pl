@@ -19,7 +19,7 @@ sub source {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	if ($count >= 100000) {
+	if ($count >= 1000) {
 		return 1;
 	}
 

@@ -204,20 +204,24 @@ static void __rrr_thread_signal_wait_cond_timed (
 			case 0:
 				break;
 			default:
-				RRR_BUG("BUG: Return from pthread_cond_timedwait was %i %s in __rrr_thread_signal_wait_cond_timed\n",
+				RRR_MSG_0("Unknown return value %i '%s' in __rrr_thread_signal_wait_cond_timed, trying to continue\n",
 						errno, rrr_strerror(errno));
-		}
+				break;
+			}
 	}
 }
 
-void rrr_thread_signal_wait_cond_with_watchdog_update (
+static void __rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
-		int signal
+		int signal,
+		int with_watchdog_update
 ) {
 	while (1) {
 		rrr_thread_lock(thread);
 		int signal_test = thread->signal;
-		thread->watchdog_time = rrr_time_get_64();
+		if (with_watchdog_update) {
+			thread->watchdog_time = rrr_time_get_64();
+		}
 		rrr_thread_unlock(thread);
 
 		if ((signal_test & signal) == signal) {
@@ -226,6 +230,20 @@ void rrr_thread_signal_wait_cond_with_watchdog_update (
 
 		__rrr_thread_signal_wait_cond_timed(thread);
 	}
+}
+
+void rrr_thread_signal_wait_cond_with_watchdog_update (
+		struct rrr_thread *thread,
+		int signal
+) {
+	__rrr_thread_signal_wait_cond (thread, signal, 1);
+}
+
+void rrr_thread_signal_wait_cond (
+		struct rrr_thread *thread,
+		int signal
+) {
+	__rrr_thread_signal_wait_cond(thread, signal, 0);
 }
 
 int rrr_thread_ghost_check (
@@ -422,7 +440,13 @@ static void __rrr_thread_collection_stop_and_join_all_nolock (
 		else {
 			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 		}
-		node->signal |= RRR_THREAD_SIGNAL_ENCOURAGE_STOP|RRR_THREAD_SIGNAL_START_INITIALIZE|RRR_THREAD_SIGNAL_START_AFTERFORK|RRR_THREAD_SIGNAL_START_BEFOREFORK;
+		node->signal |=
+			RRR_THREAD_SIGNAL_ENCOURAGE_STOP |
+			RRR_THREAD_SIGNAL_START_INITIALIZE |
+			RRR_THREAD_SIGNAL_START_BEFOREFORK |
+			RRR_THREAD_SIGNAL_START_AFTERFORK |
+			RRR_THREAD_SIGNAL_START_WATCHDOG
+		;
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
 
@@ -727,8 +751,7 @@ int rrr_thread_collection_start_all (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog == 1) {
 			RRR_DBG_8("START watchdog %p '%s'\n", node, node->name);
-			rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_BEFOREFORK);
-			rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_AFTERFORK);
+			rrr_thread_signal_set(node, RRR_THREAD_SIGNAL_START_WATCHDOG);
 		}
 	RRR_LL_ITERATE_END();
 
@@ -745,14 +768,11 @@ void rrr_thread_start_now_with_watchdog (
 	rrr_thread_unlock(thread);
 
 	RRR_DBG_8("START thread %p '%s'\n", thread, thread->name);
-	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
 	rrr_thread_signal_set(thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 
 	RRR_DBG_8("START watchdog %p '%s'\n", wd, wd->name);
-	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_INITIALIZE);
-	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_BEFOREFORK);
-	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_AFTERFORK);
+	rrr_thread_signal_set(wd, RRR_THREAD_SIGNAL_START_WATCHDOG);
 }
 
 void rrr_thread_initialize_now_with_watchdog (
@@ -815,11 +835,13 @@ static void *__rrr_thread_watchdog_entry (
 
 	RRR_DBG_8 ("Watchdog %p for %s/%p started, waiting for start signals\n", self_thread, thread->name, thread);
 
-	rrr_thread_signal_wait_busy(self_thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
+	rrr_thread_signal_wait_cond(self_thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	rrr_thread_state_set(self_thread, RRR_THREAD_STATE_INITIALIZED);
-	rrr_thread_signal_wait_busy(self_thread, RRR_THREAD_SIGNAL_START_BEFOREFORK);
+
+	// Use conditional wait to avoid spinning if the main thread
+	// not meant to be started immediately
+	rrr_thread_signal_wait_cond(self_thread, RRR_THREAD_SIGNAL_START_WATCHDOG);
 	rrr_thread_state_set(self_thread, RRR_THREAD_STATE_RUNNING_FORKED);
-	rrr_thread_signal_wait_busy(self_thread, RRR_THREAD_SIGNAL_START_AFTERFORK);
 
 	RRR_DBG_8 ("Watchdog %p for %s/%p start signals received\n", self_thread, thread->name, thread);
 

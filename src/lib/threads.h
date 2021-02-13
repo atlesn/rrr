@@ -43,8 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Tell a thread to start after initializing */
 #define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<1)
 
-/* Tell a thread to proceed after all forking threads have reached RUNNING_FORKED */
+/* Tell a thread to proceed after it has reached RUNNING_FORKED */
 #define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<2)
+
+/* Watchdogs only use the last start signal */
+#define RRR_THREAD_SIGNAL_START_WATCHDOG	RRR_THREAD_SIGNAL_START_AFTERFORK
 
 /* Tell a thread politely to cancel */
 #define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<3)
@@ -192,6 +195,10 @@ void rrr_thread_signal_wait_busy (
 		int signal
 );
 void rrr_thread_signal_wait_cond_with_watchdog_update (
+		struct rrr_thread *thread,
+		int signal
+);
+void rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
 		int signal
 );
