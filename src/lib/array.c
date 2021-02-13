@@ -535,6 +535,10 @@ static int __rrr_array_collection_iterate_chosen_tags (
 		if (found == 1) {
 			(*found_tags)++;
 			if ((ret = callback(node, callback_arg)) != 0) {
+				if (ret == RRR_ARRAY_ITERATE_STOP) {
+					ret = 0;
+					goto out;
+				}
 				RRR_MSG_0("Error from callback in __rrr_array_collection_iterate_chosen_tags\n");
 				ret = 1;
 				goto out;
@@ -901,6 +905,9 @@ int rrr_array_message_iterate (
 				elements,
 				callback_arg
 		)) != 0) {
+			if (ret == RRR_ARRAY_ITERATE_STOP) {
+				ret = 0;
+			}
 			goto out;
 		}
 
@@ -950,6 +957,9 @@ int rrr_array_message_iterate_values (
 	return rrr_array_message_iterate (message_orig, __rrr_array_message_iterate_values_callback, &callback_data);
 }
 
+#define RRR_ARRAY_MESSAGE_ITERATE_RAW_CALLBACK_HAS_TAG() \
+	(strlen(tag) == tag_length && memcmp(data_start, tag, tag_length) == 0)
+
 static int __rrr_array_message_has_tag_callback (
 		RRR_TYPE_RAW_FIELDS,
 		void *arg
@@ -961,12 +971,12 @@ static int __rrr_array_message_has_tag_callback (
 	(void)(total_length);
 	(void)(element_count);
 
-	if (strlen(tag) != tag_length || strncmp(data_start, tag, tag_length) != 0) {
-		return 0;
+	if (RRR_ARRAY_MESSAGE_ITERATE_RAW_CALLBACK_HAS_TAG()) {
+		// Iterator will break out and return 1 if the tag is found
+		return 1;
 	}
 
-	// Iterator will break out and return 1 if the tag is found
-	return 1;
+	return 0;
 }
 
 int rrr_array_message_has_tag (
@@ -984,6 +994,51 @@ int rrr_array_message_has_tag (
 	);
 }
 
+struct rrr_array_message_clone_value_by_tag_callback_data {
+	struct rrr_type_value **target;
+	const char *tag;
+};
+
+static int __rrr_array_message_clone_value_by_tag_callback (
+		const struct rrr_type_value *value,
+		void *arg
+) {
+	struct rrr_array_message_clone_value_by_tag_callback_data *callback_data = arg;
+
+	if (value->tag == NULL || strcmp(callback_data->tag, value->tag) != 0) {
+		return 0;
+	}
+
+	if (*(callback_data->target) != NULL) {
+		RRR_BUG("BUG: Value was not NULL in __rrr_array_message_value_to_str_by_tag_callback\n");
+	}
+
+	int ret = rrr_type_value_clone(callback_data->target, value, 1);
+	return (ret == 0 ? RRR_ARRAY_ITERATE_STOP : ret);
+}
+
+int rrr_array_message_clone_value_by_tag (
+		struct rrr_type_value **target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	*target = NULL;
+
+	if (!MSG_IS_ARRAY(message_orig)) {
+		return 0;
+	}
+
+	struct rrr_array_message_clone_value_by_tag_callback_data callback_data = {
+		target,
+		tag
+	};
+
+	return rrr_array_message_iterate_values (
+			message_orig,
+			__rrr_array_message_clone_value_by_tag_callback,
+			&callback_data
+	);
+}
 
 struct rrr_array_message_append_to_collection_callback_data {
 	struct rrr_array *target_tmp;

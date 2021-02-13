@@ -231,7 +231,9 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 	}
 
 	out:
-	if (ret != 0 || transaction->response_part->response_code != 0) {
+	if ( (ret != 0) ||
+	     (transaction->response_part->response_code < 200 && transaction->response_part->response_code > 299)
+	) {
 		worker_data->request_complete = 1;
 	}
 	return ret;

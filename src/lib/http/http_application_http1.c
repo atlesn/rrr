@@ -52,8 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_application_http1 {
 	RRR_HTTP_APPLICATION_HEAD;
+
 	enum rrr_http_upgrade_mode upgrade_active;
 	struct rrr_websocket_state ws_state;
+
+	uint64_t complete_transaction_count;
 
 	// HTTP1 only has one active transaction at a time
 	struct rrr_http_transaction *active_transaction;
@@ -62,6 +65,11 @@ struct rrr_http_application_http1 {
 
 static void __rrr_http_application_http1_destroy (struct rrr_http_application *app) {
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
+
+	if (http1->active_transaction != NULL) {
+		RRR_MSG_0("Warning: HTTP1 destroy application with 1 active transaction\n");
+	}
+
 	rrr_websocket_state_clear_all(&http1->ws_state);
 	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
 	free(http1);
@@ -1475,6 +1483,7 @@ static int __rrr_http_application_http1_tick (
 	int ret = RRR_HTTP_OK;
 
 	*active_transaction_count = (http1->active_transaction != NULL ? 1 : 0);
+	*complete_transaction_count = (http1->complete_transaction_count);
 
 	*upgraded_app = NULL;
 

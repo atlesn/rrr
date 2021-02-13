@@ -117,8 +117,12 @@ int rrr_http2_transport_ctx_streams_iterate (
 		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
 		void *callback_arg
 );
+int rrr_http2_streams_count (
+		struct rrr_http2_session *session
+);
 int rrr_http2_transport_ctx_tick (
 		uint64_t *active_stream_count,
+		uint64_t *closed_stream_count,
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),

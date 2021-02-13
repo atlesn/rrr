@@ -45,6 +45,7 @@ struct rrr_http_transaction;
 #define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
     ssize_t *received_bytes,                                                                     \
     uint64_t *active_transaction_count,                                                          \
+    uint64_t *complete_transaction_count,                                                        \
     struct rrr_http_application **upgraded_app,                                                  \
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \
@@ -83,8 +84,7 @@ struct rrr_http_application_constants {
 };
 
 #define RRR_HTTP_APPLICATION_HEAD                              \
-    const struct rrr_http_application_constants *constants;    \
-    uint64_t complete_transaction_count
+    const struct rrr_http_application_constants *constants;
 
 struct rrr_http_application {
 	RRR_HTTP_APPLICATION_HEAD;

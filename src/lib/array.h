@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARRAY_HARD_ERROR		RRR_READ_HARD_ERROR
 #define RRR_ARRAY_SOFT_ERROR		RRR_READ_SOFT_ERROR
 #define RRR_ARRAY_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
+#define RRR_ARRAY_ITERATE_STOP	RRR_READ_EOF
 
 struct rrr_map;
 struct rrr_msg_msg;
@@ -181,6 +182,11 @@ int rrr_array_message_iterate_values (
 		void *callback_arg
 );
 int rrr_array_message_has_tag (
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+);
+int rrr_array_message_clone_value_by_tag (
+		struct rrr_type_value **target,
 		const struct rrr_msg_msg *message_orig,
 		const char *tag
 );

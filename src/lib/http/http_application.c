@@ -109,11 +109,10 @@ int rrr_http_application_transport_ctx_tick (
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 ) {
-	*complete_transaction_count = app->complete_transaction_count;
-
 	return app->constants->tick (
 			received_bytes,
 			active_transaction_count,
+			complete_transaction_count,
 			upgraded_app,
 			app,
 			handle,

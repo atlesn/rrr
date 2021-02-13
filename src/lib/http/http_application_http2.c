@@ -53,6 +53,14 @@ static const char rrr_http_application_http2_alpn_protos[] = {
 
 static void __rrr_http_application_http2_destroy (struct rrr_http_application *app) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	if (http2->http2_session != NULL) {
+		int streams = rrr_http2_streams_count(http2->http2_session);
+		if (streams > 0) {
+			RRR_MSG_0("Warning: HTTP2 destroy application with %i active transactions\n", streams);
+		}
+	}
+
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
 	rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
 	free(http2);
@@ -455,10 +463,12 @@ static int __rrr_http_application_http2_data_receive_callback (
 	}
 
 	if (callback_data->unique_id_generator_callback != NULL) {
+		// Is server
 		goto out_send_response;
 	}
 
-	goto out_complete_transaction;
+	// Is client
+	goto out;
 
 	out_send_response_bad_request:
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
@@ -470,8 +480,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 		}
-	out_complete_transaction:
-		callback_data->http2->complete_transaction_count++;
 	out:
 		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
 	return ret;
@@ -613,6 +621,7 @@ static int __rrr_http_application_http2_tick (
 
 	if ((ret = rrr_http2_transport_ctx_tick (
 			active_transaction_count,
+			complete_transaction_count,
 			http2->http2_session,
 			handle,
 			__rrr_http_application_http2_data_receive_callback,

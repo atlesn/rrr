@@ -42,18 +42,18 @@ sub source {
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
 
-	if (++$count % 4 == 0) {
-		$message->push_tag("http_body", "BODY BODY BODY BODY");
-		$message->push_tag("http_content_type", "content/type");
-	}
+	$message->push_tag("http_body", "Message $count");
+	$message->push_tag("http_content_type", "text/plain");
 
 	$message->send();
+
+	$count++;
 
 	# Return 1 for success and 0 for error
 	return 1;
 }
 
-my $receive_count = 0;
+my %received;
 
 sub process {
 	# Get a message from senders of the perl5 instance
@@ -61,11 +61,17 @@ sub process {
 
 	my $response_code = ($message->get_tag_all("response_code"))[0];
 
-	$receive_count++;
+#	$debug->msg(1, "Data '" . $message->{'data'} . "'\n");
+
+	$message->{'data'} =~ /(\d+)/;
+
+	$debug->msg(1, "Dup $1\n") if (defined ($received{$1}));
+
+	$received{$1} = 1;
+
+	my $receive_count = scalar keys %received;
 
 	$debug->msg(1, "Received response - Sent $count<>$receive_count Received\n") if ($receive_count % 1000 == 0);
-
-	# $debug->msg(1, "Data '" . $message->{'data'} . "'\n");
 
 	return 1;
 }

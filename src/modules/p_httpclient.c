@@ -836,7 +836,6 @@ struct httpclient_prepare_callback_data {
 	const struct rrr_msg_msg *message;
 	const struct rrr_array *array_from_msg;
 	int no_destination_override;
-	int no_msgdb_send_notify;
 };
 
 #define HTTPCLIENT_OVERRIDE_PREPARE(name)                                                \
@@ -959,14 +958,11 @@ static int httpclient_session_query_prepare_callback_process_endpoint_from_topic
 	return ret;
 }
 
-static int httpclient_session_method_prepare_callback (
-		RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS
+static int httpclient_entry_find_method (
+		enum rrr_http_method *chosen_method,
+		struct httpclient_data *data,
+		const struct rrr_array *array_from_msg
 ) {
-	struct httpclient_prepare_callback_data *callback_data = arg;
-	struct httpclient_data *data = callback_data->data;
-	struct httpclient_transaction_data *transaction_data = transaction->application_data;
-	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
-
 	int ret = 0;
 
 	rrr_length method_length = 0;
@@ -982,13 +978,21 @@ static int httpclient_session_method_prepare_callback (
 		ret = RRR_HTTP_NO_RESULT;
 	}
 
-	if (*chosen_method == RRR_HTTP_METHOD_PUT && !callback_data->no_msgdb_send_notify) {
-		httpclient_msgdb_notify_send(data, transaction_data->entry);
-	}
-
 	out:
 	RRR_FREE_IF_NOT_NULL(method_to_free);
 	return ret;
+}
+
+static int httpclient_session_method_prepare_callback (
+		RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS
+) {
+	struct httpclient_prepare_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+	const struct rrr_array *array_from_msg = callback_data->array_from_msg;
+
+	(void)(transaction);
+
+	return httpclient_entry_find_method (chosen_method, data, array_from_msg);
 }
 
 static int httpclient_session_query_prepare_callback (
@@ -1165,8 +1169,7 @@ static int httpclient_request_send (
 		struct rrr_http_client_request_data *request_data,
 		struct rrr_msg_holder *entry,
 		rrr_biglength remaining_redirects,
-		int no_destination_override,
-		int no_msgdb_send_notify
+		int no_destination_override
 ) {
 	struct rrr_msg_msg *message = entry->message;
 
@@ -1202,8 +1205,7 @@ static int httpclient_request_send (
 			data,
 			message,
 			&array_from_msg_tmp,
-			no_destination_override,
-			no_msgdb_send_notify
+			no_destination_override
 	};
 
 	request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
@@ -1305,8 +1307,7 @@ static int httpclient_redirect_callback (
 			&request_data,
 			transaction_data->entry,
 			transaction->remaining_redirects,
-			1, // No destination override (endpoint, server etc. from message)
-			1  // No msgdb send notification, is already done
+			1 // No destination override (endpoint, server etc. from message)
 	)) != 0) {
 		RRR_MSG_0("Failed to send HTTP request following redirect response in httpclient instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);
@@ -1323,12 +1324,65 @@ static int httpclient_redirect_callback (
 	return (ret & ~(RRR_HTTP_SOFT_ERROR));
 }
 
+static int httpclient_poll_callback_msgdb_notify_if_needed (
+		struct httpclient_data *data,
+		struct rrr_msg_holder *entry
+) {
+	const struct rrr_msg_msg *message = (const struct rrr_msg_msg *) entry->message;
+
+	int ret = 0;
+
+	// We need to sneak-peak into the message to figure out if 
+	// it will become a PUT request.
+
+	struct rrr_array array_tmp = {0};
+
+	if (data->msgdb_socket == NULL) {
+		goto out;
+	}
+
+	if (MSG_IS_ARRAY(message)) {
+		struct rrr_type_value *value_tmp = NULL;
+
+		if ((ret = rrr_array_message_clone_value_by_tag (
+				&value_tmp,
+				message,
+				"http_method"
+		)) != 0) {
+			goto out;
+		}
+
+		if (value_tmp != NULL) {
+			RRR_LL_APPEND(&array_tmp, value_tmp);
+		}
+	}
+
+	enum rrr_http_method method = 0;
+	if ((ret = httpclient_entry_find_method(&method, data, &array_tmp)) != 0) {
+		goto out;
+	}
+
+	if (method == RRR_HTTP_METHOD_PUT) {
+		httpclient_msgdb_notify_send(data, entry);
+	}
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
-	struct rrr_msg_msg *message = entry->message;
+
+	if (httpclient_poll_callback_msgdb_notify_if_needed (data, entry)) {
+		RRR_MSG_0("Warning: Failed no add message to message DB in httpclient instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
 
 	if (RRR_DEBUGLEVEL_3) {
+		struct rrr_msg_msg *message = entry->message;
+
 		char *topic_tmp = NULL;
 
 		if (rrr_msg_msg_topic_get(&topic_tmp, message) != 0 ) {
@@ -1501,8 +1555,7 @@ static int httpclient_parse_config (
 
 static void httpclient_queue_process (
 	struct rrr_msg_holder_collection *queue,
-	struct httpclient_data *data,
-	int no_msgdb_send_notify
+	struct httpclient_data *data
 ) {
 	if (RRR_LL_COUNT(queue) ==  0) {
 		return;
@@ -1524,14 +1577,23 @@ static void httpclient_queue_process (
 		rrr_msg_holder_lock(node);
 		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
 
-		// Always run prior to timeout check to add messages to the msgdb as needed
-		if ((ret_tmp = httpclient_request_send (
+		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
+				// Delete any message from message db upon TTL timeout
+				httpclient_msgdb_notify_timeout(data, node);
+				ttl_timeout_count++;
+				RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
+				// No msgdb notify for normal timeout, let any messages get read back into the queue again
+				send_timeout_count++;
+				RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if ((ret_tmp = httpclient_request_send (
 				data,
 				&data->request_data,
 				node,
 				data->redirects_max,
-				0, // Destination override performed as needed,
-				no_msgdb_send_notify
+				0 // Destination override performed as needed
 		)) != RRR_HTTP_OK) {
 			if (ret_tmp == RRR_HTTP_BUSY) {
 				// Try again after ticking more, maybe we need to read
@@ -1553,19 +1615,8 @@ static void httpclient_queue_process (
 			}
 		}
 		else {
+			// Request send, may now be removed from queue
 			RRR_LL_ITERATE_SET_DESTROY();
-		}
-
-		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
-				// Delete the any message from message db upon TTL timeout
-				httpclient_msgdb_notify_timeout(data, node);
-				ttl_timeout_count++;
-				RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
-				// No msgdb notify for normal timeout, let any messages get read back into the queue again
-				send_timeout_count++;
-				RRR_LL_ITERATE_SET_DESTROY();
 		}
 
 		pthread_cleanup_pop(1); // Unlock
@@ -1680,26 +1731,31 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			//printf("httpclient %" PRIu64 "<>%" PRIu64 "\n", bytes_total, prev_bytes_total);
 		} while (bytes_total != prev_bytes_total && --max);
 
-		// Don't poll more messages before the queue is empty (avoid dupes)
-		if (  data->msgdb_socket != NULL &&
-		      prev_msgdb_index_time + data->msgdb_poll_interval_us < time_now &&
-		      active_transaction_count == 0 &&
-		      RRR_LL_COUNT(&data->from_msgdb_queue
-		) == 0) {
+
+		// After timer has passed and before polling, wait untill queues
+		// are empty (avoid dupes). In high traffic situations, it make
+		// take some time before the msgdb is polled.
+		if ( data->msgdb_socket != NULL &&
+		     prev_msgdb_index_time + data->msgdb_poll_interval_us < time_now &&
+		     active_transaction_count == 0 &&
+		     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
+		     RRR_LL_COUNT(&data->from_senders_queue) == 0
+		) {
 			httpclient_msgdb_poll(data);
 			prev_msgdb_index_time = time_now;
 		}
 
+		// Priority to the msgdb queue, runs first 
+		httpclient_queue_process(&data->from_msgdb_queue, data);
+		httpclient_queue_process(&data->from_senders_queue, data);
+
+		// We must always poll to ensure messages are stored int msgdb, if active
 		if (rrr_poll_do_poll_delete(thread_data, &thread_data->poll, httpclient_poll_callback, 0) != 0) {
 			RRR_MSG_0("Error while polling in httpclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
-		// Priority to the msgdb queue, runs first
-		httpclient_queue_process(&data->from_msgdb_queue, data, 1);
-		httpclient_queue_process(&data->from_senders_queue, data, 0);
-	
 		if (prev_bytes_total == bytes_total) {
 			consecutive_nothing_happened++;
 			if (consecutive_nothing_happened > 200 && active_transaction_count == 0) {
