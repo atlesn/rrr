@@ -508,7 +508,7 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_body);
+	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
 	if (bytes_to_send > buf_size) {
 		bytes_to_send = buf_size;
 	}
