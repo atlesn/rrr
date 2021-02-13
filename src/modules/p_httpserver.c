@@ -1501,7 +1501,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 
 		if (accept_count == 0) {
-			rrr_posix_usleep(50000); // 50 ms
+			rrr_posix_usleep(100000); // 100 ms
 		}
 		else {
 			accept_count_total += accept_count;
