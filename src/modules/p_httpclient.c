@@ -566,58 +566,59 @@ static int httpclient_msgdb_notify_send_callback (struct rrr_msgdb_client_conn *
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
-		RRR_MSG_0("Warning: Failed to send message to msgdb in httpclient, return from send was %i\n",
+		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from send was %i\n",
 			ret);
 		goto out;
 	}
 
 	int positive_ack = 0;
 	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_MSG_0("Warning: Failed to send message to msgdb in httpclient, return from await ack was %i positive ack was %i\n",
+		RRR_MSG_0("Failed to send message to msgdb in httpclient, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
 		goto out;
 	}
 
 	out:
 	MSG_SET_TYPE(msg, type_orig);
-	return 0; // Mask all errors
+	return ret;
 }
 
-#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE() \
-	if (data->msgdb_socket == NULL) return
+#define HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() \
+	(data->msgdb_socket != NULL)
 
-#define HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC() \
-	if (MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) == 0) return
+#define HTTPCLIENT_NOTIFY_MSGDB_MSG_HAS_TOPIC() \
+	(MSG_TOPIC_LENGTH((struct rrr_msg_msg *) entry_locked->message) > 0)
 
-static void httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr_msg_holder *entry_locked) {
+	if (!HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() || !HTTPCLIENT_NOTIFY_MSGDB_MSG_HAS_TOPIC()) {
+		return 0;
+	}
 
 	struct httpclient_msgdb_notify_send_callback_data callback_data = {
 		data,
 		entry_locked
 	};
 
-	if (rrr_msgdb_client_conn_ensure_with_callback (	
+	return rrr_msgdb_client_conn_ensure_with_callback (	
 			&data->msgdb_conn,
 			data->msgdb_socket,
 			httpclient_msgdb_notify_send_callback,
 			&callback_data
-	) != 0) {
-		RRR_MSG_0("Warning: Failed to send notification to message DB in httpclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
-	}
+	);
 }
 
 static void httpclient_msgdb_notify_timeout(struct httpclient_data *data, const struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+	if (!HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() || !HTTPCLIENT_NOTIFY_MSGDB_MSG_HAS_TOPIC()) {
+		return;
+	}
 
 	httpclient_msgdb_delete(data, entry_locked->message);
 }
 
 static void httpclient_msgdb_notify_complete(struct httpclient_data *data, const struct rrr_msg_holder *entry_locked) {
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_ACTIVE();
-	HTTPCLIENT_NOTIFY_MSGDB_ENSURE_TOPIC();
+	if (!HTTPCLIENT_NOTIFY_MSGDB_IS_ACTIVE() || !HTTPCLIENT_NOTIFY_MSGDB_MSG_HAS_TOPIC()) {
+		return;
+	}
 
 	httpclient_msgdb_delete(data, entry_locked->message);
 }
@@ -1363,7 +1364,9 @@ static int httpclient_poll_callback_msgdb_notify_if_needed (
 	}
 
 	if (method == RRR_HTTP_METHOD_PUT) {
-		httpclient_msgdb_notify_send(data, entry);
+		if ((ret = httpclient_msgdb_notify_send(data, entry)) != 0) {
+			goto out;
+		}
 	}
 
 	out:
@@ -1375,9 +1378,8 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
 
-	if (httpclient_poll_callback_msgdb_notify_if_needed (data, entry)) {
-		RRR_MSG_0("Warning: Failed no add message to message DB in httpclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+	if (httpclient_poll_callback_msgdb_notify_if_needed (data, entry) != 0) {
+		return 1;
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
@@ -1569,10 +1571,10 @@ static void httpclient_queue_process (
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
 
-		if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
+		// Max loop time 1 second
+		if (rrr_time_get_64() - loop_begin_time > 1 * 1000 * 1000) {
 			RRR_LL_ITERATE_BREAK();
 		}
-		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
 		rrr_msg_holder_lock(node);
 		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
