@@ -483,7 +483,13 @@ static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, v
 
 	int max = RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX;
 
+	const uint64_t loop_begin_time = rrr_time_get_64();
 	RRR_LL_ITERATE_BEGIN(&paths, struct rrr_type_value);
+		// Max loop time 1 second
+		if (rrr_time_get_64() - loop_begin_time > 1 * 1000 * 1000) {
+			RRR_LL_ITERATE_BREAK();
+		}
+
 		if (node->tag == NULL || strcmp(node->tag, "file") != 0) {
 			RRR_LL_ITERATE_NEXT();
 		}
