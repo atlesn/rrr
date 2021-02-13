@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 #include "util/macro_utils.h"
 #include "util/slow_noop.h"
+#include "util/gnu.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
 #include "rrr_strerror.h"
@@ -1033,7 +1034,8 @@ static void *__rrr_thread_start_routine_intermediate (
 
 	rrr_thread_signal_wait_busy(thread, RRR_THREAD_SIGNAL_START_INITIALIZE);
 	if (!rrr_thread_signal_check(thread, RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) {
-		RRR_DBG_8("Thread %p/%s received initialize signal, proceeding\n", thread, thread->name);
+		RRR_DBG_8("Thread %p/%s TID %llu received initialize signal, proceeding\n",
+				thread, thread->name, (long long unsigned int) rrr_gettid());
 		thread->start_routine(thread);
 	}
 	else {
