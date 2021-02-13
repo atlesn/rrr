@@ -25,7 +25,12 @@ sub process {
 		$debug->dbg(2, "Got HTTP1 request\n");
 	}
 
+	my $body = ($message->get_tag_all("http_body"))[0];
+
 	$message->clear_array();
+
+	$message->push_tag_str("http_body", $body);
+
 	$message->send();
 
 	return 1;

@@ -19,6 +19,10 @@ sub source {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
+	if ($count >= 100000) {
+		return 1;
+	}
+
 	my $t = time();
 	my $r = rand(10000);
 
@@ -39,7 +43,7 @@ sub source {
 	$message->push_tag("b", "bbbbbbbbb");
 
 	if (++$count % 4 == 0) {
-		$message->push_tag("http_body", "BODY BODY\0BODY\0BODY");
+		$message->push_tag("http_body", "BODY BODY BODY BODY");
 		$message->push_tag("http_content_type", "content/type");
 	}
 
@@ -49,3 +53,19 @@ sub source {
 	return 1;
 }
 
+my $receive_count = 0;
+
+sub process {
+	# Get a message from senders of the perl5 instance
+	my $message = shift;
+
+	my $response_code = ($message->get_tag_all("response_code"))[0];
+
+	$receive_count++;
+
+	$debug->msg(1, "Received response - Sent $count<>$receive_count Received\n") if ($receive_count % 1000 == 0);
+
+	# $debug->msg(1, "Data '" . $message->{'data'} . "'\n");
+
+	return 1;
+}
