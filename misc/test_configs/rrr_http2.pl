@@ -19,11 +19,14 @@ sub process {
 	my $protocol = ($message->get_tag_all("http_protocol"))[0];
 
 	if ($protocol == 2) {
-		print "Got HTTP2 request\n";
+		$debug->dbg(2, "Got HTTP2 request\n");
 	}
 	else {
-		print "Got HTTP1 request\n";
+		$debug->dbg(2, "Got HTTP1 request\n");
 	}
+
+	$message->clear_array();
+	$message->send();
 
 	return 1;
 }

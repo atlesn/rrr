@@ -1677,6 +1677,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
 				goto out_message;
 			}
+			//printf("httpclient %" PRIu64 "<>%" PRIu64 "\n", bytes_total, prev_bytes_total);
 		} while (bytes_total != prev_bytes_total && --max);
 
 		// Don't poll more messages before the queue is empty (avoid dupes)
@@ -1698,7 +1699,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		// Priority to the msgdb queue, runs first
 		httpclient_queue_process(&data->from_msgdb_queue, data, 1);
 		httpclient_queue_process(&data->from_senders_queue, data, 0);
-
+	
 		if (prev_bytes_total == bytes_total) {
 			consecutive_nothing_happened++;
 			if (consecutive_nothing_happened > 200 && active_transaction_count == 0) {

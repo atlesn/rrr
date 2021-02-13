@@ -28,12 +28,12 @@ sub source {
 #	my $method = (++$count % 2 == 0 ? "GET" : "PUT");
 
 	$message->push_tag("http_server", "localhost");
-	$message->push_tag("http_endpoint", "/redirect.php?c=$r");
+	$message->push_tag("http_endpoint", "/$r");
 #	$message->push_tag("http_method", $method);
 #	$message->push_tag("http_port", $port);
-	$message->push_tag("http_port", "443");
+	$message->push_tag("http_port", "4431");
 	$message->push_tag("http_method", "PUT");
-	$message->push_tag("http_format", "raw");
+	$message->push_tag("http_format", "multipart");
 #	$message->push_tag("http_port", "80");
 	$message->push_tag("a", "aaa");
 	$message->push_tag("b", "bbbbbbbbb");
