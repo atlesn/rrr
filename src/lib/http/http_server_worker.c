@@ -39,9 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip_util.h"
 #include "../util/posix.h"
 
-#define RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S	5
-#define RRR_HTTP_SERVER_WORKER_WEBSOCKET_TIMEOUT_S			(RRR_HTTP_SERVER_WORKER_WEBSOCKET_PING_INTERVAL_S*2)
-
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
 		const struct rrr_http_server_callbacks *callbacks,

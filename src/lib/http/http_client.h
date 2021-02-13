@@ -90,6 +90,7 @@ struct rrr_http_client_request_data {
 	int do_plain_http2;
 
 	int ssl_no_cert_verify;
+	uint16_t concurrent_connections;
 
 	ssize_t read_max_size;
 };
@@ -107,9 +108,6 @@ struct rrr_http_client_request_callback_data {
 	struct rrr_http_transaction *transaction;
 };
 
-void rrr_http_client_request_data_init (
-		struct rrr_http_client_request_data *target
-);
 int rrr_http_client_request_data_reset_from_request_data (
 		struct rrr_http_client_request_data *target,
 		const struct rrr_http_client_request_data *source

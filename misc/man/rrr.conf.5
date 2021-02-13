@@ -1714,6 +1714,9 @@ If the original message which caused the query had a topic set, this topic will 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
 
+.It http_concurrent_connections=UNSIGNED INTEGER
+Maximum number of concurrent connections to open for each host/port combination. Defaults to 10, minimum value is 1 and maximum value is 65535.
+
 .It http_tls_*
 Refer to the
 .B TLS

@@ -51,6 +51,7 @@ int rrr_http_client_config_parse (
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
+		uint16_t default_concurrent_connections,
 		int enable_fixed,
 		int enable_endpoint,
 		int enable_format
@@ -76,6 +77,15 @@ int rrr_http_client_config_parse (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);
+
+	if (data->concurrent_connections < 1 || data->concurrent_connections > 0xffff) {
+		RRR_MSG_0("Parameter %s was out of range, value must be > 0 and < 65536.\n", config_string);
+		ret = 1;
+		goto out;
+	}
 
 	data->method = rrr_http_util_method_str_to_enum(data->method_str); // Any value allowed, also NULL
 

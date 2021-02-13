@@ -42,6 +42,7 @@ struct rrr_http_client_config {
 	enum rrr_http_body_format body_format;
 
 	rrr_setting_uint server_port;
+	rrr_setting_uint concurrent_connections;
 
 	struct rrr_map tags;
 	struct rrr_map fixed_tags;
@@ -58,6 +59,7 @@ int rrr_http_client_config_parse (
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
+		uint16_t default_concurrent_connections,
 		int enable_fixed,
 		int enable_endpoint,
 		int enable_body_format

@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_SERVER                    "localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT                      0 // 0=automatic
 #define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX             5
+#define RRR_HTTPCLIENT_DEFAULT_CONCURRENT_CONNECTIONS    10
 #define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX               500
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
@@ -1426,8 +1427,6 @@ static int httpclient_data_init (
 
 	data->thread_data = thread_data;
 
-	rrr_http_client_request_data_init(&data->request_data);
-
 	goto out;
 //	out_cleanup_data:
 //		httpclient_data_cleanup(httpclient_data);
@@ -1516,6 +1515,7 @@ static int httpclient_parse_config (
 			"http",
 			RRR_HTTPCLIENT_DEFAULT_SERVER,
 			RRR_HTTPCLIENT_DEFAULT_PORT,
+			RRR_HTTPCLIENT_DEFAULT_CONCURRENT_CONNECTIONS,
 			0, // <-- Disable fixed tags and fields
 			1, // <-- Enable endpoint
 			1  // <-- Enable body format

@@ -46,8 +46,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS 10
-
 static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
 	void *ptr = *((void **) arg);
 	RRR_FREE_IF_NOT_NULL(ptr);
@@ -58,13 +56,6 @@ static void __rrr_http_client_uri_dbl_ptr_destroy_if_not_null (void *arg) {
 	if (uri != NULL) {
 		rrr_http_util_uri_destroy(uri);
 	}
-}
-
-
-void rrr_http_client_request_data_init (
-		struct rrr_http_client_request_data *target
-) {
-	memset(target, '\0', sizeof(*target));
 }
 
 static int __rrr_http_client_request_data_strings_reset (
@@ -148,6 +139,10 @@ int rrr_http_client_request_data_reset (
 	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
 
+	if (data->concurrent_connections == 0) {
+		data->concurrent_connections = 1;
+	}
+
 	out:
 	return ret;
 }
@@ -162,7 +157,12 @@ int rrr_http_client_request_data_reset_from_config (
 		goto out;
 	}
 
+	if (config->concurrent_connections < 1 || config->concurrent_connections > 65535) {
+		RRR_BUG("BUG: Concurrent connection parameter out of range in rrr_http_client_request_data_reset_from_config\n");
+	}
+
 	data->http_port = config->server_port;
+	data->concurrent_connections = config->concurrent_connections;
 
 	out:
 	return ret;
@@ -524,8 +524,8 @@ static int __rrr_http_client_request_send_intermediate_connect (
 		);
 
 		if (keepalive_handle == 0) {
-			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%i\n",
-					server_to_use, port_to_use, concurrent_index + 1, RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS);
+			RRR_DBG_3("HTTP client new connection to %s:%" PRIu16 " %" PRIu16 "/%" PRIu16 "\n",
+					server_to_use, port_to_use, concurrent_index + 1, callback_data->data->concurrent_connections);
 
 			if (rrr_net_transport_connect (
 					transport_keepalive,
@@ -554,7 +554,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 				__rrr_http_client_request_send_final_transport_ctx_callback,
 				callback_data
 		);
-	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < RRR_HTTP_CLIENT_MAX_SERVER_CONCURRENT_CONNECTIONS);
+	} while (ret == RRR_HTTP_BUSY && (++concurrent_index) < callback_data->data->concurrent_connections);
 
 	out:
 		return ret;

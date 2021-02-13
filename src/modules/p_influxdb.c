@@ -52,6 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086
+#define INFLUXDB_DEFAULT_CONCURRENT_CONNECTIONS 10
 #define INFLUXDB_MAX_REDIRECTS 5
 
 // Standardized return values, HTTP-framework compatible
@@ -459,6 +460,7 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			"influxdb",
 			INFLUXDB_DEFAULT_SERVER,
 			INFLUXDB_DEFAULT_PORT,
+			INFLUXDB_DEFAULT_CONCURRENT_CONNECTIONS,
 			1, // <-- Enable fixed tags and fields
 			0, // <-- Do not enable endpoint
 			0  // <-- Do not enable body format
