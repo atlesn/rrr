@@ -165,8 +165,6 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	char topic_tmp[128];
-
 	int does_match = 0;
 
 	if (rrr_msg_msg_topic_match (
