@@ -569,8 +569,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	rrr_http_client_request_data_init(&data.request_data);
-
 	if (__rrr_http_client_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
