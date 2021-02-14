@@ -24,6 +24,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "increment.h"
 
+int rrr_increment_verify (
+		const uint64_t step_or_mod,
+		const uint64_t min,
+		const uint64_t max,
+		const uint64_t position_or_zero
+) {
+	if (step_or_mod > 0xff) {
+		RRR_MSG_0("step_or_mod was above max value %lu\n", 0xff);
+		return 1;
+	}
+	if (min > 0xffffffff) {
+		RRR_MSG_0("min was above max value %lu\n", 0xffffffff);
+		return 1;
+	}
+	if (max > 0xffffffff) {
+		RRR_MSG_0("max was above max value %lu\n", 0xffffffff);
+		return 1;
+	}
+	if (position_or_zero > 0xffffffff) {
+		RRR_MSG_0("position was above max value %lu\n", 0xff);
+		return 1;
+	}
+	if (min > max) {
+		RRR_MSG_0("min was > max in incrementer\n");
+		return 1;
+	}
+	if (step_or_mod == 0) {
+		RRR_MSG_0("BUG: mod was 0 in incrementer\n");
+		return 1;
+	}
+	// If min is 5 and max is 10, there are 6 possible numbers
+	if (max - min + 1 < step_or_mod) {
+		RRR_MSG_0("BUG: max - min was < mod in incrementer\n");
+		return 1;
+	}
+	if (position_or_zero > step_or_mod - 1) {
+		RRR_MSG_0("BUG: position was > mod - 1 in incrementer\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 uint32_t rrr_increment_basic (
 		const uint32_t value,
 		const uint32_t step,
@@ -45,20 +88,6 @@ uint32_t rrr_increment_mod (
 		const uint32_t max,
 		const uint8_t position
 ) {
-	if (min > max) {
-		RRR_BUG("BUG: min was > max in incrementer\n");
-	}
-	if (mod == 0) {
-		RRR_BUG("BUG: mod was 0 in incrementer\n");
-	}
-	// If min is 5 and max is 10, there are 6 possible numbers
-	if (max - min + 1 < mod) {
-		RRR_BUG("BUG: max - min was < mod in incrementer\n");
-	}
-	if (position > mod - 1) {
-		RRR_BUG("BUG: position was > mod - 1 in incrementer\n");
-	}
-
 	uint64_t value_tmp = (uint64_t) value - ((uint64_t) value % mod) + mod + position;
 	if (value_tmp > max || value_tmp < min) {
 		value_tmp = (uint64_t) min - ((uint64_t) min % mod) + position;

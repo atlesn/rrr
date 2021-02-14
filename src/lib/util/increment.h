@@ -23,6 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+int rrr_increment_verify (
+		const uint64_t step_or_mod,
+		const uint64_t min,
+		const uint64_t max,
+		const uint64_t position_or_zero
+);
 uint32_t rrr_increment_basic (
 		const uint32_t value,
 		const uint32_t step,

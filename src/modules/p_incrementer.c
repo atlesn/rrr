@@ -28,20 +28,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 
-#include "../lib/message_holder/message_holder.h"
-#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages/msg_msg.h"
-#include "../lib/message_holder/message_holder_util.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_util.h"
 #include "../lib/map.h"
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/msgdb/msgdb_client.h"
+#include "../lib/util/increment.h"
 
 struct incrementer_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -57,7 +58,7 @@ struct incrementer_data {
 	rrr_setting_uint id_min;
 	rrr_setting_uint id_max;
 	rrr_setting_uint id_modulus;
-	rrr_setting_uint id_start;
+	rrr_setting_uint id_position;
 
 	struct rrr_map db_initial_ids;
 	struct rrr_map db_used_ids;
@@ -330,11 +331,7 @@ static int incrementer_process_subject (
 			INSTANCE_D_NAME(data->thread_data), topic_tmp);
 	}
 
-
-	unsigned long long new_id_llu = old_id_llu;
-	if (++new_id_llu == 0) {
-		new_id_llu++;
-	}
+	unsigned long long new_id_llu = rrr_increment_mod(old_id_llu, data->id_modulus, data->id_min, data->id_max, data->id_position);
 
 	if ((ret = rrr_string_builder_append_format(&topic_new, "%s/%llu", topic_tmp, new_id_llu)) != 0) {
 		RRR_MSG_0("Failed to allocate new topic in incrementer_process_subject\n");
@@ -498,10 +495,16 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 		
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_min", id_min, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_start", id_start, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_min", id_min, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_max", id_max, 0xffffffff);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_modulus", id_modulus, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("incrementer_id_position", id_position, 0);
+
+	if ((ret = rrr_increment_verify (data->id_modulus, data->id_min, data->id_max, data->id_position)) != 0) {
+		RRR_MSG_0("Invalid ID parameters in incrementer instance %s\n",
+				config->name);
+		goto out;
+	}
 
 	out:
 	return ret;
