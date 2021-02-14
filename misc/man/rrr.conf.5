@@ -1,4 +1,4 @@
-.Dd 2021-02-08
+.Dd 2021-02-14
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -345,10 +345,13 @@ Creates a socket to which other programs or
 can deliver data.
 
 .It httpserver (PAI)
-Spins up a TLS-capable HTTP server which can parse POST and GET data into RRR message arrays.
+Spins up an nHTTP server which can parse input data into RRR array messages and generate requests.
 
 .It httpclient (PAI)
-Sends records to any HTTP server using GET or POST, TLS-capable.
+Sends records and requests to an HTTP server.
+
+.It incrementer (PA)
+Keeps track of unique IDs and appends them to topics of messages.
 
 .It msgdb (N)
 Filesystem storage engine for RRR messages (message DB).
@@ -1753,6 +1756,89 @@ Multiple instances of the Message DB should not use the same directory.
 
 .It msgdb_socket=FILENAME
 The path to the socket to which clients connects. Defaults to '/var/run/rrr/msgdb.sock'.
+.El
+
+.SS incrementer (PA)
+Incrementer will append unique ID numbers to messages matching a specified topic filter.
+If wildcards are present in the filter, an separate ID counter will be used for each unique topic matching the filter.
+The ID counters may be initialized by passing in messages with a start ID value in a specific tag, or they may begin at
+the lowest allowed value. If a message DB socket is specified, the latest used ID's will be stored on disk for
+persistence across restarts.
+
+When messages are allocated an ID, a number following a slash / is appended to the topic before the messages
+are sent to the output buffer for other instances to pick up.
+
+If a message with the topic
+.B my/topic-a
+is given to incrementer and matches the active configuration, the topic will be changed to
+.B my/topic-a/UUU
+where UUU is the allocated numberic ID. The allocated IDs are 32-bit unsigned integers which gives a maximum value of 4.294.967.295
+which when reached wraps back to the minimum value.
+
+.Bl -tag -width -indent
+.It incrementer_subject_topic_filter=MQTT TOPIC FILTER
+The topic filter for messages to process, required parameters. Wildcards # and + are allowed per MQTT standards.
+Messages received which do not match will be passed through to the output buffer unmodified.
+To prevent other messages from being received to incrementer all together, set the same filter in the general
+.B topic_filter
+parameter.
+
+.It incrementer_msgdb_socket=PATH
+If specified, used IDs will be stored on disk using Message DB. An instance of
+.B msgdb (N)
+must be running and listening on the socket.
+
+.It incrementer_id_tag=TAG
+If specified, all topics for which to allocate IDs must be pre-initialized. This is done
+by passing a message to
+.B incrementer
+with the same topic 
+
+.It incrementer_id_min=UNSIGNED INTEGER
+The lowest ID to allocate, defaults to 1.
+
+.It incrementer_id_max=UNSIGNED INTEGER
+The maximum ID to allocate, default to 4.294.967.295.
+
+.It incrementer_id_modulus=UNSIGNED INTEGER
+The modulus (increment step) to use, defaults to 1 which is also the minimum value. Maximum value is 255.
+
+.It incrementer_id_position=UNSIGNED INTEGER
+The position within the modulus to use for IDs. Defaults to 0, maximum value is 254 and must be less than modulus.
+.El
+
+The max and min values must otherwise be set so that the modulus fits between them.
+The consistency of the configuration parameters will be checked during startup.
+Any ID which after incrementation gets a value less than min or more than max will
+be reset to a low value matching the modulus and position parameters.
+
+The algorithm used for calculating ID numbers:
+
+\(bu IDo  = Old ID (last allocated)
+.br
+\(bu IDn  = New ID
+.br
+\(bu IDl  = Lowest ID
+.br
+\(bu IDh  = Highest ID
+.br
+\(bu m    = Modulus
+.br
+\(bu p    = Position
+
+.nf
+IDn1 = IDo - (IDo mod m) + m + p
+
+If IDn1 < IDl or IDn1 > IDh, then IDn2 = IDl - (IDl mod m) + p
+                             else IDn2 = IDn1
+
+If IDn2 < IDl, then IDn = IDn2 + m
+               else IDn = IDn2
+.fi
+
+\(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
+.br
+\(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
 
 .SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5.
