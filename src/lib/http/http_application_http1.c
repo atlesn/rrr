@@ -253,8 +253,7 @@ static int __rrr_http_application_http1_response_send (
 			__rrr_http_application_http1_response_send_final,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_application_http1_transport_ctx_send_response\n",
-				handle->handle);
+		RRR_DBG_2("Failed to send response to HTTP client\n");
 		goto out;
 	}
 
@@ -1119,6 +1118,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 			goto out;
 		}
 
+		read_session->eof_ok_now = 1;
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {

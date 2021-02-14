@@ -29,7 +29,9 @@ sub process {
 
 	$message->clear_array();
 
-	$message->push_tag_str("http_body", $body);
+	if (defined $body) {
+		$message->push_tag_str("http_body", $body);
+	}
 
 	$message->send();
 

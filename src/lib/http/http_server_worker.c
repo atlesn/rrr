@@ -427,7 +427,7 @@ static void __rrr_http_server_worker_thread_entry (
 				&worker_data
 		)) != 0) {
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
-				RRR_DBG_2("HTTP worker %i: Failed while working with client, soft error\n",
+				RRR_DBG_2("HTTP worker %i: Soft error while working with client\n",
 						worker_data.config_data.transport_handle);
 				break;
 			}
