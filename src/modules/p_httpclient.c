@@ -1365,7 +1365,7 @@ static int httpclient_poll_callback_msgdb_notify_if_needed (
 		}
 	}
 
-	enum rrr_http_method method = RRR_HTTP_METHOD_GET;
+	enum rrr_http_method method = data->http_client_config.method;
 	if ((ret = httpclient_entry_find_method(&method, data, &array_tmp)) != 0) {
 		if (ret != RRR_HTTP_NO_RESULT) {
 			goto out;
