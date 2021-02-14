@@ -407,6 +407,7 @@ static int __rrr_msgdb_server_del_path_split_callback (
 				if (rmdir(str) != 0) {
 					RRR_MSG_0("Could not remove directory '%s' in message db server: %s\n",
 						str, rrr_strerror(errno));
+					ret = RRR_MSGDB_SOFT_ERROR;
 				}
 			}
 			else {
