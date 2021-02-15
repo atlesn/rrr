@@ -335,13 +335,15 @@ int colplan_array_bind_execute (
 	struct rrr_array collection = {0};
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_array_message_append_to_collection(&collection, entry->message) != 0) {
+	uint16_t array_version = 0;
+
+	if (rrr_array_message_append_to_collection(&array_version, &collection, entry->message) != 0) {
 		RRR_MSG_0("Could not convert array message to data collection in mysql\n");
 		ret = 1;
 		goto out_cleanup;
 	}
 
-	if (collection.version != 7) {
+	if (array_version != 7) {
 		RRR_BUG("Array version mismatch in MySQL colplan_array_bind_execute (%u vs %i), module must be updated\n",
 				collection.version, 7);
 	}
@@ -781,7 +783,7 @@ int process_callback (
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct rrr_msg_msg *message = entry->message;
 
-	rrr_thread_update_watchdog_time(INSTANCE_D_THREAD(thread_data));
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
 	RRR_DBG_3 ("mysql instance %s: processing message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
@@ -813,7 +815,8 @@ int process_callback (
 		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
-				entry
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		) != 0) {
 			RRR_MSG_0("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
 					INSTANCE_D_NAME(thread_data));
@@ -911,8 +914,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
-		rrr_thread_update_watchdog_time(thread);
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
 			RRR_MSG_0("Error while polling in mysql instance %s\n",

@@ -62,3 +62,13 @@ AC_DEFUN([SYSTEMD_SYSTEM_UNIT_DIR], [[$(
 	fi;
 	echo -n "$SYSTEMD_systemdsystemunitdir" | tr -d '\n')]])
 dnl Don't put the end brackets on this line, will put an ugly newline in the substiution text
+
+# SYSTEMD_TMPFILES_DIR()
+# ----------------------
+AC_DEFUN([SYSTEMD_TMPFILES_DIR], [[$(
+	if [ "x$SYSTEMD_init" != "x1" ]; then
+		>&2 echo "SYSTEMD_@&t@TMPFILES_DIR used before SYSTEMD_@&t@INIT";
+		exit 1
+	fi;
+	echo -n "$SYSTEMD_tmpfilesdir" | tr -d '\n')]])
+dnl Don't put the end brackets on this line, will put an ugly newline in the substiution text

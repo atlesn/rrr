@@ -58,5 +58,10 @@ int rrr_msg_addr_clone (
 		struct rrr_msg_addr **target,
 		const struct rrr_msg_addr *source
 );
+void rrr_msg_addr_to_str (
+		char *target,
+		size_t target_size,
+		const struct rrr_msg_addr *msg
+);
 
 #endif /* RRR_MESSAGE_ADDR_H */

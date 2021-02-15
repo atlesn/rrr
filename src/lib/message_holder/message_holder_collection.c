@@ -19,11 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "log.h"
+
 #include "message_holder_collection.h"
 #include "message_holder_struct.h"
 #include "message_holder.h"
 
-#include "log.h"
 #include "util/linked_list.h"
 
 void rrr_msg_holder_collection_clear (
