@@ -57,7 +57,7 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	if (http2->http2_session != NULL) {
 		int streams = rrr_http2_streams_count(http2->http2_session);
 		if (streams > 0) {
-			RRR_MSG_0("Warning: HTTP2 destroy application with %i active transactions\n", streams);
+			RRR_DBG_2("HTTP2 destroys application with %i active transactions\n", streams);
 		}
 	}
 

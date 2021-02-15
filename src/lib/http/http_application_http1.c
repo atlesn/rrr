@@ -67,7 +67,7 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
 
 	if (http1->active_transaction != NULL) {
-		RRR_MSG_0("Warning: HTTP1 destroy application with 1 active transaction\n");
+		RRR_DBG_2("HTTP1 destroys application with 1 active transaction\n");
 	}
 
 	rrr_websocket_state_clear_all(&http1->ws_state);
