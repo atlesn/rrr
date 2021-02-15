@@ -12,8 +12,8 @@ merge() {
 	git push || exit 1
 }
 
-merge websocket
 merge bugfix
+merge testing
 merge development
 merge development-freebsd
 merge development-voidlinux
@@ -23,8 +23,6 @@ merge ubuntu
 merge debian-testing
 merge rrr-mysql-5.7
 merge rrr-mysql-8.0
-merge junction
-merge snmp
 merge alpine
 
 git checkout master || exit 1
