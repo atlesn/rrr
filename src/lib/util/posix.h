@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,8 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#define RRR_POSIX_MUTEX_IS_RECURSIVE	(1<<0)
-#define RRR_POSIX_MUTEX_IS_PSHARED		(1<<1)
+#define RRR_POSIX_MUTEX_IS_RECURSIVE    (1<<0)
+#define RRR_POSIX_MUTEX_IS_PSHARED      (1<<1)
+#define RRR_POSIX_MUTEX_IS_ERRORCHECK   (1<<2)
 
 int rrr_posix_usleep(int useconds);
 void *rrr_posix_mmap (size_t size);

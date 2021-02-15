@@ -23,11 +23,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_BASE64_H
 
 unsigned char *rrr_base64_encode (
-		const unsigned char *src, size_t len,
+		const unsigned char *src,
+		size_t len,
 		size_t *out_len
 );
-
 unsigned char *rrr_base64_decode (
+		const unsigned char *src,
+		size_t len,
+		size_t *out_len
+);
+unsigned char *rrr_base64url_encode (
+		const unsigned char *src,
+		size_t len,
+		size_t *out_len
+);
+unsigned char *rrr_base64url_decode (
 		const unsigned char *src,
 		size_t len,
 		size_t *out_len

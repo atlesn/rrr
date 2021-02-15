@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -66,6 +66,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
 		{0,							's',	"sync",					"[-s|--sync]"},
+		{0,							'S',	"strip-separators",		"[-S|--strip-separators]"},
 		{0,							'q',	"quiet",				"[-q|--quiet]"},
 		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -95,6 +96,7 @@ struct rrr_post_data {
 	uint64_t elements_count;
 	struct rrr_array_tree *tree;
 
+	int strip_separators;
 	int sync_byte_by_byte;
 	int quiet;
 
@@ -187,6 +189,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
+	}
+
+	// Strip separators
+	if (cmd_exists(cmd, "strip-separators", 0)) {
+		data->strip_separators = 1;
+	}
+	else {
+		data->strip_separators = 0;
 	}
 
 	// Sync byte by byte
@@ -417,6 +427,10 @@ static int __rrr_post_read_callback (struct rrr_read_session *read_session, stru
 
 	struct rrr_msg_msg *message = NULL;
 
+	if (data->strip_separators) {
+		rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+	}
+
 	if ((ret = rrr_array_new_message_from_collection (
 			&message,
 			array_final,
@@ -542,7 +556,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 

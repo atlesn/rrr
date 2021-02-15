@@ -95,6 +95,7 @@ static int __rrr_http_query_builder_escape_field (
 }
 
 int rrr_http_query_builder_append_type_value_as_escaped_string (
+		int *value_was_empty,
 		struct rrr_http_query_builder *query_builder,
 		const struct rrr_type_value *value,
 		int do_quote_values
@@ -103,18 +104,20 @@ int rrr_http_query_builder_append_type_value_as_escaped_string (
 
 	int ret = RRR_HTTP_OK;
 
+	*value_was_empty = 0;
+
 	char *value_tmp = NULL;
 
 	if (RRR_TYPE_IS_FIXP(value->definition->type)) {
 		char buf[512];
 
 		if ((ret = rrr_fixp_to_str_double(buf, 511, *((rrr_fixp*) value->data))) != 0) {
-			RRR_MSG_0("Could not convert fixed point to string in  __rrr_http_query_builder_append_type_value_raw\n");
+			RRR_MSG_0("Could not convert fixed point to string in rrr_http_query_builder_append_type_value_as_escaped_string\n");
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 
-		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append fixed point to query buffer in  __rrr_http_query_builder_append_type_value_raw\n");
+		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append fixed point to query buffer in rrr_http_query_builder_append_type_value_as_escaped_string\n");
 	}
 	else if (RRR_TYPE_IS_64(value->definition->type)) {
 		char buf[64];
@@ -125,25 +128,28 @@ int rrr_http_query_builder_append_type_value_as_escaped_string (
 			sprintf(buf, "%" PRIu64, *((uint64_t*) value->data));
 		}
 
-		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append 64 type to query buffer in  __rrr_http_query_builder_append_type_value_raw\n");
+		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append 64 type to query buffer in rrr_http_query_builder_append_type_value_as_escaped_string\n");
 	}
 	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
 		// For value with 0 length, only the tag is output with value 1
 		if (value->total_stored_length > 0) {
 			if (__rrr_http_query_builder_escape_field(&value_tmp, value->data, value->total_stored_length, do_quote_values) != 0) {
-				RRR_MSG_0("Could not escape blob field in influxdb __query_append_values_from_array\n");
+				RRR_MSG_0("Could not escape blob field in rrr_http_query_builder_append_type_value_as_escaped_string\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
 
-			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, value_tmp, "Could not append blob type to query buffer in  __rrr_http_query_builder_append_type_value_raw\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, value_tmp, "Could not append blob type to query buffer in rrr_http_query_builder_append_type_value_as_escaped_string\n");
 		}
 		else {
-			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "1", "Could not append '1' for blob type with no length to query buffer in  __rrr_http_query_builder_append_type_value_raw\n");
+			*value_was_empty = 1;
 		}
 	}
+	else if (RRR_TYPE_IS_VAIN(value->definition->type)) {
+		*value_was_empty = 1;
+	}
 	else {
-		RRR_MSG_0("Unknown value type %ul with tag '%s' while constructing HTTP query\n",
+		RRR_MSG_0("Unknown value type %u with tag '%s' while constructing HTTP query\n",
 				value->definition->type, (value->tag != NULL ? value->tag : "(no tag)"));
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -186,13 +192,20 @@ static int __rrr_http_query_builder_append_type_value (
 	RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, name_escaped_tmp, "Could not append name to query buffer in rrr_http_query_builder_append_values_from_array\n");
 	RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in rrr_http_query_builder_append_values_from_array\n");
 
+	int value_was_empty = 0;
+
 	if ((ret = rrr_http_query_builder_append_type_value_as_escaped_string (
+			&value_was_empty,
 			query_builder,
 			value,
 			do_quote_values
 	)) != RRR_HTTP_OK) {
 		RRR_MSG_0("Error while adding value with tag '%s' to query\n", node_tag);
 		goto out;
+	}
+
+	if (value_was_empty) {
+		rrr_string_builder_chop(string_builder);
 	}
 
 	out:

@@ -33,12 +33,31 @@ struct rrr_mmap {
 	  void *heap;
 };
 
-void rrr_mmap_free(struct rrr_mmap *mmap, void *ptr);
-void rrr_mmap_dump_indexes (struct rrr_mmap *mmap);
-void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size);
-int rrr_mmap_heap_reallocate (struct rrr_mmap *mmap, uint64_t heap_size);
-int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name);
-void rrr_mmap_incref (struct rrr_mmap *mmap);
-void rrr_mmap_destroy (struct rrr_mmap *mmap);
+void rrr_mmap_free (
+		struct rrr_mmap *mmap,
+		void *ptr
+);
+void rrr_mmap_dump_indexes (
+		struct rrr_mmap *mmap
+);
+void *rrr_mmap_allocate (
+		struct rrr_mmap *mmap,
+		uint64_t req_size
+);
+int rrr_mmap_heap_reallocate (
+		struct rrr_mmap *mmap,
+		uint64_t heap_size
+);
+int rrr_mmap_new (
+		struct rrr_mmap **target,
+		uint64_t heap_size,
+		const char *name
+);
+void rrr_mmap_incref (
+		struct rrr_mmap *mmap
+);
+void rrr_mmap_destroy (
+		struct rrr_mmap *mmap
+);
 
 #endif /* RRR_MMAP_H */

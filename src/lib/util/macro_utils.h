@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_PASTE(x, y) x ## y
 #define RRR_PASTE_3(x, y, z) x ## y ## z
+#define RRR_PASTE_4(a, b, c, d) a ## b ## c ## d
 
 #define RRR_QUOTE(value) #value
 

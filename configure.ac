@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.15-3)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.15-3", [Full version])
+AC_INIT([Read Route Record],[1.16-0])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.16-0", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 15, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 3, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -34,7 +34,6 @@ AS_IF([test "x${EGCC}" != "x"], [
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
 AC_PROG_CC
-AC_PROG_CC_STDC
 AC_PROG_INSTALL
 #AC_PROG_YACC
 #AM_PROG_LEX
@@ -51,6 +50,8 @@ AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable Libre
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
 AC_ARG_WITH([openssl-ish], [AS_HELP_STRING([--with-openssl-ish], [Force enable OpenSSL (or LibreSSL-style OpenSSL) support])], [enable_openssl=yes; enable_auto_ssl=no], [ enable_openssl=no ])
+AC_ARG_WITH([jsonc],[AS_HELP_STRING([--without-jsonc],[build without the json-c bindings])],[enable_jsonc=no],[enable_jsonc=yes])
+AC_ARG_WITH([nghttp2],[AS_HELP_STRING([--without-nghttp2],[build without the NGHTTP2 bindings])],[enable_nghttp2=no],[enable_nghttp2=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
@@ -94,6 +95,7 @@ SHELL_VARS_INIT([variables.sh])
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
 SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
 SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
+SHELL_VARS_EXPORT([RRR_WITH_NGHTTP2], $enable_nghttp2)
 SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
@@ -105,6 +107,8 @@ AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_JSONC], [test "x$enable_jsonc" != xno])
+AM_CONDITIONAL([RRR_WITH_NGHTTP2], [test "x$enable_nghttp2" != xno])
 AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 
 AC_CHECK_HEADER([linux/input.h], [have_linux_input=yes], [have_linux_input=no])
@@ -147,6 +151,29 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+AC_MSG_CHECKING([precense of gettid()])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <unistd.h>
+		#include <sys/types.h>
+
+		int main (int argc, char *argv[]) {
+			pid_t tid = gettid();
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
+TLS_CFLAGS=
+TLS_LDFLAGS=
+TLS_LIBADD=
+
 CHECK_LIBRESSL_LIBTLS
 
 AC_MSG_CHECKING([for automatic LibreSSL/OpenSSL selection])
@@ -175,9 +202,9 @@ AS_IF([test "x$enable_libressl" = xyes], [
 	AC_MSG_CHECKING([LibreSSL LIBADD])
 	AC_MSG_RESULT([$LIBRESSL_LIBTLS_LIBADD])
 
-	AC_SUBST([LIBRESSL_LIBTLS_CFLAGS])
-	AC_SUBST([LIBRESSL_LIBTLS_LDFLAGS])
-	AC_SUBST([LIBRESSL_LIBTLS_LIBADD])
+	TLS_CFLAGS=$LIBRESSL_LIBTLS_CFLAGS
+	TLS_LDFLAGS=$LIBRESSL_LIBTLS_LDFLAGS
+	TLS_LIBADD=$LIBRESSL_LIBTLS_LIBADD
 ], [
 	AC_MSG_RESULT([Not compiling with LibreSSL])
 ])
@@ -204,6 +231,10 @@ AS_IF([test "x$enable_openssl" = xyes], [
 	OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
 	AC_SUBST([OPENSSL_CFLAGS_COMPAT])
 	AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+
+	AC_SUBST([TLS_CFLAGS])
+	AC_SUBST([TLS_LDFLAGS])
+	AC_SUBST([TLS_LIBADD])
 ], [
 	AC_MSG_RESULT([Not compiling with OpenSSL])
 ])
@@ -221,9 +252,21 @@ AS_IF([test "x$enable_encryption" != "xno" ], [
 	AC_MSG_RESULT([yes])
 	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/sha.h openssl/rand.h])
 	AC_DEFINE([RRR_WITH_OPENSSL_CRYPT], [1], "Use OpenSSL/LibreSSL cryptography functions")
+	AS_IF([test "x$TLS_LDFLAGS" = "x"], [
+		AX_CHECK_OPENSSL([], [
+			AC_MSG_ERROR([Cannot compile with encryption, OpenSSL/LibreSSL missing])
+		])
+		TLS_CFLAGS=$OPENSSL_INCLUDES
+		TLS_LDFLAGS=$OPENSSL_LDFLAGS
+		TLS_LIBADD=$OPENSSL_LIBS
+	])
 ], [
 	AC_MSG_RESULT([not enabled])
 ])
+
+AC_SUBST([TLS_CFLAGS])
+AC_SUBST([TLS_LDFLAGS])
+AC_SUBST([TLS_LIBADD])
 
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_openssl)
 SHELL_VARS_EXPORT([RRR_WITH_OPENSSL_CRYPT], $enable_openssl_crypt)
@@ -459,6 +502,66 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+AC_MSG_CHECKING([json-c bindings])
+AS_IF([test "x$enable_jsonc" = xno], [
+	AC_MSG_RESULT([Not compiling with json-c bindings])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_JSONC], [1], [Compile with json-c bindings])
+	AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
+	AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
+
+	AC_CHECK_LIB(json-c, json_object_new_null, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
+	], [])
+
+	AC_CHECK_LIB(json-c, json_object_new_uint64, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
+	], [])
+
+	AC_MSG_CHECKING([json_object_object_add is of void type])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <json-c/json_object.h>
+			int main (int argc, char *argv[]) {
+				json_object *obj1 = json_object_new_object();
+				json_object *obj2 = json_object_new_object();
+				// Compilation fails if function is of void type
+				return json_object_object_add(obj1, "key", obj2);
+			}
+		]])
+	], [
+		AC_MSG_RESULT([no])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
+	])
+
+	JSONC_CFLAGS=""
+	JSONC_LDFLAGS=""
+	JSONC_LIBS="-ljson-c"
+
+	AC_SUBST([JSONC_CFLAGS])
+	AC_SUBST([JSONC_LDFLAGS])
+	AC_SUBST([JSONC_LIBS])
+])
+
+AC_MSG_CHECKING([NGHTTP2 bindings])
+AS_IF([test "x$enable_nghttp2" = xno], [
+	AC_MSG_RESULT([Not compiling with NGHTTP2 bindings])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_WITH_NGHTTP2], [1], [Compile with NGHTTP2 bindings])
+	AC_CHECK_HEADERS([nghttp2/nghttp2.h])
+	AC_CHECK_LIB(nghttp2, nghttp2_pack_settings_payload, [], AC_MSG_ERROR([nghttp2_pack_settings_payload from nghttp2 not found]))
+	NGHTTP2_CFLAGS=""
+	NGHTTP2_LDFLAGS="-lnghttp2"
+
+	AC_SUBST([NGHTTP2_CFLAGS])
+	AC_SUBST([NGHTTP2_LDFLAGS])
+	AC_SUBST([NGHTTP2_LIBS])
+])
+
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
@@ -548,18 +651,27 @@ AS_IF([test "x$enable_confdir" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
-AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_UNIT_INSTALL], [test "x$RRR_SYSTEMD_NO_UNIT_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_TMPFILES_INSTALL], [test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x1"])
 
 AC_MSG_CHECKING([for systemd usage])
 AS_IF([test "x$enable_systemd" = xyes], [
 	REQUIRE_CONFDIR
 	SYSTEMD_INIT
-	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_MSG_RESULT([yes]);
+
+	AC_SUBST([RRR_SYSTEMD_UNIT_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
+	AC_MSG_CHECKING([For systemd unit directory])
+	AC_MSG_RESULT([SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_SUBST([RRR_TMPFILES_DIR], [SYSTEMD_TMPFILES_DIR])
+	AC_MSG_CHECKING([For systemd tmpfiles.d directory])
+	AC_MSG_RESULT([SYSTEMD_TMPFILES_DIR])
 
 	AC_CONFIG_FILES([misc/systemd/make-service.sh])
+	AC_CONFIG_FILES([misc/systemd/make-tmpfiles.sh])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
-
-	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
 
 	AC_MSG_CHECKING([for systemd service file no installation command])
 	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
@@ -575,10 +687,24 @@ AS_IF([test "x$enable_systemd" = xyes], [
 
 	JOURNALD_LIBS="-lsystemd"
 	AC_SUBST([JOURNALD_LIBS])
+
+	RRR_RUN_DIR="/run/rrr"
 ],[
+	RRR_RUN_DIR="/tmp"
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([for RRR run directory])
+AC_MSG_RESULT([${RRR_RUN_DIR}])
+AC_SUBST(RRR_RUN_DIR)
+AC_DEFINE_UNQUOTED([RRR_RUN_DIR], ["${RRR_RUN_DIR}"], [Default run directory for sockets])
+
+AC_MSG_CHECKING([for RRR data directory])
+RRR_DATA_DIR="${localstatedir}/lib/rrr"
+AC_MSG_RESULT([${RRR_DATA_DIR}])
+AC_SUBST(RRR_DATA_DIR)
+
+AC_CONFIG_FILES([src/make-paths.sh])
 
 AC_MSG_CHECKING([for daemon username])
 AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
@@ -594,6 +720,7 @@ AS_IF([test "x$enable_runit" = xyes], [
 	REQUIRE_CONFDIR
 	AC_SUBST([RUNIT_SV_DIR], [/etc/sv/rrr/])
 	AC_CONFIG_FILES([misc/runit/Makefile])
+	
 	AC_CONFIG_FILES([misc/runit/make-runit.sh])
 	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
 ],[
@@ -618,11 +745,25 @@ AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
+AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
-				src/tests/Makefile src/tests/modules/Makefile
-				misc/Makefile src/cmodules/Makefile
+AC_CONFIG_FILES(
+	Makefile
+	src/Makefile
+	src/modules/Makefile
+	src/lib/Makefile
+	src/tests/Makefile
+	src/tests/modules/Makefile
+	misc/Makefile
+	src/cmodules/Makefile
 )
 
 AC_OUTPUT
 SHELL_VARS_CLEANUP
+
+# Make sure dependency_libs is always set to empty in new .la files to avoid
+# recursive depedency linking
+echo "rrr: disabling libtool depedency_libs variable"
+sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
+mv libtool.new libtool
+chmod +x libtool

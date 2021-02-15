@@ -36,9 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 
+#include "../log.h"
+
 #include "rrr_socket.h"
 
-#include "../log.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"
@@ -484,7 +485,7 @@ int rrr_socket_open_and_read_file (
 	*result_bytes = 0;
 
 	char *contents_tmp = NULL;
-	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file", 0);
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);
 
 	if (fd <= 0) {
 		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
@@ -493,11 +494,11 @@ int rrr_socket_open_and_read_file (
 		goto out;
 	}
 
-	ssize_t bytes = ret = lseek(fd, 0, SEEK_END);
-	if (ret == 0) {
+	ssize_t bytes = lseek(fd, 0, SEEK_END);
+	if (bytes == 0) {
 		goto out;
 	}
-	else if (ret < 0) {
+	else if (bytes < 0) {
 		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
@@ -512,19 +513,18 @@ int rrr_socket_open_and_read_file (
 	}
 
 	if ((contents_tmp = malloc(bytes + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_full_file\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_file\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = read(fd, contents_tmp, bytes)) != bytes) {
-		RRR_MSG_0("Could not read all bytes from file '%s', return was %i: %s\n",
-				filename, ret, rrr_strerror(errno));
+	ssize_t bytes_read;
+	if ((bytes_read = read(fd, contents_tmp, bytes)) != bytes) {
+		RRR_MSG_0("Could not read all bytes from file '%s', return was %lli: %s\n",
+				filename, (long long int) bytes_read, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
-
-	ret = 0;
 
 	// Make sure we allocate bytes + 1 above
 	contents_tmp[bytes] = '\0';
@@ -589,6 +589,8 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 	pthread_mutex_unlock(&socket_lock);
 
 	if (did_destroy != 1 && ignore_unregistered == 0) {
+		// NOTE ! If this warning appears, program must be fixed. In a possible race
+		//        condition, we might try to close an FD opened by somebody else.
 		RRR_MSG_0("Warning: Socket close of fd %i called but it was not registered. Attempting to close anyway.\n", fd);
 		int ret = close(fd);
 		if (ret != 0) {
@@ -1111,6 +1113,35 @@ int rrr_socket_sendto_nonblock (
 	return ret;
 }
 
+int rrr_socket_sendto_nonblock_check_retry (
+		ssize_t *written_bytes,
+		int fd,
+		const void *data,
+		ssize_t size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int err = 0;
+	int ret = rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, addr, addr_len);
+
+	if (ret == RRR_SOCKET_SOFT_ERROR) {
+		if (err == EWOULDBLOCK || err == EAGAIN || err == EINPROGRESS) {
+			ret = RRR_SOCKET_WRITE_INCOMPLETE;
+		}
+	}
+
+	return ret;
+}
+
+int rrr_socket_send_nonblock_check_retry (
+		ssize_t *written_bytes,
+		int fd,
+		const void *data,
+		ssize_t size
+) {
+	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0);
+}
+
 int rrr_socket_sendto_blocking (
 		int fd,
 		const void *data,
@@ -1126,9 +1157,8 @@ int rrr_socket_sendto_blocking (
 	while (written_bytes_total < size) {
 		RRR_DBG_7("Blocking send on fd %i starting, writing %li bytes (where of %li is complete)\n",
 				fd, size, written_bytes_total);
-		int err;
-		if ((ret = rrr_socket_sendto_nonblock (
-				&err,
+
+		if ((ret = rrr_socket_sendto_nonblock_check_retry (
 				&written_bytes,
 				fd,
 				data + written_bytes_total,
@@ -1136,8 +1166,8 @@ int rrr_socket_sendto_blocking (
 				addr,
 				addr_len
 		)) != 0) {
-			if (ret != RRR_SOCKET_SOFT_ERROR) {
-				RRR_MSG_0("Error from sendto in rrr_socket_sendto_blocking\n");
+			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
+				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
 				goto out;
 			}
 		}
@@ -1183,6 +1213,14 @@ int rrr_socket_sendto_nonblock_fail_on_partial_write (
 
 	out:
 	return ret;
+}
+
+int rrr_socket_send_blocking (
+		int fd,
+		void *data,
+		ssize_t size
+) {
+	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
 }
 
 int rrr_socket_check_alive (int fd) {

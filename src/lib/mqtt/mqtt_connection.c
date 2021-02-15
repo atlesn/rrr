@@ -872,7 +872,11 @@ static int __rrr_mqtt_conn_iterator_ctx_write (
 
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_ctx_send_nonblock(handle, data, data_size)) != 0) {
+	uint64_t bytes_written = 0;
+
+	// NOTE : Partial sends are not supported, caller must produce error
+
+	if ((ret = rrr_net_transport_ctx_send_nonblock(&bytes_written, handle, data, data_size)) != 0) {
 		if (ret == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
 			ret = RRR_MQTT_INCOMPLETE;
 			goto out;
@@ -1014,8 +1018,9 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	if ((ret = __rrr_mqtt_conn_iterator_ctx_write (handle, (char*) &header, sizeof(header.type) + variable_int_length)) != 0) {
 		if (ret == RRR_MQTT_INCOMPLETE) {
-			RRR_DBG_3("Note: Connection busy while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
-			ret = RRR_MQTT_OK;
+			// TODO : Recover from this?
+			RRR_MSG_0("Error: Connection busy while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
 

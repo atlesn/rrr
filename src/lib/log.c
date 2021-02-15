@@ -122,6 +122,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 struct rrr_log_hook {
 	void (*log)(
 			unsigned short loglevel_translated,
+			unsigned short loglevel_orig,
 			const char *prefix,
 			const char *message,
 			void *private_arg
@@ -138,6 +139,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
 				unsigned short loglevel_translated,
+				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
@@ -205,6 +207,7 @@ void rrr_log_hook_unregister (
 
 void rrr_log_hooks_call_raw (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message
 ) {
@@ -215,6 +218,7 @@ void rrr_log_hooks_call_raw (
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				loglevel_translated,
+				loglevel_orig,
 				prefix,
 				message,
 				hook->private_arg
@@ -226,6 +230,7 @@ void rrr_log_hooks_call_raw (
 
 static void __rrr_log_hooks_call (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -254,10 +259,17 @@ static void __rrr_log_hooks_call (
 	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - size, __format, args);
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
-	rrr_log_hooks_call_raw(loglevel_translated, prefix, tmp);
+	rrr_log_hooks_call_raw (
+		loglevel_translated,
+		loglevel_orig,
+		prefix,
+		tmp
+	);
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (unsigned short loglevel) {
+static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
+		unsigned short loglevel
+) {
 	unsigned short result = 0;
 
 	switch (loglevel) {
@@ -279,7 +291,9 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (unsigned shor
 	return result;
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (unsigned short loglevel) {
+static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (
+		unsigned short loglevel
+) {
 	(void)(loglevel);
 	return RRR_RFC5424_LOGLEVEL_ERROR;
 }
@@ -292,7 +306,12 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (unsigned shor
 #define SET_IOVEC(str)	\
 		{ str, strlen(str) }
 
-static void __rrr_log_sd_journal_sendv (unsigned short loglevel, const char *prefix, const char *__restrict __format, va_list args) {
+static void __rrr_log_sd_journal_sendv (
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		va_list args
+) {
 	char *buf_priority = NULL;
 	char *buf_prefix = NULL;
 	char *buf_message = NULL;
@@ -331,7 +350,12 @@ static void __rrr_log_sd_journal_sendv (unsigned short loglevel, const char *pre
 }
 #endif
 
-void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+void rrr_log_printf_nolock (
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
 	va_list args;
 	va_start(args, __format);
 
@@ -359,7 +383,10 @@ void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const c
 	va_end(args);
 }
 
-void rrr_log_printf_plain (const char *__restrict __format, ...) {
+void rrr_log_printf_plain (
+		const char *__restrict __format,
+		...
+) {
 	va_list args;
 	va_start(args, __format);
 
@@ -387,9 +414,10 @@ void rrr_log_printf_plain (const char *__restrict __format, ...) {
 	va_end(args);
 }
 
-void rrr_log_printn_plain (const char *value, size_t value_size) {
-
-
+void rrr_log_printn_plain (
+		const char *value,
+		size_t value_size
+) {
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
 		int ret = sd_journal_print(LOG_DEBUG, "%.*s", (int) value_size, value);
@@ -411,7 +439,12 @@ void rrr_log_printn_plain (const char *value, size_t value_size) {
 #endif
 }
 
-void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+void rrr_log_printf (
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
 	va_list args;
 	va_list args_copy;
 
@@ -441,13 +474,25 @@ void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__
 
 #endif
 
-	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
+	__rrr_log_hooks_call (
+		loglevel_translated,
+		loglevel,
+		prefix,
+		__format,
+		args_copy
+);
 
 	va_end(args);
 	va_end(args_copy);
 }
 
-void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+void rrr_log_fprintf (
+		FILE *file,
+		unsigned short loglevel,
+		const char *prefix,
+		const char *__restrict __format,
+		...
+) {
 	va_list args;
 	va_list args_copy;
 
@@ -470,7 +515,13 @@ void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, c
 	LOCK_END;
 #endif
 
-	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
+	__rrr_log_hooks_call (
+		loglevel_translated,
+		loglevel,
+		prefix,
+		__format,
+		args_copy
+	);
 
 	va_end(args);
 	va_end(args_copy);
