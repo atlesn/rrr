@@ -23,7 +23,7 @@ test_SOURCES = test.c \
 	test_msgdb.c \
 	test_nullsafe.c \
 	test_increment.c
-test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE \
+test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE -DPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
@@ -31,19 +31,19 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE \
 	-fprofile-arcs -ftest-coverage
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
-make_test_data_CFLAGS = 
+make_test_data_CFLAGS = -fPIE -DPIE
 
 send_ip_SOURCES = send_ip.c
-send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR
+send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fPIE -DPIE
 
 send_fifo_SOURCES = send_fifo.c
 send_fifo_CFLAGS = ${AM_CFLAGS}
-send_fifo_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS}
+send_fifo_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
 
 sha1_sha_SOURCES = sha1/sha.c
-sha1_sha_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS}
+sha1_sha_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
 
 sha1_shatest_SOURCES = sha1/shatest.c
-sha1_shatest_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS}
+sha1_shatest_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
 
 TESTS = test.sh test_passwd.sh sha1/shatest
