@@ -181,8 +181,14 @@ static int __rrr_msgdb_server_chdir (
 
 	if (chdir(directory) != 0) {
 		if (!silent) {
-			RRR_MSG_0("Could not change to directory '%s' in message db server: %s\n",
-				directory, rrr_strerror(errno));
+			if (errno == ENOENT) {
+				RRR_DBG_3("Note: Could not change to directory '%s' in message db server: %s\n",
+					directory, rrr_strerror(errno));
+			}
+			else {
+				RRR_MSG_0("Could not change to directory '%s' in message db server: %s\n",
+					directory, rrr_strerror(errno));
+			}
 		}
 		ret = 1;
 		goto out;
@@ -623,7 +629,6 @@ static int __rrr_msgdb_server_idx_path_split_callback (
 	out:
 	return ret;
 }
-
 
 struct rrr_msgdb_server_idx_make_index_readdir_callback_data {
 	struct rrr_array *response_target;
