@@ -1,0 +1,5 @@
+#!/bin/sh
+OUTPUT=$1
+rm -f $OUTPUT || exit 1
+echo "# @PACKAGE_STRING@" >> $OUTPUT
+echo "d @RRR_RUN_DIR@ 0755 @RRR_DAEMON_USERNAME@ @RRR_DAEMON_USERNAME@" >> $OUTPUT

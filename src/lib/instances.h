@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,6 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "util/linked_list.h"
 
+#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER   (1<<0)
+#define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP (1<<1)
+#define RRR_INSTANCE_MISC_OPTIONS_DUPLICATE        (1<<2)
+
 struct rrr_stats_instance;
 struct rrr_cmodule;
 struct rrr_fork_handler;
@@ -49,6 +53,7 @@ struct rrr_instance {
 
 	// Static members
 	unsigned long int senders_count;
+	int misc_flags;
 
 	// Shortcuts
 	struct rrr_instance_config_data *config;
@@ -79,8 +84,10 @@ struct rrr_instance_module_data {
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
 #define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->module_name
+#define INSTANCE_D_MODULE(thread_data) thread_data->init_data.module
 #define INSTANCE_D_THREAD(thread_data) thread_data->thread
 #define INSTANCE_D_INSTANCE(thread_data) thread_data->init_data.instance
+#define INSTANCE_D_FLAGS(thread_data) INSTANCE_D_INSTANCE(thread_data)->misc_flags
 
 struct rrr_instance_runtime_init_data {
 	struct cmd_data *cmd_data;
@@ -131,6 +138,8 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
 		thread_data->init_data.message_broker, thread_data->message_broker_handle
+#define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
+		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
@@ -164,11 +173,20 @@ struct rrr_instance *rrr_instance_find (
 unsigned int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 );
+void rrr_instance_runtime_data_destroy_hard (
+		struct rrr_instance_runtime_data *data
+);
 struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 		struct rrr_instance_runtime_init_data *init_data
 );
-void *rrr_instance_thread_entry_intermediate (
-		struct rrr_thread *thread
+int rrr_instances_create_and_start_threads (
+		struct rrr_thread_collection **thread_collection_target,
+		struct rrr_instance_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
 );
 int rrr_instance_create_from_config (
 		struct rrr_instance_collection *instances,

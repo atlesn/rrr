@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -60,6 +60,11 @@ int rrr_readdir_foreach (
 		const char *dir_path,
 		int (*callback)(struct dirent *entry, const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
 		void *private_data
+);
+int rrr_readdir_foreach_recursive (
+		const char *dir_path,
+		int (*callback)(const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
+		void *private_arg
 );
 
 #endif /* RRR_READDIR_H */

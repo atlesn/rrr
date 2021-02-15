@@ -38,7 +38,10 @@ struct rrr_exit_cleanup_method {
 static struct rrr_exit_cleanup_method *first_exit_cleanup_method = NULL;
 pthread_mutex_t exit_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void rrr_exit_cleanup_method_push(void (*method)(void *arg), void *arg) {
+void rrr_exit_cleanup_method_push (
+		void (*method)(void *arg),
+		void *arg
+) {
 	struct rrr_exit_cleanup_method *new_method = malloc(sizeof(*new_method));
 
 	pthread_mutex_lock(&exit_cleanup_lock);
@@ -80,13 +83,18 @@ int rrr_signal_handler_get_active (void) {
 	return active;
 }
 
-void rrr_signal_handler_set_active (int active) {
+void rrr_signal_handler_set_active (
+		int active
+) {
 	pthread_mutex_lock(&signal_lock);
 	signal_handlers_active = active;
 	pthread_mutex_unlock(&signal_lock);
 }
 
-struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg) {
+struct rrr_signal_handler *rrr_signal_handler_push(
+		int (*handler)(int signal, void *private_arg),
+		void *private_arg
+) {
 	struct rrr_signal_handler *h = malloc(sizeof(*h));
 	h->handler = handler;
 	h->private_arg = private_arg;
@@ -97,10 +105,13 @@ struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, vo
 	}
 	RRR_LL_APPEND(&signal_handlers, h);
 	pthread_mutex_unlock(&signal_lock);
+
 	return h;
 }
 
-void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
+void rrr_signal_handler_remove (
+		struct rrr_signal_handler *handler
+) {
 	pthread_mutex_lock(&signal_lock);
 	if (signal_handlers_active == 1) {
 		RRR_BUG("Signals were not disabled while being in rrr_signal_handler_remove\n");
@@ -109,7 +120,10 @@ void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 	pthread_mutex_unlock(&signal_lock);
 }
 
-void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
+void rrr_signal_handler_remove_all_except (
+		int *was_found,
+		void *function_ptr
+) {
 	*was_found = 0;
 
 	pthread_mutex_lock(&signal_lock);
@@ -127,7 +141,9 @@ void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
 	pthread_mutex_unlock(&signal_lock);
 }
 
-void rrr_signal (int s) {
+void rrr_signal (
+		int s
+) {
 	RRR_DBG_SIGNAL("Received signal %i int pid %i signal handlers active: %i\n", s, getpid(), signal_handlers_active);
 
 	if (signal_handlers_active == 1) {
@@ -169,9 +185,15 @@ void rrr_signal_default_signal_actions_register(void) {
 	sigaction (SIGUSR1, &action, NULL);
 	// Used to set main_running = 0;
 	sigaction (SIGTERM, &action, NULL);
+	// Used to wake up sleeps
+	sigaction (SIGCONT, &action, NULL);
 }
 
-int rrr_signal_default_handler(int *main_running, int s, void *arg) {
+int rrr_signal_default_handler (
+		int *main_running,
+		int s,
+		void *arg
+) {
 	(void)(arg);
 
 	if (s == SIGCHLD) {

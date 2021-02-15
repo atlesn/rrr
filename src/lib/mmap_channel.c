@@ -40,6 +40,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
 
+int rrr_mmap_channel_count (
+		struct rrr_mmap_channel *target
+) {
+	int count;
+	pthread_mutex_lock(&target->index_lock);
+	count = target->entry_count;
+	pthread_mutex_unlock(&target->index_lock);
+	return count;
+}
+
 static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel *target,
 		struct rrr_mmap_channel_block *block
@@ -112,7 +122,6 @@ static int __rrr_mmap_channel_allocate (
 		int shmid = 0;
 		do {
 			new_key = rrr_rand();
-//			printf("allocate shmget key %i pos %i size %lu\n", new_key, block_pos, data_size);
 			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) == -1) {
 				if (errno == EEXIST) {
 					// OK, try another key
@@ -142,7 +151,6 @@ static int __rrr_mmap_channel_allocate (
 	}
 	else {
 		if ((block->ptr_shm_or_mmap = rrr_mmap_allocate(target->mmap, data_size)) == NULL) {
-//			RRR_MSG_0("Could not allocate mmap memory in __rrr_mmap_channel_allocate \n");
 			ret = 1;
 			goto out;
 		}
@@ -179,7 +187,6 @@ int rrr_mmap_channel_write_using_callback (
 		}
 
 		if (full_wait_time_us == 0 || wait_attempts_max-- == 0) {
-//			printf("mmap channel %p %s full wait time %u us attempts %i\n", target, target->name, full_wait_time_us, wait_attempts_max);
 			pthread_mutex_lock(&target->index_lock);
 			target->write_full_counter++;
 			pthread_mutex_unlock(&target->index_lock);
@@ -187,10 +194,7 @@ int rrr_mmap_channel_write_using_callback (
 			goto out_unlock;
 		}
 
-//		uint64_t time_start = rrr_time_get_64();
-//		printf("mmap channel %p %s full wait timeout result %i\n", target, target->name, ret);
 		rrr_posix_usleep(full_wait_time_us);
-//		printf("mmap channel %p %s full wait done in %" PRIu64 "\n", target, target->name, rrr_time_get_64() - time_start);
 
 	attempt_block_lock:
 		pthread_mutex_lock(&target->index_lock);
@@ -223,12 +227,13 @@ int rrr_mmap_channel_write_using_callback (
 
 	block->size_data = data_size;
 
-	RRR_DBG_4("mmap channel %p %s wr blk %i size %li\n", target, target->name, target->wpos, data_size);
+	RRR_MMAP_DBG("mmap channel %p %s wr blk %i size %li\n", target, target->name, target->wpos, data_size);
 
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
 
 	pthread_mutex_lock(&target->index_lock);
+	target->entry_count++;
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
 		target->wpos = 0;
@@ -306,16 +311,20 @@ int rrr_mmap_channel_read_with_callback (
 			ret = RRR_MMAP_CHANNEL_EMPTY;
 			goto out_unlock;
 		}
-//		uint64_t time_start = rrr_time_get_64();
-//		printf("mmap channel %p %s empty wait %u us\n", source, source->name, empty_wait_time_us);
+
 		rrr_posix_usleep(empty_wait_time_us);
-//		printf("mmap channel %p %s empty wait done in %" PRIu64 "\n", source, source->name, rrr_time_get_64() - time_start);
 
 	attempt_block_lock:
 		pthread_mutex_lock(&source->index_lock);
+
 		block = &(source->blocks[source->rpos]);
+		int entry_count = source->entry_count;
+
 		pthread_mutex_unlock(&source->index_lock);
 
+		if (entry_count == 0) {
+			goto out_unlock;
+		}
 		if (pthread_mutex_trylock(&block->block_lock) != 0) {
 			goto attempt_read_wait;
 		}
@@ -325,9 +334,8 @@ int rrr_mmap_channel_read_with_callback (
 		goto attempt_read_wait;
 	}
 
-	RRR_DBG_4("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
+	RRR_MMAP_DBG("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
 
-//	uint64_t start_time = rrr_time_get_64();
 	if (block->shmid != 0) {
 		const char *data_pointer = NULL;
 
@@ -356,7 +364,6 @@ int rrr_mmap_channel_read_with_callback (
 			do_rpos_increment = 0;
 		}
 	}
-//	printf("read callback time %p: %" PRIu64 "\n", source, rrr_time_get_64() - start_time);
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
@@ -365,14 +372,13 @@ int rrr_mmap_channel_read_with_callback (
 		do_unlock_block = 0;
 
 		pthread_mutex_lock(&source->index_lock);
+		source->entry_count--;
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
 			source->rpos = 0;
 		}
 		pthread_mutex_unlock(&source->index_lock);
 	}
-
-//	printf ("mmap channel read from mmap %p to local %p size_data %lu\n", block->ptr, result, *target_size);
 
 	out_unlock:
 	if (do_unlock_block) {
@@ -401,7 +407,6 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 					block_j->ptr_shm_or_mmap != NULL &&
 					block_i->ptr_shm_or_mmap > block_j->ptr_shm_or_mmap
 				) {
-//					printf ("swap i and j (%p > %p)\n", block_i->ptr_shm_or_mmap, block_j->ptr_shm_or_mmap);
 					// The data structure here makes sure we don't forget to update
 					// this function when the struct changes.
 					struct rrr_mmap_channel_block tmp = {
@@ -445,7 +450,7 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
 			if (++msg_count == 1) {
-				RRR_MSG_0("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
+				RRR_MSG_1("Note: Pointer was still present in block in rrr_mmap_channel_destroy, fork might not have exited yet or has been killed before cleanup.\n");
 			}
 		}
 		if (pthread_mutex_trylock(&target->blocks[i].block_lock) != 0) {
@@ -458,7 +463,7 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 		}
 	}
 	if (msg_count > 1) {
-		RRR_MSG_0("Last message duplicated %i times\n", msg_count - 1);
+		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
 	}
 
 	rrr_mmap_free(target->mmap, target);

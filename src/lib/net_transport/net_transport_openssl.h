@@ -32,7 +32,9 @@ int rrr_net_transport_openssl_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 );
 
 #endif /* RRR_NET_TRANSPORT_OPENSSL_H */

@@ -1,5 +1,6 @@
 from rrr_helper import *
 import time
+import termios
 
 def config (config : rrr_config):
 	print ("Python3 in config custom setting is " + config.get("python3_custom_setting"));

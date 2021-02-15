@@ -49,11 +49,13 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 		{0,							'P',	"plain-disable",		"[-P|--plain-disable]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"ssl-port",				"[-s|--ssl-port[=]HTTPS PORT]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
+#endif
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -63,12 +65,14 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 struct rrr_http_server_data {
+	uint16_t http_port;
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	char *certificate_file;
 	char *private_key_file;
-	uint16_t http_port;
 	uint16_t https_port;
 	int ssl_no_cert_verify;
 	int plain_disable;
+#endif
 };
 
 /*
@@ -88,13 +92,21 @@ static void __rrr_http_server_data_init (struct rrr_http_server_data *data) {
 }
 
 static void __rrr_http_server_data_cleanup (struct rrr_http_server_data *data) {
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	RRR_FREE_IF_NOT_NULL(data->certificate_file);
 	RRR_FREE_IF_NOT_NULL(data->private_key_file);
+#else
+	(void)(data);
+#endif
 }
 
 static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, struct cmd_data *cmd) {
 	int ret = 0;
 
+	uint64_t port_tmp;
+	const char *port;
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	// Certificate file
 	const char *certificate = cmd_get_value(cmd, "certificate", 0);
 	if (cmd_get_value (cmd, "certificate", 1) != NULL) {
@@ -150,31 +162,6 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 
-	// HTTP port
-	const char *port = cmd_get_value(cmd, "port", 0);
-	uint64_t port_tmp = 0;
-	if (cmd_get_value (cmd, "port", 1) != NULL) {
-		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
-		ret = 1;
-		goto out;
-	}
-	if (port != NULL) {
-		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
-			ret = 1;
-			goto out;
-		}
-	}
-	if (port_tmp == 0) {
-		port_tmp = 80;
-	}
-	else if (port_tmp > 65535) {
-		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
-		ret = 1;
-		goto out;
-	}
-	data->http_port = port_tmp;
-
 	// HTTPS port
 	port = cmd_get_value(cmd, "ssl-port", 0);
 	port_tmp = 0;
@@ -199,6 +186,32 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 	data->https_port = port_tmp;
+#endif
+
+	// HTTP port
+	port = cmd_get_value(cmd, "port", 0);
+	port_tmp = 0;
+	if (cmd_get_value (cmd, "port", 1) != NULL) {
+		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+	if (port != NULL) {
+		if (cmd_convert_uint64_10(port, &port_tmp)) {
+			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	if (port_tmp == 0) {
+		port_tmp = 80;
+	}
+	else if (port_tmp > 65535) {
+		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		ret = 1;
+		goto out;
+	}
+	data->http_port = port_tmp;
 
 	out:
 	return ret;
@@ -239,7 +252,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 0) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -249,14 +262,19 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_http_server_new(&http_server) != 0) {
+	if (rrr_http_server_new (
+			&http_server,
+			0 // Don't disable http2
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	int transport_count = 0;
 
 	if (data.plain_disable != 1) {
+#endif
 		if (rrr_http_server_start_plain (
 				http_server,
 				data.http_port
@@ -264,9 +282,12 @@ int main (int argc, const char **argv, const char **env) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 		transport_count++;
 	}
+#endif
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (data.certificate_file != NULL && data.private_key_file != NULL) {
 		// DO NOT run config cleanup for this, memory managed elsewhere
 		struct rrr_net_transport_config net_transport_config_tls = {
@@ -301,6 +322,7 @@ int main (int argc, const char **argv, const char **env) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+#endif
 
 	rrr_signal_default_signal_actions_register();
 
@@ -316,7 +338,7 @@ int main (int argc, const char **argv, const char **env) {
 		// We must do this here, the HTTP server library does not do this
 		// itself as it is also used by RRR modules for which this is performed
 		// by the main process
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 
 		int accept_count = 0;
 		if (rrr_http_server_tick(&accept_count, http_server, 5, &callbacks) != 0) {
@@ -347,7 +369,7 @@ int main (int argc, const char **argv, const char **env) {
 			http_server = NULL;
 		}
 
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
 
 		rrr_signal_handler_remove(signal_handler);

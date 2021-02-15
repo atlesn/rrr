@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,6 +54,8 @@ struct test_data {
 	char blob_b[8];
 
 	struct rrr_msg_msg msg;
+
+	char empty_string_dummy[2];
 } __attribute__((packed));
 
 void test_data_init (struct test_data *data) {
@@ -87,7 +89,8 @@ void test_data_init (struct test_data *data) {
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	data->msg.msg_size = sizeof(struct rrr_msg_msg) - 1;
+	data->msg.data[0] = '\0';
+	data->msg.msg_size = sizeof(struct rrr_msg_msg);
 	data->msg.msg_type = RRR_MSG_TYPE_MESSAGE;
 	data->msg.topic_length = 0;
 	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);
@@ -95,6 +98,8 @@ void test_data_init (struct test_data *data) {
 
 	MSG_TO_BE(&data->msg);
 	rrr_msg_checksum_and_to_network_endian((struct rrr_msg *) &data->msg);
+
+	memcpy(data->empty_string_dummy, "\"\"", 2);
 }
 
 int main (int argc, char **argv) {
@@ -117,8 +122,7 @@ int main (int argc, char **argv) {
 		goto out;
 	}
 
-	// -1 due to last element of msg_msg struct
-	if (write(fd, &data, sizeof(data) - 1) != sizeof(data) - 1) {
+	if (write(fd, &data, sizeof(data)) != sizeof(data)) {
 		fprintf (stderr, "Could not write to output file '%s': %s\n",
 				argv[1], strerror(errno));
 		ret = 1;

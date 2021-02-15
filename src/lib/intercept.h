@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -62,6 +62,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // umask calls must be wrapped in global umask lock
 #ifndef RRR_INTERCEPT_ALLOW_UMASK
 #	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
+#endif
+
+#ifndef RRR_INTERCEPT_ALLOW_GETTID
+#	define gettid(void)		RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_GETTID
 #endif
 
 #endif /* RRR_INTERCEPT_H */
