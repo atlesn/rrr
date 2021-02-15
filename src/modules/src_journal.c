@@ -177,11 +177,14 @@ static int journal_preload (struct rrr_thread *thread) {
 // Note : Context here is ANY thread
 static void journal_log_hook (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
 ) {
 	struct journal_data *data = private_arg;
+
+	(void)(loglevel_orig);
 
 	// Make the calling thread pause a bit to reduce the amount of messages
 	// coming in. This is done if we are unable to handle request due to
@@ -430,7 +433,8 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 				0,
 				0,
 				journal_write_message_callback,
-				&callback_data
+				&callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		)) {
 			RRR_MSG_0("Could not create new message in journal instance %s\n",
 					INSTANCE_D_NAME(thread_data));

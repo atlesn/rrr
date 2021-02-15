@@ -36,9 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 
+#include "../log.h"
+
 #include "rrr_socket.h"
 
-#include "../log.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"
@@ -1117,7 +1118,7 @@ int rrr_socket_sendto_nonblock_check_retry (
 		int fd,
 		const void *data,
 		ssize_t size,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	int err = 0;
@@ -1166,7 +1167,7 @@ int rrr_socket_sendto_blocking (
 				addr_len
 		)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-				RRR_MSG_0("Error from sendto in rrr_socket_sendto_blocking\n");
+				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
 				goto out;
 			}
 		}

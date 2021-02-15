@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -743,29 +743,29 @@ PyTypeObject rrr_python3_rrr_message_type = {
 	    .tp_finalize	= NULL
 };
 
-#define ALLOCATE_DEF						\
-	struct rrr_type_value **target,			\
-	uint8_t type,							\
-	uint8_t type_flags,						\
-	ssize_t item_size,						\
-	const char *tag,						\
-	rrr_length tag_length,					\
-	ssize_t elements
+#define ALLOCATE_DEF                                           \
+    struct rrr_type_value **target,                            \
+    uint8_t type,                                              \
+    uint8_t type_flags,                                        \
+    ssize_t item_size,                                         \
+    const char *tag,                                           \
+    rrr_length tag_length,                                     \
+    ssize_t elements
 
-#define CONVERT_DEF							\
-	struct rrr_type_value *target,			\
-	PyObject *item,							\
-	int index,								\
-	ssize_t size
+#define CONVERT_DEF                                            \
+    struct rrr_type_value *target,                             \
+    PyObject *item,                                            \
+    int index,                                                 \
+    ssize_t size
 
-#define PRELIMINARY_CHECK_DEF				\
-	int (**allocate_function)(ALLOCATE_DEF),\
-	int (**convert_function)(CONVERT_DEF),	\
-	uint8_t *target_type,					\
-	uint8_t *target_type_flags,				\
-	ssize_t *size,							\
-	PyObject **new_subject,					\
-	PyObject *subject
+#define PRELIMINARY_CHECK_DEF                                  \
+    int (**allocate_function)(ALLOCATE_DEF),                   \
+    int (**convert_function)(CONVERT_DEF),                     \
+    uint8_t *target_type,                                      \
+    uint8_t *target_type_flags,                                \
+    ssize_t *size,                                             \
+    PyObject **new_subject,                                    \
+    PyObject *subject
 
 static int __allocate_64 (ALLOCATE_DEF) {
 	(void)(item_size);
@@ -867,6 +867,19 @@ static int __convert_blob (CONVERT_DEF) {
 	return 0;
 }
 
+static int __convert_vain (CONVERT_DEF) {
+	(void)(target);
+	(void)(item);
+	(void)(size);
+
+	if (index > 0) {
+		RRR_MSG_0("Multiple values not supported for Py_None/vain type\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 	int ret = 0;
 	PyObject *replacement_subject = NULL;
@@ -881,26 +894,26 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 		if (PyFloat_Check(subject)) {
 			test_d = PyFloat_AsDouble(subject);
 			if (test_d == -1.0 && PyErr_Occurred()) {
-				RRR_MSG_0("Error while converting double in __convert_preliminary_check_long\n");
+				RRR_MSG_0("Error while converting double in __preliminary_check_long\n");
 				ret = 1;
 				goto out;
 			}
 			if ((ret = rrr_fixp_ldouble_to_fixp(&test_f, test_d)) != 0) {
-				RRR_MSG_0("Could not convert double to fixed pointer in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Could not convert double to fixed pointer in __preliminary_check_fixp\n");
 				goto out;
 			}
 		}
 		else if (PyUnicode_Check(subject)) {
 			const char *str = PyUnicode_AsUTF8(subject);
 			if (str == NULL) {
-				RRR_MSG_0("Could not convert unicode to string in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Could not convert unicode to string in __preliminary_check_fixp\n");
 				ret = 1;
 				goto out;
 			}
 
 			const char *endptr;
 			if ((ret = rrr_fixp_str_to_fixp(&test_f, str, PyUnicode_GetLength(subject), &endptr)) != 0) {
-				RRR_MSG_0("Error while converting string to fixed pointer in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Error while converting string to fixed pointer in __preliminary_check_fixp\n");
 				goto out;
 			}
 
@@ -917,7 +930,7 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 		}
 
 		if ((replacement_subject = PyLong_FromLongLong(test_f)) == NULL) {
-			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_fixp\n",
+			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __preliminary_check_fixp\n",
 					subject->ob_type->tp_name);
 			return 1;
 		}
@@ -947,17 +960,17 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 	if (PyFloat_Check(subject)) {
 		test_d = PyFloat_AsDouble(subject);
 		if (test_d == -1.0 && PyErr_Occurred()) {
-			RRR_MSG_0("Error while converting double in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Error while converting double in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
 		if (test_d > INT64_MAX || test_d < INT64_MIN) {
-			RRR_MSG_0("Double value was out of range in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Double value was out of range in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
 		if (!isfinite(test_d)) {
-			RRR_MSG_0("Double value was not finite in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Double value was not finite in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -996,7 +1009,7 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 
 	do_signed_and_convert:
 		if ((replacement_subject = PyLong_FromLongLong(test_i)) == NULL) {
-			RRR_MSG_0("Could not create long object in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Could not create long object in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -1007,7 +1020,7 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 
 	do_unsigned_and_convert:
 		if ((replacement_subject = PyLong_FromUnsignedLongLong(test_u)) == NULL) {
-			RRR_MSG_0("Could not create long object in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Could not create long object in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -1052,7 +1065,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 				PyErr_Clear();
 				long long int temp_i = PyLong_AsLongLong(subject);
 				if (PyErr_Occurred()) {
-					RRR_MSG_0("Could not convert long to string in __convert_preliminary_check_stringish\n");
+					RRR_MSG_0("Could not convert long to string in __preliminary_check_stringish\n");
 					ret = 1;
 					goto out;
 				}
@@ -1065,7 +1078,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 		else if (PyFloat_Check(subject)) {
 			double temp_d = PyFloat_AsDouble(subject);
 			if (PyErr_Occurred()) {
-				RRR_MSG_0("Could not convert double to string in __convert_preliminary_check_stringish\n");
+				RRR_MSG_0("Could not convert double to string in __preliminary_check_stringish\n");
 				ret = 1;
 				goto out;
 			}
@@ -1085,14 +1098,14 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 			replacement_subject = PyUnicode_FromStringAndSize(str, new_size);
 		}
 		else {
-			RRR_MSG_0("Unsupported type '%s' while converting to string in __convert_preliminary_check_stringish\n",
+			RRR_MSG_0("Unsupported type '%s' while converting to string in __preliminary_check_stringish\n",
 					subject->ob_type->tp_name);
 			ret = 1;
 			goto out;
 		}
 
 		if (replacement_subject == NULL) {
-			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_stringish\n",
+			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __preliminary_check_stringish\n",
 					subject->ob_type->tp_name);
 			return 1;
 		}
@@ -1141,7 +1154,7 @@ static int __preliminary_check_sep (PRELIMINARY_CHECK_DEF) {
 
 	const char *str = PyUnicode_AsUTF8(*new_subject != NULL ? *new_subject : subject);
 	if (str == NULL) {
-		RRR_MSG_0("Could not get string from unicode in __convert_preliminary_check_sep\n");
+		RRR_MSG_0("Could not get string from unicode in __preliminary_check_sep\n");
 		return 1;
 	}
 
@@ -1174,19 +1187,19 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 		else if (PyUnicode_Check(subject)) {
 			const char *str = PyUnicode_AsUTF8AndSize(subject, &new_size);
 			if (str == NULL) {
-				RRR_MSG_0("Could not get string from unicode object in __convert_preliminary_check_blob\n");
+				RRR_MSG_0("Could not get string from unicode object in __preliminary_check_blob\n");
 			}
 			replacement_subject = PyByteArray_FromStringAndSize(str, new_size);
 		}
 		else {
-			RRR_MSG_0("Could not convert type %s to bytearray in __convert_preliminary_check_blob\n",
+			RRR_MSG_0("Could not convert type %s to bytearray in __preliminary_check_blob\n",
 					subject->ob_type->tp_name);
 			ret = 1;
 			goto out;
 		}
 
 		if (replacement_subject == NULL) {
-			RRR_MSG_0("Could not create replacement bytearray in __convert_preliminary_check_blob\n");
+			RRR_MSG_0("Could not create replacement bytearray in __preliminary_check_blob\n");
 			ret = 1;
 			goto out;
 		}
@@ -1203,6 +1216,28 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 
 	out:
 	Py_XDECREF(replacement_subject);
+	return ret;
+}
+
+static int __preliminary_check_vain (PRELIMINARY_CHECK_DEF) {
+	(void)(new_subject);
+
+	int ret = 0;
+
+	if (subject != Py_None) {
+		RRR_MSG_0("Value of type %s found when Py_None was expected in __preliminary_check_vain\n",
+				subject->ob_type->tp_name);
+		ret = 1;
+		goto out;
+	}
+
+	*convert_function = __convert_vain;
+	*allocate_function = __allocate_blob;
+	*target_type = RRR_TYPE_VAIN;
+	*target_type_flags = 0;
+	*size = 0;
+
+	out:
 	return ret;
 }
 
@@ -1293,6 +1328,9 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		else if (RRR_TYPE_IS_BLOB(type_orig)) {
 			preliminary_check_function = __preliminary_check_blob;
 		}
+		else if (RRR_TYPE_IS_VAIN(type_orig)) {
+			preliminary_check_function = __preliminary_check_vain;
+		}
 	}
 
 	// Attempt to auto-detect type
@@ -1311,6 +1349,9 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		}
 		else if (PyBytes_Check(first_item) || PyByteArray_Check(first_item)) {
 			preliminary_check_function = __preliminary_check_blob;
+		}
+		else if (first_item == Py_None) {
+			preliminary_check_function = __preliminary_check_vain;
 		}
 	}
 
@@ -1525,12 +1566,6 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			goto out_err;
 		}
 
-		/* XXX  : This division to get the length of each element does not work
-		 *        for RRR message and string nodes with multiple values, array
-		 *        framework disallows these definition. If we for some strange reason do
-		 *        receive these types as arrays, it is still possible to
-		 *        handle them.
-		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
 			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
@@ -1555,6 +1590,10 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			}
 			else if (RRR_TYPE_IS_BLOB(node->definition->type)) {
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
+			}
+			else if (RRR_TYPE_IS_VAIN(node->definition->type)) {
+				node_element_value = Py_None;
+				Py_INCREF(Py_None);
 			}
 			else {
 				RRR_MSG_0("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",

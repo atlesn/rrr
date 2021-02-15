@@ -48,6 +48,9 @@ void rrr_msg_holder_decref (
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_decref_while_locked_and_unlock_void (
+		void *entry
+);
 void rrr_msg_holder_decref_void (
 		void *entry
 );
@@ -62,6 +65,11 @@ int rrr_msg_holder_new (
 int rrr_msg_holder_clone_no_data (
 		struct rrr_msg_holder **result,
 		const struct rrr_msg_holder *source
+);
+void rrr_msg_holder_set_data_unlocked (
+		struct rrr_msg_holder *target,
+		void *message,
+		ssize_t message_data_length
 );
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,

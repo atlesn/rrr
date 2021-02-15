@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -43,7 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"
 #include "../util/macro_utils.h"
-//#include "../ip_util.h"
 
 #define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
@@ -103,10 +102,12 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			0,
 			0,
 			__rrr_cmodule_helper_read_final_callback,
-			callback_data
+			callback_data,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			INSTANCE_D_THREAD(callback_data->parent_thread_data)
 	) != 0) {
-		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->parent_thread_data));
+		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s reader thread ID %lli\n",
+				INSTANCE_D_NAME(callback_data->parent_thread_data), (long long int) pthread_self());
 		return 1;
 	}
 
@@ -324,7 +325,12 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
 	// only (includes statistics engine)
-	rrr_log_hooks_call_raw(msg_log->loglevel, msg_log->prefix_and_message, RRR_MSG_LOG_MSG_POS(msg_log));
+	rrr_log_hooks_call_raw (
+		msg_log->loglevel_translated,
+		msg_log->loglevel_orig,
+		msg_log->prefix_and_message,
+		RRR_MSG_LOG_MSG_POS(msg_log)
+	);
 
 	return 0;
 }
@@ -358,6 +364,7 @@ static int __rrr_cmodule_helper_read_from_fork_control_callback (
 	(void)(data_size);
 
 	if (RRR_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
+		RRR_DBG_8("Worker %s completed configuration\n", callback_data->worker->name);
 		if (callback_data->worker->config_complete != 0) {
 			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
 		}
@@ -449,8 +456,8 @@ static int __rrr_cmodule_helper_read_from_forks (
 				break;
 			}
 			else {
-				RRR_MSG_0("Error while reading from worker fork %s\n",
-						node->name);
+				RRR_MSG_0("Error %i while reading from worker fork %s\n",
+						ret, node->name);
 				ret = 1;
 				goto out;
 			}
@@ -646,7 +653,7 @@ static int __rrr_cmodule_helper_threads_start (
 	data->stats = stats;
 	data->long_sleep_time_us = long_sleep_time_us;
 
-	if ((thread = rrr_thread_collection_thread_allocate_preload_and_register (
+	if ((thread = rrr_thread_collection_thread_new (
 			thread_collection,
 			__rrr_cmodule_helper_reader_thread_entry,
 			NULL,
@@ -662,13 +669,7 @@ static int __rrr_cmodule_helper_threads_start (
 		goto out_destroy_collection;
 	}
 
-	if ((ret = rrr_thread_start(thread)) != 0) {
-		RRR_MSG_0("Could not start read thread in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
-				INSTANCE_D_NAME(parent_thread_data));
-		goto out_destroy_collection;
-	}
-
-	if ((ret = rrr_thread_collection_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
+	if ((ret = rrr_thread_collection_start_all(data->thread_collection, NULL, NULL)) != 0) {
 		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		ret = 1;
@@ -689,7 +690,6 @@ static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
 	struct rrr_cmodule_helper_reader_thread_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		rrr_thread_collection_stop_and_join_all_no_unlock(data->thread_collection);
 		rrr_thread_collection_destroy(data->thread_collection);
 		data->thread_collection = NULL;
 	}
@@ -744,6 +744,8 @@ void rrr_cmodule_helper_loop (
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1) {
 		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
+
+//		printf ("main tick %i\n", tick);
 
 		if (rrr_thread_collection_check_any_stopped(reader_thread_data.thread_collection)) {
 			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -960,12 +962,36 @@ int rrr_cmodule_helper_worker_forks_start (
 					configuration_callback,
 					configuration_callback_arg,
 					process_callback,
-					process_callback_arg
+					process_callback_arg,
+					NULL,
+					NULL
 		) != 0) {
 			return 1;
 		}
 	}
 	return 0;
+}
+
+int rrr_cmodule_helper_worker_custom_fork_start (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
+) {
+	return rrr_cmodule_main_worker_fork_start (
+			INSTANCE_D_CMODULE(thread_data),
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_SETTINGS(thread_data),
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			custom_tick_callback,
+			custom_tick_callback_arg
+	);
 }
 
 static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (

@@ -47,13 +47,13 @@ struct rrr_module_load_data {
 	void (*unload)(void);
 };
 
-#define RRR_MODULE_POLL_CALLBACK_SIGNATURE		\
-	struct rrr_msg_holder *entry,				\
-	void *arg
+#define RRR_MODULE_POLL_CALLBACK_SIGNATURE                     \
+    struct rrr_msg_holder *entry,                              \
+    void *arg
 
-#define RRR_MODULE_INJECT_SIGNATURE \
-	struct rrr_instance_runtime_data *thread_data, \
-	struct rrr_msg_holder *message
+#define RRR_MODULE_INJECT_SIGNATURE                            \
+    struct rrr_instance_runtime_data *thread_data,             \
+    struct rrr_msg_holder *message
 
 // Try not to put functions with equal arguments next to each other
 struct rrr_module_operations {
@@ -73,7 +73,10 @@ struct rrr_module_operations {
 	int (*cancel_function)(struct rrr_thread *);
 };
 
-void rrr_module_unload (void *dl_ptr, void (*unload)(void));
+void rrr_module_unload (
+		void *dl_ptr,
+		void (*unload)(void)
+);
 int rrr_module_load (
 		struct rrr_module_load_data *target,
 		const char *name,

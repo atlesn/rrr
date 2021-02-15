@@ -240,7 +240,9 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 			configuration_callback,
 			&run_data,
 			process_callback,
-			&run_data
+			&run_data,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions

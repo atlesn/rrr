@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -41,7 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msg_log {
 	RRR_MSG_HEAD;
 	uint8_t is_stdout;
-	uint8_t loglevel;
+	uint8_t loglevel_translated;
+	uint8_t loglevel_orig;
 	uint16_t prefix_size;
 	char prefix_and_message[1];
 } __attribute((__packed__));
@@ -51,9 +52,15 @@ int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg);
 void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size);
 int rrr_msg_msg_log_new (
 		struct rrr_msg_log **target,
-		uint8_t loglevel,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
+);
+int rrr_msg_msg_log_to_str (
+	char **target_prefix,
+	char **target_message,
+	const struct rrr_msg_log *msg
 );
 
 #endif /* RRR_MESSAGE_LOG_H */

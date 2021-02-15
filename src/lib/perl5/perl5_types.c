@@ -34,31 +34,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "perl5.h"
 #include "perl5_types.h"
 
-#define ELEMENT_SIZE_SET																\
-	ssize_t element_size = value->total_stored_length / value->element_count;			\
-	do {if (element_size * value->element_count != value->total_stored_length) {		\
-		RRR_BUG("BUG: Array element size discrepancy in __rrr_perl5_type_*_to_sv\n");	\
-	}} while(0)
+#define ELEMENT_SIZE_SET                                                                         \
+    ssize_t element_size = value->total_stored_length / value->element_count;                    \
+    do {if (element_size * value->element_count != value->total_stored_length) {                 \
+        RRR_BUG("BUG: Array element size discrepancy in __rrr_perl5_type_*_to_sv\n");            \
+    }} while(0)
 
-#define ELEMENT_LOOP_BEGIN																\
-	do {for (int i = 0; i < value->element_count; i++) {								\
-		void *pos = value->data + (element_size * i)
+#define ELEMENT_LOOP_BEGIN                                                                       \
+    do {for (int i = 0; i < value->element_count; i++) {                                         \
+        void *pos = value->data + (element_size * i)
 
-#define ELEMENT_CALL_CALLBACK															\
-	do {ret = callback(ctx, sv, i, value->definition, callback_arg);					\
-		SvREFCNT_dec(sv);																\
-		if (ret != 0) {																	\
-			RRR_MSG_0("Error from callback in __rrr_perl5_type_*_to_sv\n");			\
-			ret = 1;																	\
-			goto out;																	\
-	}} while(0)
+#define ELEMENT_CALL_CALLBACK                                                                    \
+    do {ret = callback(ctx, sv, i, value->definition, callback_arg);                             \
+        SvREFCNT_dec(sv);                                                                        \
+        if (ret != 0) {                                                                          \
+  RRR_MSG_0("Error from callback in __rrr_perl5_type_*_to_sv\n");                                \
+  ret = 1;                                                                                       \
+  goto out;                                                                                      \
+    }} while(0)
 
 #define ELEMENT_LOOP_END																\
 	}} while (0)
 
 static int __rrr_perl5_type_to_sv_64 (RRR_PERL5_TYPE_TO_SV_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
@@ -99,7 +99,7 @@ static int __rrr_perl5_type_to_sv_64 (RRR_PERL5_TYPE_TO_SV_ARGS) {
 
 static int __rrr_perl5_type_to_sv_blob (RRR_PERL5_TYPE_TO_SV_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
@@ -116,7 +116,7 @@ static int __rrr_perl5_type_to_sv_blob (RRR_PERL5_TYPE_TO_SV_ARGS) {
 
 static int __rrr_perl5_type_to_sv_str (RRR_PERL5_TYPE_TO_SV_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
@@ -124,6 +124,23 @@ static int __rrr_perl5_type_to_sv_str (RRR_PERL5_TYPE_TO_SV_ARGS) {
 
 	ELEMENT_LOOP_BEGIN;
 		SV *sv = newSVpvn_utf8(pos, element_size, 1);
+		ELEMENT_CALL_CALLBACK;
+	ELEMENT_LOOP_END;
+
+	out:
+	return ret;
+}
+
+static int __rrr_perl5_type_to_sv_vain (RRR_PERL5_TYPE_TO_SV_ARGS) {
+	PerlInterpreter *my_perl = ctx->interpreter;
+	PERL_SET_CONTEXT(my_perl);
+
+	int ret = 0;
+
+	ELEMENT_SIZE_SET;
+
+	ELEMENT_LOOP_BEGIN;
+		SV *sv = newSV(0);
 		ELEMENT_CALL_CALLBACK;
 	ELEMENT_LOOP_END;
 
@@ -223,18 +240,18 @@ static int __rrr_perl5_type_to_value_64_common_save_intermediate_result (
 		rrr_type type
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
-    struct type_to_value_h_intermediate_result *result = malloc(sizeof(*result));
-    if (result == NULL) {
-    	RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
-    	ret = 1;
-    	goto out;
-    }
+	struct type_to_value_h_intermediate_result *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
+		ret = 1;
+		goto out;
+	}
 
-    memset(result, '\0', sizeof(*result));
+	memset(result, '\0', sizeof(*result));
 
 	STRLEN str_len;
 	char *num_str = SvPV_force(sv, str_len);
@@ -247,7 +264,7 @@ static int __rrr_perl5_type_to_value_64_common_save_intermediate_result (
 	RRR_ASSERT(sizeof(int64_t) >= sizeof(IV),perl5_int64_t_cannot_hold_iv);
 	RRR_ASSERT(sizeof(double) >= sizeof(NV),perl5_double_cannot_hold_nv);
 
-    if (type == RRR_TYPE_FIXP) {
+	if (type == RRR_TYPE_FIXP) {
 		rrr_fixp fixp;
 
 		// Will print error message
@@ -257,8 +274,8 @@ static int __rrr_perl5_type_to_value_64_common_save_intermediate_result (
 
 		result->do_signed = 1;
 		result->signed_value = fixp;
-    }
-    else {
+	}
+	else {
 		if (str_len == 0 || *num_str == '\0') {
 			result->signed_value = 0;
 			result->do_signed = 1;
@@ -270,7 +287,7 @@ static int __rrr_perl5_type_to_value_64_common_save_intermediate_result (
 		else {
 			result->unsigned_value = SvUV(sv);
 		}
-    }
+	}
 
 	RRR_LL_APPEND(collection, result);
 	result = NULL;
@@ -284,9 +301,9 @@ static int __rrr_perl5_type_to_value_64_common (
 		RRR_PERL5_TYPE_TO_VALUE_ARGS, rrr_type type
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
-    struct rrr_type_value *result = NULL;
+	struct rrr_type_value *result = NULL;
 
 	int ret = 0;
 
@@ -423,20 +440,20 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 		int do_binary
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
 	SV *sv_to_free = NULL;
 
-    struct type_to_value_blob_intermediate_result *result = malloc(sizeof(*result));
-    if (result == NULL) {
-    	RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
-    	ret = 1;
-    	goto out;
-    }
+	struct type_to_value_blob_intermediate_result *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
+		ret = 1;
+		goto out;
+	}
 
-    memset(result, '\0', sizeof(*result));
+	memset(result, '\0', sizeof(*result));
 
 	STRLEN str_len = 0;
 	char *value = NULL;
@@ -490,7 +507,7 @@ static int __rrr_perl5_type_to_value_blob_populate_intermediate_list (
 		int do_binary
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
@@ -534,9 +551,9 @@ static int __rrr_perl5_type_to_value_blob_populate_intermediate_list (
 
 static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
-    struct rrr_type_value *result = NULL;
+	struct rrr_type_value *result = NULL;
 
 	int ret = 0;
 
@@ -622,9 +639,9 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 
 static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
-    struct rrr_type_value *result = NULL;
+	struct rrr_type_value *result = NULL;
 
 	int ret = 0;
 
@@ -643,12 +660,6 @@ static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	)) != 0) {
 		goto out;
 	}
-
-/*	if (RRR_LL_COUNT(&intermediate_values) > 1) {
-		RRR_MSG_0("Array items of type str cannot have more than one value, %i was found\n", RRR_LL_COUNT(&intermediate_values));
-		ret = 1;
-		goto out;
-	}*/
 
 	ssize_t data_size = RRR_LL_FIRST(&intermediate_values)->data_size;
 	const char *data = RRR_LL_FIRST(&intermediate_values)->data;
@@ -687,11 +698,34 @@ static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	return ret;
 }
 
+static int __rrr_perl5_type_to_value_vain (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
+	PerlInterpreter *my_perl = ctx->interpreter;
+	PERL_SET_CONTEXT(my_perl);
+
+	if (av_len(values) > 1) {
+		RRR_MSG_0("Array items of type vain cannot have more than one value, %lld were found\n", (long long int) av_len(values));
+		return 1;
+	}
+
+	return rrr_type_value_new (
+			target,
+			&rrr_type_definition_vain,
+			0,
+			0,
+			NULL,
+			0,
+			NULL,
+			1,
+			NULL,
+			0
+	);
+}
+
 static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
-    PERL_SET_CONTEXT(my_perl);
+	PERL_SET_CONTEXT(my_perl);
 
-    struct rrr_type_value *result = NULL;
+	struct rrr_type_value *result = NULL;
 
 	int ret = 0;
 
@@ -786,24 +820,28 @@ static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 		{ RRR_PASTE(RRR_TYPE_,name_uc), & RRR_PASTE(rrr_type_definition_,name_lc), to_sv, to_value }
 
 static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
-	DEFINE_PERL5_TYPE(LE,	le,		NULL,							NULL),									// 0
-	DEFINE_PERL5_TYPE(BE,	be,		NULL,							NULL),									// 1
-	DEFINE_PERL5_TYPE(H,	h,		__rrr_perl5_type_to_sv_64,		__rrr_perl5_type_to_value_h),			// 2
-	DEFINE_PERL5_TYPE(BLOB,	blob,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),		// 3
-	DEFINE_PERL5_TYPE(USTR,	ustr,	NULL,							__rrr_perl5_type_to_value_ustr_istr),	// 4
-	DEFINE_PERL5_TYPE(ISTR,	istr,	NULL,							__rrr_perl5_type_to_value_ustr_istr),	// 5
-	DEFINE_PERL5_TYPE(SEP,	sep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),		// 6
-	DEFINE_PERL5_TYPE(MSG,	msg,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),		// 7
-	DEFINE_PERL5_TYPE(FIXP,	fixp,	__rrr_perl5_type_to_sv_64,		__rrr_perl5_type_to_value_fixp),		// 8
-	DEFINE_PERL5_TYPE(STR,	str,	__rrr_perl5_type_to_sv_str,		__rrr_perl5_type_to_value_str),			// 9
-	DEFINE_PERL5_TYPE(NSEP,	nsep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),		//10
-	DEFINE_PERL5_TYPE(STX,	stx,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),		//11
+	DEFINE_PERL5_TYPE(LE,   le,   NULL,                        NULL),                                // 0
+	DEFINE_PERL5_TYPE(BE,   be,   NULL,                        NULL),                                // 1
+	DEFINE_PERL5_TYPE(H,    h,    __rrr_perl5_type_to_sv_64,   __rrr_perl5_type_to_value_h),         // 2
+	DEFINE_PERL5_TYPE(BLOB, blob, __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      // 3
+	DEFINE_PERL5_TYPE(USTR, ustr, NULL,                        __rrr_perl5_type_to_value_ustr_istr), // 4
+	DEFINE_PERL5_TYPE(ISTR, istr, NULL,                        __rrr_perl5_type_to_value_ustr_istr), // 5
+	DEFINE_PERL5_TYPE(SEP,  sep,  __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      // 6
+	DEFINE_PERL5_TYPE(MSG,  msg,  __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      // 7
+	DEFINE_PERL5_TYPE(FIXP, fixp, __rrr_perl5_type_to_sv_64,   __rrr_perl5_type_to_value_fixp),      // 8
+	DEFINE_PERL5_TYPE(STR,  str,  __rrr_perl5_type_to_sv_str,  __rrr_perl5_type_to_value_str),       // 9
+	DEFINE_PERL5_TYPE(HEX,  str,  __rrr_perl5_type_to_sv_str,  __rrr_perl5_type_to_value_str),       //10
+	DEFINE_PERL5_TYPE(NSEP, nsep, __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //11
+	DEFINE_PERL5_TYPE(STX,  stx,  __rrr_perl5_type_to_sv_blob, __rrr_perl5_type_to_value_blob),      //12
+	DEFINE_PERL5_TYPE(ERR,  err,  NULL,                        NULL),                                //13
+	DEFINE_PERL5_TYPE(VAIN, vain, __rrr_perl5_type_to_sv_vain, __rrr_perl5_type_to_value_vain),      //14
 	{ 0, NULL, NULL, NULL }
 };
 // NOTE : Count correctly here
 const struct rrr_perl5_type_definition *rrr_perl5_type_definition_string = &rrr_perl5_type_definitions[9];
 const struct rrr_perl5_type_definition *rrr_perl5_type_definition_h = &rrr_perl5_type_definitions[2];
 const struct rrr_perl5_type_definition *rrr_perl5_type_definition_blob = &rrr_perl5_type_definitions[3];
+const struct rrr_perl5_type_definition *rrr_perl5_type_definition_vain = &rrr_perl5_type_definitions[14];
 
 const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_name (
 		const char *name
@@ -855,6 +893,9 @@ const struct rrr_perl5_type_definition *rrr_perl5_type_get_from_sv (
 		if (rrr_utf8_validate(str, len) == 0) {
 			type = rrr_perl5_type_definition_string;
 		}
+	}
+	else if (!SvOK(sv)) {
+		type = rrr_perl5_type_definition_vain;
 	}
 
 	return type;

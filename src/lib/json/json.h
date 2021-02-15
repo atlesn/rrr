@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_JSON_PARSE_ERROR       RRR_READ_SOFT_ERROR
 #define RRR_JSON_PARSE_INCOMPLETE  RRR_READ_INCOMPLETE
 
+struct rrr_map;
 struct rrr_array;
 
 int rrr_json_to_arrays (
@@ -37,6 +38,12 @@ int rrr_json_to_arrays (
 		const int max_levels,
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
+);
+int rrr_json_from_array (
+		char **target,
+		int *found_tags,
+		const struct rrr_array *source,
+		const struct rrr_map *tags
 );
 
 #endif /* RRR_JSON_H */

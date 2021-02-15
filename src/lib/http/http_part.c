@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 #include "http_header_fields.h"
+#include "../string_builder.h"
 #include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
@@ -77,8 +78,6 @@ void rrr_http_part_destroy (struct rrr_http_part *part) {
 	rrr_http_header_field_collection_clear(&part->headers);
 	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
 	rrr_http_field_collection_clear(&part->fields);
-	RRR_FREE_IF_NOT_NULL(part->response_str);
-	rrr_nullsafe_str_destroy_if_not_null(&part->response_raw_data_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_method_str_nullsafe);
 	free (part);
@@ -124,35 +123,6 @@ int rrr_http_part_prepare (struct rrr_http_part **part) {
 	return ret;
 }
 
-int rrr_http_part_raw_response_set_allocated (
-		struct rrr_http_part *part,
-		char **raw_data_source,
-		size_t raw_data_size
-) {
-	int ret = 0;
-
-	if (part->response_raw_data_nullsafe != NULL) {
-		RRR_BUG("BUG: rrr_http_part_set_allocated_raw_response called while raw data was already set\n");
-	}
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&part->response_raw_data_nullsafe, NULL, 0)) != 0) {
-		goto out;
-	}
-	rrr_nullsafe_str_set_allocated(part->response_raw_data_nullsafe, (void **) raw_data_source, raw_data_size);
-
-	out:
-	return ret;
-}
-
-/*
-void rrr_http_part_raw_request_set_ptr (
-		struct rrr_http_part *part,
-		const char *raw_data,
-		size_t raw_data_size
-) {
-	part->request_raw_data = raw_data;
-	part->request_raw_data_size = raw_data_size;
-}
-*/
 const struct rrr_http_header_field *rrr_http_part_header_field_get (
 		const struct rrr_http_part *part,
 		const char *name
@@ -219,6 +189,17 @@ struct rrr_http_chunk *rrr_http_part_chunk_new (
 	return new_chunk;
 }
 
+void rrr_http_part_header_field_remove (
+		struct rrr_http_part *part,
+		const char *field
+) {
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if (rrr_nullsafe_str_cmpto_case(node->name, field) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->headers, 0; rrr_http_header_field_destroy(node));
+}
+
 int rrr_http_part_header_field_push (
 		struct rrr_http_part *part,
 		const char *name,
@@ -236,6 +217,27 @@ int rrr_http_part_header_field_push (
 
 	out:
 	return ret;
+}
+
+int rrr_http_part_header_field_push_if_not_exists (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	if (rrr_http_part_header_field_get_raw (part, name) != NULL) {
+		return 0;
+	}
+
+	return rrr_http_part_header_field_push(part, name, value);
+}
+
+int rrr_http_part_header_field_push_and_replace (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	rrr_http_part_header_field_remove (part, name);
+	return rrr_http_part_header_field_push(part, name, value);
 }
 
 int rrr_http_part_fields_iterate_const (
@@ -260,17 +262,6 @@ int rrr_http_part_header_fields_iterate (
 	RRR_LL_ITERATE_END();
 
 	return ret;
-}
-
-void rrr_http_part_header_field_remove (
-		struct rrr_http_part *part,
-		const char *field
-) {
-	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
-		if (rrr_nullsafe_str_cmpto_case(node->name, field) == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->headers, 0; rrr_http_header_field_destroy(node));
 }
 
 int rrr_http_part_chunks_iterate (
@@ -618,10 +609,8 @@ int rrr_http_part_post_x_www_form_body_make (
 	int ret = 0;
 
 	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
-	char *header_buf = NULL;
 
 	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &header_buf);
 
 	if (no_urlencoding == 0) {
 		if ((ret = rrr_http_field_collection_to_urlencoded_form_data(&body_buf_nullsafe, &part->fields)) != 0) {
@@ -637,17 +626,40 @@ int rrr_http_part_post_x_www_form_body_make (
 	if ((ret = rrr_http_part_header_field_push(part, "content-type", "application/x-www-form-urlencoded")) != 0) {
 		goto out;
 	}
-/*
-	if ((ret = chunk_callback(header_buf, strlen(header_buf), chunk_callback_arg)) != 0) {
-		goto out;
-	}
-*/
+
 	if ((ret = chunk_callback(body_buf_nullsafe, chunk_callback_arg)) != 0) {
 		goto out;
 	}
 
 	out:
 	pthread_cleanup_pop(1);
+	return ret;
+}
+
+int rrr_http_part_json_make (
+		struct rrr_http_part *part,
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
+		void *chunk_callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
+
+	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
+
+	if ((ret = rrr_http_field_collection_to_json(&body_buf_nullsafe, &part->fields)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_header_field_push(part, "content-type", "application/json")) != 0) {
+		goto out;
+	}
+
+	if ((ret = chunk_callback(body_buf_nullsafe, chunk_callback_arg)) != 0) {
+		goto out;
+	}
+
+	out:
 	pthread_cleanup_pop(1);
 	return ret;
 }
@@ -657,25 +669,35 @@ static void __rrr_http_part_header_field_dump (
 ) {
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(parent_name,field->name);
 
-	RRR_MSG_3("%s: unsigned %llu - signed %lli - value length '%ld'\n",
+	RRR_DBG("%s: unsigned %llu - signed %lli - value length '%ld'\n",
 			parent_name,
 			field->value_unsigned,
 			field->value_signed,
 			(unsigned long) rrr_nullsafe_str_len(field->value)
 	);
 
+	if (rrr_nullsafe_str_len(field->value) > 0) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,field->value);
+		RRR_DBG("\t = %s\n", value);
+	}
+
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(name,node->name);
-		RRR_MSG_3("\t%s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->value);
+		RRR_DBG("\t |_ %s: %ld bytes\n", name, (unsigned long) rrr_nullsafe_str_len(node->value));
+		if (rrr_nullsafe_str_len(node->value) > 0) {
+			RRR_DBG("\t      = %s\n", value);
+		}
 	RRR_LL_ITERATE_END();
 }
 
 void rrr_http_part_header_dump (
 		struct rrr_http_part *part
 ) {
-	printf ("== DUMP HTTP PART HEADER ====================================\n");
+	RRR_DBG("== DUMP HTTP PART HEADER ====================================\n");
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		__rrr_http_part_header_field_dump(node);
+	
 	RRR_LL_ITERATE_END();
-	printf ("== DUMP HTTP PART HEADER END ================================\n");
+	RRR_DBG("== DUMP HTTP PART HEADER END ================================\n");
 }

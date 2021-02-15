@@ -657,16 +657,16 @@ static int __rrr_array_tree_interpret_single_definition (
 	return ret;
 }
 
-#define CHECK_KEYWORDS								\
-	do {int pos_orig = pos->pos;					\
-	if (rrr_parse_match_word(pos, "IF") ||			\
-		rrr_parse_match_word(pos, "ELSIF") ||		\
-		rrr_parse_match_word(pos, "ELSE") ||		\
-		rrr_parse_match_word(pos, "REWIND")			\
-	) {												\
-		pos->pos = pos_orig;						\
-		*special_found = 1;							\
-		goto out;									\
+#define CHECK_KEYWORDS                                         \
+    do {int pos_orig = pos->pos;                               \
+    if (rrr_parse_match_word(pos, "IF") ||                     \
+        rrr_parse_match_word(pos, "ELSIF") ||                  \
+        rrr_parse_match_word(pos, "ELSE") ||                   \
+        rrr_parse_match_word(pos, "REWIND")                    \
+    ) {                                                        \
+        pos->pos = pos_orig;                                   \
+        *special_found = 1;                                    \
+        goto out;                                              \
 	}} while(0)
 
 static void __rrr_array_tree_interpret_node_check_end (
@@ -1009,12 +1009,12 @@ static void __rrr_array_tree_dump (
 		int level
 );
 
-#define MAKE_TABS						\
-	char tabs[level + 1];				\
-	for (int i = 0; i < level; i++) {	\
-		tabs[i] = '\t';					\
-	}									\
-	tabs[level] = '\0'
+#define MAKE_TABS                                              \
+    char tabs[level + 1];                                      \
+    for (int i = 0; i < level; i++) {                          \
+        tabs[i] = '\t';                                        \
+    }                                                          \
+    tabs[level] = '\0'
 
 static void __rrr_array_tree_branch_dump (
 		struct rrr_string_builder *string_builder,
@@ -1128,29 +1128,29 @@ void rrr_array_tree_dump (
 
 // 1: Check if return value from previous branch condition is FALSE or CONTINUE
 // 2: Proceed into tree if current condition return is TRUE or CONTINUE
-#define ITERATE_BRANCH_TREE_IF_TRUE(branch)													\
-	do { if (ret & (RRR_ARRAY_TREE_CONTINUE|RRR_ARRAY_TREE_CONDITION_FALSE)) {	\
-	ret = condition_callback(&branch->condition, callback_arg);								\
-	if ((ret & ~(RRR_ARRAY_TREE_CONTINUE|RRR_ARRAY_TREE_CONDITION_FALSE)) != 0) {	\
-		goto out;																			\
-	}																						\
-	if ((ret == RRR_ARRAY_TREE_CONDITION_TRUE) ||											\
-		(ret & (RRR_ARRAY_TREE_CONTINUE)													\
-	)) { int ret_tmp;																		\
-		if ((ret_tmp = __rrr_array_tree_iterate (											\
-				branch->array_tree,															\
-				value_count,																\
-				rewind_callback,															\
-				value_callback,																\
-				condition_callback,															\
-				leaf_callback,																\
-				post_loop_callback,															\
-				callback_arg																\
-		)) != 0) {																			\
-			ret = ret_tmp;																	\
-			goto out;																		\
-		}																					\
-	}}} while(0)
+#define ITERATE_BRANCH_TREE_IF_TRUE(branch)                                                                                    \
+    do { if (ret & (RRR_ARRAY_TREE_CONTINUE|RRR_ARRAY_TREE_CONDITION_FALSE)) {                                                 \
+    ret = condition_callback(&branch->condition, callback_arg);                                                                \
+    if ((ret & ~(RRR_ARRAY_TREE_CONTINUE|RRR_ARRAY_TREE_CONDITION_FALSE)) != 0) {                                              \
+        goto out;                                                                                                              \
+    }                                                                                                                          \
+    if ((ret == RRR_ARRAY_TREE_CONDITION_TRUE) ||                                                                              \
+        (ret & (RRR_ARRAY_TREE_CONTINUE)                                                                                       \
+    )) { int ret_tmp;                                                                                                          \
+        if ((ret_tmp = __rrr_array_tree_iterate (                                                                              \
+                branch->array_tree,                                                                                            \
+                value_count,                                                                                                   \
+                rewind_callback,                                                                                               \
+                value_callback,                                                                                                \
+                condition_callback,                                                                                            \
+                leaf_callback,                                                                                                 \
+                post_loop_callback,                                                                                            \
+                callback_arg                                                                                                   \
+        )) != 0) {                                                                                                             \
+            ret = ret_tmp;                                                                                                     \
+            goto out;                                                                                                          \
+        }                                                                                                                      \
+    }}} while(0)
 
 static int __rrr_array_tree_iterate (
 		const struct rrr_array_tree *tree,
@@ -1295,21 +1295,21 @@ int __rrr_array_tree_import_value_resolve_ref (
 	return RRR_ARRAY_TREE_SOFT_ERROR;
 }
 
-#define RESOLVE_REF(target,ref)																			\
-	do {if (new_value->ref != NULL) {																	\
-		if ((ret = __rrr_array_tree_import_value_resolve_ref (											\
-				&new_value->target, target_array, new_value->ref										\
-		)) != 0) {																						\
-			goto out;																					\
-		}																								\
-		RRR_FREE_IF_NOT_NULL(new_value->ref);															\
-		if (new_value->target == 0) {																	\
-			RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n",		\
-				new_value->ref);																		\
-			ret = RRR_ARRAY_TREE_SOFT_ERROR;															\
-			goto out;																					\
-		}																								\
-	}} while (0)
+#define RESOLVE_REF(target,ref)                                                                                                \
+    do {if (new_value->ref != NULL) {                                                                                          \
+        if ((ret = __rrr_array_tree_import_value_resolve_ref (                                                                 \
+                &new_value->target, target_array, new_value->ref                                                               \
+        )) != 0) {                                                                                                             \
+            goto out;                                                                                                          \
+        }                                                                                                                      \
+        RRR_FREE_IF_NOT_NULL(new_value->ref);                                                                                  \
+        if (new_value->target == 0) {                                                                                          \
+            RRR_MSG_0("Resolve of reference '%s' to use as " RRR_QUOTE(target) " had 0 result\n",                              \
+                new_value->ref);                                                                                               \
+            ret = RRR_ARRAY_TREE_SOFT_ERROR;                                                                                   \
+            goto out;                                                                                                          \
+        }                                                                                                                      \
+    }} while (0)
 
 int __rrr_array_tree_import_value_callback (
 		const struct rrr_type_value *value,
@@ -1377,7 +1377,7 @@ int __rrr_array_tree_import_value_callback (
 		goto out;
 	}
 
-	if (parsed_bytes == 0) {
+	if (parsed_bytes == 0 && !RRR_TYPE_IS_VAIN(new_value->definition->type)) {
 		RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 	}
 

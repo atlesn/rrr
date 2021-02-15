@@ -61,6 +61,20 @@ sub process {
 		$i++;
 	}
 
+	{
+		my @value_count_list;
+		my @value_defined_list;
+
+		for ($i = 0; $i < $message->count_positions(); $i++) {
+			my @values = $message->get_position($i);
+			push @value_count_list, scalar @values;
+			push @value_defined_list, (defined $values[0] ? "D" : "U");
+		}
+
+		print "Value counts: @value_count_list\n";
+		print "Value defined: @value_defined_list\n";
+	}
+
 	print "perl5 timestamp: " . $message->{'timestamp'} . "\n";
 	print "perl5 old topic: " . $message->{'topic'} . "\n";
 	$message->{'topic'} .= "/perl5";
@@ -116,7 +130,7 @@ sub process {
 	my @tag_counts = $message->get_tag_counts ();
 
 	print "Tag names: " . join(",", @tag_names) . "\n";
-	print "Tag counts: " . join(",", @tag_counts) . "\n";
+	print "Tag counts: " . join(" ", @tag_counts) . "\n";
 	print "Position count: " . $message->count_positions() . "\n";
 
 	if (@tag_names != @tag_counts || @tag_counts != $message->count_positions()) {

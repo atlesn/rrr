@@ -66,6 +66,12 @@ void rrr_string_builder_clear (
 	string_builder->wpos = 0;
 }
 
+void rrr_string_builder_clear_void (
+		void *string_builder
+) {
+	rrr_string_builder_clear(string_builder);
+}
+
 const char *rrr_string_builder_buf (
 		const struct rrr_string_builder *string_builder
 ) {
@@ -121,10 +127,6 @@ int rrr_string_builder_reserve (
 		struct rrr_string_builder *string_builder,
 		rrr_biglength bytes
 ) {
-	if (bytes == 0) {
-		return 0;
-	}
-
 	if (string_builder->wpos + bytes + 1 > string_builder->size) {
 		rrr_biglength new_size = bytes + 1 + string_builder->size + 1024;
 		char *new_buf = realloc(string_builder->buf, new_size);
@@ -154,7 +156,7 @@ int rrr_string_builder_append_from (
 		goto out;
 	}
 
-	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos + 1);
+	__rrr_string_builder_unchecked_append_raw (target, source->buf, source->wpos);
 
 	out:
 	return ret;
@@ -178,7 +180,7 @@ int rrr_string_builder_append (
 		struct rrr_string_builder *string_builder,
 		const char *str
 ) {
-	if (*str == '\0') {
+	if (*str == '\0' && string_builder->buf != NULL) {
 		return 0;
 	}
 
@@ -226,3 +228,10 @@ int rrr_string_builder_append_format (
 	return ret;
 }
 
+void rrr_string_builder_chop (
+		struct rrr_string_builder *string_builder
+) {
+	if (string_builder->wpos > 0) {
+		string_builder->wpos -= 1;
+	}
+}

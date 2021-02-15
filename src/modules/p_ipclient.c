@@ -173,15 +173,11 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *message = entry->message;
 
-	RRR_DBG_3 ("ipclient instance %s: Result from buffer timestamp %" PRIu64 "\n",
+	RRR_DBG_2 ("ipclient instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&private_data->send_queue_intermediate, entry);
-	RRR_LL_VERIFY_HEAD(&private_data->send_queue_intermediate);
-	RRR_LL_ITERATE_BEGIN(&private_data->send_queue_intermediate, struct rrr_msg_holder);
-		RRR_LL_VERIFY_NODE(&private_data->send_queue_intermediate);
-	RRR_LL_ITERATE_END();
 
 	rrr_msg_holder_unlock(entry);
 	return 0;
@@ -198,12 +194,15 @@ static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *a
 
 	int ret = 0;
 
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing to output buffer in ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -263,10 +262,7 @@ int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *
 	int ret = 0;
 
 	if ((ret = rrr_udpstream_asd_queue_and_incref_message(ipclient_data->udpstream_asd, entry)) != 0) {
-		if (ret == RRR_UDPSTREAM_ASD_BUFFER_FULL) {
-/*			RRR_DEBUG_MSG_2("ASD-buffer full for ipclient instance %s\n",
-					INSTANCE_D_NAME(ipclient_data->thread_data));*/
-			ret = 0;
+		if (ret == RRR_UDPSTREAM_ASD_NOT_READY) {
 			goto out;
 		}
 		else {
@@ -294,6 +290,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 
 		if ((ret = data->queue_method(node, data)) != 0) {
 			rrr_msg_holder_unlock(node);
+			ret &= ~(RRR_UDPSTREAM_ASD_NOT_READY);
 			RRR_LL_ITERATE_BREAK();
 		}
 
@@ -303,7 +300,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_queue_intermediate, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if ((*send_count) > 0) {
-		RRR_DBG_3 ("ipclient instance %s queued %i packets for transmission\n",
+		RRR_DBG_2 ("ipclient instance %s queued %i packets for transmission\n",
 				INSTANCE_D_NAME(data->thread_data), (*send_count));
 	}
 
@@ -367,11 +364,15 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	) != 0) {
 		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
-		goto out;
+		goto out_no_unlock;
 	}
 
 	rrr_msg_holder_lock(entry);
 
+	pthread_cleanup_push(rrr_msg_holder_decref_while_locked_and_unlock_void, entry);
+
+	// The innermost callback will set joined_data when it has successfully
+	// filled a message into the entry, we use this for bugchecking
 	joined_data = entry->message;
 
 	if ((ret = callback_data->callback(&joined_data, entry, callback_data->udpstream_callback_data)) != 0) {
@@ -389,10 +390,11 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		}
 		ret = RRR_FIFO_GLOBAL_ERR;
 	out:
-		rrr_msg_holder_decref_while_locked_and_unlock(entry);
+		pthread_cleanup_pop(1);
 		if (joined_data != NULL && ret == 0) {
 			RRR_BUG("Callback returned non-error but still did not set joined_data to NULL in ipclient_udpstream_allocator_intermediate\n");
 		}
+	out_no_unlock:
 		return ret;
 }
 
@@ -456,7 +458,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
 	network_restart:
-	RRR_DBG_2 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
+	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
 
 	// TODO : Does the following comment still apply?
 	//     Only close here and not when shutting down the thread (might cause
@@ -479,21 +481,16 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		time_now = rrr_time_get_64();
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
-		do {
+		while ( RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
+		        rrr_time_get_64() < poll_timeout &&
+		        no_polling == 0
+		) {
 			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
 				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
-		} while (RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
-				rrr_time_get_64() < poll_timeout &&
-				no_polling == 0
-		);
-	//			RRR_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
-	//					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
-
-//		RRR_DEBUG_MSG_2("ipclient instance %s receive\n",
-//				INSTANCE_D_NAME(thread_data));
+		}
 
 		int queue_count = 0;
 		rrr_thread_watchdog_time_update(thread);
@@ -521,13 +518,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		receive_total += receive_count;
 
 		if (receive_count == 0 && send_count == 0) {
-			if (consecutive_zero_recv_and_send > 1000) {
+			if (consecutive_zero_recv_and_send > 1000 && RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX) {
 /*				RRR_DEBUG_MSG_2("ipclient instance %s long sleep send buffer %i\n",
 						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_queue_intermediate));*/
 				rrr_posix_usleep (100000); // 100 ms
 			}
 			else {
-				sched_yield();
 				if (consecutive_zero_recv_and_send++ > 10) {
 					rrr_posix_usleep(10);
 				}

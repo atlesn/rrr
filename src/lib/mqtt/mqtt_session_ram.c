@@ -2861,7 +2861,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			counters->maintain_ack_complete_counter > 0 ||
 			counters->maintain_ack_missing_counter > 0
 	) {
-		RRR_DBG_4("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+		RRR_DBG_3("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->to_remote_queue.buffer,
 				counters->maintain_deleted_counter,
 				counters->maintain_ack_complete_counter,
@@ -2896,7 +2896,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			counters->maintain_ack_complete_counter > 0 ||
 			counters->maintain_ack_missing_counter > 0
 	) {
-		RRR_DBG_4("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+		RRR_DBG_3("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->from_remote_queue.buffer,
 				counters->maintain_deleted_counter,
 				counters->maintain_ack_complete_counter,

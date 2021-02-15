@@ -24,14 +24,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdlib.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
+
+#include "../log.h"
 
 #include "net_transport_libressl.h"
 #include "net_transport_tls_common.h"
 #include "net_transport.h"
 
-#include "../log.h"
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
@@ -735,6 +737,8 @@ int rrr_net_transport_libressl_new (
 	if (ca_file != NULL && *ca_file != '\0' && tls_config_set_ca_file(tls->config, ca_file) < 0) {
 		goto out_config_error;
 	}
+
+	printf("TLS CA PATH: %s\n", ca_path);
 
 	if (ca_path != NULL && *ca_path != '\0' && tls_config_set_ca_path(tls->config, ca_path) < 0) {
 		goto out_config_error;

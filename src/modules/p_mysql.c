@@ -815,7 +815,8 @@ int process_callback (
 		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
-				entry
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		) != 0) {
 			RRR_MSG_0("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
 					INSTANCE_D_NAME(thread_data));

@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_QUERY_BUILDER_H
 #define RRR_HTTP_QUERY_BUILDER_H
 
+#include <stdio.h>
+
 struct rrr_string_builder;
 struct rrr_map;
 struct rrr_array;
@@ -38,6 +40,7 @@ void rrr_http_query_builder_cleanup (
 		struct rrr_http_query_builder *query_builder
 );
 int rrr_http_query_builder_append_type_value_as_escaped_string (
+		int *value_was_empty,
 		struct rrr_http_query_builder *query_builder,
 		const struct rrr_type_value *value,
 		int do_quote_values

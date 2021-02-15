@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/modules.h"
 #include "../../lib/messages/msg_msg.h"
 #include "../../lib/instance_config.h"
+#include "../../lib/util/posix.h"
 #include "../../lib/util/macro_utils.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
@@ -114,9 +115,9 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	// Uncomment to make test module halt before it runs
-/*	while (thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
-		usleep (20000); // 20 ms
+/*	while (rrr_thread_signal_encourage_stop_check(thread_data->thread) != 1) {
+		rrr_thread_watchdog_time_update(thread_data->thread);
+		rrr_posix_usleep (20000); // 20 ms
 	}*/
 
 	rrr_thread_watchdog_time_update(thread);

@@ -1,7 +1,7 @@
 /*
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <signal.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "../log.h"
 
@@ -113,7 +114,9 @@ int rrr_cmodule_main_worker_fork_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 ) {
 	int ret = 0;
 
@@ -175,7 +178,9 @@ int rrr_cmodule_main_worker_fork_start (
 			configuration_callback,
 			configuration_callback_arg,
 			process_callback,
-			process_callback_arg
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	);
 
 	exit(ret);
@@ -245,6 +250,12 @@ int rrr_cmodule_new (
 	}
 
 	cmodule->fork_handler = fork_handler;
+
+	// Default settings for modules which do not parse config
+	cmodule->config_data.worker_spawn_interval_us = RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS * 1000;
+	cmodule->config_data.worker_sleep_time_us = RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS * 1000;
+	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
+	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
 	*result = cmodule;
 

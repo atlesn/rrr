@@ -30,11 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
+#include "../log.h"
+
 #include "net_transport.h"
 #include "net_transport_openssl.h"
 #include "net_transport_tls_common.h"
 
-#include "../log.h"
 #include "../socket/rrr_socket.h"
 #include "../rrr_openssl.h"
 #include "../rrr_strerror.h"
@@ -356,7 +357,7 @@ static int __rrr_net_transport_openssl_handshake_perform (
 	if ((ret = SSL_do_handshake(ssl)) != 1) {
 		if (ret < 0) {
 			if (--handshake_retry_max > 0 && (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl))) {
-				rrr_posix_usleep(1); // Schedule
+				rrr_posix_usleep(1000); // 1 ms
 				goto handshake_retry;
 			}
 			if (handshake_retry_max == 0) {

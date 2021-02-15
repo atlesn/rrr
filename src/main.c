@@ -37,53 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
-struct rrr_main_check_wait_for_data {
-	struct rrr_instance_collection *instances;
-};
-
-static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, struct rrr_thread *thread, void *arg) {
-	struct rrr_main_check_wait_for_data *data = arg;
-	struct rrr_instance *instance = rrr_instance_find_by_thread(data->instances, thread);
-
-	if (instance == NULL) {
-		RRR_BUG("Instance not found in __main_start_threads_check_wait_for_callback\n");
-	}
-
-	*do_start = 1;
-
-	// TODO : Check for wait_for loops in configuration
-
-	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_friend);
-		struct rrr_instance *check = node->instance;
-		if (check == instance) {
-			RRR_MSG_0("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
-					INSTANCE_M_NAME(instance));
-			return 1;
-		}
-
-		if (	rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
-				rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_STOPPED
-		) {
-			// OK
-		}
-		else {
-			RRR_DBG_1 ("Instance %s waiting for instance %s to start\n",
-					INSTANCE_M_NAME(instance), INSTANCE_M_NAME(check));
-			*do_start = 0;
-		}
-	RRR_LL_ITERATE_END();
-
-	return 0;
-}
-
-// This function allocates runtime data and thread data.
-// - runtime data is ALWAYS destroyed by the thread. If a thread does not
-//   start, we must BUG() out
-// - thread data is freed by main unless thread has become ghost in which the
-//   thread will free it if it wakes up
-
 int rrr_main_create_and_start_threads (
-		struct rrr_thread_collection **thread_collection,
+		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
@@ -91,104 +46,18 @@ int rrr_main_create_and_start_threads (
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
 ) {
-	int ret = 0;
-
-	struct rrr_instance_runtime_data **runtime_data = NULL;
-
-	if (RRR_LL_COUNT(instances) == 0) {
-		RRR_MSG_0("No instances started, exiting\n");
-		ret = 1;
-		goto out;
-	}
-
-	runtime_data = malloc(sizeof(*runtime_data) * RRR_LL_COUNT(instances)); // Size of pointer
-
-	// Create thread collection
-	if (rrr_thread_collection_new (thread_collection) != 0) {
-		RRR_MSG_0("Could not create thread collection\n");
-		ret = 1;
-		goto out;
-	}
-
-	// Initialize thread data and runtime data
-	int threads_total = 0;
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		struct rrr_instance *instance = node;
-
-		if (instance->module_data == NULL) {
-			RRR_BUG("BUG: Dynamic data was NULL in rrr_main_create_and_start_threads\n");
-		}
-
-		struct rrr_instance_runtime_init_data init_data;
-		init_data.module = instance->module_data;
-		init_data.senders = &instance->senders;
-		init_data.cmd_data = cmd;
-		init_data.global_config = global_config;
-		init_data.instance_config = instance->config;
-		init_data.stats = stats;
-		init_data.message_broker = message_broker;
-		init_data.fork_handler = fork_handler;
-		init_data.topic_first_token = instance->topic_first_token;
-		init_data.topic_str = instance->topic_filter;
-		init_data.instance = instance;
-
-		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
-
-		if ((runtime_data[threads_total] = rrr_instance_runtime_data_new(&init_data)) == NULL) {
-			RRR_BUG("Error while creating runtime data for instance %s, can't proceed\n",
-					INSTANCE_M_NAME(instance));
-		}
-
-		struct rrr_thread *thread = rrr_thread_collection_thread_allocate_preload_and_register (
-				*thread_collection,
-				rrr_instance_thread_entry_intermediate,
-				instance->module_data->operations.preload,
-				instance->module_data->operations.poststop,
-				instance->module_data->operations.cancel_function,
-				instance->module_data->instance_name,
-				RRR_MAIN_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
-				runtime_data[threads_total]
-		);
-
-		if (thread == NULL) {
-			// This might actually not be a bug but we cannot recover from preload failure
-			RRR_BUG("Error while preloading thread for instance %s, can't proceed\n",
-					instance->module_data->instance_name);
-		}
-
-		// Set shortcuts
-		node->thread = thread;
-
-		threads_total++;
-	RRR_LL_ITERATE_END();
-
-	for (int i = 0; i < threads_total; i++) {
-		RRR_DBG_1 ("Starting thread %s\n", INSTANCE_M_NAME(runtime_data[i]->init_data.instance));
-		if (rrr_thread_start(INSTANCE_M_THREAD(runtime_data[i]->init_data.instance)) != 0) {
-			RRR_BUG ("Error while starting thread for instance %s, can't proceed\n",
-					INSTANCE_M_NAME(runtime_data[i]->init_data.instance));
-		}
-	}
-
-	struct rrr_main_check_wait_for_data callback_data = { instances };
-
-	if (rrr_thread_collection_start_all_after_initialized (
-			*thread_collection,
-			__rrr_main_start_threads_check_wait_for_callback,
-			&callback_data
-	) != 0) {
-		RRR_MSG_0("Error while waiting for threads to initialize\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(runtime_data);
-	return ret;
+	return rrr_instances_create_and_start_threads (
+			thread_collection_target,
+			instances,
+			global_config,
+			cmd,
+			stats,
+			message_broker,
+			fork_handler
+	);
 }
 
 void rrr_main_threads_stop_and_destroy (struct rrr_thread_collection *collection) {
-	rrr_thread_collection_stop_and_join_all_no_unlock(collection);
 	rrr_thread_collection_destroy (collection);
 }
 
