@@ -1,12 +1,12 @@
 Name:           rrr
-Version:        1.15
-Release:        4%{?dist}
+Version:        1.16
+Release:        0%{?dist}
 Summary:	RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 Group:		rrr
 
 License:        GPLv3+
 URL:            https://www.github.com/atlesn/rrr
-Source0:        rrr-1.15.tar.gz
+Source0:        rrr-1.16.tar.gz
 
 BuildRequires:  automake, autoconf, (mariadb-devel or community-mysql-devel), openssl-devel, perl-devel >= 5.26, systemd-devel, libusb-devel, pkgconf-pkg-config, python3-devel
 Requires:       libusb, systemd, openssl-libs, (mariadb-common or mysql-common), python3 >= 3.6, perl >= 5.26, librrr1
@@ -55,6 +55,7 @@ useradd -r rrr -g rrr || true
 /usr/lib/rrr/raw.*
 /usr/lib/rrr/socket.*
 /usr/lib/rrr/voltmonitor.*
+/usr/lib/rrr/python.*
 
 %package devel
 Summary:	Development headers for RRR
@@ -71,15 +72,6 @@ Group:		rrr
 RRR library
 %files -n librrr1
 %{_libdir}/librrr.*
-
-%package mod-python3
-Summary:	Python3 bindings.
-Group:		rrr
-%description mod-python3
-Python3 bindings.
-%files mod-python3
-%{_libdir}/librrrpython*
-/usr/lib/rrr/python*
 
 %package mod-mysql
 Summary:	MySQL/MariaDB bindings.

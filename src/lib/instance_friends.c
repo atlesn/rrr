@@ -28,11 +28,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "instances.h"
 
-int rrr_instance_friend_collection_check_empty (struct rrr_instance_friend_collection *collection) {
+int rrr_instance_friend_collection_check_empty (
+		struct rrr_instance_friend_collection *collection
+) {
 	return RRR_LL_IS_EMPTY(collection);
 }
 
-int rrr_instance_friend_collection_check_exists (struct rrr_instance_friend_collection *collection, struct rrr_instance *sender) {
+int rrr_instance_friend_collection_check_exists (
+		struct rrr_instance_friend_collection *collection,
+		struct rrr_instance *sender
+) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_friend);
 		if (node->instance == sender) {
 			return 1;
@@ -42,7 +47,10 @@ int rrr_instance_friend_collection_check_exists (struct rrr_instance_friend_coll
 	return 0;
 }
 
-int rrr_instance_friend_collection_append (struct rrr_instance_friend_collection *collection, struct rrr_instance *sender) {
+int rrr_instance_friend_collection_append (
+		struct rrr_instance_friend_collection *collection,
+		struct rrr_instance *sender
+) {
 	int ret = 0;
 
 	if (rrr_instance_friend_collection_check_exists(collection,sender)) {
@@ -67,11 +75,15 @@ int rrr_instance_friend_collection_append (struct rrr_instance_friend_collection
 	return ret;
 }
 
-void rrr_instance_friend_collection_clear (struct rrr_instance_friend_collection *collection) {
+void rrr_instance_friend_collection_clear (
+		struct rrr_instance_friend_collection *collection
+) {
 	RRR_LL_DESTROY(collection, struct rrr_instance_friend, free(node));
 }
 
-int rrr_instance_friend_collection_count (struct rrr_instance_friend_collection *collection) {
+int rrr_instance_friend_collection_count (
+		struct rrr_instance_friend_collection *collection
+) {
 	return RRR_LL_COUNT(collection);
 }
 

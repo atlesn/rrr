@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,16 +37,14 @@ struct rrr_cmodule;
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_stats_instance *stats,
-		struct rrr_poll_collection *poll,
-		pid_t fork_pid
+		struct rrr_poll_collection *poll
 );
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
 		const char *config_suffix
 );
-int rrr_cmodule_helper_worker_fork_start (
-		pid_t *handle_pid,
+int rrr_cmodule_helper_worker_forks_start (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
@@ -55,19 +53,24 @@ int rrr_cmodule_helper_worker_fork_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
-void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+int rrr_cmodule_helper_worker_custom_fork_start (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
+);
+void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
 		unsigned long long int *write_retry_counter,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule *cmodule
 );
 
 #endif /* RRR_CMODULE_HELPER_H */

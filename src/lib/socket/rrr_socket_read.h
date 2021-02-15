@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "../util/linked_list.h"
+#include "../messages/msg.h"
 
 struct rrr_read_session;
 struct rrr_read_session_collection;
@@ -40,7 +41,6 @@ int rrr_socket_read (
 		socklen_t *src_addr_len,
 		int flags
 );
-
 int rrr_socket_read_message_default (
 		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
@@ -53,6 +53,16 @@ int rrr_socket_read_message_default (
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
+);
+int rrr_socket_read_message_split_callbacks (
+		uint64_t *bytes_read,
+		struct rrr_read_session_collection *read_session_collection,
+		int fd,
+		int read_flags_socket,
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
+		void *callback_arg1,
+		void *callback_arg2
+	
 );
 
 #endif /* RRR_SOCKET_READ_H */

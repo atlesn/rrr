@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_H
-#define RRR_PYTHON3_H
+#ifndef RRR_PYTHON3_CMODULE_H
+#define RRR_PYTHON3_CMODULE_H
 
 #define PY_SSIZE_T_CLEAN
 
@@ -72,4 +72,4 @@ int rrr_py_cmodule_runtime_init (
 void rrr_py_cmodule_runtime_cleanup (struct python3_fork_runtime *runtime);
 
 
-#endif /* RRR_PYTHON3_H */
+#endif /* RRR_PYTHON3_CMODULE_H */

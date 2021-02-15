@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,10 +27,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_types.h"
 #include "../read_constants.h"
 
-#define RRR_MSG_READ_OK				RRR_READ_OK
-#define RRR_MSG_READ_INCOMPLETE		RRR_READ_INCOMPLETE
-#define RRR_MSG_READ_SOFT_ERROR		RRR_READ_SOFT_ERROR
-#define RRR_MSG_READ_HARD_ERROR		RRR_READ_HARD_ERROR
+#define RRR_MSG_READ_OK          RRR_READ_OK
+#define RRR_MSG_READ_INCOMPLETE  RRR_READ_INCOMPLETE
+#define RRR_MSG_READ_SOFT_ERROR  RRR_READ_SOFT_ERROR
+#define RRR_MSG_READ_HARD_ERROR  RRR_READ_HARD_ERROR
+
+#define RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA                                              \
+	int (*callback_msg)(struct rrr_msg_msg **message, void *arg1, void *arg2),              \
+	int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *arg1, void *arg2),   \
+	int (*callback_log_msg)(const struct rrr_msg_log *message, void *arg1, void *arg2),     \
+	int (*callback_ctrl_msg)(const struct rrr_msg *message, void *arg1, void *arg2)
+
+#define RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON                                          \
+	int (*callback_msg)(struct rrr_msg_msg **message, void *arg1, void *arg2);              \
+	int (*callback_addr_msg)(const struct rrr_msg_addr *message, void *arg1, void *arg2);   \
+	int (*callback_log_msg)(const struct rrr_msg_log *message, void *arg1, void *arg2);     \
+	int (*callback_ctrl_msg)(const struct rrr_msg *message, void *arg1, void *arg2)
+
+struct rrr_msg_msg;
+struct rrr_msg_addr;
+struct rrr_msg_log;
 
 void rrr_msg_populate_head (
 		struct rrr_msg *message,
@@ -58,6 +74,13 @@ int rrr_msg_get_target_size_and_check_checksum (
 int rrr_msg_check_data_checksum_and_length (
 		struct rrr_msg *message,
 		rrr_length data_size
+);
+int rrr_msg_to_host_and_verify_with_callback (
+		struct rrr_msg **msg,
+		rrr_length expected_size,
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
+		void *callback_arg1,
+		void *callback_arg2
 );
 
 #endif /* RRR_MSG_H */

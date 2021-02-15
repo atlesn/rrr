@@ -31,6 +31,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		RRR_MSG_0(msg ": %s\n", buf);					\
 	} while(0)
 
+#define RRR_SSL_DBG_3(msg)								\
+	do { if (RRR_DEBUGLEVEL_3) { 						\
+		char buf[256];									\
+		ERR_error_string_n(ERR_get_error(), buf, 256); 	\
+		RRR_MSG_3(msg ": %s\n", buf);					\
+	}} while(0)
+
+
 void rrr_openssl_global_register_user(void);
 void rrr_openssl_global_unregister_user(void);
 int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const char *ca_path);
