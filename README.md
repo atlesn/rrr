@@ -141,12 +141,10 @@ The latest RRR release will be downloaded and built. When prompted after compila
 #### Packages available on the APT and Yum mirrors
 
 - rrr
-- rrr-mod-python3
 - rrr-mod-mysql / rrr-mod-mariadb
 - librrr1
-- librrr-dev
-- rrr-mod-python3-dbgsym
 - librrr1-dbgsym
+- librrr-dev
 
 Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If you need to use for instance
 MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
