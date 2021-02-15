@@ -23,7 +23,7 @@ test_SOURCES = test.c \
 	test_msgdb.c \
 	test_nullsafe.c \
 	test_increment.c
-test_CFLAGS = ${AM_CFLAGS} -O0 \
+test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
