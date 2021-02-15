@@ -76,18 +76,17 @@ int rrr_msgdb_client_conn_ensure_with_callback (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_open (conn, socket)) != 0) {
-		RRR_MSG_0("Warning: Connection to msgdb on socket '%s' failed\n",
-			socket);
-		goto out;
-	}
+	int retries = 1;
+	do {
+		if ((ret = rrr_msgdb_client_open (conn, socket)) != 0) {
+			RRR_MSG_0("Connection to msgdb on socket '%s' failed\n",
+				socket);
+		}
+		else if ((ret = callback(conn, callback_arg)) != 0) {
+			rrr_msgdb_client_close(conn);
+		}
+	} while (ret != 0 && retries--);
 
-	if ((ret = callback(conn, callback_arg)) != 0) {
-		rrr_msgdb_client_close(conn);
-		goto out;
-	}
-
-	out:
 	return ret;
 }
 
@@ -185,7 +184,6 @@ int rrr_msgdb_client_await_msg (
 
 	*result_msg = NULL;
 
-
 	uint64_t bytes_read;
 
 	retry:
@@ -209,8 +207,7 @@ int rrr_msgdb_client_await_msg (
 	}
 
 	if (*result_msg == NULL) {
-		RRR_MSG_0("msgdb fd %i request failed\n", conn->fd);
-		ret = RRR_MSGDB_SOFT_ERROR;
+		RRR_DBG_3("msgdb fd %i no result\n", conn->fd);
 	}
 
 	out:

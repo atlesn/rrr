@@ -433,7 +433,7 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 		goto out;
 	}
 
-	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp)) {
+	if (rrr_msgdb_client_cmd_get(&msg_tmp, &data->msgdb_conn, topic_tmp) || msg_tmp == NULL) {
 		// Don't return failure on this error
 		goto out;
 	}

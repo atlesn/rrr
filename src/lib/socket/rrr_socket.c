@@ -1167,7 +1167,7 @@ int rrr_socket_sendto_blocking (
 				addr_len
 		)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-				RRR_MSG_0("Error from sendto in rrr_socket_sendto_blocking\n");
+				RRR_DBG_7("Error from sendto on fd %i in rrr_socket_sendto_blocking\n", fd);
 				goto out;
 			}
 		}

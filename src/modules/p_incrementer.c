@@ -98,8 +98,7 @@ static int incrementer_get_id_from_msgdb_callback (
 
 	*(callback_data->result) = 0;
 
-	if (rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->tag)) {
-		// Don't return failure on this error
+	if ((ret = rrr_msgdb_client_cmd_get(&msg_tmp, conn, callback_data->tag))) {
 		goto out;
 	}
 
@@ -205,14 +204,14 @@ static int incrementer_update_id_msgdb_callback (
 	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
-		RRR_MSG_0("Failed to send message to msgdb in incrementer_udpate_id_msgdb_callback, return from send was %i\n",
+		RRR_DBG_7("Failed to send message to msgdb in incrementer_udpate_id_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
 	}
 
 	int positive_ack = 0;
 	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_MSG_0("Failed to send message to msgdb in incrementer_update_id_msgdb_callback, return from await ack was %i positive ack was %i\n",
+		RRR_DBG_7("Failed to send message to msgdb in incrementer_update_id_msgdb_callback, return from await ack was %i positive ack was %i\n",
 			ret, positive_ack);
 		ret = 1; // Ensure failure is returned upon negative ACK
 		goto out;

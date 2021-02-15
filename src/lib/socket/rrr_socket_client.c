@@ -175,7 +175,7 @@ int rrr_socket_client_collection_accept (
 		return 1;
 	}
 
-	RRR_DBG_1("Client connection accepted into collection with fd %i\n", temp.connected_fd);
+	RRR_DBG_7("Client connection accepted into collection with fd %i\n", temp.connected_fd);
 
 	RRR_LL_UNSHIFT(collection, client_new);
 
@@ -190,12 +190,12 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		RRR_DBG_3("TX to fd %i\n", node->connected_fd);
+		RRR_DBG_7("TX to fd %i in client collection\n", node->connected_fd);
 		ssize_t written_bytes_dummy = 0;
 		if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, node->connected_fd, data, size)) != 0) {
 			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 				// TODO : This error message is useless because we don't know which client has disconnected
-				RRR_DBG_1("Disconnecting client in client collection following send error\n");
+				RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n", node->connected_fd, ret);
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;
@@ -274,6 +274,7 @@ int rrr_socket_client_collection_read_raw (
 		}
 
 		if (node->last_seen < timeout) {
+			RRR_DBG_7("Disconnecting fd %i in client collection following inactivity timeout\n", node->connected_fd);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_client_destroy(node));
@@ -394,7 +395,8 @@ void rrr_socket_client_collection_send_tick (
 				NULL,
 				0
 		)) != RRR_SOCKET_OK && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
-			RRR_DBG_7("");
+			RRR_DBG_7("Disconnecting fd %i in client collection following send errorm return was %i\n",
+					node->connected_fd, ret_tmp);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
