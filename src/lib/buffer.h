@@ -119,7 +119,11 @@ struct rrr_fifo_buffer {
 
 	sem_t new_data_available;
 };
-
+void rrr_fifo_buffer_get_stats_populate (
+		struct rrr_fifo_buffer_stats *target,
+		uint64_t entries_written,
+		uint64_t entries_deleted
+);
 int rrr_fifo_buffer_get_stats (
 		struct rrr_fifo_buffer_stats *stats,
 		struct rrr_fifo_buffer *buffer
@@ -129,6 +133,10 @@ void rrr_fifo_buffer_destroy (
 );
 int rrr_fifo_buffer_init (
 		struct rrr_fifo_buffer *buffer
+);
+void rrr_fifo_buffer_full_limit_set (
+		struct rrr_fifo_buffer *buffer,
+		int limit
 );
 int rrr_fifo_buffer_init_custom_free (
 		struct rrr_fifo_buffer *buffer,
@@ -146,6 +154,18 @@ static inline int rrr_fifo_buffer_get_entry_count (
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	ret = buffer->entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	return ret;
+}
+
+static inline int rrr_fifo_buffer_get_entry_count_combined (
+		struct rrr_fifo_buffer *buffer
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	ret = buffer->entry_count + buffer->write_queue_entry_count;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	return ret;
@@ -193,6 +213,13 @@ void rrr_fifo_buffer_clear_with_callback (
 void rrr_fifo_buffer_clear (
 		struct rrr_fifo_buffer *buffer
 );
+int rrr_fifo_buffer_search_return_value_process (
+		unsigned char *do_keep,
+		unsigned char *do_give,
+		unsigned char *do_free,
+		unsigned char *do_stop,
+		int actions
+);
 int rrr_fifo_buffer_search (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
@@ -205,10 +232,6 @@ int rrr_fifo_buffer_search_and_replace (
 		void *callback_arg,
 		unsigned int wait_milliseconds,
 		int call_again_after_looping
-);
-int rrr_fifo_buffer_clear_order_lt (
-		struct rrr_fifo_buffer *buffer,
-		uint64_t order_min
 );
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,

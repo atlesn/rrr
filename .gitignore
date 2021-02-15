@@ -11,6 +11,12 @@
 /src/rrr_stats
 /src/rrr_passwd
 /src/rrr_auth
+/src/rrr_msgdb
+/src/rrr_msg
+/src/test.sh
+/src/test.sh.log
+/src/test-suite.log
+/src/make-paths.sh
 /build_timestamp.h
 /build_directory.h
 input_data

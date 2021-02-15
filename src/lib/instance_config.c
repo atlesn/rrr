@@ -47,7 +47,9 @@ int rrr_instance_config_string_set (
 	return 0;
 }
 
-void rrr_instance_config_destroy(struct rrr_instance_config_data *config) {
+void rrr_instance_config_destroy (
+		struct rrr_instance_config_data *config
+) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
@@ -97,7 +99,11 @@ struct rrr_instance_config_data *rrr_instance_config_new (
 	return ret;
 }
 
-int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config_data *source, const char *name) {
+int rrr_instance_config_read_port_number (
+		rrr_setting_uint *target,
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
 	int ret = 0;
 
 	*target = 0;
@@ -138,7 +144,9 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	return ret;
 }
 
-int rrr_instance_config_check_all_settings_used (struct rrr_instance_config_data *config) {
+int rrr_instance_config_check_all_settings_used (
+		struct rrr_instance_config_data *config
+) {
 	int ret = rrr_settings_check_all_used (config->settings);
 
 	if (ret != 0) {
@@ -160,6 +168,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 
 	struct rrr_array_tree *new_tree = NULL;
 
+	char *array_tree_name_tmp = NULL;
 	char *target_str_tmp = NULL;
 
 	if ((ret = rrr_settings_get_string_noconvert_silent(&target_str_tmp, config->settings, cmd_key)) != 0) {
@@ -173,57 +182,78 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		}
 	}
 
-	char *curly_start_pos = strchr(target_str_tmp, '{');
-	char *curly_end_pos = strchr(target_str_tmp, '}');
+	struct rrr_parse_pos pos;
 
-	if (curly_start_pos == NULL || curly_end_pos == NULL || !(curly_end_pos > curly_start_pos)) {
-		size_t definition_length = strlen(target_str_tmp);
+	rrr_parse_pos_init(&pos, target_str_tmp, strlen(target_str_tmp));
+	rrr_parse_ignore_space_and_tab(&pos);
 
-		// Replace terminating \0 with semicolon. We don't actually use the \0 to
-		// figure out where the end is when parsing the array. This adding of ;
-		// allows simple array definition to be specified without ; at the end.
-		target_str_tmp[definition_length] = ';';
+	if (rrr_parse_match_word(&pos, "{")) {
+		int start, end;
+		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_LETTERS | RRR_PARSE_MATCH_NUMBERS);
+		rrr_parse_ignore_space_and_tab(&pos);
+		if (rrr_parse_match_word(&pos, "}") && end > start) {
+			rrr_parse_ignore_space_and_tab(&pos);
+			if (!RRR_PARSE_CHECK_EOF(&pos)) {
+				RRR_MSG_0("Extra data found after array tree name enclosed by {} '%s'\n", target_str_tmp);
+				ret = 1;
+				goto out;
+			}
 
-		if (rrr_array_tree_interpret_raw (
-				&new_tree,
-				target_str_tmp,
-				definition_length + 1, // DO NOT use strlen here, string no longer has \0
-				"-"
-		)) {
-			RRR_MSG_0("Error while parsing array tree in setting %s in instance %s\n", cmd_key, config->name);
+			rrr_parse_str_extract(&array_tree_name_tmp, &pos, start, end);
+
+			const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
+					config->global_array_trees,
+					array_tree_name_tmp
+			);
+
+			if (array_tree == NULL) {
+				RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", array_tree_name_tmp);
+				ret = 1;
+				goto out;
+			}
+
+			if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
+				goto out;
+			}
+
+			goto out_save_tree;
+		}
+		else {
+			RRR_MSG_0("Missing end } in array tree name or non-letter characters encountered '%s'\n", target_str_tmp);
 			ret = 1;
 			goto out;
 		}
 	}
-	else {
-		const char *name_pos = curly_start_pos + 1;
-		*curly_end_pos = '\0';
 
-		const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
-				config->global_array_trees,
-				name_pos
-		);
+	size_t definition_length = strlen(target_str_tmp);
 
-		if (array_tree == NULL) {
-			RRR_MSG_0("Array tree with name '%s' not found, check spelling\n", name_pos);
-			ret = 1;
-			goto out;
-		}
+	// Replace terminating \0 with semicolon. We don't actually use the \0 to
+	// figure out where the end is when parsing the array. This adding of ;
+	// allows simple array definition to be specified without ; at the end.
+	target_str_tmp[definition_length] = ';';
 
-		if ((ret = rrr_array_tree_clone_without_data(&new_tree, array_tree)) != 0) {
-			goto out;
-		}
+	if (rrr_array_tree_interpret_raw (
+			&new_tree,
+			target_str_tmp,
+			definition_length + 1, // DO NOT use strlen here, string no longer has \0
+			"-"
+	)) {
+		RRR_MSG_0("Error while parsing array tree in setting %s in instance %s\n", cmd_key, config->name);
+		ret = 1;
+		goto out;
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
-		rrr_array_tree_dump(new_tree);
-	}
+	out_save_tree:
+		if (RRR_DEBUGLEVEL_1) {
+			rrr_array_tree_dump(new_tree);
+		}
 
-	*target_array_tree = new_tree;
-	new_tree = NULL;
+		*target_array_tree = new_tree;
+		new_tree = NULL;
 
 	out:
 		RRR_FREE_IF_NOT_NULL(target_str_tmp);
+		RRR_FREE_IF_NOT_NULL(array_tree_name_tmp);
 		if (new_tree != NULL) {
 			rrr_array_tree_destroy(new_tree);
 		}

@@ -40,6 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((c) == '\r' || (c) == '\n')
 #define RRR_PARSE_MATCH_C_COMMAS(c)		\
 	((c) == ',' || (c) == ';')
+#define RRR_PARSE_MATCH_C_DASH(c)		\
+	((c) == '-')
 #define RRR_PARSE_MATCH_C_LETTER(c) 	\
 	(	((c) >= 'a' && (c) <= 'z') ||	\
 		((c) >= 'A' && (c) <= 'Z') ||	\
@@ -52,9 +54,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((c) >= '0' && (c) <= '9')
 #define RRR_PARSE_MATCH_C_NULL(c) 		\
 	((c) == '\0')
-
-// XXX : Removed - for compatibility with condition expressions
-// || ((c) == '-')
 
 struct rrr_parse_pos {
 	const char *data;
@@ -69,9 +68,15 @@ void rrr_parse_pos_init (
 		const char *data,
 		int size
 );
-void rrr_parse_ignore_space_and_tab (struct rrr_parse_pos *pos);
-void rrr_parse_ignore_spaces_and_increment_line (struct rrr_parse_pos *pos);
-void rrr_parse_comment (struct rrr_parse_pos *pos);
+void rrr_parse_ignore_space_and_tab (
+		struct rrr_parse_pos *pos
+);
+void rrr_parse_ignore_spaces_and_increment_line (
+		struct rrr_parse_pos *pos
+);
+void rrr_parse_comment (
+		struct rrr_parse_pos *pos
+);
 int rrr_parse_match_word_case (
 		struct rrr_parse_pos *pos,
 		const char *word

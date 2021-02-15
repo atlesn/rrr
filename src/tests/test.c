@@ -44,6 +44,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
+#include "test_json.h"
+#include "test_conversion.h"
+#include "test_msgdb.h"
+#include "test_nullsafe.h"
+#include "test_increment.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -97,14 +102,16 @@ int signal_interrupt (int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",				"{CONFIGURATION FILE}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel DEBUGLEVEL]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"library-tests",		"[-l|--library-tests]"},
-		{0,							'\0',	NULL, 					""}
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',   "config",                "{CONFIGURATION FILE}"},
+        {0,                           'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
+        {0,                           'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,   'd',    "debuglevel",            "[-d|--debuglevel DEBUGLEVEL]"},
+        {CMD_ARG_FLAG_NO_ARGUMENT,    'l',    "library-tests",         "[-l|--library-tests]"},
+        {0,                           '\0',    NULL,                   ""}
 };
 
-int rrr_test_library_functions (void) {
+int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 	int ret = 0;
 	int ret_tmp = 0;
 
@@ -130,6 +137,36 @@ int rrr_test_library_functions (void) {
 
 	TEST_BEGIN("inet functions") {
 		ret_tmp = rrr_test_inet();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("JSON parsing") {
+		ret_tmp = rrr_test_json();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("type conversion") {
+		ret_tmp = rrr_test_conversion();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("message database") {
+		ret_tmp = rrr_test_msgdb(fork_handler);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("nullsafe") {
+		ret_tmp = rrr_test_nullsafe();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("increment") {
+		ret_tmp = rrr_test_increment();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
@@ -195,7 +232,7 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -203,7 +240,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	if (cmd_exists(&cmd, "library-tests", 0)) {
 		TEST_MSG("Library tests requested by argument, doing that now.\n");
-		ret = rrr_test_library_functions();
+		ret = rrr_test_library_functions(fork_handler);
 		goto out_cleanup_cmd;
 	}
 
@@ -214,17 +251,9 @@ int main (int argc, const char **argv, const char **env) {
 		goto out_cleanup_cmd;
 	}
 
-	TEST_BEGIN("non-existent config file") {
-		config = rrr_config_parse_file("nonexistent_file");
-	} TEST_RESULT(config == NULL);
-
-	if (config != NULL) {
-		goto out_cleanup_config;
-	}
-
-	TEST_BEGIN("true configuration loading") {
-		config = rrr_config_parse_file(config_file);
-	} TEST_RESULT(config != NULL);
+	TEST_BEGIN("configuration loading") {
+		ret = rrr_config_parse_file(&config, config_file);
+	} TEST_RESULT(ret == 0);
 
 	if (config == NULL) {
 		ret = 1;

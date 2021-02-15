@@ -30,17 +30,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/log.h"
+#include "lib/common.h"
 #include "lib/rrr_config.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/log.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
+#include "lib/http/http_util.h"
 #include "lib/http/http_client.h"
+#include "lib/http/http_transaction.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -59,6 +62,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
+		{0,							'O',	"no-output",			"[-O|--no-output]"},
 		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
 		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
@@ -73,19 +77,33 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
-	int websocket_upgrade;
+	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
+	int no_output;
+	struct rrr_net_transport_config net_transport_config;
+	struct rrr_net_transport *net_transport_keepalive_plain;
+	struct rrr_net_transport *net_transport_keepalive_tls;
+	int final_callback_count;
+	rrr_http_unique_id unique_id_counter;
 };
 
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
+	if (data->net_transport_keepalive_plain != NULL) {
+		rrr_net_transport_destroy(data->net_transport_keepalive_plain);
+	}
+	if (data->net_transport_keepalive_tls != NULL) {
+		rrr_net_transport_destroy(data->net_transport_keepalive_tls);
+	}
+
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
 	}
+
 	rrr_read_session_collection_clear(&data->read_sessions);
 	rrr_map_clear(&data->tags);
 }
@@ -110,9 +128,23 @@ static int __rrr_http_client_parse_config (
 
 	// HTTP CLIENT EXECUTABLE SPECIFIC PARAMETERS
 
-	// Websocket upgrade
+	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
-		data->websocket_upgrade = 1;
+#ifdef RRR_WITH_NGHTTP2
+		if (cmd_exists(cmd, "http2-upgrade", 0)) {
+			RRR_MSG_0("Both upgrade to websocket and http2 was set\n");
+			ret = 1;
+			goto out;
+		}
+#endif
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
+	}
+	else {
+#ifdef RRR_WITH_NGHTTP2
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+#else
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+#endif
 	}
 
 	const char *array_definition = cmd_get_value(cmd, "array-definition", 0);
@@ -136,7 +168,7 @@ static int __rrr_http_client_parse_config (
 		}
 	}
 	else {
-		if (data->websocket_upgrade != 1) {
+		if (data->upgrade_mode != RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 			RRR_MSG_0("Array-definition specified while websocket mode was not active\n");
 			ret = 1;
 			goto out;
@@ -197,6 +229,11 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
+	// Disable output
+	if (cmd_exists(cmd, "no-output", 0)) {
+		data->no_output = 1;
+	}
+
 	// No certificate verification
 	if (cmd_exists(cmd, "no-cert-verify", 0)) {
 		request_data->ssl_no_cert_verify = 1;
@@ -253,36 +290,110 @@ static int __rrr_http_client_parse_config (
 	return ret;
 }
 
+static int __rrr_http_client_final_write_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	ssize_t *bytes = arg;
+	*bytes = write (STDOUT_FILENO, str, len);
+	return 0;
+}
+
 static int __rrr_http_client_final_callback (
 		RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS
 ) {
+	struct rrr_http_client_data *http_client_data = arg;
+
 	int ret = 0;
 
-	(void)(response_code);
-	(void)(response_arg);
-	(void)(data);
-	(void)(chunk_idx);
-	(void)(chunk_total);
-	(void)(part_data_size);
-	(void)(arg);
+	rrr_length data_start = 0;
+	rrr_length data_size = rrr_nullsafe_str_len(response_data);
 
-	if (chunk_data_start == NULL) {
+	if (data_size == 0) {
 		goto out;
 	}
 
-	while (chunk_data_size > 0) {
-		ssize_t bytes;
+	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
-		bytes = write (STDOUT_FILENO, chunk_data_start, chunk_data_size);
+	http_client_data->final_callback_count++;
+
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+		RRR_MSG_0("Error response from server: %i %s\n",
+				transaction->response_part->response_code,
+				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+		);
+	}
+
+	if (http_client_data->no_output) {
+		goto out;
+	}
+
+	while (data_size > 0) {
+		ssize_t bytes = 0;
+
+		rrr_nullsafe_str_with_raw_truncated_do (
+				response_data,
+				data_start,
+				data_size,
+				__rrr_http_client_final_write_callback,
+				&bytes
+		);
+
 		if (bytes < 0) {
-			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_final_callback: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 		else {
-			chunk_data_start += bytes;
-			chunk_data_size -= bytes;
+			data_start += bytes;
+			data_size -= bytes;
 		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_unique_id_generator_callback (
+		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+	*unique_id = ++(http_client_data->unique_id_counter);
+	return 0;
+}
+
+static int __rrr_http_client_redirect_callback (
+		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(transaction);
+
+	int ret = 0;
+
+	if ((ret = rrr_http_client_request_data_reset_from_uri(&http_client_data->request_data, uri)) != 0) {
+		goto out;
+	}
+
+	if (rrr_http_client_request_send (
+			&http_client_data->request_data,
+			&http_client_data->net_transport_keepalive_plain,
+			&http_client_data->net_transport_keepalive_tls,
+			&http_client_data->net_transport_config,
+			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			http_client_data,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL
+	) != 0) {
+		goto out;
 	}
 
 	out:
@@ -310,8 +421,10 @@ static int __rrr_http_client_send_websocket_frame_final_callback (
 	return ret;
 }
 
-static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
+static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(unique_id);
 
 	int ret = 0;
 
@@ -391,20 +504,37 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	return ret;
 }
 
+static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	(void)(arg);
+	write (STDOUT_FILENO, str, len);
+	return 0;
+}
+
 static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(opcode);
-	(void)(payload);
-	(void)(payload_size);
 	(void)(unique_id);
 	(void)(http_client_data);
 
-	if (payload_size < INT_MAX) {
-		printf("Received response: %.*s\n", (int) payload_size, payload);
+	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));
+
+	if (is_binary) {
+		printf ("- (binary data) -\n");
+	}
+	else {
+		rrr_nullsafe_str_with_raw_do_const(payload, __rrr_http_client_receive_websocket_frame_nullsafe_callback, NULL);
 	}
 
 	return 0;
+}
+
+static int main_running = 1;
+int rrr_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -415,29 +545,27 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
+	struct rrr_signal_handler *signal_handler = NULL;
+
 	if (rrr_log_init() != 0) {
 		goto out_final;
 	}
 	rrr_strerror_init();
+	rrr_signal_default_signal_actions_register();
+	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
+	rrr_signal_handler_set_active (RRR_SIGNALS_ACTIVE);
 
 	struct cmd_data cmd;
 	struct rrr_http_client_data data = {0};
-	struct rrr_net_transport *net_transport_keepalive = NULL;
-	int net_transport_keepalive_handle = 0;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
-
-	if (rrr_http_client_data_init(&data.request_data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
 
 	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 
@@ -446,97 +574,86 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	int retry_max = 10;
-
-	retry:
-	if (--retry_max == 0) {
-		RRR_MSG_0("Maximum number of retries reached\n");
+	if (rrr_http_client_request_data_reset (
+			&data.request_data,
+			RRR_HTTP_TRANSPORT_ANY,
+			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_BODY_FORMAT_URLENCODED,
+			data.upgrade_mode,
+			0, // No plain HTTP2
+			RRR_HTTP_CLIENT_USER_AGENT
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	data.request_data.do_retry = 0;
+	data.net_transport_config.transport_type = RRR_NET_TRANSPORT_BOTH;
 
-	struct rrr_net_transport_config net_transport_config = {
+	if (rrr_http_client_request_send (
+			&data.request_data,
+			&data.net_transport_keepalive_plain,
+			&data.net_transport_keepalive_tls,
+			&data.net_transport_config,
+			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			&data,
 			NULL,
 			NULL,
 			NULL,
 			NULL,
 			NULL,
-			RRR_NET_TRANSPORT_BOTH
-	};
+			NULL,
+			NULL,
+			NULL
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
-	if (data.websocket_upgrade) {
-		if (rrr_http_client_start_websocket_simple (
-				&data.request_data,
-				&net_transport_keepalive,
-				&net_transport_keepalive_handle,
-				&net_transport_config,
+	int targets_plain = 0;
+	int targets_tls = 0;
+	uint64_t prev_bytes_total = 0;
+	do {
+		uint64_t bytes_total = 0;
+		uint64_t active_transaction_count = 0;
+
+		if ((ret = rrr_http_client_tick (
+				&bytes_total,
+				&active_transaction_count,
+				data.net_transport_keepalive_plain,
+				data.net_transport_keepalive_tls,
+				1 * 1024 * 1024 * 1024, // 1 GB
+				5000, // Idle timeout 5 sec
 				__rrr_http_client_final_callback,
-				NULL
-		) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
+				&data,
+				__rrr_http_client_redirect_callback,
+				&data,
+				__rrr_http_client_send_websocket_frame_callback,
+				&data,
+				__rrr_http_client_receive_websocket_frame_callback,
+				&data
+		)) != 0) {
+			break;
 		}
 
-/*		if (data.tree != NULL) {
-			int flags = fcntl(0, F_GETFL, 0);
-			flags |= O_NONBLOCK;
-			if (fcntl(STDIN_FILENO, F_SETFL) != 0) {
-				RRR_MSG_0("Failed to set non-block mode on STDIN: %s\n", rrr_strerror(errno));
-				ret = EXIT_FAILURE;
-				goto out;
-			}
-		}*/
-
-		uint64_t prev_bytes_total = 0;
-		while (1) {
-			uint64_t bytes_total = 0;
-			if ((ret = rrr_http_client_websocket_tick (
-					&bytes_total,
-					RRR_HTTP_CLIENT_WEBSOCKET_TIMEOUT_S,
-					&data.request_data,
-					net_transport_keepalive,
-					net_transport_keepalive_handle,
-					__rrr_http_client_send_websocket_frame_callback,
-					&data,
-					__rrr_http_client_receive_websocket_frame_callback,
-					&data
-			)) != 0) {
-				if (ret != RRR_READ_EOF) {
-					ret = EXIT_FAILURE;
-				}
-				goto out;
-			}
-//			printf("tick %" PRIu64 "\n", bytes_total);
-			if (prev_bytes_total == bytes_total) {
-				rrr_posix_usleep(5000); // 5 ms
-			}
-			prev_bytes_total = bytes_total;
+		if (prev_bytes_total == bytes_total) {
+			rrr_posix_usleep(0); // Schedule
 		}
-	}
-	else {
-		if (rrr_http_client_send_request_simple (
-				&data.request_data,
-				RRR_HTTP_METHOD_GET,
-				&net_transport_config,
-				__rrr_http_client_final_callback,
-				NULL
-		) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-	}
 
-	if (data.request_data.do_retry) {
-		goto retry;
-	}
+		prev_bytes_total = bytes_total;
+
+		if (data.net_transport_keepalive_plain) {
+			rrr_net_transport_stats_get(&targets_plain, data.net_transport_keepalive_plain);
+		}
+		if (data.net_transport_keepalive_tls) {
+			rrr_net_transport_stats_get(&targets_tls, data.net_transport_keepalive_tls);
+		}
+	} while (main_running && data.final_callback_count == 0 && targets_plain + targets_tls > 0);
 
 	out:
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_remove(signal_handler);
 		rrr_config_set_debuglevel_on_exit();
-		if (net_transport_keepalive != NULL) {
-			rrr_net_transport_destroy(net_transport_keepalive);
-		}
 		__rrr_http_client_data_cleanup(&data);
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
