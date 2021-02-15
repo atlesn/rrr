@@ -76,21 +76,22 @@ typedef int64_t rrr_slength;
 #define PRIrrrbl PRIu64
 #define PRIrrrsl PRIi64
 
+#define RRR_SLENGTH_MAX INT64_MAX
 #define RRR_LENGTH_MAX 0xffffffff // 8 f's
 
-static inline void __rrr_types_asserts(void) {
+static inline void __rrr_types_asserts (void) {
 	RRR_ASSERT(sizeof(size_t) <= sizeof(rrr_biglength),unsafe_platform_size_t_is_too_big);
 	RRR_ASSERT(sizeof(size_t) >= sizeof(rrr_length),unsafe_platform_size_t_is_too_small);
 }
 
-static inline void __rrr_types_checked_length_counter_add(rrr_slength *target, rrr_biglength operand) {
+static inline void __rrr_types_checked_length_counter_add (rrr_slength *target, rrr_biglength operand) {
 	*target += (rrr_slength) operand;
 	if (*target < 0 || *target > RRR_LENGTH_MAX || operand > RRR_LENGTH_MAX) {
 		RRR_BUG("BUG: Overflow in __rrr_types_checked_tmp_add");
 	}
 }
 
-static inline void __rrr_types_checked_length_counter_sub(rrr_slength *target, rrr_biglength operand) {
+static inline void __rrr_types_checked_length_counter_sub (rrr_slength *target, rrr_biglength operand) {
 	*target -= (rrr_slength) operand;
 	if (*target < 0 || operand > RRR_LENGTH_MAX) {
 		RRR_BUG("BUG: Underflow in __rrr_types_checked_tmp_add");

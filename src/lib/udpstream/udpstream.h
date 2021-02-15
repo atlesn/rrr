@@ -65,6 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../read.h"
+#include "../read_constants.h"
 #include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
@@ -101,14 +102,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
 // #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
 
-// Return values from API functions, not all of them use all values
-#define RRR_UDPSTREAM_OK 0
-#define RRR_UDPSTREAM_ERR 1
-#define RRR_UDPSTREAM_UNKNOWN_CONNECT_ID 2
-#define RRR_UDPSTREAM_NOT_READY 3
-#define RRR_UDPSTREAM_BUFFER_FULL 4
-#define RRR_UDPSTREAM_RESET 5
-#define RRR_UDPSTREAM_IDS_EXHAUSTED 6
+#define RRR_UDPSTREAM_OK                  RRR_READ_OK
+#define RRR_UDPSTREAM_HARD_ERR            RRR_READ_HARD_ERROR
+#define RRR_UDPSTREAM_SOFT_ERR            RRR_READ_SOFT_ERROR
+#define RRR_UDPSTREAM_NOT_READY           RRR_READ_INCOMPLETE
 
 // Flags and type are stored together, 4 bits each. Lower 4 are for type.
 
@@ -125,21 +122,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // is closed. If frame id is zero, a hard reset is performed and sending should
 // stop immediately and a new stream must be used instead. This might happen
 // if a client restarts and gets ready again before the connection times out.
-#define RRR_UDPSTREAM_FRAME_TYPE_RESET				00
+#define RRR_UDPSTREAM_FRAME_TYPE_RESET				0
 
 // Used to initiate a new stream, both request and response
-#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			01
+#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			1
 
 // Used for data transmission
-#define RRR_UDPSTREAM_FRAME_TYPE_DATA				03
+#define RRR_UDPSTREAM_FRAME_TYPE_DATA				3
 
 // Used to acknowledge frames and to regulate window size
-#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			04
+#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			4
 
 // Used for control packets with no data. The application_data field may be used
 // by the application to exchange control data. Delivery is not guaranteed like
 // with data packets, control packets are just sent immediately.
-#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			05
+#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			5
 
 #define RRR_UDPSTREAM_FRAME_TYPE(frame) \
 	((frame)->flags_and_type & 0x0f)
@@ -229,41 +226,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP (1<<1)
 #define RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE (1<<2)
 
-#define RRR_UDPSTREAM_HEADER_FIELDS 							\
-	uint8_t flags_and_type;										\
-	uint8_t version;											\
-	uint16_t stream_id;											\
-	union {														\
-		uint32_t frame_id;										\
-		uint32_t connect_handle;								\
-		uint32_t window_size;									\
-	};															\
-	union {														\
-		struct rrr_udpstream_ack_data ack_data; 				\
-		uint64_t application_data;								\
-	};															\
-	uint16_t data_size
+#define RRR_UDPSTREAM_HEADER_FIELDS                            \
+    uint8_t flags_and_type;                                    \
+    uint8_t version;                                           \
+    uint16_t stream_id;                                        \
+    union {                                                    \
+        uint32_t frame_id;                                     \
+        uint32_t connect_handle;                               \
+        uint32_t window_size;                                  \
+    };                                                         \
+    union {                                                    \
+        struct rrr_udpstream_ack_data ack_data;                \
+        uint64_t application_data;                             \
+    };                                                         \
+    uint16_t data_size
 
-#define RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS							\
-	void **joined_data,												\
-	void *allocation_handle,										\
-	void *udpstream_callback_arg
+#define RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS                    \
+    void **joined_data,                                        \
+    void *allocation_handle,                                   \
+    void *udpstream_callback_arg
 
-#define RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS						\
-	uint32_t size,													\
-	const struct sockaddr *remote_addr,								\
-	socklen_t remote_addr_len,										\
-	int (*receive_callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS),	\
-	void *udpstream_callback_arg,									\
-	void *arg
+#define RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS                  \
+    uint32_t size,                                             \
+    const struct sockaddr *remote_addr,                        \
+    socklen_t remote_addr_len,                                 \
+    int (*receive_callback)(RRR_UDPSTREAM_RECEIVE_CALLBACK_ARGS),\
+    void *udpstream_callback_arg,                              \
+    void *arg
 
-#define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS						\
-	RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
+#define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS                  \
+    RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
 
-#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS					\
-	void **joined_data,												\
-	const struct rrr_udpstream_receive_data *receive_data,			\
-	void *arg
+#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS              \
+    void **joined_data,                                        \
+    const struct rrr_udpstream_receive_data *receive_data,     \
+    void *arg
 
 struct rrr_udpstream_ack_data {
 	uint32_t ack_id_first;
@@ -453,19 +450,6 @@ int rrr_udpstream_connection_check (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
 );
-
-// Nag about missing out release-ACK packet (sends new delivery ACK), possibly
-// with window size regulation. An API user calling this function must previously
-// have stored the original sender address and
-/*int rrr_udpstream_release_ack_urge (
-		struct rrr_udpstream *udpstream_data,
-		uint16_t stream_id,
-		uint64_t boundary_id,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int window_size_change
-);*/
-
 int rrr_udpstream_regulate_window_size (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,

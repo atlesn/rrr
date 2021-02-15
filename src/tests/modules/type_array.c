@@ -50,6 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
 
+// Set high to stop test from exiting. Set back to 200 when work is done.
+#define RRR_TEST_TYPE_ARRAY_LOOP_COUNT 200
+
 struct rrr_test_result {
 	int result;
 };
@@ -130,36 +133,41 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
-	rrr_message_broker_costumer_handle *handle = NULL;
+
+	rrr_message_broker_costumer_handle *handle_self = NULL;
+	rrr_message_broker_costumer_handle *handle_output = NULL;
 
 	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
 
-	while (rrr_time_get_64() < limit) {
-		if ((handle = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output))) != NULL) {
-			break;
-		}
+	while (rrr_time_get_64() < limit && (handle_output == NULL || handle_self == NULL)) {
+		handle_output = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output));
+		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
 		rrr_posix_usleep(50000);
 	}
 
-	if (handle == NULL) {
-		TEST_MSG("Could not find message broker handle for output '%s' after 2 seconds in test_do_poll_loop\n",
+	if (handle_output == NULL || handle_self == NULL) {
+		TEST_MSG("Could not find message broker handle for output '%s' or self after 2 seconds in test_do_poll_loop\n",
 				INSTANCE_M_NAME(output));
 		ret = 1;
 		goto out;
 	}
 
 	// Poll from output
-	for (int i = 1; i <= 200 && test_result->result != 2; i++) {
-		if (rrr_thread_check_encourage_stop(self->thread) == 1) {
+	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
+		if (rrr_thread_signal_encourage_stop_check(self->thread) == 1) {
 			break;
 		}
 
-		TEST_MSG("Test result polling from %s try: %i of 200\n",
-				INSTANCE_M_NAME(output), i);
+		rrr_thread_watchdog_time_update(self->thread);
+
+		TEST_MSG("Test result polling from %s try: %i of %i\n",
+				INSTANCE_M_NAME(output), i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		ret = rrr_message_broker_poll_delete (
 				broker,
-				handle,
+				handle_output,
+				handle_self,
+				0,
 				callback,
 				callback_data,
 				150
@@ -244,7 +252,8 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_array array_tmp = {0};
 
 	if (MSG_IS_ARRAY(message)) {
-		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
+		uint16_t array_version_dummy;
+		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
 			TEST_MSG("Could not create array collection in test_averager_callback\n");
 			ret = 1;
 			goto out;
@@ -340,7 +349,7 @@ int test_averager (
 	return ret;
 }
 
-#define TEST_DATA_ELEMENTS 12
+#define TEST_DATA_ELEMENTS 13
 
 struct rrr_test_type_array_callback_data {
 	const struct rrr_test_function_data *config;
@@ -394,7 +403,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (rrr_array_message_append_to_collection(&collection, message) != 0) {
+	uint16_t array_version_dummy;
+	if (rrr_array_message_append_to_collection(&array_version_dummy, &collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
 		ret = 1;
 		goto out;
@@ -411,7 +421,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		final_length += node->total_stored_length;
 	RRR_LL_ITERATE_END();
 
-	const struct rrr_type_value *types[12];
+	const struct rrr_type_value *types[13];
 
 	// After the array has been assembled and then disassembled again, all
 	// short numbers become full length 8 bytes numbers
@@ -432,6 +442,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	types[10] = rrr_array_value_get_by_index(&collection, 10);
 
 	types[11] = rrr_array_value_get_by_index(&collection, 11);
+
+	types[12] = rrr_array_value_get_by_index(&collection, 12);
 
 	// In some tests chains, the integers become text strings
 	if (config->do_array_str_to_h_conversion) {
@@ -527,6 +539,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	for (int i = 11; i < 12; i++) {
 		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_MSG ? "OK" : "NOT OK"));
 	}
+	for (int i = 12; i < 13; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_STR ? "OK" : "NOT OK"));
+	}
 
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
@@ -539,7 +554,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		!RRR_TYPE_IS_64(types[8]->definition->type) ||
 
 		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
-		types[11]->definition->type != RRR_TYPE_MSG
+		types[11]->definition->type != RRR_TYPE_MSG ||
+		types[12]->definition->type != RRR_TYPE_STR
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -596,23 +612,20 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
+	if (types[12]->total_stored_length != 0) {
+		char *tmp = NULL;
+		types[12]->definition->to_str(&tmp, types[12]);
+		RRR_MSG_0("Returned empty string was not empty, value was '%s'\n",
+			(tmp != NULL ? tmp : "(conversion failed)")
+		);
+		ret = 1;
+		goto out;
+	}
+
 	strcpy(final_data_raw->blob_a, blob_a);
 	strcpy(final_data_raw->blob_b, blob_b);
 
 	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
-
-	if (RRR_DEBUGLEVEL_3) {
-		// TODO : This needs to be put in a buffer then written out
-/*		RRR_DBG("dump final_data_raw: 0x");
-		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
-			char c = ((char*)final_data_raw)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
 
 	if (final_data_raw->le1 == final_data_raw->le3 ||
 		final_data_raw->le3 == final_data_raw->le4 ||
@@ -749,7 +762,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 
 	int ret = 0;
 
-	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
+	RRR_DBG_2("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	test_result->result = 2;
 

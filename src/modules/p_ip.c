@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -72,7 +72,6 @@ enum ip_action {
 struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection send_buffer;
-//	struct rrr_msg_msg_holder_collection delivery_buffer;
 	unsigned int source_udp_port;
 	unsigned int source_tcp_port;
 	struct rrr_ip_data ip_udp_4;
@@ -83,11 +82,12 @@ struct ip_data {
 	struct rrr_array_tree *definitions;
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
+	int do_strip_array_separators;
 	int do_smart_timeout;
 	int do_sync_byte_by_byte;
 	int do_send_rrr_msg_msg;
 	int do_force_target;
-	int do_extract_rrr_msg_msgs;
+	int do_extract_rrr_messages;
 	int do_preserve_order;
 	int do_persistent_connections;
 	int do_multiple_per_connection;
@@ -285,11 +285,19 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_msg_msgs, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_strip_array_separators", do_strip_array_separators, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
+
+	if (data->do_strip_array_separators && data->definitions == NULL) {
+		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
 			data->do_multiple_per_connection == 0 &&
@@ -366,6 +374,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 }
 
 static int ip_read_receive_message (
+		struct rrr_msg_holder_collection *new_entries,
 		struct ip_data *data,
 		const struct rrr_msg_holder *entry_orig,
 		struct rrr_msg_msg *message
@@ -395,18 +404,8 @@ static int ip_read_receive_message (
 	// Now managed by ip buffer entry
 	message = NULL;
 
-	// Unsafe is ok, we are in context. Must also use delayed write
-	// as write lock is already held on the buffer.
-
-	if ((ret = rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
-			new_entry
-	)) != 0) {
-		RRR_MSG_0("Could not write message to output buffer in ip instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
+	rrr_msg_holder_incref_while_locked(new_entry);
+	RRR_LL_APPEND(new_entries, new_entry);
 
 	data->messages_count_read++;
 
@@ -419,6 +418,7 @@ static int ip_read_receive_message (
 }
 
 static int ip_read_data_receive_extract_messages (
+		struct rrr_msg_holder_collection *new_entries,
 		struct ip_data *data,
 		const struct rrr_msg_holder *entry_orig,
 		const struct rrr_array *array
@@ -437,7 +437,7 @@ static int ip_read_data_receive_extract_messages (
 			}
 
 			// Guarantees to free message also upon errors
-			if ((ret = ip_read_receive_message(data, entry_orig, message_new)) != 0) {
+			if ((ret = ip_read_receive_message(new_entries, data, entry_orig, message_new)) != 0) {
 				goto out;
 			}
 
@@ -468,6 +468,7 @@ struct ip_read_array_callback_data {
 	struct rrr_read_session_collection *read_sessions;
 	int loops;
 	uint64_t end_time;
+	struct rrr_msg_holder_collection *new_entries;
 };
 
 static int __rrr_ip_receive_array_tree_callback (
@@ -510,8 +511,9 @@ static int __rrr_ip_receive_array_tree_callback (
 			protocol
 	);
 
-	if (data->do_extract_rrr_msg_msgs) {
+	if (data->do_extract_rrr_messages) {
 		if ((ret = ip_read_data_receive_extract_messages (
+				callback_data->new_entries,
 				data,
 				callback_data->template_entry,
 				array_final
@@ -521,6 +523,10 @@ static int __rrr_ip_receive_array_tree_callback (
 	}
 	else {
 		struct rrr_msg_msg *message_new = NULL;
+
+		if (data->do_strip_array_separators) {
+			rrr_array_strip_type(array_final, &rrr_type_definition_sep);
+		}
 
 		if ((ret = rrr_array_new_message_from_collection (
 				&message_new,
@@ -533,7 +539,12 @@ static int __rrr_ip_receive_array_tree_callback (
 		}
 
 		// Guarantees to free message also upon errors
-		if ((ret = ip_read_receive_message(data, callback_data->template_entry, message_new)) != 0) {
+		if ((ret = ip_read_receive_message (
+				callback_data->new_entries,
+				data,
+				callback_data->template_entry,
+				message_new
+		)) != 0) {
 			goto out;
 		}
 	}
@@ -617,6 +628,8 @@ static int ip_read_loop (
 ) {
 	int ret = 0;
 
+	struct rrr_msg_holder_collection new_entries = {0};
+
 	struct ip_read_array_callback_data callback_data = {
 			NULL, // Set in first callback
 			data,
@@ -625,7 +638,8 @@ static int ip_read_loop (
 			fd,
 			read_sessions,
 			4,
-			end_time
+			end_time,
+			&new_entries
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
@@ -635,10 +649,19 @@ static int ip_read_loop (
 			0,
 			0,
 			ip_read_array_intermediate,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			&new_entries,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	)) != 0) {
 		goto out;
 	}
 
@@ -647,6 +670,7 @@ static int ip_read_loop (
 	}
 
 	out:
+	rrr_msg_holder_collection_clear(&new_entries);
 	return ret;
 }
 
@@ -1074,7 +1098,8 @@ static int ip_send_message (
 	else if (MSG_IS_ARRAY(message)) {
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
-		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
+		uint16_t array_version_dummy;
+		if (rrr_array_message_append_to_collection(&array_version_dummy, &array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
@@ -1354,7 +1379,8 @@ static int ip_send_loop (
 
 				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 						INSTANCE_D_BROKER_ARGS(data->thread_data),
-						node
+						node,
+						INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
 							INSTANCE_D_NAME(data->thread_data));
@@ -1577,8 +1603,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	unsigned int consecutive_nothing_happened = 0;
 	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 //		printf ("IP ticks: %u\n", tick);
 

@@ -25,7 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_read.h"
 
 #define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY	(1<<0)
-#define RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1	(1<<1)
+#define RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1	(1<<1)
+#define RRR_NET_TRANSPORT_F_TLS_NO_ALPN			(1<<2)
 
 #define RRR_NET_TRANSPORT_READ_OK				RRR_READ_OK
 #define RRR_NET_TRANSPORT_READ_HARD_ERROR		RRR_READ_HARD_ERROR
@@ -44,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 enum rrr_net_transport_type {
 	RRR_NET_TRANSPORT_BOTH,
 	RRR_NET_TRANSPORT_PLAIN,
-	RRR_NET_TRANSPORT_TLS // TODO : Consider wrapping in RRR_WITH_OPENSSL
+	RRR_NET_TRANSPORT_TLS
 };
 
 enum rrr_net_transport_socket_mode {
