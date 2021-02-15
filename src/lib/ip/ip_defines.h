@@ -32,4 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_UDP	1
 #define RRR_IP_TCP	2
 
+#define RRR_IP_TRANSPORT_NAME(type) \
+	(type == RRR_IP_AUTO ? "auto" : \
+	(type == RRR_IP_UDP ? "udp" : \
+	(type == RRR_IP_TCP ? "tcp" : \
+	"(unknown)")))
+
 #endif /* RRR_IP_DEFINES_H */

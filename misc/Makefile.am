@@ -2,6 +2,8 @@ man1_MANS = man/rrr.1 man/rrr_post.1 man/rrr_stats.1 man/rrr_passwd.1 man/rrr_au
 man5_MANS = man/rrr.conf.5 man/rrr_python3.5
 environmentfile_DATA = rrr.conf
 environmentfiledir = @RRR_ENVIRONMENT_FILE_DIR@
+varlibfile_DATA = .placeholder
+varlibfiledir = @RRR_DATA_DIR@
 
 if RRR_WITH_SYSTEMD
 systemd_subdir = systemd
@@ -20,3 +22,7 @@ openrc_subdir = openrc
 endif
 
 SUBDIRS = ${systemd_subdir} ${confdir_subdir} ${runit_subdir} ${openrc_subdir}
+
+install-data-hook:
+	chown -R @RRR_DAEMON_USERNAME@:@RRR_DAEMON_USERNAME@ ${DESTDIR}${varlibfiledir} || true
+

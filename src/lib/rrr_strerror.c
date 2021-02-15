@@ -45,7 +45,9 @@ struct rrr_strerror_collection {
 static struct rrr_strerror_collection errors = {0};
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int __rrr_strerror_node_destroy (struct rrr_strerror_node *node) {
+static int __rrr_strerror_node_destroy (
+		struct rrr_strerror_node *node
+) {
 	RRR_FREE_IF_NOT_NULL(node->str);
 	free(node);
 	return 0;

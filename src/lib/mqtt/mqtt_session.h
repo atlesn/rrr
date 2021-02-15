@@ -97,7 +97,6 @@ struct rrr_mqtt_session_iterate_send_queue_counters {
 		unsigned int maintain_ack_complete_counter;
 		unsigned int maintain_ack_missing_counter;
 		unsigned int incomplete_qos_publish_counter;
-		unsigned int incomplete_qos_publish_max_reached_counter;
 		unsigned int sent_counter;
 		unsigned int buffer_size;
 };

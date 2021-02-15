@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,56 +25,77 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_head.h"
 
 #define MSG_TYPE_MSG 1
-//#define MSG_TYPE_ACK 2
 #define MSG_TYPE_TAG 2
+#define MSG_TYPE_GET 3
+#define MSG_TYPE_PUT 4
+#define MSG_TYPE_DEL 5
+#define MSG_TYPE_IDX 6
 
 #define MSG_CLASS_DATA 1
 #define MSG_CLASS_ARRAY 11
 
 #define MSG_TYPE_MSG_STRING "MSG"
 #define MSG_TYPE_TAG_STRING "TAG"
+#define MSG_TYPE_GET_STRING "GET"
+#define MSG_TYPE_PUT_STRING "PUT"
+#define MSG_TYPE_DEL_STRING "DEL"
+#define MSG_TYPE_IDX_STRING "IDX"
 
 #define MSG_CLASS_DATA_STRING "DATA"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_TYPE(message)			((message)->type_and_class & 0x0f)
-#define MSG_CLASS(message)			(((message)->type_and_class & 0xf0) >> 4)
+#define MSG_TYPE(message)             ((message)->type_and_class & 0x0f)
+#define MSG_CLASS(message)            (((message)->type_and_class & 0xf0) >> 4)
 
-#define MSG_SET_TYPE(message,n)		(message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
-#define MSG_SET_CLASS(message,n)	(message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
+#define MSG_SET_TYPE(message,n)       (message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
+#define MSG_SET_CLASS(message,n)      (message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
+
+#define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
+#define MSG_IS_TAG(message)           (MSG_TYPE(message) == MSG_TYPE_TAG)
+#define MSG_IS_GET(message)           (MSG_TYPE(message) == MSG_TYPE_GET)
+#define MSG_IS_PUT(message)           (MSG_TYPE(message) == MSG_TYPE_PUT)
+#define MSG_IS_DEL(message)           (MSG_TYPE(message) == MSG_TYPE_DEL)
+#define MSG_IS_IDX(message)           (MSG_TYPE(message) == MSG_TYPE_IDX)
+
+#define MSG_TYPE_NAME(message) \
+	(MSG_IS_MSG(message) ? MSG_TYPE_MSG_STRING : \
+	(MSG_IS_TAG(message) ? MSG_TYPE_TAG_STRING : \
+	(MSG_IS_GET(message) ? MSG_TYPE_GET_STRING : \
+	(MSG_IS_PUT(message) ? MSG_TYPE_PUT_STRING : \
+	(MSG_IS_DEL(message) ? MSG_TYPE_DEL_STRING : \
+	(MSG_IS_IDX(message) ? MSG_TYPE_IDX_STRING : \
+	"(unknown)" ))))))
 
 #define MSG_CLASS_OK(message) \
-	((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
+    ((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
 
 #define MSG_TYPE_OK(message) \
-	(MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_TAG)
+    (MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_IDX)
 
-#define MSG_IS_MSG(message)			(MSG_TYPE(message) == MSG_TYPE_MSG)
-//#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
-#define MSG_IS_TAG(message)			(MSG_TYPE(message) == MSG_TYPE_TAG)
+#define MSG_IS_DATA(message)          (MSG_CLASS(message) == MSG_CLASS_DATA)
+#define MSG_IS_ARRAY(message)         (MSG_CLASS(message) == MSG_CLASS_ARRAY)
 
-#define MSG_IS_DATA(message)		(MSG_CLASS(message) == MSG_CLASS_DATA)
-#define MSG_IS_ARRAY(message)		(MSG_CLASS(message) == MSG_CLASS_ARRAY)
+#define MSG_IS_MSG_DATA(message)      (MSG_IS_MSG(message) && MSG_IS_DATA(message))
+#define MSG_IS_MSG_ARRAY(message)     (MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
-#define MSG_IS_MSG_DATA(message)	(MSG_IS_MSG(message) && MSG_IS_DATA(message))
-#define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
+#define MSG_MIN_SIZE(message)         (sizeof(*(message))-1)
+#define MSG_TOTAL_SIZE(message)       ((message)->msg_size)
+#define MSG_TOPIC_LENGTH(message)     ((message)->topic_length)
+#define MSG_TOPIC_PTR(message)        ((message)->data + 0)
+#define MSG_DATA_LENGTH(message)      ((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
+#define MSG_DATA_PTR(message)         ((message)->data + (message)->topic_length)
 
-#define MSG_MIN_SIZE(message)		(sizeof(*(message))-1)
-#define MSG_TOTAL_SIZE(message)		((message)->msg_size)
-#define MSG_TOPIC_LENGTH(message)	((message)->topic_length)
-#define MSG_TOPIC_PTR(message)		((message)->data + 0)
-#define MSG_DATA_LENGTH(message)	((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
-#define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
+#define MSG_TOPIC_IS(message,topic)   (rrr_msg_msg_topic_equals(message,topic))
 
-#define MSG_TO_BE(message)												\
-	(message)->timestamp = rrr_htobe64((message)->timestamp);			\
-	(message)->topic_length = rrr_htobe16((message)->topic_length)
+#define MSG_TO_BE(message)                                          \
+    (message)->timestamp = rrr_htobe64((message)->timestamp);       \
+    (message)->topic_length = rrr_htobe16((message)->topic_length)
 
-#define RRR_MSG_MSG_HEAD 	\
-	rrr_u64 timestamp;		\
-	rrr_u8 type_and_class;	\
-	rrr_u8 version;			\
-	rrr_u16 topic_length
+#define RRR_MSG_MSG_HEAD       \
+    rrr_u64 timestamp;         \
+    rrr_u8 type_and_class;     \
+    rrr_u8 version;            \
+    rrr_u16 topic_length
 
 struct rrr_msg_msg {
 	RRR_MSG_HEAD;

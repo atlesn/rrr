@@ -587,64 +587,6 @@ static PyObject *rrr_python3_array_f_new (PyTypeObject *type, PyObject *args, Py
 		return NULL;
 }
 
-/*
-static struct rrr_python3_array_value_data *rrr_python3_array_get_or_append_new (
-		struct rrr_python3_array_data *data,
-		int index
-) {
-	struct rrr_python3_array_value_data *node = NULL;
-
-	ssize_t node_count = PyList_GET_SIZE(data->list);
-
-	// Append new node if index is just after the current element count
-	if (index == node_count) {
-		node = PyObject_New(struct rrr_python3_array_value_data, &rrr_python3_array_value_type);
-		if (node == NULL) {
-			return NULL;
-		}
-		PyList_Append(data->list, (PyObject*) node);
-	}
-	else if (index > node_count) {
-		RRR_MSG_0("Index was too big in rrr_python3_array_set_value, max index is the current last index + 1, otherwise a hole would have been produced\n");
-		return NULL;
-	}
-	else {
-		node = __rrr_python3_array_get_node_by_index(data, index);
-	}
-
-	if (node == NULL) {
-		VL_BUG("node was NULL in rrr_python3_array_set_value\n");
-	}
-
-	return node;
-}
-
-static int __rrr_python3_array_get_index_from_args (long *index_final, PyObject *args[], PyObject *count) {
-	*index_final = 0;
-
-	long argc = PyLong_AsLong(count);
-	if (argc < 1) {
-		RRR_MSG_0("Missing index argument\n");
-		return 1;
-	}
-
-	if (!PyLong_Check(args[0])) {
-		RRR_MSG_0("Non-numeric type specified as index\n");
-		return 1;
-	}
-
-	long index = PyLong_AsLong(args[0]);
-	if (index < 0) {
-		RRR_MSG_0("Negative index value provided\n");
-		return 1;
-	}
-
-	*index_final = index;
-
-	return 0;
-}
-*/
-
 static int __rrr_python3_array_append_raw (
 		struct rrr_python3_array_data *data,
 		PyObject *value

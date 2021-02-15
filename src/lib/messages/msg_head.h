@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,31 +25,38 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_inttypes.h"
 
 // All odd numbers are reserved for the control type where bits 1-15 are flags
-#define RRR_MSG_TYPE_CTRL			1
-#define RRR_MSG_TYPE_MESSAGE			2
-#define RRR_MSG_TYPE_SETTING			4
-#define RRR_MSG_TYPE_TREE_DATA		6
-#define RRR_MSG_TYPE_MESSAGE_ADDR	8
-#define RRR_MSG_TYPE_MESSAGE_LOG		16
+#define RRR_MSG_TYPE_CTRL               1
+#define RRR_MSG_TYPE_MESSAGE            2
+#define RRR_MSG_TYPE_SETTING            4
+#define RRR_MSG_TYPE_TREE_DATA          6
+#define RRR_MSG_TYPE_MESSAGE_ADDR       8
+#define RRR_MSG_TYPE_MESSAGE_LOG       16
 
 // This bit is reserved for holding the type=control number
-#define RRR_MSG_CTRL_F_RESERVED		(1<<0)
-#define RRR_MSG_CTRL_F_ACK			(1<<1)
-#define RRR_MSG_CTRL_F_PING			(1<<2)
-#define RRR_MSG_CTRL_F_PONG			(1<<3)
+#define RRR_MSG_CTRL_F_RESERVED    (1<<0)
+
+#define RRR_MSG_CTRL_F_PING        (1<<2)
+#define RRR_MSG_CTRL_F_PONG        (1<<3)
+#define RRR_MSG_CTRL_F_ACK         (1<<4)
+#define RRR_MSG_CTRL_F_NACK        (1<<5)
 
 // These bits are used by higher level structures. If more flags are needed,
 // reserve more USR-bits here to avoid collisions and only refer to them by
 // these names
-#define RRR_MSG_CTRL_F_USR_A			(1<<15)
-#define RRR_MSG_CTRL_F_USR_B			(1<<14)
-#define RRR_MSG_CTRL_F_USR_C			(1<<13)
-#define RRR_MSG_CTRL_F_USR_D			(1<<12)
+#define RRR_MSG_CTRL_F_USR_A      (1<<15)
+#define RRR_MSG_CTRL_F_USR_B      (1<<14)
+#define RRR_MSG_CTRL_F_USR_C      (1<<13)
+#define RRR_MSG_CTRL_F_USR_D      (1<<12)
 
-#define RRR_MSG_CTRL_F_ALL				(RRR_MSG_CTRL_F_RESERVED|RRR_MSG_CTRL_F_ACK|0xF000)
-#define RRR_MSG_CTRL_F_HAS(msg,flag)		(((msg)->msg_type & (flag)) == (flag))
-#define RRR_MSG_CTRL_F_CLEAR(msg,flag)	((msg)->msg_type &= ~(flag))
-#define RRR_MSG_CTRL_FLAGS(msg)			((msg)->msg_type & RRR_MSG_CTRL_F_ALL)
+#define RRR_MSG_CTRL_F_ALL              ( RRR_MSG_CTRL_F_RESERVED |  \
+                                          RRR_MSG_CTRL_F_PING |      \
+					  RRR_MSG_CTRL_F_PONG |      \
+					  RRR_MSG_CTRL_F_ACK |       \
+					  RRR_MSG_CTRL_F_NACK |      \
+					  0xF000)
+#define RRR_MSG_CTRL_F_HAS(msg,flag)    (((msg)->msg_type & (flag)) == (flag))
+#define RRR_MSG_CTRL_F_CLEAR(msg,flag)  ((msg)->msg_type &= ~(flag))
+#define RRR_MSG_CTRL_FLAGS(msg)         ((msg)->msg_type & RRR_MSG_CTRL_F_ALL)
 
 // The control messages contain flags in the type field
 #define RRR_MSG_IS_CTRL(msg) \
@@ -64,16 +71,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((msg)->msg_type == RRR_MSG_TYPE_SETTING)
 #define RRR_MSG_IS_RRR_MESSAGE_LOG(msg) \
 	((msg)->msg_type == RRR_MSG_TYPE_MESSAGE_LOG)
+#define RRR_MSG_IS_TREE_DATA(msg) \
+	((msg)->msg_type == RRR_MSG_TYPE_TREE_DATA)
+
+#define RRR_MSG_TYPE_OK(msg)                                   \
+    (RRR_MSG_IS_CTRL(msg) ||                                   \
+     RRR_MSG_IS_RRR_MESSAGE(msg) ||                            \
+     RRR_MSG_IS_RRR_MESSAGE_ADDR(msg) ||                       \
+     RRR_MSG_IS_SETTING(msg) ||                                \
+     RRR_MSG_IS_RRR_MESSAGE_LOG(msg) ||                        \
+     RRR_MSG_IS_TREE_DATA(msg)                                 \
+    )
 
 // The header_crc32 is calculated AFTER conversion to network
 // byte order (big endian). The crc32 is then converted itself.
 
-#define RRR_MSG_HEAD			\
-	rrr_u32 header_crc32;		\
-	rrr_u32 msg_size;			\
-	rrr_u16 msg_type;			\
-	rrr_u32 msg_value;			\
-	rrr_u32 data_crc32;
+#define RRR_MSG_HEAD                   \
+    rrr_u32 header_crc32;              \
+    rrr_u32 msg_size;                  \
+    rrr_u16 msg_type;                  \
+    rrr_u32 msg_value;                 \
+    rrr_u32 data_crc32;
 
 struct rrr_msg {
 	RRR_MSG_HEAD;

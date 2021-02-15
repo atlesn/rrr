@@ -22,9 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
+#include "../log.h"
 #include "msg_addr.h"
 #include "msg.h"
+#include "../ip/ip_util.h"
 
 int rrr_msg_addr_to_host (struct rrr_msg_addr *msg) {
 	if (!RRR_MSG_ADDR_SIZE_OK(msg)) {
@@ -83,4 +84,12 @@ int rrr_msg_addr_clone (
 
 	out:
 	return ret;
+}
+
+void rrr_msg_addr_to_str (
+		char *target,
+		size_t target_size,
+		const struct rrr_msg_addr *msg
+) {
+	rrr_ip_to_str (target, target_size, (const struct sockaddr *) msg->addr, sizeof(msg->addr));
 }
