@@ -501,12 +501,19 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 //		RRR_DBG_3("message broker costumer %s write return from callback was OK\n", callback_data->costumer->name);
 	}
 
-	if (entry->usercount != 1) {
-		RRR_BUG("BUG: Usercount was not 1 after callback in __rrr_message_broker_write_entry_intermediate\n");
-	}
+	{
+		rrr_msg_holder_lock(entry);
+		if (entry->usercount != 1) {
+			RRR_BUG("BUG: Usercount was not 1 after callback in __rrr_message_broker_write_entry_intermediate\n");
+		}
+		if (entry->message != NULL && entry->data_length == 0) {
+			RRR_BUG("BUG: Entry message was set but data length was left being + in __rrr_message_broker_write_entry_intermediate, callback must set data length\m");
+		}
 
-	// Prevents cleanup_pop below to free the entry now that everything is in order
-	rrr_msg_holder_incref(entry);
+		// Prevents cleanup_pop below to free the entry now that everything is in order
+		rrr_msg_holder_incref_while_locked(entry);
+		rrr_msg_holder_unlock(entry);
+	}
 
 	*data = (char*) entry;
 	*size = sizeof(*entry);
