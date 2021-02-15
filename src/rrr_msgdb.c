@@ -79,7 +79,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	// The fork signal handler must be first
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
