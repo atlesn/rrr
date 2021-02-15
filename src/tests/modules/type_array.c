@@ -50,6 +50,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/util/rrr_endian.h"
 
+// Set high to stop test from exiting. Set back to 200 when work is done.
+#define RRR_TEST_TYPE_ARRAY_LOOP_COUNT 200
+
 struct rrr_test_result {
 	int result;
 };
@@ -130,36 +133,41 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
-	rrr_message_broker_costumer_handle *handle = NULL;
+
+	rrr_message_broker_costumer_handle *handle_self = NULL;
+	rrr_message_broker_costumer_handle *handle_output = NULL;
 
 	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
 
-	while (rrr_time_get_64() < limit) {
-		if ((handle = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output))) != NULL) {
-			break;
-		}
+	while (rrr_time_get_64() < limit && (handle_output == NULL || handle_self == NULL)) {
+		handle_output = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output));
+		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
 		rrr_posix_usleep(50000);
 	}
 
-	if (handle == NULL) {
-		TEST_MSG("Could not find message broker handle for output '%s' after 2 seconds in test_do_poll_loop\n",
+	if (handle_output == NULL || handle_self == NULL) {
+		TEST_MSG("Could not find message broker handle for output '%s' or self after 2 seconds in test_do_poll_loop\n",
 				INSTANCE_M_NAME(output));
 		ret = 1;
 		goto out;
 	}
 
 	// Poll from output
-	for (int i = 1; i <= 200 && test_result->result != 2; i++) {
+	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
 		if (rrr_thread_signal_encourage_stop_check(self->thread) == 1) {
 			break;
 		}
 
-		TEST_MSG("Test result polling from %s try: %i of 200\n",
-				INSTANCE_M_NAME(output), i);
+		rrr_thread_watchdog_time_update(self->thread);
+
+		TEST_MSG("Test result polling from %s try: %i of %i\n",
+				INSTANCE_M_NAME(output), i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		ret = rrr_message_broker_poll_delete (
 				broker,
-				handle,
+				handle_output,
+				handle_self,
+				0,
 				callback,
 				callback_data,
 				150
@@ -754,7 +762,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 
 	int ret = 0;
 
-	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
+	RRR_DBG_2("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	test_result->result = 2;
 

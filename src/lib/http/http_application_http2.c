@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct rrr_http2_session *http2_session;
+	struct rrr_http_transaction *transaction_incomplete_upgrade;
 };
 
 static const char rrr_http_application_http2_alpn_protos[] = {
@@ -52,11 +53,20 @@ static const char rrr_http_application_http2_alpn_protos[] = {
 
 static void __rrr_http_application_http2_destroy (struct rrr_http_application *app) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	if (http2->http2_session != NULL) {
+		int streams = rrr_http2_streams_count(http2->http2_session);
+		if (streams > 0) {
+			RRR_DBG_2("HTTP2 destroys application with %i active transactions\n", streams);
+		}
+	}
+
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
+	rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
 	free(http2);
 }
 
-struct rrr_http_application_http2_header_fields_submit_callback_data {
+struct rrr_http_application_http2_send_prepare_callback_data {
 	struct rrr_http_application_http2 *app;
 	int32_t stream_id;
 };
@@ -65,7 +75,7 @@ static int __rrr_http_application_http2_header_fields_submit_callback (
 		struct rrr_http_header_field *field,
 		void *arg
 ) {
-	struct rrr_http_application_http2_header_fields_submit_callback_data *callback_data = arg;
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -132,6 +142,41 @@ static int __rrr_http_application_http2_request_send_possible (
 	return 0;
 }
 
+static int __rrr_http_application_http2_request_send_preliminary_callback (
+		enum rrr_http_method method,
+		enum rrr_http_upgrade_mode upgrade_mode,
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *request,
+		void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
+}
+
+static int __rrr_http_application_http2_request_send_final_callback (
+		struct rrr_http_part *request_part,
+		const struct rrr_nullsafe_str *send_body,
+		void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	int ret = 0;
+
+	// Will detect that the stream ID is not allocated yet and pass ID -1 to library to trigger allocation
+	if ((ret = rrr_http2_headers_end(http2->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+	out:
+	return ret;
+}
+
 static int __rrr_http_application_http2_request_send (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS
 ) {
@@ -142,7 +187,6 @@ static int __rrr_http_application_http2_request_send (
 	int ret = 0;
 
 	struct rrr_http_application *http1 = NULL;
-	struct rrr_nullsafe_str *endpoint_nullsafe = NULL;
 
 	if (rrr_net_transport_ctx_is_tls(handle)) {
 		const char *selected_proto = NULL;
@@ -181,20 +225,12 @@ static int __rrr_http_application_http2_request_send (
 		}
 	}
 
+	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrrl "\n",
+			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
+			rrr_nullsafe_str_len(transaction->send_body));
+
+	// The ID retrieved does not have a stream yet, stream is created in final_callback
 	int32_t stream_id_preliminary = 0;
-
-	int form_data_was_made = 0;
-	if ((ret = rrr_http_transaction_form_data_generate_if_needed (&form_data_was_made, transaction)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_transaction_endpoint_with_query_string_create(&endpoint_nullsafe, transaction)) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_7("http2 request submit send data length %" PRIrrrl "\n",
-			rrr_nullsafe_str_len(transaction->send_data_tmp));
-
 	if  ((ret = rrr_http2_request_start (
 			&stream_id_preliminary,
 			http2->http2_session
@@ -205,22 +241,8 @@ static int __rrr_http_application_http2_request_send (
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
-	ret |= __rrr_http_application_http2_header_submit_nullsafe(http2, stream_id_preliminary, ":path", endpoint_nullsafe);
 
 	if (ret != 0) {
-		goto out;
-	}
-
-	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
-			http2,
-			stream_id_preliminary
-	};
-
-	if ((ret = rrr_http_part_header_fields_iterate (
-			transaction->request_part,
-			__rrr_http_application_http2_header_fields_submit_callback,
-			&callback_data
-	)) != 0) {
 		goto out;
 	}
 
@@ -235,28 +257,37 @@ static int __rrr_http_application_http2_request_send (
 
 	rrr_http_transaction_incref(transaction);
 
-	// Will detect that the stream ID is not allocated yet and pass ID -1 to library to trigger allocation
-	if ((ret = rrr_http2_headers_end(http2->http2_session, stream_id_preliminary)) != 0) {
-		goto out;
-	}
+	struct rrr_http_application_http2_send_prepare_callback_data callback_data = {
+		http2,
+		stream_id_preliminary
+	};
 
-	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id_preliminary)) != 0) {
+	if ((ret = rrr_http_transaction_request_prepare_wrapper (
+			transaction,
+			upgrade_mode,
+			user_agent,
+			__rrr_http_application_http2_request_send_preliminary_callback,
+			__rrr_http_application_http2_header_fields_submit_callback,
+			__rrr_http_application_http2_request_send_final_callback,
+			&callback_data
+	)) != 0) {
 		goto out;
 	}
 
 	out:
 	rrr_http_application_destroy_if_not_null(&http1);
-	rrr_nullsafe_str_destroy_if_not_null(&endpoint_nullsafe);
 	return ret;
 }
 
 struct rrr_http_application_http2_callback_data {
 	struct rrr_http_application_http2 *http2;
 	struct rrr_net_transport_handle *handle;
-	uint64_t unique_id;
-	int is_client;
+	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
+	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
+	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
+	void *async_response_get_callback_arg;
 };
 
 static int __rrr_http_application_http2_data_receive_callback (
@@ -271,7 +302,11 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	if (callback_data->is_client) {
+	// TODO : Create separate functions for client and server
+
+	if (callback_data->unique_id_generator_callback == NULL) {
+		// Is client
+
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
 		if (!is_stream_close) {
@@ -306,12 +341,23 @@ static int __rrr_http_application_http2_data_receive_callback (
 		}
 	}
 	else {
+		// Is server
+
 		if (is_stream_close) {
 			goto out;
 		}
 
 		if (transaction == NULL) {
-			if ((ret = rrr_http_transaction_new(&transaction_to_destroy, 0, 0, NULL, NULL)) != 0) {
+			if ((ret = rrr_http_transaction_new (
+					&transaction_to_destroy,
+					0,
+					0,
+					0,
+					callback_data->unique_id_generator_callback,
+					callback_data->unique_id_generator_callback_arg,
+					NULL,
+					NULL
+			)) != 0) {
 				RRR_MSG_0("Could not create transaction in __rrr_http_application_http2_callback\n");
 				goto out;
 			}
@@ -330,7 +376,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
-		const struct rrr_http_header_field *content_type = rrr_http_part_header_field_get(transaction->request_part, "content-type");
 
 		if (method == NULL) {
 			RRR_DBG_3("http2 field :method missing in request\n");
@@ -358,8 +403,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 				data_size,
 				RRR_HTTP_APPLICATION_HTTP2,
 				method->value,
-				path->value,
-				(content_type != NULL ? content_type->value : NULL)
+				path->value
 		)) != 0) {
 			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
 				goto out_send_response_bad_request;
@@ -401,21 +445,30 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction,
 			data,
 			0,
-			callback_data->unique_id,
 			RRR_HTTP_APPLICATION_HTTP2,
 			callback_data->callback_arg
 	)) != 0) {
-		if (ret == RRR_HTTP_PARSE_SOFT_ERR && !callback_data->is_client) {
-			goto out_send_response_bad_request;
+		if (callback_data->unique_id_generator_callback != NULL) {
+			// Is server
+
+			if (ret == RRR_HTTP_PARSE_SOFT_ERR) {
+				goto out_send_response_bad_request;
+			}
+			else if (ret == RRR_HTTP_NO_RESULT) {
+				transaction->need_response = 1;
+				ret = 0;
+			}
 		}
 		goto out;
 	}
 
-	if (!callback_data->is_client) {
+	if (callback_data->unique_id_generator_callback != NULL) {
+		// Is server
 		goto out_send_response;
 	}
 
-	goto out_complete_transaction;
+	// Is client
+	goto out;
 
 	out_send_response_bad_request:
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
@@ -427,8 +480,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 				goto out;
 			}
 		}
-	out_complete_transaction:
-		callback_data->http2->complete_transaction_count++;
 	out:
 		rrr_http_transaction_decref_if_not_null(transaction_to_destroy);
 	return ret;
@@ -460,22 +511,22 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	if (transaction->send_data_tmp == NULL || transaction->send_data_pos >= rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+	if (transaction->send_body == NULL || transaction->send_body_pos >= rrr_nullsafe_str_len(transaction->send_body)) {
 		*done = 1;
 		goto out;
 	}
 
-	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_data_tmp);
+	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
 	if (bytes_to_send > buf_size) {
 		bytes_to_send = buf_size;
 	}
 
 	RRR_DBG_3("http2 source %" PRIrrrl "/%" PRIrrrl " bytes to send\n",
-			rrr_nullsafe_str_len(transaction->send_data_tmp) - transaction->send_data_pos, rrr_nullsafe_str_len(transaction->send_data_tmp));
+			rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos, rrr_nullsafe_str_len(transaction->send_body));
 
 	if ((ret = rrr_nullsafe_str_with_raw_truncated_do (
-			transaction->send_data_tmp,
-			transaction->send_data_pos,
+			transaction->send_body,
+			transaction->send_body_pos,
 			bytes_to_send,
 			__rrr_http_application_http2_data_source_truncated_callback,
 			buf
@@ -483,13 +534,38 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	transaction->send_data_pos += bytes_to_send;
+	transaction->send_body_pos += bytes_to_send;
 	*written_bytes = bytes_to_send;
 
 	// Saves an extra call to this function
-	if (transaction->send_data_pos >= rrr_nullsafe_str_len(transaction->send_data_tmp)) {
+	if (transaction->send_body_pos >= rrr_nullsafe_str_len(transaction->send_body)) {
 		RRR_DBG_3("http2 source complete\n", bytes_to_send);
 		*done = 1;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_application_http2_streams_iterate_callback (
+		uint32_t stream_id,
+		void *application_data,
+		void *arg
+) {
+	struct rrr_http_application_http2_callback_data *callback_data = arg;
+	struct rrr_http_transaction *transaction = application_data;
+
+	int ret = 0;
+
+	if (transaction->need_response) {
+		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
+			ret &= ~(RRR_HTTP_NO_RESULT);
+			goto out;
+		}
+
+		if ((ret = rrr_http_application_http2_response_submit((struct rrr_http_application *) callback_data->http2, transaction, stream_id)) != 0) {
+			goto out;
+		}
 	}
 
 	out:
@@ -503,20 +579,49 @@ static int __rrr_http_application_http2_tick (
 
 	int ret = 0;
 
-
 	(void)(upgrade_verify_callback);
 	(void)(upgrade_verify_callback_arg);
 
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
 			handle,
-			unique_id,
-			is_client,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
 			callback,
-			callback_arg
+			callback_arg,
+			async_response_get_callback,
+			async_response_get_callback_arg
 	};
 
+	if (http2->transaction_incomplete_upgrade != NULL) {
+		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) != 0) {
+			ret &= ~(RRR_HTTP_NO_RESULT);
+			goto out;
+		}
+
+		ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
+
+		rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
+		http2->transaction_incomplete_upgrade = NULL;
+
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	if (async_response_get_callback != NULL) {
+		if ((ret = rrr_http2_transport_ctx_streams_iterate (
+				http2->http2_session,
+				__rrr_http_application_http2_streams_iterate_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
+
 	if ((ret = rrr_http2_transport_ctx_tick (
+			active_transaction_count,
+			complete_transaction_count,
 			http2->http2_session,
 			handle,
 			__rrr_http_application_http2_data_receive_callback,
@@ -627,7 +732,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		void *arg
 ) {
 	size_t *result_len = arg;
-	return rrr_base64url_decode (
+	return (char *) rrr_base64url_decode (
 			str,
 			len,
 			result_len
@@ -720,6 +825,40 @@ int rrr_http_application_http2_new_from_upgrade (
 		return ret;
 }
 
+
+static int __rrr_http_application_http2_response_submit_response_code_callback (
+	int response_code,
+	void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+	return rrr_http2_header_status_submit(callback_data->app->http2_session, callback_data->stream_id, response_code);
+}
+
+static int __rrr_http_application_http2_response_submit_final_callback (
+	struct rrr_http_part *response_part,
+	const struct rrr_nullsafe_str *send_data,
+	void *arg
+) {
+	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+
+	(void)(response_part);
+	(void)(send_data);
+
+	int ret = 0;
+
+	if ((ret = rrr_http2_headers_end(callback_data->app->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+
+	// Misc. callbacks will produce the actual response during ticking, if any
+	if ((ret = rrr_http2_data_submission_request_set(callback_data->app->http2_session, callback_data->stream_id)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_application_http2_response_submit (
 		struct rrr_http_application *app,
 		struct rrr_http_transaction *transaction,
@@ -727,65 +866,21 @@ int rrr_http_application_http2_response_submit (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
-	int ret = 0;
-
-	if (rrr_nullsafe_str_len(transaction->response_part->response_raw_data_nullsafe) > 0) {
-		rrr_nullsafe_str_move(&transaction->send_data_tmp, &transaction->response_part->response_raw_data_nullsafe);
-	}
-
-	int response_code = transaction->response_part->response_code;
-
-	if (response_code == 0) {
-		response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
-	}
-
-	// Predict that we are going to send data later on stream 1 (during ticking)?
-	if (response_code == RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT && rrr_nullsafe_str_len(transaction->send_data_tmp) > 0) {
-		response_code = RRR_HTTP_RESPONSE_CODE_OK;
-	}
-
-	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrrl "\n",
-			response_code, rrr_nullsafe_str_len(transaction->send_data_tmp));
-
-	if ((ret = rrr_http2_header_status_submit(http2->http2_session, stream_id, response_code)) != 0) {
-		goto out;
-	}
-
-	if (rrr_nullsafe_str_len(transaction->send_data_tmp) > 0) {
-		char content_length_str[64];
-		sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_data_tmp));
-		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-length", content_length_str)) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id, "content-type", "text/plain")) != 0) {
-			goto out;
-		}
-	}
-
-	struct rrr_http_application_http2_header_fields_submit_callback_data callback_data = {
+	struct rrr_http_application_http2_send_prepare_callback_data callback_data = {
 			http2,
 			stream_id
 	};
 
-	if ((ret = rrr_http_part_header_fields_iterate (
-			transaction->response_part,
+	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrrl "\n",
+			transaction->response_part->response_code, rrr_nullsafe_str_len(transaction->send_body));
+
+	return rrr_http_transaction_response_prepare_wrapper (
+			transaction,
 			__rrr_http_application_http2_header_fields_submit_callback,
+			__rrr_http_application_http2_response_submit_response_code_callback,
+			__rrr_http_application_http2_response_submit_final_callback,
 			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http2_headers_end(http2->http2_session, stream_id)) != 0) {
-		goto out;
-	}
-
-	// Misc. callbacks will produce the actual response during ticking, if any
-	if ((ret = rrr_http2_data_submission_request_set(http2->http2_session, stream_id)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
+	);
 }
 
 int rrr_http_application_http2_response_to_upgrade_submit (
@@ -806,4 +901,14 @@ int rrr_http_application_http2_response_to_upgrade_submit (
 
 	out:
 	return ret;
+}
+
+void rrr_http_application_http2_response_to_upgrade_async_prepare (
+		struct rrr_http_application *app,
+		struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	http2->transaction_incomplete_upgrade = transaction;
+	rrr_http_transaction_incref(transaction);
 }

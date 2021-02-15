@@ -72,7 +72,6 @@ enum ip_action {
 struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection send_buffer;
-//	struct rrr_msg_msg_holder_collection delivery_buffer;
 	unsigned int source_udp_port;
 	unsigned int source_tcp_port;
 	struct rrr_ip_data ip_udp_4;
@@ -375,6 +374,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 }
 
 static int ip_read_receive_message (
+		struct rrr_msg_holder_collection *new_entries,
 		struct ip_data *data,
 		const struct rrr_msg_holder *entry_orig,
 		struct rrr_msg_msg *message
@@ -404,18 +404,8 @@ static int ip_read_receive_message (
 	// Now managed by ip buffer entry
 	message = NULL;
 
-	// Unsafe is ok, we are in context. Must also use delayed write
-	// as write lock is already held on the buffer.
-
-	if ((ret = rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
-			new_entry
-	)) != 0) {
-		RRR_MSG_0("Could not write message to output buffer in ip instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
+	rrr_msg_holder_incref_while_locked(new_entry);
+	RRR_LL_APPEND(new_entries, new_entry);
 
 	data->messages_count_read++;
 
@@ -428,6 +418,7 @@ static int ip_read_receive_message (
 }
 
 static int ip_read_data_receive_extract_messages (
+		struct rrr_msg_holder_collection *new_entries,
 		struct ip_data *data,
 		const struct rrr_msg_holder *entry_orig,
 		const struct rrr_array *array
@@ -446,7 +437,7 @@ static int ip_read_data_receive_extract_messages (
 			}
 
 			// Guarantees to free message also upon errors
-			if ((ret = ip_read_receive_message(data, entry_orig, message_new)) != 0) {
+			if ((ret = ip_read_receive_message(new_entries, data, entry_orig, message_new)) != 0) {
 				goto out;
 			}
 
@@ -477,6 +468,7 @@ struct ip_read_array_callback_data {
 	struct rrr_read_session_collection *read_sessions;
 	int loops;
 	uint64_t end_time;
+	struct rrr_msg_holder_collection *new_entries;
 };
 
 static int __rrr_ip_receive_array_tree_callback (
@@ -521,6 +513,7 @@ static int __rrr_ip_receive_array_tree_callback (
 
 	if (data->do_extract_rrr_messages) {
 		if ((ret = ip_read_data_receive_extract_messages (
+				callback_data->new_entries,
 				data,
 				callback_data->template_entry,
 				array_final
@@ -546,7 +539,12 @@ static int __rrr_ip_receive_array_tree_callback (
 		}
 
 		// Guarantees to free message also upon errors
-		if ((ret = ip_read_receive_message(data, callback_data->template_entry, message_new)) != 0) {
+		if ((ret = ip_read_receive_message (
+				callback_data->new_entries,
+				data,
+				callback_data->template_entry,
+				message_new
+		)) != 0) {
 			goto out;
 		}
 	}
@@ -630,6 +628,8 @@ static int ip_read_loop (
 ) {
 	int ret = 0;
 
+	struct rrr_msg_holder_collection new_entries = {0};
+
 	struct ip_read_array_callback_data callback_data = {
 			NULL, // Set in first callback
 			data,
@@ -638,7 +638,8 @@ static int ip_read_loop (
 			fd,
 			read_sessions,
 			4,
-			end_time
+			end_time,
+			&new_entries
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
@@ -648,10 +649,19 @@ static int ip_read_loop (
 			0,
 			0,
 			ip_read_array_intermediate,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_message_broker_write_entries_from_collection_unsafe (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			&new_entries,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	)) != 0) {
 		goto out;
 	}
 
@@ -660,6 +670,7 @@ static int ip_read_loop (
 	}
 
 	out:
+	rrr_msg_holder_collection_clear(&new_entries);
 	return ret;
 }
 
@@ -1368,7 +1379,8 @@ static int ip_send_loop (
 
 				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 						INSTANCE_D_BROKER_ARGS(data->thread_data),
-						node
+						node,
+						INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
 							INSTANCE_D_NAME(data->thread_data));

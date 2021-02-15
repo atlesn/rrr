@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "lib/log.h"
+
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -33,7 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/log.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
 #include "lib/util/gnu.h"

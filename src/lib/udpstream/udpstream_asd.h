@@ -38,15 +38,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // TODO : The following method to avoid duplicate IDs is very inefficient
 // This many delivered messages must follow a message before it is deleted from release queue
-#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER RRR_UDPSTREAM_WINDOW_SIZE_MAX
+#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX / 2
 
 #define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD 500
 #define RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT -20
 
-#define RRR_UDPSTREAM_ASD_OK			0
-#define RRR_UDPSTREAM_ASD_ERR			RRR_UDPSTREAM_ERR
-#define RRR_UDPSTREAM_ASD_NOT_READY		RRR_UDPSTREAM_NOT_READY
-#define RRR_UDPSTREAM_ASD_BUFFER_FULL	RRR_UDPSTREAM_BUFFER_FULL
+#define RRR_UDPSTREAM_ASD_OK                    RRR_UDPSTREAM_OK
+#define RRR_UDPSTREAM_ASD_HARD_ERR              RRR_UDPSTREAM_HARD_ERR
+#define RRR_UDPSTREAM_ASD_NOT_READY             RRR_UDPSTREAM_NOT_READY
 
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_RST			(0<<0)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_MSG			(1<<0)
@@ -83,6 +82,7 @@ struct rrr_udpstream_asd_queue_entry {
 	uint64_t send_time;
 	int delivered_grace_counter;
 	int ack_status_flags;
+	int send_count;
 };
 
 struct rrr_udpstream_asd_queue_new {

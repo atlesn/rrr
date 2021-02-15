@@ -201,7 +201,7 @@ int averager_process_message (
 
 	int ret = 0;
 
-	RRR_DBG_4("averager instance %s callback got a message from buffer with timestamp %" PRIu64 "\n",
+	RRR_DBG_2("averager instance %s callback got a message from buffer with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(averager_data->thread_data), message->timestamp);
 
 	// NOTE : Not all errors are critical, some are user caused
@@ -342,7 +342,8 @@ int averager_spawn_message (
 			0,
 			0,
 			averager_spawn_message_callback,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not create and write array message to output buffer in averager instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
@@ -493,7 +494,8 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 			if (rrr_message_broker_write_entries_from_collection_unsafe (
 					INSTANCE_D_BROKER(thread_data),
 					INSTANCE_D_HANDLE(thread_data),
-					&data->output_list
+					&data->output_list,
+					INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 			) != 0) {
 				RRR_MSG_0("Could not write to output buffer in averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));

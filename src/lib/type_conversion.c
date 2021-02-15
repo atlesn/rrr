@@ -271,6 +271,10 @@ static int __rrr_type_convert_str2str (RRR_TYPE_CONVERT_ARGS) {
 
 static int __rrr_type_convert_str2blob (RRR_TYPE_CONVERT_ARGS) {
 	TYPE_STR_ENSURE();
+	if (source->total_stored_length == 0) {
+		RRR_DBG_3("  E str2blob not possible for empty string\n");
+		return RRR_TYPE_CONVERSION_NOT_POSSIBLE;
+	}
 	return __rrr_type_convert_clone_set_new_definition_with_data(target, source, &rrr_type_definition_blob);
 }
 

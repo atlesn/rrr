@@ -100,7 +100,7 @@ static int __rrr_ip_graylist_push (
 
 	char ip_str[256];
 	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_DBG_2("Host '%s' graylisting for %llu ms following connection error\n",
+	RRR_DBG_3("Host '%s' graylisting for %llu ms following connection error\n",
 			ip_str,
 			target->graylist_period_us / 1000LLU
 	);
@@ -342,7 +342,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
     memset(accept_result, '\0', sizeof(*accept_result));
 
 	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
-		RRR_DBG_4("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		RRR_DBG_3("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out_error_free_accept;
 	}
@@ -350,7 +350,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 	uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
 	if ((ret = rrr_socket_connect_nonblock_postcheck_loop(fd, timeout)) != 0) {
 		if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_DBG_4("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
+			RRR_DBG_3("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
 		}
 		goto out_error_free_accept;
 	}

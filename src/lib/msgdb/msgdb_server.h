@@ -22,12 +22,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MSGDB_SERVER_H
 #define RRR_MSGDB_SERVER_H
 
+#include <inttypes.h>
+
 struct rrr_msgdb_server;
 
 int rrr_msgdb_server_new (
-	struct rrr_msgdb_server **result,
-	const char *directory,
-	const char *socket
+		struct rrr_msgdb_server **result,
+		const char *directory,
+		const char *socket
+);
+void rrr_msgdb_server_destroy (
+		struct rrr_msgdb_server *server
+);
+void rrr_msgdb_server_destroy_void (
+		void *server
+);
+int rrr_msgdb_server_tick (
+		struct rrr_msgdb_server *server
+);
+uint64_t rrr_msgdb_server_recv_count_get (
+	struct rrr_msgdb_server *server
 );
 
 #endif /* RRR_MSGDB_SERVER_H */

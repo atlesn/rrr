@@ -34,14 +34,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
+/* Uncomment to enable errorchecking on mutexes */
+#define RRR_THREAD_DEBUG_MUTEX
+
 /* Tell a thread to start initialization */
 #define RRR_THREAD_SIGNAL_START_INITIALIZE	(1<<0)
 
 /* Tell a thread to start after initializing */
 #define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<1)
 
-/* Tell a thread to proceed after all forking threads have reached RUNNING_FORKED */
+/* Tell a thread to proceed after it has reached RUNNING_FORKED */
 #define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<2)
+
+/* Watchdogs only use the last start signal */
+#define RRR_THREAD_SIGNAL_START_WATCHDOG	RRR_THREAD_SIGNAL_START_AFTERFORK
 
 /* Tell a thread politely to cancel */
 #define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<3)
@@ -117,16 +123,36 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
+#ifdef RRR_THREAD_DEBUG_MUTEX
+#	include "rrr_strerror.h"
+#endif
+
 static inline void rrr_thread_lock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_lock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Locking failed in rrr_thread_lock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_lock(&thread->mutex);
+#endif
 }
 
 static inline void rrr_thread_unlock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_unlock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Unlocking failed in rrr_thread_unlock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_unlock(&thread->mutex);
+#endif
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
@@ -146,6 +172,16 @@ static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thre
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
 }
 
+static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {
+	struct rrr_thread *thread = (struct rrr_thread *) arg;
+	int signal;
+	rrr_thread_lock(thread);
+	thread->watchdog_time = rrr_time_get_64();
+	signal = thread->signal;
+	rrr_thread_unlock(thread);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
+}
+
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
 		int signal
@@ -159,6 +195,10 @@ void rrr_thread_signal_wait_busy (
 		int signal
 );
 void rrr_thread_signal_wait_cond_with_watchdog_update (
+		struct rrr_thread *thread,
+		int signal
+);
+void rrr_thread_signal_wait_cond (
 		struct rrr_thread *thread,
 		int signal
 );
@@ -189,6 +229,9 @@ void rrr_thread_collection_destroy (
 		struct rrr_thread_collection *collection
 );
 void rrr_thread_start_condition_helper_nofork (
+		struct rrr_thread *thread
+);
+void rrr_thread_start_condition_helper_nofork_nice (
 		struct rrr_thread *thread
 );
 int rrr_thread_start_condition_helper_fork (

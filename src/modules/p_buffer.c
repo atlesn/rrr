@@ -76,8 +76,11 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
+
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
 	drop:
 	rrr_msg_holder_unlock(entry);
@@ -98,6 +101,10 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer_do_duplicate", do_duplicate, 0);
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("buffer_do_duplicate",
+		RRR_MSG_0("Warning: Parameter 'buffer_do_duplicate' which is set for instance %s is deprecated. Use 'duplicate' instead, which also works on any mdoule.\n",
+			config->name);
+	);
 
 	out:
 	return ret;
@@ -144,6 +151,11 @@ static int buffer_preload (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
+	// TODO : Remove buffer_do_duplicate option in later version
+	//    - Move parse_config to normal location
+	//    - Remove preload function
+	//    - Must use duplicate=yes instead
+
 	int ret = 0;
 
 	buffer_data_init(data, thread_data);
@@ -174,10 +186,6 @@ static int buffer_preload (struct rrr_thread *thread) {
 					INSTANCE_D_NAME(thread_data));
 			goto out;
 		}
-	}
-	else {
-		RRR_DBG_1("Buffer instance %s detected %i readers, duplication is not enabled in configuration\n",
-				INSTANCE_D_NAME(thread_data), slots);
 	}
 
 	out:

@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARRAY_HARD_ERROR		RRR_READ_HARD_ERROR
 #define RRR_ARRAY_SOFT_ERROR		RRR_READ_SOFT_ERROR
 #define RRR_ARRAY_PARSE_INCOMPLETE	RRR_READ_INCOMPLETE
+#define RRR_ARRAY_ITERATE_STOP	RRR_READ_EOF
 
 struct rrr_map;
 struct rrr_msg_msg;
@@ -146,6 +147,13 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 ssize_t rrr_array_get_packed_length (
 		const struct rrr_array *definition
 );
+int rrr_array_selected_tags_split (
+		int *found_tags,
+		const struct rrr_array *definition,
+		const struct rrr_map *tags,
+		int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg),
+		void *callback_arg
+);
 int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
@@ -162,16 +170,25 @@ int rrr_array_new_message_from_collection (
 );
 int rrr_array_message_iterate (
 		const struct rrr_msg_msg *message_orig,
+		int (*callback)(RRR_TYPE_RAW_FIELDS, void *arg),
+		void *callback_arg
+);
+int rrr_array_message_iterate_values (
+		const struct rrr_msg_msg *message_orig,
 		int (*callback)(
-				const char *data_start,
-				const struct rrr_type_definition *type,
-				rrr_type_flags flags,
-				rrr_length tag_length,
-				rrr_length total_length,
-				rrr_length element_count,
+				const struct rrr_type_value *value,
 				void *arg
 		),
 		void *callback_arg
+);
+int rrr_array_message_has_tag (
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+);
+int rrr_array_message_clone_value_by_tag (
+		struct rrr_type_value **target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
 );
 int rrr_array_message_append_to_collection (
 		uint16_t *array_version,

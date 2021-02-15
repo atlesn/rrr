@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <inttypes.h>
+#include <string.h>
 
 #include "../log.h"
 #include "json.h"
@@ -251,6 +252,222 @@ int rrr_json_to_arrays (
 	}
 	if (object != NULL) {
 		json_object_put(object);
+	}
+	return ret;
+}
+
+static int __rrr_json_type_to_object (
+		json_object **target,
+		const struct rrr_type_value *value
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	json_object *object_new = NULL;
+
+	if (RRR_TYPE_IS_VAIN(value->definition->type)) {
+#ifdef RRR_HAVE_JSONC_NEW_NULL
+		object_new = json_object_new_null(); // Note : Always returns NULL
+#else
+		object_new = NULL;
+#endif
+	}
+	else {
+		if (RRR_TYPE_IS_64(value->definition->type)) {
+			uint64_t value_64 = value->definition->to_64(value);
+			if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
+				object_new = json_object_new_int64(*((int64_t *) &value_64));
+			}
+			else {
+#ifdef RRR_HAVE_JSONC_NEW_UINT64
+				object_new = json_object_new_uint64(value_64);
+#else
+				if (value_64 > INT64_MAX) {
+					RRR_DBG_3("JSON unsigned value '%" PRIu64 "' would overflow as signed integer, converting to string\n",
+							value_64);
+					char buf[64];
+					sprintf(buf, "%" PRIu64, value_64);
+					object_new = json_object_new_string(buf);
+				}
+				else {
+					object_new = json_object_new_int64(value_64);
+				}
+#endif
+			}
+		}
+		else {
+			object_new = json_object_new_string_len(value->data, value->total_stored_length);
+		}
+
+		if (object_new == NULL) {
+			RRR_MSG_0("Could not create JSON object in __rrr_json_type_to_object\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	*target = object_new;
+
+	out:
+	return ret;
+}
+
+static int __rrr_json_object_add (
+	json_object *target,
+	const char *key,
+	json_object **value
+) {
+	int ret = 0;
+
+	const int length_old = json_object_object_length(target);
+
+#ifdef RRR_HAVE_JSONC_OBJECT_ADD_VOID
+	json_object_object_add(target, key, *value);
+#else
+	if ((ret = json_object_object_add(target, key, *value)) != 0) {
+		RRR_MSG_0("Failed to add value to JSON object in __rrr_json_object_add: %s\n", json_tokener_error_desc(ret));
+		ret = 1;
+		goto out;
+	}
+#endif
+	*value = NULL;
+
+	if (length_old == json_object_object_length(target)) {
+		RRR_DBG_3("Note: Overwrote already existing value '%s' in JSON object\n", key);
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_json_array_add (
+	json_object *target,
+	json_object **value
+) {
+	int ret = 0;
+
+	if ((ret = json_object_array_add(target, *value)) != 0) {
+		RRR_MSG_0("Failed to add value to JSON array in __rrr_json_array_add: %s\n", json_tokener_error_desc(ret));
+		ret = 1;
+		goto out;
+	}
+	*value = NULL;
+
+	out:
+	return ret;
+}
+
+struct rrr_json_from_array_callback_data {
+	json_object *base;
+};
+
+static int __rrr_json_from_array_callback (
+		const struct rrr_type_value *node_orig,
+		const struct rrr_array *node_values,
+		void *arg
+
+) {
+	struct rrr_json_from_array_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *tag_tmp = NULL;
+	json_object *object_new = NULL;
+
+	if ((tag_tmp = malloc(node_orig->tag_length + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_json_from_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (node_orig->tag_length > 0) {
+		memcpy(tag_tmp, node_orig->tag, node_orig->tag_length);
+	}
+
+	tag_tmp[node_orig->tag_length] = '\0';
+
+	RRR_DBG_3("JSON add value of type '%s' tag '%s' element count %" PRIrrrl "\n",
+			node_orig->definition->identifier, tag_tmp, node_orig->element_count);
+
+	if (RRR_LL_COUNT(node_values) == 1) {
+		if ((ret = __rrr_json_type_to_object(&object_new, RRR_LL_FIRST(node_values))) != 0) {
+			goto out;
+		}
+		if ((ret = __rrr_json_object_add(callback_data->base, tag_tmp, &object_new)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		struct json_object *array;
+		if ((object_new = array = json_object_new_array()) == NULL) {
+			RRR_MSG_0("Could not create JSON array in __rrr_json_from_array_callback\n");
+			ret = 1;
+			goto out;
+		}
+		if ((ret = __rrr_json_object_add(callback_data->base, tag_tmp, &object_new)) != 0) {
+			goto out;
+		}
+
+		RRR_LL_ITERATE_BEGIN(node_values, const struct rrr_type_value);
+			if ((ret = __rrr_json_type_to_object(&object_new, RRR_LL_FIRST(node_values))) != 0) {
+				goto out;
+			}
+			if ((ret = __rrr_json_array_add(array, &object_new)) != 0) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	}
+
+	out:
+	if (object_new != NULL) {
+		json_object_put(object_new);
+	}
+	RRR_FREE_IF_NOT_NULL(tag_tmp);
+	return ret;
+}
+
+int rrr_json_from_array (
+		char **target,
+		int *found_tags,
+		const struct rrr_array *source,
+		const struct rrr_map *tags
+) {
+	int ret = 0;
+
+	json_object *base = NULL;
+
+	if ((base = json_object_new_object()) == NULL) {
+		RRR_MSG_0("Failed to allocate JSON object in rrr_json_from_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_json_from_array_callback_data callback_data = {
+		base
+	};
+
+	if ((ret = rrr_array_selected_tags_split (
+			found_tags,
+			source,
+			tags,
+			__rrr_json_from_array_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	const char *json_str = json_object_to_json_string_ext(base, JSON_C_TO_STRING_PLAIN);
+
+	if ((*target = strdup(json_str)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_json_from_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	if (base != NULL) {
+		json_object_put(base);
 	}
 	return ret;
 }

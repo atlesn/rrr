@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,15 +33,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/threads.h"
 #include "../lib/messages/msg_msg.h"
-#include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 
 struct raw_data {
-	int message_count;
 	int print_data;
+	long double total_message_age_us;
+	uint64_t total_message_count;
 };
 
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -54,8 +54,10 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_msg_msg *reading = entry->message;
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
+	long double message_age = (long double) (rrr_time_get_64() - reading->timestamp);
+
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 " age %Lg ms\n",
+			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp, message_age / 1000.0);
 
 	if (raw_data->print_data != 0) {
 		// Use high debuglevel to force suppression of messages in journal module
@@ -66,8 +68,8 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out;
 		}
 
-		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s'\n",
-				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp);
+		RRR_DBG_2("Raw %s: Received message of size %llu with timestamp %" PRIu64 " topic '%s' age %Lg ms\n",
+				INSTANCE_D_NAME(thread_data), (long long unsigned) MSG_TOTAL_SIZE(reading), reading->timestamp, topic_tmp, message_age / 1000.0);
 
 		if (MSG_IS_ARRAY(reading)) {
 			uint16_t array_version_dummy;
@@ -86,7 +88,8 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 
-	raw_data->message_count++;
+	raw_data->total_message_age_us += message_age;
+	raw_data->total_message_count++;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
@@ -142,36 +145,35 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
-	uint64_t total_counter = 0;
+	uint64_t prev_message_count = 0;
 	uint64_t timer_start = rrr_time_get_64();
 	int ticks = 0;
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
 
-		int prev_message_count = raw_data->message_count;
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 25) != 0) {
 			RRR_MSG_0("Error while polling in raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
-		}
-
-		if (prev_message_count == raw_data->message_count) {
-			rrr_posix_usleep(50000); // 50 ms
 		}
 
 		uint64_t timer_now = rrr_time_get_64();
 		if (timer_now - timer_start > 1000000) {
 			timer_start = timer_now;
 
-			total_counter += raw_data->message_count;
+			uint64_t message_count = raw_data->total_message_count - prev_message_count;
+			prev_message_count = raw_data->total_message_count;
 
-			RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 "\n",
-					INSTANCE_D_NAME(thread_data), raw_data->message_count, total_counter);
+			RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 " avg age %Lg ms\n",
+					INSTANCE_D_NAME(thread_data),
+					message_count,
+					raw_data->total_message_count,
+					(raw_data->total_message_age_us/(long double) raw_data->total_message_count/1000.0)
+			);
 
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "received", raw_data->message_count);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "received", message_count);
 			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "ticks", ticks);
 
-			raw_data->message_count = 0;
 			ticks = 0;
 		}
 

@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #include "lib/log.h"
 #include "lib/common.h"
@@ -29,10 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/rrr_umask.h"
 #include "lib/util/posix.h"
+#include "lib/msgdb/msgdb_server.h"
 #include "paths.h"
 #include "main.h"
 
-RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_msgdb");
 
 #define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
 
@@ -43,8 +45,8 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 #endif
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "directory",             "[-d|--directory]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "socket",                "[-d|--socket]"},
+		{CMD_ARG_FLAG_NO_FLAG,         '\0',   "directory",             "{DIRECTORY}"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "socket",                "[-s|--socket]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -71,19 +73,15 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 	rrr_strerror_init();
 
+	struct rrr_msgdb_server *server = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
-
 	struct cmd_data cmd;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	// The fork signal handler must be first
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
-
-	printf("d: %s\n", rrr_paths_data_dir);
-	printf("s: %s\n", RRR_MSGDB_DEFAULT_SOCKET);
 
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
@@ -95,18 +93,37 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
+	const char *directory = cmd_get_value(&cmd, "directory", 0);
+	const char *socket = cmd_get_value(&cmd, "socket", 0);
+
+	if (socket == NULL) {
+		socket = RRR_MSGDB_DEFAULT_SOCKET;
+	}
+
 	rrr_umask_onetime_set_global(RRR_GLOBAL_UMASK);
 
 	RRR_DBG_1("RRR debuglevel is: %u\n", RRR_DEBUGLEVEL);
+	RRR_DBG_1("Using directory '%s' and socket '%s'\n", directory, socket);
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
+	if ((ret = rrr_msgdb_server_new(&server, directory, socket)) != 0) {
+		goto out_cleanup_signal;
+	}
+
 	while (main_running) {
-		rrr_posix_usleep(250000); // 250 ms
+		if ((ret = rrr_msgdb_server_tick(server)) != 0) {
+			break;
+		}
+		rrr_posix_usleep(1000);
 	}
 
 	rrr_config_set_debuglevel_on_exit();
 
 	out_cleanup_signal:
+		if (server != NULL) {
+			rrr_msgdb_server_destroy(server);
+		}
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();

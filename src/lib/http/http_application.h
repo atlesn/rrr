@@ -27,37 +27,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <sys/socket.h>
 
-#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS	\
-	struct rrr_net_transport_handle *handle,				\
-	struct rrr_http_transaction *transaction,				\
-	const char *data_ptr,									\
-	ssize_t overshoot_bytes,								\
-	rrr_http_unique_id unique_id,							\
-	enum rrr_http_application_type next_protocol_version	\
+#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS      \
+    struct rrr_net_transport_handle *handle,                   \
+    struct rrr_http_transaction *transaction,                  \
+    const char *data_ptr,                                      \
+    ssize_t overshoot_bytes,                                   \
+    enum rrr_http_application_type next_protocol_version
 
-#define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS	\
-	int *do_upgrade,										\
-	enum rrr_http_application_type from,					\
-	enum rrr_http_upgrade_mode to,							\
-	void *arg
+#define RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS  \
+    struct rrr_http_transaction *transaction,                  \
+    void *arg
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS	\
-	int *do_websocket,											\
-	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,			\
-	void *arg
+#define RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS      \
+    int *do_upgrade,                                           \
+    enum rrr_http_application_type from,                       \
+    enum rrr_http_upgrade_mode to,                             \
+    void *arg
+
+#define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS \
+    int *do_websocket,                                         \
+    RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
+    void *arg 
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
-	void **data, ssize_t *data_len, int *is_binary, void *arg
+    void **data, ssize_t *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS \
-	const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
+#define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS     \
+    const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
 
-#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS		\
-	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,	\
-	void *arg
+#define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS             \
+    RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
+    void *arg
 
-#define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS	\
-	RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
+#define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS         \
+    RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
+
+#define RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS \
+    RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 
 struct rrr_http_application;
 struct rrr_net_transport_handle;
@@ -90,13 +96,14 @@ int rrr_http_application_transport_ctx_request_send (
 );
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
 		uint64_t *complete_transaction_count,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
-		int is_client,
+		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -107,8 +114,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
-		int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS),
-		void *raw_callback_arg
+		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg
 );
 int rrr_http_application_alpn_protos_with_all_do (
 		int (*callback)(const char *alpn_protos, unsigned int alpn_protos_length, void *callback_arg),

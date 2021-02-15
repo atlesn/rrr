@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include "../log.h"
 #include "http_part_parse.h"
@@ -310,13 +309,21 @@ int rrr_http_part_multipart_process (
 	return ret;
 }
 
-static int __rrr_http_part_multipart_field_make (
-		const char *boundary,
-		struct rrr_http_field *node,
-		int is_first,
-		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
-		void *chunk_callback_arg
+struct rrr_http_part_multipart_form_data_make_field_callback_data {
+		int is_first;
+		const char *boundary;
+		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS);
+		void *chunk_callback_arg;
+};
+
+static int __rrr_http_part_multipart_form_data_make_field_callback (
+		const struct rrr_nullsafe_str *name,
+		const struct rrr_nullsafe_str *value,
+		const struct rrr_nullsafe_str *content_type,
+		void *arg
 ) {
+	struct rrr_http_part_multipart_form_data_make_field_callback_data *callback_data = arg;
+
 	int ret = 0;
 
 	char *name_buf = NULL;
@@ -325,14 +332,8 @@ static int __rrr_http_part_multipart_field_make (
 	char *body_buf = NULL;
 	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
 
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &name_buf_full);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &content_type_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
-	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
-
-	if (rrr_nullsafe_str_isset(node->name)) {
-		if ((name_buf = rrr_http_util_header_value_quote_nullsafe(node->name, '"', '"')) == NULL) {
+	if (rrr_nullsafe_str_isset(name)) {
+		if ((name_buf = rrr_http_util_header_value_quote_nullsafe(name, '"', '"')) == NULL) {
 			RRR_MSG_0("Could not quote field name_buf in __rrr_http_part_multipart_field_make\n");
 			ret = 1;
 			goto out;
@@ -345,8 +346,8 @@ static int __rrr_http_part_multipart_field_make (
 		}
 	}
 
-	if (rrr_nullsafe_str_isset(node->content_type)) {
-		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,node->content_type);
+	if (rrr_nullsafe_str_isset(content_type)) {
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type);
 		if ((ret = rrr_asprintf (&content_type_buf, "Content-Type: %s\r\n", value)) <= 0) {
 			RRR_MSG_0("Could not create content_type_buf in __rrr_http_part_multipart_field_make return was %i\n", ret);
 			ret = 1;
@@ -360,8 +361,8 @@ static int __rrr_http_part_multipart_field_make (
 			"%s--%s\r\n"
 			"Content-Disposition: form-data%s\r\n"
 			"%s\r\n",
-			(is_first ? "" : "\r\n"),
-			boundary,
+			(callback_data->is_first ? "" : "\r\n"),
+			callback_data->boundary,
 			(name_buf_full != NULL ? name_buf_full : ""),
 			(content_type_buf != NULL ? content_type_buf : "")
 	)) < 0) {
@@ -376,24 +377,26 @@ static int __rrr_http_part_multipart_field_make (
 
 	rrr_nullsafe_str_set_allocated(body_buf_nullsafe, (void**) &body_buf, strlen(body_buf));
 
-	if ((ret = chunk_callback (body_buf_nullsafe, chunk_callback_arg)) != 0) {
+	if ((ret = callback_data->chunk_callback (body_buf_nullsafe, callback_data->chunk_callback_arg)) != 0) {
 		RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make A\n");
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_isset(node->value)) {
-		if ((ret = chunk_callback (node->value, chunk_callback_arg)) != 0) {
+	if (rrr_nullsafe_str_isset(value)) {
+		if ((ret = callback_data->chunk_callback (value, callback_data->chunk_callback_arg)) != 0) {
 			RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make B\n");
 			goto out;
 		}
 	}
 
+	callback_data->is_first = 0;
+
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	RRR_FREE_IF_NOT_NULL(name_buf);
+	RRR_FREE_IF_NOT_NULL(name_buf_full);
+	RRR_FREE_IF_NOT_NULL(content_type_buf);
+	RRR_FREE_IF_NOT_NULL(body_buf);
+	rrr_nullsafe_str_destroy_if_not_null(&body_buf_nullsafe);
 	return ret;
 }
 
@@ -407,10 +410,6 @@ int rrr_http_part_multipart_form_data_make (
 	char *body_buf = NULL;
 	char *boundary_buf = NULL;
 	struct rrr_nullsafe_str *body_buf_nullsafe = NULL;
-
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &body_buf);
-	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &boundary_buf);
-	pthread_cleanup_push(rrr_nullsafe_str_destroy_if_not_null_void, &body_buf_nullsafe);
 
 	// RFC7578
 
@@ -437,13 +436,21 @@ int rrr_http_part_multipart_form_data_make (
 		}
 	}
 
-	int is_first = 1;
-	RRR_LL_ITERATE_BEGIN(&part->fields, struct rrr_http_field);
-		if ((ret = __rrr_http_part_multipart_field_make(boundary_buf, node, is_first, chunk_callback, chunk_callback_arg)) != 0) {
-			goto out;
-		}
-		is_first = 0;
-	RRR_LL_ITERATE_END();
+	struct rrr_http_part_multipart_form_data_make_field_callback_data callback_data = {
+		1,
+		boundary_buf,
+		chunk_callback,
+		chunk_callback_arg
+	};
+
+
+	if ((ret = rrr_http_field_collection_iterate_as_strings (
+		&part->fields,
+		__rrr_http_part_multipart_form_data_make_field_callback,
+		&callback_data
+	)) != 0) {
+		goto out;
+	}
 
 	{
 		if ((ret = rrr_nullsafe_str_new_or_replace_raw(&body_buf_nullsafe, NULL, 0)) != 0) {
@@ -460,10 +467,11 @@ int rrr_http_part_multipart_form_data_make (
 			goto out;
 		}
 	}
+
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	RRR_FREE_IF_NOT_NULL(body_buf);
+	RRR_FREE_IF_NOT_NULL(boundary_buf);
+	rrr_nullsafe_str_destroy_if_not_null(&body_buf_nullsafe);
 
 	return ret;
 }

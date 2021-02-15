@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_PART_MULTIPART_H
 #define RRR_HTTP_PART_MULTIPART_H
 
+#include "http_common.h"
+
 struct rrr_http_part;
 
 int rrr_http_part_multipart_process (

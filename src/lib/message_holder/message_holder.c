@@ -23,13 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
-#include "log.h"
+#include "../log.h"
 #include "message_holder.h"
 #include "message_holder_struct.h"
-#include "mqtt/mqtt_topic.h"
-#include "util/macro_utils.h"
-#include "util/posix.h"
-#include "util/linked_list.h"
+#include "../mqtt/mqtt_topic.h"
+#include "../util/macro_utils.h"
+#include "../util/posix.h"
+#include "../util/linked_list.h"
 
 // This lock protects the lock member of all ip buffer entries
 // and must be held when accessing the locks
@@ -57,7 +57,7 @@ void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 ) {
 	if (entry->usercount <= 0) {
-		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_lock_\n");
+		RRR_BUG("BUG: Entry was destroyed in rrr_msg_holder_lock\n");
 	}
 	pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
@@ -115,6 +115,12 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	else {
 		rrr_msg_holder_unlock(entry);
 	}
+}
+
+void rrr_msg_holder_decref_while_locked_and_unlock_void (
+		void *entry
+) {
+	rrr_msg_holder_decref_while_locked_and_unlock(entry);
 }
 
 void rrr_msg_holder_incref_while_locked (

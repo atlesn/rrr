@@ -40,13 +40,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/string_builder.h"
 
 struct exploder_data {
-	struct rrr_instance_runtime_data *thread_data;
-	int do_non_array_passthrough;
-	int do_original_passthrough;
-	int do_preserve_timestamp;
-	int do_preserve_topic;
-	int do_topic_append_tag;
-	char *topic;
+		struct rrr_instance_runtime_data *thread_data;
+		int do_non_array_passthrough;
+		int do_original_passthrough;
+		int do_preserve_timestamp;
+		int do_preserve_topic;
+		int do_topic_append_tag;
+		char *topic;
 };
 
 static void exploder_data_init(struct exploder_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -129,7 +129,8 @@ static int exploder_process_value (
 
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
-			entry_new
+			entry_new,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		goto out;
 	}
@@ -215,7 +216,8 @@ static int exploder_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out_write:
 	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry
+			entry,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
 	out_drop:
@@ -259,10 +261,6 @@ static void *thread_entry_exploder (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("exploder instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
-
-
-
-
 
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -46,6 +46,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MAP_ITERATE_IS_FIRST()									\
 	RRR_LL_ITERATE_IS_FIRST()
 
+#define RRR_MAP_ITERATE_IS_LAST()									\
+	RRR_LL_ITERATE_IS_LAST()
+
+#define RRR_MAP_ITERATE_BREAK() \
+	RRR_LL_ITERATE_BREAK()
+
 #define RRR_MAP_COUNT(map)											\
 	RRR_LL_COUNT(map)
 
@@ -57,6 +63,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MAP_ITERATOR_NEXT(iterator) \
 	rrr_map_iterator_next(iterator)
+
+#define RRR_MAP_MERGE_AND_CLEAR_SOURCE_HEAD(target,source) \
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)
 
 // Make sure this is EQUAL to rrr_linked_list_node. Different
 // pointer types are OK.
@@ -106,8 +115,32 @@ int rrr_map_item_new (
 int rrr_map_item_add (
 		struct rrr_map *map,
 		struct rrr_map_item *item
-	);
+);
+int rrr_map_item_replace_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+);
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
+);
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
+);
 int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+);
+int rrr_map_item_prepend_new (
 		struct rrr_map *map,
 		const char *tag,
 		const char *value

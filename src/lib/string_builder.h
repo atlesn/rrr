@@ -57,6 +57,9 @@ char *rrr_string_builder_buffer_takeover (
 void rrr_string_builder_clear (
 		struct rrr_string_builder *string_builder
 );
+void rrr_string_builder_clear_void (
+		void *string_builder
+);
 const char *rrr_string_builder_buf (
 		const struct rrr_string_builder *string_builder
 );

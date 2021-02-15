@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_APPLICATION_HTTP1_H
 #define RRR_HTTP_APPLICATION_HTTP1_H
 
-int rrr_http_application_http1_new (struct rrr_http_application **target);
+#include "http_common.h"
+
+int rrr_http_application_http1_new (
+		struct rrr_http_application **target
+);
 
 #endif /* RRR_HTTP_APPLICATION_HTTP1_H */

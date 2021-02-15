@@ -28,38 +28,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /*
  * About debug levels, ORed together:
- * 0 - Only errors are printed. Critical errors to STDERR, other errors to STDOUT.
- * 1 - Info about loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside. (low rate)
- * 2 - Runtime information in modules, they tell what they do. Log messages between modules. (high rate)
- * 3 - Some data debugging is printed (high rate)
- * 4 - Debug locking and buffers (very high rate)
- * 5 - Debug cmodule worker fork and mmap channel communication
- * 6 - Not used
- * 7 - Debug sockets (high rate at initialization)
- * 8 - Internal thread debug. Usually low rate, but high rates with modules like http server.
+ * 0 /   0 - Severe errors
+ * 1 /   1 - Loading and closing of modules, threads and forks. Detailed errors about incorrect data from outside
+ * 2 /   2 - Messages between modules and requests sent/received by modules and message broker backstop
+ * 3 /   4 - Details about message and value processing in modules
+ * 4 /   8 - MMAP channel messages as well as buffer searhing/ratelimiting/cleanup
+ * 5 /  16 - Cmodule worker fork processing
+ * 6 /  32 - Hex dumps of RRR messages when converted to/from host endianess
+ * 7 /  64 - Socket open/close/read/write
+ * 8 / 128- Thread handling
  */
 
-#define __RRR_DEBUGLEVEL_0	(0)		// 0 - 0
-#define __RRR_DEBUGLEVEL_1	(1<<0)	// 1 - 1
-#define __RRR_DEBUGLEVEL_2	(1<<1)	// 2 - 2
-#define __RRR_DEBUGLEVEL_3	(1<<2)	// 3 - 4
-#define __RRR_DEBUGLEVEL_4	(1<<3)	// 4 - 8
-#define __RRR_DEBUGLEVEL_5	(1<<4)	// 5 - 16
-#define __RRR_DEBUGLEVEL_6	(1<<5)	// 6 - 32
-#define __RRR_DEBUGLEVEL_7	(1<<6)	// 7 - 64
-#define __RRR_DEBUGLEVEL_8	(1<<7)	// 8 - 128
-#define __RRR_DEBUGLEVEL_ALL	(__RRR_DEBUGLEVEL_1|__RRR_DEBUGLEVEL_2|__RRR_DEBUGLEVEL_3|__RRR_DEBUGLEVEL_4| \
-		__RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8)
+#define __RRR_DEBUGLEVEL_0  (0)     // 0
+#define __RRR_DEBUGLEVEL_1  (1<<0)  // 1
+#define __RRR_DEBUGLEVEL_2  (1<<1)  // 2
+#define __RRR_DEBUGLEVEL_3  (1<<2)  // 4
+#define __RRR_DEBUGLEVEL_4  (1<<3)  // 8
+#define __RRR_DEBUGLEVEL_5  (1<<4)  // 16
+#define __RRR_DEBUGLEVEL_6  (1<<5)  // 32
+#define __RRR_DEBUGLEVEL_7  (1<<6)  // 64
+#define __RRR_DEBUGLEVEL_8  (1<<7)  // 128
 
-#define __RRR_LOG_PREFIX_0	0
-#define __RRR_LOG_PREFIX_1	1
-#define __RRR_LOG_PREFIX_2	2
-#define __RRR_LOG_PREFIX_3	3
-#define __RRR_LOG_PREFIX_4	4
-#define __RRR_LOG_PREFIX_5	5
-#define __RRR_LOG_PREFIX_6	6
-#define __RRR_LOG_PREFIX_7	7
-#define __RRR_LOG_PREFIX_8	8
+#define __RRR_DEBUGLEVEL_ALL (                                                            \
+             __RRR_DEBUGLEVEL_1|__RRR_DEBUGLEVEL_2|__RRR_DEBUGLEVEL_3|__RRR_DEBUGLEVEL_4| \
+             __RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8)
+
+#define __RRR_LOG_PREFIX_0  0
+#define __RRR_LOG_PREFIX_1  1
+#define __RRR_LOG_PREFIX_2  2
+#define __RRR_LOG_PREFIX_3  3
+#define __RRR_LOG_PREFIX_4  4
+#define __RRR_LOG_PREFIX_5  5
+#define __RRR_LOG_PREFIX_6  6
+#define __RRR_LOG_PREFIX_7  7
+#define __RRR_LOG_PREFIX_8  8
 
 #define RRR_DEBUGLEVEL_OK(x) \
 	(x >= __RRR_LOG_PREFIX_0 && x <= __RRR_LOG_PREFIX_8)
@@ -73,6 +75,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // arguments properly, use when coding.
 //#define RRR_WITH_PRINTF_LOGGING
 
+//#define RRR_WITH_SIGNAL_PRINTF
+
+#ifndef RRR_WITH_SIGNAL_PRINTF
+#	define RRR_DBG_SIGNAL(...) do { } while(0)
+#endif
+
 #ifdef RRR_WITH_PRINTF_LOGGING
 #	define RRR_MSG_PLAIN(...) printf(__VA_ARGS__)
 #	define RRR_MSG_PLAIN_N(a,b) do{ (void)(a); (void)(b); }while(0)
@@ -82,7 +90,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_3(...) printf(__VA_ARGS__)
 #	define RRR_MSG_4(...) printf(__VA_ARGS__)
 #	define RRR_MSG_ERR(...) printf(__VA_ARGS__)
-#	define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
+#	ifdef RRR_WITH_SIGNAL_PRINTF
+#		define RRR_DBG_SIGNAL(...) printf(__VA_ARGS__)
+#	endif
 #	define RRR_MSG_X(loglevel, ...) printf(__VA_ARGS__)
 #	define RRR_DBG_X(loglevel,...) printf(__VA_ARGS__)
 #	define RRR_DBG_1(...) printf(__VA_ARGS__)
@@ -123,9 +133,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_MSG_ERR(...) \
 	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
-	// Debug without holding the lock
-#	define RRR_DBG_SIGNAL(...) \
-	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+	// Debug without holding the lock, by default disabled as printf is not async-safe
+#	ifdef RRR_WITH_SIGNAL_PRINTF
+#		define RRR_DBG_SIGNAL(...) \
+		do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
+#	endif
 
 // Zero may be passed to X functions
 #	define RRR_MSG_X(debuglevel_num, ...)													\
@@ -219,6 +231,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
 				unsigned short loglevel_translated,
+				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
@@ -231,6 +244,7 @@ void rrr_log_hook_unregister (
 );
 void rrr_log_hooks_call_raw (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message
 );

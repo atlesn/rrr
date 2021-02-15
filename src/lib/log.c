@@ -122,6 +122,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 struct rrr_log_hook {
 	void (*log)(
 			unsigned short loglevel_translated,
+			unsigned short loglevel_orig,
 			const char *prefix,
 			const char *message,
 			void *private_arg
@@ -138,6 +139,7 @@ void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
 				unsigned short loglevel_translated,
+				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
@@ -205,6 +207,7 @@ void rrr_log_hook_unregister (
 
 void rrr_log_hooks_call_raw (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message
 ) {
@@ -215,6 +218,7 @@ void rrr_log_hooks_call_raw (
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				loglevel_translated,
+				loglevel_orig,
 				prefix,
 				message,
 				hook->private_arg
@@ -226,6 +230,7 @@ void rrr_log_hooks_call_raw (
 
 static void __rrr_log_hooks_call (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -254,7 +259,12 @@ static void __rrr_log_hooks_call (
 	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - size, __format, args);
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
-	rrr_log_hooks_call_raw(loglevel_translated, prefix, tmp);
+	rrr_log_hooks_call_raw (
+		loglevel_translated,
+		loglevel_orig,
+		prefix,
+		tmp
+	);
 }
 
 static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
@@ -464,7 +474,13 @@ void rrr_log_printf (
 
 #endif
 
-	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
+	__rrr_log_hooks_call (
+		loglevel_translated,
+		loglevel,
+		prefix,
+		__format,
+		args_copy
+);
 
 	va_end(args);
 	va_end(args_copy);
@@ -499,7 +515,13 @@ void rrr_log_fprintf (
 	LOCK_END;
 #endif
 
-	__rrr_log_hooks_call(loglevel_translated, prefix, __format, args_copy);
+	__rrr_log_hooks_call (
+		loglevel_translated,
+		loglevel,
+		prefix,
+		__format,
+		args_copy
+	);
 
 	va_end(args);
 	va_end(args_copy);

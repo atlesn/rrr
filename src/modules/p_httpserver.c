@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -49,18 +49,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/helpers/nullsafe_str.h"
 #include "../lib/rrr_types.h"
 
-#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN					80
+#define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN                     80
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-#define RRR_HTTPSERVER_DEFAULT_PORT_TLS						443
+#    define RRR_HTTPSERVER_DEFAULT_PORT_TLS                   443
 #endif
-#define RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS		1500
-#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS				5
+#define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
+#define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
 
-#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX					"httpserver/request/"
-#define RRR_HTTPSERVER_RAW_TOPIC_PREFIX						"httpserver/raw/"
-#define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX				"httpserver/websocket/"
-#define RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS				2000
-#define RRR_HTTPSERVER_WORKER_THREADS_MAX					1024
+#define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
+#define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
+#define RRR_HTTPSERVER_WORKER_THREADS_MAX                     1024
 
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -76,19 +74,24 @@ struct httpserver_data {
 
 	int do_http_fields_accept_any;
 	int do_allow_empty_messages;
-	int do_get_raw_response_from_senders;
-	int do_receive_raw_data;
 	int do_receive_full_request;
 	int do_accept_websocket_binary;
 	int do_receive_websocket_rrr_message;
 	int do_disable_http2;
+	int do_get_response_from_senders;
 
-	rrr_setting_uint raw_response_timeout_ms;
+	rrr_setting_uint response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
 	struct rrr_map websocket_topic_filters;
 
+	char *allow_origin_header;
+
 	pthread_mutex_t oustanding_responses_lock;
+
+	// Settings for test suite
+	rrr_setting_uint startup_delay_us;
+	int do_fail_once;
 };
 
 static void httpserver_data_cleanup(void *arg) {
@@ -96,6 +99,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 }
 
 static int httpserver_data_init (
@@ -129,27 +133,27 @@ static int httpserver_parse_config (
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_tls", port_tls, RRR_HTTPSERVER_DEFAULT_PORT_TLS);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_tls",
-			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
-				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-			) {
-				RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
-						config->name);
-				ret = 1;
-				goto out;
-			}
+		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_TLS &&
+			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
+		) {
+			RRR_MSG_0("Setting http_server_port_tls is set for httpserver instance %s but TLS transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
 	);
 #endif
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_port_plain", port_plain, RRR_HTTPSERVER_DEFAULT_PORT_PLAIN);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_port_plain",
-			if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
-				data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
-			) {
-				RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
-						config->name);
-				ret = 1;
-				goto out;
-			}
+		if (data->net_transport_config.transport_type != RRR_NET_TRANSPORT_PLAIN &&
+			data->net_transport_config.transport_type != RRR_NET_TRANSPORT_BOTH
+		) {
+			RRR_MSG_0("Setting http_server_port_plain is set for httpserver instance %s but plain transport is not configured.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
 	);
 
 	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
@@ -167,19 +171,23 @@ static int httpserver_parse_config (
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_allow_empty_messages", do_allow_empty_messages, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_raw_response_from_senders", do_get_raw_response_from_senders, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_raw_data", do_receive_raw_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_receive_full_request", do_receive_full_request, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_get_response_from_senders", do_get_response_from_senders, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_response_timeout_ms", response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_raw_response_timeout_ms", raw_response_timeout_ms, RRR_HTTPSERVER_DEFAULT_RAW_RESPONSE_TIMEOUT_MS);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
-
-	if (data->do_receive_raw_data || data->do_get_raw_response_from_senders) {
-		RRR_DBG_1("httpserver instance %s disabling HTTP2 due to http_server_get_raw_response_from_senders and/or http_server_receive_raw_data being active\n",
-				config->name);
-		data->do_disable_http2 = 1;
+	if (data->do_get_response_from_senders) {
+		if (RRR_INSTANCE_CONFIG_EXISTS("http_server_receive_full_request") && !data->do_receive_full_request) {
+			RRR_MSG_0("http_server_get_response_from_senders was 'yes' while http_server_receive_full_request was explicitly set to 'no' in httpserver instance %s, this is an invalid configuration.\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
+		data->do_receive_full_request = 1;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_allow_empty_messages", do_allow_empty_messages, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
 
 	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
 		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
@@ -206,15 +214,22 @@ static int httpserver_parse_config (
 
 	if (data->do_receive_websocket_rrr_message) {
 		RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("http_server_accept_websocket_binary",
-				if (data->do_accept_websocket_binary == 0) {
-					RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
-							config->name);
-					ret = 1;
-					goto out;
-				}
+			if (data->do_accept_websocket_binary == 0) {
+				RRR_MSG_0("http_server_accept_websocket_binary was explicitly set to no in httpserver instance %s while http_server_receive_websocket_rrr_message was yes, this is a configuration error.\n",
+						config->name);
+				ret = 1;
+				goto out;
+			}
 		);
 		data->do_accept_websocket_binary = 1;
 	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
+
+	// Undocumented, used to test failures in clients
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
+	data->startup_delay_us *= 1000 * 1000;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_fail_once", do_fail_once, 0);
 
 	out:
 	return ret;
@@ -479,9 +494,8 @@ static int httpserver_receive_callback_get_fields (
 }
 
 struct receive_get_response_callback_data {
-	char *response;
-	size_t response_size;
-	char *topic_filter;
+	struct rrr_msg_holder *entry;
+	const char *topic_filter;
 };
 
 static int httpserver_receive_get_response_callback (
@@ -491,8 +505,6 @@ static int httpserver_receive_get_response_callback (
 	struct rrr_msg_msg *msg = entry->message;
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
-
-	char *response = NULL;
 
 	if (MSG_TOPIC_LENGTH(msg) > 0) {
 		if ((ret = rrr_mqtt_topic_match_str_with_end (
@@ -507,130 +519,29 @@ static int httpserver_receive_get_response_callback (
 			RRR_MSG_0("Error while matching topic in httpserver_receive_get_response_callback\n");
 			goto out;
 		}
+		else {
+			if (callback_data->entry != NULL) {
+				RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
+			}
+
+			rrr_msg_holder_incref_while_locked(entry);
+			callback_data->entry = entry;
+		}
 	}
-
-	// Even if data is 0 length, allocate a byte to make pointer non-zero so that caller
-	// can see that response has been received
-	if ((response = malloc(MSG_DATA_LENGTH(msg) + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate response memory in httpserver_receive_get_response_callback\n");
-		ret = RRR_FIFO_GLOBAL_ERR;
-		goto out;
-	}
-
-	memcpy(response, MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg));
-
-	if (callback_data->response != NULL) {
-		RRR_BUG("BUG: Response field was not clear in httpserver_receive_get_response_callback\n");
-	}
-
-	callback_data->response = response;
-	callback_data->response_size = MSG_DATA_LENGTH(msg);
-
-	response = NULL;
 
 	ret = RRR_FIFO_SEARCH_GIVE|RRR_FIFO_SEARCH_FREE|RRR_FIFO_SEARCH_STOP;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(response);
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
-static void httpserver_receive_get_raw_response_cleanup (void *ptr) {
+static void httpserver_receive_get_response_callback_data_cleanup (void *ptr) {
 	struct receive_get_response_callback_data *callback_data = ptr;
 
-	RRR_FREE_IF_NOT_NULL(callback_data->response);
-	RRR_FREE_IF_NOT_NULL(callback_data->topic_filter);
-}
-
-static int httpserver_receive_get_raw_response (
-		struct rrr_net_transport_handle *handle,
-		struct rrr_thread *thread,
-		struct httpserver_data *data,
-		struct rrr_http_part *response_part,
-		uint64_t unique_id
-) {
-	int ret = 0;
-
-	struct receive_get_response_callback_data callback_data = {0};
-
-	pthread_cleanup_push(httpserver_receive_get_raw_response_cleanup, &callback_data);
-
-	if ((ret = httpserver_generate_unique_topic (
-			&callback_data.topic_filter,
-			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
-			unique_id,
-			NULL
-	)) != 0) {
-		goto out;
+	if (callback_data->entry != NULL) {
+		rrr_msg_holder_decref(callback_data->entry);
 	}
-
-	// Message has already been generated by receive raw callback. We await
-	// a response here.
-
-	// We may spend some time in this loop. This is not a problem as each request
-	// is processed by a dedicated thread.
-	uint64_t time_begin = rrr_time_get_64();
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
-
-		uint64_t max_time = (rrr_time_get_64() + 10 * 1000);
-		while (rrr_time_get_64() < max_time) {
-			if ((ret = rrr_poll_do_poll_search (
-					data->thread_data,
-					&data->thread_data->poll,
-					httpserver_receive_get_response_callback,
-					&callback_data,
-					2
-			)) != 0) {
-				RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
-				goto out;
-			}
-
-			if (callback_data.response != NULL) {
-				goto loop_out_response_found;
-			}
-		}
-
-		if (data->raw_response_timeout_ms == 0) {
-			// No timeout, check connection and loop again
-			if ((ret = rrr_net_transport_ctx_check_alive(handle)) != 0) {
-				RRR_DBG_1("Connection closed while waiting for response from senders in httpserver instance %s\n",
-						INSTANCE_D_NAME(data->thread_data));
-				goto out;
-			}
-		}
-		else if (rrr_time_get_64() > time_begin + data->raw_response_timeout_ms * 1000) {
-			break;
-		}
-	}
-
-	if (callback_data.response != NULL) {
-		RRR_DBG_1("Timeout while waiting for response from senders in httpserver instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
-
-	loop_out_response_found:
-
-	RRR_DBG_3("httpserver instance %s got a response from senders with filter %s size %lu\n",
-			INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter, callback_data.response_size);
-
-	// Will set our pointer to NULL
-	if (rrr_http_part_raw_response_set_allocated (
-			response_part,
-			&callback_data.response,
-			callback_data.response_size
-	) != 0) {
-		RRR_MSG_0("Failed to set raw response in httpserver_receive_get_raw_response\n");
-		ret = RRR_HTTP_HARD_ERROR;
-		goto out;
-	}
-
-	out:
-	pthread_cleanup_pop(1);
-	return ret;
 }
 
 static int httpserver_receive_callback_full_request (
@@ -686,6 +597,315 @@ static int httpserver_receive_callback_full_request (
 	return ret;
 }
 
+static int httpserver_receive_get_response_extract_data (
+		struct rrr_array *target,
+		const struct rrr_msg_msg *msg
+) {
+	int ret = 0;
+
+	if (MSG_IS_ARRAY(msg)) {
+		uint16_t array_version = 0;
+		if ((ret = rrr_array_message_append_to_collection(&array_version, target, msg)) != 0) {
+			goto out;
+		}
+	}
+	else if (MSG_IS_DATA(msg)) {
+		if ((ret = rrr_array_push_value_blob_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
+			goto out;
+		}
+	}
+	else {
+		RRR_MSG_0("Unknown message class %u in httpserver_receive_get_response_extract_data\n", MSG_CLASS(msg));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+struct httpserver_response_data {
+	struct rrr_array target;
+	char *request_topic;
+	uint64_t time_begin;
+};
+
+static int httpserver_response_data_new (
+		struct httpserver_response_data **target,
+		rrr_http_unique_id unique_id
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct httpserver_response_data *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in httpserver_response_data_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(result, '\0', sizeof(*result));
+
+	if ((ret = httpserver_generate_unique_topic (
+			&result->request_topic,
+			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
+			unique_id,
+			NULL
+	)) != 0) {
+		goto out_free;
+	}
+
+	*target = result;
+	goto out;
+	out_free:
+		free(result);
+	out:
+		return ret;
+}
+
+static void httpserver_response_data_destroy (
+		struct httpserver_response_data *data
+) {
+	RRR_FREE_IF_NOT_NULL(data->request_topic);
+	rrr_array_clear(&data->target);
+	free(data);
+}
+
+static void httpserver_response_data_destroy_void (
+		void *data
+) {
+	httpserver_response_data_destroy(data);
+}
+
+static void httpserver_response_data_destroy_if_not_null_void_dbl_ptr (
+		void *arg
+) {
+	struct httpserver_response_data **data = arg;
+	if (*data == NULL) {
+		return;
+	}
+	httpserver_response_data_destroy(*data);
+}
+
+static int httpserver_receive_callback_response_get (
+		struct httpserver_data *data,
+		struct httpserver_response_data *response_data
+) {
+	int ret = 0;
+
+	struct receive_get_response_callback_data callback_data = {0};
+
+	pthread_cleanup_push(httpserver_receive_get_response_callback_data_cleanup, &callback_data);
+
+	callback_data.topic_filter = response_data->request_topic;
+
+	if (response_data->time_begin == 0) {
+		response_data->time_begin = rrr_time_get_64();
+	}
+
+	if ((ret = rrr_poll_do_poll_search (
+			data->thread_data,
+			&data->thread_data->poll,
+			httpserver_receive_get_response_callback,
+			&callback_data,
+			0
+	)) != 0) {
+		RRR_MSG_0("Error from poll in httpserver_receive_callback_get_response\n");
+		goto out;
+	}
+
+	if (data->response_timeout_ms == 0) {
+		// No timeout
+	}
+	else if (rrr_time_get_64() > response_data->time_begin + data->response_timeout_ms * 1000) {
+		RRR_DBG_1("Timeout while waiting for response from senders with filter '%s' in httpserver instance %s\n",
+				response_data->request_topic, INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (callback_data.entry != NULL) {
+		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s\n",
+				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
+
+		ret = httpserver_receive_get_response_extract_data (
+				&response_data->target,
+				(struct rrr_msg_msg *) callback_data.entry->message
+		);
+
+		goto out;
+	}
+	else {
+		ret = RRR_HTTP_NO_RESULT;
+	}
+
+/*		if ((ret = rrr_net_transport_ctx_check_alive(handle)) != 0) {
+			RRR_DBG_1("Connection closed while waiting for response from senders in httpserver instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}*/
+
+	out:
+	pthread_cleanup_pop(1);
+	return ret;
+
+}
+
+static int httpserver_receive_callback_response_process_string_value (
+	char **target,
+	const struct rrr_type_value *value
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	char *result = NULL;
+
+	if ((ret = value->definition->to_str(&result, value)) != 0) {
+		RRR_MSG_0("Failed to convert field in response from senders to string in httpserver. Data type of array field was %s.\n",
+			value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+	if (strlen(result) > 255) {
+		RRR_MSG_0("Invalid string field in response from senders in httpserver, length exceeded 255 bytes. Data type of array field was %s.\n",
+			value->definition->identifier);
+		ret = 1;
+		goto out;
+	}
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+	return ret;
+}
+
+#define VERIFY_SINGLE_ELEMENT(var,name)     \
+	do {if(var->element_count != 1){    \
+		RRR_MSG_0("Field " name " in response from senders in httpserver instance %s did not contain excactly one element\n", INSTANCE_D_NAME(data->thread_data)); \
+	}} while (0)
+
+static int httpserver_receive_callback_response_process (
+	struct httpserver_data *data,
+	struct httpserver_response_data *response_data,
+	struct rrr_http_transaction *transaction
+) {
+	struct rrr_http_part *part = transaction->response_part;
+
+	const struct rrr_type_value *value_response_code = rrr_array_value_get_by_tag_const(&response_data->target, "http_response_code");
+	const struct rrr_type_value *value_content_type = rrr_array_value_get_by_tag_const(&response_data->target, "http_content_type");
+	const struct rrr_type_value *value_body = rrr_array_value_get_by_tag_const(&response_data->target, "http_body");
+
+	int ret = 0;
+
+	char *content_type_to_free = NULL;
+	char *body_to_free = NULL;
+
+	if (value_response_code != NULL) {
+		VERIFY_SINGLE_ELEMENT(value_response_code, "response code");
+
+		unsigned int response_code_to_use = 0;
+
+		unsigned long long response_code = value_response_code->definition->to_ull(value_response_code);
+		if (response_code < 100 || response_code > 599) {
+			RRR_MSG_0("Warning: Invalid response code %" PRIu64 " in response from senders in httpserver instance %s. Data type of array field was %s. Defaulting to 200.\n",
+				response_code, INSTANCE_D_NAME(data->thread_data), value_response_code->definition->identifier);
+			response_code = 200;
+		}
+		response_code_to_use = response_code;
+
+		part->response_code = response_code_to_use;
+	}
+
+	if (value_body != NULL) {
+		VERIFY_SINGLE_ELEMENT(value_body, "body");
+
+		const char *content_type_to_use = NULL;
+
+		switch (value_body->definition->type) {
+			case RRR_TYPE_VAIN:
+				break;
+			case RRR_TYPE_BLOB:
+			case RRR_TYPE_MSG:
+			case RRR_TYPE_STR:
+				if (value_body->total_stored_length > 0) {
+					if ((ret = rrr_http_transaction_send_body_set (
+						transaction,
+						value_body->data,
+						value_body->total_stored_length
+					)) != 0) {
+						goto out;
+					}
+				}
+				break;
+			default:
+				if ((ret = value_body->definition->to_str(&body_to_free, value_body)) != 0) {
+					RRR_MSG_0("Failed to process body field in httpserver instance %s. Data type of array field was %s.\n",
+						INSTANCE_D_NAME(data->thread_data), value_body->definition->identifier);
+					goto out;
+				}
+				break;
+		};
+
+		switch (value_body->definition->type) {
+			case RRR_TYPE_MSG:
+				content_type_to_use = "application/rrr-message";
+				break;
+			case RRR_TYPE_BLOB:
+				content_type_to_use = "application/octet-stream";
+				break;
+			default:
+				content_type_to_use = "text/plain";
+				break;
+		};
+
+		if (value_content_type != 0) {
+			VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
+			if ((ret = httpserver_receive_callback_response_process_string_value (&content_type_to_free, value_content_type)) != 0) {
+				RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+			content_type_to_use = content_type_to_free;
+		}
+
+		if (content_type_to_use != NULL) {
+			if ((ret = rrr_http_part_header_field_push(part, "Content-Type", content_type_to_use)) != 0) {
+				goto out;
+			}
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(body_to_free);
+	RRR_FREE_IF_NOT_NULL(content_type_to_free);
+	return ret;
+}
+
+// NOTE : Worker thread CTX in httpserver_async_response_get
+static int httpserver_async_response_get (
+		RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS
+) {
+	struct httpserver_callback_data *receive_callback_data = arg;
+	struct httpserver_data *data = receive_callback_data->httpserver_data;
+	struct httpserver_response_data *response_data = transaction->application_data;
+
+	int ret = 0;
+
+	if ((ret = httpserver_receive_callback_response_get (data, response_data)) != 0) {
+		goto out;
+	}
+	if ((ret = httpserver_receive_callback_response_process (data, response_data, transaction)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 // NOTE : Worker thread CTX in httpserver_receive_callback
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
@@ -693,19 +913,26 @@ static int httpserver_receive_callback (
 	struct httpserver_callback_data *receive_callback_data = arg;
 	struct httpserver_data *data = receive_callback_data->httpserver_data;
 
+	(void)(thread);
+	(void)(handle);
 	(void)(overshoot_bytes);
 
 	int ret = 0;
 
-	char *request_topic = NULL;
-	struct rrr_array array_tmp = {0};
+	struct httpserver_response_data *response_data = NULL;
 
-	if ((ret = httpserver_generate_unique_topic (
-			&request_topic,
-			RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX,
-			unique_id,
-			NULL
-	)) != 0) {
+	static int fail_once = 1;
+
+	if ((ret = httpserver_response_data_new(&response_data, transaction->unique_id)) != 0) {
+		goto out_final;
+	}
+
+	pthread_cleanup_push(httpserver_response_data_destroy_if_not_null_void_dbl_ptr, &response_data);
+
+	if (data->do_fail_once && fail_once) {
+		RRR_MSG_0("Fail once debug is active in httpserver, sending 500 to client\n");
+		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+		fail_once = 0;
 		goto out;
 	}
 
@@ -720,7 +947,7 @@ static int httpserver_receive_callback (
 			RRR_DBG_3("Zero length body from HTTP client, not creating RRR full request message\n");
 		}
 		else if ((ret = httpserver_receive_callback_full_request (
-				&array_tmp,
+				&response_data->target,
 				transaction->request_part,
 				data_ptr,
 				next_protocol_version
@@ -730,7 +957,7 @@ static int httpserver_receive_callback (
 	}
 
 	if ((ret = httpserver_receive_callback_get_fields (
-			&array_tmp,
+			&response_data->target,
 			data,
 			transaction->request_part
 	)) != 0) {
@@ -738,11 +965,11 @@ static int httpserver_receive_callback (
 	}
 
 	struct httpserver_write_message_callback_data write_callback_data = {
-			&array_tmp,
-			request_topic
+			&response_data->target,
+			response_data->request_topic
 	};
 
-	if (RRR_LL_COUNT(&array_tmp) == 0 && data->do_allow_empty_messages == 0) {
+	if (RRR_LL_COUNT(&response_data->target) == 0 && data->do_allow_empty_messages == 0) {
 		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");
 	}
 	else {
@@ -753,7 +980,8 @@ static int httpserver_receive_callback (
 				socklen,
 				RRR_IP_TCP,
 				httpserver_write_message_callback,
-				&write_callback_data
+				&write_callback_data,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 		)) != 0) {
 			RRR_MSG_0("Error while saving message in httpserver_receive_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
@@ -761,26 +989,23 @@ static int httpserver_receive_callback (
 		}
 	}
 
-	if (data->do_get_raw_response_from_senders) {
-		if ((ret = httpserver_receive_get_raw_response (
-				handle,
-				thread,
-				data,
-				transaction->response_part,
-				unique_id
-		)) != 0) {
-			if (ret == RRR_HTTP_SOFT_ERROR) {
-				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_GATEWAY_TIMEOUT;
-				ret = RRR_HTTP_OK;
-			}
+	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
+			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
 			goto out;
 		}
 	}
 
+	if (data->do_get_response_from_senders) {
+		rrr_http_transaction_application_data_set(transaction, (void **) &response_data, httpserver_response_data_destroy_void);
+		ret = RRR_HTTP_NO_RESULT;
+	}
+
 	out:
-	rrr_array_clear(&array_tmp);
-	RRR_FREE_IF_NOT_NULL(request_topic);
-	return ret;
+		pthread_cleanup_pop(1);
+	out_final:
+		return ret;
 }
 
 struct receive_raw_broker_callback_data {
@@ -920,9 +1145,7 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
-
 
 	int ret = 0;
 
@@ -1001,6 +1224,58 @@ static int httpserver_websocket_handshake_callback (
 		return ret;
 }
 
+static int httpserver_websocket_get_response_callback_extract_data (
+		void **data,
+		ssize_t *data_len,
+		int *is_binary,
+		struct rrr_msg_holder *entry,
+		rrr_http_unique_id unique_id
+) {
+	int ret = 0;
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	void *response_data = NULL;
+
+	rrr_msg_holder_lock(entry);
+
+	struct rrr_msg_msg *msg = entry->message;
+
+	if (MSG_DATA_LENGTH(msg) > SSIZE_MAX) {
+		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%li\n",
+				unique_id, (uint64_t) MSG_DATA_LENGTH(msg), (uint64_t) SSIZE_MAX);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out_unlock;
+	}
+	else if (MSG_DATA_LENGTH(msg) == 0) {
+		if ((response_data = strdup("")) == NULL) {
+			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
+			ret = 1;
+			goto out_unlock;
+		}
+	}
+	else {
+		if ((response_data = malloc(MSG_DATA_LENGTH(msg))) == NULL) {
+			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
+			ret = 1;
+			goto out_unlock;
+		}
+		memcpy(response_data, MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg));
+	}
+
+	*data = response_data;
+	*data_len = MSG_DATA_LENGTH(msg);
+
+	response_data = NULL;
+
+	out_unlock:
+	RRR_FREE_IF_NOT_NULL(response_data);
+	rrr_msg_holder_unlock(entry);
+	return ret;
+}
+
 static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct httpserver_callback_data *httpserver_callback_data = arg;
 
@@ -1008,22 +1283,23 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	int ret = 0;
 
-	*data = NULL;
-	*data_len = 0;
-	*is_binary = 0;
+	char *topic_filter = NULL;
 
 	struct receive_get_response_callback_data callback_data = {0};
 
-	pthread_cleanup_push(httpserver_receive_get_raw_response_cleanup, &callback_data);
+	pthread_cleanup_push(httpserver_receive_get_response_callback_data_cleanup, &callback_data);
+	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &topic_filter);
 
 	if ((ret = httpserver_generate_unique_topic (
-			&callback_data.topic_filter,
+			&topic_filter,
 			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
 			unique_id,
 			"#"
 	)) != 0) {
 		goto out;
 	}
+
+	callback_data.topic_filter = topic_filter;
 
 	if ((ret = rrr_poll_do_poll_search (
 			httpserver_callback_data->httpserver_data->thread_data,
@@ -1032,23 +1308,24 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 			&callback_data,
 			0
 	)) != 0) {
-		RRR_MSG_0("Error from poll in httpserver_receive_callback\n");
+		RRR_MSG_0("Error from poll in httpserver_websocket_get_response_callback\n");
 		goto out;
 	}
 
-	if (callback_data.response_size > SSIZE_MAX) {
-		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%li\n",
-				unique_id, callback_data.response_size, (long int) SSIZE_MAX);
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
+	if (callback_data.entry != NULL) {
+		if ((ret = httpserver_websocket_get_response_callback_extract_data (
+			data,
+			data_len,
+			is_binary,
+			callback_data.entry,
+			unique_id
+		)) != 0) {
+			goto out;
+		}
 	}
-
-	*data = callback_data.response;
-	*data_len = callback_data.response_size;
-
-	callback_data.response = NULL;
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	return ret;
 }
@@ -1086,55 +1363,13 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			addr_len,
 			RRR_IP_TCP,
 			httpserver_receive_raw_broker_callback,
-			&write_callback_data
+			&write_callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	);
 
 	out:
 		RRR_FREE_IF_NOT_NULL(topic);
 		return ret;
-}
-
-// NOTE : Worker thread CTX in httpserver_receive_raw_callback
-static int httpserver_receive_raw_callback (
-		RRR_HTTP_SERVER_WORKER_RAW_RECEIVE_CALLBACK_ARGS
-) {
-	struct httpserver_callback_data *receive_callback_data = arg;
-
-	(void)(next_protocol_version);
-	(void)(transaction);
-
-	int ret = 0;
-
-	char *topic = NULL;
-
-	if ((ret = httpserver_generate_unique_topic (
-			&topic,
-			RRR_HTTPSERVER_RAW_TOPIC_PREFIX,
-			unique_id,
-			NULL
-	)) != 0) {
-		goto out;
-	}
-
-	struct receive_raw_broker_callback_data write_callback_data = {
-		receive_callback_data->httpserver_data,
-		data,
-		topic,
-		0
-	};
-
-	ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(receive_callback_data->httpserver_data->thread_data),
-			addr,
-			addr_len,
-			0,
-			httpserver_receive_raw_broker_callback,
-			&write_callback_data
-	);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(topic);
-	return ret;
 }
 
 static int httpserver_unique_id_generator_callback (
@@ -1143,12 +1378,12 @@ static int httpserver_unique_id_generator_callback (
 	struct httpserver_callback_data *data = arg;
 
 	return rrr_message_broker_get_next_unique_id (
-			result,
+			unique_id,
 			INSTANCE_D_BROKER_ARGS(data->httpserver_data->thread_data)
 	);
 }
 
-// If we receive messages from senders which no worker seem to want, we must delete it
+// If we receive messages from senders which no worker seem to want, we must delete them
 static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct httpserver_callback_data *callback_data = arg;
 
@@ -1158,7 +1393,7 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		entry->send_time = rrr_time_get_64();
 	}
 
-	uint64_t timeout = entry->send_time + RRR_HTTPSERVER_RAW_RESPONSE_TIMEOUT_MS * 1000;
+	uint64_t timeout = entry->send_time + callback_data->httpserver_data->response_timeout_ms * 1000;
 	if (rrr_time_get_64() > timeout) {
 		struct rrr_msg_msg *msg = entry->message;
 		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
@@ -1173,6 +1408,11 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (thread_data->init_data.instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+		RRR_MSG_1("Note: httpserver instance %s has input buffer disabled, performance when data is retrieved from senders may be impacted.\n",
+			INSTANCE_D_NAME(thread_data));
+	}
 
 	if (httpserver_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -1194,6 +1434,16 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	RRR_DBG_1 ("httpserver started thread %p\n", thread_data);
 
 	struct rrr_http_server *http_server = NULL;
+
+	{
+		uint64_t startup_time = rrr_time_get_64() + data->startup_delay_us;
+		while (rrr_thread_signal_encourage_stop_check(thread) != 1 && startup_time > rrr_time_get_64()) {
+			rrr_thread_watchdog_time_update(thread);
+			RRR_DBG_1("httpserver instance %s startup delay configured, waiting...\n",
+				INSTANCE_D_NAME(thread_data));
+			rrr_posix_usleep(500000);
+		}
+	}
 
 	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
@@ -1220,18 +1470,18 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	};
 
 	struct rrr_http_server_callbacks callbacks = {
-			httpserver_unique_id_generator_callback,
-			&callback_data,
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
-			(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
-			(data->do_receive_raw_data ? httpserver_receive_raw_callback : NULL),
-			(data->do_receive_raw_data ? &callback_data : NULL),
-			httpserver_receive_callback,
-			&callback_data
+		httpserver_unique_id_generator_callback,
+		&callback_data,
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_handshake_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_frame_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? httpserver_websocket_get_response_callback : NULL),
+		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
+		httpserver_receive_callback,
+		&callback_data,
+		httpserver_async_response_get,
+		&callback_data
 	};
 
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
@@ -1251,7 +1501,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 
 		if (accept_count == 0) {
-			rrr_posix_usleep(50000); // 50 ms
+			rrr_posix_usleep(100000); // 100 ms
 		}
 		else {
 			accept_count_total += accept_count;

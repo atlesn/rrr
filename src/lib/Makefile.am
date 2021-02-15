@@ -65,7 +65,7 @@ mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
-socket = socket/rrr_socket.c socket/rrr_socket_read.c \
+socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chunk.c \
          socket/rrr_socket_common.c socket/rrr_socket_client.c 
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
@@ -82,21 +82,23 @@ cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channe
 
 net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
-# posix.c is in libadd further down
-util = util/gnu.c util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
-       util/slow_noop.c util/utf8.c util/readfile.c util/hex.c
+# posix.c and gnu.c is in libadd further down
+util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
+       util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
+       util/increment.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
 udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
-message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
+                 message_holder/message_holder_slot.c
 
 messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
 
 helpers = helpers/nullsafe_str.c
 
-msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c
+msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
@@ -128,6 +130,11 @@ libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
 librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
+
+libadd_rrr_gnu = librrr_gnu.la
+librrr_gnu_la_SOURCES = util/gnu.c
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
 librrr_conversion_warning_la_SOURCES = type.c type_conversion.c
@@ -174,6 +181,7 @@ libadd_all =                         \
     ${libadd_rrr_umask}              \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
+    ${libadd_rrr_gnu}                \
     ${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}

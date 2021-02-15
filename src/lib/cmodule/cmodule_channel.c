@@ -145,7 +145,7 @@ int rrr_cmodule_channel_receive_messages (
 				callback,
 				callback_arg
 		);
-	} while (--retry_max >= 0 && ret != 0 && ret != RRR_MMAP_CHANNEL_EMPTY);
+	} while (--retry_max >= 0 && ret == 0);
 
 	return ret;
 }

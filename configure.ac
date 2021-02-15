@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record],[1.15-3])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.15-3", [Full version])
+AC_INIT([Read Route Record],[1.16-0])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.16-0", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 15, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 3, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -149,6 +149,25 @@ AC_RUN_IFELSE([
 	AC_DEFINE([RRR_HAS_PATH_MAX_IN_LINUX_LIMITS_H], [1], [Use linux/limits.h to find PATH_MAX])
 ], [
 	AC_MSG_RESULT([limits.h])
+])
+
+AC_MSG_CHECKING([precense of gettid()])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <unistd.h>
+		#include <sys/types.h>
+
+		int main (int argc, char *argv[]) {
+			pid_t tid = gettid();
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
 ])
 
 TLS_CFLAGS=
@@ -492,6 +511,32 @@ AS_IF([test "x$enable_jsonc" = xno], [
 	AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
 	AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
 
+	AC_CHECK_LIB(json-c, json_object_new_null, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
+	], [])
+
+	AC_CHECK_LIB(json-c, json_object_new_uint64, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
+	], [])
+
+	AC_MSG_CHECKING([json_object_object_add is of void type])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <json-c/json_object.h>
+			int main (int argc, char *argv[]) {
+				json_object *obj1 = json_object_new_object();
+				json_object *obj2 = json_object_new_object();
+				// Compilation fails if function is of void type
+				return json_object_object_add(obj1, "key", obj2);
+			}
+		]])
+	], [
+		AC_MSG_RESULT([no])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
+	])
+
 	JSONC_CFLAGS=""
 	JSONC_LDFLAGS=""
 	JSONC_LIBS="-ljson-c"
@@ -700,6 +745,7 @@ AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
+AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
 AC_CONFIG_FILES(
 	Makefile

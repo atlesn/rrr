@@ -62,6 +62,9 @@ void rrr_fork_handler_destroy (
 		struct rrr_fork_handler *handler
 );
 int rrr_fork_signal_handler (int s, void *arg);
+void rrr_fork_send_sigusr1_to_pid (
+		pid_t pid
+);
 void rrr_fork_send_sigusr1_and_wait (
 		struct rrr_fork_handler *handler
 );
