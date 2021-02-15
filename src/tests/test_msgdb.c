@@ -540,6 +540,7 @@ int rrr_test_msgdb(struct rrr_fork_handler *fork_handler) {
 		// Child code
 		char debuglevel[64];
 		sprintf(debuglevel, "%llu", (long long unsigned) RRR_DEBUGLEVEL);
+		setenv("LD_LIBRARY_PATH", "../lib/.libs/", 1);
 #ifdef RRR_TEST_MSGDB_SERVER_USE_VALGRIND
 		execl("/usr/bin/valgrind", "", MSGDB_CMD, MSGDB_DIRECTORY, "-s", MSGDB_SOCKET, "-d", debuglevel, (char *) NULL);
 #else
