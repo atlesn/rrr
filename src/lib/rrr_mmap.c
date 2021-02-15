@@ -68,7 +68,10 @@ struct rrr_mmap_heap_block_index {
 	uint64_t block_sizes[64];
 };
 
-void rrr_mmap_free(struct rrr_mmap *mmap, void *ptr) {
+void rrr_mmap_free (
+		struct rrr_mmap *mmap,
+		void *ptr
+) {
 	pthread_mutex_lock(&mmap->mutex);
 
 	uint64_t pos = ptr - mmap->heap;
@@ -114,7 +117,9 @@ void rrr_mmap_free(struct rrr_mmap *mmap, void *ptr) {
 	pthread_mutex_unlock(&mmap->mutex);
 }
 
-void rrr_mmap_dump_indexes (struct rrr_mmap *mmap) {
+void rrr_mmap_dump_indexes (
+		struct rrr_mmap *mmap
+) {
 	pthread_mutex_lock(&mmap->mutex);
 	uint64_t block_pos = 0;
 	uint64_t total_free_bytes = 0;
@@ -165,7 +170,10 @@ void __dump_bin (uint64_t n) {
 	printf ("\n");
 }
 
-void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
+void *rrr_mmap_allocate (
+		struct rrr_mmap *mmap,
+		uint64_t req_size
+) {
 	if (req_size == 0) {
 		RRR_BUG("request size was 0 in rrr_mmap_allocate\n");
 	}
@@ -286,7 +294,7 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 	return result;
 }
 
-static void *__rrr_mmap(size_t size) {
+static void *__rrr_mmap (size_t size) {
     void *ptr = rrr_posix_mmap(size);
 
     if (ptr != NULL) {
@@ -296,7 +304,10 @@ static void *__rrr_mmap(size_t size) {
     return ptr;
 }
 
-int rrr_mmap_heap_reallocate (struct rrr_mmap *mmap, uint64_t heap_size) {
+int rrr_mmap_heap_reallocate (
+		struct rrr_mmap *mmap,
+		uint64_t heap_size
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&mmap->mutex);
@@ -327,7 +338,11 @@ int rrr_mmap_heap_reallocate (struct rrr_mmap *mmap, uint64_t heap_size) {
 	return ret;
 }
 
-int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name) {
+int rrr_mmap_new (
+		struct rrr_mmap **target,
+		uint64_t heap_size,
+		const char *name
+) {
 	int ret = 0;
 
 	*target = NULL;
@@ -379,13 +394,19 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 		return ret;
 }
 
-void rrr_mmap_incref (struct rrr_mmap *mmap) {
+// TODO : Usercount seems not to be used
+
+void rrr_mmap_incref (
+		struct rrr_mmap *mmap
+) {
 	pthread_mutex_lock(&mmap->mutex);
 	mmap->usercount++;
 	pthread_mutex_unlock(&mmap->mutex);
 }
 
-void rrr_mmap_destroy (struct rrr_mmap *mmap) {
+void rrr_mmap_destroy (
+		struct rrr_mmap *mmap
+) {
 	int usercount_result;
 
 	pthread_mutex_lock(&mmap->mutex);

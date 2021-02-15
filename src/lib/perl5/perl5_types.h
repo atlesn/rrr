@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PERL5_TYPES_H
 #define RRR_PERL5_TYPES_H
 
-#include "type.h"
+#include "../type.h"
 #include "fixed_point.h"
 
 struct rrr_perl5_ctx;

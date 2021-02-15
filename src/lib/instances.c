@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <unistd.h>
+
 #include <stdlib.h>
 
 #include "log.h"
@@ -31,6 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
+#include "util/gnu.h"
+
+#define RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 struct rrr_instance *rrr_instance_find_by_thread (
 		struct rrr_instance_collection *instances,
@@ -51,9 +56,9 @@ int rrr_instance_check_threads_stopped (
 	RRR_LL_ITERATE_BEGIN(instances,struct rrr_instance);
 		struct rrr_instance *instance = node;
 		if (
-				rrr_thread_get_state(instance->thread) == RRR_THREAD_STATE_STOPPED ||
+				rrr_thread_state_get(instance->thread) == RRR_THREAD_STATE_STOPPED ||
 	//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
-				rrr_thread_is_ghost(instance->thread)
+				rrr_thread_ghost_check(instance->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", INSTANCE_M_NAME(instance));
 			ret = 1;
@@ -277,6 +282,43 @@ static int __rrr_instance_parse_topic_filter (
 	return ret;
 }
 
+static int __rrr_instance_parse_misc (
+		struct rrr_instance *data_final
+) {
+	int ret = 0;
+
+	struct rrr_instance_config_data *config = data_final->config;
+
+	struct data {
+		int do_enable_buffer;
+		int do_enable_backstop;
+		int do_duplicate;
+	} data_tmp;
+
+	struct data *data = &data_tmp;
+
+	// Note : Options are both default yes and default no, take care
+
+	// Default YES options
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer", do_enable_buffer, 1);
+	if (!data->do_enable_buffer) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER;
+	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("backstop", do_enable_backstop, 1);
+	if (!data->do_enable_backstop) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP;
+	}
+
+	// Default NO options
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("duplicate", do_duplicate, 0);
+	if (data->do_duplicate) {
+		data_final->misc_flags |= RRR_INSTANCE_MISC_OPTIONS_DUPLICATE;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_instance_add_wait_for_instances (
 		struct rrr_instance_collection *instances,
 		struct rrr_instance *instance
@@ -406,34 +448,51 @@ static int __rrr_instance_add_senders (
 	return ret;
 }
 
-void rrr_instance_collection_clear (struct rrr_instance_collection *target) {
+void rrr_instance_collection_clear (
+		struct rrr_instance_collection *target
+) {
 	RRR_LL_DESTROY(target, struct rrr_instance, __rrr_instance_destroy(node));
 }
 
-unsigned int rrr_instance_collection_count (struct rrr_instance_collection *collection) {
+unsigned int rrr_instance_collection_count (
+		struct rrr_instance_collection *collection
+) {
 	if (RRR_LL_COUNT(collection) < 0) {
 		RRR_BUG("BUG: Count was <0 in rrr_instance_metadata_collection_count\n");
 	}
 	return (RRR_LL_COUNT(collection));
 }
 
-static int __rrr_instace_runtime_data_destroy_callback (struct rrr_thread *thread, void *arg) {
+void rrr_instance_runtime_data_destroy_hard (
+		struct rrr_instance_runtime_data *data
+) {
+	rrr_message_broker_costumer_unregister(data->message_broker_handle);
+	free(data);
+}
+
+static int __rrr_instace_runtime_data_destroy_callback (
+		struct rrr_thread *thread,
+		void *arg
+) {
 	(void)(arg);
 
 	struct rrr_instance_runtime_data *data = thread->private_data;
-	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
-	free(data);
+	rrr_instance_runtime_data_destroy_hard(data);
 	thread->private_data = NULL;
 	return 0;
 }
 
-static void __rrr_instace_runtime_data_destroy_intermediate (void *arg) {
+static void __rrr_instace_runtime_data_destroy_intermediate (
+		void *arg
+) {
 	struct rrr_instance_runtime_data *data = arg;
 	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", data->thread);
 	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
 }
 
-struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (struct rrr_instance_runtime_init_data *init_data) {
+struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
+		struct rrr_instance_runtime_init_data *init_data
+) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
 	struct rrr_instance_runtime_data *data = malloc(sizeof(*data));
@@ -445,10 +504,16 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (struct rrr_inst
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
 
+	if (init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) {
+		RRR_DBG_1("%s instance %s buffer is disabled, starting with one-slot buffer\n",
+				init_data->instance->module_data->module_name, init_data->instance->module_data->instance_name);
+	}
+
 	if (rrr_message_broker_costumer_register (
 			&data->message_broker_handle,
 			init_data->message_broker,
-			init_data->module->instance_name
+			init_data->module->instance_name,
+			(init_data->instance->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER) != 0
 	) != 0) {
 		RRR_MSG_0("Could not register with message broker in rrr_instance_new_thread\n");
 		goto out_free;
@@ -517,7 +582,7 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 
 #include "fork.h"
 
-void *rrr_instance_thread_entry_intermediate (
+static void *__rrr_instance_thread_entry_intermediate (
 		struct rrr_thread *thread
 ) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -562,9 +627,12 @@ void *rrr_instance_thread_entry_intermediate (
 	struct rrr_instance *faulty_instance = NULL;
 	if (rrr_poll_add_from_thread_senders(&faulty_instance, &thread_data->poll, thread_data) != 0) {
 		RRR_MSG_0("Failed to add senders to poll collection of instance %s. Faulty sender was %s.\n",
-				INSTANCE_D_NAME(thread_data), INSTANCE_M_NAME(faulty_instance));
+				INSTANCE_D_NAME(thread_data), (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
 		goto out;
 	}
+
+	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, instance %p\n",
+		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, thread_data);
 
 	// Ignore return value
 	thread_data->init_data.module->operations.thread_entry(thread);
@@ -581,6 +649,216 @@ void *rrr_instance_thread_entry_intermediate (
 	// only do the cleanup functions
 
 	return NULL;
+}
+
+static int __rrr_instance_thread_preload_enable_duplication_as_needed (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	int ret = 0;
+
+	if (INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DUPLICATE) {
+		int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
+
+		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %i readers detected\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), slots);
+
+		if ((ret = rrr_message_broker_setup_split_output_buffer (
+				INSTANCE_D_BROKER(thread_data),
+				INSTANCE_D_HANDLE(thread_data),
+				slots
+		)) != 0) {
+			RRR_MSG_0("Could not setup split buffer in buffer instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_thread_preload (
+		struct rrr_thread *thread
+) {
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	int ret = 0;
+
+	if ((ret = __rrr_instance_thread_preload_enable_duplication_as_needed (thread_data)) != 0) {
+		goto out;
+	}
+
+	if (INSTANCE_D_MODULE(thread_data)->operations.preload != NULL) {
+		if ((ret = INSTANCE_D_MODULE(thread_data)->operations.preload(thread)) != 0) {
+			RRR_MSG_0("Preload function for module %s instance %s failed with return value %i\n",
+					INSTANCE_D_MODULE_NAME(thread_data),
+					INSTANCE_D_NAME(thread_data),
+					ret
+			);
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_instance_collection_start_threads_check_wait_for_callback_data {
+	struct rrr_instance_collection *instances;
+};
+
+static int __rrr_instance_collection_start_threads_check_wait_for_callback (
+		int *do_start,
+		struct rrr_thread *thread,
+		void *arg
+) {
+	struct rrr_instance_collection_start_threads_check_wait_for_callback_data *data = arg;
+	struct rrr_instance *instance = rrr_instance_find_by_thread(data->instances, thread);
+
+	if (instance == NULL) {
+		RRR_BUG("Instance not found in __main_start_threads_check_wait_for_callback\n");
+	}
+
+	*do_start = 1;
+
+	// TODO : Check for wait_for loops in configuration
+
+	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_friend);
+		struct rrr_instance *check = node->instance;
+		if (check == instance) {
+			RRR_MSG_0("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
+					INSTANCE_M_NAME(instance));
+			return 1;
+		}
+
+		if (	rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
+				rrr_thread_state_get(check->thread) == RRR_THREAD_STATE_STOPPED
+		) {
+			// OK
+		}
+		else {
+			RRR_DBG_1 ("Instance %s waiting for instance %s to start\n",
+					INSTANCE_M_NAME(instance), INSTANCE_M_NAME(check));
+			*do_start = 0;
+		}
+	RRR_LL_ITERATE_END();
+
+	return 0;
+}
+
+// This function allocates runtime data and thread data.
+// - runtime data is ALWAYS destroyed by the thread. If a thread does not
+//   start, we must BUG() out
+// - thread data is freed by main unless thread has become ghost in which the
+//   thread will free it if it wakes up
+
+int rrr_instances_create_and_start_threads (
+		struct rrr_thread_collection **thread_collection_target,
+		struct rrr_instance_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
+) {
+	int ret = 0;
+
+	struct rrr_thread_collection *thread_collection = NULL;
+
+	struct rrr_instance_runtime_data *runtime_data_tmp = NULL;
+
+	if (RRR_LL_COUNT(instances) == 0) {
+		RRR_MSG_0("No instances started, exiting\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Create thread collection
+	if (rrr_thread_collection_new (&thread_collection) != 0) {
+		RRR_MSG_0("Could not create thread collection\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Initialize thread data and runtime data
+	int threads_total = 0;
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
+
+		if (instance->module_data == NULL) {
+			RRR_BUG("BUG: Dynamic data was NULL in rrr_main_create_and_start_threads\n");
+		}
+
+		struct rrr_instance_runtime_init_data init_data;
+		init_data.module = instance->module_data;
+		init_data.senders = &instance->senders;
+		init_data.cmd_data = cmd;
+		init_data.global_config = global_config;
+		init_data.instance_config = instance->config;
+		init_data.stats = stats;
+		init_data.message_broker = message_broker;
+		init_data.fork_handler = fork_handler;
+		init_data.topic_first_token = instance->topic_first_token;
+		init_data.topic_str = instance->topic_filter;
+		init_data.instance = instance;
+
+		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
+
+		if ((runtime_data_tmp = rrr_instance_runtime_data_new(&init_data)) == NULL) {
+			RRR_MSG_0("Error while creating runtime data for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			ret = 1;
+			goto out_destroy_collection;
+		}
+
+		struct rrr_thread *thread = rrr_thread_collection_thread_new (
+				thread_collection,
+				__rrr_instance_thread_entry_intermediate,
+				__rrr_instance_thread_preload,
+				instance->module_data->operations.poststop,
+				instance->module_data->operations.cancel_function,
+				instance->module_data->instance_name,
+				RRR_INSTANCE_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
+				runtime_data_tmp
+		);
+
+		if (thread == NULL) {
+			RRR_MSG_0("Error while starting instance %s\n",
+					instance->module_data->instance_name);
+			ret = 1;
+			goto out_destroy_collection;
+		}
+
+		runtime_data_tmp = NULL;
+
+		// Set shortcuts
+		node->thread = thread;
+
+		threads_total++;
+	RRR_LL_ITERATE_END();
+
+	struct rrr_instance_collection_start_threads_check_wait_for_callback_data callback_data = { instances };
+
+	if (rrr_thread_collection_start_all (
+			thread_collection,
+			__rrr_instance_collection_start_threads_check_wait_for_callback,
+			&callback_data
+	) != 0) {
+		RRR_MSG_0("Error while waiting for threads to initialize\n");
+		ret = 1;
+		goto out_destroy_collection;
+	}
+
+	*thread_collection_target = thread_collection;
+
+	goto out;
+	out_destroy_collection:
+		rrr_thread_collection_destroy(thread_collection);
+	out:
+		if (runtime_data_tmp != NULL) {
+			rrr_instance_runtime_data_destroy_hard(runtime_data_tmp);
+		}
+		return ret;
 }
 
 int rrr_instance_create_from_config (
@@ -618,6 +896,12 @@ int rrr_instance_create_from_config (
 		ret = __rrr_instance_parse_topic_filter(instance);
 		if (ret != 0) {
 			RRR_MSG_0("Parsing topic filter failed for instance %s\n",
+					INSTANCE_M_NAME(instance));
+			goto out;
+		}
+		ret = __rrr_instance_parse_misc(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing of misc parameters failed for instance %s\n",
 					INSTANCE_M_NAME(instance));
 			goto out;
 		}

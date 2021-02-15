@@ -95,19 +95,18 @@ int rrr_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
-		{0,							'W',	"no-watchdog-timers",	"[-W|--no-watchdog-timers]"},
-		{0,							'T',	"no-thread-restart",	"[-T|--no-thread-restart]"},
-		{0,							's',	"stats",				"[-s|--stats]"},
-// Not implemented (yet). TTL check is present in duplicator and buffer modules
-//		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"ttl",					"[-t|--time-to-live]"},
-		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+		{CMD_ARG_FLAG_NO_FLAG_MULTI,   '\0',   "config",                "{CONFIGURATION FILE OR DIRECTORY}"},
+		{0,                            'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
+		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
+		{0,                            's',    "stats",                 "[-s|--stats]"},
+		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
+		{0,                            'b',    "banner",                "[-b|--banner]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+		{0,                            'h',    "help",                  "[-h|--help]"},
+		{0,                            'v',    "version",               "[-v|--version]"},
+		{0,                            '\0',    NULL,                   NULL}
 };
 
 struct stats_data {
@@ -213,13 +212,13 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
-	if ((config = rrr_config_parse_file(config_file)) == NULL) {
+	if (rrr_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
@@ -296,7 +295,7 @@ static int main_loop (
 			// as the handle usercount will be > 1. This handle will not be destroyed untill the
 			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
 			// to find the handle as it will be removed from the costumer handle list.
-			rrr_message_broker_unregister_all_hard(&message_broker);
+			rrr_message_broker_unregister_all(&message_broker);
 
 			if (main_running && rrr_config_global.no_thread_restart == 0) {
 				rrr_posix_usleep(1000000); // 1s
@@ -312,7 +311,7 @@ static int main_loop (
 		}
 
 		int count;
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
@@ -330,7 +329,7 @@ static int main_loop (
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 		int count;
 
-		rrr_thread_postponed_cleanup_run(&count);
+		rrr_thread_cleanup_postponed_run(&count);
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
@@ -522,7 +521,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_signal;
 	}
 

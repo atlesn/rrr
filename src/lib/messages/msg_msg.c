@@ -24,16 +24,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <util/utf8.h>
 
-#include "log.h"
+#include "../log.h"
 
 #include "msg.h"
 #include "msg_msg.h"
-#include "rrr_types.h"
-#include "util/rrr_endian.h"
-#include "util/macro_utils.h"
-#include "util/rrr_time.h"
+#include "../rrr_types.h"
+#include "../string_builder.h"
+#include "../util/utf8.h"
+#include "../util/rrr_endian.h"
+#include "../util/macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../helpers/nullsafe_str.h"
+#include "../mqtt/mqtt_topic.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
@@ -121,6 +124,57 @@ int rrr_msg_msg_new_with_data (
 	}
 
 	return 0;
+}
+
+struct rrr_msg_msg_new_with_data_nullsafe_callback_data {
+	struct rrr_msg_msg **final_result;
+	rrr_u8 type;
+	rrr_u8 class;
+	rrr_u64 timestamp;
+	const char *topic;
+	rrr_u16 topic_length;
+};
+
+static int __rrr_msg_msg_new_with_data_nullsafe_callback (
+		const void *str,
+		rrr_length len,
+		void *arg
+) {
+	struct rrr_msg_msg_new_with_data_nullsafe_callback_data *callback_data = arg;
+	return rrr_msg_msg_new_with_data (
+			callback_data->final_result,
+			callback_data->type,
+			callback_data->class,
+			callback_data->timestamp,
+			callback_data->topic,
+			callback_data->topic_length,
+			str,
+			len
+	);
+}
+
+int rrr_msg_msg_new_with_data_nullsafe (
+		struct rrr_msg_msg **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		const char *topic,
+		rrr_u16 topic_length,
+		const struct rrr_nullsafe_str *str
+) {
+	struct rrr_msg_msg_new_with_data_nullsafe_callback_data callback_data = {
+			final_result,
+			type,
+			class,
+			timestamp,
+			topic,
+			topic_length
+	};
+	return rrr_nullsafe_str_with_raw_do_const (
+			str,
+			__rrr_msg_msg_new_with_data_nullsafe_callback,
+			&callback_data
+	);
 }
 
 int rrr_msg_msg_to_string (
@@ -211,6 +265,17 @@ int rrr_msg_msg_to_host_and_verify (struct rrr_msg_msg *message, rrr_biglength e
 		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
+
+	if (RRR_DEBUGLEVEL_6) {
+		struct rrr_string_builder str_tmp = {0};
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
+			unsigned char *buf = (unsigned char *) message;
+			rrr_string_builder_append_format(&str_tmp, "%02x-", *(buf + i));
+		}
+		RRR_DBG("Message from network: %s\n", rrr_string_builder_buf(&str_tmp));
+		rrr_string_builder_clear(&str_tmp);
+	}
+
 	message->timestamp = rrr_be64toh(message->timestamp);
 	message->topic_length = rrr_be16toh(message->topic_length);
 
@@ -227,12 +292,13 @@ void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message) {
 	MSG_TO_BE(message);
 
 	if (RRR_DEBUGLEVEL_6) {
-		RRR_DBG("Message prepared for network: ");
-		for (unsigned int i = 0; i < sizeof(*message); i++) {
+		struct rrr_string_builder str_tmp = {0};
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			unsigned char *buf = (unsigned char *) message;
-			RRR_DBG("%x-", *(buf + i));
+			rrr_string_builder_append_format(&str_tmp, "%02x-", *(buf + i));
 		}
-		RRR_DBG("\n");
+		RRR_DBG("Message prepared for network: %s\n", rrr_string_builder_buf(&str_tmp));
+		rrr_string_builder_clear(&str_tmp);
 	}
 /*
 	if (message_to_string (message, buf+1, buf_size) != 0) {
@@ -326,6 +392,67 @@ int rrr_msg_msg_topic_get (
 	*((*result) + MSG_TOPIC_LENGTH(message)) = '\0';
 
 	return 0;
+}
+
+int rrr_msg_msg_topic_equals (
+		const struct rrr_msg_msg *message,
+		const char *topic
+) {
+	const size_t len_a = MSG_TOPIC_LENGTH(message);
+	const size_t len_b = strlen(topic);
+
+	if (len_a != len_b) {
+		return 0;
+	}
+
+	if (len_a == 0) {
+		return 1;
+	}
+
+	// Return 1 for equals
+	return (memcmp(MSG_TOPIC_PTR(message), topic, len_a) == 0);
+}
+
+int rrr_msg_msg_topic_match (
+		int *does_match,
+		const struct rrr_msg_msg *message,
+		const struct rrr_mqtt_topic_token *filter_first_token
+) {
+	int ret = 0;
+
+	char *topic_tmp = NULL;
+
+	*does_match = 0;
+
+	struct rrr_mqtt_topic_token *entry_first_token = NULL;
+
+	if (rrr_mqtt_topic_validate_name_with_end (
+			MSG_TOPIC_PTR(message),
+			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
+	) != 0) {
+		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic\n");
+		ret = 0;
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_tokenize_with_end (
+			&entry_first_token,
+			MSG_TOPIC_PTR(message),
+			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
+	) != 0) {
+		RRR_MSG_0("Tokenizing of topic failed in rrr_msg_msg_topic_match\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_mqtt_topic_match_tokens_recursively(filter_first_token, entry_first_token) == RRR_MQTT_TOKEN_MATCH) {
+		*does_match = 1;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
+	rrr_mqtt_topic_token_destroy(entry_first_token);
+	return ret;
 }
 
 int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {

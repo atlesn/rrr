@@ -240,7 +240,9 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 			configuration_callback,
 			&run_data,
 			process_callback,
-			&run_data
+			&run_data,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions
@@ -324,7 +326,6 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 struct cmodule_fork_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
-	pid_t *fork_pid;
 };
 
 static int cmodule_fork (void *arg) {
@@ -343,8 +344,7 @@ static int cmodule_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_fork_start (
-			callback_data->fork_pid,
+	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			cmodule_init_wrapper_callback,
 			data,
@@ -374,10 +374,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(cmodule_data_cleanup, data);
 
-	pid_t fork_pid = 0;
-
 	struct cmodule_fork_callback_data fork_callback_data = {
-		thread_data, &fork_pid
+		thread_data
 	};
 
 	if (rrr_thread_start_condition_helper_fork(thread, cmodule_fork, &fork_callback_data) != 0) {
@@ -390,8 +388,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll,
-			fork_pid
+			&thread_data->poll
 	);
 
 	out_message:

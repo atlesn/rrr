@@ -22,12 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
 #include "log.h"
 #include "ip_util.h"
+#include "../rrr_strerror.h"
 
 void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
 	const char *result = NULL;
@@ -71,6 +73,47 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 
 	out:
 	dest[dest_size - 1] = '\0';
+}
+
+int rrr_ip_to_str_and_port (
+		uint16_t *target_port,
+		char *target_ip,
+		size_t target_ip_size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	*target_port = 0;
+	*target_ip = '\0';
+
+	struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) addr;
+	struct sockaddr_in *in = (struct sockaddr_in *) addr;
+
+	if (addr_len == sizeof(*in6)) {
+		if (inet_ntop(AF_INET6, &in6->sin6_addr, target_ip, target_ip_size) == NULL) {
+			RRR_MSG_0("Could not convert IPv6 address to string: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		*target_port = ntohs(in6->sin6_port);
+	}
+	else if (addr_len == sizeof(*in)) {
+		if (inet_ntop(AF_INET, &in->sin_addr, target_ip, target_ip_size) == NULL) {
+			RRR_MSG_0("Could not convert IPv4 address to string: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		*target_port = ntohs(in->sin_port);
+	}
+	else {
+		RRR_MSG_0("Unknown address length %llu while extracting IP and port\n", (long long unsigned) addr_len);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 void rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed (

@@ -28,7 +28,7 @@ The configuration uses the **httpserver** and **perl5** modules, which both read
 	http_server_receive_full_request=yes
 	http_server_fields_accept_any=yes
 	http_server_allow_empty_messages=yes
-	http_server_get_raw_response_from_senders=yes
+	http_server_get_response_from_senders=yes
 	
 	[instance_perl5]
 	module=perl5
@@ -37,77 +37,27 @@ The configuration uses the **httpserver** and **perl5** modules, which both read
 	perl5_process_sub=process
 	perl5_do_include_build_directories=yes
 
-* **httpserver** receives HTTP requests, parses them, and puts any field from GET or POST into an RRR array message.
+* **httpserver** receives HTTP requests, parses them, and puts any fields from GET, PUT or POST into an RRR array message.
   In addition, the requested endpoint, HTTP method etc. is put into the array message due to the full request parameter.
 * The server is configured to allow empty messages (zero length body, no GET/POST fields and no fields in URI)
 * The perl5 module receives the request and prints out all received fields
-* A raw response is generated and handed back to the httpserver
+* A response is generated and handed back to the httpserver
 * The Perl5 is set to look for the required RRR Perl5 objects in build directories,
   this option is not required if RRR is properly installed on the system.
-	
-Had the **http_server_get_raw_response**-parameter not been set, the **httpserver** would instead have generated **204 No Content** for all requests. Doing this removes the need of creating the response in the Perl5 script.
 
 ### http\_server.pl
 
-	#!/usr/bin/perl -w
+	(File available in the source directory)
 	
-	package main;
-	
-	use rrr::rrr_helper;
-	use rrr::rrr_helper::rrr_message;
-	use rrr::rrr_helper::rrr_settings;
-	use rrr::rrr_helper::rrr_debug;
-	
-	my $debug = { };
-	bless $debug, rrr::rrr_helper::rrr_debug;
-	
-	my $server_name = "RRR Perl5 HTTP server";
-	
-	sub process {
-		my $message = shift;
-	
-		my @fields = $message->get_tag_names();
-	
-		$debug->msg(1, "Received a HTTP request in $server_name, topic was " . $message->{'topic'} . "\n");
-		
-		$debug->msg(1, "Dumping received fields:\n");
-		foreach my $field (@fields) {
-			my $to_print = "\t$field: ";
-			$to_print .= join (", ", $message->get_tag_all($field));
-			$to_print .= "\n";
-			$debug->msg(1, $to_print);
-		}
-	
-		my $response = "$server_name: ";
-		$response .= (defined $message->get_tag_all("but_did_you_die") ? "No" : "Success!");
-		
-		my $http = "HTTP/1.1 200 OK\r\n";
-		$http .= "Content-Type: text/plain\r\n";
-		$http .= "Content-Length: " . (length $response) . "\r\n\r\n";
-		$http .= $response;
-		
-		$message->clear_array();
-	
-		$message->{'data'} = $http;
-		$message->{'data_len'} = length $http;
-		$message->{'topic'} =~ s/request/raw/;
-	
-		$debug->msg(1, "Created a HTTP response in $server_name, topic is now " . $message->{'topic'} . "\n");
-		
-		$message->send();
-	
-		return 1;
-	}
+Had the **http_server_get_response_from_senders**-parameter not been set, the **httpserver** would instead have generated **204 No Content** for all requests.
+Doing this removes the need of creating the response in the Perl5 script, if generating a specific response is not needed.
 	
 The process subroutine is called once per request.
-All received fields are printed out and a raw HTTP response is generated.
-Note that the array values must be cleared from the message before we add the raw data since array values overrides raw data and both cannot co-exist in a message.
-
-We also need to modify the topic since **httpserver** expects **/httpserver/raw/xxx** topics back,
-we simply replace the _request_ word with _raw_.  
+All received fields are printed out and a HTTP response is generated.
+The message is sent back to the httpserver preserving it's topic, it will then be sent back to the same connection from which the request originated.
 
 To test things out, run `rrr http_server.conf` and use a web browser to access `http://localhost:8000/`.
-You can also try to add some fields in the query string like `http://localhost:8000/?but_did_you_die`.
+You can also try to add some fields in the query string like `http://localhost:8000/?but_did_you_die=1`.
 Watch the output from RRR as you access the URL.
 
 The Python module can also be used instead of Perl5.  

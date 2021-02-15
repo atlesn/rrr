@@ -32,6 +32,9 @@ struct rrr_msg_addr;
 struct rrr_setting_packed;
 struct rrr_mmap_channel;
 
+int rrr_cmodule_channel_count (
+		struct rrr_mmap_channel *channel
+);
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		const struct rrr_msg *message

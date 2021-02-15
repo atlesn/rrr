@@ -335,8 +335,8 @@ int rrr_read_message_using_callbacks (
 		// may change the read complete method. This function may called multiple times if it does
 		// not return OK the first time. In that case, we will read more data repeatedly time until
 		// OK is returned.
-		const int ret_from_get_target_size = function_get_target_size(read_session, functions_callback_arg);
-		if (ret_from_get_target_size != RRR_READ_OK && ret_from_get_target_size != RRR_READ_INCOMPLETE) {
+		ret = function_get_target_size(read_session, functions_callback_arg);
+		if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE) {
 			goto out;
 		}
 
@@ -365,10 +365,10 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
-			return (ret_from_get_target_size == RRR_READ_OK ? RRR_READ_INCOMPLETE : ret_from_get_target_size);
+			ret = RRR_READ_INCOMPLETE;
 		}
-		else if (ret_from_get_target_size != RRR_READ_OK) {
-			ret = ret_from_get_target_size;
+
+		if (ret != RRR_READ_OK) {
 			goto out;
 		}
 
@@ -428,106 +428,6 @@ int rrr_read_message_using_callbacks (
 	if (ret != RRR_READ_OK && ret != RRR_READ_INCOMPLETE && read_session != NULL) {
 		function_read_session_remove(read_session, functions_callback_arg);
 	}
-	return ret;
-}
-
-int rrr_read_common_receive_message_raw_callback (
-		void **data,
-		ssize_t data_size,
-		struct rrr_read_common_receive_message_callback_data *callback_data
-) {
-	struct rrr_msg *msg = *data;
-
-	int ret = 0;
-
-	// Header CRC32 is checked when reading the data from remote and getting size
-	if (rrr_msg_head_to_host_and_verify(msg, data_size) != 0) {
-		RRR_MSG_0("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_msg_check_data_checksum_and_length(msg, data_size) != 0) {
-		RRR_MSG_0 ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
-		if (callback_data->callback_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_msg in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		struct rrr_msg_msg *message = (struct rrr_msg_msg *) msg;
-		if (rrr_msg_msg_to_host_and_verify(message, data_size) != 0) {
-			RRR_MSG_0("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
-					MSG_TOTAL_SIZE(message), message->msg_size);
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		ret = callback_data->callback_msg((struct rrr_msg_msg **) data, callback_data->callback_arg);
-	}
-	else if (RRR_MSG_IS_RRR_MESSAGE_ADDR(msg)) {
-		if (callback_data->callback_addr_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		struct rrr_msg_addr *message = (struct rrr_msg_addr *) msg;
-		if (rrr_msg_addr_to_host(message) != 0) {
-			RRR_MSG_0("Invalid data in received address message in rrr_read_common_receive_message_raw_callback\n");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		ret = callback_data->callback_addr_msg(message, callback_data->callback_arg);
-	}
-	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		if (callback_data->callback_log_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_msg_log in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		struct rrr_msg_log *message = (struct rrr_msg_log *) msg;
-		if (rrr_msg_msg_log_to_host(message) != 0) {
-			RRR_MSG_0("Invalid data in received log message in rrr_read_common_receive_message_raw_callback\n");
-			ret = RRR_READ_SOFT_ERROR;
-			goto out;
-		}
-
-		ret = callback_data->callback_log_msg(message, callback_data->callback_arg);
-	}
-	else {
-		RRR_MSG_0("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",
-				msg->msg_type);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-
-	out:
-	return ret;
-
-}
-
-int rrr_read_common_receive_message_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	int ret = 0;
-
-	if ((ret = rrr_read_common_receive_message_raw_callback((void **) &read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
-		// Returns soft error if message is invalid, might also return
-		// other errors from final callback function
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 	return ret;
 }
 

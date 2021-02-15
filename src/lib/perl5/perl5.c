@@ -145,7 +145,6 @@ static PerlInterpreter *__rrr_perl5_construct(void) {
 	out_unlock:
 	__rrr_perl5_init_unlock();
 
-	out:
 	return ret;
 }
 
@@ -850,7 +849,8 @@ static int __rrr_perl5_message_to_hv (
     // New style array handling
     rrr_array_clear(array);
     if (MSG_IS_ARRAY(message)) {
-		if (rrr_array_message_append_to_collection(array, message) != 0) {
+	    	uint16_t array_version_dummy;
+		if (rrr_array_message_append_to_collection(&array_version_dummy, array, message) != 0) {
 			RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_to_hv\n");
 			ret = 1;
 			goto out;

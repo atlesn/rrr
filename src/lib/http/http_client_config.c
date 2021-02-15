@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "http_client_config.h"
+#include "http_util.h"
 
 #include "../instance_config.h"
 #include "../map.h"
@@ -37,6 +38,7 @@ void rrr_http_client_config_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->method_str);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
+	RRR_FREE_IF_NOT_NULL(data->body_format_str);
 	RRR_MAP_CLEAR(&data->tags);
 	RRR_MAP_CLEAR(&data->fixed_tags);
 	RRR_MAP_CLEAR(&data->fields);
@@ -49,9 +51,10 @@ int rrr_http_client_config_parse (
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
+		uint16_t default_concurrent_connections,
 		int enable_fixed,
 		int enable_endpoint,
-		int do_raw_mode
+		int enable_format
 ) {
 	int ret = 0;
 
@@ -72,46 +75,19 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_method");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, method_str);
 
-	/*
-	 * DO NOT REMOVE THIS COMMENT
-	 * Default method when user only specifies POST is RRR_HTTP_METHOD_POST_URLENCODED
-	 */
+	RRR_INSTANCE_CONFIG_STRING_SET("_plain_http2");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_plain_http2, 0);
 
-	if (data->method_str == NULL || *(data->method_str) == '\0') {
-		data->method = RRR_HTTP_METHOD_GET;
-	}
-	else if (	strcasecmp(data->method_str, "get") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_GET;
-	}
-	else if (	strcasecmp(data->method_str, "post_multipart") == 0 ||
-				strcasecmp(data->method_str, "post_multipart_form_data") == 0 ||
-				strcasecmp(data->method_str, "multipart/form-data") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
-	}
-	else if (	strcasecmp(data->method_str, "post_urlencoded") == 0 ||
-				strcasecmp(data->method_str, "post") == 0 ||
-				strcasecmp(data->method_str, "application/x-www-urlencoded") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_URLENCODED;
-		// RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING only used by influxdb, not configurable
-	}
-	else if (	strcasecmp(data->method_str, "post_binary") == 0 ||
-				strcasecmp(data->method_str, "post_application_octet_stream") == 0 ||
-				strcasecmp(data->method_str, "application/octet-stream") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
-	}
-	else if (	strcasecmp(data->method_str, "post_text_plain") == 0
-	) {
-		data->method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
-	}
-	else {
-		RRR_MSG_0("Unknown value '%s' for HTTP method in instance %s\n", data->method_str, config->name);
+	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);
+
+	if (data->concurrent_connections < 1 || data->concurrent_connections > 0xffff) {
+		RRR_MSG_0("Parameter %s was out of range, value must be > 0 and < 65536.\n", config_string);
 		ret = 1;
 		goto out;
 	}
+
+	data->method = rrr_http_util_method_str_to_enum(data->method_str); // Any value allowed, also NULL
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_tags");
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_arrow, &data->tags)) != 0) {
@@ -140,6 +116,12 @@ int rrr_http_client_config_parse (
 		}
 	}
 
+	if (enable_format) {
+		RRR_INSTANCE_CONFIG_STRING_SET("_format");
+		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, body_format_str);
+		data->body_format = rrr_http_util_format_str_to_enum(data->body_format_str); // Any value allowed, also NULL
+	}
+
 	if (enable_fixed) {
 		RRR_INSTANCE_CONFIG_STRING_SET("_fixed_tags");
 		if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
@@ -159,22 +141,6 @@ int rrr_http_client_config_parse (
 				ret = 1;
 				goto out;
 			}
-		}
-	}
-
-	if (do_raw_mode) {
-		const char *check[] = { "_tags", "_fields", "_fixed_tags", "_fixed_fields", "_endpoint", "_method" };
-
-		for (size_t i = 0; i < sizeof(check) / sizeof(check[0]); i++) {
-			RRR_INSTANCE_CONFIG_STRING_SET(check[i]);
-			if (RRR_INSTANCE_CONFIG_EXISTS(config_string)) {
-				RRR_MSG_0("%s cannot be specified while raw send mode is active in instance %s\n", config_string, config->name);
-				ret = 1;
-			}
-		}
-
-		if (ret != 0) {
-			goto out;
 		}
 	}
 

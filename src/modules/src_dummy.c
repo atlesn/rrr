@@ -111,6 +111,8 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 
 	uint64_t time = rrr_time_get_64();
 
+//	printf("Dummy new %" PRIu64 "\n", time);
+
 	size_t payload_size = 0;
 	if (data->random_payload_max_size > 0) {
 		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
@@ -172,8 +174,8 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	int generated_count = 0;
 	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
-	while (!rrr_thread_check_encourage_stop(thread)) {
-		rrr_thread_update_watchdog_time(thread);
+	while (!rrr_thread_signal_encourage_stop_check(thread)) {
+		rrr_thread_watchdog_time_update(thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			if (rrr_message_broker_write_entry (
@@ -183,7 +185,8 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 					0,
 					0,
 					dummy_write_message_callback,
-					data
+					data,
+					INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 			)) {
 				RRR_MSG_0("Could not create new message in dummy instance %s\n",
 						INSTANCE_D_NAME(thread_data));
