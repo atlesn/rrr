@@ -30,6 +30,7 @@ chmod -R u+w $RPM_BUILD_ROOT/*
 %post
 groupadd -r rrr || true
 useradd -r rrr -g rrr || true
+chown -R rrr:rrr /var/lib/rrr || true
 %files
 %license LICENSE LICENSE.*
 %{_mandir}/*
@@ -55,7 +56,13 @@ useradd -r rrr -g rrr || true
 /usr/lib/rrr/raw.*
 /usr/lib/rrr/socket.*
 /usr/lib/rrr/voltmonitor.*
-/usr/lib/rrr/python.*
+/usr/lib/rrr/python3.*
+/usr/lib/rrr/exploder.*
+/usr/lib/rrr/mangler.*
+/usr/lib/rrr/msgdb.*
+/usr/lib/rrr/incrementer.*
+/usr/lib/tmpfiles.d/rrr.conf
+/var/lib/rrr/.placeholder
 
 %package devel
 Summary:	Development headers for RRR
