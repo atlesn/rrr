@@ -357,7 +357,7 @@ static int __rrr_net_transport_openssl_handshake_perform (
 	if ((ret = SSL_do_handshake(ssl)) != 1) {
 		if (ret < 0) {
 			if (--handshake_retry_max > 0 && (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl))) {
-				rrr_posix_usleep(1); // Schedule
+				rrr_posix_usleep(1000); // 1 ms
 				goto handshake_retry;
 			}
 			if (handshake_retry_max == 0) {
