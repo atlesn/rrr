@@ -141,12 +141,10 @@ The latest RRR release will be downloaded and built. When prompted after compila
 #### Packages available on the APT and Yum mirrors
 
 - rrr
-- rrr-mod-python3
 - rrr-mod-mysql / rrr-mod-mariadb
 - librrr1
-- librrr-dev
-- rrr-mod-python3-dbgsym
 - librrr1-dbgsym
+- librrr-dev
 
 Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If you need to use for instance
 MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
@@ -162,7 +160,7 @@ some extra packages must be installed prior to compilation.
 
 On SUSE, the following packages should be installed to build RRR:
 
-	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool
+	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool libjson-c-devel libnghttp2-devel
 
 On Debian, Ubuntu and derived systems, the following should be installed:
 	
