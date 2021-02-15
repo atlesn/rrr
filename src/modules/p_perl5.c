@@ -272,7 +272,9 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 			configuration_callback,
 			&child_data,
 			process_callback,
-			&child_data
+			&child_data,
+			custom_tick_callback,
+			custom_tick_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in perl5_init_wrapper_callback\n");
 		// Don't goto out, run cleanup functions
@@ -300,11 +302,11 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	struct rrr_perl5_settings_hv *settings_hv = NULL;
 
 	if (cmodule_config_data->config_function == NULL || *(cmodule_config_data->config_function) == '\0') {
-		RRR_DBG_2("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_DBG_1("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_DBG_2("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
+	RRR_DBG_1("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
 
 	if (rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
@@ -383,7 +385,6 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 struct perl5_fork_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
-	pid_t *fork_pid;
 };
 
 static int perl5_fork (void *arg) {
@@ -402,8 +403,7 @@ static int perl5_fork (void *arg) {
 		goto out;
 	}
 
-	if (rrr_cmodule_helper_worker_fork_start (
-			callback_data->fork_pid,
+	if (rrr_cmodule_helper_worker_forks_start (
 			thread_data,
 			perl5_init_wrapper_callback,
 			data,
@@ -432,10 +432,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	pthread_cleanup_push(data_cleanup, data);
 
-	pid_t fork_pid = 0;
-
 	struct perl5_fork_callback_data fork_callback_data = {
-		thread_data, &fork_pid
+		thread_data
 	};
 
 	if (rrr_thread_start_condition_helper_fork(thread, perl5_fork, &fork_callback_data) != 0) {
@@ -447,8 +445,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll,
-			fork_pid
+			&thread_data->poll
 	);
 
 	out_message:

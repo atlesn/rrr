@@ -32,9 +32,11 @@ perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la \
-	ipclient.la ip.la averager.la file.la junction.la \
+	ipclient.la ip.la averager.la file.la exploder.la mangler.la \
+	junction.la \
 	buffer.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la journal.la cmodule.la httpclient.la httpserver.la \
+	msgdb.la incrementer.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
@@ -43,6 +45,12 @@ module_ldflags=-module -avoid-version -shared -L../lib
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
 
+msgdb_la_LDFLAGS = ${module_ldflags}
+msgdb_la_SOURCES = d_msgdb.c
+
+incrementer_la_LDFLAGS = ${module_ldflags}
+incrementer_la_SOURCES = p_incrementer.c
+
 mqttclient_la_LDFLAGS = ${module_ldflags}
 mqttclient_la_SOURCES = p_mqttclient.c
 
@@ -50,7 +58,7 @@ dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c
 
 raw_la_LDFLAGS = ${module_ldflags}
-raw_la_SOURCES = p_raw.c
+raw_la_SOURCES = d_raw.c
 
 averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
@@ -61,8 +69,16 @@ ipclient_la_SOURCES = p_ipclient.c
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c
 
+<<<<<<< HEAD
 junction_la_LDFLAGS = ${module_ldflags}
 junction_la_SOURCES = p_junction.c
+=======
+exploder_la_LDFLAGS = ${module_ldflags}
+exploder_la_SOURCES = p_exploder.c
+
+mangler_la_LDFLAGS = ${module_ldflags}
+mangler_la_SOURCES = p_mangler.c
+>>>>>>> master
 
 ip_la_LDFLAGS = ${module_ldflags}
 ip_la_SOURCES = p_ip.c

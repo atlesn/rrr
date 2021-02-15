@@ -30,18 +30,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "message_broker_route.h"
 
+//#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
+#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+
 // TODO : Make this smaller
 // TODO : Change data_length to unsigned
 
 struct rrr_msg_holder {
 	RRR_LL_NODE(struct rrr_msg_holder);
 	pthread_mutex_t lock;
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	int lock_recursion_count;
+#endif
 	int usercount;
 	ssize_t data_length;
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	int protocol;
 	uint64_t send_time;
+	const void *source;
 	void *message;
 
 	// Used by higher levels to control partial sends

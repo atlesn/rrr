@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <termios.h>
 
+#include "lib/log.h"
+
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/rrr_config.h"
@@ -32,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/log.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
 #include "lib/util/linked_list.h"
@@ -150,7 +151,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	// Don't require arguments here, separate check in parse_config
-	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_banner_help_and_version(&cmd, 0) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

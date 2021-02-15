@@ -23,13 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <poll.h>
-
+#include <limits.h>
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
+#include "../log.h"
+
 #include "net_transport_plain.h"
 
-#include "../log.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../read.h"
@@ -165,7 +166,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
-		RRR_NET_TRANSPORT_READ_ARGS
+		RRR_NET_TRANSPORT_READ_MESSAGE_ARGS
 ) {
 	int ret = 0;
 
@@ -206,11 +207,46 @@ static int __rrr_net_transport_plain_read_message (
 				RRR_MSG_0("Hard error while reading from remote in __rrr_net_transport_plain_read_message\n");
 			}
 			else {
-				RRR_DBG_1("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
+				RRR_DBG_7("Read returned %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
 			}
 			goto out;
 		}
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_plain_read (
+		RRR_NET_TRANSPORT_READ_ARGS
+) {
+	int ret = RRR_NET_TRANSPORT_READ_OK;
+
+	if (buf_size > SSIZE_MAX) {
+		RRR_MSG_0("Buffer size too large in __rrr_net_transport_plain_read\n");
+		ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+		goto out;
+	}
+
+	ssize_t bytes_read_s = 0;
+
+	ret = rrr_socket_read (
+			buf,
+			&bytes_read_s,
+			handle->submodule_private_fd,
+			buf_size,
+			NULL,
+			NULL,
+			RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF
+	);
+
+	ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
+
+	if (bytes_read_s < 0) {
+		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_libressl_read\n");
+	}
+
+	*bytes_read = bytes_read_s;
 
 	out:
 	return ret;
@@ -228,8 +264,10 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_send_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
-		goto out;
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
+		if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
+			goto out;
+		}
 	}
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
@@ -286,6 +324,8 @@ int __rrr_net_transport_plain_accept (
 
 	int ret = 0;
 
+	*did_accept = 0;
+
 	struct rrr_ip_data ip_data = {0};
 
 	ip_data.fd = listen_handle->submodule_private_fd;
@@ -336,6 +376,8 @@ int __rrr_net_transport_plain_accept (
 			callback_arg
 	);
 
+	*did_accept = 1;
+
 	goto out;
 	out_destroy_ip:
 		rrr_ip_close(&accept_data->ip_data);
@@ -350,6 +392,18 @@ static int __rrr_net_transport_plain_poll (
 	return rrr_socket_check_alive (handle->submodule_private_fd);
 }
 
+static int __rrr_net_transport_plain_is_tls (void) {
+	return 0;
+}
+
+static void __rrr_net_transport_plain_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+	(void)(handle);
+	*proto = NULL;
+}
+
 static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_destroy,
 	__rrr_net_transport_plain_connect,
@@ -357,8 +411,11 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_accept,
 	__rrr_net_transport_plain_close,
 	__rrr_net_transport_plain_read_message,
+	__rrr_net_transport_plain_read,
 	__rrr_net_transport_plain_send,
-	__rrr_net_transport_plain_poll
+	__rrr_net_transport_plain_poll,
+	__rrr_net_transport_plain_is_tls,
+	__rrr_net_transport_plain_selected_proto_get
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {

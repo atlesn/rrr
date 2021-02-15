@@ -1,0 +1,88 @@
+======================================
+  =      RRRRRRRRRRR  RRRR  RRRR
+  =       RRRRRRRRRRR   RRR   RRR
+  =       RRR      RRR   RRR   RRR
+  =       RRR      RRR   RRR   RRR
+  =       RRRRRRRRRR  RRRR  RRRR
+  =       RRRRRRRRR  RRRR  RRRR
+  =       RRR    RRR   RRR   RRR
+  =       RRR     RRR   RRR   RRR
+  =       RRR      RRR   RRR   RRR
+  =      RRRR       RRRR   RRRR  RRRR
+================================================
+
+======================
+== RRR CODING STYLE ==
+======================
+
+If a function which breaks these rules are encountered, consider cleaning it up in a separate commit.
+
+1. FUNCTIONS
+Function are written like this:
+
+	int my_function (
+			my_struct *s,
+			int x
+	);
+	
+	int my_function (
+			my_struct *s,
+			int x
+	) {
+		return 0;
+	}
+
+There are two tabs in front of the argument.
+
+If a function has only a few primitive arguments, it may be defined on a single line
+
+	int my_function (int *result, int x)
+
+Function pointers are generally defined on a single line unless they have a lot of arguments.
+
+2. STRUCTS ETC.
+
+Structs are written like this:
+
+	struct my_struct {
+		int a;
+		int b;
+	};
+
+There is one tab in front of the struct members.
+
+3. NAMES
+
+- Names are either only uppercase or only lowercase
+- Words are separated by underscore
+- Public defines start with RRR_ .
+- Public global variables start with rrr_ .
+- All function and struct names, except from in the modules, start with rrr_ for public functions and __rrr for static functions. The framework name must follow immediately after 'rrr_' or 'RRR_' followed by another underscore.
+- Functions in the modules start with the module name followed by an underscode.
+
+Words in names may be shortened if a framework has a lot of functions and there's a long word in its name. The shortening must be consistent, meaning that all names in the framework must have the same shortening.
+
+Function naming:
+- Function names describe what the function does with whole words
+
+Standardized function name ending, the must be used when appropriate:
+- Allocation and initializing: _new
+- Allocation: _allocate
+- Initialization: _init
+- Destruction/free: _destroy
+- De-initialization but no free: _clear
+- Add to list: _append, _add, _push
+- Prepend to list: _unshit, _prepend
+- Remove from list: _remove
+- Iterate list: _iterate
+- Parse data: _parse
+- Read data: _read
+- Write data: _write
+
+4. INITIALIZATION AND ALLOCATION
+
+General rules:
+- All results from malloc or other functions must be checked for NULL
+- malloc + memset is to be used instead of calloc. The compiler will optimize this.
+- All data structs must be initialized with "memset 0 sizeof" or = {0} to avoid disclosure bugs 
+

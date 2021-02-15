@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
+struct rrr_nullsafe_str;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
@@ -54,6 +55,10 @@ struct rrr_net_transport_handle {
 	// Like HTTP session
 	void *application_private_ptr;
 	void (*application_ptr_destroy)(void *ptr);
+
+	// Optionally used to find existing connections to remotes
+	char *match_string;
+	uint64_t match_number;
 
 	// Called first when we try to destroy. When it returns 0,
 	// we go ahead with destruction and call ptr_destroy. Only
@@ -147,13 +152,14 @@ struct rrr_net_transport_collection {
 	void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_ARGS											\
+	int *did_accept,															\
 	struct rrr_net_transport_handle *listen_handle,								\
 	int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),		\
 	void *callback_arg,															\
 	void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),		\
 	void *final_callback_arg
 
-#define RRR_NET_TRANSPORT_READ_ARGS												\
+#define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS												\
 	uint64_t *bytes_read,														\
 	struct rrr_net_transport_handle *handle,									\
 	int read_attempts,															\
@@ -164,6 +170,12 @@ struct rrr_net_transport_collection {
 	void *get_target_size_arg,													\
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),	\
 	void *complete_callback_arg
+
+#define RRR_NET_TRANSPORT_READ_ARGS											\
+	uint64_t *bytes_read,														\
+	struct rrr_net_transport_handle *handle,									\
+	char *buf,																	\
+	size_t buf_size
 
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
@@ -180,7 +192,8 @@ struct rrr_net_transport_methods {
 	int (*close)(
 			struct rrr_net_transport_handle *handle
 	);
-	int (*read_message)(RRR_NET_TRANSPORT_READ_ARGS);
+	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
+	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
 	int (*send)(
 			uint64_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
@@ -188,6 +201,11 @@ struct rrr_net_transport_methods {
 			ssize_t size
 	);
 	int (*poll)(
+			struct rrr_net_transport_handle *handle
+	);
+	int (*is_tls)(void);
+	void (*selected_proto_get)(
+			const char **proto,
 			struct rrr_net_transport_handle *handle
 	);
 };
@@ -209,11 +227,18 @@ int rrr_net_transport_handle_close_tag_list_push (
 		struct rrr_net_transport *transport,
 		int handle
 );
+void rrr_net_transport_stats_get (
+		int *handle_count,
+		struct rrr_net_transport *transport
+);
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
-		int flags
+		int flags,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 );
+void rrr_net_transport_maintenance (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
@@ -239,6 +264,19 @@ int rrr_net_transport_connect (
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
 );
+int rrr_net_transport_handle_get_by_match (
+		struct rrr_net_transport *transport,
+		const char *string,
+		uint64_t number
+);
+int rrr_net_transport_is_tls (
+		struct rrr_net_transport *transport
+);
+int rrr_net_transport_ctx_handle_match_data_set (
+		struct rrr_net_transport_handle *handle,
+		const char *string,
+		uint64_t number
+);
 int rrr_net_transport_ctx_check_alive (
 		struct rrr_net_transport_handle *handle
 );
@@ -254,6 +292,7 @@ int rrr_net_transport_ctx_read_message (
 		void *complete_callback_arg
 );
 int rrr_net_transport_ctx_send_nonblock (
+		uint64_t *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
@@ -262,6 +301,16 @@ int rrr_net_transport_ctx_send_blocking (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_ctx_send_blocking_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *str
+);
+int rrr_net_transport_ctx_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport_handle *handle,
+		char *buf,
+		size_t buf_size
 );
 int rrr_net_transport_ctx_handle_has_application_data (
 		struct rrr_net_transport_handle *handle
@@ -277,6 +326,13 @@ void rrr_net_transport_ctx_get_socket_stats (
 		uint64_t *bytes_total,
 		struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_is_tls (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		int transport_handle,
@@ -289,11 +345,31 @@ int rrr_net_transport_iterate_with_callback (
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );
+int rrr_net_transport_match_data_set (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const char *string,
+		uint64_t number
+);
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,
 		int transport_handle,
 		const void *data,
 		ssize_t size
+);
+int rrr_net_transport_send_nonblock (
+		uint64_t *written_bytes,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const void *data,
+		ssize_t size
+);
+int rrr_net_transport_read (
+		uint64_t *bytes_read,
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		char *buf,
+		size_t buf_size
 );
 int rrr_net_transport_bind_and_listen (
 		struct rrr_net_transport *transport,
@@ -308,14 +384,9 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
-int rrr_net_transport_accept (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
-		void *callback_arg
-);
 int rrr_net_transport_accept_all_handles (
 		struct rrr_net_transport *transport,
+		int at_most_one_accept,
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
 );

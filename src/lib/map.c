@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,17 +27,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
-void rrr_map_item_destroy (struct rrr_map_item *item) {
+void rrr_map_item_destroy (
+		struct rrr_map_item *item
+) {
 	RRR_FREE_IF_NOT_NULL(item->tag);
 	RRR_FREE_IF_NOT_NULL(item->value);
 	free(item);
 }
 
-void rrr_map_clear (struct rrr_map *map) {
+void rrr_map_clear (
+		struct rrr_map *map
+) {
 	RRR_LL_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
 }
 
-int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
+int rrr_map_item_new (
+		struct rrr_map_item **target,
+		ssize_t field_size
+) {
 	int ret = 0;
 
 	struct rrr_map_item *item = malloc(sizeof(*item));
@@ -70,13 +77,56 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 	return ret;
 }
 
-int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item) {
-	RRR_LL_APPEND(map, item);
+static void __rrr_map_item_remove_by_tag (
+		struct rrr_map *map,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(map, struct rrr_map_item);
+		if (tag == NULL && node->tag == NULL) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (tag != NULL && node->tag != NULL) {
+			if (strcmp(tag, node->tag) == 0) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(map, 0; rrr_map_item_destroy(node));
+}
+
+static void __rrr_map_item_add (
+		struct rrr_map *map,
+		struct rrr_map_item *item,
+		int do_prepend,
+		int do_unique
+) {
+	if (do_unique) {
+		__rrr_map_item_remove_by_tag(map, item->tag);
+	}
+
+	if (do_prepend) {
+		RRR_LL_UNSHIFT(map, item);
+	}
+	else {
+		RRR_LL_APPEND(map, item);
+	}
+}
+
+int rrr_map_item_add (
+		struct rrr_map *map,
+		struct rrr_map_item *item
+) {
+	__rrr_map_item_add(map, item, 0, 0);
 	return 0;
 }
 
-int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value) {
+static int __rrr_map_item_new_with_values (
+		struct rrr_map_item **result,
+		const char *tag,
+		const char *value
+) {
 	int ret = 0;
+
+	*result = NULL;
 
 	struct rrr_map_item *item_new = NULL;
 
@@ -96,7 +146,7 @@ int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *valu
 		memcpy(item_new->value, value, value_size);
 	}
 
-	RRR_LL_APPEND(map, item_new);
+	*result = item_new;
 	item_new = NULL;
 
 	out:
@@ -106,7 +156,84 @@ int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *valu
 	return ret;
 }
 
-int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter) {
+static int __rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int do_prepend,
+		int do_unique
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, value)) != 0) {
+		goto out;
+	}
+
+	__rrr_map_item_add(map, item_new, do_prepend, do_unique);
+
+	out:
+	return ret;
+}
+
+int rrr_map_item_replace_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 0, 1);
+}
+
+int rrr_map_item_replace_new_with_callback (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value,
+		int (*callback_confirm)(void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	if ((ret = __rrr_map_item_new_with_values (&item_new, tag, value)) != 0) {
+		goto out;
+	}
+
+	if ((ret = callback_confirm(callback_arg)) != 0) {
+		goto out_destroy_item;
+	}
+
+	__rrr_map_item_add(map, item_new, 0, 1);
+
+	goto out;
+	out_destroy_item:
+		rrr_map_item_destroy(item_new);
+	out:
+		return ret;
+}
+
+int rrr_map_item_add_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 0, 0);
+}
+
+int rrr_map_item_prepend_new (
+		struct rrr_map *map,
+		const char *tag,
+		const char *value
+) {
+	return __rrr_map_item_add_new(map, tag, value, 1, 0);
+}
+
+int rrr_map_parse_pair (
+		const char *input,
+		struct rrr_map *target,
+		const char *delimeter
+) {
 	int ret = 0;
 	struct rrr_map_item *column = NULL;
 
@@ -163,7 +290,9 @@ int rrr_map_parse_tag_only (const char *input, void *arg) {
 	return rrr_map_parse_pair (input, arg, NULL);
 }
 
-const char *rrr_map_get_value (const struct rrr_map *map, const char *tag) {
+const char *rrr_map_get_value (
+		const struct rrr_map *map, const char *tag
+) {
 	RRR_LL_ITERATE_BEGIN(map, const struct rrr_map_item);
 		if (strcmp (node->tag, tag) == 0) {
 			return node->value;

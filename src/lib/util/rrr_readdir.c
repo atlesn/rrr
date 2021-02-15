@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_readdir.h"
 #include "rrr_strerror.h"
 #include "rrr_path_max.h"
+#include "util/linked_list.h"
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -179,4 +180,194 @@ int rrr_readdir_foreach (
 		void *private_data
 ) {
 	return rrr_readdir_foreach_prefix(dir_path, NULL, callback, private_data);
+}
+
+struct rrr_readdir_entry_collection;
+
+struct rrr_readdir_entry {
+	RRR_LL_NODE(struct rrr_readdir_entry);
+	struct rrr_readdir_entry_collection *collection;
+	char orig_path[PATH_MAX + 1];
+	char resolved_path[PATH_MAX + 1];
+	unsigned char type;
+};
+
+struct rrr_readdir_entry_collection {
+	RRR_LL_HEAD(struct rrr_readdir_entry);
+};
+
+static void __rrr_readdir_entry_collection_destroy (
+	struct rrr_readdir_entry_collection *collection
+);
+
+static void __rrr_readdir_entry_destroy (
+	struct rrr_readdir_entry *entry
+) {
+	if (entry->collection != NULL) {
+		__rrr_readdir_entry_collection_destroy(entry->collection);
+	}
+	free(entry);
+}
+
+static void __rrr_readdir_entry_collection_destroy (
+	struct rrr_readdir_entry_collection *collection
+) {
+	RRR_LL_DESTROY(collection, struct rrr_readdir_entry, __rrr_readdir_entry_destroy(node));
+	free(collection);
+}
+
+static int __rrr_readdir_entry_collection_new (
+	struct rrr_readdir_entry_collection **target
+) {
+	if ((*target = malloc(sizeof(**target))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_readdir_entry_collection_new\n");
+		return 1;
+	}
+
+	memset(*target, '\0', sizeof(**target));
+
+	return 0;
+}
+
+int __rrr_readdir_foreach_path_is_self_or_parent (
+		const char *path
+) {
+	int dot_count = 0;
+
+	// Note : Must be signed
+	for (ssize_t i = strlen(path) - 1; i >= 0; i--) {
+		char chr = *(path + i);
+		if (chr == '.') {
+			dot_count++;
+		}
+		else if (chr == '/' && dot_count > 0) {
+			return 1;
+		}
+		else {
+			return 0;
+		}
+	}
+
+	return dot_count > 0 ? 1 : 0;
+}
+
+static int __rrr_readdir_foreach_recursive_descend_callback (
+		struct dirent *entry,
+		const char *orig_path,
+		const char *resolved_path,
+		unsigned char type,
+		void *private_data
+) {
+	int ret = 0;
+
+	if (__rrr_readdir_foreach_path_is_self_or_parent (orig_path)) {
+		goto out;
+	}
+
+	struct rrr_readdir_entry_collection *target = private_data;
+
+	(void)(entry);
+
+	struct rrr_readdir_entry *new_entry = NULL;
+
+	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_readdir_foreach_recursive_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(new_entry, '\0', sizeof(*new_entry));
+
+	strcpy(new_entry->orig_path, orig_path);
+	strcpy(new_entry->resolved_path, resolved_path);
+	new_entry->type = type;
+
+	RRR_LL_APPEND(target, new_entry);
+
+	out:
+	return ret;
+}
+
+int __rrr_readdir_foreach_recursive_descend (
+		struct rrr_readdir_entry_collection **target,
+		const char *dir_path
+) {
+	int ret = 0;
+
+	struct rrr_readdir_entry_collection *collection = NULL;
+
+	if ((ret = __rrr_readdir_entry_collection_new (&collection)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_readdir_foreach (
+			dir_path,
+			__rrr_readdir_foreach_recursive_descend_callback,
+			collection
+	)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_readdir_entry);
+		if (node->type == DT_DIR) {
+			if ((ret = __rrr_readdir_foreach_recursive_descend(&node->collection, node->orig_path)) != 0) {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	*target = collection;
+	collection = NULL;
+
+	out:
+	if (collection != NULL) {
+		__rrr_readdir_entry_collection_destroy(collection);
+	}
+	return ret;
+}
+
+static int __rrr_readdir_foreach_recursive_final_callback (
+	struct rrr_readdir_entry_collection *collection,
+	int (*callback)(const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
+	void *private_data
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_readdir_entry);
+		if ((ret = callback(node->orig_path, node->resolved_path, node->type, private_data)) != 0) {
+			goto out;
+		}
+		if (node->collection) {
+			if ((ret = __rrr_readdir_foreach_recursive_final_callback(node->collection, callback, private_data)) != 0) {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+int rrr_readdir_foreach_recursive (
+		const char *dir_path,
+		int (*callback)(const char *orig_path, const char *resolved_path, unsigned char type, void *private_data),
+		void *private_arg
+) {
+	int ret = 0;
+
+	struct rrr_readdir_entry_collection *collection = NULL;
+
+	if ((ret = __rrr_readdir_foreach_recursive_descend(&collection, dir_path)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_readdir_foreach_recursive_final_callback (collection, callback, private_arg)) != 0) {
+		goto out;
+	}
+
+	out:
+	if (collection != NULL) {
+		__rrr_readdir_entry_collection_destroy(collection);
+	}
+	return ret;
 }

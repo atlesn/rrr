@@ -1,8 +1,12 @@
 etc/*
+var/lib/rrr/.placeholder
 usr/bin/*
 usr/lib/*/perl5/*
 usr/share/man/*
+usr/lib/tmpfiles.d/rrr.conf
 usr/lib/rrr/cmodules/*
+usr/lib/rrr/python3.la
+usr/lib/rrr/python3.so
 usr/lib/rrr/averager.la
 usr/lib/rrr/averager.so
 usr/lib/rrr/buffer.la
@@ -11,6 +15,10 @@ usr/lib/rrr/cmodule.la
 usr/lib/rrr/cmodule.so
 usr/lib/rrr/dummy.la
 usr/lib/rrr/dummy.so
+usr/lib/rrr/incrementer.la
+usr/lib/rrr/incrementer.so
+usr/lib/rrr/msgdb.la
+usr/lib/rrr/msgdb.so
 usr/lib/rrr/httpclient.la
 usr/lib/rrr/httpclient.so
 usr/lib/rrr/httpserver.la
