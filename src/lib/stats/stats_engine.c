@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
 #include "../messages/msg.h"
+#include "../messages/msg_msg.h"
 #include "../util/rrr_time.h"
 #include "../util/linked_list.h"
 #include "../util/gnu.h"
@@ -84,11 +85,15 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 
 static void __rrr_stats_engine_log_listener (
 		unsigned short loglevel_translated,
+		unsigned short loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
 ) {
 	struct rrr_stats_engine *stats = private_arg;
+
+	(void)(loglevel_orig);
+
 	struct rrr_stats_message *new_message = NULL;
 
 	if (stats->initialized == 0) {
@@ -137,8 +142,11 @@ static void __rrr_stats_engine_log_listener (
 
 static int __rrr_stats_client_new (
 		struct rrr_stats_client **target,
+		int fd,
 		struct rrr_stats_engine *engine
 ) {
+	(void)(fd);
+
 	struct rrr_stats_client *client = malloc(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
@@ -160,8 +168,8 @@ static void __rrr_stats_client_destroy (
 	free(client);
 }
 
-static int __rrr_stats_client_new_void (void **target, void *private_data) {
-	return __rrr_stats_client_new ((struct rrr_stats_client **) target, private_data);
+static int __rrr_stats_client_new_void (void **target, int fd, void *private_data) {
+	return __rrr_stats_client_new ((struct rrr_stats_client **) target, fd, private_data);
 }
 
 static void __rrr_stats_client_destroy_void (void *client) {
@@ -311,15 +319,17 @@ struct rrr_stats_engine_read_callback_data {
 };
 
 static int __rrr_stats_engine_read_callback (
-		struct rrr_read_session *read_session,
-		void *arg
+		struct rrr_msg_msg **msg,
+		void *arg1,
+		void *arg2
 ) {
-	struct rrr_stats_engine *stats = arg;
+	struct rrr_stats_engine *stats = arg1;
 
 	(void)(stats);
+	(void)(arg2);
 
 	// TODO : Handle data from client
-	RRR_DBG_3("STATS RX size %li, data ignored\n", read_session->target_size);
+	RRR_DBG_3("STATS RX msg size %" PRIrrrl ", data ignored\n", MSG_TOTAL_SIZE(*msg));
 
 	return 0;
 }
@@ -605,14 +615,14 @@ int rrr_stats_engine_tick (
 	struct rrr_stats_engine_read_callback_data callback_data = { stats };
 
 	// Read from clients
-	if ((ret = rrr_socket_client_collection_read (
+	if ((ret = rrr_socket_client_collection_read_message (
 			&stats->client_collection,
-			sizeof(struct rrr_msg),
 			1024,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-			rrr_read_common_get_session_target_length_from_message_and_checksum,
-			NULL,
 			__rrr_stats_engine_read_callback,
+			NULL,
+			NULL,
+			NULL,
 			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Error while reading from clients in stats engine\n");

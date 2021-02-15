@@ -4,7 +4,7 @@ TEST_COMPOSITE_FILE=./.test_composite.sh
 VARIABLES_FILE=../../variables.sh
 
 if test "x$TEST_VARIABLES_SET" != "x1"; then
-	echo -e "#!/bin/sh\n\nTEST_VARIABLES_SET=1\n" > $TEST_COMPOSITE_FILE
+	printf "#!/bin/sh\n\nTEST_VARIABLES_SET=1\n" > $TEST_COMPOSITE_FILE
 	cat $VARIABLES_FILE | grep '=' >> $TEST_COMPOSITE_FILE
 	cat test.sh | grep -v '/bin/sh' >> $TEST_COMPOSITE_FILE
 	chmod +x $TEST_COMPOSITE_FILE
@@ -17,7 +17,7 @@ TEST="./test -e test_env.conf $1 $2 $3 $4"
 TEST_SOCKET=.rrr_test.sock
 TEST_DATA_FILE=.test_data.tmp
 TEST_DATA_GENERATOR=./make_test_data
-TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg
+TEST_DATA_ARRAY_DEFINITION=be4#int1,be3#int2,be2s#int3,be1#int4,sep1@1#sep1,le4@1#aaa,le3#bbb,le2s@1#ccc,le1#ddd,sep2#sep2,blob8@2#blob,msg#msg,str#emptystr,vain
 
 RRR_POST=../rrr_post
 RRR_POST_ARGS="$TEST_SOCKET -d 8 -f - -c 1 -a $TEST_DATA_ARRAY_DEFINITION"
@@ -144,6 +144,10 @@ do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
 do_test_standalone test_file.conf
+
+rm -rf /tmp/rrr-test-msgdb*
+do_test_standalone test_incrementer.conf
+rm -rf /tmp/rrr-test-msgdb* || exit 1
 
 do_test_websocket test_websocket.conf
 

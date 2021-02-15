@@ -155,6 +155,25 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([limits.h])
 ])
 
+AC_MSG_CHECKING([precense of gettid()])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#define _GNU_SOURCE
+		#include <unistd.h>
+		#include <sys/types.h>
+
+		int main (int argc, char *argv[]) {
+			pid_t tid = gettid();
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
 TLS_CFLAGS=
 TLS_LDFLAGS=
 TLS_LIBADD=
@@ -496,6 +515,32 @@ AS_IF([test "x$enable_jsonc" = xno], [
 	AC_CHECK_HEADERS([json-c/json_tokener.h json-c/json_object.h json-c/json_object_iterator.h json-c/json_util.h])
 	AC_CHECK_LIB(json-c, json_tokener_new, [], AC_MSG_ERROR([json_tokener_new from json-c not found]))
 
+	AC_CHECK_LIB(json-c, json_object_new_null, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_NULL], [1], [We have json-c json_object_new_null])
+	], [])
+
+	AC_CHECK_LIB(json-c, json_object_new_uint64, [
+		AC_DEFINE([RRR_HAVE_JSONC_NEW_UINT64], [1], [We have json-c json_object_new_uint64])
+	], [])
+
+	AC_MSG_CHECKING([json_object_object_add is of void type])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <json-c/json_object.h>
+			int main (int argc, char *argv[]) {
+				json_object *obj1 = json_object_new_object();
+				json_object *obj2 = json_object_new_object();
+				// Compilation fails if function is of void type
+				return json_object_object_add(obj1, "key", obj2);
+			}
+		]])
+	], [
+		AC_MSG_RESULT([no])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_JSONC_OBJECT_ADD_VOID], [1], [json_object_object_add is of void type])
+	])
+
 	JSONC_CFLAGS=""
 	JSONC_LDFLAGS=""
 	JSONC_LIBS="-ljson-c"
@@ -610,18 +655,27 @@ AS_IF([test "x$enable_confdir" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
-AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_UNIT_INSTALL], [test "x$RRR_SYSTEMD_NO_UNIT_INSTALL" = "x1"])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_TMPFILES_INSTALL], [test "x$RRR_SYSTEMD_NO_TMPFILES_INSTALL" = "x1"])
 
 AC_MSG_CHECKING([for systemd usage])
 AS_IF([test "x$enable_systemd" = xyes], [
 	REQUIRE_CONFDIR
 	SYSTEMD_INIT
-	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_MSG_RESULT([yes]);
+
+	AC_SUBST([RRR_SYSTEMD_UNIT_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
+	AC_MSG_CHECKING([For systemd unit directory])
+	AC_MSG_RESULT([SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_SUBST([RRR_TMPFILES_DIR], [SYSTEMD_TMPFILES_DIR])
+	AC_MSG_CHECKING([For systemd tmpfiles.d directory])
+	AC_MSG_RESULT([SYSTEMD_TMPFILES_DIR])
 
 	AC_CONFIG_FILES([misc/systemd/make-service.sh])
+	AC_CONFIG_FILES([misc/systemd/make-tmpfiles.sh])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
-
-	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
 
 	AC_MSG_CHECKING([for systemd service file no installation command])
 	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
@@ -637,10 +691,24 @@ AS_IF([test "x$enable_systemd" = xyes], [
 
 	JOURNALD_LIBS="-lsystemd"
 	AC_SUBST([JOURNALD_LIBS])
+
+	RRR_RUN_DIR="/run/rrr"
 ],[
+	RRR_RUN_DIR="/tmp"
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([for RRR run directory])
+AC_MSG_RESULT([${RRR_RUN_DIR}])
+AC_SUBST(RRR_RUN_DIR)
+AC_DEFINE_UNQUOTED([RRR_RUN_DIR], ["${RRR_RUN_DIR}"], [Default run directory for sockets])
+
+AC_MSG_CHECKING([for RRR data directory])
+RRR_DATA_DIR="${localstatedir}/lib/rrr"
+AC_MSG_RESULT([${RRR_DATA_DIR}])
+AC_SUBST(RRR_DATA_DIR)
+
+AC_CONFIG_FILES([src/make-paths.sh])
 
 AC_MSG_CHECKING([for daemon username])
 AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
@@ -656,6 +724,7 @@ AS_IF([test "x$enable_runit" = xyes], [
 	REQUIRE_CONFDIR
 	AC_SUBST([RUNIT_SV_DIR], [/etc/sv/rrr/])
 	AC_CONFIG_FILES([misc/runit/Makefile])
+	
 	AC_CONFIG_FILES([misc/runit/make-runit.sh])
 	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
 ],[
@@ -680,10 +749,17 @@ AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
 AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
+AC_CONFIG_FILES([src/test.sh],[chmod +x src/test.sh])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
-				src/tests/Makefile src/tests/modules/Makefile
-				misc/Makefile src/cmodules/Makefile
+AC_CONFIG_FILES(
+	Makefile
+	src/Makefile
+	src/modules/Makefile
+	src/lib/Makefile
+	src/tests/Makefile
+	src/tests/modules/Makefile
+	misc/Makefile
+	src/cmodules/Makefile
 )
 
 AC_OUTPUT

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read_constants.h"
 #include "../lib/net_transport/net_transport.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/http/http_util.h"
 #include "../lib/http/http_application.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
@@ -51,12 +52,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086
+#define INFLUXDB_DEFAULT_CONCURRENT_CONNECTIONS 10
 #define INFLUXDB_MAX_REDIRECTS 5
 
 // Standardized return values, HTTP-framework compatible
-#define INFLUXDB_OK		 	RRR_READ_OK
-#define INFLUXDB_HARD_ERR	RRR_READ_HARD_ERROR
-#define INFLUXDB_SOFT_ERR	RRR_READ_SOFT_ERROR
+#define INFLUXDB_OK          RRR_READ_OK
+#define INFLUXDB_HARD_ERR    RRR_READ_HARD_ERROR
+#define INFLUXDB_SOFT_ERR    RRR_READ_SOFT_ERROR
 
 struct influxdb_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -67,6 +69,8 @@ struct influxdb_data {
 
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
+
+	rrr_http_unique_id unique_id_counter;
 
 	// NOT managed by cleanup function, separate cleanup_push/pop
 	struct rrr_net_transport *transport;
@@ -94,20 +98,19 @@ static void influxdb_data_destroy (void *arg) {
 	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
 }
 
-#define CHECK_RET()																			\
-		do {if (ret != 0) {																	\
-			if (ret == RRR_HTTP_SOFT_ERROR) {												\
-				RRR_MSG_0("Soft error in influxdb instance %s, discarding message\n",		\
-					INSTANCE_D_NAME(data->thread_data));									\
-				ret = 0;																	\
-				goto out;																	\
-			}																				\
-			RRR_MSG_0("Hard error in influxdb instance %s\n",								\
-				INSTANCE_D_NAME(data->thread_data));										\
-			ret = 1;																		\
-			goto out;																		\
-		}} while(0)
-
+#define CHECK_RET()                                                                         \
+        do {if (ret != 0) {                                                                 \
+            if (ret == RRR_HTTP_SOFT_ERROR) {                                               \
+                RRR_MSG_0("Soft error in influxdb instance %s, discarding message\n",       \
+                    INSTANCE_D_NAME(data->thread_data));                                    \
+                ret = 0;                                                                    \
+                goto out;                                                                   \
+            }                                                                               \
+            RRR_MSG_0("Hard error in influxdb instance %s\n",                               \
+                INSTANCE_D_NAME(data->thread_data));                                        \
+            ret = 1;                                                                        \
+            goto out;                                                                       \
+        }} while(0)
 
 struct response_callback_data {
 	struct influxdb_data *data;
@@ -122,9 +125,7 @@ static int influxdb_receive_http_response (
 	(void)(handle);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(unique_id);
 	(void)(next_protocol_version);
-
 
 	int ret = 0;
 
@@ -132,7 +133,10 @@ static int influxdb_receive_http_response (
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
-				INSTANCE_D_NAME(data->data->thread_data), transaction->response_part->response_code, transaction->response_part->response_str);
+				INSTANCE_D_NAME(data->data->thread_data),
+				transaction->response_part->response_code,
+				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+		);
 		ret = 1;
 		goto out;
 	}
@@ -148,6 +152,14 @@ struct send_data_callback_data {
 	struct rrr_array *array;
 	int ret;
 };
+
+static int influxdb_unique_id_generator (
+		RRR_HTTP_COMMON_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct send_data_callback_data *callback_data = arg;
+	*unique_id = ++(callback_data->data->unique_id_counter);
+	return 0;
+}
 
 static void influxdb_send_data_callback (
 		struct rrr_net_transport_handle *handle,
@@ -192,7 +204,16 @@ static void influxdb_send_data_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_transaction_new(&transaction, RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING, INFLUXDB_MAX_REDIRECTS, NULL, NULL)) != 0) {
+	if ((ret = rrr_http_transaction_new (
+			&transaction,
+			RRR_HTTP_METHOD_POST,
+			RRR_HTTP_BODY_FORMAT_URLENCODED_NO_QUOTING,
+			INFLUXDB_MAX_REDIRECTS,
+			influxdb_unique_id_generator,
+			callback_data,
+			NULL,
+			NULL
+	)) != 0) {
 		RRR_MSG_0("Could not create HTTP transaction in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -266,7 +287,8 @@ static void influxdb_send_data_callback (
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
 			rrr_http_query_builder_wpos_get(&query_builder),
-			NULL // <-- No content-type
+			NULL, // <-- No content-type
+			NULL  // <-- No original value
 	)) != 0) {
 		RRR_MSG_0("Could not add data to HTTP query in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -293,23 +315,19 @@ static void influxdb_send_data_callback (
 
 	ssize_t received_bytes = 0;
 	uint64_t complete_transactions_count = 0;
+	uint64_t active_transaction_count = 0;
 
 	do {
-		if ((ret = rrr_http_session_transport_ctx_tick (
+		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
+				&active_transaction_count,
 				&complete_transactions_count,
 				handle,
 				0, // No max read size
-				0, // No unique id
-				1, // Is client
-				NULL,
-				NULL,
 				NULL,
 				NULL,
 				influxdb_receive_http_response,
 				&response_callback_data,
-				NULL,
-				NULL,
 				NULL,
 				NULL,
 				NULL,
@@ -442,9 +460,10 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			"influxdb",
 			INFLUXDB_DEFAULT_SERVER,
 			INFLUXDB_DEFAULT_PORT,
+			INFLUXDB_DEFAULT_CONCURRENT_CONNECTIONS,
 			1, // <-- Enable fixed tags and fields
 			0, // <-- Do not enable endpoint
-			0  // <-- Don't check for raw mode consistency
+			0  // <-- Do not enable body format
 	) != 0) {
 		ret = 1;
 	}

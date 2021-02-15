@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,19 +34,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
-// #define RRR_THREADS_MAX 32
+/* Uncomment to enable errorchecking on mutexes */
+#define RRR_THREAD_DEBUG_MUTEX
+
+/* Tell a thread to start initialization */
+#define RRR_THREAD_SIGNAL_START_INITIALIZE	(1<<0)
 
 /* Tell a thread to start after initializing */
-#define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<0)
+#define RRR_THREAD_SIGNAL_START_BEFOREFORK	(1<<1)
 
-/* Tell a thread to cancel */
-#define RRR_THREAD_SIGNAL_KILL_				(1<<1)
+/* Tell a thread to proceed after it has reached RUNNING_FORKED */
+#define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<2)
+
+/* Watchdogs only use the last start signal */
+#define RRR_THREAD_SIGNAL_START_WATCHDOG	RRR_THREAD_SIGNAL_START_AFTERFORK
 
 /* Tell a thread politely to cancel */
-#define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
-
-/* Tell a thread to proceed after all forking threads have reached RUNNING_FORKED */
-#define RRR_THREAD_SIGNAL_START_AFTERFORK	(1<<3)
+#define RRR_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<3)
 
 /* Can only be set in thread control */
 #define RRR_THREAD_STATE_NEW 0
@@ -61,11 +65,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * We only check for this if thread is started with INSTANCE_START_PRIORITY_FORK */
 #define RRR_THREAD_STATE_RUNNING_FORKED 5
 
-/* Thread has to do a few cleanup operations before stopping */
-// #define RRR_THREAD_STATE_STOPPING 6
+/* Thread may set this if it has to do a few cleanup operations before stopping, WD will
+ * be more patient when waiting for STOPPED (KILLTIME_PAPATIENTT_LIMIT will be used). Thread must set
+ * this within the ordinary KILLTIME_LIMIT */
+#define RRR_THREAD_STATE_STOPPING 6
 
 // Milliseconds
 #define RRR_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
+#define RRR_THREAD_WATCHDOG_KILLTIME_PATIENT_LIMIT 5000
 
 #define RRR_THREAD_NAME_MAX_LENGTH 64
 
@@ -116,16 +123,36 @@ struct rrr_thread_collection {
 
 #include "log.h"
 
+#ifdef RRR_THREAD_DEBUG_MUTEX
+#	include "rrr_strerror.h"
+#endif
+
 static inline void rrr_thread_lock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_lock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Locking failed in rrr_thread_lock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_lock(&thread->mutex);
+#endif
 }
 
 static inline void rrr_thread_unlock (
 		struct rrr_thread *thread
 ) {
+#ifdef RRR_THREAD_DEBUG_MUTEX
+	int err;
+	if ((err = pthread_mutex_unlock(&thread->mutex)) != 0) {
+		RRR_BUG("BUG: Unlocking failed in rrr_thread_unlock for thread %p name %s: %s\n",
+				thread, thread->name, rrr_strerror(err));
+	}
+#else
 	pthread_mutex_unlock(&thread->mutex);
+#endif
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
@@ -140,6 +167,16 @@ static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thread) {
 	int signal;
 	rrr_thread_lock(thread);
+	signal = thread->signal;
+	rrr_thread_unlock(thread);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
+}
+
+static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {
+	struct rrr_thread *thread = (struct rrr_thread *) arg;
+	int signal;
+	rrr_thread_lock(thread);
+	thread->watchdog_time = rrr_time_get_64();
 	signal = thread->signal;
 	rrr_thread_unlock(thread);
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
@@ -161,7 +198,10 @@ void rrr_thread_signal_wait_cond_with_watchdog_update (
 		struct rrr_thread *thread,
 		int signal
 );
-
+void rrr_thread_signal_wait_cond (
+		struct rrr_thread *thread,
+		int signal
+);
 int rrr_thread_ghost_check (
 		struct rrr_thread *thread
 );
@@ -191,20 +231,23 @@ void rrr_thread_collection_destroy (
 void rrr_thread_start_condition_helper_nofork (
 		struct rrr_thread *thread
 );
+void rrr_thread_start_condition_helper_nofork_nice (
+		struct rrr_thread *thread
+);
 int rrr_thread_start_condition_helper_fork (
 		struct rrr_thread *thread,
 		int (*fork_callback)(void *arg),
 		void *callback_arg
 );
-int rrr_thread_collection_start_all_after_initialized (
+int rrr_thread_collection_start_all (
 		struct rrr_thread_collection *collection,
 		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-void rrr_thread_collection_stop_and_join_all_no_unlock (
-		struct rrr_thread_collection *collection
+void rrr_thread_start_now_with_watchdog (
+		struct rrr_thread *thread
 );
-int rrr_thread_start (
+void rrr_thread_initialize_now_with_watchdog (
 		struct rrr_thread *thread
 );
 int rrr_thread_with_lock_do (
@@ -212,7 +255,7 @@ int rrr_thread_with_lock_do (
 		int (*callback)(struct rrr_thread *thread, void *arg),
 		void *callback_arg
 );
-struct rrr_thread *rrr_thread_collection_thread_allocate_preload_and_register (
+struct rrr_thread *rrr_thread_collection_thread_new (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
@@ -229,7 +272,7 @@ void rrr_thread_collection_join_and_destroy_stopped_threads (
 		int *count,
 		struct rrr_thread_collection *collection
 );
-int rrr_thread_collection_iterate_non_wd_and_not_signalled_by_state (
+int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),

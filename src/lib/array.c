@@ -99,6 +99,41 @@ int rrr_array_append_from (
 	return ret;
 }
 
+int rrr_array_push_value_vain_with_tag (
+		struct rrr_array *collection,
+		const char *tag
+) {
+	struct rrr_type_value *new_value = NULL;
+
+	int ret = 0;
+
+	if ((ret = rrr_type_value_new (
+			&new_value,
+			&rrr_type_definition_vain,
+			0,
+			strlen(tag),
+			tag,
+			0,
+			NULL,
+			1,
+			NULL,
+			0 
+	)) != 0) {
+		RRR_MSG_0("Could not create value in __rrr_array_push_value_vain_with_tag return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_LL_APPEND(collection, new_value);
+	new_value = NULL;
+
+	out:
+	if (new_value != NULL) {
+		rrr_type_value_destroy(new_value);
+	}
+	return ret;
+}
+
 static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
@@ -189,7 +224,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 			&new_value,
 			type,
 			0,
-			strlen(tag),
+			tag != NULL ? strlen(tag) : 0,
 			tag,
 			value_size,
 			NULL,
@@ -500,6 +535,10 @@ static int __rrr_array_collection_iterate_chosen_tags (
 		if (found == 1) {
 			(*found_tags)++;
 			if ((ret = callback(node, callback_arg)) != 0) {
+				if (ret == RRR_ARRAY_ITERATE_STOP) {
+					ret = 0;
+					goto out;
+				}
 				RRR_MSG_0("Error from callback in __rrr_array_collection_iterate_chosen_tags\n");
 				ret = 1;
 				goto out;
@@ -560,6 +599,73 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 
 	out:
 	return ret;
+}
+
+struct rrr_array_selected_tags_split_callback_data {
+	int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_array_selected_tags_split_callback (const struct rrr_type_value *node, void *arg) {
+	struct rrr_array_selected_tags_split_callback_data *callback_data = arg;
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	if (node->total_stored_length == 0) {
+		for (rrr_length i = 0; i < node->element_count; i++) {
+			struct rrr_type_value *node_new = NULL;
+			if ((ret = rrr_type_value_new (&node_new, node->definition, node->flags, 0, NULL, 0, NULL, 1, NULL, 0)) != 0) {
+				goto out;
+			}
+			RRR_LL_APPEND(&array_tmp, node_new);
+		}
+	}
+	else {
+		const rrr_length element_size = node->total_stored_length / node->element_count;
+
+		if (element_size * node->element_count != node->total_stored_length) {
+			RRR_MSG_0("Invalid total store length in array value in __rrr_array_collection_split_callback, not divisible by element size\n");
+			ret = 1;
+			goto out;
+		}
+
+		for (rrr_length pos = 0; pos < node->total_stored_length; pos += element_size) {
+			struct rrr_type_value *node_new = NULL;
+			if ((ret = rrr_type_value_new (&node_new, node->definition, node->flags, 0, NULL, 0, NULL, 1, NULL, element_size)) != 0) {
+				goto out;
+			}
+			memcpy(node_new->data, node->data + pos, element_size);
+			RRR_LL_APPEND(&array_tmp, node_new);
+		}
+	}
+
+	ret = callback_data->callback(node, &array_tmp, callback_data->callback_arg);
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
+int rrr_array_selected_tags_split (
+		int *found_tags,
+		const struct rrr_array *definition,
+		const struct rrr_map *tags,
+		int (*callback)(const struct rrr_type_value *node_orig, const struct rrr_array *node_values, void *arg),
+		void *callback_arg
+) {
+	struct rrr_array_selected_tags_split_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return __rrr_array_collection_iterate_chosen_tags (
+			found_tags,
+			definition,
+			tags,
+			__rrr_array_selected_tags_split_callback,
+			&callback_data
+	);
 }
 
 static int __rrr_array_collection_export_callback (const struct rrr_type_value *node, void *arg) {
@@ -731,15 +837,7 @@ int rrr_array_new_message_from_collection (
 
 int rrr_array_message_iterate (
 		const struct rrr_msg_msg *message_orig,
-		int (*callback)(
-				const char *data_start,
-				const struct rrr_type_definition *type,
-				rrr_type_flags flags,
-				rrr_length tag_length,
-				rrr_length total_length,
-				rrr_length element_count,
-				void *arg
-		),
+		int (*callback)(RRR_TYPE_RAW_FIELDS, void *arg),
 		void *callback_arg
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
@@ -807,6 +905,9 @@ int rrr_array_message_iterate (
 				elements,
 				callback_arg
 		)) != 0) {
+			if (ret == RRR_ARRAY_ITERATE_STOP) {
+				ret = 0;
+			}
 			goto out;
 		}
 
@@ -816,6 +917,127 @@ int rrr_array_message_iterate (
 
 	out:
 	return ret;
+}
+
+struct rrr_array_message_iterate_values_callback_data {
+	int (*callback)(const struct rrr_type_value *value, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_array_message_iterate_values_callback (
+		RRR_TYPE_RAW_FIELDS,
+		void *arg
+) {
+	struct rrr_array_message_iterate_values_callback_data *callback_data = arg;
+	return rrr_type_value_raw_with_tmp_do (
+		data_start,
+		type,
+		flags,
+		tag_length,
+		total_length,
+		element_count,
+		callback_data->callback,
+		callback_data->callback_arg
+	);
+}
+
+int rrr_array_message_iterate_values (
+		const struct rrr_msg_msg *message_orig,
+		int (*callback)(
+				const struct rrr_type_value *value,
+				void *arg
+		),
+		void *callback_arg
+) {
+	struct rrr_array_message_iterate_values_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return rrr_array_message_iterate (message_orig, __rrr_array_message_iterate_values_callback, &callback_data);
+}
+
+#define RRR_ARRAY_MESSAGE_ITERATE_RAW_CALLBACK_HAS_TAG() \
+	(strlen(tag) == tag_length && memcmp(data_start, tag, tag_length) == 0)
+
+static int __rrr_array_message_has_tag_callback (
+		RRR_TYPE_RAW_FIELDS,
+		void *arg
+) {
+	const char *tag = arg;
+
+	(void)(type);
+	(void)(flags);
+	(void)(total_length);
+	(void)(element_count);
+
+	if (RRR_ARRAY_MESSAGE_ITERATE_RAW_CALLBACK_HAS_TAG()) {
+		// Iterator will break out and return 1 if the tag is found
+		return 1;
+	}
+
+	return 0;
+}
+
+int rrr_array_message_has_tag (
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	if (!MSG_IS_ARRAY(message_orig)) {
+		return 0;
+	}
+
+	return rrr_array_message_iterate (
+			message_orig,
+			__rrr_array_message_has_tag_callback,
+			(void *) tag // Cast away const OK
+	);
+}
+
+struct rrr_array_message_clone_value_by_tag_callback_data {
+	struct rrr_type_value **target;
+	const char *tag;
+};
+
+static int __rrr_array_message_clone_value_by_tag_callback (
+		const struct rrr_type_value *value,
+		void *arg
+) {
+	struct rrr_array_message_clone_value_by_tag_callback_data *callback_data = arg;
+
+	if (value->tag == NULL || strcmp(callback_data->tag, value->tag) != 0) {
+		return 0;
+	}
+
+	if (*(callback_data->target) != NULL) {
+		RRR_BUG("BUG: Value was not NULL in __rrr_array_message_value_to_str_by_tag_callback\n");
+	}
+
+	int ret = rrr_type_value_clone(callback_data->target, value, 1);
+	return (ret == 0 ? RRR_ARRAY_ITERATE_STOP : ret);
+}
+
+int rrr_array_message_clone_value_by_tag (
+		struct rrr_type_value **target,
+		const struct rrr_msg_msg *message_orig,
+		const char *tag
+) {
+	*target = NULL;
+
+	if (!MSG_IS_ARRAY(message_orig)) {
+		return 0;
+	}
+
+	struct rrr_array_message_clone_value_by_tag_callback_data callback_data = {
+		target,
+		tag
+	};
+
+	return rrr_array_message_iterate_values (
+			message_orig,
+			__rrr_array_message_clone_value_by_tag_callback,
+			&callback_data
+	);
 }
 
 struct rrr_array_message_append_to_collection_callback_data {

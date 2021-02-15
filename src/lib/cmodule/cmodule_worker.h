@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -118,7 +118,9 @@ int rrr_cmodule_worker_loop_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback)(RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 );
 int rrr_cmodule_worker_loop_init_wrapper_default (
 		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
@@ -131,7 +133,9 @@ int rrr_cmodule_worker_main (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
 );
 
 #endif /* RRR_CMODULE_WORKER_H */

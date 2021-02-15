@@ -47,6 +47,7 @@ struct rrr_msg_holder {
 	socklen_t addr_len;
 	int protocol;
 	uint64_t send_time;
+	const void *source;
 	void *message;
 
 	// Used by higher levels to control partial sends

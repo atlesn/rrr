@@ -70,6 +70,9 @@ int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const 
 	const char *ca_file_use = (ca_file != NULL && *ca_file != '\0' ? ca_file : NULL);
 
 	RRR_DBG_1("Using path '%s' for CA certificates in OpenSSL\n", ca_path_use);
+	if (ca_file_use) {
+		RRR_DBG_1("Using file '%s' as CA certificate in OpenSSL\n", ca_file_use);
+	}
 
 	if (SSL_CTX_load_verify_locations(ctx, ca_file_use, ca_path_use) != 1) {
 		RRR_SSL_ERR("Could not set certificate verification file/path");

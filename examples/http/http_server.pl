@@ -22,31 +22,35 @@ sub process {
 
 	my @fields = $message->get_tag_names();
 
-	$debug->msg(1, "Received a HTTP request in $server_name, topic was " . $message->{'topic'} . "\n");
+	$debug->msg(2, "Received a HTTP request in $server_name, topic was " . $message->{'topic'} . "\n");
 	
-	$debug->msg(1, "Dumping received fields:\n");
+	$debug->msg(2, "Dumping received fields:\n");
 	foreach my $field (@fields) {
 		my $to_print = "\t$field: ";
 		$to_print .= join (", ", $message->get_tag_all($field));
 		$to_print .= "\n";
-		$debug->msg(1, $to_print);
+		$debug->msg(2, $to_print);
 	}
 
-	my $response = "$server_name: ";
-	$response .= (defined $message->get_tag_all("but_did_you_die") ? "No" : "Success!");
+	my $endpoint = ($message->get_tag_all("http_endpoint"))[0];
+
+	my $response = "<!DOCTYPE HTML>\n<html>\n<head><title>$server_name</title></head>\n\n<body>\n";
+
+	if ($endpoint !~ /frame/) {
+		$response .= "<iframe src=\"/frame$endpoint\" style=\"border: 0px solid #000; background-color: #ddd;\"></iframe>\n";
+	}
+	else {
+		$response .= (defined $message->get_tag_all("but_did_you_die") ? "No" : "Success!");
+	}
 	
-	my $http = "HTTP/1.1 200 OK\r\n";
-	$http .= "Content-Type: text/plain\r\n";
-	$http .= "Content-Length: " . (length $response) . "\r\n\r\n";
-	$http .= $response;
+	$response .= "</body></html>";
 
 	$message->clear_array();
 
-	$message->{'data'} = $http;
-	$message->{'data_len'} = length $http;
-	$message->{'topic'} =~ s/request/raw/;
+	$message->push_tag_str("http_content_type", "text/html");
+	$message->push_tag_str("http_body", $response);
 
-	$debug->msg(1, "Created a HTTP response in $server_name, topic is now " . $message->{'topic'} . "\n");
+	$debug->msg(2, "Created a HTTP response in $server_name, topic is now " . $message->{'topic'} . "\n");
 	
 	$message->send();
 

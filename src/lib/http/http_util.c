@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,12 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <stdarg.h>
 
 #include "../log.h"
 
 #include "http_util.h"
+#include "http_common.h"
 
 #include "../util/posix.h"
 #include "../util/gnu.h"
@@ -1103,4 +1105,167 @@ void rrr_http_util_nprintf (
 void rrr_http_util_dbl_ptr_free (void *ptr) {
 	void *to_free = *((void **) ptr);
 	RRR_FREE_IF_NOT_NULL(to_free);
+}
+
+enum rrr_http_method rrr_http_util_method_str_to_enum (
+		const char *method_str
+) {
+	enum rrr_http_method method = RRR_HTTP_METHOD_GET;
+
+	/*
+	 * DO NOT REMOVE THIS COMMENT
+	 * Default method when user only specifies POST is RRR_HTTP_METHOD_POST_URLENCODED
+	 */
+
+	if (method_str == NULL || *(method_str) == '\0') {
+		// Default to GET
+	}
+	else if ( strcasecmp(method_str, "get") == 0) {
+		method = RRR_HTTP_METHOD_GET;
+	}
+	else if ( strcasecmp(method_str, "head") == 0) {
+		method = RRR_HTTP_METHOD_HEAD;
+	}
+	else if ( strcasecmp(method_str, "options") == 0) {
+		method = RRR_HTTP_METHOD_OPTIONS;
+	}
+	else if ( strcasecmp(method_str, "delete") == 0) {
+		method = RRR_HTTP_METHOD_DELETE;
+	}
+	else if ( strcasecmp(method_str, "put") == 0) {
+		method = RRR_HTTP_METHOD_PUT;
+	}
+	else if ( strcasecmp(method_str, "post") == 0) {
+		method = RRR_HTTP_METHOD_POST;
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown value '%s' for HTTP method in rrr_http_util_method_str_to_enum, defaulting to GET\n", method_str);
+	}
+
+	return method;
+}
+
+enum rrr_http_body_format rrr_http_util_format_str_to_enum (
+		const char *format_str
+) {
+	enum rrr_http_body_format format = RRR_HTTP_BODY_FORMAT_URLENCODED;
+
+	if (format_str == NULL || *(format_str) == '\0') {
+		// Default to URLENCODED
+	}
+	else if (strcasecmp(format_str, "urlencoded") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_URLENCODED;
+	}
+	else if (strcasecmp(format_str, "multipart") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
+	}
+	else if (strcasecmp(format_str, "json") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_JSON;
+	}
+	else if (strcasecmp(format_str, "raw") == 0) {
+		format = RRR_HTTP_BODY_FORMAT_RAW;
+	}
+	else {
+		RRR_MSG_0("Warning: Unknown value '%s' for HTTP format in rrr_http_util_format_str_to_enum, defaulting to URLENCODED\n", format_str);
+	}
+
+	return format;
+}
+
+struct rrr_http_util_iana_response_code {
+	unsigned int code;	
+	const char *phrase;
+};
+
+static const struct rrr_http_util_iana_response_code rrr_http_util_iana_response_codes[] = {
+	// Common IANA codes
+	{200, "OK"},
+	{204, "No Content"},
+	{400, "Bad Request"},
+	{403, "Forbidden"},
+	{404, "Not Found"},
+	{500, "Internal Server Error"},
+
+	// Non-iana codes
+	{418, "I'm a teapot"}, // RFC2324/RFC7168
+
+	// Other IANA codes
+	{100, "Continue"},
+	{101, "Switching Protocols"},
+	{102, "Processing"},
+	{103, "Early Hints"},
+	{201, "Created"},
+	{202, "Accepted"},
+	{203, "Non-Authoritative Information"},
+	{205, "Reset Content"},
+	{206, "Partial Content"},
+	{207, "Multi-Status"},
+	{208, "Already Reported"},
+	{226, "IM Used"},
+	{300, "Multiple Choices"},
+	{301, "Moved Permanently"},
+	{302, "Found"},
+	{303, "See Other"},
+	{304, "Not Modified"},
+	{305, "Use Proxy"},
+	{307, "Temporary Redirect"},
+	{308, "Permanent Redirect"},
+	{401, "Unauthorized"},
+	{402, "Payment Required"},
+	{405, "Method Not Allowed"},
+	{406, "Not Acceptable"},
+	{407, "Proxy Authentication Required"},
+	{408, "Request Timeout"},
+	{409, "Conflict"},
+	{410, "Gone"},
+	{411, "Length Required"},
+	{412, "Precondition Failed"},
+	{413, "Payload Too Large"},
+	{414, "URI Too Long"},
+	{415, "Unsupported Media Type"},
+	{416, "Range Not Satisfiable"},
+	{417, "Expectation Failed"},
+	{421, "Misdirected Request"},
+	{422, "Unprocessable Entity"},
+	{423, "Locked"},
+	{424, "Failed Dependency"},
+	{425, "Too Early"},
+	{426, "Upgrade Required"},
+	{428, "Precondition Required"},
+	{429, "Too Many Requests"},
+	{431, "Request Header Fields Too Large"},
+	{451, "Unavailable For Legal Reasons"},
+	{501, "Not Implemented"},
+	{502, "Bad Gateway"},
+	{503, "Service Unavailable"},
+	{504, "Gateway Timeout"},
+	{505, "HTTP Version Not Supported"},
+	{506, "Variant Also Negotiates"},
+	{507, "Insufficient Storage"},
+	{508, "Loop Detected"},
+	{510, "Not Extended"},
+	{511, "Network Authentication Required"}
+};
+
+const char *rrr_http_util_iana_response_phrase_from_status_code (
+		unsigned int status_code
+) {
+	if (status_code < 100 || status_code > 599) {
+		goto out_unknown;
+	}
+
+	int retries = 1;
+	while (--retries >= 0) {
+		for (size_t i = 0; i < sizeof(rrr_http_util_iana_response_codes) / sizeof(rrr_http_util_iana_response_codes[0]); i++) {
+			const struct rrr_http_util_iana_response_code *code = &rrr_http_util_iana_response_codes[i];
+			if (code->code == status_code) {
+				return code->phrase;
+			}
+		}
+
+		status_code -= status_code % 100;
+	}
+
+	out_unknown:
+	return "Unknown status";
 }

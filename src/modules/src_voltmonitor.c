@@ -151,10 +151,10 @@ static int usb_connect(struct voltmonitor_data *data) {
 
 	char drivername[64] ;
 	if ( usb_get_driver_np ( h, 0, drivername, sizeof(drivername) ) == 0 ) {
-		RRR_DBG_2 ( "voltage monitor usb device driver: %s\n", drivername );
+		RRR_DBG_1 ( "voltage monitor usb device driver: %s\n", drivername );
 		
 		if ( drivername[0] != 0 ) {
-			RRR_DBG_2 ( "voltagemonitor releasing driver\n" );
+			RRR_DBG_1 ( "voltagemonitor releasing driver\n" );
 			
 			if ( usb_detach_kernel_driver_np ( h, 0 ) ) {
 				RRR_MSG_0 ("voltmonitor: release kernel USB driver failed\n");
@@ -189,8 +189,8 @@ static int usb_connect(struct voltmonitor_data *data) {
 	int subtype = inbuf[6];
 	int unitversion = inbuf[5];
 
-	RRR_DBG_2 ( "voltagemonitor device subtype: %d\n", subtype );
-	RRR_DBG_2 ( "voltagemonitor unitversion: %d\n", unitversion );
+	RRR_DBG_1 ( "voltagemonitor device subtype: %d\n", subtype );
+	RRR_DBG_1 ( "voltagemonitor unitversion: %d\n", unitversion );
 	
 	if ( unitversion != 5 || subtype != 7 ) {
 		RRR_MSG_0 ("voltmonitor: Unknown USB voltmeter version\n");
@@ -224,7 +224,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 		exit(EXIT_FAILURE);
 	}
 
-	RRR_DBG_2 ("Read voltage channel %i calibration %f\n", data->usb_channel, data->usb_calibration);
+	RRR_DBG_3 ("Read voltage channel %i calibration %f\n", data->usb_channel, data->usb_calibration);
 
 	unsigned int channel = data->usb_channel - 1;
 
@@ -473,7 +473,8 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 			0,
 			0,
 			voltmonitor_spawn_message_callback,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Could not spawn message in voltmonitor instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

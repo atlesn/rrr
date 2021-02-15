@@ -624,7 +624,8 @@ static int file_read_array_callback (struct rrr_read_session *read_session, stru
 			0,
 			0,
 			file_read_array_write_callback,
-			&write_callback_data
+			&write_callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(callback_data->file_data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Could not create new array message in file instance %s, return was %i\n",
 				INSTANCE_D_NAME(callback_data->file_data->thread_data), ret);
@@ -837,7 +838,8 @@ static int file_read_all_to_message_complete_callback (
 			0,
 			0,
 			file_read_all_to_message_write_callback,
-			&write_callback_data
+			&write_callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Could not create new message in file instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);

@@ -41,7 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_common.h"
+#include "lib/http/http_util.h"
 #include "lib/http/http_client.h"
+#include "lib/http/http_transaction.h"
 #include "lib/net_transport/net_transport.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/rrr_strerror.h"
@@ -84,6 +86,7 @@ struct rrr_http_client_data {
 	struct rrr_net_transport *net_transport_keepalive_plain;
 	struct rrr_net_transport *net_transport_keepalive_tls;
 	int final_callback_count;
+	rrr_http_unique_id unique_id_counter;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -302,8 +305,6 @@ static int __rrr_http_client_final_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(transaction);
-
 	int ret = 0;
 
 	rrr_length data_start = 0;
@@ -316,6 +317,13 @@ static int __rrr_http_client_final_callback (
 	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
 	http_client_data->final_callback_count++;
+
+	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+		RRR_MSG_0("Error response from server: %i %s\n",
+				transaction->response_part->response_code,
+				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+		);
+	}
 
 	if (http_client_data->no_output) {
 		goto out;
@@ -347,6 +355,14 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
+static int __rrr_http_client_unique_id_generator_callback (
+		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+	*unique_id = ++(http_client_data->unique_id_counter);
+	return 0;
+}
+
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -366,6 +382,10 @@ static int __rrr_http_client_redirect_callback (
 			&http_client_data->net_transport_keepalive_tls,
 			&http_client_data->net_transport_config,
 			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			http_client_data,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,
@@ -403,6 +423,8 @@ static int __rrr_http_client_send_websocket_frame_final_callback (
 
 static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS) {
 	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(unique_id);
 
 	int ret = 0;
 
@@ -547,8 +569,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	rrr_http_client_request_data_init(&data.request_data);
-
 	if (__rrr_http_client_parse_config(&data, &cmd) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -558,6 +578,7 @@ int main (int argc, const char **argv, const char **env) {
 			&data.request_data,
 			RRR_HTTP_TRANSPORT_ANY,
 			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
 			0, // No plain HTTP2
 			RRR_HTTP_CLIENT_USER_AGENT
@@ -574,6 +595,10 @@ int main (int argc, const char **argv, const char **env) {
 			&data.net_transport_keepalive_tls,
 			&data.net_transport_config,
 			5, // Max redirects
+			__rrr_http_client_unique_id_generator_callback,
+			&data,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			NULL,
@@ -590,9 +615,11 @@ int main (int argc, const char **argv, const char **env) {
 	uint64_t prev_bytes_total = 0;
 	do {
 		uint64_t bytes_total = 0;
+		uint64_t active_transaction_count = 0;
 
 		if ((ret = rrr_http_client_tick (
 				&bytes_total,
+				&active_transaction_count,
 				data.net_transport_keepalive_plain,
 				data.net_transport_keepalive_tls,
 				1 * 1024 * 1024 * 1024, // 1 GB
@@ -604,9 +631,7 @@ int main (int argc, const char **argv, const char **env) {
 				__rrr_http_client_send_websocket_frame_callback,
 				&data,
 				__rrr_http_client_receive_websocket_frame_callback,
-				&data,
-				NULL,
-				NULL
+				&data
 		)) != 0) {
 			break;
 		}

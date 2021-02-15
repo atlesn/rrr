@@ -1136,7 +1136,8 @@ static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_ms
 			0,
 			0,
 			mqttclient_receive_publish_create_entry_callback,
-			&callback_data
+			&callback_data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing entry to output buffer in mqttclient_receive_publish_create_entry of mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));

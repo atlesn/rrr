@@ -174,9 +174,11 @@ struct read_data_receive_message_callback_data {
 	struct rrr_array *array_final;
 };
 
-int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *arg) {
+int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *private_data, void *arg) {
 	struct read_data_receive_message_callback_data *callback_data = arg;
 	struct socket_data *data = callback_data->data;
+
+	(void)(private_data);
 
 	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
 		if (rrr_msg_msg_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
@@ -195,10 +197,11 @@ int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *arg) {
 	return 0;
 }
 
-int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
+int read_raw_data_callback (struct rrr_read_session *read_session, void *private_data, void *arg) {
 	struct read_data_receive_message_callback_data *callback_data = arg;
 	struct socket_data *data = callback_data->data;
 
+	(void)(private_data);
 	(void)(read_session);
 
 	int ret = 0;
@@ -240,21 +243,15 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 	};
 
 	if (data->receive_rrr_message != 0) {
-		struct rrr_read_common_receive_message_callback_data read_callback_data = {
+		if ((ret = rrr_socket_client_collection_read_message (
+				&data->clients,
+				4096,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				read_rrr_msg_msg_callback,
 				NULL,
 				NULL,
-				&socket_callback_data
-		};
-		if ((ret = rrr_socket_client_collection_read (
-				&data->clients,
-				sizeof(struct rrr_msg),
-				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
-				rrr_read_common_receive_message_callback,
-				&read_callback_data
+				&socket_callback_data
 		)) != 0) {
 			goto out;
 		}
@@ -274,9 +271,9 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 				data->do_sync_byte_by_byte,
 				0 // TODO : Set max size?
 		};
-		if ((ret = rrr_socket_client_collection_read (
+		if ((ret = rrr_socket_client_collection_read_raw (
 				&data->clients,
-				sizeof(struct rrr_msg),
+				4096,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				rrr_read_common_get_session_target_length_from_array_tree,
@@ -314,7 +311,8 @@ int socket_read_data(struct socket_data *data) {
 			0,
 			0,
 			read_data_receive_callback,
-			data
+			data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	);
 }
 
@@ -391,7 +389,12 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	while (!rrr_thread_signal_encourage_stop_check(thread)) {
 		rrr_thread_watchdog_time_update(thread);
 
-		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
+		if (rrr_socket_client_collection_accept (
+			&data->clients,
+			NULL,
+			NULL,
+			NULL
+		) != 0) {
 			RRR_MSG_0("Error while accepting connections in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;

@@ -72,6 +72,13 @@ static int __rrr_test_json_data_a_callback (const struct rrr_array *array, void 
 				goto out;
 			}
 		}
+		else if (strcmp(node->tag, "keepnull") == 0) {
+			if (!RRR_TYPE_IS_VAIN(node->definition->type)) {
+				TEST_MSG("Mismatch, null value was not vain\n");
+				ret = 1;
+				goto out;
+			}
+		}
 		else {
 			TEST_MSG("Unknown tag '%s'\n", node->tag);
 			ret = 1;
@@ -89,7 +96,7 @@ static int __rrr_test_json_data_a_callback (const struct rrr_array *array, void 
 int rrr_test_json(void) {
 	int ret = 0;
 
-	const char *data_a = "[{\"drop\" : {\"keepvalue\" : \"value\"}, \"keep1\" : 1},{\"keep2.2\" : 2.2}]";
+	const char *data_a = "[{\"drop\" : {\"keepvalue\" : \"value\"}, \"keep1\" : 1},{\"keep2.2\" : 2.2, \"keepnull\" : null}]";
 
 	RRR_DBG_3("JSON: %s\n", data_a);
 
@@ -100,7 +107,7 @@ int rrr_test_json(void) {
 		goto out;
 	}
 
-	if (counter != 3) {
+	if (counter != 4) {
 		TEST_MSG("JSON test failed: Values missing or too many values %i<>3\n", counter);
 		ret = 1;
 		goto out;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -72,8 +72,6 @@ int rrr_nullsafe_str_new_or_replace_raw (
 ) {
 	int ret = 0;
 
-	*result = NULL;
-
 	if (len != 0 && str == NULL) {
 		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
@@ -109,6 +107,22 @@ int rrr_nullsafe_str_new_or_replace_raw (
 		free(new_str);
 	out:
 		return ret;
+}
+
+int rrr_nullsafe_str_new_or_replace_raw_allocated (
+		struct rrr_nullsafe_str **result,
+		void **str,
+		rrr_nullsafe_len len
+) {
+	if (rrr_nullsafe_str_new_or_replace_raw(result, NULL, 0) != 0) {
+		return 1;
+	}
+
+	(*result)->str = *str;
+	(*result)->len = len;
+	*str = NULL;
+
+	return 0;
 }
 
 int rrr_nullsafe_str_new_or_replace (
@@ -292,7 +306,7 @@ int rrr_nullsafe_str_set (
 		rrr_nullsafe_len len
 ) {
 	if (nullsafe == NULL) {
-		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set_allocated");
+		RRR_BUG("BUG: Target was NULL in rrr_nullsafe_str_set\n");
 	}
 
 	RRR_FREE_IF_NOT_NULL(nullsafe->str);
@@ -328,6 +342,77 @@ int rrr_nullsafe_str_chr (
 	return 0;
 }
 
+int rrr_nullsafe_str_split_raw (
+		const struct rrr_nullsafe_str *nullsafe,
+		char c,
+		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	if (nullsafe == NULL) {
+		return 0;
+	}
+
+	rrr_nullsafe_len start_pos = 0;
+	for (rrr_nullsafe_len i = 0; i < nullsafe->len; i++) {
+		if (*((const char *)(nullsafe->str + i)) == c) {
+			if ((ret = callback(nullsafe->str + start_pos, i - start_pos, 0, callback_arg)) != 0) {
+				goto out;
+			}
+			start_pos = i + 1;
+		}
+		if (nullsafe->len - 1 == i) {
+			if ((ret = callback(nullsafe->str + start_pos, i - start_pos + 1, 1, callback_arg)) != 0) {
+				goto out;
+			}
+		}
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_nullsafe_str_split_callback_data {
+	int (*callback)(const struct rrr_nullsafe_str *str, int is_last, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_nullsafe_str_split_callback (
+	const void *data,
+	size_t len,
+	int is_last,
+	void *arg
+) {
+	struct rrr_nullsafe_str_split_callback_data *callback_data = arg;
+
+	struct rrr_nullsafe_str tmp = {
+		(void *) data, // Cast away const OK
+		len
+	};
+
+	return callback_data->callback(&tmp, is_last, callback_data->callback_arg);
+}
+
+int rrr_nullsafe_str_split (
+		const struct rrr_nullsafe_str *nullsafe,
+		char c,
+		int (*callback)(const struct rrr_nullsafe_str *str, int is_last, void *arg),
+		void *callback_arg
+) {
+	struct rrr_nullsafe_str_split_callback_data callback_data = {
+		callback,
+		callback_arg
+	};
+
+	return rrr_nullsafe_str_split_raw (
+		nullsafe,
+		c,
+		__rrr_nullsafe_str_split_callback,
+		&callback_data
+	);
+}
+
 int rrr_nullsafe_str_str (
 		const struct rrr_nullsafe_str *haystack,
 		const struct rrr_nullsafe_str *needle,
@@ -348,9 +433,12 @@ int rrr_nullsafe_str_str (
 
 	const void *start = haystack->str;
 	const void *end = haystack->str + haystack->len;
-	
-	while (start + needle->len <= end) {
-		if (memcmp(start, needle->str, needle->len) == 0) {
+	const void *search_end = end - needle->len;
+
+	while (start <= search_end) {
+		if (*((const char *) start) == *((const char *) needle->str) &&
+		    memcmp(start, needle->str, needle->len) == 0
+		) {
 			const struct rrr_nullsafe_str tmp_at_needle = {
 					(void *) start, // Cast away const OK
 					end - start
@@ -598,7 +686,7 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 
 	char *tmp = NULL;
 
-	if (nullsafe->len == 0) {
+	if (nullsafe == NULL || nullsafe->len == 0) {
 		ret = callback("", callback_arg);
 		goto out;
 	}
@@ -619,11 +707,30 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 	RRR_FREE_IF_NOT_NULL(tmp);
 	return ret;
 }
+		
+static int __rrr_nullsafe_str_raw_null_terminated_dump_callback (
+		const char *str,
+		void *arg
+) {
+	(void)(arg);
+	RRR_MSG_3("%s\n", str);
+	return 0;
+}
+
+int rrr_nullsafe_str_raw_null_terminated_dump (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	return rrr_nullsafe_str_with_raw_null_terminated_do (
+			nullsafe,
+			__rrr_nullsafe_str_raw_null_terminated_dump_callback,
+			NULL
+	);
+}
 
 #define RRR_NULLSAFE_STR_WITH_STR_DO_STR_AND_LEN_TO_USE_SET(letter)						\
 	const void *RRR_PASTE_3(str_to_use, _, letter) = str_static;						\
 	rrr_nullsafe_len RRR_PASTE_3(len_to_use, _, letter) = 0;									\
-	do {if (RRR_PASTE_3(nullsafe, _, letter)->len > 0) {								\
+    do {if (RRR_PASTE_3(nullsafe, _, letter) != NULL && RRR_PASTE_3(nullsafe, _, letter)->len > 0) {                           \
 		RRR_PASTE_3(str_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->str;		\
 		RRR_PASTE_3(len_to_use, _, letter) = RRR_PASTE_3(nullsafe, _, letter)->len;		\
 	}} while (0)

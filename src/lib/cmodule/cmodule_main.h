@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -87,7 +87,9 @@ int rrr_cmodule_main_worker_fork_start (
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
-		void *process_callback_arg
+		void *process_callback_arg,
+		int (*init_custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *init_custom_tick_callback_arg
 );
 void rrr_cmodule_main_workers_stop (
 		struct rrr_cmodule *cmodule

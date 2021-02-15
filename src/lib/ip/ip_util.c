@@ -100,14 +100,14 @@ int rrr_ip_to_str_and_port (
 	}
 	else if (addr_len == sizeof(*in)) {
 		if (inet_ntop(AF_INET, &in->sin_addr, target_ip, target_ip_size) == NULL) {
-			RRR_MSG_0("Could not convert IPv4 address to string\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not convert IPv4 address to string: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 		*target_port = ntohs(in->sin_port);
 	}
 	else {
-		RRR_MSG_0("Unknown address length %lu while extracting IP and port\n", addr_len);
+		RRR_MSG_0("Unknown address length %llu while extracting IP and port\n", (long long unsigned) addr_len);
 		ret = 1;
 		goto out;
 	}

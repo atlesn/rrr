@@ -264,6 +264,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_IS_FIRST()					\
 		(prev == NULL)
 
+#define RRR_LL_ITERATE_IS_LAST()					\
+		(next == NULL)
+
 #define RRR_LL_ITERATE_SET_DESTROY()				\
 		linked_list_iterate_destroy = 1
 

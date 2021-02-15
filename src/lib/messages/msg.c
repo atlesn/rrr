@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "msg.h"
+#include "msg_msg.h"
+#include "msg_addr.h"
+#include "msg_log.h"
+#include "msg_head.h"
 
 #include "../rrr_types.h"
 #include "../util/crc32.h"
@@ -85,7 +89,7 @@ static int __rrr_msg_head_validate (
 			goto out;
 		}
 	}
-	else if (RRR_MSG_IS_SETTING(message) || RRR_MSG_IS_RRR_MESSAGE(message) || RRR_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+	else if (RRR_MSG_TYPE_OK(message)) {
 		// OK
 	}
 	else {
@@ -147,8 +151,9 @@ int rrr_msg_check_data_checksum_and_length (
 	if (data_size < sizeof(*message)) {
 		RRR_BUG("rrr_msg_checksum_check called with too short message\n");
 	}
-	if ((int64_t) message->msg_size != data_size) {
-		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check\n");
+	if (message->msg_size != data_size) {
+		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check (%" PRIu32 "<>%" PRIrrrl ")\n",
+				message->msg_size, data_size);
 		return 1;
 	}
 	// HEX dumper
@@ -162,5 +167,104 @@ int rrr_msg_check_data_checksum_and_length (
 	rrr_u32 checksum = message->data_crc32;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	return rrr_crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
+	if (rrr_crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0) {
+		return 1;
+	}
+
+	message->data_crc32 = 0;
+	message->header_crc32 = 0;
+
+	return 0;
+}
+
+int rrr_msg_to_host_and_verify_with_callback (
+		struct rrr_msg **msg,
+		rrr_length expected_size,
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
+		void *callback_arg1,
+		void *callback_arg2
+) {
+	int ret = 0;
+
+	// Remember that msg variable is double pointer
+
+	// Header CRC32 is checked when reading the data from remote and getting size
+	if (rrr_msg_head_to_host_and_verify(*msg, expected_size) != 0) {
+		RRR_MSG_0("Message was invalid in rrr_msg_to_host_and_verify_with_callback\n");
+		ret = RRR_MSG_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_msg_check_data_checksum_and_length(*msg, expected_size) != 0) {
+		RRR_MSG_0 ("Message checksum was invalid in rrr_msg_to_host_and_verify_with_callback\n");
+		ret = RRR_MSG_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	if (RRR_MSG_IS_RRR_MESSAGE(*msg)) {
+		if (callback_msg == NULL) {
+			RRR_MSG_0("Received an rrr_msg_msg in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) *msg, expected_size) != 0) {
+			RRR_MSG_0("Message verification failed in rrr_msg_to_host_and_verify_with_callback (size: %u<>%u)\n",
+					MSG_TOTAL_SIZE(*msg), (*msg)->msg_size);
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_msg((struct rrr_msg_msg **) msg, callback_arg1, callback_arg2);
+	}
+	else if (RRR_MSG_IS_CTRL(*msg)) {
+		if (callback_ctrl_msg == NULL) {
+			RRR_MSG_0("Received an rrr_msg of control type in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_ctrl_msg(*msg, callback_arg1, callback_arg2);
+	}
+	else if (RRR_MSG_IS_RRR_MESSAGE_ADDR(*msg)) {
+		if (callback_addr_msg == NULL) {
+			RRR_MSG_0("Received an rrr_msg_addr in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		struct rrr_msg_addr *message = (struct rrr_msg_addr *) (*msg);
+		if (rrr_msg_addr_to_host(message) != 0) {
+			RRR_MSG_0("Invalid data in received address message in rrr_msg_to_host_and_verify_with_callback\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_addr_msg(message, callback_arg1, callback_arg2);
+	}
+	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(*msg)) {
+		if (callback_log_msg == NULL) {
+			RRR_MSG_0("Received an rrr_msg_msg_log in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		struct rrr_msg_log *message = (struct rrr_msg_log *) (*msg);
+		if (rrr_msg_msg_log_to_host(message) != 0) {
+			RRR_MSG_0("Invalid data in received log message in rrr_msg_to_host_and_verify_with_callback\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_log_msg(message, callback_arg1, callback_arg2);
+	}
+	else {
+		RRR_MSG_0("Received a socket message of unknown type %u in rrr_msg_to_host_and_verify_with_callback\n",
+				(*msg)->msg_type);
+		ret = RRR_MSG_READ_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
 }

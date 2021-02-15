@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "buffer.h"
+#include "poll_helper.h"
 #include "util/linked_list.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
@@ -34,12 +35,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_DROP		(1<<1)
 #define RRR_MESSAGE_BROKER_AGAIN	(1<<2)
 
+#define RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP    (1<<0)
+
+struct rrr_msg_holder;
+struct rrr_msg_holder_collection;
+struct rrr_msg_holder_slot;
+
 // All costumers must be registered prior to starting any threads
 
 struct rrr_message_broker_split_buffer_node {
 	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
 	struct rrr_fifo_buffer queue;
-	pthread_t identifier;
+	rrr_message_broker_costumer_handle *owner;
 };
 
 struct rrr_message_broker_split_buffer_collection {
@@ -51,8 +58,10 @@ struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
 	struct rrr_fifo_buffer main_queue;
 	struct rrr_message_broker_split_buffer_collection split_buffers;
+	struct rrr_msg_holder_slot *slot;
 	char *name;
 	int usercount;
+	int flags;
 	uint64_t unique_counter;
 };
 
@@ -62,15 +71,15 @@ struct rrr_message_broker {
 	pthread_t creator;
 };
 
-struct rrr_msg_holder;
-struct rrr_msg_holder_collection;
-
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
 typedef void rrr_message_broker_costumer_handle;
 
-void rrr_message_broker_unregister_all_hard (
+void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
+);
+void rrr_message_broker_costumer_unregister (
+		rrr_message_broker_costumer_handle *handle
 );
 void rrr_message_broker_cleanup (
 		struct rrr_message_broker *broker
@@ -82,14 +91,11 @@ rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
 		struct rrr_message_broker *broker,
 		const char *name
 );
-void rrr_message_broker_costumer_unregister (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
-);
 int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
 		struct rrr_message_broker *broker,
-		const char *name_unique
+		const char *name_unique,
+		int no_buffer
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker *broker,
@@ -108,7 +114,9 @@ int rrr_message_broker_write_entry (
 		socklen_t socklen,
 		int protocol,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker *broker,
@@ -118,26 +126,28 @@ int rrr_message_broker_clone_and_write_entry (
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder *entry
-);
-int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder *entry
+		struct rrr_msg_holder *entry,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_msg_holder_collection *collection
+		struct rrr_msg_holder_collection *collection,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_message_broker_poll_discard (
 		int *discarded_count,
 		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self
 );
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
@@ -145,6 +155,8 @@ int rrr_message_broker_poll_delete (
 int rrr_message_broker_poll (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *self,
+		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds

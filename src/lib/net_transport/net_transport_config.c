@@ -22,9 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <strings.h>
 
+#include "../log.h"
+
 #include "net_transport_config.h"
 
-#include "../log.h"
 #include "../instance_config.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"

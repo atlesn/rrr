@@ -88,13 +88,14 @@ int rrr_http_application_transport_ctx_request_send (
 
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
+		uint64_t *active_transaction_count,
 		uint64_t *complete_transaction_count,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
-		rrr_http_unique_id unique_id,
-		int is_client,
+		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
+		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
 		void *upgrade_verify_callback_arg,
 		int (*websocket_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -105,19 +106,19 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
-		int (*raw_callback)(RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS),
-		void *raw_callback_arg
+		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
+		void *async_response_get_callback_arg
 ) {
-	*complete_transaction_count = app->complete_transaction_count;
-
 	return app->constants->tick (
 			received_bytes,
+			active_transaction_count,
+			complete_transaction_count,
 			upgraded_app,
 			app,
 			handle,
 			read_max_size,
-			unique_id,
-			is_client,
+			unique_id_generator_callback,
+			unique_id_generator_callback_arg,
 			upgrade_verify_callback,
 			upgrade_verify_callback_arg,
 			websocket_callback,
@@ -128,8 +129,8 @@ int rrr_http_application_transport_ctx_tick (
 			frame_callback_arg,
 			callback,
 			callback_arg,
-			raw_callback,
-			raw_callback_arg
+			async_response_get_callback,
+			async_response_get_callback_arg
 	);
 }
 
