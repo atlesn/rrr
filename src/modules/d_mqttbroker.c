@@ -378,9 +378,9 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	unsigned long int consecutive_nothing_happened = 0;
 
 	uint64_t prev_stats_time = rrr_time_get_64();
-	while (rrr_thread_check_encourage_stop(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_update_watchdog_time(thread);
+		rrr_thread_watchdog_time_update(thread);
 
 		int something_happened = 0;
 

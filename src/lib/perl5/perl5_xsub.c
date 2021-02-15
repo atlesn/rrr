@@ -426,6 +426,7 @@ AV *rrr_perl5_message_ip_get (HV *hv) {
 	av_push(result, newSVuv(result_port));
 
 	out:
+	(void)(ret); // Ignore dummy ret value
 	return result;
 }
 
@@ -467,6 +468,7 @@ SV *rrr_perl5_message_ip_get_protocol (HV *hv) {
 	}
 
 	out:
+	(void)(ret); // Ignore dummy ret value
 	return result;
 }
 

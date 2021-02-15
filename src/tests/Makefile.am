@@ -10,11 +10,20 @@ SUBDIRS = modules
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
 
-test_LDFLAGS = -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
-test_LDADD = -ldl -lpthread -lm -L../lib -L../lib/.libs -lrrr
-test_SOURCES = test.c ../main.c \
-	test_usleep.c test_fixp.c test_inet.c test_condition.c
-test_CFLAGS = ${AM_CFLAGS} -O0 \
+test_LDFLAGS = ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
+test_LDADD = -ldl -lpthread -lm -L../lib -L../lib/.libs -lrrr 
+test_SOURCES = test.c \
+	../main.c \
+	test_usleep.c \
+	test_fixp.c \
+	test_inet.c \
+	test_condition.c \
+	test_json.c \
+	test_conversion.c \
+	test_msgdb.c \
+	test_nullsafe.c \
+	test_increment.c
+test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \

@@ -48,7 +48,6 @@ struct rrr_socket_options {
 	int protocol;
 };
 
-struct rrr_read_session;
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd
@@ -152,6 +151,20 @@ int rrr_socket_sendto_nonblock (
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
+int rrr_socket_sendto_nonblock_check_retry (
+		ssize_t *written_bytes,
+		int fd,
+		const void *data,
+		ssize_t size,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
+int rrr_socket_send_nonblock_check_retry (
+		ssize_t *written_bytes,
+		int fd,
+		const void *data,
+		ssize_t size
+);
 int rrr_socket_sendto_blocking (
 		int fd,
 		const void *data,
@@ -167,22 +180,11 @@ int rrr_socket_sendto_nonblock_fail_on_partial_write (
 		const struct sockaddr *sockaddr,
 		socklen_t addrlen
 );
-static inline int rrr_socket_send_nonblock (
-		ssize_t *written_bytes,
-		int fd,
-		const void *data,
-		ssize_t size
-) {
-	int err = 0;
-	return rrr_socket_sendto_nonblock(&err, written_bytes, fd, data, size, NULL, 0);
-}
-static inline int rrr_socket_send_blocking (
+int rrr_socket_send_blocking (
 		int fd,
 		void *data,
 		ssize_t size
-) {
-	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
-}
+);
 int rrr_socket_check_alive (int fd);
 
 

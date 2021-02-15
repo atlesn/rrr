@@ -34,8 +34,46 @@ sub source {
 	return 1;
 }
 
+my @persistent_single_value_tags;
+
 sub process {
 	my $message = shift;
+
+	if ($message->count_positions() == 1) {
+		print "Received single position array message with tag " . ($message->get_tag_names()) . "\n";
+		push @persistent_single_value_tags, ($message->get_tag_names());
+		return 1;
+	}
+
+	print "Single position array message count: " . scalar @persistent_single_value_tags . " full message position count: " . $message->count_positions() . "\n";
+	if (scalar @persistent_single_value_tags != $message->count_positions()) {
+		print "Single message count from exploder not matching full message position count\n";
+		return 0;
+	}
+
+	my $i = 0;
+	foreach my $tag ($message->get_tag_names()) {
+		print "$tag<>$persistent_single_value_tags[$i]\n";
+		if ($tag ne $persistent_single_value_tags[$i]) {
+			print "Tag mismatch between single message and full message\n";
+			return 0;
+		}
+		$i++;
+	}
+
+	{
+		my @value_count_list;
+		my @value_defined_list;
+
+		for ($i = 0; $i < $message->count_positions(); $i++) {
+			my @values = $message->get_position($i);
+			push @value_count_list, scalar @values;
+			push @value_defined_list, (defined $values[0] ? "D" : "U");
+		}
+
+		print "Value counts: @value_count_list\n";
+		print "Value defined: @value_defined_list\n";
+	}
 
 	print "perl5 timestamp: " . $message->{'timestamp'} . "\n";
 	print "perl5 old topic: " . $message->{'topic'} . "\n";
@@ -92,7 +130,7 @@ sub process {
 	my @tag_counts = $message->get_tag_counts ();
 
 	print "Tag names: " . join(",", @tag_names) . "\n";
-	print "Tag counts: " . join(",", @tag_counts) . "\n";
+	print "Tag counts: " . join(" ", @tag_counts) . "\n";
 	print "Position count: " . $message->count_positions() . "\n";
 
 	if (@tag_names != @tag_counts || @tag_counts != $message->count_positions()) {

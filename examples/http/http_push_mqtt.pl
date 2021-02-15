@@ -25,31 +25,20 @@ sub send_response {
 
 	$message->clear_array();
 
+	$body =~ s/\\/\\\\/;
 	$body =~ s/"/\\"/;
 
 	my $json = "{
 		\"content\": \"$body\",
-		\"id\": " . $req->{"id"} . "
+		\"handle\": $req->{handle},
+		\"id\": $req->{id}
 }";
 
-	my $response = "";
-	if ($code == 200) {
-		$response = "HTTP/1.1 200 OK\r\n";
-	}
-	else {
-		$response = "HTTP/1.1 500 Bad Request\r\n";
-	}
-
-	$response .= "Access-Control-Allow-Origin: *\r\n";
-
-	$response .= "Content-Type: application/json; charset=UTF-8\r\n";
-	$response .= "Content-Length: " . (length $json) . "\r\n\r\n$json";
-
-	$req->{'topic'} =~ s/request/raw/;
+#	$message->push_tag_h("http_response_code", $code);
+	$message->push_tag_str("http_content_type", "application/json");
+	$message->push_tag_str("http_body", $json);
 
 	$message->{'topic'} = $req->{'topic'};
-	$message->{'data'} = $response;
-	$message->{'data_len'} = length $response;
 
 	$message->send();
 }

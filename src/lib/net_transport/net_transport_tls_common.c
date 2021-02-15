@@ -41,7 +41,9 @@ int rrr_net_transport_tls_common_new (
 		const char *certificate_file,
 		const char *private_key_file,
 		const char *ca_file,
-		const char *ca_path
+		const char *ca_path,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
 ) {
 	struct rrr_net_transport_tls *result = NULL;
 
@@ -51,7 +53,13 @@ int rrr_net_transport_tls_common_new (
 
 	int flags_checked = 0;
 	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
-	CHECK_FLAG(RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1);
+	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1);
+	CHECK_FLAG(RRR_NET_TRANSPORT_F_TLS_NO_ALPN);
+/*
+ *
+					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? NULL : alpn_protos),
+					(flags & RRR_NET_TRANSPORT_F_TLS_NO_ALPN ? 0 : alpn_protos_length)
+ */
 
 	if (flags != 0) {
 		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
@@ -97,12 +105,23 @@ int rrr_net_transport_tls_common_new (
 		}
 	}
 
+	if (alpn_protos != NULL && *alpn_protos != '\0') {
+		if ((result->alpn.protos = malloc(alpn_protos_length)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
+			ret = 1;
+			goto out_free;
+		}
+		memcpy(result->alpn.protos, alpn_protos, alpn_protos_length);
+		result->alpn.length = alpn_protos_length;
+	}
+
 	result->flags = flags_checked;
 
 	*target = result;
 
 	goto out;
 	out_free:
+		RRR_FREE_IF_NOT_NULL(result->alpn.protos);
 		RRR_FREE_IF_NOT_NULL(result->ca_path);
 		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);
@@ -115,6 +134,7 @@ int rrr_net_transport_tls_common_new (
 int rrr_net_transport_tls_common_destroy (
 		struct rrr_net_transport_tls *tls
 ) {
+	RRR_FREE_IF_NOT_NULL(tls->alpn.protos);
 	RRR_FREE_IF_NOT_NULL(tls->ca_path);
 	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
@@ -168,4 +188,42 @@ int rrr_net_transport_tls_common_read_complete_callback (
 ) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
+}
+
+// Caller must allocate size of ALPN vector + 1 byte. If to little is
+// allocated, empty string is returned. No that even though a vector with
+// one element is the exact size of the resulting output string, we must
+// still allocate +1 to fit the comma temporarily.
+void rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated (
+		unsigned char *out_buf,
+		unsigned int out_size,
+		const unsigned char *in,
+		unsigned int in_size
+) {
+	unsigned int wpos = 0;
+	for (unsigned int i = 0; i < in_size;/* increment at loop end */) {
+		const unsigned char *text = in + i + 1;
+		unsigned char text_length = in[i];
+
+		if (i + text_length >= in_size) {
+			RRR_MSG_0("Warning: Invalid size in vector from input in rrr_net_transport_tls_common_alpn_protos_to_str\n");
+			wpos = 0;
+			break;
+		}
+
+		// Fit comma and \0
+		if (wpos + text_length + 2 > out_size) {
+			break;
+		}
+
+		memcpy(out_buf + wpos, text, text_length);
+		wpos += text_length;
+		out_buf[wpos] = ',';
+		wpos++;
+
+		i += text_length + 1;
+	}
+
+	// PS ! Don't subtract 1 from 0 (please)
+	out_buf[wpos > 0 ? wpos - 1 : 0] = '\0'; // Overwrites last ,
 }
