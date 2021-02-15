@@ -162,7 +162,7 @@ some extra packages must be installed prior to compilation.
 
 On SUSE, the following packages should be installed to build RRR:
 
-	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool
+	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool libjson-c-devel libnghttp2-devel
 
 On Debian, Ubuntu and derived systems, the following should be installed:
 	
