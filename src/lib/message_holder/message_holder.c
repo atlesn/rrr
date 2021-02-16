@@ -251,6 +251,7 @@ int rrr_msg_holder_clone_no_data (
 
 	if (ret == 0) {
 		rrr_msg_holder_lock(*result);
+		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
 		rrr_msg_holder_unlock(*result);
 	}

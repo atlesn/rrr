@@ -46,9 +46,14 @@ struct rrr_msg_holder {
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	int protocol;
-	uint64_t send_time;
 	const void *source;
 	void *message;
+
+	// Message broker updates this on writes to buffer
+	uint64_t buffer_time;
+
+	// Avaialbe for modules
+	uint64_t send_time;
 
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;

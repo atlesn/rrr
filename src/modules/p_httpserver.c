@@ -1389,11 +1389,11 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
 
-	if (entry->send_time == 0) {
-		entry->send_time = rrr_time_get_64();
+	if (entry->buffer_time == 0) {
+		RRR_BUG("BUG: Buffer time was 0 for entry in httpserver_housekeep_callback\n");
 	}
 
-	uint64_t timeout = entry->send_time + callback_data->httpserver_data->response_timeout_ms * 1000;
+	uint64_t timeout = entry->buffer_time + callback_data->httpserver_data->response_timeout_ms * 1000;
 	if (rrr_time_get_64() > timeout) {
 		struct rrr_msg_msg *msg = entry->message;
 		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
