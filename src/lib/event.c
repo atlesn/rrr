@@ -55,8 +55,8 @@ int rrr_event_dispatch (
 	uint64_t time_periodic_call = 0;
 
 	while (ret == 0) {
-
 		struct rrr_event event;
+
 		{
 			pthread_mutex_lock(mutex);
 
@@ -82,9 +82,7 @@ int rrr_event_dispatch (
 			goto out;
 		}
 
-		if (event.amount == 0) {
-			continue;
-		}
+		ret = 0;
 
 		if (queue->functions[event.function] == NULL) {
 			RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", event.function);
