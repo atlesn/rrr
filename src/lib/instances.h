@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_friends.h"
 #include "threads.h"
 #include "poll_helper.h"
+#include "event.h"
 #include "util/linked_list.h"
 
 #define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER   (1<<0)
@@ -70,12 +71,17 @@ struct rrr_instance_collection {
 	struct rrr_instance *first_entry;
 };
 
+struct rrr_instance_event_functions {
+	int (*broker_data_available)(RRR_EVENT_FUNCTION_ARGS);
+};
+
 struct rrr_instance_module_data {
 	const char *instance_name;
 	const char *module_name;
 	unsigned int type;
+	int want_event_dispatch;
 	struct rrr_module_operations operations;
-	void *special_module_operations;
+	struct rrr_instance_event_functions event_functions;
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(void);

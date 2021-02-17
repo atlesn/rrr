@@ -110,7 +110,7 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
+librrr_la_SOURCES = buffer.c threads.c event.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
                     read.c rrr_mmap.c mmap_channel.c \

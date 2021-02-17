@@ -38,13 +38,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/event.h"
 
 struct buffer_data {
 	struct rrr_instance_runtime_data *thread_data;
 	rrr_setting_uint message_ttl_seconds;
 	uint64_t message_ttl_us;
-	int do_duplicate;
-	int configuration_failed_in_preload;
+	uint64_t poll_count_tmp;
 };
 
 static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -82,9 +82,34 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
+	data->poll_count_tmp++;
+
 	drop:
 	rrr_msg_holder_unlock(entry);
 	return ret;
+}
+
+static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
+
+	data->poll_count_tmp = 0;
+
+	if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, buffer_poll_callback, 0) != 0) {
+		RRR_MSG_0("Error while polling in buffer instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		return 1;
+	}
+
+	if (data->poll_count_tmp >= *amount) {
+		*amount = 0;
+	}
+	else {
+		*amount -= data->poll_count_tmp;
+	}
+
+	return 0;
 }
 
 static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config_data *config) {
@@ -100,7 +125,6 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 
 	data->message_ttl_us = ((uint64_t) data->message_ttl_seconds) * ((uint64_t) 1000000);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("buffer_do_duplicate", do_duplicate, 0);
 	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("buffer_do_duplicate",
 		RRR_MSG_0("Warning: Parameter 'buffer_do_duplicate' which is set for instance %s is deprecated. Use 'duplicate' instead, which also works on any mdoule.\n",
 			config->name);
@@ -113,14 +137,13 @@ static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_co
 static void *thread_entry_buffer (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
-
 	RRR_DBG_1 ("buffer thread thread_data is %p\n", thread_data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (data->configuration_failed_in_preload) {
-		RRR_MSG_0("Configuration of buffer instance %s failed during preload stage\n",
-				INSTANCE_D_NAME(thread_data));
+	buffer_data_init(data, thread_data);
+
+	if (buffer_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
 		goto out_message;
 	}
 
@@ -129,67 +152,21 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("buffer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	// NOTE : The duplicating is handled by the message broker. See our preload() function.
+	rrr_message_broker_event_dispatch (
+			INSTANCE_D_BROKER_ARGS(thread_data),
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
 
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
-
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, buffer_poll_callback, 50) != 0) {
-			RRR_MSG_0("Error while polling in buffer instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
+		rrr_posix_usleep(100000);
 	}
 
 	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);
 
 	pthread_exit(0);
-}
-
-static int buffer_preload (struct rrr_thread *thread) {
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
-
-	// TODO : Remove buffer_do_duplicate option in later version
-	//    - Move parse_config to normal location
-	//    - Remove preload function
-	//    - Must use duplicate=yes instead
-
-	int ret = 0;
-
-	buffer_data_init(data, thread_data);
-
-	// Don't fail hard here in preload, causes program crash
-	if (buffer_parse_config(data, INSTANCE_D_CONFIG(thread_data)) != 0) {
-		data->configuration_failed_in_preload = 1;
-	}
-
-	int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
-
-	if (data->do_duplicate) {
-		RRR_DBG_1("Buffer instance %s detected %i readers, setting up duplicated output buffers\n",
-				INSTANCE_D_NAME(thread_data), slots);
-
-		if (slots == 0) {
-			RRR_MSG_0("Warning: 0 readers found for buffer instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out;
-		}
-
-		if ((ret = rrr_message_broker_setup_split_output_buffer (
-				INSTANCE_D_BROKER(thread_data),
-				INSTANCE_D_HANDLE(thread_data),
-				slots
-		)) != 0) {
-			RRR_MSG_0("Could not setup split buffer in buffer instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
 }
 
 static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -209,11 +186,15 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 }
 
 static struct rrr_module_operations module_operations = {
-		buffer_preload,
+		NULL,
 		thread_entry_buffer,
 		NULL,
 		buffer_inject,
 		NULL
+};
+
+struct rrr_instance_event_functions event_functions = {
+	buffer_event_broker_data_available
 };
 
 static const char *module_name = "buffer";
@@ -226,7 +207,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

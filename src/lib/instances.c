@@ -527,6 +527,72 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 		return data;
 }
 
+struct rrr_instance_before_start_tasks_register_write_listener_callback_data {
+	struct rrr_message_broker *broker;
+	const struct rrr_instance *instance;
+};
+
+static int __rrr_instance_before_start_tasks_register_write_listener (
+		const struct rrr_instance *friend,
+		void *arg
+) {
+	struct rrr_instance_before_start_tasks_register_write_listener_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	rrr_message_broker_costumer_handle *self = rrr_message_broker_costumer_find_by_name(callback_data->broker, callback_data->instance->config->name);
+	rrr_message_broker_costumer_handle *sender = rrr_message_broker_costumer_find_by_name(callback_data->broker, friend->config->name);
+
+	RRR_DBG_8("Instance %s register write listener on instance %s\n",
+		callback_data->instance->config->name, friend->config->name);
+
+	if (self == NULL || sender == NULL) {
+		RRR_BUG("BUG: self or sender was NULL in __rrr_instance_before_start_tasks_register_write_listener\n");
+	}
+
+	if ((ret = rrr_message_broker_write_listener_add (sender, self)) != 0) {
+		RRR_MSG_0("Failed while registering write listener for instance %s with senders\n",
+				callback_data->instance->config->name);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+// Initialize event handling, this must be done prior to starting threads
+// because the write notify listener lists in message broker are not
+// protected by mutexes and must may not be changed by the threads
+// themselves.
+static int __rrr_instance_before_start_tasks (
+		struct rrr_message_broker *broker,
+		const struct rrr_instance *instance
+) {
+	int ret = 0;
+
+	if (instance->module_data->event_functions.broker_data_available != NULL) {
+		rrr_message_broker_costumer_handle *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+
+		rrr_message_broker_write_listener_init(self, instance->module_data->event_functions.broker_data_available);
+
+		struct rrr_instance_before_start_tasks_register_write_listener_callback_data callback_data = {
+			broker,
+			instance
+		};
+
+		if ((ret = rrr_instance_friend_collection_iterate_const (
+				&instance->senders,
+				__rrr_instance_before_start_tasks_register_write_listener,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static void __rrr_instance_thread_intermediate_cleanup (
 		void *arg
 ) {
@@ -781,7 +847,6 @@ int rrr_instances_create_and_start_threads (
 	}
 
 	// Initialize thread data and runtime data
-	int threads_total = 0;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
 
@@ -833,8 +898,14 @@ int rrr_instances_create_and_start_threads (
 
 		// Set shortcuts
 		node->thread = thread;
+	RRR_LL_ITERATE_END();
 
-		threads_total++;
+	// Task which needs to be performed when all instances have been initialized, but
+	// which cannot be performed after threads have started.
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		if ((ret = __rrr_instance_before_start_tasks(message_broker, node)) != 0) {
+			goto out_destroy_collection;
+		}
 	RRR_LL_ITERATE_END();
 
 	struct rrr_instance_collection_start_threads_check_wait_for_callback_data callback_data = { instances };

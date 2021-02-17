@@ -205,7 +205,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->type = RRR_MODULE_TYPE_SOURCE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->special_module_operations = NULL;
 }
 
 void unload(void) {

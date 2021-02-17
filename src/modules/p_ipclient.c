@@ -611,7 +611,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
 }
 
 void unload(void) {

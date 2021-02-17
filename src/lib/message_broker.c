@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "modules.h"
 #include "message_broker.h"
+#include "event.h"
+#include "event_functions.h"
 #include "ip/ip.h"
 #include "message_holder/message_holder.h"
 #include "message_holder/message_holder_slot.h"
@@ -59,6 +61,11 @@ static void __rrr_message_broker_costumer_incref (
 	costumer->usercount++;
 }
 
+static void __rrr_message_broker_costumer_decref (
+		int *did_destroy,
+		struct rrr_message_broker_costumer *costumer
+);
+
 static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
@@ -79,6 +86,14 @@ static void __rrr_message_broker_costumer_destroy (
 	RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
 			costumer->name, stats.total_entries_deleted, stats.total_entries_written);
 
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		if (costumer->write_notify_listeners[i] == NULL) {
+			break;
+		}
+		int did_destroy_dummy;
+		__rrr_message_broker_costumer_decref(&did_destroy_dummy, costumer->write_notify_listeners[i]);
+	}
+
 	RRR_LL_DESTROY (
 			&costumer->split_buffers,
 			struct rrr_message_broker_split_buffer_node,
@@ -86,6 +101,8 @@ static void __rrr_message_broker_costumer_destroy (
 	);
 	rrr_fifo_buffer_destroy(&costumer->main_queue);
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
+	pthread_mutex_destroy(&costumer->event_lock);
+	pthread_cond_destroy(&costumer->event_cond);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
 	free(costumer);
@@ -173,14 +190,26 @@ static int __rrr_message_broker_costumer_new (
 	}
 
 	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not initialize mutex A in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_fifo;
 	}
 
+	if ((rrr_posix_mutex_init(&costumer->event_lock, 0)) != 0) {
+		RRR_MSG_0("Could not initialize mutex B in __rrr_message_broker_costumer_new\n");
+		ret = 1;
+		goto out_destroy_split_buffer_lock;
+	}
+
+	if ((rrr_posix_cond_init(&costumer->event_cond, 0)) != 0) {
+		RRR_MSG_0("Could not initialize cond in __rrr_message_broker_costumer_new\n");
+		ret = 1;
+		goto out_destroy_event_lock;
+	}
+
 	if (no_buffer) {
 		if ((ret = rrr_msg_holder_slot_new(&costumer->slot)) != 0) {
-			goto out_destroy_split_buffer_lock;
+			goto out_destroy_event_cond;
 		}
 	}
 
@@ -189,6 +218,10 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
+	out_destroy_event_cond:
+		pthread_cond_destroy(&costumer->event_cond);
+	out_destroy_event_lock:
+		pthread_mutex_destroy(&costumer->event_lock);
 	out_destroy_split_buffer_lock:
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
@@ -456,6 +489,26 @@ int rrr_message_broker_setup_split_output_buffer (
 	return ret;
 }
 
+static void __rrr_message_broker_write_notifications_send (
+	struct rrr_message_broker_costumer *costumer,
+	uint16_t amount
+) {
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
+		if (listener == NULL) {
+			return;
+		}
+		rrr_event_pass (
+				&listener->events,
+				&listener->event_lock,
+				&listener->event_cond,
+				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+				0,
+				amount
+		);
+	}
+}
+
 struct rrr_message_broker_write_entry_intermediate_callback_data {
 	struct rrr_message_broker_costumer *costumer;
 	const struct sockaddr *addr;
@@ -477,7 +530,8 @@ static void __rrr_message_broker_free_message_holder_double_pointer (void *arg) 
 	rrr_msg_holder_decref(*(ptr->entry));
 }
 
-static int __rrr_message_broker_write_entry_callback_handling (
+static int __rrr_message_broker_write_entry_callback_intermediate (
+		struct rrr_message_broker_costumer *costumer,
 		int *write_drop,
 		int *write_again,
 		struct rrr_msg_holder *entry,
@@ -513,6 +567,10 @@ static int __rrr_message_broker_write_entry_callback_handling (
 		}
 	}
 
+	if (!(*write_drop)) {
+		__rrr_message_broker_write_notifications_send (costumer, 1);
+	}
+
 	return ret;
 }
 
@@ -526,7 +584,8 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	int ret = 0;
 
-	if ((ret = __rrr_message_broker_write_entry_callback_handling (
+	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
+			callback_data->costumer,
 			do_drop,
 			do_again,
 			entry,
@@ -576,7 +635,8 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	int write_drop = 0;
 	int write_again = 0;
 
-	if ((ret = __rrr_message_broker_write_entry_callback_handling (
+	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
+			callback_data->costumer,
 			&write_drop,
 			&write_again,
 			entry,
@@ -807,6 +867,8 @@ int rrr_message_broker_clone_and_write_entry (
 		}
 	}
 
+	__rrr_message_broker_write_notifications_send(costumer, 1);
+
 	out:
 	// Cast away const OK
 	rrr_msg_holder_unlock((struct rrr_msg_holder *) entry);
@@ -861,6 +923,8 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		}
 	}
 
+	__rrr_message_broker_write_notifications_send(costumer, 1);
+
 	out:
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
@@ -895,6 +959,8 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		goto out_final;
 	}
 
+	int written_entries = RRR_LL_COUNT(collection);
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
 		rrr_msg_holder_lock(node);
 		node->buffer_time = rrr_time_get_64();
@@ -908,6 +974,16 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	}
 	else {
 		ret = rrr_fifo_buffer_write(&costumer->main_queue, __rrr_message_broker_write_entries_from_collection_callback, collection);
+	}
+
+	while (written_entries > 0) {
+		if (written_entries > 0xffff) {
+			__rrr_message_broker_write_notifications_send(costumer, 0xffff);
+			written_entries -= 0xffff;
+		}
+		else {
+			__rrr_message_broker_write_notifications_send(costumer, written_entries);
+		}
 	}
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
@@ -1436,6 +1512,22 @@ int rrr_message_broker_with_ctx_do (
 	return ret;
 }
 
+int rrr_message_broker_event_dispatch (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
+		void *arg
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_event_dispatch");
+
+	ret = rrr_event_dispatch(&costumer->events, &costumer->event_lock, &costumer->event_cond, function_periodic, arg);
+
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
 int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
@@ -1459,3 +1551,36 @@ int rrr_message_broker_with_ctx_and_buffer_lock_do (
 	return ret;
 }
 
+void rrr_message_broker_write_listener_init (
+		rrr_message_broker_costumer_handle *handle,
+		int (*function)(RRR_EVENT_FUNCTION_ARGS)
+) {
+	struct rrr_message_broker_costumer *costumer = handle;
+	rrr_event_function_set(&costumer->events, RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE, function);
+}
+
+int rrr_message_broker_write_listener_add (
+		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *listener_handle
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	struct rrr_message_broker_costumer *costumer = handle;
+	struct rrr_message_broker_costumer *listener_costumer = listener_handle;
+
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		if (costumer->write_notify_listeners[i] == NULL) {
+			__rrr_message_broker_costumer_incref(listener_costumer);
+			costumer->write_notify_listeners[i] = listener_costumer;
+			listener_costumer = NULL;
+			break;
+		}
+	}
+
+	if (listener_costumer != NULL) {
+		RRR_MSG_0("Write notification list was full in rrr_message_broker_write_listener_add for costumer %s\n", costumer->name);
+		ret = 1;
+	}
+
+	return ret;
+}

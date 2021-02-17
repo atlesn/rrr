@@ -962,8 +962,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
-	data->special_module_operations = NULL;
 }
 
 void unload(void) {

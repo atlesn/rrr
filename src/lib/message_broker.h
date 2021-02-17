@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "poll_helper.h"
+#include "event.h"
 #include "util/linked_list.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
@@ -37,11 +38,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP    (1<<0)
 
+#define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX 64
+
 struct rrr_msg_holder;
 struct rrr_msg_holder_collection;
 struct rrr_msg_holder_slot;
 
-// All costumers must be registered prior to starting any threads
+// Do not cast this to struct rrr_message_broker_costumer except from
+// inside this framework, memory might become freed up at any time
+typedef void rrr_message_broker_costumer_handle;
 
 struct rrr_message_broker_split_buffer_node {
 	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
@@ -63,6 +68,10 @@ struct rrr_message_broker_costumer {
 	int usercount;
 	int flags;
 	uint64_t unique_counter;
+	pthread_mutex_t event_lock;
+	pthread_cond_t event_cond;
+	struct rrr_event_queue events;
+	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 };
 
 struct rrr_message_broker {
@@ -70,10 +79,6 @@ struct rrr_message_broker {
 	pthread_mutex_t lock;
 	pthread_t creator;
 };
-
-// Do not cast this to struct rrr_message_broker_costumer except from
-// inside this framework, memory might become freed up at any time
-typedef void rrr_message_broker_costumer_handle;
 
 void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
@@ -184,12 +189,26 @@ int rrr_message_broker_with_ctx_do (
 		void *callback_arg_1,
 		void *callback_arg_2
 );
+int rrr_message_broker_event_dispatch (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
+		void *arg
+);
 int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),
 		void *callback_arg_1,
 		void *callback_arg_2
+);
+void rrr_message_broker_write_listener_init (
+		rrr_message_broker_costumer_handle *handle,
+		int (*function)(RRR_EVENT_FUNCTION_ARGS)
+);
+int rrr_message_broker_write_listener_add (
+		rrr_message_broker_costumer_handle *handle,
+		rrr_message_broker_costumer_handle *listener_handle
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */
