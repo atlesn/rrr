@@ -99,6 +99,7 @@ int rrr_msg_holder_util_clone_no_locking (
 
 	if (ret == 0) {
 		rrr_msg_holder_lock(*result);
+		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
 		rrr_msg_holder_unlock(*result);

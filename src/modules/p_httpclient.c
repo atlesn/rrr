@@ -78,6 +78,8 @@ struct httpclient_data {
 	int do_endpoint_from_topic;
 	int do_endpoint_from_topic_force;
 
+	int do_meta_tags_ignore;
+
 	char *method_tag;
 	int do_method_tag_force;
 
@@ -95,6 +97,8 @@ struct httpclient_data {
 
 	char *body_tag;
 	int do_body_tag_force;
+
+	struct rrr_map meta_tags_all;
 
 	rrr_setting_uint message_timeout_us;
 	rrr_setting_uint message_ttl_us;
@@ -138,6 +142,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->server_tag);
 	RRR_FREE_IF_NOT_NULL(data->port_tag);
 	RRR_FREE_IF_NOT_NULL(data->body_tag);
+	rrr_map_clear(&data->meta_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 }
 
@@ -1086,6 +1091,12 @@ static int httpclient_session_query_prepare_callback (
 		goto out;
 	}
 
+	if (data->do_meta_tags_ignore) {
+		RRR_MAP_ITERATE_BEGIN(&data->meta_tags_all);
+			rrr_array_clear_by_tag(&array_to_send_tmp, node_tag);
+		RRR_MAP_ITERATE_END();
+	}
+
 	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
 		// Add all array fields
 		RRR_LL_ITERATE_BEGIN(&array_to_send_tmp, const struct rrr_type_value);
@@ -1437,9 +1448,13 @@ static int httpclient_data_init (
 		return ret;
 }
 
-#define HTTPCLIENT_OVERRIDE_TAG_GET(parameter)                                                                                    \
-    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));         \
-    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0) \
+#define HTTPCLIENT_OVERRIDE_TAG_GET(parameter)                                                                                                            \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));                                 \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0);                        \
+    do {if (data->RRR_PASTE(parameter,_tag) != NULL && (ret = rrr_map_item_add_new(&data->meta_tags_all, data->RRR_PASTE(parameter,_tag), NULL)) != 0) {  \
+        RRR_MSG_0("Failed to add meta tag to map in httpclient_parse_config\n");                                                                          \
+        ret = 1; goto out;                                                                                                                                \
+    }} while(0)
 
 #define HTTPCLIENT_OVERRIDE_TAG_VALIDATE(parameter)                                                                               \
     do {if (data->RRR_PASTE_3(do_,parameter,_tag_force) != 0) {                                                                   \
@@ -1481,6 +1496,8 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic", do_endpoint_from_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_endpoint_from_topic_force", do_endpoint_from_topic_force, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_meta_tags_ignore", do_meta_tags_ignore, 1); // Default YES
 
 	HTTPCLIENT_OVERRIDE_TAG_GET(method);
 	HTTPCLIENT_OVERRIDE_TAG_GET(format);

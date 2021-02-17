@@ -489,6 +489,8 @@ static int __rrr_message_broker_write_entry_callback_handling (
 	*write_drop = 0;
 	*write_again = 0;
 
+	entry->buffer_time = rrr_time_get_64();
+
 	if ((ret = callback(entry, callback_arg)) != 0) {
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
 			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
@@ -745,6 +747,10 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 		goto out;
 	}
 
+	rrr_msg_holder_lock(target);
+	target->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(target);
+
 	*data = (char *) target;
 	*size = sizeof(*target);
 	*order = 0;
@@ -753,6 +759,16 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 
 	out:
 	return ret;
+}
+				
+static void __rrr_message_broker_clone_and_write_entry_slot_callback (
+		struct rrr_msg_holder *entry,
+		void *arg
+) {
+	(void)(arg);
+	rrr_msg_holder_lock(entry);
+	entry->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(entry);
 }
 
 // Note : Used by inject functions. entry is not properly const
@@ -772,6 +788,8 @@ int rrr_message_broker_clone_and_write_entry (
 				costumer->slot,
 				entry,
 				NULL,
+				NULL,
+				__rrr_message_broker_clone_and_write_entry_slot_callback,
 				NULL
 		)) != 0) {
 			goto out;
@@ -821,6 +839,10 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_unsafe");
+
+	rrr_msg_holder_lock(entry);
+	entry->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(entry);
 
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_write_incref(costumer->slot, entry, check_cancel_callback, check_cancel_callback_arg)) != 0) {
@@ -872,6 +894,12 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	if (RRR_LL_COUNT(collection) == 0) {
 		goto out_final;
 	}
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+		node->buffer_time = rrr_time_get_64();
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END();
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entries_from_collection");
 

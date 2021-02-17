@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_runtime_data *parent_thread_data;
+	struct rrr_thread *self_thread;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
@@ -104,7 +105,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			__rrr_cmodule_helper_read_final_callback,
 			callback_data,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			INSTANCE_D_THREAD(callback_data->parent_thread_data)
+			callback_data->self_thread
 	) != 0) {
 		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s reader thread ID %lli\n",
 				INSTANCE_D_NAME(callback_data->parent_thread_data), (long long int) pthread_self());
@@ -477,6 +478,7 @@ static int __rrr_cmodule_helper_read_thread_read_from_forks (
 		int *read_count,
 		int *config_complete,
 		struct rrr_instance_runtime_data *parent_thread_data,
+		struct rrr_thread *self_thread,
 		int read_max
 ) {
 	int ret = 0;
@@ -486,6 +488,7 @@ static int __rrr_cmodule_helper_read_thread_read_from_forks (
 	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 
 	callback_data.parent_thread_data = parent_thread_data;
+	callback_data.self_thread = self_thread;
 
 	ret = __rrr_cmodule_helper_read_from_forks (
 			config_complete,
@@ -548,6 +551,7 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 				&read_count_tmp,
 				&config_complete_tmp,
 				data->parent_thread_data,
+				thread,
 				50
 		) != 0) {
 			break;
@@ -572,7 +576,7 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 			consecutive_nothing_happened = 0;
 		}
 
-//		printf("Tick: %i, read_count: %i\n", tick, read_count);
+		// printf("Tick: %s %i, read_count: %i\n", INSTANCE_D_NAME(data->parent_thread_data), tick, read_count);
 
 		if (consecutive_nothing_happened > 250) {
 			usleep_count_long += 1;

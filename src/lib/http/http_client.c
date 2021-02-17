@@ -685,6 +685,7 @@ static int __rrr_http_client_request_send (
 
 	struct rrr_http_transaction *transaction = NULL;
 	char *server_to_free = NULL;
+	char *request_header_host_to_free = NULL;
 
 	struct rrr_http_client_request_callback_data callback_data = {0};
 
@@ -759,6 +760,14 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
+	if (rrr_asprintf(&request_header_host_to_free, "%s:%u", server_to_use, port_to_use) <= 0) {
+		RRR_MSG_0("Failed to allocate memory for host header in __rrr_http_client_request_send\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	callback_data.request_header_host = request_header_host_to_free;
+
 #ifdef RRR_WITH_NGHTTP2
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
@@ -769,8 +778,6 @@ static int __rrr_http_client_request_send (
 		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 #endif /* RRR_WITH_NGHTTP2 */
-
-	callback_data.request_header_host = server_to_use;
 
 	if (method_prepare_callback != NULL) {
 		enum rrr_http_method chosen_method = data->method;
@@ -835,6 +842,7 @@ static int __rrr_http_client_request_send (
 	out:
 	rrr_http_transaction_decref_if_not_null(transaction);
 	RRR_FREE_IF_NOT_NULL(server_to_free);
+	RRR_FREE_IF_NOT_NULL(request_header_host_to_free);
 	return ret;
 }
 

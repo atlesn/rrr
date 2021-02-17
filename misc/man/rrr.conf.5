@@ -1603,6 +1603,11 @@ resectively, and the same values may be used in the messages.
 
 Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
 
+.It http_meta_tags_ignore={yes|no}
+Ignore the above defined tags when array values to the HTTP query (controlled by)
+.B http_tags.
+If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If
@@ -1639,19 +1644,25 @@ section for more details.
 .It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
+.It http_fields=HTTP FIELD NAME[=VALUE][,...]
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
-A comma separated list of array tags to find in RRR messages from other modules.
-If left unspecified, all array values found will be sent to the HTTP server.
+.B http_tags
+is a comma separated list of array tags to find in RRR messages from other modules.
+If left unspecified, all array values found will be sent to the HTTP server in default configurations.
 If a tag is postfixed with a
 .B HTTP FIELD NAME,
 this name instead of the array tag name when sending data to the HTTP server.
-If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced.
- 
-.It http_fields=HTTP FIELD NAME[=VALUE][,...]
-A set of fixed fields to send to the HTTP server, optionally with values. Values from
+If tags are specified and an RRR message from a sender is missing one or more of the specified tags, an error is produced.
+
 .B http_fields
-are always sent regardless of
+is a set of fixed fields to send to the HTTP server, optionally with values. Values from
+.B http_fields
+are sent regardless of the configuration of
 .B http_tags.
+
+If a message is to have it's raw body sent in a PUT or POST request, controlled by
+.B http_body_tag,
+fields from these parameters will not added to the query.
 
 .It http_rrr_msg_to_array={yes|no}
 Convert fields in RRR messages from other modules to array values. The fields used are

@@ -2793,6 +2793,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		ret = RRR_FIFO_SEARCH_STOP;
 		goto out_unlock;
 	}
+	
+	// TODO : Function is messy/too big, prone to bugs. Clean up.
 
 	// Make sure packet to transmit is locked if it is not
 	// the same as the holder packet

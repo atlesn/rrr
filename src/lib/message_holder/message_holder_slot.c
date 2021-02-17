@@ -457,7 +457,9 @@ int rrr_msg_holder_slot_write_clone (
 		struct rrr_msg_holder_slot *slot,
 		const struct rrr_msg_holder *source,
 		int (*check_cancel_callback)(void *arg),
-		void *check_cancel_callback_arg
+		void *check_cancel_callback_arg,
+		void (*after_clone_callback)(struct rrr_msg_holder *entry, void *arg),
+		void *after_clone_callback_arg
 ) {
 	int ret = 0;
 
@@ -465,6 +467,10 @@ int rrr_msg_holder_slot_write_clone (
 
 	if ((ret = rrr_msg_holder_util_clone_no_locking(&entry_new, source)) != 0) {
 		goto out_no_unlock;
+	}
+
+	if (after_clone_callback) {
+		after_clone_callback(entry_new, after_clone_callback_arg);
 	}
 
 	LOCK_AND_WAIT();
