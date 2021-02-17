@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -44,7 +44,7 @@ struct buffer_data {
 	struct rrr_instance_runtime_data *thread_data;
 	rrr_setting_uint message_ttl_seconds;
 	uint64_t message_ttl_us;
-	uint64_t poll_count_tmp;
+	struct rrr_poll_helper_counters counters;
 };
 
 static void buffer_data_init(struct buffer_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -80,9 +80,7 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
 
-	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
-
-	data->poll_count_tmp++;
+	RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data);
 
 	drop:
 	rrr_msg_holder_unlock(entry);
@@ -94,7 +92,9 @@ static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
-	data->poll_count_tmp = 0;
+	(void)(flags);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, buffer_poll_callback, 0) != 0) {
 		RRR_MSG_0("Error while polling in buffer instance %s\n",
@@ -102,12 +102,7 @@ static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 		return 1;
 	}
 
-	if (data->poll_count_tmp >= *amount) {
-		*amount = 0;
-	}
-	else {
-		*amount -= data->poll_count_tmp;
-	}
+	RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(data);
 
 	return 0;
 }
@@ -157,11 +152,6 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
 			thread
 	);
-
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-		rrr_posix_usleep(100000);
-	}
 
 	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread);

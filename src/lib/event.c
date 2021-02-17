@@ -40,6 +40,9 @@ void rrr_event_function_set (
 	handle->functions[code] = function;
 }
 
+#define PERIODIC_EXPIRED() \
+	(time_now - time_periodic_call >= 1 * 1000 * 1000)
+
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		pthread_mutex_t *mutex,
@@ -59,7 +62,7 @@ int rrr_event_dispatch (
 
 			if (queue->queue[queue->queue_rpos].amount == 0) {
 				struct timespec wakeup_time;
-				rrr_time_gettimeofday_timespec(&wakeup_time, 1 * 1000 * 1000); // 1 second
+				rrr_time_gettimeofday_timespec(&wakeup_time, 100 * 1000); // 100 ms
 				ret = pthread_cond_timedwait(cond, mutex, &wakeup_time);
 			}
 
@@ -94,22 +97,21 @@ int rrr_event_dispatch (
 		periodic_check:
 		time_now = rrr_time_get_64();
 
-		if (time_now - time_periodic_call >= 1 * 1000 * 1000) { // 1 second
+		if (PERIODIC_EXPIRED()) {
 			if ((ret = function_periodic(arg)) != 0) {
 				goto out;
 			}
 			time_periodic_call = time_now;
 		}
 
-		int max = 1000;
-		while (event.amount > 0 && max--) {
+		int tick = 0;
+		while (event.amount > 0) {
+			if ((++tick) % 65535 == 0) {
+				goto periodic_check;
+			}
 			if ((ret = queue->functions[event.function](&event.amount, event.flags, arg)) != 0) {
 				goto out;
 			}
-		}
-
-		if (event.amount > 0) {
-			goto periodic_check;
 		}
 	}
 

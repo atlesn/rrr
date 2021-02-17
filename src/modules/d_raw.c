@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/buffer.h"
 #include "../lib/threads.h"
+#include "../lib/message_broker.h"
+#include "../lib/event.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -41,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct raw_data {
 	int print_data;
 	long double total_message_age_us;
-	uint64_t total_message_count;
+	struct rrr_poll_helper_counters counters;
 };
 
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -89,13 +91,53 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	raw_data->total_message_age_us += message_age;
-	raw_data->total_message_count++;
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(raw_data);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
 	rrr_msg_holder_unlock(entry);
 	return ret;
+}
+
+static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct raw_data *data = thread_data->private_data = thread_data->private_memory;
+
+	(void)(flags);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
+
+	if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
+		RRR_MSG_0("Error while polling in raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		return 1;
+	}
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(data);
+
+	return 0;
+}
+
+static int raw_event_periodic (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(message_count, raw_data);
+
+	RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 " avg age %Lg ms\n",
+			INSTANCE_D_NAME(thread_data),
+			message_count,
+			raw_data->counters.total_message_count,
+			(raw_data->total_message_age_us/(long double) raw_data->counters.total_message_count/1000.0)
+	);
+
+	rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "received", message_count);
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
 void data_init(struct raw_data *data) {
@@ -120,8 +162,6 @@ int parse_config (struct raw_data *data, struct rrr_instance_config_data *config
 
 	data->print_data = yesno;
 
-	/* On error, memory is freed by data_cleanup */
-
 	out:
 	return ret;
 }
@@ -145,40 +185,11 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
-	uint64_t prev_message_count = 0;
-	uint64_t timer_start = rrr_time_get_64();
-	int ticks = 0;
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 25) != 0) {
-			RRR_MSG_0("Error while polling in raw instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		uint64_t timer_now = rrr_time_get_64();
-		if (timer_now - timer_start > 1000000) {
-			timer_start = timer_now;
-
-			uint64_t message_count = raw_data->total_message_count - prev_message_count;
-			prev_message_count = raw_data->total_message_count;
-
-			RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 " avg age %Lg ms\n",
-					INSTANCE_D_NAME(thread_data),
-					message_count,
-					raw_data->total_message_count,
-					(raw_data->total_message_age_us/(long double) raw_data->total_message_count/1000.0)
-			);
-
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "received", message_count);
-			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "ticks", ticks);
-
-			ticks = 0;
-		}
-
-		ticks++;
-	}
+	rrr_message_broker_event_dispatch (
+			INSTANCE_D_BROKER_ARGS(thread_data),
+			raw_event_periodic,
+			thread
+	);
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting state is %i\n",
 			thread, INSTANCE_D_NAME(thread_data), rrr_thread_state_get(thread));
@@ -194,6 +205,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+static struct rrr_instance_event_functions event_functions = {
+	raw_event_broker_data_available
+};
+
 static const char *module_name = "raw";
 
 __attribute__((constructor)) void load(void) {
@@ -204,6 +219,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

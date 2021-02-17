@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_POLL_HELPER_H
 #define RRR_POLL_HELPER_H
 
+#include <stdint.h>
+
 #include "instance_friends.h"
 #include "modules.h"
 #include "util/linked_list.h"
@@ -32,6 +34,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_POLL_ERR 1
 #define RRR_POLL_NOT_FOUND 2
+
+struct rrr_poll_helper_counters {
+	uint64_t total_message_count;
+	uint64_t prev_message_count;
+	unsigned int poll_count_tmp;
+	unsigned int consecutive_no_poll;
+};
+
+#define RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data)           \
+    data->counters.total_message_count++;                      \
+    data->counters.poll_count_tmp++;
+
+#define RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data)      \
+    data->counters.poll_count_tmp = 0;
+
+#define RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(data)       \
+    do {if (data->counters.poll_count_tmp == 0) {              \
+    /* Since more than amount is sometimes polled, we get      \
+       notifications without any results being available. */   \
+        if (++(data->counters.consecutive_no_poll) > 1) {      \
+            *amount = 0;                                       \
+        }                                                      \
+    }                                                          \
+    else {                                                     \
+        data->counters.consecutive_no_poll = 0;                \
+        if (data->counters.poll_count_tmp >= *amount) {        \
+            *amount = 0;                                       \
+        }                                                      \
+        else {                                                 \
+            *amount -= data->counters.poll_count_tmp;          \
+    }}} while(0)
+
+#define RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(count, data)                                            \
+	uint64_t count = raw_data->counters.total_message_count - raw_data->counters.prev_message_count; \
+	data->counters.prev_message_count = data->counters.total_message_count 
+
 
 typedef void rrr_message_broker_costumer_handle;
 
