@@ -14,6 +14,9 @@ they pass through.
 As part of an application, RRR will handle tasks like networking, daemonizing, logging and buffering,
 allowing developers to focus on more specialized tasks.
 
+The different RRR modules share a common message format which enables excange of messages between any modules.
+Modules may serialize data into other protocol formats to send messages externally, or deserialize input data into RRR messages.
+
 The use of RRR assists in creating
 **[message-passing](https://en.wikipedia.org/wiki/Message_passing)** and
 **[event-driven](https://en.wikipedia.org/wiki/Event-driven_programming)**
@@ -47,7 +50,7 @@ also possible to generate these messages externally based on the header files.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
-the source, for instance when the data source is a device on a computer.
+the source, for instance when the data source is a device on a computer. HTTP and MQTT can also be used to send data to RRR.
 
 Message processing in RRR is designed to work with as little state as possible. By default, messages are passed through
 without the need for any complex data structures in memory or persistently open TCP connections.
