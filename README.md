@@ -66,7 +66,8 @@ The `.md` files contain the examples, and the source scripts and configuration f
 - Support for **HTTP/2** in both the RRR HTTP server and client.
 - Improved and simplified backend handling of HTTP requests
 - JSON handling in HTTP modules
-- Option to disable output buffers and to enable duplication in all modules, will reduce latency
+- Option to disable output buffers, will reduce latency when high througput is not needed
+- Option to enable output duplication in all modules
 - Backstop option to stop message loops, allows bus operation
 - New modules **mangler**, **exploder**, **incrementer**
 
