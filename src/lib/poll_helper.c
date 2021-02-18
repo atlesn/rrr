@@ -157,55 +157,84 @@ int rrr_poll_do_poll_discard (
 	return ret;
 }
 
-struct rrr_poll_delete_topic_filtering_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
-	void *callback_arg;
-	int do_poll_delete;
-};
-
-static int __rrr_poll_delete_topic_filtering_callback (
-		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+static int __rrr_poll_intermediate_callback_topic_filter (
+		int *does_match,
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_msg_holder *entry
 ) {
-	struct rrr_poll_delete_topic_filtering_callback_data *callback_data = arg;
+	int ret = 0;
 
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	int does_match = 0;
+	*does_match = 0;
 
 	if (rrr_msg_msg_topic_match (
-			&does_match,
+			does_match,
 			(const struct rrr_msg_msg *) entry->message,
-			INSTANCE_D_TOPIC(callback_data->thread_data)
+			INSTANCE_D_TOPIC(thread_data)
 	) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data));
+				INSTANCE_D_NAME(thread_data));
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
 		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
-				INSTANCE_D_NAME(callback_data->thread_data),
-				INSTANCE_D_TOPIC_STR(callback_data->thread_data),
+				INSTANCE_D_NAME(thread_data),
+				INSTANCE_D_TOPIC_STR(thread_data),
 				(does_match ? "MATCH" : "MISMATCH/DROPPED")
 		);
 	}
 
+	out:
+	return ret;
+}
+
+struct rrr_poll_intermediate_callback_data {
+	uint16_t *amount;
+	struct rrr_instance_runtime_data *thread_data;
+	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	void *callback_arg;
+	int do_poll_delete;
+};
+
+static int __rrr_poll_intermediate_callback (
+		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+) {
+	struct rrr_poll_intermediate_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	int does_match = 1;
+
+	if (callback_data->thread_data->init_data.topic_first_token != NULL) {
+		if ((ret = __rrr_poll_intermediate_callback_topic_filter(&does_match, callback_data->thread_data, entry)) != 0) {
+			goto out;
+		}
+	}
+
 	if (does_match) {
-		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
-		return callback_data->callback(entry, callback_data->callback_arg);
+		// Callback unlocks
+		ret = callback_data->callback(entry, callback_data->callback_arg);
+		goto out_no_unlock;
 	}
 	else if (!callback_data->do_poll_delete) {
 		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	}
 
 	out:
-	rrr_msg_holder_unlock(entry);
-	return ret;
+		rrr_msg_holder_unlock(entry);
+	out_no_unlock:
+		if (*callback_data->amount == 0) {
+			RRR_BUG("BUG: Amount was 0 in __rrr_poll_do_poll\n");
+		}
+		if (--(*callback_data->amount) == 0) {
+			ret |= RRR_FIFO_SEARCH_STOP;
+		}
+		return ret;
 }
 
 static int __rrr_poll_do_poll (
+		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
@@ -215,21 +244,13 @@ static int __rrr_poll_do_poll (
 ) {
 	int ret = 0;
 
-	// Small optimization, skip topic filtering callback when filtering is not active
-
-	int (*callback_to_use)(RRR_MODULE_POLL_CALLBACK_SIGNATURE) = callback;
-
-	struct rrr_poll_delete_topic_filtering_callback_data filter_callback_data;
-
-	if (thread_data->init_data.topic_first_token != NULL) {
-		filter_callback_data.callback = callback;
-		filter_callback_data.callback_arg = callback_arg;
-		filter_callback_data.thread_data = thread_data;
-		filter_callback_data.do_poll_delete = do_poll_delete;
-
-		callback_to_use = __rrr_poll_delete_topic_filtering_callback;
-		callback_arg = &filter_callback_data;
-	}
+	struct rrr_poll_intermediate_callback_data callback_data = {
+		amount,
+		thread_data,
+		callback,
+		callback_arg,
+		do_poll_delete
+	};
 
 	if (RRR_LL_COUNT(collection) == 0 && wait_milliseconds > 0) {
 		rrr_posix_usleep(wait_milliseconds * 1000);
@@ -251,8 +272,8 @@ static int __rrr_poll_do_poll (
 					entry->message_broker_handle,
 					INSTANCE_D_HANDLE(thread_data),
 					message_broker_flags,
-					callback_to_use,
-					callback_arg,
+					__rrr_poll_intermediate_callback,
+					&callback_data,
 					wait_milliseconds
 			);
 		}
@@ -261,14 +282,14 @@ static int __rrr_poll_do_poll (
 					entry->message_broker_handle,
 					INSTANCE_D_HANDLE(thread_data),
 					message_broker_flags,
-					callback_to_use,
-					callback_arg,
+					__rrr_poll_intermediate_callback,
+					&callback_data,
 					wait_milliseconds
 			);
 		}
 
-		if (	(ret_tmp & RRR_FIFO_CALLBACK_ERR) ==  RRR_FIFO_CALLBACK_ERR ||
-				(ret_tmp & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR
+		if ( (ret_tmp & RRR_FIFO_CALLBACK_ERR) ||
+		     (ret_tmp & RRR_FIFO_GLOBAL_ERR)
 		) {
 			ret = 1;
 			RRR_LL_ITERATE_BREAK();
@@ -277,28 +298,34 @@ static int __rrr_poll_do_poll (
 			RRR_BUG("BUG: Unknown return value %i when polling in rrr_poll_do_poll_delete\n",
 					ret_tmp);
 		}
+
+		if (*amount == 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
 	RRR_LL_ITERATE_END();
 
 	return ret;
 }
 
 int rrr_poll_do_poll_delete (
+		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 ) {
-	return __rrr_poll_do_poll (thread_data, collection, callback, thread_data, wait_milliseconds, 1);
+	return __rrr_poll_do_poll (amount, thread_data, collection, callback, thread_data, wait_milliseconds, 1);
 }
 
 int rrr_poll_do_poll_search (
+		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
 ) {
-	return __rrr_poll_do_poll (thread_data, collection, callback, callback_arg, wait_milliseconds, 0);
+	return __rrr_poll_do_poll (amount, thread_data, collection, callback, callback_arg, wait_milliseconds, 0);
 }
 
 int rrr_poll_collection_count (

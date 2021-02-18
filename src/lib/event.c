@@ -184,7 +184,6 @@ void rrr_event_pass (
 		uint8_t flags,
 		uint16_t amount
 ) {
-	pthread_mutex_lock(&queue->lock);
 	for (;;) {
 		// Sneak peak at previous write, maybe it's the same function
 		uint8_t wpos = queue->queue_wpos;

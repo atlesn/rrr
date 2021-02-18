@@ -704,7 +704,9 @@ static int httpserver_receive_callback_response_get (
 		response_data->time_begin = rrr_time_get_64();
 	}
 
+	uint16_t amount = 100;
 	if ((ret = rrr_poll_do_poll_search (
+			&amount,
 			data->thread_data,
 			&data->thread_data->poll,
 			httpserver_receive_get_response_callback,
@@ -1300,7 +1302,9 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	callback_data.topic_filter = topic_filter;
 
+	uint16_t amount = 100;
 	if ((ret = rrr_poll_do_poll_search (
+			&amount,
 			httpserver_callback_data->httpserver_data->thread_data,
 			&httpserver_callback_data->httpserver_data->thread_data->poll,
 			httpserver_receive_get_response_callback,
@@ -1515,7 +1519,9 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			prev_stats_time = time_now;
 		}
 
+		uint16_t amount = 100;
 		if (rrr_poll_do_poll_search (
+				&amount,
 				data->thread_data,
 				&data->thread_data->poll,
 				httpserver_housekeep_callback,

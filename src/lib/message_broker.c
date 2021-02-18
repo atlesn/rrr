@@ -1101,7 +1101,8 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 			callback_data
 	);
 
-	return ret;
+	// We always stop, the slot only has at most one element.
+	return ret & ~(RRR_FIFO_SEARCH_STOP);
 }
 
 static void __rrr_message_broker_get_source_buffer (

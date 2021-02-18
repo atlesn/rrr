@@ -1608,7 +1608,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 //		printf ("IP ticks: %u\n", tick);
 
 		if (has_senders != 0) {
-			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 0) != 0) {
+			uint16_t amount = 100;
+			if (rrr_poll_do_poll_delete (&amount, thread_data, &thread_data->poll, poll_callback_ip, 0) != 0) {
 				RRR_MSG_0("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;

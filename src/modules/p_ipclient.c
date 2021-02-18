@@ -483,7 +483,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		        rrr_time_get_64() < poll_timeout &&
 		        no_polling == 0
 		) {
-			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
+			uint16_t amount = 100;
+			if (rrr_poll_do_poll_delete (&amount, thread_data, &thread_data->poll, poll_callback, 25) != 0) {
 				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
