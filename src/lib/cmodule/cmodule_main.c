@@ -63,7 +63,7 @@ static void __rrr_cmodule_main_worker_kill (
 			worker->name, pid);
 	kill(pid, SIGUSR1);
 
-	rrr_posix_usleep(100000); // 100 ms
+	rrr_posix_usleep(150000); // 150 ms
 
 	RRR_DBG_1("Sending SIGKILL to worker fork %s pid %i\n",
 			worker->name, pid);
