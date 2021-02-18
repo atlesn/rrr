@@ -709,6 +709,39 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
+static int __rrr_cmodule_main_worker_fork_start_intermediate (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
+) {
+	rrr_event_function_set (
+			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+			__rrr_cmodule_helper_event_mmap_channel_data_available
+	);
+
+	return rrr_cmodule_main_worker_fork_start (
+			INSTANCE_D_CMODULE(thread_data),
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_SETTINGS(thread_data),
+			INSTANCE_D_EVENTS(thread_data),
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
+	);
+}
+
 int rrr_cmodule_helper_worker_forks_start (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -718,18 +751,10 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-	rrr_event_function_set (
-			INSTANCE_D_EVENTS(thread_data),
-			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
-			__rrr_cmodule_helper_event_mmap_channel_data_available
-	);
 
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (rrr_cmodule_main_worker_fork_start (
-					INSTANCE_D_CMODULE(thread_data),
-					INSTANCE_D_NAME(thread_data),
-					INSTANCE_D_SETTINGS(thread_data),
-					INSTANCE_D_EVENTS(thread_data),
+		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
 					configuration_callback,
@@ -752,11 +777,8 @@ int rrr_cmodule_helper_worker_custom_fork_start (
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
-	return rrr_cmodule_main_worker_fork_start (
-			INSTANCE_D_CMODULE(thread_data),
-			INSTANCE_D_NAME(thread_data),
-			INSTANCE_D_SETTINGS(thread_data),
-			INSTANCE_D_EVENTS(thread_data),
+	return __rrr_cmodule_main_worker_fork_start_intermediate (
+			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
 			NULL,
