@@ -46,11 +46,11 @@ struct rrr_event_queue {
 	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
 };
 
-void rrr_event_queue_cleanup (
+void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 );
-int rrr_event_queue_init (
-		struct rrr_event_queue *queue
+int rrr_event_queue_new (
+		struct rrr_event_queue **target
 );
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,

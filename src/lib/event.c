@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 #include <errno.h>
+#include <sys/mman.h>
 
 #include "log.h"
 #include "event.h"
@@ -32,35 +33,50 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
-void rrr_event_queue_cleanup (
+void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
 	pthread_mutex_destroy(&queue->lock);
 	pthread_cond_destroy(&queue->cond);
+	munmap(queue, sizeof(*queue));
 }
 
-int rrr_event_queue_init (
-		struct rrr_event_queue *queue
+int rrr_event_queue_new (
+		struct rrr_event_queue **target
 ) {
 	int ret = 0;
 
-	if ((rrr_posix_mutex_init(&queue->lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
+	*target = NULL;
+
+	struct rrr_event_queue *queue = NULL;
+
+	if ((queue = rrr_posix_mmap(sizeof(*queue))) == NULL) {
+		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((rrr_posix_cond_init(&queue->cond, 0)) != 0) {
+	if ((rrr_posix_mutex_init(&queue->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_munmap;
+	}
+
+	if ((rrr_posix_cond_init(&queue->cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize cond in rrr_event_queue_init\n");
 		ret = 1;
 		goto out_destroy_lock;
 	}
+
+	*target = queue;
 
 	goto out;
 //	out_destroy_cond:
 //		pthread_cond_destroy(&queue->cond);
 	out_destroy_lock:
 		pthread_mutex_destroy(&queue->lock);
+	out_munmap:
+		munmap(queue, sizeof(*queue));
 	out:
 		return ret;
 }

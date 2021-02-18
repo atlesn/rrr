@@ -64,7 +64,7 @@ struct rrr_message_broker_costumer {
 	int usercount;
 	int flags;
 	uint64_t unique_counter;
-	struct rrr_event_queue events;
+	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 };
 
@@ -138,7 +138,7 @@ static void __rrr_message_broker_costumer_destroy (
 			struct rrr_message_broker_split_buffer_node,
 			__rrr_message_broker_split_buffer_node_destroy(node)
 	);
-	rrr_event_queue_cleanup(&costumer->events);
+	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_buffer_destroy(&costumer->main_queue);
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
@@ -221,8 +221,8 @@ static int __rrr_message_broker_costumer_new (
 		goto out_destroy_fifo;
 	}
 
-	if ((ret = rrr_event_queue_init(&costumer->events)) != 0){
-		RRR_MSG_0("Could not initialize event queue in __rrr_message_broker_costumer_new\n");
+	if ((ret = rrr_event_queue_new(&costumer->events)) != 0){
+		RRR_MSG_0("Could not create event queue in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_split_buffer_lock;
 	}
@@ -239,7 +239,7 @@ static int __rrr_message_broker_costumer_new (
 
 	goto out;
 	out_cleanup_events:
-		rrr_event_queue_cleanup(&costumer->events);
+		rrr_event_queue_destroy(costumer->events);
 	out_destroy_split_buffer_lock:
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
@@ -468,7 +468,7 @@ static void __rrr_message_broker_write_notifications_send (
 			return;
 		}
 		rrr_event_pass (
-				&listener->events,
+				listener->events,
 				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 				0,
 				amount
@@ -1420,7 +1420,7 @@ int rrr_message_broker_event_dispatch (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	ret = rrr_event_dispatch(&costumer->events, function_periodic, arg);
+	ret = rrr_event_dispatch(costumer->events, function_periodic, arg);
 
 	return ret;
 }
@@ -1448,7 +1448,7 @@ void rrr_message_broker_write_listener_init (
 		struct rrr_message_broker_costumer *costumer,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS)
 ) {
-	rrr_event_function_set(&costumer->events, RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE, function);
+	rrr_event_function_set(costumer->events, RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE, function);
 }
 
 // No locking, call prior to starting threads
