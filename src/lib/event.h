@@ -38,12 +38,20 @@ struct rrr_event {
 };
 
 struct rrr_event_queue {
-	struct rrr_event queue[0xff];
-	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
 	uint8_t queue_rpos;
 	uint8_t queue_wpos;
+	pthread_mutex_t lock;
+	pthread_cond_t cond;
+	struct rrr_event queue[0xff];
+	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
 };
 
+void rrr_event_queue_cleanup (
+		struct rrr_event_queue *queue
+);
+int rrr_event_queue_init (
+		struct rrr_event_queue *queue
+);
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,
@@ -51,15 +59,11 @@ void rrr_event_function_set (
 );
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
-		pthread_mutex_t *mutex,
-		pthread_cond_t *cond,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 );
 void rrr_event_pass (
 		struct rrr_event_queue *queue,
-		pthread_mutex_t *mutex,
-		pthread_cond_t *cond,
 		uint8_t function,
 		uint8_t flags,
 		uint16_t amount

@@ -32,6 +32,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
+void rrr_event_queue_cleanup (
+		struct rrr_event_queue *queue
+) {
+	pthread_mutex_destroy(&queue->lock);
+	pthread_cond_destroy(&queue->cond);
+}
+
+int rrr_event_queue_init (
+		struct rrr_event_queue *queue
+) {
+	int ret = 0;
+
+	if ((rrr_posix_mutex_init(&queue->lock, 0)) != 0) {
+		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((rrr_posix_cond_init(&queue->cond, 0)) != 0) {
+		RRR_MSG_0("Could not initialize cond in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_destroy_lock;
+	}
+
+	goto out;
+//	out_destroy_cond:
+//		pthread_cond_destroy(&queue->cond);
+	out_destroy_lock:
+		pthread_mutex_destroy(&queue->lock);
+	out:
+		return ret;
+}
+
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,
@@ -45,8 +78,6 @@ void rrr_event_function_set (
 
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
-		pthread_mutex_t *mutex,
-		pthread_cond_t *cond,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 ) {
@@ -58,12 +89,12 @@ int rrr_event_dispatch (
 		struct rrr_event event;
 
 		{
-			pthread_mutex_lock(mutex);
+			pthread_mutex_lock(&queue->lock);
 
 			if (queue->queue[queue->queue_rpos].amount == 0) {
 				struct timespec wakeup_time;
 				rrr_time_gettimeofday_timespec(&wakeup_time, 100 * 1000); // 100 ms
-				ret = pthread_cond_timedwait(cond, mutex, &wakeup_time);
+				ret = pthread_cond_timedwait(&queue->cond, &queue->lock, &wakeup_time);
 			}
 
 			event = queue->queue[queue->queue_rpos];
@@ -73,7 +104,7 @@ int rrr_event_dispatch (
 				queue->queue_rpos++;
 			}
 
-			pthread_mutex_unlock(mutex);
+			pthread_mutex_unlock(&queue->lock);
 		}
 
 		if (ret != 0 && ret != ETIMEDOUT) {
@@ -133,13 +164,11 @@ static void __rrr_event_pass_add_maximum_amount (
 
 void rrr_event_pass (
 		struct rrr_event_queue *queue,
-		pthread_mutex_t *mutex,
-		pthread_cond_t *cond,
 		uint8_t function,
 		uint8_t flags,
 		uint16_t amount
 ) {
-	pthread_mutex_lock(mutex);
+	pthread_mutex_lock(&queue->lock);
 	for (;;) {
 		// Sneak peak at previous write, maybe it's the same function
 		uint8_t wpos = queue->queue_wpos;
@@ -165,7 +194,7 @@ void rrr_event_pass (
 				event->flags = flags;
 				event->amount = amount;
 				queue->queue_wpos++;
-				pthread_cond_broadcast(cond);
+				pthread_cond_broadcast(&queue->cond);
 				amount = 0;
 			}
 			else if (wpos == queue->queue_rpos) {
@@ -181,11 +210,11 @@ void rrr_event_pass (
 		} while(--wpos != queue->queue_wpos);
 
 		// Event queue was full :-(
-		pthread_mutex_unlock(mutex);
+		pthread_mutex_unlock(&queue->lock);
 		rrr_posix_usleep(5000); // 5 ms
-		pthread_mutex_lock(mutex);
+		pthread_mutex_lock(&queue->lock);
 	}
 
 	out:
-	pthread_mutex_unlock(mutex);
+	pthread_mutex_unlock(&queue->lock);
 }

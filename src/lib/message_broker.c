@@ -64,8 +64,6 @@ struct rrr_message_broker_costumer {
 	int usercount;
 	int flags;
 	uint64_t unique_counter;
-	pthread_mutex_t event_lock;
-	pthread_cond_t event_cond;
 	struct rrr_event_queue events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
 };
@@ -140,10 +138,9 @@ static void __rrr_message_broker_costumer_destroy (
 			struct rrr_message_broker_split_buffer_node,
 			__rrr_message_broker_split_buffer_node_destroy(node)
 	);
+	rrr_event_queue_cleanup(&costumer->events);
 	rrr_fifo_buffer_destroy(&costumer->main_queue);
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
-	pthread_mutex_destroy(&costumer->event_lock);
-	pthread_cond_destroy(&costumer->event_cond);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
 	free(costumer);
@@ -224,21 +221,15 @@ static int __rrr_message_broker_costumer_new (
 		goto out_destroy_fifo;
 	}
 
-	if ((rrr_posix_mutex_init(&costumer->event_lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex B in __rrr_message_broker_costumer_new\n");
+	if ((ret = rrr_event_queue_init(&costumer->events)) != 0){
+		RRR_MSG_0("Could not initialize event queue in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_split_buffer_lock;
 	}
 
-	if ((rrr_posix_cond_init(&costumer->event_cond, 0)) != 0) {
-		RRR_MSG_0("Could not initialize cond in __rrr_message_broker_costumer_new\n");
-		ret = 1;
-		goto out_destroy_event_lock;
-	}
-
 	if (no_buffer) {
 		if ((ret = rrr_msg_holder_slot_new(&costumer->slot)) != 0) {
-			goto out_destroy_event_cond;
+			goto out_cleanup_events;
 		}
 	}
 
@@ -247,10 +238,8 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
-	out_destroy_event_cond:
-		pthread_cond_destroy(&costumer->event_cond);
-	out_destroy_event_lock:
-		pthread_mutex_destroy(&costumer->event_lock);
+	out_cleanup_events:
+		rrr_event_queue_cleanup(&costumer->events);
 	out_destroy_split_buffer_lock:
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
@@ -480,8 +469,6 @@ static void __rrr_message_broker_write_notifications_send (
 		}
 		rrr_event_pass (
 				&listener->events,
-				&listener->event_lock,
-				&listener->event_cond,
 				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
 				0,
 				amount
@@ -1433,7 +1420,7 @@ int rrr_message_broker_event_dispatch (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	ret = rrr_event_dispatch(&costumer->events, &costumer->event_lock, &costumer->event_cond, function_periodic, arg);
+	ret = rrr_event_dispatch(&costumer->events, function_periodic, arg);
 
 	return ret;
 }
