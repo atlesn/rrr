@@ -89,11 +89,9 @@ void rrr_event_function_set (
 	handle->functions[code] = function;
 }
 
-#define PERIODIC_EXPIRED() \
-	(time_now - time_periodic_call >= 1 * 1000 * 1000)
-
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
+		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 ) {
@@ -131,31 +129,33 @@ int rrr_event_dispatch (
 
 		ret = 0;
 
-		if (queue->functions[event.function] == NULL) {
-			RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", event.function);
-			ret = 1;
-			goto out;
-		}
-
 		uint64_t time_now;
 
 		periodic_check:
 		time_now = rrr_time_get_64();
 
-		if (PERIODIC_EXPIRED()) {
+		if (time_now - time_periodic_call >= periodic_interval_us) {
 			if ((ret = function_periodic(arg)) != 0) {
 				goto out;
 			}
 			time_periodic_call = time_now;
 		}
 
-		int tick = 0;
-		while (event.amount > 0) {
-			if ((++tick) % 65535 == 0) {
-				goto periodic_check;
-			}
-			if ((ret = queue->functions[event.function](&event.amount, event.flags, arg)) != 0) {
+		if (event.amount > 0) {
+			if (queue->functions[event.function] == NULL) {
+				RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", event.function);
+				ret = 1;
 				goto out;
+			}
+
+			int tick = 0;
+			while (event.amount > 0) {
+				if ((++tick) % 65535 == 0) {
+					goto periodic_check;
+				}
+				if ((ret = queue->functions[event.function](&event.amount, event.flags, arg)) != 0) {
+					goto out;
+				}
 			}
 		}
 	}

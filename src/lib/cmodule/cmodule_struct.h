@@ -42,8 +42,9 @@ struct rrr_cmodule_worker {
 	int do_processing;
 	int do_drop_on_error;
 
-	// Managed pointer
+	// Managed structures
 	char *name;
+	struct rrr_event_queue *event_queue_worker;
 
 	pthread_mutex_t pid_lock;
 
@@ -73,7 +74,7 @@ struct rrr_cmodule_worker {
 	// Unmanaged pointers provided by application
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
-	struct rrr_event_queue *notify_queue;
+	struct rrr_event_queue *event_queue_parent;
 };
 
 struct rrr_cmodule {

@@ -59,6 +59,7 @@ void rrr_event_function_set (
 );
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
+		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 );

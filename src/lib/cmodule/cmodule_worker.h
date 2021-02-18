@@ -43,26 +43,6 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 );
-int rrr_cmodule_worker_new (
-		struct rrr_cmodule_worker **result,
-		const char *name,
-		struct rrr_instance_settings *settings,
-		struct rrr_event_queue *notify_queue,
-		struct rrr_fork_handler *fork_handler,
-		struct rrr_mmap *mmap,
-		rrr_setting_uint spawn_interval_us,
-		rrr_setting_uint sleep_time_us,
-		rrr_setting_uint nothing_happened_limit,
-		int do_spawning,
-		int do_processing,
-		int do_drop_on_error
-);
-void rrr_cmodule_worker_clear_queue_to_fork (
-		struct rrr_cmodule_worker *worker
-);
-void rrr_cmodule_worker_destroy (
-		struct rrr_cmodule_worker *worker
-);
 void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
@@ -98,6 +78,23 @@ int rrr_cmodule_worker_main (
 		void *custom_tick_callback_arg
 );
 struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
+		struct rrr_cmodule_worker *worker
+);
+int rrr_cmodule_worker_new (
+		struct rrr_cmodule_worker **result,
+		const char *name,
+		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *event_queue_parent,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_mmap *mmap,
+		rrr_setting_uint spawn_interval_us,
+		rrr_setting_uint sleep_time_us,
+		rrr_setting_uint nothing_happened_limit,
+		int do_spawning,
+		int do_processing,
+		int do_drop_on_error
+);
+void rrr_cmodule_worker_destroy (
 		struct rrr_cmodule_worker *worker
 );
 

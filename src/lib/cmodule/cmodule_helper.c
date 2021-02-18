@@ -122,7 +122,7 @@ static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *wo
 	// Don't set retry-timer, we have many opportunities to send pings anyway
 	if (rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_fork,
-			NULL,
+			worker->event_queue_worker,
 			&msg
 	) != 0) {
 		// Don't trigger error here. The reader thread will exit causing restart
@@ -167,7 +167,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
-			NULL,
+			worker->event_queue_worker,
 			message,
 			&addr_msg
 	)) != 0) {

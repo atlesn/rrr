@@ -1426,7 +1426,7 @@ int rrr_message_broker_event_dispatch (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	ret = rrr_event_dispatch(costumer->events, function_periodic, arg);
+	ret = rrr_event_dispatch(costumer->events, 1 * 1000 * 1000, function_periodic, arg);
 
 	return ret;
 }

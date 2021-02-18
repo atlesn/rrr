@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../mmap_channel.h"
 #include "../common.h"
+#include "../event.h"
+#include "../event_functions.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
 #include "../messages/msg_msg.h"
@@ -59,7 +61,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	retry:
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
-			worker->notify_queue,
+			worker->event_queue_parent,
 			message,
 			message_addr
 	);
@@ -75,107 +77,6 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	}
 
 	return ret;
-}
-
-int rrr_cmodule_worker_new (
-		struct rrr_cmodule_worker **result,
-		const char *name,
-		struct rrr_instance_settings *settings,
-		struct rrr_event_queue *notify_queue,
-		struct rrr_fork_handler *fork_handler,
-		struct rrr_mmap *mmap,
-		rrr_setting_uint spawn_interval_us,
-		rrr_setting_uint sleep_time_us,
-		rrr_setting_uint nothing_happened_limit,
-		int do_spawning,
-		int do_processing,
-		int do_drop_on_error
-) {
-	int ret = 0;
-
-	struct rrr_cmodule_worker *worker = NULL;
-
-	char *to_fork_name = NULL;
-	char *to_parent_name = NULL;
-
-	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
-	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
-
-	if ((worker = malloc(sizeof(*worker))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_worker_new\n");
-		ret = 1;
-		goto out;
-	}
-
-	memset(worker, '\0', sizeof(*worker));
-
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, mmap, name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
-		goto out_free;
-	}
-
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, mmap, name)) != 0) {
-		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
-		goto out_destroy_channel_to_fork;
-	}
-
-	if ((worker->name = strdup(name)) == NULL) {
-		RRR_MSG_0("Could not allocate name in __rrr_cmodule_worker_new\n");
-		ret = 1;
-		goto out_destroy_channel_to_parent;
-	}
-
-	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
-		ret = 1;
-		goto out_free_name;
-	}
-
-	if (sleep_time_us > spawn_interval_us) {
-		sleep_time_us = spawn_interval_us;
-	}
-
-	worker->settings = settings;
-	worker->notify_queue = notify_queue;
-	worker->fork_handler = fork_handler;
-	worker->spawn_interval_us = spawn_interval_us;
-	worker->sleep_time_us = sleep_time_us;
-	worker->nothing_happened_limit = nothing_happened_limit;
-	worker->do_spawning = do_spawning;
-	worker->do_processing = do_processing;
-	worker->do_drop_on_error = do_drop_on_error;
-
-	pthread_mutex_lock(&worker->pid_lock);
-	worker->pid = 0;
-	pthread_mutex_unlock(&worker->pid_lock);
-
-	*result = worker;
-	worker = NULL;
-
-	goto out;
-	out_free_name:
-		free(worker->name);
-	out_destroy_channel_to_parent:
-		rrr_mmap_channel_destroy(worker->channel_to_parent);
-	out_destroy_channel_to_fork:
-		rrr_mmap_channel_destroy(worker->channel_to_fork);
-	out_free:
-		free(worker);
-	out:
-		RRR_FREE_IF_NOT_NULL(to_fork_name);
-		RRR_FREE_IF_NOT_NULL(to_parent_name);
-		return ret;
-}
-
-// Child MUST NOT call this when exiting
-void rrr_cmodule_worker_destroy (
-		struct rrr_cmodule_worker *worker
-) {
-	rrr_mmap_channel_destroy(worker->channel_to_fork);
-	rrr_mmap_channel_destroy(worker->channel_to_parent);
-
-	RRR_FREE_IF_NOT_NULL(worker->name);
-	free(worker);
 }
 
 void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
@@ -244,7 +145,7 @@ static void __rrr_cmodule_worker_log_hook (
 	int ret = 0;
 	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
-			worker->notify_queue,
+			worker->event_queue_parent,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -275,7 +176,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
-			worker->notify_queue,
+			worker->event_queue_parent,
 			setting,
 			sizeof(*setting),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -292,6 +193,7 @@ struct rrr_cmodule_process_callback_data {
 	struct rrr_cmodule_worker *worker;
 	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
 	void *process_callback_arg;
+	unsigned int total_count;
 };
 
 static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
@@ -300,6 +202,8 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 	int ret = 0;
 
 	const struct rrr_msg_msg *msg = data;
+
+	callback_data->total_count++;
 
 	if (RRR_MSG_IS_CTRL(msg)) {
 		RRR_DBG_5("cmodule worker %s received control message\n", callback_data->worker->name);
@@ -349,6 +253,48 @@ static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t dat
 				ret = 0;
 			}
 		}
+	}
+
+	return ret;
+}
+
+struct rrr_cmodule_worker_event_callback_data {
+	struct rrr_cmodule_worker *worker;
+	int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS);
+	void *custom_tick_callback_arg;
+	struct rrr_cmodule_process_callback_data read_callback_data;
+};
+
+static int __rrr_cmodule_worker_event_mmap_channel_data_available (
+		RRR_EVENT_FUNCTION_ARGS
+) {
+	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
+	struct rrr_cmodule_worker *worker = callback_data->worker;
+
+	(void)(flags);
+
+	int ret = 0;
+
+	callback_data->read_callback_data.total_count = 0;
+
+	if ((ret = rrr_cmodule_channel_receive_messages (
+			worker->channel_to_fork,
+			0,
+			__rrr_cmodule_worker_loop_read_callback,
+			&callback_data->read_callback_data
+	)) != 0) {
+		if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
+			RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
+					worker->name, (long) getpid());
+			return 1;
+		}
+	}
+
+	if (callback_data->read_callback_data.total_count > *amount || callback_data->read_callback_data.total_count == 0) {
+		*amount = 0;
+	}
+	else {
+		*amount -= callback_data->read_callback_data.total_count;
 	}
 
 	return ret;
@@ -405,7 +351,7 @@ int __rrr_cmodule_worker_send_pong (
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, worker->notify_queue, &msg);
+	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, worker->event_queue_parent, &msg);
 
 	if (ret == 0) {
 		worker->total_msg_mmap_to_parent++;
@@ -413,6 +359,55 @@ int __rrr_cmodule_worker_send_pong (
 	// Let errors propagate
 
 	return ret;
+}
+
+static int __rrr_cmodule_worker_event_periodic (
+		RRR_EVENT_FUNCTION_PERIODIC_ARGS
+) {
+	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
+	struct rrr_cmodule_worker *worker = callback_data->worker;
+
+	int ret_tmp = 0;
+
+	if (worker->ping_received) {
+		RRR_DBG_5("cmodule worker %s ping received, sending pong\n", worker->name);
+		if ((ret_tmp = __rrr_cmodule_worker_send_pong(worker)) != 0) {
+			RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
+					worker->name, (long) getpid(), ret_tmp);
+		}
+		// Always set to 0, maybe this fork should be killed if PONG messages
+		// are not received by parent.
+		worker->ping_received = 0;
+	}
+
+	if (worker->do_spawning) {
+		RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
+		if (__rrr_cmodule_worker_spawn_message (
+				worker,
+				callback_data->read_callback_data.process_callback,
+				callback_data->read_callback_data.process_callback_arg
+		) != 0) {
+			return 1;
+		}
+	}
+
+	int custom_tick_something_happened = 1;
+	int retries = 100;
+	while (--retries && custom_tick_something_happened) {
+		if (callback_data->custom_tick_callback != NULL) {
+			if (callback_data->custom_tick_callback (
+					&custom_tick_something_happened,
+					worker,
+					callback_data->custom_tick_callback_arg
+			) != 0) {
+				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
+						worker->name, (long) getpid());
+				return 1;
+			}
+		}
+	}
+
+	return 0;
 }
 
 static int __rrr_cmodule_worker_loop (
@@ -424,119 +419,30 @@ static int __rrr_cmodule_worker_loop (
 ) {
 	int ret = 0;
 
-	struct rrr_cmodule_process_callback_data read_callback_data = {
-		worker,
-		process_callback,
-		process_callback_arg
-	};
-
-	// Control stuff
-	uint64_t time_now = 0;
-	uint64_t next_spawn_time = 0;
-
-//	int usleep_hits_b = 0;
-
-	uint64_t prev_total_processed_msg = 0;
-	uint64_t prev_total_msg_mmap_from_parent = 0;
-
-	rrr_setting_uint consecutive_nothing_happened = 0;
-
-	uint64_t prev_stats_time = 0;
-
 	if (worker->do_spawning == 0 && worker->do_processing == 0 && custom_tick_callback == NULL) {
 		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
 	}
 
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
 
-	while (worker->received_stop_signal == 0) {
-		time_now = rrr_time_get_64();
-
-		if (next_spawn_time == 0) {
-			next_spawn_time = time_now + worker->spawn_interval_us;
+	struct rrr_cmodule_worker_event_callback_data callback_data = {
+		worker,
+		custom_tick_callback,
+		custom_tick_callback_arg,
+		{
+			worker,
+			process_callback,
+			process_callback_arg,
+			0
 		}
+	};
 
-		if ((ret = rrr_cmodule_channel_receive_messages (
-				worker->channel_to_fork,
-				RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-				__rrr_cmodule_worker_loop_read_callback,
-				&read_callback_data
-		)) != 0) {
-			if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
-				RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
-				ret = 1;
-				goto loop_out;
-			}
-			ret = 0;
-		}
-
-		if (worker->do_spawning) {
-			if (time_now >= next_spawn_time) {
-				RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
-				if (__rrr_cmodule_worker_spawn_message(worker, process_callback, process_callback_arg) != 0) {
-					goto loop_out;
-				}
-				next_spawn_time = 0;
-			}
-		}
-
-		if (worker->ping_received) {
-			RRR_DBG_5("cmodule worker %s ping received, sending pong\n", worker->name);
-			if ((ret = __rrr_cmodule_worker_send_pong(worker)) != 0) {
-				RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
-						worker->name, (long) getpid(), ret);
-				ret = 0;
-			}
-			// Always set to 0, maybe this fork should be killed if PONG messages
-			// are not received by parent.
-			worker->ping_received = 0;
-		}
-
-		int custom_tick_something_happened = 0;
-		if (custom_tick_callback != NULL) {
-			if (custom_tick_callback (
-					&custom_tick_something_happened,
-					worker,
-					custom_tick_callback_arg
-			) != 0) {
-				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
-				ret = 1;
-				goto loop_out;
-			}
-		}
-
-//		printf("%" PRIu64 " - %" PRIu64 "\n", prev_total_msg_mmap_from_parent, prev_total_processed_msg);
-
-		if (	custom_tick_something_happened ||
-			prev_total_msg_mmap_from_parent != worker->total_msg_mmap_to_fork ||
-			prev_total_processed_msg != worker->total_msg_processed
-		) {
-			consecutive_nothing_happened = 0;
-		}
-		else {
-			consecutive_nothing_happened++;
-		}
-
-		if (consecutive_nothing_happened > worker->nothing_happened_limit) {
-			rrr_posix_usleep(worker->sleep_time_us);
-		}
-		else if (consecutive_nothing_happened > 100) {
-			rrr_posix_usleep(100); // 100 us
-		}
-
-		if (time_now - prev_stats_time > 1000000) {
-			RRR_DBG_5("cmodule worker %s alive\n", worker->name);
-			// No stats here for now
-			prev_stats_time = time_now;
-		}
-
-		prev_total_processed_msg = worker->total_msg_processed;
-		prev_total_msg_mmap_from_parent = worker->total_msg_mmap_to_fork;
-	}
-
-	loop_out:
+	rrr_event_dispatch (
+			worker->event_queue_worker,
+			worker->spawn_interval_us,
+			__rrr_cmodule_worker_event_periodic,
+			&callback_data
+	);
 
 	RRR_DBG_1("child worker loop %s complete, received_stop_signal is %i ret is %i\n",
 			worker->name,
@@ -587,7 +493,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
-			worker->notify_queue,
+			worker->event_queue_parent,
 			&control_msg,
 			sizeof(control_msg),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -718,4 +624,118 @@ struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
 	struct rrr_cmodule_worker *worker
 ) {
 	return worker->settings;
+}
+
+int rrr_cmodule_worker_new (
+		struct rrr_cmodule_worker **result,
+		const char *name,
+		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *event_queue_parent,
+		struct rrr_fork_handler *fork_handler,
+		struct rrr_mmap *mmap,
+		rrr_setting_uint spawn_interval_us,
+		rrr_setting_uint sleep_time_us,
+		rrr_setting_uint nothing_happened_limit,
+		int do_spawning,
+		int do_processing,
+		int do_drop_on_error
+) {
+	int ret = 0;
+
+	struct rrr_cmodule_worker *worker = NULL;
+
+	char *to_fork_name = NULL;
+	char *to_parent_name = NULL;
+
+	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
+	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
+
+	if ((worker = malloc(sizeof(*worker))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_worker_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(worker, '\0', sizeof(*worker));
+
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, mmap, name)) != 0) {
+		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		goto out_free;
+	}
+
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, mmap, name)) != 0) {
+		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
+		goto out_destroy_channel_to_fork;
+	}
+
+	if ((worker->name = strdup(name)) == NULL) {
+		RRR_MSG_0("Could not allocate name in __rrr_cmodule_worker_new\n");
+		ret = 1;
+		goto out_destroy_channel_to_parent;
+	}
+
+	if ((rrr_posix_mutex_init(&worker->pid_lock, 0)) != 0) {
+		RRR_MSG_0("Could not initialize lock in __rrr_cmodule_worker_new\n");
+		ret = 1;
+		goto out_free_name;
+	}
+
+	if ((ret = rrr_event_queue_new(&worker->event_queue_worker)) != 0) {
+		RRR_MSG_0("Could not initialize event queue in __rrr_cmodule_worker_new\n");
+		goto out_destroy_pid_lock;
+	}
+
+	rrr_event_function_set (
+			worker->event_queue_worker,
+			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+			__rrr_cmodule_worker_event_mmap_channel_data_available
+	);
+
+	if (sleep_time_us > spawn_interval_us) {
+		sleep_time_us = spawn_interval_us;
+	}
+
+	worker->settings = settings;
+	worker->event_queue_parent = event_queue_parent;
+	worker->fork_handler = fork_handler;
+	worker->spawn_interval_us = spawn_interval_us;
+	worker->sleep_time_us = sleep_time_us;
+	worker->nothing_happened_limit = nothing_happened_limit;
+	worker->do_spawning = do_spawning;
+	worker->do_processing = do_processing;
+	worker->do_drop_on_error = do_drop_on_error;
+
+	pthread_mutex_lock(&worker->pid_lock);
+	worker->pid = 0;
+	pthread_mutex_unlock(&worker->pid_lock);
+
+	*result = worker;
+	worker = NULL;
+
+	goto out;
+	out_destroy_pid_lock:
+		pthread_mutex_destroy(&worker->pid_lock);
+	out_free_name:
+		free(worker->name);
+	out_destroy_channel_to_parent:
+		rrr_mmap_channel_destroy(worker->channel_to_parent);
+	out_destroy_channel_to_fork:
+		rrr_mmap_channel_destroy(worker->channel_to_fork);
+	out_free:
+		free(worker);
+	out:
+		RRR_FREE_IF_NOT_NULL(to_fork_name);
+		RRR_FREE_IF_NOT_NULL(to_parent_name);
+		return ret;
+}
+
+// Child MUST NOT call this when exiting
+void rrr_cmodule_worker_destroy (
+		struct rrr_cmodule_worker *worker
+) {
+	rrr_mmap_channel_destroy(worker->channel_to_fork);
+	rrr_mmap_channel_destroy(worker->channel_to_parent);
+
+	RRR_FREE_IF_NOT_NULL(worker->name);
+	free(worker);
 }
