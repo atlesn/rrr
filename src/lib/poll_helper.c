@@ -161,6 +161,7 @@ struct rrr_poll_delete_topic_filtering_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
 	void *callback_arg;
+	int do_poll_delete;
 };
 
 static int __rrr_poll_delete_topic_filtering_callback (
@@ -195,6 +196,9 @@ static int __rrr_poll_delete_topic_filtering_callback (
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
 		return callback_data->callback(entry, callback_data->callback_arg);
 	}
+	else if (!callback_data->do_poll_delete) {
+		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+	}
 
 	out:
 	rrr_msg_holder_unlock(entry);
@@ -221,6 +225,7 @@ static int __rrr_poll_do_poll (
 		filter_callback_data.callback = callback;
 		filter_callback_data.callback_arg = callback_arg;
 		filter_callback_data.thread_data = thread_data;
+		filter_callback_data.do_poll_delete = do_poll_delete;
 
 		callback_to_use = __rrr_poll_delete_topic_filtering_callback;
 		callback_arg = &filter_callback_data;
