@@ -191,7 +191,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
-	struct rrr_message_broker message_broker = {0};
+	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_config *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
 
@@ -203,7 +203,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-	if (rrr_message_broker_init(&message_broker) != 0) {
+	if (rrr_message_broker_new(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
@@ -284,7 +284,7 @@ int main (int argc, const char **argv, const char **env) {
 				config,
 				&cmd,
 				&stats_engine,
-				&message_broker,
+				message_broker,
 				fork_handler
 		) != 0) {
 			ret = 1;
@@ -336,7 +336,7 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 
 	out_cleanup_message_broker:
-		rrr_message_broker_cleanup(&message_broker);
+		rrr_message_broker_destroy(message_broker);
 
 //	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);

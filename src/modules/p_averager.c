@@ -492,8 +492,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		if (RRR_LL_COUNT(&data->output_list) > 0) {
 			if (rrr_message_broker_write_entries_from_collection_unsafe (
-					INSTANCE_D_BROKER(thread_data),
-					INSTANCE_D_HANDLE(thread_data),
+					INSTANCE_D_BROKER_ARGS(thread_data),
 					&data->output_list,
 					INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 			) != 0) {

@@ -813,8 +813,7 @@ int process_callback (
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
 		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-				INSTANCE_D_BROKER(thread_data),
-				INSTANCE_D_HANDLE(thread_data),
+				INSTANCE_D_BROKER_ARGS(thread_data),
 				entry,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		) != 0) {

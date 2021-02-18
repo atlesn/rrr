@@ -39,7 +39,6 @@ struct rrr_cmodule;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
-typedef void rrr_message_broker_costumer_handle;
 struct rrr_mqtt_topic_token;
 
 struct rrr_instance {
@@ -114,7 +113,7 @@ struct rrr_instance_runtime_init_data {
 struct rrr_instance_runtime_data {
 	struct rrr_instance_runtime_init_data init_data;
 
-	rrr_message_broker_costumer_handle *message_broker_handle;
+	struct rrr_message_broker_costumer *message_broker_handle;
 
 	void *private_data;
 	void *preload_data;
@@ -143,7 +142,7 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
-		thread_data->init_data.message_broker, thread_data->message_broker_handle
+		thread_data->message_broker_handle
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 

@@ -643,8 +643,7 @@ static int ip_read_loop (
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,

@@ -134,8 +134,8 @@ int test_do_poll_loop (
 
 	struct rrr_test_result *test_result = callback_data->test_result;
 
-	rrr_message_broker_costumer_handle *handle_self = NULL;
-	rrr_message_broker_costumer_handle *handle_output = NULL;
+	struct rrr_message_broker_costumer *handle_self = NULL;
+	struct rrr_message_broker_costumer *handle_output = NULL;
 
 	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
 
@@ -164,7 +164,6 @@ int test_do_poll_loop (
 				INSTANCE_M_NAME(output), i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		ret = rrr_message_broker_poll_delete (
-				broker,
 				handle_output,
 				handle_self,
 				0,

@@ -32,16 +32,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages/msg_msg.h"
 
 static int __poll_collection_entry_destroy (
+		struct rrr_message_broker *message_broker,
 		struct rrr_poll_collection_entry *entry
 ) {
+	rrr_message_broker_costumer_decref(message_broker, entry->message_broker_handle);
 	free(entry);
 	return 0;
 }
 
 void rrr_poll_collection_clear (
+		struct rrr_message_broker *message_broker,
 		struct rrr_poll_collection *collection
 ) {
-	RRR_LL_DESTROY(collection,struct rrr_poll_collection_entry, __poll_collection_entry_destroy(node));
+	RRR_LL_DESTROY(collection,struct rrr_poll_collection_entry, __poll_collection_entry_destroy(message_broker, node));
 }
 
 int rrr_poll_collection_add (
@@ -53,7 +56,7 @@ int rrr_poll_collection_add (
 	int ret = 0;
 	*flags_result = 0;
 
-	rrr_message_broker_costumer_handle *handle = rrr_message_broker_costumer_find_by_name(message_broker, costumer_name);
+	struct rrr_message_broker_costumer *handle = rrr_message_broker_costumer_find_by_name(message_broker, costumer_name);
 	if (handle == NULL) {
 		RRR_MSG_0("Could not find message broker costumer '%s' in rrr_poll_collection_add\n", costumer_name);
 		ret = RRR_POLL_ERR;
@@ -71,6 +74,8 @@ int rrr_poll_collection_add (
 
 	entry->message_broker = message_broker;
 	entry->message_broker_handle = handle;
+
+	rrr_message_broker_costumer_incref(message_broker, handle);
 
 	RRR_LL_APPEND(collection, entry);
 
@@ -131,7 +136,6 @@ int rrr_poll_do_poll_discard (
 
 		ret_tmp = rrr_message_broker_poll_discard (
 				&discarded_count_tmp,
-				entry->message_broker,
 				entry->message_broker_handle,
 				INSTANCE_D_HANDLE(thread_data)
 		);
@@ -237,7 +241,6 @@ static int __rrr_poll_do_poll (
 
 		if (do_poll_delete) {
 			ret_tmp = rrr_message_broker_poll_delete (
-					entry->message_broker,
 					entry->message_broker_handle,
 					INSTANCE_D_HANDLE(thread_data),
 					message_broker_flags,
@@ -248,7 +251,6 @@ static int __rrr_poll_do_poll (
 		}
 		else {
 			ret_tmp = rrr_message_broker_poll (
-					entry->message_broker,
 					entry->message_broker_handle,
 					INSTANCE_D_HANDLE(thread_data),
 					message_broker_flags,

@@ -540,8 +540,8 @@ static int __rrr_instance_before_start_tasks_register_write_listener (
 
 	int ret = 0;
 
-	rrr_message_broker_costumer_handle *self = rrr_message_broker_costumer_find_by_name(callback_data->broker, callback_data->instance->config->name);
-	rrr_message_broker_costumer_handle *sender = rrr_message_broker_costumer_find_by_name(callback_data->broker, friend->config->name);
+	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(callback_data->broker, callback_data->instance->config->name);
+	struct rrr_message_broker_costumer *sender = rrr_message_broker_costumer_find_by_name(callback_data->broker, friend->config->name);
 
 	RRR_DBG_8("Instance %s register write listener on instance %s\n",
 		callback_data->instance->config->name, friend->config->name);
@@ -571,7 +571,7 @@ static int __rrr_instance_before_start_tasks (
 	int ret = 0;
 
 	if (instance->module_data->event_functions.broker_data_available != NULL) {
-		rrr_message_broker_costumer_handle *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+		struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
 
 		rrr_message_broker_write_listener_init(self, instance->module_data->event_functions.broker_data_available);
 
@@ -622,7 +622,7 @@ static void __rrr_instance_thread_poll_collection_clear_void (
 	RRR_DBG_8("Thread %p intermediate poll collection clear\n", thread);
 
 	pthread_mutex_lock(&thread->mutex);
-	rrr_poll_collection_clear(&thread_data->poll);
+	rrr_poll_collection_clear(INSTANCE_D_BROKER(thread_data), &thread_data->poll);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
@@ -729,7 +729,6 @@ static int __rrr_instance_thread_preload_enable_duplication_as_needed (
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), slots);
 
 		if ((ret = rrr_message_broker_setup_split_output_buffer (
-				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				slots
 		)) != 0) {
@@ -1032,7 +1031,6 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 	if (rrr_message_broker_get_entry_count_and_ratelimit (
 			delivery_entry_count,
 			delivery_ratelimit_active,
-			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data)
 	) != 0) {
 		RRR_MSG_0("Error while getting output buffer size in %s instance %s\n",
@@ -1044,12 +1042,12 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 	if (*delivery_entry_count > 10000 && *delivery_ratelimit_active == 0) {
 		RRR_DBG_1("Enabling ratelimit on buffer in %s instance %s due to slow reader\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
-		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+		rrr_message_broker_set_ratelimit(INSTANCE_D_HANDLE(thread_data), 1);
 	}
 	else if (*delivery_entry_count < 10 && *delivery_ratelimit_active == 1) {
 		RRR_DBG_1("Disabling ratelimit on buffer in %s instance %s due to low buffer level\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
-		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
+		rrr_message_broker_set_ratelimit(INSTANCE_D_HANDLE(thread_data), 0);
 	}
 
 	out:

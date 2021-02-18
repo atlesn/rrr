@@ -71,12 +71,10 @@ struct rrr_poll_helper_counters {
 	data->counters.prev_message_count = data->counters.total_message_count 
 
 
-typedef void rrr_message_broker_costumer_handle;
-
 struct rrr_poll_collection_entry {
 	RRR_LL_NODE(struct rrr_poll_collection_entry);
 	struct rrr_message_broker *message_broker;
-	rrr_message_broker_costumer_handle *message_broker_handle;
+	struct rrr_message_broker_costumer *message_broker_handle;
 };
 
 struct rrr_poll_collection {
@@ -84,6 +82,7 @@ struct rrr_poll_collection {
 };
 
 void rrr_poll_collection_clear (
+		struct rrr_message_broker *message_broker,
 		struct rrr_poll_collection *collection
 );
 int rrr_poll_collection_add (

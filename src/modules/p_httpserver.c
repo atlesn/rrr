@@ -974,8 +974,7 @@ static int httpserver_receive_callback (
 	}
 	else {
 		if ((ret = rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER(data->thread_data),
-				INSTANCE_D_HANDLE(data->thread_data),
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
 				sockaddr,
 				socklen,
 				RRR_IP_TCP,

@@ -74,8 +74,7 @@ static int buffer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	);
 
 	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-			INSTANCE_D_BROKER(thread_data),
-			INSTANCE_D_HANDLE(thread_data),
+			INSTANCE_D_BROKER_ARGS(thread_data),
 			entry,
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	);
@@ -164,8 +163,7 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 	// This will also unlock
 	if (rrr_message_broker_clone_and_write_entry (
-			INSTANCE_D_BROKER(thread_data),
-			INSTANCE_D_HANDLE(thread_data),
+			INSTANCE_D_BROKER_ARGS(thread_data),
 			message
 	) != 0) {
 		RRR_MSG_0("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));

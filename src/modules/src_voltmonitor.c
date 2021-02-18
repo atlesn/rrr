@@ -467,8 +467,7 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 	};
 
 	if ((ret = rrr_message_broker_write_entry(
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,
