@@ -61,6 +61,7 @@ int rrr_cmodule_channel_send_message_simple (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
+			NULL,
 			sizeof(*message),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
@@ -109,6 +110,7 @@ int rrr_cmodule_channel_send_message_and_address (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
+			NULL,
 			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,

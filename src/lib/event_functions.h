@@ -23,5 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_FUNCTIONS_H
 
 #define RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE 0
+#define RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE   1
 
 #endif /* RRR_EVENT_FUNCTIONS_H */

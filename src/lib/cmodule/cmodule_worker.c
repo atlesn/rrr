@@ -240,6 +240,7 @@ static void __rrr_cmodule_worker_log_hook (
 	int ret = 0;
 	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
+			NULL,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -270,6 +271,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
+			NULL,
 			setting,
 			sizeof(*setting),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -581,6 +583,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
+			NULL,
 			&control_msg,
 			sizeof(control_msg),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,

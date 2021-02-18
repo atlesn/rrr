@@ -33,6 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
+#include "event.h"
+#include "event_functions.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
 
@@ -185,6 +187,7 @@ static int __rrr_mmap_channel_allocate (
 
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
 		size_t data_size,
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
@@ -261,6 +264,10 @@ int rrr_mmap_channel_write_using_callback (
 	}
 	pthread_mutex_unlock(&target->index_lock);
 
+	if (queue_notify != NULL) {
+		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 0, 1);
+	}
+
 	out_unlock:
 	if (do_unlock_block) {
 		pthread_mutex_unlock(&block->block_lock);
@@ -282,6 +289,7 @@ static int __rrr_mmap_channel_write_callback (void *target_ptr, void *arg) {
 
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
@@ -293,6 +301,7 @@ int rrr_mmap_channel_write (
 	};
 	return rrr_mmap_channel_write_using_callback (
 			target,
+			queue_notify,
 			data_size,
 			full_wait_time_us,
 			retries_max,
