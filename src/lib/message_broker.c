@@ -944,6 +944,7 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		}
 		else {
 			__rrr_message_broker_write_notifications_send(costumer, written_entries);
+			written_entries = 0;
 		}
 	}
 
