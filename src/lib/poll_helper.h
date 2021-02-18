@@ -39,7 +39,6 @@ struct rrr_poll_helper_counters {
 	uint64_t total_message_count;
 	uint64_t prev_message_count;
 	unsigned int poll_count_tmp;
-	unsigned int consecutive_no_poll;
 };
 
 #define RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(data)           \
@@ -48,23 +47,6 @@ struct rrr_poll_helper_counters {
 
 #define RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data)      \
     data->counters.poll_count_tmp = 0;
-
-#define RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(data)       \
-    do {if (data->counters.poll_count_tmp == 0) {              \
-    /* Since more than amount is sometimes polled, we get      \
-       notifications without any results being available. */   \
-        if (++(data->counters.consecutive_no_poll) > 1) {      \
-            *amount = 0;                                       \
-        }                                                      \
-    }                                                          \
-    else {                                                     \
-        data->counters.consecutive_no_poll = 0;                \
-        if (data->counters.poll_count_tmp >= *amount) {        \
-            *amount = 0;                                       \
-        }                                                      \
-        else {                                                 \
-            *amount -= data->counters.poll_count_tmp;          \
-    }}} while(0)
 
 #define RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(count, data)                                            \
 	uint64_t count = raw_data->counters.total_message_count - raw_data->counters.prev_message_count; \
@@ -97,12 +79,14 @@ int rrr_poll_do_poll_discard (
 		struct rrr_poll_collection *collection
 );
 int rrr_poll_do_poll_delete (
+		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 );
 int rrr_poll_do_poll_search (
+		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),

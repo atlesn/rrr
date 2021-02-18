@@ -206,7 +206,6 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 
 struct rrr_cmodule_helper_poll_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
-	unsigned int max_count;
 };
 
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -225,11 +224,6 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	}
 	else {
 		RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(thread_data);
-
-		if (thread_data->counters.poll_count_tmp >= callback_data->max_count) {
-			ret |= RRR_FIFO_SEARCH_STOP;
-		}
-
 		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	}
 
@@ -238,25 +232,21 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 }
 
 static int __rrr_cmodule_helper_poll (
-		struct rrr_instance_runtime_data *thread_data,
-		unsigned int max_count
+		uint16_t *amount,
+		struct rrr_instance_runtime_data *thread_data
 ) {
-	int ret = 0;
-
 	struct rrr_cmodule_helper_poll_callback_data callback_data = {
-		thread_data,
-		max_count
+		thread_data
 	};
 
-	if (rrr_poll_do_poll_search (thread_data, INSTANCE_D_POLL(thread_data), __rrr_cmodule_helper_poll_callback, &callback_data, 0) != 0) {
-		RRR_MSG_0("Error while polling in instance %s\n",
-			INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
+	return rrr_poll_do_poll_search (
+			amount,
+			thread_data,
+			INSTANCE_D_POLL(thread_data),
+			__rrr_cmodule_helper_poll_callback,
+			&callback_data,
+			0
+	);
 }
 
 static int __rrr_cmodule_helper_event_message_broker_data_available (
@@ -269,11 +259,7 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
 
-	int ret = __rrr_cmodule_helper_poll (thread_data, 100);
-
-	RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(thread_data);
-
-	return ret;
+	return __rrr_cmodule_helper_poll (amount, thread_data);
 }
 
 struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {

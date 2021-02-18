@@ -110,15 +110,7 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, raw_poll_callback, 0) != 0) {
-		RRR_MSG_0("Error while polling in raw instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		return 1;
-	}
-
-	RRR_POLL_HELPER_COUNTERS_UPDATE_AFTER_POLL(data);
-
-	return 0;
+	return rrr_poll_do_poll_delete (amount, thread_data, &thread_data->poll, raw_poll_callback, 0);
 }
 
 static int raw_event_periodic (void *arg) {
