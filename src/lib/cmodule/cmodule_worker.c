@@ -367,6 +367,10 @@ static int __rrr_cmodule_worker_event_periodic (
 	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
 	struct rrr_cmodule_worker *worker = callback_data->worker;
 
+	if (worker->received_stop_signal) {
+		return RRR_EVENT_EXIT;
+	}
+
 	int ret_tmp = 0;
 
 	if (worker->ping_received) {
@@ -417,8 +421,6 @@ static int __rrr_cmodule_worker_loop (
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
-	int ret = 0;
-
 	if (worker->do_spawning == 0 && worker->do_processing == 0 && custom_tick_callback == NULL) {
 		RRR_BUG("BUG: No spawning or processing mode set and no custom tick callback in __rrr_cmodule_worker_loop\n");
 	}
@@ -437,7 +439,7 @@ static int __rrr_cmodule_worker_loop (
 		}
 	};
 
-	rrr_event_dispatch (
+	int ret_tmp = rrr_event_dispatch (
 			worker->event_queue_worker,
 			worker->spawn_interval_us,
 			__rrr_cmodule_worker_event_periodic,
@@ -447,10 +449,10 @@ static int __rrr_cmodule_worker_loop (
 	RRR_DBG_1("child worker loop %s complete, received_stop_signal is %i ret is %i\n",
 			worker->name,
 			worker->received_stop_signal,
-			ret
+			ret_tmp
 	);
 
-	return ret;
+	return 0;
 }
 
 int rrr_cmodule_worker_loop_start (

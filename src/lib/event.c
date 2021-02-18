@@ -161,7 +161,7 @@ int rrr_event_dispatch (
 	}
 
 	out:
-	return ret;
+	return ret & ~(RRR_EVENT_EXIT);
 }
 
 static void __rrr_event_pass_add_maximum_amount (

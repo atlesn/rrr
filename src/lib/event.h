@@ -25,11 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 
+#include "read_constants.h"
+
 #define RRR_EVENT_FUNCTION_ARGS \
 	uint16_t *amount, uint8_t flags, void *arg
 
 #define RRR_EVENT_FUNCTION_PERIODIC_ARGS \
 	void *arg
+
+#define RRR_EVENT_OK     RRR_READ_OK
+#define RRR_EVENT_EXIT   RRR_READ_EOF
 
 struct rrr_event {
 	uint8_t function;
