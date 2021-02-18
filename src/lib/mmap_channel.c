@@ -40,6 +40,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
 
+struct rrr_mmap_channel_block {
+	pthread_mutex_t block_lock;
+	size_t size_capacity;
+	size_t size_data; // If set to 0, block is free
+	int shmid;
+	void *ptr_shm_or_mmap;
+};
+
+struct rrr_mmap_channel {
+	struct rrr_mmap *mmap;
+	pthread_mutex_t index_lock;
+	int entry_count;
+	int wpos;
+	int rpos;
+	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+	char name[64];
+
+	unsigned long long int read_starvation_counter;
+	unsigned long long int write_full_counter;
+};
+
 int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
 ) {
