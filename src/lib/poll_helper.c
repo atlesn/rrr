@@ -160,6 +160,7 @@ int rrr_poll_do_poll_discard (
 struct rrr_poll_delete_topic_filtering_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	void *callback_arg;
 };
 
 static int __rrr_poll_delete_topic_filtering_callback (
@@ -192,7 +193,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	if (does_match) {
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
-		return callback_data->callback(entry, callback_data->thread_data);
+		return callback_data->callback(entry, callback_data->callback_arg);
 	}
 
 	out:
@@ -218,6 +219,7 @@ static int __rrr_poll_do_poll (
 
 	if (thread_data->init_data.topic_first_token != NULL) {
 		filter_callback_data.callback = callback;
+		filter_callback_data.callback_arg = callback_arg;
 		filter_callback_data.thread_data = thread_data;
 
 		callback_to_use = __rrr_poll_delete_topic_filtering_callback;
