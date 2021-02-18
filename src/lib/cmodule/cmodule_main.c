@@ -29,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
+#include "cmodule_struct.h"
+#include "cmodule_config_data.h"
 #include "../fork.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"

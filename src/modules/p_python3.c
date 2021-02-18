@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
+#include "../lib/cmodule/cmodule_config_data.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_holder/message_holder.h"
 
@@ -111,7 +112,7 @@ int python3_configuration_callback(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS) {
 	}
 
 	// NOTE : The python config object operates on the original settings structure
-	config = rrr_python3_config_new (worker->settings);
+	config = rrr_python3_config_new (rrr_cmodule_worker_get_settings(worker));
 
 	if (config == NULL) {
 		RRR_MSG_0("Could not create config object in __rrr_py_persistent_send_config \n");
@@ -186,7 +187,7 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct python3_data *data = private_arg;
 	struct python3_child_data child_data = {0};
 
-	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	child_data.parent_data = data;
 

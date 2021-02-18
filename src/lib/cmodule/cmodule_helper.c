@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
+#include "cmodule_struct.h"
 
 #include "../buffer.h"
 #include "../modules.h"
@@ -869,6 +870,12 @@ void rrr_cmodule_helper_loop (
 
 	cleanup:
 	pthread_cleanup_pop(1);
+}
+
+const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
 }
 
 int rrr_cmodule_helper_parse_config (

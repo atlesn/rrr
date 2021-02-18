@@ -47,36 +47,7 @@ struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
-struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_sleep_time_us;
-	rrr_setting_uint worker_nothing_happened_limit;
-	rrr_setting_uint worker_count;
-
-	int do_spawning;
-	int do_processing;
-	int do_drop_on_error;
-
-	char *config_function;
-	char *process_function;
-	char *source_function;
-	char *log_prefix;
-};
-
-struct rrr_cmodule {
-	RRR_LL_HEAD(struct rrr_cmodule_worker);
-	struct rrr_mmap *mmap;
-
-	struct rrr_cmodule_config_data config_data;
-
-	// Used when creating forks and cleaning up, not managed
-	struct rrr_fork_handler *fork_handler;
-
-	struct rrr_msg_holder_collection queue_to_forks;
-
-	// Used by message_broker_cmodule poll functions, not managed
-	void *callback_data_tmp;
-};
+struct rrr_cmodule;
 
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,

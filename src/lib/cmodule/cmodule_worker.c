@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
+#include "cmodule_struct.h"
 
 #include "../fork.h"
 #include "../mmap_channel.h"
@@ -708,4 +709,10 @@ int rrr_cmodule_worker_main (
 	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
 
 	return ret;
+}
+
+struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
+	struct rrr_cmodule_worker *worker
+) {
+	return worker->settings;
 }

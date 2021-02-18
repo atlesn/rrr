@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
+#include "../lib/cmodule/cmodule_config_data.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 
@@ -137,7 +138,7 @@ static int __cmodule_load (
 		struct cmodule_run_data *run_data,
 		struct cmodule_data *data
 ) {
-	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	int ret = 1; // Default is NOT OK
 
@@ -382,8 +383,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	RRR_DBG_1 ("cmodule instance %s started thread %p fork handler ptr %p\n",
-			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
+	RRR_DBG_1 ("cmodule instance %s started thread %p\n",
+			INSTANCE_D_NAME(thread_data), thread_data);
 
 	rrr_cmodule_helper_loop (
 			thread_data,
@@ -392,8 +393,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	);
 
 	out_message:
-	RRR_DBG_1 ("cmodule instance %s stopping thread %p fork handler ptr %p\n",
-			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
+	RRR_DBG_1 ("cmodule instance %s stopping thread %p\n",
+			INSTANCE_D_NAME(thread_data), thread_data);
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
