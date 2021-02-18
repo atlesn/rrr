@@ -59,6 +59,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	retry:
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
+			worker->notify_queue,
 			message,
 			message_addr
 	);
@@ -80,6 +81,7 @@ int rrr_cmodule_worker_new (
 		struct rrr_cmodule_worker **result,
 		const char *name,
 		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *notify_queue,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,
@@ -134,6 +136,7 @@ int rrr_cmodule_worker_new (
 	}
 
 	worker->settings = settings;
+	worker->notify_queue = notify_queue;
 	worker->fork_handler = fork_handler;
 	worker->spawn_interval_us = spawn_interval_us;
 	worker->sleep_time_us = sleep_time_us;
@@ -241,7 +244,7 @@ static void __rrr_cmodule_worker_log_hook (
 	int ret = 0;
 	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
-			NULL,
+			worker->notify_queue,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -272,7 +275,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
-			NULL,
+			worker->notify_queue,
 			setting,
 			sizeof(*setting),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -402,7 +405,7 @@ int __rrr_cmodule_worker_send_pong (
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PONG, 0);
 
-	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, &msg);
+	ret = rrr_cmodule_channel_send_message_simple(worker->channel_to_parent, worker->notify_queue, &msg);
 
 	if (ret == 0) {
 		worker->total_msg_mmap_to_parent++;
@@ -584,7 +587,7 @@ int rrr_cmodule_worker_loop_start (
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
-			NULL,
+			worker->notify_queue,
 			&control_msg,
 			sizeof(control_msg),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,

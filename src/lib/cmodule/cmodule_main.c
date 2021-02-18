@@ -111,6 +111,7 @@ int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *notify_queue,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
@@ -130,6 +131,7 @@ int rrr_cmodule_main_worker_fork_start (
 			&worker,
 			name,
 			settings,
+			notify_queue,
 			cmodule->fork_handler,
 			cmodule->mmap,
 			cmodule->config_data.worker_spawn_interval_us,
@@ -213,7 +215,6 @@ static void __rrr_cmodule_config_data_cleanup (
 void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
-	rrr_msg_holder_collection_clear(&cmodule->queue_to_forks);
 	rrr_cmodule_main_workers_stop(cmodule);
 	if (cmodule->mmap != NULL) {
 		rrr_mmap_destroy(cmodule->mmap);

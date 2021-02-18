@@ -46,6 +46,7 @@ struct rrr_cmodule_worker;
 struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
+struct rrr_event_queue;
 
 struct rrr_cmodule;
 
@@ -53,6 +54,7 @@ int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *notify_queue,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),

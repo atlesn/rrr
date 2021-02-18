@@ -444,9 +444,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
 	rrr_cmodule_helper_loop (
-			thread_data,
-			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll
+			thread_data
 	);
 
 	out_message:
@@ -475,6 +473,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
+	data->event_functions = rrr_cmodule_helper_event_functions;
 }
 
 void unload(void) {

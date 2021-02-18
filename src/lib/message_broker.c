@@ -1413,6 +1413,12 @@ int rrr_message_broker_get_fifo_stats (
 	return ret;
 }
 
+struct rrr_event_queue *rrr_message_broker_event_queue_get (
+		struct rrr_message_broker_costumer *costumer
+) {
+	return costumer->events;
+}
+
 int rrr_message_broker_event_dispatch (
 		struct rrr_message_broker_costumer *costumer,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),

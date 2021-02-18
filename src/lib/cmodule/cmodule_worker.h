@@ -36,6 +36,7 @@ struct rrr_fork_handler;
 struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
+struct rrr_event_queue;
 
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
@@ -46,6 +47,7 @@ int rrr_cmodule_worker_new (
 		struct rrr_cmodule_worker **result,
 		const char *name,
 		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *notify_queue,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,

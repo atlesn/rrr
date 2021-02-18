@@ -51,6 +51,7 @@ int rrr_cmodule_channel_count (
 
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg *message
 ) {
 	int ret = 0;
@@ -61,7 +62,7 @@ int rrr_cmodule_channel_send_message_simple (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
-			NULL,
+			notify_queue,
 			sizeof(*message),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
@@ -94,6 +95,7 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 ) {
@@ -110,7 +112,7 @@ int rrr_cmodule_channel_send_message_and_address (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
-			NULL,
+			notify_queue,
 			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,

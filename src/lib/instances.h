@@ -120,6 +120,9 @@ struct rrr_instance_runtime_data {
 	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
 	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
 
+	// Poll statistics for modules which read from others
+	struct rrr_poll_helper_counters counters;
+
 	// Shorcut which is set by thread itself after starting
 	struct rrr_thread *thread;
 
@@ -134,15 +137,17 @@ struct rrr_instance_runtime_data {
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
 #define INSTANCE_D_STATS(thread_data) thread_data->stats
 #define INSTANCE_D_STATS_ENGINE(thread_data) thread_data->init_data.stats
+#define INSTANCE_D_POLL(thread_data) (&thread_data->poll)
+#define INSTANCE_D_COUNTERS(thread_data) (&thread_data->counters)
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
+#define INSTANCE_D_BROKER_ARGS(thread_data) INSTANCE_D_HANDLE(thread_data)
+#define INSTANCE_D_EVENTS(thread_data) rrr_message_broker_event_queue_get(INSTANCE_D_HANDLE(thread_data))
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
 #define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
-#define INSTANCE_D_BROKER_ARGS(thread_data) \
-		thread_data->message_broker_handle
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 

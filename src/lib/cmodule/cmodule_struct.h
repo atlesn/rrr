@@ -73,6 +73,7 @@ struct rrr_cmodule_worker {
 	// Unmanaged pointers provided by application
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
+	struct rrr_event_queue *notify_queue;
 };
 
 struct rrr_cmodule {
@@ -81,13 +82,13 @@ struct rrr_cmodule {
 
 	struct rrr_cmodule_config_data config_data;
 
+	int config_check_complete;
+	int config_check_complete_message_printed;
+
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
 
-	struct rrr_msg_holder_collection queue_to_forks;
-
-	// Used by message_broker_cmodule poll functions, not managed
-	void *callback_data_tmp;
+//	struct rrr_msg_holder_collection queue_to_forks;
 };
 
 #endif /* RRR_CMODULE_STRUCT_H */

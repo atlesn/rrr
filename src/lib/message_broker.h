@@ -144,6 +144,9 @@ int rrr_message_broker_get_fifo_stats (
 		struct rrr_fifo_buffer_stats *target,
 		struct rrr_message_broker_costumer *costumer
 );
+struct rrr_event_queue *rrr_message_broker_event_queue_get (
+		struct rrr_message_broker_costumer *costumer
+);
 int rrr_message_broker_event_dispatch (
 		struct rrr_message_broker_costumer *costumer,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
