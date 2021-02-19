@@ -34,17 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../util/linked_list.h"
 
-struct rrr_socket_client {
-	RRR_LL_NODE(struct rrr_socket_client);
-	struct rrr_read_session_collection read_sessions;
-	struct rrr_socket_send_chunk_collection send_chunks;
-	int connected_fd;
-	struct sockaddr_storage addr;
-	socklen_t addr_len;
-	uint64_t last_seen;
-	void *private_data;
-	void (*private_data_destroy)(void *private_data);
-};
+struct event;
+struct rrr_socket_client;
 
 struct rrr_socket_client_collection {
 	RRR_LL_HEAD(struct rrr_socket_client);
@@ -67,6 +58,11 @@ int rrr_socket_client_collection_init (
 );
 int rrr_socket_client_collection_count (
 		struct rrr_socket_client_collection *collection
+);
+int rrr_socket_client_collection_iterate (
+		struct rrr_socket_client_collection *collection,
+		int (*callback)(int fd, void *private_data, void *arg),
+		void *callback_arg
 );
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
@@ -104,6 +100,14 @@ int rrr_socket_client_collection_send_push (
 );
 void rrr_socket_client_collection_send_tick (
 		struct rrr_socket_client_collection *collection
+);
+int rrr_socket_client_collection_dispatch (
+		struct rrr_socket_client_collection *collection,
+		uint64_t periodic_interval_us,
+		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		int  (*callback_periodic)(void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_SOCKET_CLIENT_H */

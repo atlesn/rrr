@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
+#include <event2/event.h>
 
 #include "../log.h"
 
@@ -39,6 +40,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
+
+struct rrr_socket_client {
+	RRR_LL_NODE(struct rrr_socket_client);
+	struct rrr_read_session_collection read_sessions;
+	struct rrr_socket_send_chunk_collection send_chunks;
+	int connected_fd;
+	struct event *event;
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+	uint64_t last_seen;
+	void *private_data;
+	void (*private_data_destroy)(void *private_data);
+};
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client
@@ -141,6 +155,29 @@ int rrr_socket_client_collection_count (
 	return RRR_LL_COUNT(collection);
 }
 
+int rrr_socket_client_collection_iterate (
+		struct rrr_socket_client_collection *collection,
+		int (*callback)(int fd, void *private_data, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if ((ret = callback(node->connected_fd, node->private_data, callback_arg)) != 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
+				ret = 0;
+			}
+			else {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+
+	out:
+	return ret;
+}
+
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
 		int (*private_data_new)(void **target, int fd, void *private_arg),
@@ -182,27 +219,49 @@ int rrr_socket_client_collection_accept (
 	return 0;
 }
 
+struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data {
+	void *data;
+	size_t size;
+};
+
+static int __rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback (
+		int fd,
+		void *private_data,
+		void *arg
+) {
+	struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	RRR_DBG_7("TX to fd %i in client collection\n", fd);
+
+	ssize_t written_bytes_dummy = 0;
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, fd, callback_data->data, callback_data->size)) != 0) {
+		if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
+			// TODO : This error message is useless because we don't know which client has disconnected
+			RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n", fd, ret);
+			ret = RRR_READ_EOF;
+		}
+	}
+
+	return ret;
+}
+
 int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		struct rrr_socket_client_collection *collection,
 		void *data,
 		size_t size
 ) {
-	int ret = 0;
+	struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data callback_data = {
+		data,
+		size
+	};
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		RRR_DBG_7("TX to fd %i in client collection\n", node->connected_fd);
-		ssize_t written_bytes_dummy = 0;
-		if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, node->connected_fd, data, size)) != 0) {
-			if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-				// TODO : This error message is useless because we don't know which client has disconnected
-				RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n", node->connected_fd, ret);
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-			ret = 0;
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
-
-	return ret;
+	return rrr_socket_client_collection_iterate (
+			collection,
+			__rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback,
+			&callback_data
+	);
 }
 
 struct rrr_socket_client_collection_read_raw_complete_callback_data {
@@ -400,4 +459,158 @@ void rrr_socket_client_collection_send_tick (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+}
+
+void __rrr_socket_client_collection_event_base_destroy_void (
+		void *event_base
+) {
+	event_base_free(event_base);
+}
+
+void __rrr_socket_client_collection_event_destroy_void_dbl_ptr (
+		void *arg
+) {
+	struct event **event = arg;
+	if (*event != NULL) {
+		event_free(*event);
+	}
+}
+
+struct rrr_socket_client_collection_event_callback_data {
+	struct rrr_socket_client_collection *collection;
+	struct event_base *event_base;
+	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
+	void (*callback_private_data_destroy)(void *private_data);
+	int  (*callback_periodic)(void *arg);
+	void *callback_arg;
+};
+
+void __rrr_socket_client_collection_event_accept (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_socket_client_collection_event_callback_data *callback_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int ret_tmp;
+
+	if ((ret_tmp = rrr_socket_client_collection_accept (
+			callback_data->collection,
+			callback_data->callback_private_data_new,
+			callback_data->callback_arg,
+			callback_data->callback_private_data_destroy
+	)) != 0) {
+		event_base_loopbreak(callback_data->event_base);
+	}
+}
+
+void __rrr_socket_client_collection_event_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_socket_client_collection_event_callback_data *callback_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if ( callback_data->callback_periodic != NULL &&
+	     callback_data->callback_periodic(callback_data->callback_arg) != 0
+	) {
+		event_base_loopbreak(callback_data->event_base);
+	}
+}
+
+int rrr_socket_client_collection_dispatch (
+		struct rrr_socket_client_collection *collection,
+		uint64_t periodic_interval_us,
+		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		int  (*callback_periodic)(void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct event_base *event_base = NULL;
+
+	if ((event_base = event_base_new()) == NULL) {
+		RRR_MSG_0("Could not create event base in rrr_socket_client_collection_dispatch\n");
+		ret = 1;
+		goto out_final;
+	}
+
+	pthread_cleanup_push(__rrr_socket_client_collection_event_base_destroy_void, event_base);
+
+	struct event *listen_event = NULL;
+	struct event *periodic_event = NULL;
+
+	pthread_cleanup_push(__rrr_socket_client_collection_event_destroy_void_dbl_ptr, &listen_event);
+	pthread_cleanup_push(__rrr_socket_client_collection_event_destroy_void_dbl_ptr, &periodic_event);
+
+	struct rrr_socket_client_collection_event_callback_data callback_data = {
+		collection,
+		event_base,
+		callback_private_data_new,
+		callback_private_data_destroy,
+		callback_periodic,
+		callback_arg
+	};
+
+	if ((listen_event = event_new (
+			event_base,
+			collection->listen_fd,
+			EV_READ|EV_TIMEOUT|EV_PERSIST,
+			__rrr_socket_client_collection_event_accept,
+			&callback_data
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct timeval tv_interval = {0};
+
+	tv_interval.tv_usec = periodic_interval_us % 1000000;
+	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
+
+	if ((periodic_event = event_new (
+			event_base,
+			0,
+			EV_PERSIST,
+			__rrr_socket_client_collection_event_periodic,
+			&callback_data
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(periodic_event, &tv_interval) || event_add(listen_event, NULL)) {
+		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_dispatch\n");
+		event_del(periodic_event);
+		event_del(listen_event);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = event_base_dispatch(event_base)) != 0) {
+		RRR_MSG_0("Error from event_base_dispatch in rrr_socket_client_collection_dispatch: %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (event_base_got_break(event_base)) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+	out_final:
+		return ret;
 }

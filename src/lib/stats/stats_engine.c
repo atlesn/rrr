@@ -333,14 +333,14 @@ static int __rrr_stats_engine_unicast_send_intermediate (
 		size_t size,
 		void *callback_arg
 ) {
-	struct rrr_socket_client *client = callback_arg;
+	int fd = *((int *) callback_arg);
 
 	int ret = 0;
 
 	ssize_t written_bytes_dummy = 0;
-	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, client->connected_fd, data, size)) != 0) {
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_dummy, fd, data, size)) != 0) {
 		RRR_DBG_1("Warning: Send error in __rrr_stats_engine_send_unicast_intermediate for client with fd %i\n",
-				client->connected_fd);
+				fd);
 	}
 
 	return ret;
@@ -448,6 +448,46 @@ static int __rrr_stats_engine_send_messages (
 	return ret;
 }
 
+static int __rrr_stats_engine_journal_send_to_new_clients_callback (
+		int fd,
+		void *private_data,
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+	struct rrr_stats_client *client = private_data;
+
+	if (client->first_log_journal_messages_sent == 0) {
+		// If journal is busy, just don't do anything.
+		JOURNAL_LOCK(stats);
+
+		// If there are more than 100 messages in the queue, clean up by removing entries from the beginning
+		RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+			if (RRR_LL_COUNT(&stats->log_journal) > 100) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+			else {
+				RRR_LL_ITERATE_LAST();
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, 0; rrr_stats_message_destroy(node));
+
+		RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+			// Ignore errors
+			__rrr_stats_engine_pack_message(node, __rrr_stats_engine_unicast_send_intermediate, &fd);
+			if (node == stats->log_journal_last_sent_message) {
+				// The rest will be sent by the normal send function
+				RRR_LL_ITERATE_LAST();
+			}
+		RRR_LL_ITERATE_END();
+
+		JOURNAL_UNLOCK();
+
+		client->first_log_journal_messages_sent = 1;
+	}
+
+	return 0;
+}
+
 static void __rrr_stats_engine_journal_send_to_new_clients (
 		struct rrr_stats_engine *stats
 ) {
@@ -456,38 +496,7 @@ static void __rrr_stats_engine_journal_send_to_new_clients (
 		return;
 	}
 
-	RRR_LL_ITERATE_BEGIN(&stats->client_collection, struct rrr_socket_client);
-		struct rrr_stats_client *client = node->private_data;
-		struct rrr_socket_client *socket_client = node;
-
-		if (client->first_log_journal_messages_sent == 0) {
-			// If journal is busy, just don't do anything.
-			JOURNAL_LOCK(stats);
-
-			// If there are more than 100 messages in the queue, clean up by removing entries from the beginning
-			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
-				if (RRR_LL_COUNT(&stats->log_journal) > 100) {
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-				else {
-					RRR_LL_ITERATE_LAST();
-				}
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, 0; rrr_stats_message_destroy(node));
-
-			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
-				// Ignore errors
-				__rrr_stats_engine_pack_message(node, __rrr_stats_engine_unicast_send_intermediate, socket_client);
-				if (node == stats->log_journal_last_sent_message) {
-					// The rest will be sent by the normal send function
-					RRR_LL_ITERATE_LAST();
-				}
-			RRR_LL_ITERATE_END();
-
-			JOURNAL_UNLOCK();
-
-			client->first_log_journal_messages_sent = 1;
-		}
-	RRR_LL_ITERATE_END();
+	rrr_socket_client_collection_iterate(&stats->client_collection, __rrr_stats_engine_journal_send_to_new_clients_callback, stats);
 }
 
 static void __rrr_stats_engine_log_journal_send_to_clients (

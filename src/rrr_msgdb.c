@@ -111,13 +111,15 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
+	rrr_msgdb_server_dispatch(server);
+/*
 	while (main_running) {
 		if ((ret = rrr_msgdb_server_tick(server)) != 0) {
 			break;
 		}
 		rrr_posix_usleep(1000);
 	}
-
+*/
 	rrr_config_set_debuglevel_on_exit();
 
 	out_cleanup_signal:
