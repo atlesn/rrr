@@ -314,26 +314,6 @@ void rrr_stats_engine_cleanup (
 	pthread_mutex_destroy(&stats->journal_lock);
 }
 
-struct rrr_stats_engine_read_callback_data {
-	struct rrr_stats_engine *engine;
-};
-
-static int __rrr_stats_engine_read_callback (
-		struct rrr_msg_msg **msg,
-		void *arg1,
-		void *arg2
-) {
-	struct rrr_stats_engine *stats = arg1;
-
-	(void)(stats);
-	(void)(arg2);
-
-	// TODO : Handle data from client
-	RRR_DBG_3("STATS RX msg size %" PRIrrrl ", data ignored\n", MSG_TOTAL_SIZE(*msg));
-
-	return 0;
-}
-
 int __rrr_stats_engine_multicast_send_intermediate (
 		struct rrr_msg *data,
 		size_t size,
@@ -612,18 +592,16 @@ int rrr_stats_engine_tick (
 		goto out_unlock;
 	}
 
-	struct rrr_stats_engine_read_callback_data callback_data = { stats };
-
-	// Read from clients
+	// Read from clients, note that no callbacks are defined yet
 	if ((ret = rrr_socket_client_collection_read_message (
 			&stats->client_collection,
 			1024,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-			__rrr_stats_engine_read_callback,
 			NULL,
 			NULL,
 			NULL,
-			&callback_data
+			NULL,
+			NULL
 	)) != 0) {
 		RRR_MSG_0("Error while reading from clients in stats engine\n");
 		ret = 1;
