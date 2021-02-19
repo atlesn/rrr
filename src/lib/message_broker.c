@@ -86,8 +86,11 @@ static void __rrr_message_broker_split_buffer_node_destroy (
 ) {
 	struct rrr_fifo_buffer_stats stats;
 	rrr_fifo_buffer_get_stats(&stats, &node->queue);
-	RRR_DBG_1("\t- Split buffer stats: %" PRIu64 "/%" PRIu64 "\n",
-			stats.total_entries_deleted, stats.total_entries_written);
+	RRR_DBG_1("\t- Split buffer stats for %s: %" PRIu64 "/%" PRIu64 "\n",
+			node->owner->name,
+			stats.total_entries_deleted,
+			stats.total_entries_written
+	);
 	rrr_fifo_buffer_destroy(&node->queue);
 	free(node);
 }
@@ -1074,6 +1077,7 @@ static void __rrr_message_broker_get_source_buffer (
 
 	struct rrr_fifo_buffer *found_buffer = NULL;
 
+	int pos = 0;
 	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
 		if (node->owner == self) {
 			found_buffer = &node->queue;
@@ -1081,10 +1085,13 @@ static void __rrr_message_broker_get_source_buffer (
 		}
 		else if (node->owner == NULL) {
 			// Allocate
+			RRR_DBG_1("Message broker costumer %s add split buffer reader %s at position %i\n",
+				costumer->name, self->name);
 			node->owner = self;
 			found_buffer = &node->queue;
 			RRR_LL_ITERATE_LAST();
 		}
+		pos++;
 	RRR_LL_ITERATE_END();
 
 	if (found_buffer == NULL) {
