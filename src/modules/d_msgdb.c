@@ -212,7 +212,8 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("msgdb started thread %p\n", thread_data);
 
 	rrr_cmodule_helper_loop (
-			thread_data
+			thread_data,
+			20 * 1000 // 20 ms
 	);
 
 	out_message:

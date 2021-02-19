@@ -38,7 +38,8 @@ struct rrr_cmodule;
 extern struct rrr_instance_event_functions rrr_cmodule_helper_event_functions;
 
 void rrr_cmodule_helper_loop (
-		struct rrr_instance_runtime_data *thread_data
+		struct rrr_instance_runtime_data *thread_data,
+		unsigned int periodic_interval_us
 );
 const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
 		struct rrr_instance_runtime_data *thread_data

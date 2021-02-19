@@ -576,7 +576,8 @@ static int __rrr_cmodule_helper_event_periodic (
 }
 
 void rrr_cmodule_helper_loop (
-		struct rrr_instance_runtime_data *thread_data
+		struct rrr_instance_runtime_data *thread_data,
+		unsigned int periodic_interval_us
 ) {
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
@@ -588,7 +589,7 @@ void rrr_cmodule_helper_loop (
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
-			1 * 1000 * 1000,
+			periodic_interval_us,
 			__rrr_cmodule_helper_event_periodic,
 			INSTANCE_D_THREAD(thread_data)
 	);
