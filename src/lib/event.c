@@ -107,9 +107,14 @@ int rrr_event_dispatch (
 		{
 			pthread_mutex_lock(&queue->lock);
 
+			unsigned int sleep_time = 100 * 1000; // 100 ms
+			if (sleep_time > periodic_interval_us) {
+				sleep_time = periodic_interval_us;
+			}
+
 			if (queue->queue[queue->queue_rpos].amount == 0) {
 				struct timespec wakeup_time;
-				rrr_time_gettimeofday_timespec(&wakeup_time, 100 * 1000); // 100 ms
+				rrr_time_gettimeofday_timespec(&wakeup_time, sleep_time);
 				ret = pthread_cond_timedwait(&queue->cond, &queue->lock, &wakeup_time);
 			}
 
