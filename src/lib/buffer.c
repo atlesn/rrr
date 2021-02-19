@@ -457,7 +457,7 @@ void rrr_fifo_buffer_clear_with_callback (
 	int freed_counter = 0;
 	while (entry != NULL) {
 		struct rrr_fifo_buffer_entry *next = entry->next;
-		RRR_DBG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+		RRR_DBG_4 ("buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		__rrr_fifo_buffer_entry_lock(entry);
 		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
@@ -476,7 +476,7 @@ void rrr_fifo_buffer_clear_with_callback (
 
 	__rrr_fifo_buffer_stats_add_deleted(buffer, freed_counter);
 
-	RRR_DBG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	RRR_DBG_4 ("buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
@@ -564,7 +564,7 @@ int rrr_fifo_buffer_search (
 	struct rrr_fifo_buffer_entry *next;
 	struct rrr_fifo_buffer_entry *prev = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
-		RRR_DBG_4("Buffer %p search loop entry %p next %p prev %p\n", buffer, entry, entry->next, prev);
+		RRR_DBG_4("buffer %p search loop entry %p next %p prev %p\n", buffer, entry, entry->next, prev);
 		next = entry->next;
 
 		int did_something = 0;
@@ -833,7 +833,7 @@ int rrr_fifo_buffer_search_and_replace (
 	struct rrr_fifo_buffer_entry *next;
 	struct rrr_fifo_buffer_entry *prev = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
-		RRR_DBG_4("Buffer %p search_and_replace loop entry %p data %p next %p prev %p\n",
+		RRR_DBG_4("buffer %p search_and_replace loop entry %p data %p next %p prev %p\n",
 				buffer, entry, entry->data, entry->next, prev);
 		next = entry->next;
 
@@ -1094,7 +1094,7 @@ int rrr_fifo_buffer_read_clear_forward (
 
 #ifdef FIFO_DEBUG_COUNTER
 	if (fifo_verify_counter(buffer) != 0) {
-		RRR_BUG("Buffer size mismatch\n");
+		RRR_BUG("BUG: buffer size mismatch\n");
 	}
 #endif /* FIFO_DEBUG_COUNTER */
 
@@ -1360,7 +1360,7 @@ static void __rrr_fifo_buffer_update_ratelimit(struct rrr_fifo_buffer *buffer) {
 
 	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (ratelimit->spins_per_us + 1));
 
-	RRR_DBG_4("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
+	RRR_DBG_4("buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
 			buffer,
 			ratelimit->read_write_balance,
 			ratelimit->sleep_spin_time,
