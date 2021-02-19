@@ -125,7 +125,6 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 int test_do_poll_loop (
 		struct rrr_instance *self,
-		struct rrr_instance *output,
 		struct rrr_message_broker *broker,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		struct rrr_test_callback_data *callback_data
@@ -135,19 +134,16 @@ int test_do_poll_loop (
 	struct rrr_test_result *test_result = callback_data->test_result;
 
 	struct rrr_message_broker_costumer *handle_self = NULL;
-	struct rrr_message_broker_costumer *handle_output = NULL;
 
 	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
 
-	while (rrr_time_get_64() < limit && (handle_output == NULL || handle_self == NULL)) {
-		handle_output = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(output));
+	while (rrr_time_get_64() < limit && (handle_self == NULL)) {
 		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
 		rrr_posix_usleep(50000);
 	}
 
-	if (handle_output == NULL || handle_self == NULL) {
-		TEST_MSG("Could not find message broker handle for output '%s' or self after 2 seconds in test_do_poll_loop\n",
-				INSTANCE_M_NAME(output));
+	if (handle_self == NULL) {
+		TEST_MSG("Could not find message broker handle for self after 2 seconds in test_do_poll_loop\n");
 		ret = 1;
 		goto out;
 	}
@@ -160,11 +156,12 @@ int test_do_poll_loop (
 
 		rrr_thread_watchdog_time_update(self->thread);
 
-		TEST_MSG("Test result polling from %s try: %i of %i\n",
-				INSTANCE_M_NAME(output), i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
+		TEST_MSG("Test result polling try: %i of %i\n",
+				i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
+		uint16_t amount = 100;
 		ret = rrr_message_broker_poll_delete (
-				handle_output,
+				&amount,
 				handle_self,
 				0,
 				callback,
@@ -184,8 +181,8 @@ int test_do_poll_loop (
 			test_result->result = 1;
 		}
 		else {
-			TEST_MSG("Result of polling from %s: %i\n",
-					INSTANCE_M_NAME(output), test_result->result);
+			TEST_MSG("Result of polling: %i\n",
+					test_result->result);
 		}
 	}
 
@@ -314,6 +311,7 @@ int test_averager (
 		RRR_TEST_FUNCTION_ARGS
 ) {
 	(void)(test_function_data);
+	(void)(instances);
 
 	// Preconditions for this test:
 	// - Sender of the averager module is a voltmonitor module with configuration
@@ -323,28 +321,17 @@ int test_averager (
 
 	struct rrr_test_result test_result = {0};
 
-	struct rrr_instance *output = rrr_instance_find(instances, output_name);
-	if (output == NULL) {
-		TEST_MSG("Could not find output instances %s in test_averager\n",
-				output_name);
-		ret = 1;
-		goto out;
-	}
-
 	struct rrr_test_callback_data callback_data = { &test_result, NULL };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output));
 	ret |= test_do_poll_loop(
 			INSTANCE_D_INSTANCE(self_thread_data),
-			output,
 			INSTANCE_D_BROKER(self_thread_data),
 			test_averager_callback,
 			&callback_data
 	);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 
-	out:
 	return ret;
 }
 
@@ -679,25 +666,18 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 int test_array (
 		RRR_TEST_FUNCTION_ARGS
 ) {
+	(void)(instances);
+
 	int ret = 0;
 
 	struct rrr_test_result test_result_1 = {1};
-
-	struct rrr_instance *output_1 = rrr_instance_find(instances, output_name);
-	if (output_1 == NULL) {
-		TEST_MSG("Could not find output instance %s in test_type_array\n",
-				output_name);
-		return 1;
-	}
 
 	struct rrr_test_type_array_callback_data array_callback_data = { test_function_data };
 	struct rrr_test_callback_data callback_data = { &test_result_1, &array_callback_data };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output_1));
 	ret |= test_do_poll_loop(
 			INSTANCE_D_INSTANCE(self_thread_data),
-			output_1,
 			INSTANCE_D_BROKER(self_thread_data),
 			test_type_array_callback,
 			&callback_data
@@ -719,25 +699,17 @@ int test_anything (
 		RRR_TEST_FUNCTION_ARGS
 ) {
 	(void)(test_function_data);
+	(void)(instances);
 
 	int ret = 0;
 
 	struct rrr_test_result test_result_1 = {1};
 
-	struct rrr_instance *output_1 = rrr_instance_find(instances, output_name);
-	if (output_1 == NULL) {
-		TEST_MSG("Could not find output instance %s in test_type_array\n",
-				output_name);
-		return 1;
-	}
-
 	struct rrr_test_callback_data callback_data = { &test_result_1, NULL };
 
 	// Poll from first output
-	TEST_MSG("Polling from %s\n", INSTANCE_M_NAME(output_1));
 	ret |= test_do_poll_loop(
 			INSTANCE_D_INSTANCE(self_thread_data),
-			output_1,
 			INSTANCE_D_BROKER(self_thread_data),
 			test_anything_callback,
 			&callback_data
@@ -891,15 +863,6 @@ int test_type_array_mysql (
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 	struct rrr_msg_holder *entry = NULL;
 
-	struct rrr_instance *tag_buffer = rrr_instance_find(instances, output_name);
-
-	if (tag_buffer == NULL) {
-		TEST_MSG("Could not find output instance %s in test_type_array_mysql_and_network\n",
-				output_name);
-		ret = 1;
-		goto out;
-	}
-
 	struct rrr_instance *mysql = NULL;
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
@@ -934,7 +897,6 @@ int test_type_array_mysql (
 	TEST_MSG("Polling MySQL\n");
 	ret |= test_do_poll_loop(
 			INSTANCE_D_INSTANCE(self_thread_data),
-			tag_buffer,
 			INSTANCE_D_BROKER(self_thread_data),
 			test_type_array_mysql_and_network_callback,
 			&callback_data
