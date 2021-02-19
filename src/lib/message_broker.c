@@ -136,7 +136,6 @@ static void __rrr_message_broker_friends_clear (
 			break;
 		}
 		int did_destroy_dummy = 0;
-		printf("- Clear friend %s\n", target[i]->name);
 		__rrr_message_broker_costumer_decref(&did_destroy_dummy, target[i]);
 		target[i] = NULL;
 	}
@@ -146,8 +145,6 @@ static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
 	struct rrr_fifo_buffer_stats stats;
-
-	printf("Costumer %s destroy\n", costumer->name);
 
 	if (costumer->slot != NULL) {
 		uint64_t entries_deleted = 0;
@@ -182,8 +179,6 @@ static void __rrr_message_broker_costumer_decref (
 		struct rrr_message_broker_costumer *costumer
 ) {
 	*did_destroy = 0;
-
-	printf("Costumer %s decref from %u\n", costumer->name, costumer->usercount);
 
 	if (--(costumer->usercount) > 0) {
 		return;
