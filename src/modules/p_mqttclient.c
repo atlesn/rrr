@@ -1540,14 +1540,15 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 				INSTANCE_D_NAME(data->thread_data), i_first);
 	}
 
-	int is_retry = 0;
+//	int is_retry = 0;
 
 	reconnect:
 
+/* TODO : Fix this config parameter
 	if (is_retry != 0 && data->do_discard_on_connect_retry) {
 		int discarded_count = 0;
 
-		if (rrr_poll_do_poll_discard (&discarded_count, data->thread_data, &data->thread_data->poll) != 0) {
+		if (rrr_poll_do_poll_discard (&discarded_count, data->thread_data) != 0) {
 			RRR_MSG_0("Polling from senders failed while discarding messages upon connect retry in mqttclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_MQTT_INTERNAL_ERROR;
@@ -1561,7 +1562,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 					INSTANCE_D_NAME(data->thread_data), discarded_count);
 		}
 	}
-
+*/
 	data->transport_handle = 0;
 	data->session = NULL;
 
@@ -1604,7 +1605,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 							ret
 					);
 					ret = RRR_MQTT_OK;
-					is_retry = 1;
+//					is_retry = 1;
 					goto reconnect;
 				}
 
@@ -1738,7 +1739,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(mqttclient_exit_message, thread);
 
 	int no_senders = 0;
-	if (rrr_poll_collection_count(&thread_data->poll) == 0) {
+	if (rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		no_senders = 1;
 		if (data->publish_topic != NULL) {
 			RRR_MSG_0("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
@@ -1924,7 +1925,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			else {
 				RRR_BENCHMARK_IN(mqtt_client_sleep);
 				uint16_t amount = 100;
-				ret_tmp = rrr_poll_do_poll_delete (&amount, thread_data, &thread_data->poll, mqttclient_poll_callback, poll_sleep);
+				ret_tmp = rrr_poll_do_poll_delete (&amount, thread_data, mqttclient_poll_callback, poll_sleep);
 				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 				if (ret_tmp != 0) {
 					RRR_MSG_0("Error while polling from senders in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));

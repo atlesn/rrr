@@ -130,14 +130,12 @@ struct rrr_instance_runtime_data {
 	// * Init and cleanup in intermediate thread entry function
 	// * Cleanup in ghost handler
 	struct rrr_cmodule *cmodule;
-	struct rrr_poll_collection poll;
 	struct rrr_stats_instance *stats;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
 #define INSTANCE_D_STATS(thread_data) thread_data->stats
 #define INSTANCE_D_STATS_ENGINE(thread_data) thread_data->init_data.stats
-#define INSTANCE_D_POLL(thread_data) (&thread_data->poll)
 #define INSTANCE_D_COUNTERS(thread_data) (&thread_data->counters)
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle

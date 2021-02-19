@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "event_functions.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 #include "util/gnu.h"
@@ -466,7 +467,8 @@ unsigned int rrr_instance_collection_count (
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
-	rrr_message_broker_costumer_unregister(data->message_broker_handle);
+	printf("Unregister %s\n", INSTANCE_D_NAME(data));
+	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
 	free(data);
 }
 
@@ -527,36 +529,74 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 		return data;
 }
 
-struct rrr_instance_before_start_tasks_register_write_listener_callback_data {
+struct rrr_instance_add_senders_to_broker_callback_data {
+	struct rrr_message_broker_costumer *target;
 	struct rrr_message_broker *broker;
-	const struct rrr_instance *instance;
+	struct rrr_instance *faulty_sender;
 };
 
-static int __rrr_instance_before_start_tasks_register_write_listener (
-		const struct rrr_instance *friend,
+static int __rrr_instance_add_senders_to_broker_callback (
+		struct rrr_instance *instance,
 		void *arg
 ) {
-	struct rrr_instance_before_start_tasks_register_write_listener_callback_data *callback_data = arg;
-
 	int ret = 0;
 
-	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(callback_data->broker, callback_data->instance->config->name);
-	struct rrr_message_broker_costumer *sender = rrr_message_broker_costumer_find_by_name(callback_data->broker, friend->config->name);
+	struct rrr_instance_add_senders_to_broker_callback_data *data = arg;
 
-	RRR_DBG_8("Instance %s register write listener on instance %s\n",
-		callback_data->instance->config->name, friend->config->name);
+	struct rrr_message_broker_costumer *handle = rrr_message_broker_costumer_find_by_name (
+			data->broker,
+			INSTANCE_M_NAME(instance)
+	);
 
-	if (self == NULL || sender == NULL) {
-		RRR_BUG("BUG: self or sender was NULL in __rrr_instance_before_start_tasks_register_write_listener\n");
+	if (handle == NULL) {
+		RRR_MSG_0("Could not find message broker costumer '%s' in __rrr_instance_add_senders_to_broker_callback\n", INSTANCE_M_NAME(instance));
+		data->faulty_sender = instance;
+		ret = 1;
+		goto out;
 	}
 
-	if ((ret = rrr_message_broker_write_listener_add (sender, self)) != 0) {
-		RRR_MSG_0("Failed while registering write listener for instance %s with senders\n",
-				callback_data->instance->config->name);
+	if ((ret = rrr_message_broker_sender_add(data->target, handle)) != 0) {
+		RRR_MSG_0("Failed to add costumer '%s' in __rrr_instance_add_senders_to_broker_callback\n", INSTANCE_M_NAME(instance));
+		data->faulty_sender = instance;
+		ret = 1;
 		goto out;
 	}
 
 	out:
+	return ret;
+}
+
+static int __rrr_instance_add_senders_to_broker (
+		struct rrr_instance **faulty_sender,
+		struct rrr_message_broker *broker,
+		struct rrr_instance *instance
+) {
+	int ret = 0;
+
+	struct rrr_message_broker_costumer *handle = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+
+	if (handle == NULL) {
+		RRR_BUG("BUG: Target costumer not found in __rrr_instance_add_senders_to_broker\n");
+	}
+
+	*faulty_sender = NULL;
+
+	struct rrr_instance_add_senders_to_broker_callback_data callback_data = {
+			handle,
+			broker,
+			NULL
+	};
+
+	ret = rrr_instance_friend_collection_iterate (
+			&instance->senders,
+			__rrr_instance_add_senders_to_broker_callback,
+			&callback_data
+	);
+
+	if (ret != 0) {
+		*faulty_sender = callback_data.faulty_sender;
+	}
+
 	return ret;
 }
 
@@ -566,27 +606,22 @@ static int __rrr_instance_before_start_tasks_register_write_listener (
 // themselves.
 static int __rrr_instance_before_start_tasks (
 		struct rrr_message_broker *broker,
-		const struct rrr_instance *instance
+		struct rrr_instance *instance
 ) {
 	int ret = 0;
 
-	if (instance->module_data->event_functions.broker_data_available != NULL) {
-		struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
+	rrr_event_function_set (
+		rrr_message_broker_event_queue_get(self),
+		RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+		instance->module_data->event_functions.broker_data_available
+	);
 
-		rrr_message_broker_write_listener_init(self, instance->module_data->event_functions.broker_data_available);
-
-		struct rrr_instance_before_start_tasks_register_write_listener_callback_data callback_data = {
-			broker,
-			instance
-		};
-
-		if ((ret = rrr_instance_friend_collection_iterate_const (
-				&instance->senders,
-				__rrr_instance_before_start_tasks_register_write_listener,
-				&callback_data
-		)) != 0) {
-			goto out;
-		}
+	struct rrr_instance *faulty_instance = NULL;
+	if (__rrr_instance_add_senders_to_broker(&faulty_instance, broker, instance) != 0) {
+		RRR_MSG_0("Failed to add senders of instance %s. Faulty sender was %s.\n",
+				instance->config->name, (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
+		goto out;
 	}
 
 	out:
@@ -610,19 +645,6 @@ static void __rrr_instance_thread_intermediate_cleanup (
 	rrr_cmodule_destroy(thread_data->cmodule);
 
 	out:
-	pthread_mutex_unlock(&thread->mutex);
-}
-
-static void __rrr_instance_thread_poll_collection_clear_void (
-		void *arg
-) {
-	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-
-	RRR_DBG_8("Thread %p intermediate poll collection clear\n", thread);
-
-	pthread_mutex_lock(&thread->mutex);
-	rrr_poll_collection_clear(INSTANCE_D_BROKER(thread_data), &thread_data->poll);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
@@ -656,7 +678,6 @@ static void *__rrr_instance_thread_entry_intermediate (
 
 	pthread_cleanup_push(__rrr_instace_runtime_data_destroy_intermediate, thread->private_data);
 	pthread_cleanup_push(__rrr_instance_thread_intermediate_cleanup, thread);
-	pthread_cleanup_push(__rrr_instance_thread_poll_collection_clear_void, thread);
 	pthread_cleanup_push(__rrr_instance_thread_stats_instance_cleanup, thread);
 
 	if ((rrr_cmodule_new (
@@ -690,13 +711,6 @@ static void *__rrr_instance_thread_entry_intermediate (
 		goto out;
 	}
 
-	struct rrr_instance *faulty_instance = NULL;
-	if (rrr_poll_add_from_thread_senders(&faulty_instance, &thread_data->poll, thread_data) != 0) {
-		RRR_MSG_0("Failed to add senders to poll collection of instance %s. Faulty sender was %s.\n",
-				INSTANCE_D_NAME(thread_data), (faulty_instance != NULL ? INSTANCE_M_NAME(faulty_instance): "(null)"));
-		goto out;
-	}
-
 	RRR_DBG_1("Instance %s starting int PID %llu, TID %llu, thread %p, instance %p\n",
 		thread->name, (unsigned long long) getpid(), (unsigned long long) rrr_gettid(), thread, thread_data);
 
@@ -706,7 +720,6 @@ static void *__rrr_instance_thread_entry_intermediate (
 	// Keep out label ABOVE cleanup_pops
 	out:
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

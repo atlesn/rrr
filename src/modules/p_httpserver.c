@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
+#include "../lib/buffer.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
@@ -83,6 +84,8 @@ struct httpserver_data {
 	rrr_setting_uint response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
+	struct rrr_fifo_buffer buffer;
+
 	struct rrr_map websocket_topic_filters;
 
 	char *allow_origin_header;
@@ -99,6 +102,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	rrr_fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 }
 
@@ -109,6 +113,10 @@ static int httpserver_data_init (
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
+
+	if (rrr_fifo_buffer_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
+		return 1;
+	}
 
 	return 0;
 }
@@ -499,10 +507,13 @@ struct receive_get_response_callback_data {
 };
 
 static int httpserver_receive_get_response_callback (
-		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+		RRR_FIFO_READ_CALLBACK_ARGS
 ) {
 	struct receive_get_response_callback_data *callback_data = arg;
+	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
 	struct rrr_msg_msg *msg = entry->message;
+
+	(void)(size);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
 
@@ -704,11 +715,8 @@ static int httpserver_receive_callback_response_get (
 		response_data->time_begin = rrr_time_get_64();
 	}
 
-	uint16_t amount = 100;
-	if ((ret = rrr_poll_do_poll_search (
-			&amount,
-			data->thread_data,
-			&data->thread_data->poll,
+	if ((ret = rrr_fifo_buffer_search (
+			&data->buffer,
 			httpserver_receive_get_response_callback,
 			&callback_data,
 			0
@@ -1302,11 +1310,8 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	callback_data.topic_filter = topic_filter;
 
-	uint16_t amount = 100;
-	if ((ret = rrr_poll_do_poll_search (
-			&amount,
-			httpserver_callback_data->httpserver_data->thread_data,
-			&httpserver_callback_data->httpserver_data->thread_data->poll,
+	if ((ret = rrr_fifo_buffer_search (
+			&httpserver_callback_data->httpserver_data->buffer,
 			httpserver_receive_get_response_callback,
 			&callback_data,
 			0
@@ -1386,11 +1391,32 @@ static int httpserver_unique_id_generator_callback (
 	);
 }
 
+static int httpserver_poll_callback_write (RRR_FIFO_WRITE_CALLBACK_ARGS) {
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_incref(entry);
+	*data = (char *) entry;
+	*size = sizeof(*entry);
+	*order = 0;
+	return RRR_FIFO_OK;
+}
+
+static int httpserver_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct httpserver_data *data = thread_data->private_data;
+
+	return rrr_fifo_buffer_write(&data->buffer, httpserver_poll_callback_write, entry);
+}
+
 // If we receive messages from senders which no worker seem to want, we must delete them
-static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
+	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
+
+	(void)(size);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	rrr_msg_holder_lock(entry);
 
 	if (entry->buffer_time == 0) {
 		RRR_BUG("BUG: Buffer time was 0 for entry in httpserver_housekeep_callback\n");
@@ -1490,6 +1516,18 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);
 
+		// TODO : Convert to events to prevent delay
+		uint16_t amount = 100;
+		if (rrr_poll_do_poll_delete (
+				&amount,
+				data->thread_data,
+				httpserver_poll_callback,
+				100 // 100 ms
+		) != 0) {
+			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
+			break;
+		}
+
 		int accept_count = 0;
 
 		if (rrr_http_server_tick (
@@ -1503,12 +1541,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			break;
 		}
 
-		if (accept_count == 0) {
-			rrr_posix_usleep(100000); // 100 ms
-		}
-		else {
-			accept_count_total += accept_count;
-		}
+		accept_count_total += accept_count;
 
 		uint64_t time_now = rrr_time_get_64();
 		if (time_now > prev_stats_time + 1000000) {
@@ -1519,16 +1552,12 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 			prev_stats_time = time_now;
 		}
 
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_search (
-				&amount,
-				data->thread_data,
-				&data->thread_data->poll,
+		if (rrr_fifo_buffer_search (
+				&data->buffer,
 				httpserver_housekeep_callback,
 				&callback_data,
 				0
-		) != 0) {
-			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
+		)) {
 			break;
 		}
 	}

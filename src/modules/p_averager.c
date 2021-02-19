@@ -475,7 +475,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		averager_maintain_buffer(data);
 
 		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete(&amount, thread_data, &thread_data->poll, averager_poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete(&amount, thread_data, averager_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;

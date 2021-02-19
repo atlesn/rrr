@@ -38,7 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP    (1<<0)
 
-#define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX 64
+#define RRR_MESSAGE_BROKER_SENDERS_MAX                64
+#define RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX  RRR_MESSAGE_BROKER_SENDERS_MAX
 
 struct rrr_msg_holder;
 struct rrr_msg_holder_collection;
@@ -46,18 +47,11 @@ struct rrr_msg_holder_slot;
 struct rrr_message_broker_costumer;
 struct rrr_message_broker;
 
-void rrr_message_broker_costumer_incref (
-		struct rrr_message_broker *broker,
-		struct rrr_message_broker_costumer *costumer
-);
-void rrr_message_broker_costumer_decref (
-		struct rrr_message_broker *broker,
-		struct rrr_message_broker_costumer *costumer
-);
 void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
 );
 void rrr_message_broker_costumer_unregister (
+		struct rrr_message_broker *broker,
 		struct rrr_message_broker_costumer *costumer
 );
 void rrr_message_broker_destroy (
@@ -110,21 +104,11 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );
-int rrr_message_broker_poll_discard (
-		int *discarded_count,
-		struct rrr_message_broker_costumer *costumer,
+size_t rrr_message_broker_senders_count (
 		struct rrr_message_broker_costumer *self
 );
 int rrr_message_broker_poll_delete (
-		struct rrr_message_broker_costumer *costumer,
-		struct rrr_message_broker_costumer *self,
-		int broker_poll_flags,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
-);
-int rrr_message_broker_poll (
-		struct rrr_message_broker_costumer *costumer,
+		uint16_t *amount,
 		struct rrr_message_broker_costumer *self,
 		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
@@ -147,22 +131,13 @@ int rrr_message_broker_get_fifo_stats (
 struct rrr_event_queue *rrr_message_broker_event_queue_get (
 		struct rrr_message_broker_costumer *costumer
 );
-int rrr_message_broker_event_dispatch (
-		struct rrr_message_broker_costumer *costumer,
-		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
-		void *arg
-);
 int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		struct rrr_message_broker_costumer *costumer,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),
 		void *callback_arg_1,
 		void *callback_arg_2
 );
-void rrr_message_broker_write_listener_init (
-		struct rrr_message_broker_costumer *costumer,
-		int (*function)(RRR_EVENT_FUNCTION_ARGS)
-);
-int rrr_message_broker_write_listener_add (
+int rrr_message_broker_sender_add (
 		struct rrr_message_broker_costumer *costumer,
 		struct rrr_message_broker_costumer *listener_costumer
 );

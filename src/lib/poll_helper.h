@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_ERR 1
 #define RRR_POLL_NOT_FOUND 2
 
+struct rrr_message_broker;
+
 struct rrr_poll_helper_counters {
 	uint64_t total_message_count;
 	uint64_t prev_message_count;
@@ -52,54 +54,16 @@ struct rrr_poll_helper_counters {
 	uint64_t count = raw_data->counters.total_message_count - raw_data->counters.prev_message_count; \
 	data->counters.prev_message_count = data->counters.total_message_count 
 
-
-struct rrr_poll_collection_entry {
-	RRR_LL_NODE(struct rrr_poll_collection_entry);
-	struct rrr_message_broker *message_broker;
-	struct rrr_message_broker_costumer *message_broker_handle;
-};
-
-struct rrr_poll_collection {
-	RRR_LL_HEAD(struct rrr_poll_collection_entry);
-};
-
-void rrr_poll_collection_clear (
-		struct rrr_message_broker *message_broker,
-		struct rrr_poll_collection *collection
-);
-int rrr_poll_collection_add (
-		unsigned int *flags_result,
-		struct rrr_poll_collection *collection,
-		struct rrr_message_broker *message_broker,
-		const char *costumer_name
-);
-int rrr_poll_do_poll_discard (
-		int *discarded_count,
-		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_poll_collection *collection
-);
 int rrr_poll_do_poll_delete (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 );
-int rrr_poll_do_poll_search (
-		uint16_t *amount,
-		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_poll_collection *collection,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
-);
-int rrr_poll_collection_count (
-		struct rrr_poll_collection *collection
-);
-int rrr_poll_add_from_thread_senders (
+int rrr_poll_add_senders_to_broker (
 		struct rrr_instance **faulty_sender,
-		struct rrr_poll_collection *collection,
-		struct rrr_instance_runtime_data *thread_data
+		struct rrr_message_broker *broker,
+		struct rrr_instance *instance
 );
 
 #endif /* RRR_POLL_HELPER_H */

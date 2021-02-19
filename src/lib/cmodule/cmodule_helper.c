@@ -204,49 +204,24 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 	return __rrr_cmodule_helper_send_message_to_fork(preferred, entry_locked);
 }
 
-struct rrr_cmodule_helper_poll_callback_data {
-	struct rrr_instance_runtime_data *thread_data;
-};
-
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_cmodule_helper_poll_callback_data *callback_data = arg;
-	struct rrr_instance_runtime_data *thread_data = callback_data->thread_data;
+	struct rrr_instance_runtime_data *thread_data = arg;
 
 	int ret = 0;
 
 	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", transmitting to worker fork\n",
 			INSTANCE_D_NAME(thread_data), ((struct rrr_msg_msg *) entry->message)->timestamp);
 
+	retry:
 	if ((ret = __rrr_cmodule_helper_send_message_to_forks(thread_data, entry)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_FULL) {
-			ret = 0;
+			rrr_posix_usleep(1000);
+			goto retry;
 		}
-	}
-	else {
-		RRR_POLL_HELPER_COUNTERS_UPDATE_POLLED(thread_data);
-		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	}
 
 	rrr_msg_holder_unlock(entry);
 	return ret;
-}
-
-static int __rrr_cmodule_helper_poll (
-		uint16_t *amount,
-		struct rrr_instance_runtime_data *thread_data
-) {
-	struct rrr_cmodule_helper_poll_callback_data callback_data = {
-		thread_data
-	};
-
-	return rrr_poll_do_poll_search (
-			amount,
-			thread_data,
-			INSTANCE_D_POLL(thread_data),
-			__rrr_cmodule_helper_poll_callback,
-			&callback_data,
-			0
-	);
 }
 
 static int __rrr_cmodule_helper_event_message_broker_data_available (
@@ -259,7 +234,12 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
 
-	return __rrr_cmodule_helper_poll (amount, thread_data);
+	return rrr_poll_do_poll_delete (
+			amount,
+			thread_data,
+			__rrr_cmodule_helper_poll_callback,
+			0
+	);
 }
 
 struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {
@@ -598,7 +578,7 @@ static int __rrr_cmodule_helper_event_periodic (
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	if (rrr_poll_collection_count(INSTANCE_D_POLL(thread_data)) == 0) {
+	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
@@ -606,8 +586,9 @@ void rrr_cmodule_helper_loop (
 		}
 	}
 
-	rrr_message_broker_event_dispatch (
-			INSTANCE_D_BROKER_ARGS(thread_data),
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
 			__rrr_cmodule_helper_event_periodic,
 			INSTANCE_D_THREAD(thread_data)
 	);

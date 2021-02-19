@@ -451,7 +451,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	int no_polling = rrr_poll_collection_count(&thread_data->poll) > 0 ? 0 : 1;
+	int no_polling = rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) > 0 ? 0 : 1;
 
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -484,7 +484,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		        no_polling == 0
 		) {
 			uint16_t amount = 100;
-			if (rrr_poll_do_poll_delete (&amount, thread_data, &thread_data->poll, poll_callback, 25) != 0) {
+			if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback, 25) != 0) {
 				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;

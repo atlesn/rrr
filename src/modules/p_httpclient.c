@@ -1779,7 +1779,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 		// We must always poll to ensure messages are stored int msgdb, if active
 		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete(&amount, thread_data, &thread_data->poll, httpclient_poll_callback, 0) != 0) {
+		if (rrr_poll_do_poll_delete(&amount, thread_data, httpclient_poll_callback, 0) != 0) {
 			RRR_MSG_0("Error while polling in httpclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;

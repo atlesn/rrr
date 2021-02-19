@@ -267,7 +267,6 @@ int rrr_msg_to_host_and_verify_with_callback (
 	else {
 		RRR_MSG_0("Received a socket message of unknown type %u in rrr_msg_to_host_and_verify_with_callback\n",
 				(*msg)->msg_type);
-		abort();
 		ret = RRR_MSG_READ_SOFT_ERROR;
 		goto out;
 	}

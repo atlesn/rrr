@@ -95,7 +95,7 @@ static int buffer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, &thread_data->poll, buffer_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, buffer_poll_callback, 0);
 }
 
 static int buffer_parse_config (struct buffer_data *data, struct rrr_instance_config_data *config) {
@@ -138,8 +138,9 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("buffer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	rrr_message_broker_event_dispatch (
-			INSTANCE_D_BROKER_ARGS(thread_data),
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
 			thread
 	);

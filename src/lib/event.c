@@ -100,7 +100,9 @@ int rrr_event_dispatch (
 	uint64_t time_periodic_call = 0;
 
 	while (ret == 0) {
-		struct rrr_event event;
+		uint8_t function = 0;
+		uint8_t flags = 0;
+		uint16_t amount = 0;
 
 		{
 			pthread_mutex_lock(&queue->lock);
@@ -111,11 +113,15 @@ int rrr_event_dispatch (
 				ret = pthread_cond_timedwait(&queue->cond, &queue->lock, &wakeup_time);
 			}
 
-			event = queue->queue[queue->queue_rpos];
+			struct rrr_event event  = queue->queue[queue->queue_rpos];
 
 			if (event.amount > 0) {
 				memset (&queue->queue[queue->queue_rpos], '\0', sizeof(queue->queue[0]));
-				queue->queue_rpos++;
+				queue->queue_rpos++
+;
+				function = event.function;
+				flags = event.flags;
+				amount = event.amount;
 			}
 
 			pthread_mutex_unlock(&queue->lock);
@@ -141,21 +147,27 @@ int rrr_event_dispatch (
 			time_periodic_call = time_now;
 		}
 
-		if (event.amount > 0) {
-			if (queue->functions[event.function] == NULL) {
-				RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", event.function);
+		if (amount > 0) {
+			if (queue->functions[function] == NULL) {
+				RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", function);
+				abort();
 				ret = 1;
 				goto out;
 			}
 
 			int tick = 0;
-			while (event.amount > 0) {
+			while (amount > 0) {
 				if ((++tick) % 65535 == 0) {
 					goto periodic_check;
 				}
-				if ((ret = queue->functions[event.function](&event.amount, event.flags, arg)) != 0) {
+				uint16_t amount_new = amount;
+				if ((ret = queue->functions[function](&amount_new, flags, arg)) != 0) {
 					goto out;
 				}
+				if (amount_new > amount) {
+					RRR_BUG("BUG: Amount increased after event function, possible underflow\n");
+				}
+				amount = amount_new;
 			}
 		}
 	}
@@ -184,6 +196,8 @@ void rrr_event_pass (
 		uint8_t flags,
 		uint16_t amount
 ) {
+	pthread_mutex_lock(&queue->lock);
+
 	for (;;) {
 		// Sneak peak at previous write, maybe it's the same function
 		uint8_t wpos = queue->queue_wpos;

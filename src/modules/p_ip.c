@@ -1567,7 +1567,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	int has_senders = (rrr_poll_collection_count(&thread_data->poll) > 0 ? 1 : 0);
+	int has_senders = rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) > 0 ? 1 : 0;
 
 	if (has_senders == 0 && data->definitions == NULL) {
 		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1609,7 +1609,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		if (has_senders != 0) {
 			uint16_t amount = 100;
-			if (rrr_poll_do_poll_delete (&amount, thread_data, &thread_data->poll, poll_callback_ip, 0) != 0) {
+			if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 0) != 0) {
 				RRR_MSG_0("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
