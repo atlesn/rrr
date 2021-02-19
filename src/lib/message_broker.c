@@ -87,7 +87,7 @@ static void __rrr_message_broker_split_buffer_node_destroy (
 	struct rrr_fifo_buffer_stats stats;
 	rrr_fifo_buffer_get_stats(&stats, &node->queue);
 	RRR_DBG_1("\t- Split buffer stats for %s: %" PRIu64 "/%" PRIu64 "\n",
-			node->owner->name,
+			(node->owner != NULL ? node->owner->name : "(not yet populated)"),
 			stats.total_entries_deleted,
 			stats.total_entries_written
 	);
@@ -147,28 +147,12 @@ static void __rrr_message_broker_friends_clear (
 static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	struct rrr_fifo_buffer_stats stats;
+	RRR_DBG_1 ("Message broker destroy costumer '%s'\n", costumer->name);
 
 	if (costumer->slot != NULL) {
-		uint64_t entries_deleted = 0;
-		uint64_t entries_written = 0;
-		rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
-		rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
-
 		rrr_msg_holder_slot_destroy(costumer->slot);
 	}
-	else {
-		rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
-	}
 
-	RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
-			costumer->name, stats.total_entries_deleted, stats.total_entries_written);
-
-	RRR_LL_DESTROY (
-			&costumer->split_buffers,
-			struct rrr_message_broker_split_buffer_node,
-			__rrr_message_broker_split_buffer_node_destroy(node)
-	);
 	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_buffer_destroy(&costumer->main_queue);
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
@@ -281,6 +265,35 @@ void rrr_message_broker_unregister_all (
 ) {
 	pthread_mutex_lock(&broker->lock);
 
+	// There is a certain risk that ghost threads may crash when we do this
+	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
+		struct rrr_message_broker_costumer *costumer = node;
+
+		__rrr_message_broker_friends_clear(costumer->write_notify_listeners, RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX);
+		__rrr_message_broker_friends_clear(costumer->senders, RRR_MESSAGE_BROKER_SENDERS_MAX);
+
+		struct rrr_fifo_buffer_stats stats;
+
+		if (costumer->slot != NULL) { 
+			uint64_t entries_deleted = 0;
+			uint64_t entries_written = 0;
+			rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
+			rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
+		}
+		else {
+			rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
+		}
+
+		RRR_DBG_1 ("Message broker unregister costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
+				costumer->name, stats.total_entries_deleted, stats.total_entries_written
+		);
+		RRR_LL_DESTROY (
+				&costumer->split_buffers,
+				struct rrr_message_broker_split_buffer_node,
+				__rrr_message_broker_split_buffer_node_destroy(node)
+		);
+	RRR_LL_ITERATE_END();
+
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
 			if (node->usercount > 1) {
@@ -289,12 +302,6 @@ void rrr_message_broker_unregister_all (
 			}
 		RRR_LL_ITERATE_END();
 	}
-
-	// There is a certain risk that ghost threads may crash when we do this
-	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
-		__rrr_message_broker_friends_clear(node->write_notify_listeners, RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX);
-		__rrr_message_broker_friends_clear(node->senders, RRR_MESSAGE_BROKER_SENDERS_MAX);
-	RRR_LL_ITERATE_END();
 
 	int did_destroy;
 	RRR_LL_DESTROY(broker, struct rrr_message_broker_costumer, __rrr_message_broker_costumer_decref(&did_destroy, node));
@@ -1086,7 +1093,7 @@ static void __rrr_message_broker_get_source_buffer (
 		else if (node->owner == NULL) {
 			// Allocate
 			RRR_DBG_1("Message broker costumer %s add split buffer reader %s at position %i\n",
-				costumer->name, self->name);
+				costumer->name, self->name, pos);
 			node->owner = self;
 			found_buffer = &node->queue;
 			RRR_LL_ITERATE_LAST();

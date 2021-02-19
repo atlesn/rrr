@@ -467,7 +467,6 @@ unsigned int rrr_instance_collection_count (
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
-	printf("Unregister %s\n", INSTANCE_D_NAME(data));
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
 	free(data);
 }
