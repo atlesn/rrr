@@ -242,6 +242,7 @@ int rrr_msg_to_host_and_verify_with_callback (
 
 		ret = callback_addr_msg(message, callback_arg1, callback_arg2);
 	}
+
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(*msg)) {
 		if (callback_log_msg == NULL) {
 			RRR_MSG_0("Received an rrr_msg_msg_log in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
@@ -258,9 +259,15 @@ int rrr_msg_to_host_and_verify_with_callback (
 
 		ret = callback_log_msg(message, callback_arg1, callback_arg2);
 	}
+	else if (RRR_MSG_IS_TREE_DATA(*msg)) {
+		// Not supported yet, implement as needed. Stats engine will receive
+		// these messages but it does not do anything with them.
+		RRR_DBG_3("Received a socket message tree data message in rrr_msg_to_host_and_verify_with_callback, this is not yet supported\n");
+	}
 	else {
 		RRR_MSG_0("Received a socket message of unknown type %u in rrr_msg_to_host_and_verify_with_callback\n",
 				(*msg)->msg_type);
+		abort();
 		ret = RRR_MSG_READ_SOFT_ERROR;
 		goto out;
 	}
