@@ -511,11 +511,14 @@ static int httpserver_receive_get_response_callback (
 ) {
 	struct receive_get_response_callback_data *callback_data = arg;
 	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
-	struct rrr_msg_msg *msg = entry->message;
 
 	(void)(size);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	rrr_msg_holder_lock(entry);
+
+	struct rrr_msg_msg *msg = entry->message;
 
 	if (MSG_TOPIC_LENGTH(msg) > 0) {
 		if ((ret = rrr_mqtt_topic_match_str_with_end (
@@ -739,10 +742,12 @@ static int httpserver_receive_callback_response_get (
 		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s\n",
 				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
 
+		rrr_msg_holder_lock(callback_data.entry);
 		ret = httpserver_receive_get_response_extract_data (
 				&response_data->target,
 				(struct rrr_msg_msg *) callback_data.entry->message
 		);
+		rrr_msg_holder_unlock(callback_data.entry);
 
 		goto out;
 	}
@@ -1393,7 +1398,7 @@ static int httpserver_unique_id_generator_callback (
 
 static int httpserver_poll_callback_write (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_msg_holder *entry = arg;
-	rrr_msg_holder_incref(entry);
+	rrr_msg_holder_incref_while_locked(entry);
 	*data = (char *) entry;
 	*size = sizeof(*entry);
 	*order = 0;
@@ -1404,7 +1409,9 @@ static int httpserver_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpserver_data *data = thread_data->private_data;
 
-	return rrr_fifo_buffer_write(&data->buffer, httpserver_poll_callback_write, entry);
+	int ret = rrr_fifo_buffer_write(&data->buffer, httpserver_poll_callback_write, entry);
+	rrr_msg_holder_unlock(entry);
+	return ret;
 }
 
 // If we receive messages from senders which no worker seem to want, we must delete them
