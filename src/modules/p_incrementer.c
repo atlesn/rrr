@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/event.h"
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
 #include "../lib/messages/msg_msg.h"
@@ -472,6 +473,24 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
+static int incrementer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	(void)(flags);
+
+	return rrr_poll_do_poll_delete (amount, thread_data, incrementer_poll_callback, 0);
+}
+
+static int incrementer_event_periodic (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	(void)(thread_data);
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
+}
+
 static int incrementer_parse_config (struct incrementer_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -530,16 +549,12 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("incrementer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete (&amount, thread_data, incrementer_poll_callback, 50) != 0) {
-			RRR_MSG_0("Error while polling in incrementer instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-	}
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000, // 1 s
+			incrementer_event_periodic,
+			thread
+	);
 
 	out_message:
 	pthread_cleanup_pop(1);
@@ -561,11 +576,16 @@ static const char *module_name = "incrementer";
 __attribute__((constructor)) void load(void) {
 }
 
+static struct rrr_instance_event_functions event_functions = {
+	incrementer_event_broker_data_available
+};
+
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

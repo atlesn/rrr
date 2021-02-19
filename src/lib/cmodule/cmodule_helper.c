@@ -595,12 +595,6 @@ void rrr_cmodule_helper_loop (
 	);
 }
 
-const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
-		struct rrr_instance_runtime_data *thread_data
-) {
-	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
-}
-
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
@@ -740,11 +734,14 @@ int rrr_cmodule_helper_worker_forks_start (
 
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
+		unsigned int tick_interval_us,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
+	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
+
 	return __rrr_cmodule_main_worker_fork_start_intermediate (
 			thread_data,
 			init_wrapper_callback,

@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
+#include "../lib/cmodule/cmodule_config_data.h"
 
 #define RRR_MSGDB_DEFAULT_DIRECTORY  "/var/lib/rrr/msgdb"
 #define RRR_MSGDB_DEFAULT_SOCKET     "/var/run/rrr/msgdb.sock"
@@ -169,10 +170,11 @@ static int msgdb_fork (void *arg) {
 		goto out;
 	}
 
-	// Don't parse cmodule config, not used
+	// Don't parse cmodule config, not used.
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
+			20000, // 20ms tick interval
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,
@@ -213,7 +215,7 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			20 * 1000 // 20 ms
+			1 * 1000 * 1000 // 1 s
 	);
 
 	out_message:
