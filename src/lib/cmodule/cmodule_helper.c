@@ -49,6 +49,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
+const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
+}
+
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_msg_msg *message;
