@@ -166,7 +166,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 
 	*does_match = 0;
 
-	if (rrr_msg_msg_topic_match (
+	if (MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message) > 0 && rrr_msg_msg_topic_match (
 			does_match,
 			(const struct rrr_msg_msg *) entry->message,
 			INSTANCE_D_TOPIC(thread_data)
