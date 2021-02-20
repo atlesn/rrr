@@ -214,6 +214,20 @@ int __rrr_socket_holder_new (
 	return ret;
 }
 
+int rrr_socket_with_filename_do (
+		int fd,
+		int (*callback)(const char *filename, void *arg),
+		void *callback_arg
+) {
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			return callback(node->filename, callback_arg);
+		}
+	RRR_LL_ITERATE_END();
+
+	return 1;
+}
+		
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd

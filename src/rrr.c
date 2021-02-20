@@ -333,7 +333,6 @@ static int main_loop (
 		if (count > 0) {
 			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
-		rrr_socket_close_all();
 
 	out_unload_modules:
 #		ifndef RRR_NO_MODULE_UNLOAD
@@ -341,6 +340,7 @@ static int main_loop (
 #		endif
 		rrr_stats_engine_cleanup(&stats_data.engine);
 		rrr_message_broker_destroy(message_broker);
+		rrr_socket_close_all();
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);

@@ -48,6 +48,11 @@ struct rrr_socket_options {
 	int protocol;
 };
 
+int rrr_socket_with_filename_do (
+		int fd,
+		int (*callback)(const char *filename, void *arg),
+		void *callback_arg
+);
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd

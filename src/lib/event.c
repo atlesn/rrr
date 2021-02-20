@@ -28,10 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #include <event2/thread.h>
 
+#include "../../config.h"
 #include "log.h"
 #include "event.h"
 #include "threads.h"
 #include "rrr_strerror.h"
+#include "socket/rrr_socket.h"
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
@@ -52,15 +54,36 @@ struct rrr_event_queue {
 	struct event_base *event_base;
 	struct rrr_event queue[0xff];
 	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
+	int signal_fd_listen;
+	int signal_fd_signal;
 };
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
+	if (queue->signal_fd_signal != 0) {
+		rrr_socket_close(queue->signal_fd_signal);
+	}
+	if (queue->signal_fd_listen != 0) {
+		rrr_socket_close(queue->signal_fd_listen);
+	}
 	pthread_mutex_destroy(&queue->lock);
 	pthread_cond_destroy(&queue->cond);
-	munmap(queue, sizeof(*queue));
 	event_base_free(queue->event_base);
+	munmap(queue, sizeof(*queue));
+}
+
+static int __rrr_event_queue_new_connect_callback (
+		const char *filename,
+		void *arg
+) {
+	struct rrr_event_queue *queue = arg;
+	return rrr_socket_unix_connect (
+			&queue->signal_fd_signal,
+			"event",
+			filename,
+			1
+	);
 }
 
 int rrr_event_queue_new (
@@ -108,11 +131,39 @@ int rrr_event_queue_new (
 		goto out_destroy_cond;
 	}
 
+	if ((ret = rrr_socket_unix_create_bind_and_listen (
+			&queue->signal_fd_listen,
+			"event",
+			RRR_RUN_DIR "/event.sock-XXXXXX",
+			1,
+			1,
+			1,
+			0
+	)) != 0) {
+		RRR_MSG_0("Failed to create listen socket in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_destroy_event_base;
+	}
+
+	if ((ret = rrr_socket_with_filename_do (
+			queue->signal_fd_listen,
+			__rrr_event_queue_new_connect_callback,
+			queue
+	)) != 0) {
+		RRR_MSG_0("Failed to connect to listening socket in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_close_listen_fd;
+	}
+
 	*target = queue;
 
 	goto out;
-//	out_destroy_event_base:
-//		event_base_free(queue->event_base);
+//	out_close_connect_fd:
+//		rrr_socket_close(queue->signal_fd_signal);
+	out_close_listen_fd:
+		rrr_socket_close(queue->signal_fd_listen);
+	out_destroy_event_base:
+		event_base_free(queue->event_base);
 	out_destroy_cond:
 		pthread_cond_destroy(&queue->cond);
 	out_destroy_lock:
@@ -154,13 +205,13 @@ int rrr_event_dispatch (
 				sleep_time = periodic_interval_us;
 			}
 
-			if (queue->queue[queue->queue_rpos].amount == 0) {
+			struct rrr_event event  = queue->queue[queue->queue_rpos];
+
+			if (event.amount == 0) {
 				struct timespec wakeup_time;
 				rrr_time_gettimeofday_timespec(&wakeup_time, sleep_time);
 				ret = pthread_cond_timedwait(&queue->cond, &queue->lock, &wakeup_time);
 			}
-
-			struct rrr_event event  = queue->queue[queue->queue_rpos];
 
 			if (event.amount > 0) {
 				memset (&queue->queue[queue->queue_rpos], '\0', sizeof(queue->queue[0]));
