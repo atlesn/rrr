@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../rrr_strerror.h"
+#include "../event.h"
 #include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
@@ -61,8 +62,12 @@ struct rrr_socket_client_collection {
 	int listen_fd;
 	char *creator;
 
-	struct event_base *event_base;
 	struct rrr_socket_client_collection_event_callback_data callback_data;
+
+	// Managed pointers
+	struct event_base *event_base;
+	struct event *listen_event;
+	struct event *periodic_event;
 };
 
 struct rrr_socket_client {
@@ -167,10 +172,20 @@ static int __rrr_socket_client_new (
 		return ret;
 }
 
-void __rrr_socket_client_collection_clear (
+static void __rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection
 ) {
 	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(node));
+	if (collection->listen_event != NULL) {
+		event_del(collection->listen_event);
+		event_free(collection->listen_event);
+		collection->listen_event = NULL;
+	}
+	if (collection->periodic_event != NULL) {
+		event_del(collection->periodic_event);
+		event_free(collection->periodic_event);
+		collection->periodic_event = NULL;
+	}
 }
 
 void rrr_socket_client_collection_destroy (
@@ -180,12 +195,6 @@ void rrr_socket_client_collection_destroy (
 	RRR_FREE_IF_NOT_NULL(collection->creator);
 	collection->listen_fd = 0;
 	free(collection);
-}
-
-void __rrr_socket_client_collection_clear_void (
-		void *collection
-) {
-	__rrr_socket_client_collection_clear (collection);
 }
 
 int rrr_socket_client_collection_new (
@@ -462,7 +471,7 @@ static int __rrr_socket_client_send_tick (
 	return ret;
 }
 
-void __rrr_socket_client_collection_event_write (
+static void __rrr_socket_client_collection_event_write (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -486,7 +495,7 @@ void __rrr_socket_client_collection_event_write (
 	}
 }
 
-void __rrr_socket_client_collection_event_read (
+static void __rrr_socket_client_collection_event_read (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -567,7 +576,6 @@ static int __rrr_socket_client_collection_accept (
 	RRR_DBG_7("Client connection accepted into collection with fd %i\n", temp.connected_fd);
 
 	if (collection->event_base != NULL) {
-
 		if ((client_new->event_read = event_new (
 				collection->event_base,
 				temp.connected_fd,
@@ -730,22 +738,7 @@ void rrr_socket_client_collection_send_tick (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 }
 
-void __rrr_socket_client_collection_event_base_destroy_void (
-		void *event_base
-) {
-	event_base_free(event_base);
-}
-
-void __rrr_socket_client_collection_event_destroy_void_dbl_ptr (
-		void *arg
-) {
-	struct event **event = arg;
-	if (*event != NULL) {
-		event_free(*event);
-	}
-}
-
-void __rrr_socket_client_collection_event_accept (
+static void __rrr_socket_client_collection_event_accept (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -768,7 +761,7 @@ void __rrr_socket_client_collection_event_accept (
 	}
 }
 
-void __rrr_socket_client_collection_event_periodic (
+static void __rrr_socket_client_collection_event_periodic (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
@@ -788,6 +781,7 @@ void __rrr_socket_client_collection_event_periodic (
 
 int rrr_socket_client_collection_dispatch (
 		struct rrr_socket_client_collection *collection,
+		struct rrr_event_queue *queue,
 		uint64_t periodic_interval_us,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
@@ -800,24 +794,10 @@ int rrr_socket_client_collection_dispatch (
 		void *callback_arg
 ) {
 	int ret = 0;
-	struct event_base *event_base = NULL;
 
-	if ((event_base = event_base_new()) == NULL) {
-		RRR_MSG_0("Could not create event base in rrr_socket_client_collection_dispatch\n");
-		ret = 1;
-		goto out_final;
-	}
+	__rrr_socket_client_collection_clear(collection);
 
-	pthread_cleanup_push(__rrr_socket_client_collection_event_base_destroy_void, event_base);
-
-	// The clients including event struct must be destroyed prior to the base
-	pthread_cleanup_push(__rrr_socket_client_collection_clear_void, collection);
-
-	struct event *listen_event = NULL;
-	struct event *periodic_event = NULL;
-
-	pthread_cleanup_push(__rrr_socket_client_collection_event_destroy_void_dbl_ptr, &listen_event);
-	pthread_cleanup_push(__rrr_socket_client_collection_event_destroy_void_dbl_ptr, &periodic_event);
+	collection->event_base = rrr_event_queue_base_get(queue);
 
 	{
 		struct rrr_socket_client_collection_event_callback_data callback_data = {
@@ -837,11 +817,10 @@ int rrr_socket_client_collection_dispatch (
 		};
 
 		collection->callback_data = callback_data;
-		collection->event_base = event_base;
 	}
 
-	if ((listen_event = event_new (
-			event_base,
+	if ((collection->listen_event = event_new (
+			collection->event_base,
 			collection->listen_fd,
 			EV_READ|EV_TIMEOUT|EV_PERSIST,
 			__rrr_socket_client_collection_event_accept,
@@ -857,8 +836,8 @@ int rrr_socket_client_collection_dispatch (
 	tv_interval.tv_usec = periodic_interval_us % 1000000;
 	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
 
-	if ((periodic_event = event_new (
-			event_base,
+	if ((collection->periodic_event = event_new (
+			collection->event_base,
 			0,
 			EV_PERSIST,
 			__rrr_socket_client_collection_event_periodic,
@@ -869,15 +848,13 @@ int rrr_socket_client_collection_dispatch (
 		goto out;
 	}
 
-	if (event_add(periodic_event, &tv_interval) || event_add(listen_event, NULL)) {
+	if (event_add(collection->periodic_event, &tv_interval) || event_add(collection->listen_event, NULL)) {
 		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_dispatch\n");
-		event_del(periodic_event);
-		event_del(listen_event);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = event_base_dispatch(event_base)) != 0) {
+	if ((ret = event_base_dispatch(collection->event_base)) != 0) {
 		RRR_MSG_0("Error from event_base_dispatch in rrr_socket_client_collection_dispatch: %i\n", ret);
 		ret = 1;
 		goto out;
@@ -886,16 +863,70 @@ int rrr_socket_client_collection_dispatch (
 	if (collection->callback_data.callback_periodic_ret != 0) {
 		ret = collection->callback_data.callback_periodic_ret & ~(RRR_READ_EOF);
 	}
-	else if (event_base_got_break(event_base)) {
+	else if (event_base_got_break(collection->event_base)) {
 		ret = 1;
 		goto out;
 	}
 
 	out:
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-		pthread_cleanup_pop(1);
-	out_final:
-		return ret;
+	return ret;
+}
+
+int rrr_socket_client_collection_event_setup (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_event_queue *queue,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg,
+		ssize_t read_step_max_size,
+		int read_flags_socket,
+		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
+		void *callback_arg
+) {
+	int ret = 0;
+
+	__rrr_socket_client_collection_clear(collection);
+
+	collection->event_base = rrr_event_queue_base_get(queue);
+
+	{
+		struct rrr_socket_client_collection_event_callback_data callback_data = {
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg,
+			NULL,
+			NULL,
+			0,
+			read_step_max_size,
+			read_flags_socket,
+			callback_msg,
+			callback_addr_msg,
+			callback_log_msg,
+			callback_ctrl_msg,
+			callback_arg
+		};
+
+		collection->callback_data = callback_data;
+	}
+
+	if ((collection->listen_event = event_new (
+			collection->event_base,
+			collection->listen_fd,
+			EV_READ|EV_TIMEOUT|EV_PERSIST,
+			__rrr_socket_client_collection_event_accept,
+			collection
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(collection->listen_event, NULL)) {
+		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }

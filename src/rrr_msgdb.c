@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_umask.h"
 #include "lib/util/posix.h"
 #include "lib/msgdb/msgdb_server.h"
+#include "lib/event.h"
 #include "paths.h"
 #include "main.h"
 
@@ -46,7 +47,7 @@ RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_msgdb");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,         '\0',   "directory",             "{DIRECTORY}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "socket",                "[-s|--socket]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "socket",                "[-s|--socket[=]SOCKET]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
@@ -78,6 +79,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 	rrr_strerror_init();
 
+	struct rrr_event_queue *queue = NULL;
 	struct rrr_msgdb_server *server = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct cmd_data cmd;
@@ -116,20 +118,24 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	ret = (rrr_msgdb_server_dispatch(server, rrr_msgdb_periodic, NULL) != 0);
-/*
-	while (main_running) {
-		if ((ret = rrr_msgdb_server_tick(server)) != 0) {
-			break;
-		}
-		rrr_posix_usleep(1000);
+	if ((ret = rrr_event_queue_new(&queue)) != 0) {
+		goto out_cleanup_signal;
 	}
-*/
+
+	if ((ret = rrr_msgdb_server_event_setup(server, queue)) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	ret = rrr_event_dispatch(queue, 100000, rrr_msgdb_periodic, NULL);
+
 	rrr_config_set_debuglevel_on_exit();
 
 	out_cleanup_signal:
 		if (server != NULL) {
 			rrr_msgdb_server_destroy(server);
+		}
+		if (queue != NULL) {
+			rrr_event_queue_destroy(queue);
 		}
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_signal_handler_remove(signal_handler);

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_msgdb_server;
+struct rrr_event_queue;
 
 int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
@@ -45,8 +46,13 @@ uint64_t rrr_msgdb_server_recv_count_get (
 );
 int rrr_msgdb_server_dispatch (
 		struct rrr_msgdb_server *server,
+		struct rrr_event_queue *queue,
 		int (*periodic_callback)(void *arg),
 		void *periodic_callback_arg
+);
+int rrr_msgdb_server_event_setup (
+		struct rrr_msgdb_server *server,
+		struct rrr_event_queue *queue
 );
 
 #endif /* RRR_MSGDB_SERVER_H */

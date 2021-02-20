@@ -182,6 +182,12 @@ int rrr_event_queue_new (
 		return ret;
 }
 
+struct event_base *rrr_event_queue_base_get (
+		struct rrr_event_queue *queue
+) {
+	return queue->event_base;
+}
+
 void rrr_event_queue_fds_get (
 		int *fd_listen,
 		int *fd_read,
