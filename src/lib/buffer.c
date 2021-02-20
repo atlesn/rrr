@@ -999,20 +999,26 @@ int rrr_fifo_buffer_read_clear_forward (
 
 		int ret_tmp = 0;
 
-		// Don't access entry pointers outside lock
 		{
+			// Don't access entry pointers outside lock
+			// Also, don't hold read lock while in callback
 			rrr_fifo_read_lock(buffer);
-			pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
-
-			__rrr_fifo_buffer_entry_lock(current);
-			pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, current);
 
 			next = current->next;
 
-			ret_tmp = callback(callback_data, current->data, current->size);
+			unsigned long int size = current->size;
+			char *data = current->data;
 
-			pthread_cleanup_pop(1);
-			pthread_cleanup_pop(1);
+			rrr_fifo_unlock(buffer); 
+
+			{
+				__rrr_fifo_buffer_entry_lock(current);
+				pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, current);
+
+				ret_tmp = callback(callback_data, data, size);
+
+				pthread_cleanup_pop(1);
+			}
 		}
 
 		processed_entries++;
