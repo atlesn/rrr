@@ -36,20 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_OK     RRR_READ_OK
 #define RRR_EVENT_EXIT   RRR_READ_EOF
 
-struct rrr_event {
-	uint8_t function;
-	uint8_t flags;
-	uint16_t amount;
-};
-
-struct rrr_event_queue {
-	uint8_t queue_rpos;
-	uint8_t queue_wpos;
-	pthread_mutex_t lock;
-	pthread_cond_t cond;
-	struct rrr_event queue[0xff];
-	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
-};
+struct rrr_event;
+struct rrr_event_queue;
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue

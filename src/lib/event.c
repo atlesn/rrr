@@ -33,6 +33,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
+struct rrr_event {
+	uint8_t function;
+	uint8_t flags;
+	uint16_t amount;
+};
+
+struct rrr_event_queue {
+	uint8_t queue_rpos;
+	uint8_t queue_wpos;
+	pthread_mutex_t lock;
+	pthread_cond_t cond;
+	struct rrr_event queue[0xff];
+	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
+};
+
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
