@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <errno.h>
 #include <sys/mman.h>
+#include <event2/event.h>
+#include <event2/thread.h>
 
 #include "log.h"
 #include "event.h"
@@ -32,6 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "util/posix.h"
 #include "util/rrr_time.h"
+
+static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile int rrr_event_libevent_initialized = 0;
 
 struct rrr_event {
 	uint8_t function;
@@ -44,6 +49,7 @@ struct rrr_event_queue {
 	uint8_t queue_wpos;
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
+	struct event_base *event_base;
 	struct rrr_event queue[0xff];
 	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
 };
@@ -54,12 +60,25 @@ void rrr_event_queue_destroy (
 	pthread_mutex_destroy(&queue->lock);
 	pthread_cond_destroy(&queue->cond);
 	munmap(queue, sizeof(*queue));
+	event_base_free(queue->event_base);
 }
 
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 ) {
 	int ret = 0;
+
+	pthread_mutex_lock(&init_lock);
+	if (rrr_event_libevent_initialized++ == 0) {
+		ret = evthread_use_pthreads();
+	}
+	pthread_mutex_unlock(&init_lock);
+
+	if (ret != 0) {
+		RRR_MSG_0("evthread_use_pthreads() failed in rrr_event_queue_new\n");
+		ret = 1;
+		goto out;
+	}
 
 	*target = NULL;
 
@@ -83,11 +102,19 @@ int rrr_event_queue_new (
 		goto out_destroy_lock;
 	}
 
+	if ((queue->event_base = event_base_new()) == NULL) {
+		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_destroy_cond;
+	}
+
 	*target = queue;
 
 	goto out;
-//	out_destroy_cond:
-//		pthread_cond_destroy(&queue->cond);
+//	out_destroy_event_base:
+//		event_base_free(queue->event_base);
+	out_destroy_cond:
+		pthread_cond_destroy(&queue->cond);
 	out_destroy_lock:
 		pthread_mutex_destroy(&queue->lock);
 	out_munmap:

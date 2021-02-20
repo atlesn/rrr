@@ -170,8 +170,9 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([no])
 ])
 
-AC_CHECK_HEADERS([event2/event.h], [], [AC_MSG_ERROR([libevent headers not found])])
+AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
+AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
 
 AC_SUBST([TLS_CFLAGS])
 AC_SUBST([TLS_LDFLAGS])
