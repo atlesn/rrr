@@ -60,6 +60,11 @@ int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
+int rrr_msgdb_periodic (void *arg) {
+	(void)(arg);
+	return main_running ? 0 : RRR_READ_EOF;
+}
+
 int main (int argc, const char *argv[], const char *env[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -111,7 +116,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 		goto out_cleanup_signal;
 	}
 
-	rrr_msgdb_server_dispatch(server);
+	ret = (rrr_msgdb_server_dispatch(server, rrr_msgdb_periodic, NULL) != 0);
 /*
 	while (main_running) {
 		if ((ret = rrr_msgdb_server_tick(server)) != 0) {

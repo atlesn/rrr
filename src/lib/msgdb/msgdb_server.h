@@ -44,7 +44,9 @@ uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
 );
 int rrr_msgdb_server_dispatch (
-		struct rrr_msgdb_server *server
+		struct rrr_msgdb_server *server,
+		int (*periodic_callback)(void *arg),
+		void *periodic_callback_arg
 );
 
 #endif /* RRR_MSGDB_SERVER_H */

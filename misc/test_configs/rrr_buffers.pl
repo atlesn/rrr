@@ -15,7 +15,7 @@ sub source {
 	my $message = shift;
 
 	if (rand(10) > 5) {
-		$message->{'topic'} = "";
+		$message->{'topic'} = "1";
 		for (my $i = 0; $i < 100; $i++) {
 			if ($i > 40) {
 				$message->{'topic'} = "4";
