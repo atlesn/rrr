@@ -628,8 +628,14 @@ int rrr_cmodule_worker_main (
 	return ret;
 }
 
+struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
+		struct rrr_cmodule_worker *worker
+) {
+	return worker->event_queue_worker;
+}
+
 struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
-	struct rrr_cmodule_worker *worker
+		struct rrr_cmodule_worker *worker
 ) {
 	return worker->settings;
 }

@@ -77,6 +77,9 @@ int rrr_cmodule_worker_main (
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 );
+struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
+		struct rrr_cmodule_worker *worker
+);
 struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
 		struct rrr_cmodule_worker *worker
 );

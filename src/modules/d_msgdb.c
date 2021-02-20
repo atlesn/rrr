@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
+#include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/cmodule/cmodule_helper.h"
@@ -95,25 +96,15 @@ static int msgdb_fork_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
 	struct msgdb_data *data = callback_data->data;
 
 	(void)(worker);
+	(void)(msgdb);
+	(void)(data);
 
 	int ret = 0;
 
 	*something_happened = 0;
 
-	if ((ret = rrr_msgdb_server_tick(msgdb)) != 0) {
-		RRR_MSG_0("Error from message db server while ticking in msgdb instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
+	// Do nothing
 
-	const uint64_t recv_count = rrr_msgdb_server_recv_count_get(msgdb);
-
-	if (recv_count != callback_data->prev_recv_count) {
-		*something_happened = 1;
-	}
-	callback_data->prev_recv_count = recv_count;
-
-	out:
 	return ret;
 }
 
@@ -130,6 +121,13 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 	if (rrr_msgdb_server_new(&msgdb, data->directory, data->socket) != 0) {
 		RRR_MSG_0("Could not start message db server in msgdb instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if ((rrr_msgdb_server_event_setup(msgdb, rrr_cmodule_worker_get_event_queue(worker))) != 0) {
+		RRR_MSG_0("Could not setup message db events in msgdb instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
+		goto out;
 		goto out;
 	}
 
@@ -174,7 +172,7 @@ static int msgdb_fork (void *arg) {
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
-			1000, // 1ms tick interval
+			250, // 250ms
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,
