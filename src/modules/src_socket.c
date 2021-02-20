@@ -55,7 +55,7 @@ struct socket_data {
 	int do_sync_byte_by_byte;
 	int do_unlink_if_exists;
 	struct rrr_array_tree *tree;
-	struct rrr_socket_client_collection clients;
+	struct rrr_socket_client_collection *clients;
 	int socket_fd;
 	uint64_t message_count;
 };
@@ -65,7 +65,7 @@ void data_cleanup(void *arg) {
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
 	}
-	rrr_socket_client_collection_clear(&data->clients);
+	rrr_socket_client_collection_destroy(data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
@@ -244,7 +244,7 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 
 	if (data->receive_rrr_message != 0) {
 		if ((ret = rrr_socket_client_collection_read_message (
-				&data->clients,
+				data->clients,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 				read_rrr_msg_msg_callback,
@@ -272,7 +272,7 @@ int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
 				0 // TODO : Set max size?
 		};
 		if ((ret = rrr_socket_client_collection_read_raw (
-				&data->clients,
+				data->clients,
 				4096,
 				4096,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
@@ -335,7 +335,9 @@ static int socket_start (struct socket_data *data) {
 
 	data->socket_fd = fd;
 
-	rrr_socket_client_collection_init(&data->clients, fd, socket_name);
+	if ((ret = rrr_socket_client_collection_new(&data->clients, fd, socket_name)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -346,7 +348,8 @@ static void socket_stop (void *arg) {
 	if (data->socket_fd != 0) {
 		rrr_socket_close(data->socket_fd);
 	}
-	rrr_socket_client_collection_clear(&data->clients);
+	rrr_socket_client_collection_destroy(data->clients);
+	data->clients = NULL;
 }
 
 static void *thread_entry_socket (struct rrr_thread *thread) {
@@ -390,7 +393,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 		rrr_thread_watchdog_time_update(thread);
 
 		if (rrr_socket_client_collection_accept (
-			&data->clients,
+			data->clients,
 			NULL,
 			NULL,
 			NULL

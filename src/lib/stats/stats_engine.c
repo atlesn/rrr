@@ -242,8 +242,8 @@ int rrr_stats_engine_init (
 		goto out_destroy_mutex;
 	}
 
-	if (rrr_socket_client_collection_init(&stats->client_collection, stats->socket, "rrr_stats_engine") != 0) {
-		RRR_MSG_0("Could not initialize client collection in statistics engine\n");
+	if (rrr_socket_client_collection_new(&stats->client_collection, stats->socket, "rrr_stats_engine") != 0) {
+		RRR_MSG_0("Could not create client collection in statistics engine\n");
 		ret = 1;
 		goto out_close_socket;
 	}
@@ -277,7 +277,7 @@ int rrr_stats_engine_init (
 	out_destroy_journal_lock:
 		pthread_mutex_destroy(&stats->journal_lock);
 	out_destroy_client_collection:
-		rrr_socket_client_collection_clear(&stats->client_collection);
+		rrr_socket_client_collection_destroy(stats->client_collection);
 	out_close_socket:
 		rrr_socket_close(stats->socket);
 	out_destroy_mutex:
@@ -300,7 +300,7 @@ void rrr_stats_engine_cleanup (
 	pthread_mutex_lock(&stats->main_lock);
 
 	rrr_log_hook_unregister(stats->log_hook_handle);
-	rrr_socket_client_collection_clear(&stats->client_collection);
+	rrr_socket_client_collection_destroy(stats->client_collection);
 	__rrr_stats_named_message_list_collection_clear(&stats->named_message_list);
 	__rrr_stats_log_journal_clear(&stats->log_journal);
 
@@ -322,7 +322,7 @@ int __rrr_stats_engine_multicast_send_intermediate (
 	struct rrr_stats_engine *stats = callback_arg;
 
 	return rrr_socket_client_collection_multicast_send_ignore_full_pipe (
-			&stats->client_collection,
+			stats->client_collection,
 			data,
 			size
 	);
@@ -392,7 +392,7 @@ static int __rrr_stats_engine_send_messages_from_list (
 ) {
 	int ret = 0;
 
-	int has_clients = (rrr_socket_client_collection_count(&stats->client_collection) > 0 ? 1 : 0);
+	int has_clients = (rrr_socket_client_collection_count(stats->client_collection) > 0 ? 1 : 0);
 
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t sticky_send_limit = time_now - RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS * 1000;
@@ -496,7 +496,7 @@ static void __rrr_stats_engine_journal_send_to_new_clients (
 		return;
 	}
 
-	rrr_socket_client_collection_iterate(&stats->client_collection, __rrr_stats_engine_journal_send_to_new_clients_callback, stats);
+	rrr_socket_client_collection_iterate(stats->client_collection, __rrr_stats_engine_journal_send_to_new_clients_callback, stats);
 }
 
 static void __rrr_stats_engine_log_journal_send_to_clients (
@@ -591,7 +591,7 @@ int rrr_stats_engine_tick (
 	pthread_mutex_lock(&stats->main_lock);
 
 	if (rrr_socket_client_collection_accept (
-			&stats->client_collection,
+			stats->client_collection,
 			__rrr_stats_client_new_void,
 			stats,
 			__rrr_stats_client_destroy_void
@@ -603,7 +603,7 @@ int rrr_stats_engine_tick (
 
 	// Read from clients, note that no callbacks are defined yet
 	if ((ret = rrr_socket_client_collection_read_message (
-			&stats->client_collection,
+			stats->client_collection,
 			1024,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			NULL,

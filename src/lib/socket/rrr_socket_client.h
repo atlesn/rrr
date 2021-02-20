@@ -35,26 +35,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 struct event;
-struct rrr_socket_client;
-
-struct rrr_socket_client_collection {
-	RRR_LL_HEAD(struct rrr_socket_client);
-	int listen_fd;
-	char *creator;
-};
+struct event_base;
+struct rrr_socket_client_collection;
 
 struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_msg_log;
 
-void rrr_socket_client_collection_clear (
-		struct rrr_socket_client_collection *collection
-);
-int rrr_socket_client_collection_init (
-		struct rrr_socket_client_collection *collection,
+int rrr_socket_client_collection_new (
+		struct rrr_socket_client_collection **target,
 		int listen_fd,
 		const char *creator
+);
+void rrr_socket_client_collection_destroy (
+		struct rrr_socket_client_collection *collection
 );
 int rrr_socket_client_collection_count (
 		struct rrr_socket_client_collection *collection

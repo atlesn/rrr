@@ -58,7 +58,7 @@ struct rrr_stats_engine {
 	int journal_lock_usercount;
 
 	struct rrr_stats_named_message_list_collection named_message_list;
-	struct rrr_socket_client_collection client_collection;
+	struct rrr_socket_client_collection *client_collection;
 	uint64_t next_send_time;
 	struct rrr_stats_log_journal log_journal;
 	const struct rrr_stats_message *log_journal_last_sent_message;

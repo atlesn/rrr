@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msgdb_server {
 	char *directory;
 	int fd;
-	struct rrr_socket_client_collection clients;
+	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
 };
 
@@ -87,7 +87,7 @@ int rrr_msgdb_server_new (
 		goto out_free;
 	}
 
-	if ((ret = rrr_socket_client_collection_init(&server->clients, fd, "msgdb_server")) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&server->clients, fd, "msgdb_server")) != 0) {
 		goto out_free_directory;
 	}
 
@@ -111,7 +111,7 @@ void rrr_msgdb_server_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(server->directory);
 	rrr_socket_close(server->fd);
-	rrr_socket_client_collection_clear(&server->clients);
+	rrr_socket_client_collection_destroy(server->clients);
 	free(server);
 }
 
@@ -502,7 +502,7 @@ static int __rrr_msgdb_server_send_callback (
 ) {
 	struct rrr_msgdb_server *server = arg;
 	return rrr_socket_client_collection_send_push (
-			&server->clients,
+			server->clients,
 			fd,
 			data,
 			data_size
@@ -922,7 +922,7 @@ int rrr_msgdb_server_tick (
 	int ret = 0;
 
 	if ((ret = rrr_socket_client_collection_accept (
-		&server->clients,
+		server->clients,
 		__rrr_msgdb_server_client_new_void,
 		NULL,
 		__rrr_msgdb_server_client_destroy_void
@@ -931,7 +931,7 @@ int rrr_msgdb_server_tick (
 	}
 
 	if ((ret = rrr_socket_client_collection_read_message (
-			&server->clients,
+			server->clients,
 			4096,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			__rrr_msgdb_server_read_msg_msg_callback,
@@ -944,7 +944,7 @@ int rrr_msgdb_server_tick (
 	}
 
 	rrr_socket_client_collection_send_tick (
-			&server->clients
+			server->clients
 	);
 
 	out:
@@ -974,7 +974,7 @@ int rrr_msgdb_server_dispatch (
 		void *periodic_callback_arg
 ) {
 	return rrr_socket_client_collection_dispatch (
-			&server->clients,
+			server->clients,
 			500 * 1000, // 500 ms
 			__rrr_msgdb_server_client_new_void,
 			__rrr_msgdb_server_client_destroy_void,
