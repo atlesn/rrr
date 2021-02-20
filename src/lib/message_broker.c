@@ -520,6 +520,8 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	int protocol;
 	int (*callback)(struct rrr_msg_holder *new_entry, void *arg);
 	void *callback_arg;
+	int (*check_cancel_callback)(void *arg);
+	void *check_cancel_callback_arg;
 };
 
 struct rrr_message_broker_message_holder_double_pointer {
@@ -651,8 +653,10 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 		goto out;
 	}
 
-	if (write_again) {
-		ret |= RRR_FIFO_WRITE_AGAIN;
+	if (callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
+		if (write_again) {
+			ret |= RRR_FIFO_WRITE_AGAIN;
+		}
 	}
 
 	if (write_drop) {
@@ -755,7 +759,9 @@ int rrr_message_broker_write_entry (
 			socklen,
 			protocol,
 			callback,
-			callback_arg
+			callback_arg,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	};
 
 	if (costumer->slot != NULL) {

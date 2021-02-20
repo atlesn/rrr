@@ -50,25 +50,27 @@ struct rrr_event_queue {
 	uint8_t queue_rpos;
 	uint8_t queue_wpos;
 	pthread_mutex_t lock;
-	pthread_cond_t cond;
 	struct event_base *event_base;
 	struct rrr_event queue[0xff];
 	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
 	int signal_fd_listen;
-	int signal_fd_signal;
+	int signal_fd_write;
+	int signal_fd_read;
 };
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
-	if (queue->signal_fd_signal != 0) {
-		rrr_socket_close(queue->signal_fd_signal);
+	if (queue->signal_fd_read != 0) {
+		rrr_socket_close(queue->signal_fd_read);
+	}
+	if (queue->signal_fd_write != 0) {
+		rrr_socket_close(queue->signal_fd_write);
 	}
 	if (queue->signal_fd_listen != 0) {
 		rrr_socket_close(queue->signal_fd_listen);
 	}
 	pthread_mutex_destroy(&queue->lock);
-	pthread_cond_destroy(&queue->cond);
 	event_base_free(queue->event_base);
 	munmap(queue, sizeof(*queue));
 }
@@ -79,7 +81,7 @@ static int __rrr_event_queue_new_connect_callback (
 ) {
 	struct rrr_event_queue *queue = arg;
 	return rrr_socket_unix_connect (
-			&queue->signal_fd_signal,
+			&queue->signal_fd_write,
 			"event",
 			filename,
 			1
@@ -119,16 +121,10 @@ int rrr_event_queue_new (
 		goto out_munmap;
 	}
 
-	if ((rrr_posix_cond_init(&queue->cond, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
-		RRR_MSG_0("Could not initialize cond in rrr_event_queue_init\n");
-		ret = 1;
-		goto out_destroy_lock;
-	}
-
 	if ((queue->event_base = event_base_new()) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
 		ret = 1;
-		goto out_destroy_cond;
+		goto out_destroy_lock;
 	}
 
 	if ((ret = rrr_socket_unix_create_bind_and_listen (
@@ -155,23 +151,46 @@ int rrr_event_queue_new (
 		goto out_close_listen_fd;
 	}
 
+	struct sockaddr_storage addr_dummy;
+	socklen_t addr_len_dummy = sizeof(addr_dummy);
+
+	if ((queue->signal_fd_read = rrr_socket_accept (
+			queue->signal_fd_listen,
+			(struct sockaddr *) &addr_dummy,
+			&addr_len_dummy,
+			"event"
+	)) <= 0) {
+		RRR_MSG_0("Failed to accept on listening socket in rrr_event_queue_init\n");
+		ret = 1;
+		goto out_close_connect_fd;
+	}
+
 	*target = queue;
 
 	goto out;
-//	out_close_connect_fd:
-//		rrr_socket_close(queue->signal_fd_signal);
+	out_close_connect_fd:
+		rrr_socket_close(queue->signal_fd_write);
 	out_close_listen_fd:
 		rrr_socket_close(queue->signal_fd_listen);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
-	out_destroy_cond:
-		pthread_cond_destroy(&queue->cond);
 	out_destroy_lock:
 		pthread_mutex_destroy(&queue->lock);
 	out_munmap:
 		munmap(queue, sizeof(*queue));
 	out:
 		return ret;
+}
+
+void rrr_event_queue_fds_get (
+		int *fd_listen,
+		int *fd_read,
+		int *fd_write,
+		struct rrr_event_queue *queue
+) {
+	*fd_listen = queue->signal_fd_listen;
+	*fd_read = queue->signal_fd_read;
+	*fd_write = queue->signal_fd_write;
 }
 
 void rrr_event_function_set (
@@ -181,97 +200,199 @@ void rrr_event_function_set (
 ) {
 	handle->functions[code] = function;
 }
+				
+static void __rrr_event_write_signal (
+		struct rrr_event_queue *queue
+) {
+	int max = 100;
+	while (--max) {
+		if (write(queue->signal_fd_write, "", 1) == 1) {
+			return;
+		}
+		sched_yield();
+	}
+	if (errno != EWOULDBLOCK) {
+		RRR_MSG_0("Warning: write() to signal fd %i failed in __rrr_event_write_signal: %s\n",
+			queue->signal_fd_write, rrr_strerror(errno));
+	}
+}
+
+static void __rrr_event_destroy_void_dbl_ptr (
+		void *arg
+) {
+	struct event **event = arg;
+	if (*event != NULL) {
+		event_free(*event);
+	}
+}
+
+struct rrr_event_callback_data {
+	struct rrr_event_queue *queue;
+	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
+	void *callback_arg;
+	int callback_periodic_ret;
+};
+
+static void __rrr_event_dispatch (
+		evutil_socket_t fd,
+		short event_flags,
+		void *arg
+) {
+	struct rrr_event_callback_data *callback_data = arg;
+	struct rrr_event_queue *queue = callback_data->queue;
+
+	(void)(fd);
+	(void)(event_flags);
+
+	int ret_tmp = 0;
+
+	char dummy_buf[128];
+	// Read only 1 byte
+	read(fd, dummy_buf, 1);
+
+	uint8_t function = 0;
+	uint8_t flags = 0;
+	uint16_t amount = 0;
+
+	{
+		pthread_mutex_lock(&queue->lock);
+
+		struct rrr_event event  = queue->queue[queue->queue_rpos];
+
+		if (event.amount > 0) {
+			memset (&queue->queue[queue->queue_rpos], '\0', sizeof(queue->queue[0]));
+			queue->queue_rpos++;
+			function = event.function;
+			flags = event.flags;
+			amount = event.amount;
+		}
+
+		pthread_mutex_unlock(&queue->lock);
+	}
+
+//	printf("Dispatch amount %u\n", amount);
+
+	if (amount == 0) {
+		// Read more bytes
+		read(fd, dummy_buf, sizeof(dummy_buf));
+		goto out;
+	}
+
+	if (callback_data->queue->functions[function] == NULL) {
+		RRR_BUG("BUG: Function %u was not registered in __rrr_event_dispatch\n", function);
+	}
+
+	while (amount > 0) {
+		uint16_t amount_new = amount;
+		if ((ret_tmp = callback_data->queue->functions[function](&amount_new, flags, callback_data->callback_arg)) != 0) {
+			goto out;
+		}
+		if (amount_new > amount) {
+			RRR_BUG("BUG: Amount increased after event function, possible underflow in __rrr_event_dispatch\n");
+		}
+		amount = amount_new;
+	}
+
+	out:
+	if (ret_tmp != 0) {
+		event_base_loopbreak(callback_data->queue->event_base);
+	}
+}
+
+static void __rrr_event_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_event_callback_data *callback_data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	if ( callback_data->callback_periodic != NULL &&
+	    (callback_data->callback_periodic_ret = callback_data->callback_periodic(callback_data->callback_arg)) != 0
+	) {
+		event_base_loopbreak(callback_data->queue->event_base);
+	}
+}
 
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
-		void *arg
+		void *callback_arg
 ) {
 	int ret = 0;
 
-	uint64_t time_periodic_call = 0;
+	struct rrr_event_callback_data callback_data = {
+		queue,
+		function_periodic,
+		callback_arg,
+		0
+	};
 
-	while (ret == 0) {
-		uint8_t function = 0;
-		uint8_t flags = 0;
-		uint16_t amount = 0;
+	struct event *signal_event = NULL;
+	struct event *periodic_event = NULL;
 
-		{
-			pthread_mutex_lock(&queue->lock);
+	pthread_cleanup_push(__rrr_event_destroy_void_dbl_ptr, &signal_event);
+	pthread_cleanup_push(__rrr_event_destroy_void_dbl_ptr, &periodic_event);
 
-			unsigned int sleep_time = 100 * 1000; // 100 ms
-			if (sleep_time > periodic_interval_us) {
-				sleep_time = periodic_interval_us;
-			}
-
-			struct rrr_event event  = queue->queue[queue->queue_rpos];
-
-			if (event.amount == 0) {
-				struct timespec wakeup_time;
-				rrr_time_gettimeofday_timespec(&wakeup_time, sleep_time);
-				ret = pthread_cond_timedwait(&queue->cond, &queue->lock, &wakeup_time);
-			}
-
-			if (event.amount > 0) {
-				memset (&queue->queue[queue->queue_rpos], '\0', sizeof(queue->queue[0]));
-				queue->queue_rpos++
-;
-				function = event.function;
-				flags = event.flags;
-				amount = event.amount;
-			}
-
-			pthread_mutex_unlock(&queue->lock);
-		}
-
-		if (ret != 0 && ret != ETIMEDOUT) {
-			RRR_MSG_0("pthread_cond_wait failed in rrr_event_dispatch_loop: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-
-		ret = 0;
-
-		uint64_t time_now;
-
-		periodic_check:
-		time_now = rrr_time_get_64();
-
-		if (time_now - time_periodic_call >= periodic_interval_us) {
-			if ((ret = function_periodic(arg)) != 0) {
-				goto out;
-			}
-			time_periodic_call = time_now;
-		}
-
-		if (amount > 0) {
-			if (queue->functions[function] == NULL) {
-				RRR_MSG_0("Function %u was not registered in rrr_event_dispatch_loop\n", function);
-				abort();
-				ret = 1;
-				goto out;
-			}
-
-			int tick = 0;
-			while (amount > 0) {
-				if ((++tick) % 65535 == 0) {
-					goto periodic_check;
-				}
-				uint16_t amount_new = amount;
-				if ((ret = queue->functions[function](&amount_new, flags, arg)) != 0) {
-					goto out;
-				}
-				if (amount_new > amount) {
-					RRR_BUG("BUG: Amount increased after event function, possible underflow\n");
-				}
-				amount = amount_new;
-			}
-		}
+	if ((signal_event = event_new (
+			queue->event_base,
+			queue->signal_fd_read,
+			EV_READ|EV_PERSIST,
+			__rrr_event_dispatch,
+			&callback_data
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in rrr_event_dispatch\n");
+		ret = 1;
+		goto out;
 	}
 
+	struct timeval tv_interval = {0};
+
+	tv_interval.tv_usec = periodic_interval_us % 1000000;
+	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
+
+	if ((periodic_event = event_new (
+			queue->event_base,
+			0,
+			EV_TIMEOUT|EV_PERSIST,
+			__rrr_event_periodic,
+			&callback_data
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in rrr_event_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(periodic_event, &tv_interval) || event_add(signal_event, NULL)) {
+		RRR_MSG_0("Failed to add events in rrr_event_dispatch\n");
+		event_del(periodic_event);
+		event_del(signal_event);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = event_base_dispatch(queue->event_base)) != 0) {
+		RRR_MSG_0("Error from event_base_dispatch in rrr_event_dispatch: %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (callback_data.callback_periodic_ret != 0) {
+		ret = callback_data.callback_periodic_ret & ~(RRR_EVENT_EXIT);
+	}
+	else if (event_base_got_break(queue->event_base)) {
+		ret = 1;
+		goto out;
+	}
+
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+
 	out:
-	return ret & ~(RRR_EVENT_EXIT);
+	return ret;
 }
 
 static void __rrr_event_pass_add_maximum_amount (
@@ -321,7 +442,6 @@ void rrr_event_pass (
 				event->flags = flags;
 				event->amount = amount;
 				queue->queue_wpos++;
-				pthread_cond_broadcast(&queue->cond);
 				amount = 0;
 			}
 			else if (wpos == queue->queue_rpos) {
@@ -344,4 +464,5 @@ void rrr_event_pass (
 
 	out:
 	pthread_mutex_unlock(&queue->lock);
+	__rrr_event_write_signal (queue);
 }

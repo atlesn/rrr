@@ -45,6 +45,12 @@ void rrr_event_queue_destroy (
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );
+void rrr_event_queue_fds_get (
+		int *fd_listen,
+		int *fd_read,
+		int *fd_write,
+		struct rrr_event_queue *queue
+);
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,

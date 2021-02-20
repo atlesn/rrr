@@ -115,6 +115,8 @@ int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
+int rrr_socket_close_all_except_array (int *fds, size_t fd_count);
+int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count);
 int rrr_socket_fifo_create (
 		int *fd_result,
 		const char *filename,

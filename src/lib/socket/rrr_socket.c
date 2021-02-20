@@ -630,36 +630,32 @@ int rrr_socket_close_ignore_unregistered (int fd) {
 	return __rrr_socket_close (fd, 1, 0);
 }
 
-static int __rrr_socket_close_all_except (int fd, int no_unlink) {
+int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlink) {
 	int ret = 0;
 
-	if (fd < 0) {
-		RRR_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
-	}
-
-	RRR_DBG_7("rrr_socket_close_all_except fd %i pid %i no_unlink %i\n", fd, getpid(), no_unlink);
+	RRR_DBG_7("rrr_socket_close_all_except_array pid %i no_unlink %i\n", getpid(), no_unlink);
 
 	int count = 0;
-	int found = 0;
 
 	pthread_mutex_lock(&socket_lock);
 
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		if (node->options.fd != fd) {
+		int match = 0;
+		for (size_t i = 0; i < fd_count; i++) {
+			if (node->options.fd == fds[i]) {
+				match = 1;
+				break;
+			}
+		}
+		if (match) {
+			RRR_DBG_7("- Not closing %i, was in except list\n", node->options.fd);
+		}
+		else {
+			RRR_DBG_7("- Closing %i\n", node->options.fd);
 			RRR_LL_ITERATE_SET_DESTROY();
 			count++;
 		}
-		else {
-			if (found != 0) {
-				RRR_BUG("At least two equal FD %i in socket list in rrr_socket_close_all_except\n", fd);
-			}
-			found = 1;
-		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
-
-	if (found != 1 && fd != 0) {
-		RRR_MSG_0("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
-	}
 
 	if (RRR_DEBUGLEVEL_7) {
 		__rrr_socket_dump_unlocked();
@@ -670,6 +666,10 @@ static int __rrr_socket_close_all_except (int fd, int no_unlink) {
 	RRR_DBG_1("Closed %i sockets pid %i\n", count, getpid());
 
 	return ret;
+}
+
+static int __rrr_socket_close_all_except (int fd, int no_unlink) {
+	return __rrr_socket_close_all_except_array(&fd, 1, no_unlink);
 }
 
 int rrr_socket_close_all_except (int fd) {
@@ -686,6 +686,14 @@ int rrr_socket_close_all (void) {
 
 int rrr_socket_close_all_no_unlink (void) {
 	return __rrr_socket_close_all_except(0, 1);
+}
+
+int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
+	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
+}
+
+int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
+	return __rrr_socket_close_all_except_array (fds, fd_count, 0);
 }
 
 int rrr_socket_fifo_create (

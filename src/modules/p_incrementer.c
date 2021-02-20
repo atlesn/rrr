@@ -307,6 +307,8 @@ static int incrementer_process_subject (
 
 	int ret = 0;
 
+	uint64_t time_start = rrr_time_get_64();
+
 	char *topic_tmp = NULL;
 	struct rrr_string_builder topic_new = {0};
 
@@ -354,8 +356,13 @@ static int incrementer_process_subject (
 		goto out;
 	}
 
-	RRR_DBG_2("incrementer instance %s translate topic of message with timestamp %" PRIu64 " from %s to %s\n",
-		INSTANCE_D_NAME(data->thread_data), ((struct rrr_msg_msg *) entry->message)->timestamp, topic_tmp, rrr_string_builder_buf(&topic_new));
+	RRR_DBG_2("incrementer instance %s translate topic of message with timestamp %" PRIu64 " from %s to %s duration was %" PRIu64 "ms\n",
+			INSTANCE_D_NAME(data->thread_data),
+			((struct rrr_msg_msg *) entry->message)->timestamp,
+			topic_tmp,
+			rrr_string_builder_buf(&topic_new),
+			(rrr_time_get_64() - time_start) / 1000
+	);
 
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER_ARGS(data->thread_data), 

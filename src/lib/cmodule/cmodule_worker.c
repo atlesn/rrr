@@ -571,7 +571,13 @@ int rrr_cmodule_worker_main (
 ) {
 	int ret = 0;
 
-	rrr_socket_close_all_no_unlink();
+	int event_fds[6];
+
+	// We need to preserve the open event signal sockets, any other FDs are closed
+	rrr_event_queue_fds_get(&event_fds[0], &event_fds[1], &event_fds[2], worker->event_queue_parent);
+	rrr_event_queue_fds_get(&event_fds[3], &event_fds[4], &event_fds[5], worker->event_queue_worker);
+	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
+
 	rrr_log_hook_unregister_all_after_fork();
 
 	int log_hook_handle;
