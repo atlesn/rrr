@@ -2,7 +2,7 @@ Source: rrr
 Section: main
 Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
-Build-Depends: debhelper (>=11~),
+Build-Depends: debhelper (>= 13),
                dh-autoreconf,
                dh-python,
                dh-systemd (>= 1.5),
@@ -41,7 +41,7 @@ Depends: ${misc:Depends},
          ${shlibs:Depends},
          libssl1.1,
          python3 (>= 3.6),
-         libjson-c3,
+         libjson-c5,
          libnghttp2-14
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 

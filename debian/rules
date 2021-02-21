@@ -9,7 +9,7 @@
 export RRR_SYSTEMD_NO_UNIT_INSTALL=1
 
 # This will disable installation of rrr.conf file in tmpfiles.d and let dh_installtmpfiles do that instead. Only available in Debian 11+, comment out for earlier releases
-# export RRR_SYSTEMD_NO_TMPFILES_INSTALL=1
+export RRR_SYSTEMD_NO_TMPFILES_INSTALL=1
 
 # This will create User=rrr and Group=rrr in rrr.service as opposed to the default username 'daemon'
 export RRR_DAEMON_USERNAME=rrr
@@ -24,7 +24,7 @@ export RRR_DAEMON_USERNAME=rrr
 #export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
 %:
-	dh $@ --with autoreconf,systemd
+	dh $@ --with autoreconf
 
 override_dh_missing:
 	dh_missing --list-missing
