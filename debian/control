@@ -42,7 +42,9 @@ Depends: ${misc:Depends},
          libssl1.1,
          python3 (>= 3.6),
          libjson-c5,
-         libnghttp2-14
+         libnghttp2-14,
+         libevent-pthreads,
+         libevent
 Description: RRR (Read Route Record) is a general purpose acquirement, transmission and processing daemon supporting HTTP, MQTT, TCP, UDP and other I/O devices.
 
 Package: librrr-dev
