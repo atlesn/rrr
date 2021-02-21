@@ -5,7 +5,6 @@ Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>= 13),
                dh-autoreconf,
                dh-python,
-               dh-systemd (>= 1.5),
                libmysqlclient-dev | libmariadbclient-dev-compat,
                libperl-dev (>= 5.26),
                libssl-dev,
@@ -14,7 +13,8 @@ Build-Depends: debhelper (>= 13),
                pkg-config,
                python3-dev (>= 3.6) | python3.8-dev | python3.7-dev | python3.6-dev,
                libnghttp2-dev,
-               libjson-c-dev
+               libjson-c-dev,
+	       libevent-dev
 X-Python3-Version: 3.6,3.7,3.8
 Standards-Version: 4.1.4
 Homepage: https://github.com/atlesn/rrr
