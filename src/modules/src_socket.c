@@ -65,7 +65,9 @@ void data_cleanup(void *arg) {
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
 	}
-	rrr_socket_client_collection_destroy(data->clients);
+	if (data->clients != NULL) {
+		rrr_socket_client_collection_destroy(data->clients);
+	}
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
