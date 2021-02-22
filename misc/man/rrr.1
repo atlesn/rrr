@@ -8,6 +8,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-W|--no-watchdog-timers]
 .Dl [-T|--no-thread-restart]
 .Dl [-s|--stats]
+.Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -99,6 +100,8 @@ Enable the statistics engine which
 can connect to.
 .IP -b|--banner
 Print RRR banner before starting.
+.IP -r|--run-directory[=]RUN DIRECTORY
+Specify an alternative default prefix for runtime sockets.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
@@ -120,6 +123,7 @@ If a variable is specified both in the environment and at the command line, the 
 .It RRR_NO_WATCHDOG_TIMERS
 .It RRR_NO_THREAD_RESTART
 .It RRR_LOGLEVEL_TRANSLATION
+.It RRR_RUN_DIRECTORY
 .El
 
 For on/off variables, "no" or "0" will be interpreted as

@@ -36,18 +36,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/msgdb/msgdb_server.h"
 #include "../lib/instance_config.h"
+#include "../lib/rrr_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
+#include "../lib/util/gnu.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_config_data.h"
 
 #define RRR_MSGDB_DEFAULT_DIRECTORY  "/var/lib/rrr/msgdb"
-#define RRR_MSGDB_DEFAULT_SOCKET     "/var/run/rrr/msgdb.sock"
+#define RRR_MSGDB_DEFAULT_SOCKET     "msgdb.sock"
 
 struct msgdb_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -77,7 +79,15 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_directory", directory, RRR_MSGDB_DEFAULT_DIRECTORY);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_socket", socket, RRR_MSGDB_DEFAULT_SOCKET);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("msgdb_socket", socket);
+
+	if (data->directory == NULL) {
+		if ((ret = rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET)) <= 0) {
+			RRR_MSG_0("rrr_asprintf() failed in msgdb_parse_config\n");
+			ret = 1;
+			goto out;
+		}
+	}
 
 	out:
 	return ret;

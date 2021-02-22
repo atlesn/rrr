@@ -99,6 +99,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,                            'W',    "no-watchdog-timers",    "[-W|--no-watchdog-timers]"},
 		{0,                            'T',    "no-thread-restart",     "[-T|--no-thread-restart]"},
 		{0,                            's',    "stats",                 "[-s|--stats]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",         "[-r|--run-directory[=]RUN DIRECTORY]"},
 		{0,                            'l',    "loglevel-translation",  "[-l|--loglevel-translation]"},
 		{0,                            'b',    "banner",                "[-b|--banner]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
