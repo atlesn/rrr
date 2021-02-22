@@ -93,6 +93,8 @@ int rrr_event_queue_new (
 ) {
 	int ret = 0;
 
+	// TODO : use_pthreads might not be needed as the libevent
+	//        structures are only accessed by one thread.
 	pthread_mutex_lock(&init_lock);
 	if (rrr_event_libevent_initialized++ == 0) {
 		ret = evthread_use_pthreads();
@@ -394,10 +396,9 @@ int rrr_event_dispatch (
 		goto out;
 	}
 
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-
 	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	return ret;
 }
 
