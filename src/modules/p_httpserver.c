@@ -1538,7 +1538,6 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		if (amount == 100) {
 			rrr_posix_usleep(20000); // 20ms
 		}
-		printf("httpserver %s tick %u\n", INSTANCE_D_NAME(thread_data), amount);
 
 		int accept_count = 0;
 
