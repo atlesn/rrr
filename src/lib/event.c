@@ -28,11 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #include <event2/thread.h>
 
-#include "../../config.h"
 #include "log.h"
 #include "event.h"
 #include "threads.h"
 #include "rrr_strerror.h"
+#include "rrr_config.h"
+#include "rrr_path_max.h"
 #include "socket/rrr_socket.h"
 #include "util/posix.h"
 #include "util/rrr_time.h"
@@ -129,16 +130,19 @@ int rrr_event_queue_new (
 		goto out_destroy_lock;
 	}
 
+	char buf[PATH_MAX];
+	snprintf(buf, PATH_MAX, "%s%s", rrr_config_global.run_directory, "/event.sock-XXXXXX");
+
 	if ((ret = rrr_socket_unix_create_bind_and_listen (
 			&queue->signal_fd_listen,
 			"event",
-			RRR_RUN_DIR "/event.sock-XXXXXX",
+			buf,
 			1,
 			1,
 			1,
 			0
 	)) != 0) {
-		RRR_MSG_0("Failed to create listen socket in rrr_event_queue_init\n");
+		RRR_MSG_0("Failed to create listen socket for event queue, path was '%s'\n", buf);
 		ret = 1;
 		goto out_destroy_event_base;
 	}

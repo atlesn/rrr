@@ -467,7 +467,9 @@ unsigned int rrr_instance_collection_count (
 void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
+	printf("Unregister\n");
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
+	printf("Free %s\n", INSTANCE_D_NAME(data));
 	free(data);
 }
 
@@ -489,6 +491,7 @@ static void __rrr_instace_runtime_data_destroy_intermediate (
 	struct rrr_instance_runtime_data *data = arg;
 	RRR_DBG_8("Thread %p intermediate destroy runtime data\n", data->thread);
 	rrr_thread_with_lock_do(INSTANCE_D_THREAD(data), __rrr_instace_runtime_data_destroy_callback, NULL);
+	printf("- complete\n");
 }
 
 struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
@@ -633,14 +636,18 @@ static void __rrr_instance_thread_intermediate_cleanup (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
+	printf("Intermediate cleanup lock\n");
+
 	pthread_mutex_lock(&thread->mutex);
 
+	printf("Intermediate cleanup locked\n");
 	RRR_DBG_8("Thread %p intermediate cleanup cmodule is %p\n", thread, thread_data->cmodule);
 
 	if (thread_data->cmodule == NULL) {
 		goto out;
 	}
 
+	printf("Cmodule destroy\n");
 	rrr_cmodule_destroy(thread_data->cmodule);
 
 	out:
