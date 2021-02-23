@@ -1529,11 +1529,16 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 				&amount,
 				data->thread_data,
 				httpserver_poll_callback,
-				100 // 100 ms
+				0
 		) != 0) {
 			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
 			break;
 		}
+
+		if (amount == 100) {
+			rrr_posix_usleep(20000); // 20ms
+		}
+		printf("httpserver %s tick %u\n", INSTANCE_D_NAME(thread_data), amount);
 
 		int accept_count = 0;
 
