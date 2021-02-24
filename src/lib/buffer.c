@@ -1430,9 +1430,10 @@ int rrr_fifo_buffer_write (
 		int do_free_entry = 0;
 
 		rrr_fifo_write_lock(buffer);
-		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
+		ret = __rrr_fifo_buffer_entry_new_unlocked(&entry);
+		rrr_fifo_unlock(buffer);
 
-		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
+		if (ret != 0) {
 			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_write\n");
 			ret = 1;
 			goto loop_out_no_entry_free;
@@ -1446,6 +1447,9 @@ int rrr_fifo_buffer_write (
 		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
 		ret = callback(&entry->data, &entry->size, &order, callback_arg);
 		pthread_cleanup_pop(1);
+
+		rrr_fifo_write_lock(buffer);
+		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
 
 		int do_ordered_write = 0;
 		int do_drop = 0;
@@ -1484,11 +1488,10 @@ int rrr_fifo_buffer_write (
 		loop_out_drop:
 			do_free_entry = 1;
 		loop_out_no_drop:
+			pthread_cleanup_pop(1);
 			pthread_cleanup_pop(do_free_entry);
 		loop_out_no_entry_free:
-			pthread_cleanup_pop(1);
-
-		__rrr_fifo_buffer_do_ratelimit(buffer);
+			__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
 
 	if (entry_count_before != 0 || entry_count_after != 0) {
