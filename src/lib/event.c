@@ -173,7 +173,7 @@ int rrr_event_queue_new (
 		goto out_close_connect_fd;
 	}
 
-	RRR_DBG_9_PRINTF("EQ INIT FD (listen) %i thread ID %llu\n",
+	RRR_DBG_9_PRINTF("EQ INIT FD %i thread ID %llu\n",
 		queue->signal_fd_listen, (long long unsigned) rrr_gettid());
 
 	*target = queue;
@@ -297,7 +297,7 @@ static void __rrr_event_dispatch (
 		RRR_BUG("BUG: Function %u was not registered in __rrr_event_dispatch\n", function);
 	}
 
-	RRR_DBG_9_PRINTF("EQ DISP FD (listen) %i function %u flags %u amount %u\n",
+	RRR_DBG_9_PRINTF("EQ DISP FD %i function %u flags %u amount %u\n",
 		queue->signal_fd_listen, function, flags, amount);
 
 	while (amount > 0) {
@@ -309,7 +309,7 @@ static void __rrr_event_dispatch (
 			RRR_BUG("BUG: Amount increased after event function, possible underflow in __rrr_event_dispatch\n");
 		}
 		amount = amount_new;
-		RRR_DBG_9_PRINTF("EQ DISP FD (listen) %i => amount %u (remaining)\n",
+		RRR_DBG_9_PRINTF("EQ DISP FD %i => amount %u (remaining)\n",
 			queue->signal_fd_listen, amount);
 	}
 
