@@ -410,12 +410,13 @@ pid_t rrr_fork (
 	 *       if when spin on trylock like this (also for some reason).
 	 */
 	__rrr_fork_handler_lock(handler);
-
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
+	__rrr_fork_handler_unlock (handler);
+
 	if (result == NULL) {
 		RRR_MSG_0("No available fork slot while forking in rrr_fork\n");
 		ret = -1;
-		goto out_unlock;
+		goto out;
 	}
 
 	ret = fork();
@@ -424,7 +425,7 @@ pid_t rrr_fork (
 		// Don't use rrr_strerror while other forks might be forking
 		RRR_MSG_0("Error while forking in rrr_fork errno %i\n", errno);
 		ret = -1;
-		goto out_unlock;
+		goto out;
 	}
 	else if (ret == 0) {
 		// Child code
@@ -437,13 +438,15 @@ pid_t rrr_fork (
 
 	RRR_DBG_1("=== FORK PID %i ========================================================================================\n", ret);
 
+	__rrr_fork_handler_lock(handler);
+
 	result->parent_pid = getpid();
 	result->pid = ret;
 	result->exit_notify = exit_notify;
 	result->exit_notify_arg = exit_notify_arg;
 
-	out_unlock:
-		__rrr_fork_handler_unlock (handler);
+	__rrr_fork_handler_unlock (handler);
+
 	out:
 		return ret;
 }

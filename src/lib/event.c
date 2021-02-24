@@ -34,7 +34,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "rrr_config.h"
 #include "rrr_path_max.h"
+#include "string_builder.h"
 #include "socket/rrr_socket.h"
+#include "util/gnu.h"
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
@@ -171,6 +173,9 @@ int rrr_event_queue_new (
 		goto out_close_connect_fd;
 	}
 
+	RRR_DBG_9_PRINTF("EQ INIT FD (listen) %i thread ID %llu\n",
+		queue->signal_fd_listen, (long long unsigned) rrr_gettid());
+
 	*target = queue;
 
 	goto out;
@@ -224,7 +229,7 @@ static void __rrr_event_write_signal (
 		sched_yield();
 	}
 	if (errno != EWOULDBLOCK) {
-		RRR_MSG_0("Warning: write() to signal fd %i failed in __rrr_event_write_signal: %s\n",
+		RRR_MSG_0_PRINTF("Warning: write() to signal fd %i failed in __rrr_event_write_signal: %s\n",
 			queue->signal_fd_write, rrr_strerror(errno));
 	}
 }
@@ -282,8 +287,6 @@ static void __rrr_event_dispatch (
 		pthread_mutex_unlock(&queue->lock);
 	}
 
-//	printf("Dispatch amount %u\n", amount);
-
 	if (amount == 0) {
 		// Read more bytes
 		read(fd, dummy_buf, sizeof(dummy_buf));
@@ -294,6 +297,9 @@ static void __rrr_event_dispatch (
 		RRR_BUG("BUG: Function %u was not registered in __rrr_event_dispatch\n", function);
 	}
 
+	RRR_DBG_9_PRINTF("EQ DISP FD (listen) %i function %u flags %u amount %u\n",
+		queue->signal_fd_listen, function, flags, amount);
+
 	while (amount > 0) {
 		uint16_t amount_new = amount;
 		if ((ret_tmp = callback_data->queue->functions[function](&amount_new, flags, callback_data->callback_arg)) != 0) {
@@ -303,7 +309,10 @@ static void __rrr_event_dispatch (
 			RRR_BUG("BUG: Amount increased after event function, possible underflow in __rrr_event_dispatch\n");
 		}
 		amount = amount_new;
+		RRR_DBG_9_PRINTF("EQ DISP FD (listen) %i => amount %u (remaining)\n",
+			queue->signal_fd_listen, amount);
 	}
+
 
 	out:
 	if (ret_tmp != 0) {
@@ -420,6 +429,28 @@ static void __rrr_event_pass_add_maximum_amount (
 	}
 }
 
+static void __rrr_event_queue_dump_unlocked (
+		const struct rrr_event_queue *queue
+) {
+	struct rrr_string_builder string_builder = {0};
+
+	rrr_string_builder_append_format(&string_builder, "EQ DUMP FD %i rpos %u wpos %u:", queue->signal_fd_listen, queue->queue_rpos, queue->queue_wpos);
+
+	for (unsigned long int i = 0; i < sizeof(queue->queue) / sizeof(queue->queue[0]); i++) {
+		struct rrr_event event = queue->queue[i];
+		if (event.amount || event.function || event.flags) {
+			rrr_string_builder_append_format(&string_builder, " %lu: %02x-%02x-%02x",
+				i, event.function, event.flags, event.amount);
+		}
+	}
+
+	rrr_string_builder_append(&string_builder, "\n");
+
+	RRR_DBG_9_PRINTF("%s", rrr_string_builder_buf(&string_builder));
+
+	rrr_string_builder_clear(&string_builder);
+}
+
 void rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
@@ -427,6 +458,9 @@ void rrr_event_pass (
 		uint16_t amount
 ) {
 	pthread_mutex_lock(&queue->lock);
+
+	RRR_DBG_9_PRINTF("EQ PASS FD %i function %u flags %u amount %u\n",
+		queue->signal_fd_listen, function, flags, amount);
 
 	for (;;) {
 		// Sneak peak at previous write, maybe it's the same function
@@ -474,6 +508,9 @@ void rrr_event_pass (
 	}
 
 	out:
+	if (1||RRR_DEBUGLEVEL_9) {
+		__rrr_event_queue_dump_unlocked (queue);
+	}
 	pthread_mutex_unlock(&queue->lock);
 	__rrr_event_write_signal (queue);
 }
