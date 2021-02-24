@@ -276,25 +276,33 @@ static int __rrr_cmodule_worker_event_mmap_channel_data_available (
 
 	(void)(flags);
 
-	int ret = 0;
-
 	callback_data->read_callback_data.total_count = 0;
 
-	if ((ret = rrr_cmodule_channel_receive_messages (
+	retry:
+	if (worker->received_stop_signal) {
+		RRR_DBG_1("child worker fork named %s pid %ld received stop signal while reading from mmap channel\n",
+				worker->name, (long) getpid());
+		return RRR_EVENT_EXIT;
+	}
+
+	int ret_tmp;
+	if ((ret_tmp = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_fork,
 			0,
 			__rrr_cmodule_worker_loop_read_callback,
 			&callback_data->read_callback_data
 	)) != 0) {
-		if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
+		if (ret_tmp != RRR_CMODULE_CHANNEL_EMPTY) {
 			RRR_MSG_0("Error from mmap read function in worker fork named %s pid %ld\n",
 					worker->name, (long) getpid());
 			return 1;
 		}
+		rrr_posix_usleep(1);
+		goto retry;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int __rrr_cmodule_worker_spawn_message (
