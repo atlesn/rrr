@@ -311,6 +311,8 @@ static void __rrr_event_dispatch (
 	while (amount > 0) {
 		uint16_t amount_new = amount;
 		if ((ret_tmp = callback_data->queue->functions[function](&amount_new, flags, callback_data->callback_arg)) != 0) {
+			RRR_DBG_9_PRINTF("EQ DISP FD %i => amount %u (remaining) value %i returned from function, stopping event loop\n",
+				queue->signal_fd_listen, amount, ret_tmp);
 			goto out;
 		}
 		if (amount_new > amount) {
