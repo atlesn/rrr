@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * 6 /  32 - Hex dumps of RRR messages when converted to/from host endianess
  * 7 /  64 - Socket open/close/read/write
  * 8 / 128 - Thread handling
- * 9 / 256 - Event queue pass and dispatch ()
+ * 9 / 256 - Event queue pass and dispatch (printf only)
  */
 
 #define __RRR_DEBUGLEVEL_0  (0)     // 0
