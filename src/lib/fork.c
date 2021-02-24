@@ -232,7 +232,7 @@ static void __rrr_fork_wait_loop (
 				RRR_DBG_1("Checking wait for pid %i self is %i\n", node->pid, self);
 
 				pid_t pid;
-				int status;
+				int status = 0;
 
 				if ((pid = __rrr_fork_waitpid(node->pid, &status, WNOHANG)) == node->pid) {
 					RRR_DBG_1("Wait pid %i ok\n", node->pid);
