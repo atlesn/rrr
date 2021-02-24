@@ -41,6 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_time.h"
 
 #define QUEUE_MAX 0x100
+
+#define DEC(pos) \
+	do {if (pos == 0) { pos = QUEUE_MAX - 1; } else { --pos; }} while(0)
 #define INC(pos) \
 	(pos) = (pos + 1) % (QUEUE_MAX)
 #define QUEUE_RPOS_INC() \
@@ -72,6 +75,8 @@ struct rrr_event_queue {
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
 ) {
+	RRR_DBG_9_PRINTF("EQ DSTY FD %i\n", queue->signal_fd_listen);
+
 	if (queue->signal_fd_read != 0) {
 		rrr_socket_close(queue->signal_fd_read);
 	}
@@ -226,19 +231,28 @@ void rrr_event_function_set (
 	handle->functions[code] = function;
 }
 				
-static void __rrr_event_write_signal (
+static void __rrr_event_write_signal_unlocked (
 		struct rrr_event_queue *queue
 ) {
-	int max = 100;
-	while (--max) {
-		if (write(queue->signal_fd_write, "", 1) == 1) {
+	for(;;) {
+		int ret_tmp = write(queue->signal_fd_write, "", 1);
+
+		if (ret_tmp == 1) {
 			return;
 		}
-		sched_yield();
-	}
-	if (errno != EWOULDBLOCK) {
-		RRR_MSG_0_PRINTF("Warning: write() to signal fd %i failed in __rrr_event_write_signal: %s\n",
-			queue->signal_fd_write, rrr_strerror(errno));
+		else if (errno == EWOULDBLOCK) {
+			RRR_DBG_9_PRINTF("EQ NTFY FD %i retry\n", queue->signal_fd_listen);
+		}
+		else {
+			RRR_MSG_0_PRINTF("write() to signal fd %i failed in __rrr_event_write_signal_unlocked: %s\n",
+				queue->signal_fd_write, rrr_strerror(errno));
+			event_base_loopbreak(queue->event_base);
+			return;
+		}
+
+		pthread_mutex_unlock(&queue->lock);
+		rrr_posix_usleep(1);
+		pthread_mutex_lock(&queue->lock);
 	}
 }
 
@@ -272,13 +286,20 @@ static void __rrr_event_dispatch (
 	int ret_tmp = 0;
 
 	char dummy_buf[128];
-	// Read only 1 byte
-	read(fd, dummy_buf, 1);
 
 	uint8_t function = 0;
 	uint8_t flags = 0;
 	uint16_t amount = 0;
 
+	// Read only 1 byte
+	int bytes = read(fd, dummy_buf, 1);
+	if (bytes < 0) {
+		RRR_MSG_0_PRINTF("Error from read() in __rrr_event_dispatch: %s\n", rrr_strerror(errno));
+		ret_tmp = 1;
+		goto out;
+	}
+
+	retry:
 	{
 		pthread_mutex_lock(&queue->lock);
 
@@ -296,17 +317,21 @@ static void __rrr_event_dispatch (
 	}
 
 	if (amount == 0) {
-		// Read more bytes
-		read(fd, dummy_buf, sizeof(dummy_buf));
-		goto out;
+		// Possible race condition if notification arrives prior to data
+		RRR_DBG_9_PRINTF("EQ DISP FD %i function %u flags %u amount %u read retry, event not ready yet\n",
+			queue->signal_fd_listen, function, flags, amount);
+		rrr_posix_usleep(1);
+		goto retry;
+	}
+	else {
+
+		RRR_DBG_9_PRINTF("EQ DISP FD %i function %u flags %u amount %u\n",
+			queue->signal_fd_listen, function, flags, amount);
 	}
 
 	if (callback_data->queue->functions[function] == NULL) {
 		RRR_BUG("BUG: Function %u was not registered in __rrr_event_dispatch\n", function);
 	}
-
-	RRR_DBG_9_PRINTF("EQ DISP FD %i function %u flags %u amount %u\n",
-		queue->signal_fd_listen, function, flags, amount);
 
 	while (amount > 0) {
 		uint16_t amount_new = amount;
@@ -322,7 +347,6 @@ static void __rrr_event_dispatch (
 		RRR_DBG_9_PRINTF("EQ DISP FD %i => amount %u (remaining)\n",
 			queue->signal_fd_listen, amount);
 	}
-
 
 	out:
 	if (ret_tmp != 0) {
@@ -425,7 +449,7 @@ int rrr_event_dispatch (
 	return ret;
 }
 
-static void __rrr_event_pass_add_maximum_amount (
+static void __rrr_event_pass_add_maximum_amount_unlocked (
 		uint16_t *amount,
 		struct rrr_event *event
 ) {
@@ -479,7 +503,7 @@ void rrr_event_pass (
 		const uint8_t wpos_prev = wpos - 1;	
 		struct rrr_event *event = &queue->queue[wpos_prev];
 		if (event->function == function && event->flags == flags && event->amount > 0 && event->amount < 0xffff) {
-			__rrr_event_pass_add_maximum_amount(&amount, event);
+			__rrr_event_pass_add_maximum_amount_unlocked(&amount, event);
 		}
 
 		if (amount == 0) {
@@ -498,21 +522,29 @@ void rrr_event_pass (
 				event->amount = amount;
 				QUEUE_WPOS_INC();
 				amount = 0;
+
+				// Only send notification for newly filled event block
+				__rrr_event_write_signal_unlocked(queue);
 			}
 			else if (wpos == queue->queue_rpos) {
 				// Don't add to oldest entry
 			}
 			else if (event->function == function && event->flags == flags && event->amount < 0xffff) {
-				__rrr_event_pass_add_maximum_amount(&amount, event);
+				__rrr_event_pass_add_maximum_amount_unlocked(&amount, event);
 			}
 
 			if (amount == 0) {
 				goto out;
 			}
-		} while(--wpos != queue->queue_wpos);
+
+			// Underflows
+			DEC(wpos);
+		} while (wpos != queue->queue_wpos);
 
 		// Event queue was full :-(
 		pthread_mutex_unlock(&queue->lock);
+		RRR_DBG_9_PRINTF("EQ PASS FD %i FULL\n",
+			queue->signal_fd_listen);
 		rrr_posix_usleep(5000); // 5 ms
 		pthread_mutex_lock(&queue->lock);
 	}
@@ -522,5 +554,4 @@ void rrr_event_pass (
 		__rrr_event_queue_dump_unlocked (queue);
 	}
 	pthread_mutex_unlock(&queue->lock);
-	__rrr_event_write_signal (queue);
 }
