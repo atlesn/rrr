@@ -155,6 +155,12 @@ static inline void rrr_thread_unlock (
 #endif
 }
 
+static inline void rrr_thread_unlock_void (
+		void *thread
+) {
+	rrr_thread_unlock((struct rrr_thread *) thread);
+}
+
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
 static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 	rrr_thread_lock(thread);

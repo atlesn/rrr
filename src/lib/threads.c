@@ -1364,6 +1364,7 @@ int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
+		pthread_cleanup_push(rrr_thread_unlock_void, node);
 		if (node->is_watchdog == 0 && (node->signal & ~(RRR_THREAD_SIGNAL_START_INITIALIZE)) == 0) {
 			if (node->state == state) {
 				ret = callback(node, callback_data);
@@ -1374,7 +1375,7 @@ int rrr_thread_collection_iterate_non_wd_and_not_started_by_state (
 				RRR_LL_ITERATE_LAST();
 			}
 		}
-		rrr_thread_unlock(node);
+		pthread_cleanup_pop(1);
 	RRR_LL_ITERATE_END();
 
 	pthread_mutex_unlock(&collection->threads_mutex);
