@@ -248,6 +248,10 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
+		return RRR_EVENT_EXIT;
+	}
+
 	(void)(flags);
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
@@ -435,6 +439,10 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 ) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
+		return RRR_EVENT_EXIT;
+	}
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
