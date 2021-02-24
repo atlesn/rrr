@@ -63,7 +63,7 @@ struct rrr_event_queue {
 	pthread_mutex_t lock;
 	struct event_base *event_base;
 	struct rrr_event queue[QUEUE_MAX];
-	int (*functions[QUEUE_MAX])(RRR_EVENT_FUNCTION_ARGS);
+	int (*functions[0x100])(RRR_EVENT_FUNCTION_ARGS);
 	int signal_fd_listen;
 	int signal_fd_write;
 	int signal_fd_read;
