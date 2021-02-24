@@ -40,6 +40,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 #include "util/rrr_time.h"
 
+#define QUEUE_MAX 0x100
+#define INC(pos) \
+	(pos) = (pos + 1) % (QUEUE_MAX)
+#define QUEUE_RPOS_INC() \
+	INC(queue->queue_rpos)
+#define QUEUE_WPOS_INC() \
+	INC(queue->queue_wpos)
+
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int rrr_event_libevent_initialized = 0;
 
@@ -50,12 +58,12 @@ struct rrr_event {
 };
 
 struct rrr_event_queue {
-	uint8_t queue_rpos;
-	uint8_t queue_wpos;
+	unsigned int queue_rpos;
+	unsigned int queue_wpos;
 	pthread_mutex_t lock;
 	struct event_base *event_base;
-	struct rrr_event queue[0xff];
-	int (*functions[0xff])(RRR_EVENT_FUNCTION_ARGS);
+	struct rrr_event queue[QUEUE_MAX];
+	int (*functions[QUEUE_MAX])(RRR_EVENT_FUNCTION_ARGS);
 	int signal_fd_listen;
 	int signal_fd_write;
 	int signal_fd_read;
@@ -278,7 +286,7 @@ static void __rrr_event_dispatch (
 
 		if (event.amount > 0) {
 			memset (&queue->queue[queue->queue_rpos], '\0', sizeof(queue->queue[0]));
-			queue->queue_rpos++;
+			QUEUE_RPOS_INC();
 			function = event.function;
 			flags = event.flags;
 			amount = event.amount;
@@ -436,7 +444,7 @@ static void __rrr_event_queue_dump_unlocked (
 
 	rrr_string_builder_append_format(&string_builder, "EQ DUMP FD %i rpos %u wpos %u:", queue->signal_fd_listen, queue->queue_rpos, queue->queue_wpos);
 
-	for (unsigned long int i = 0; i < sizeof(queue->queue) / sizeof(queue->queue[0]); i++) {
+	for (unsigned long int i = 0; i < QUEUE_MAX; i++) {
 		struct rrr_event event = queue->queue[i];
 		if (event.amount || event.function || event.flags) {
 			rrr_string_builder_append_format(&string_builder, " %lu: %02x-%02x-%02x",
@@ -459,8 +467,8 @@ void rrr_event_pass (
 ) {
 	pthread_mutex_lock(&queue->lock);
 
-	RRR_DBG_9_PRINTF("EQ PASS FD %i function %u flags %u amount %u\n",
-		queue->signal_fd_listen, function, flags, amount);
+	RRR_DBG_9_PRINTF("EQ PASS FD %i rpos %u wpos %u function %u flags %u amount %u\n",
+		queue->signal_fd_listen, queue->queue_rpos, queue->queue_wpos, function, flags, amount);
 
 	for (;;) {
 		// Sneak peak at previous write, maybe it's the same function
@@ -486,7 +494,7 @@ void rrr_event_pass (
 				event->function = function;
 				event->flags = flags;
 				event->amount = amount;
-				queue->queue_wpos++;
+				QUEUE_WPOS_INC();
 				amount = 0;
 			}
 			else if (wpos == queue->queue_rpos) {
