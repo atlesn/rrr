@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "cmodule_defines.h"
-#include "../util/linked_list.h"
 
 struct rrr_cmodule;
 struct rrr_cmodule_worker;
@@ -83,8 +82,8 @@ struct rrr_event_queue *rrr_cmodule_worker_get_event_queue (
 struct rrr_instance_settings *rrr_cmodule_worker_get_settings (
 		struct rrr_cmodule_worker *worker
 );
-int rrr_cmodule_worker_new (
-		struct rrr_cmodule_worker **result,
+int rrr_cmodule_worker_init (
+		struct rrr_cmodule_worker *worker,
 		const char *name,
 		struct rrr_instance_settings *settings,
 		struct rrr_event_queue *event_queue_parent,
@@ -97,7 +96,7 @@ int rrr_cmodule_worker_new (
 		int do_processing,
 		int do_drop_on_error
 );
-void rrr_cmodule_worker_destroy (
+void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker
 );
 
