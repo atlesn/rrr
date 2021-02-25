@@ -42,22 +42,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
 
-#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
+#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK()             \
 	pthread_mutex_lock(&collection->lock)
 
-#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_TRYLOCK() 	\
+#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_TRYLOCK()          \
 	pthread_mutex_trylock(&collection->lock)
 
-#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK() 	\
+#define RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK()           \
 	pthread_mutex_unlock(&collection->lock)
 
-#define RRR_NET_TRANSPORT_HANDLE_TRYLOCK(handle,ctx)	\
+#define RRR_NET_TRANSPORT_HANDLE_TRYLOCK(handle,ctx)           \
 	pthread_mutex_trylock(&((handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_LOCK(_handle,ctx)		\
+#define RRR_NET_TRANSPORT_HANDLE_LOCK(_handle,ctx)             \
 	pthread_mutex_lock(&((_handle)->lock_))
 
-#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(_handle,ctx)	\
+#define RRR_NET_TRANSPORT_HANDLE_UNLOCK(_handle,ctx)           \
 	pthread_mutex_unlock(&((_handle)->lock_))
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_and_lock (
@@ -95,13 +95,13 @@ static void __rrr_net_transport_handle_unlock(void *arg) {
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle, "wrapper");
 }
 
-#define RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN(error_source) 															\
-	do {struct rrr_net_transport_handle *handle = NULL;																	\
-	if ((handle = __rrr_net_transport_handle_get_and_lock(transport, transport_handle, error_source)) == NULL) {		\
-		RRR_MSG_0("Could not find transport handle %i in " error_source "\n", transport_handle);						\
-		return 1;																										\
-	}																													\
-	pthread_cleanup_push(__rrr_net_transport_handle_unlock, handle)
+#define RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN(error_source)                                                                    \
+    do {struct rrr_net_transport_handle *handle = NULL;                                                                        \
+    if ((handle = __rrr_net_transport_handle_get_and_lock(transport, transport_handle, error_source)) == NULL) {               \
+        RRR_MSG_0("Could not find transport handle %i in " error_source "\n", transport_handle);                               \
+        return 1;                                                                                                              \
+    }                                                                                                                          \
+    pthread_cleanup_push(__rrr_net_transport_handle_unlock, handle)
 
 #define RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT() \
 	pthread_cleanup_pop(1); } while(0)
@@ -405,7 +405,9 @@ int rrr_net_transport_new (
 		return ret;
 }
 
-void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
+void rrr_net_transport_destroy (
+		struct rrr_net_transport *transport
+) {
 	rrr_net_transport_maintenance(transport);
 
 	rrr_net_transport_common_cleanup(transport);
@@ -417,15 +419,21 @@ void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	transport->methods->destroy(transport);
 }
 
-void rrr_net_transport_destroy_void (void *arg) {
+void rrr_net_transport_destroy_void (
+		void *arg
+) {
 	rrr_net_transport_destroy(arg);
 }
 
-void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection) {
+void rrr_net_transport_collection_destroy (
+		struct rrr_net_transport_collection *collection
+) {
 	RRR_LL_DESTROY(collection, struct rrr_net_transport, rrr_net_transport_destroy(node));
 }
 
-void rrr_net_transport_collection_cleanup (struct rrr_net_transport_collection *collection) {
+void rrr_net_transport_collection_cleanup (
+		struct rrr_net_transport_collection *collection
+) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport);
 		rrr_net_transport_common_cleanup(node);
 	RRR_LL_ITERATE_END();
@@ -894,95 +902,6 @@ int rrr_net_transport_iterate_with_callback (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }
-/*
- * These are disabled. They might not work correctly, especially not destruction
- * of handles when read functions return error. Test after enabling.
-int rrr_net_transport_read_message (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_GET_AND_LOCK("rrr_net_transport_read_message");
-
-	ret = rrr_net_transport_ctx_read_message(
-			handle,
-			read_attempts,
-			read_step_initial,
-			read_step_max_size,
-			read_flags,
-			get_target_size,
-			get_target_size_arg,
-			complete_callback,
-			complete_callback_arg
-	);
-
-	RRR_NET_TRANSPORT_HANDLE_UNLOCK();
-
-	return ret;
-}
-
-int rrr_net_transport_read_message_all_handles (
-		struct rrr_net_transport *transport,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		pthread_mutex_lock(&node->lock);
-		if ((ret = transport->methods->read_message (
-				node,
-				read_attempts,
-				read_step_initial,
-				read_step_max_size,
-				read_flags,
-				get_target_size,
-				get_target_size_arg,
-				complete_callback,
-				complete_callback_arg
-		)) != 0) {
-			if (ret == RRR_READ_INCOMPLETE) {
-				ret = 0;
-				RRR_LL_ITERATE_NEXT();
-			}
-			else if (ret == RRR_READ_SOFT_ERROR) {
-				ret = 0;
-				__rrr_net_transport_handle_destroy(node, 1);
-				RRR_LL_ITERATE_SET_DESTROY();
-				RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
-			}
-			else {
-				RRR_MSG_0("Error %i from read function in rrr_net_transport_read_message_all_handles\n", ret);
-				ret = 1;
-				RRR_LL_ITERATE_LAST();
-			}
-		}
-		pthread_mutex_unlock(&node->lock);
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
-
-	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
-	return ret;
-}
-*/
 
 int rrr_net_transport_match_data_set (
 		struct rrr_net_transport *transport,
