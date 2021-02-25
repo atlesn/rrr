@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "net_transport.h"
+#include "net_transport_struct.h"
 #include "net_transport_openssl.h"
 #include "net_transport_tls_common.h"
 

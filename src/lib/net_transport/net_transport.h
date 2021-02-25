@@ -66,11 +66,6 @@ struct rrr_net_transport_handle {
 	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
 };
 
-struct rrr_net_transport_handle_close_tag_node {
-	RRR_LL_NODE(struct rrr_net_transport_handle_close_tag_node);
-	int transport_handle;
-};
-
 struct rrr_net_transport_handle_close_tag_list {
 	RRR_LL_HEAD(struct rrr_net_transport_handle_close_tag_node);
 };
@@ -83,6 +78,11 @@ struct rrr_net_transport_handle_collection {
 	struct rrr_net_transport_handle_close_tag_list close_tags;
 };
 
+/* TODO : Once MQTT no longer uses this struct, delete it and encapsulate all other structs to net_transport_struct.h */
+struct rrr_net_transport_collection {
+    RRR_LL_HEAD(struct rrr_net_transport);
+};
+
 #define RRR_NET_TRANSPORT_HEAD(type)                           \
     RRR_LL_NODE(type);                                         \
     const struct rrr_net_transport_methods *methods;           \
@@ -92,44 +92,9 @@ struct rrr_net_transport {
     RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
 };
 
-struct rrr_net_transport_collection {
-    RRR_LL_HEAD(struct rrr_net_transport);
-};
-
-#define RRR_NET_TRANSPORT_CONNECT_ARGS                         \
-    int *handle,                                               \
-    struct sockaddr *addr,                                     \
-    socklen_t *socklen,                                        \
-    struct rrr_net_transport *transport,                       \
-    unsigned int port,                                         \
-    const char *host
-
-#define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD                                \
-    struct rrr_net_transport_handle *handle;                                     \
-    int (*get_target_size)(struct rrr_read_session *read_session, void *arg);    \
-    void *get_target_size_arg;                                                   \
-    int (*complete_callback)(struct rrr_read_session *read_session, void *arg);  \
-    void *complete_callback_arg;
-
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
-
-#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS                \
-    struct rrr_net_transport *transport,                                            \
-    int transport_handle,                                                           \
-    void (*final_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),  \
-    void *final_callback_arg,                                                       \
-    void *arg
-
-#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS                                      \
-    struct rrr_net_transport *transport,                                            \
-    unsigned int port,                                                              \
-    int do_ipv6,                                                                    \
-    int (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS),  \
-    void *callback_arg,                                                             \
-    void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),  \
-    void *callback_final_arg
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS        \
     void **submodule_private_ptr,                              \
@@ -141,74 +106,6 @@ struct rrr_net_transport_collection {
     const struct sockaddr *sockaddr,                           \
     socklen_t socklen,                                         \
     void *arg
-
-#define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
-    struct rrr_net_transport *transport,                                   \
-    int transport_handle,                                                  \
-    const struct sockaddr *sockaddr,                                       \
-    socklen_t socklen,                                                     \
-    void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
-    void *final_callback_arg,                                              \
-    void *arg
-
-#define RRR_NET_TRANSPORT_ACCEPT_ARGS                                      \
-    int *did_accept,                                                       \
-    struct rrr_net_transport_handle *listen_handle,                        \
-    int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),  \
-    void *callback_arg,                                                    \
-    void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
-    void *final_callback_arg
-
-#define RRR_NET_TRANSPORT_READ_MESSAGE_ARGS                                     \
-    uint64_t *bytes_read,                                                       \
-    struct rrr_net_transport_handle *handle,                                    \
-    int read_attempts,                                                          \
-    ssize_t read_step_initial,                                                  \
-    ssize_t read_step_max_size,                                                 \
-    ssize_t read_max_size,                                                      \
-    int (*get_target_size)(struct rrr_read_session *read_session, void *arg),   \
-    void *get_target_size_arg,                                                  \
-    int (*complete_callback)(struct rrr_read_session *read_session, void *arg), \
-    void *complete_callback_arg
-
-#define RRR_NET_TRANSPORT_READ_ARGS                            \
-    uint64_t *bytes_read,                                      \
-    struct rrr_net_transport_handle *handle,                   \
-    char *buf,                                                 \
-    size_t buf_size
-
-struct rrr_net_transport_read_callback_data {
-	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
-};
-
-struct rrr_net_transport_methods {
-	void (*destroy)(
-			struct rrr_net_transport *transport
-	);
-	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
-	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);
-	int (*accept)(RRR_NET_TRANSPORT_ACCEPT_ARGS);
-	// Only call close() from parent mode destroy function
-	int (*close)(
-			struct rrr_net_transport_handle *handle
-	);
-	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
-	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
-	int (*send)(
-			uint64_t *bytes_written,
-			struct rrr_net_transport_handle *handle,
-			const void *data,
-			ssize_t size
-	);
-	int (*poll)(
-			struct rrr_net_transport_handle *handle
-	);
-	int (*is_tls)(void);
-	void (*selected_proto_get)(
-			const char **proto,
-			struct rrr_net_transport_handle *handle
-	);
-};
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 int rrr_net_transport_handle_allocate_and_add (

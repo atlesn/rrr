@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_NET_TRANSPORT_TLS_COMMON_H
 #define RRR_NET_TRANSPORT_TLS_COMMON_H
 
+#include "net_transport_struct.h"
 #include "net_transport.h"
 #include "../ip/ip.h"
 
