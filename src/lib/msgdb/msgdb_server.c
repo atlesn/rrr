@@ -922,18 +922,6 @@ uint64_t rrr_msgdb_server_recv_count_get (
 	return server->recv_count;
 }
 
-/*
-static int __rrr_msgdb_server_dispatch_periodic (
-	void *arg
-) {
-	struct rrr_msgdb_server *server = arg;
-
-	(void)(server);
-
-	return 0;
-}
-*/
-
 int rrr_msgdb_server_event_setup (
 		struct rrr_msgdb_server *server,
 		struct rrr_event_queue *queue

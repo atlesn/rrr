@@ -793,7 +793,13 @@ int rrr_socket_client_collection_event_setup (
 			__rrr_socket_client_collection_event_accept,
 			collection
 	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
+		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_event_setup\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(collection->listen_event, NULL)) {
+		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_event_setup\n");
 		ret = 1;
 		goto out;
 	}
