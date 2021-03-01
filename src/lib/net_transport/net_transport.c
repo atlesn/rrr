@@ -931,34 +931,168 @@ int rrr_net_transport_match_data_set (
 	return ret;
 }
 
-static void __rrr_net_transport_event_accept (
+void rrr_net_transport_ctx_set_want_write (
+		struct rrr_net_transport_handle *handle,
+		int want_write
+) {
+	int ret_tmp = 0;
+
+	if (want_write) {
+		ret_tmp = event_add(handle->event_write, NULL);
+	}
+	else {
+		ret_tmp = event_del(handle->event_write);
+	}
+
+	if (ret_tmp != 0) {
+		RRR_MSG_0("Warning: event_add/del failed in rrr_net_transport_ctx_set_want_write, removing handle\n");
+	}
+}
+
+#define CHECK_READ_WRITE_RETURN()                                                                              \
+    do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
+        if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
+            RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
+            event_base_loopbreak(handle->transport->event_base);                                               \
+        }                                                                                                      \
+    }} while(0)
+
+static void __rrr_net_transport_event_read (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
 ) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	int ret_tmp = handle->transport->read_callback (
+		handle,
+		handle->transport->read_callback_arg
+	);
+
+	CHECK_READ_WRITE_RETURN();
 }
 
-static int __rrr_net_transport_handle_events_setup_listen (
-	struct event_base *event_base,
-	struct rrr_net_transport_handle *handle,
-	int fd
+static void __rrr_net_transport_event_write (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	int ret_tmp = handle->transport->write_callback (
+		handle,
+		handle->transport->write_callback_arg
+	);
+
+	CHECK_READ_WRITE_RETURN();
+}
+
+static int __rrr_net_transport_handle_events_setup_connected (
+	struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
 
 	if ((handle->event_read = event_new (
-			event_base,
-			fd,
+			handle->transport->event_base,
+			handle->submodule_fd,
 			EV_READ|EV_TIMEOUT|EV_PERSIST,
-			__rrr_net_transport_event_accept,
+			__rrr_net_transport_event_read,
 			handle
 	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup\n");
+		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_connected\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (event_add(handle->event_read, NULL) != 0) {
-		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup\n");
+		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_connected\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((handle->event_write = event_new (
+			handle->transport->event_base,
+			handle->submodule_fd,
+			EV_WRITE|EV_TIMEOUT|EV_PERSIST,
+			__rrr_net_transport_event_write,
+			handle
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_connected\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Don't add write to events, it is done when data is pushed and we need to write
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_accept_callback_intermediate (
+		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS
+) {
+	(void)(arg);
+
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
+
+	if (transport->event_base != NULL) {
+		if ((ret = __rrr_net_transport_handle_events_setup_connected (
+				handle
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	final_callback(handle, sockaddr, socklen, final_callback_arg);
+
+	out:
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+	return ret;
+}
+
+static void __rrr_net_transport_event_accept (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	int did_accept = 0;
+	int ret_tmp = handle->transport->methods->accept (
+			&did_accept,
+			handle,
+			__rrr_net_transport_accept_callback_intermediate,
+			NULL,
+			handle->transport->accept_callback,
+			handle->transport->accept_callback_arg
+	);
+
+	if (ret_tmp != 0) {
+		event_base_loopbreak(handle->transport->event_base);
+	}
+}
+
+static int __rrr_net_transport_handle_events_setup_listen (
+	struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	if ((handle->event_read = event_new (
+			handle->transport->event_base,
+			handle->submodule_fd,
+			EV_READ|EV_TIMEOUT|EV_PERSIST,
+			__rrr_net_transport_event_accept,
+			handle
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_listen\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(handle->event_read, NULL) != 0) {
+		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_listen\n");
 		ret = 1;
 		goto out;
 	}
@@ -977,6 +1111,11 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_bind_and_listen_callback_intermediate");
 
 	if (transport->event_base) {
+		if ((ret = __rrr_net_transport_handle_events_setup_listen (
+				handle
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	if (final_callback) {
@@ -1030,20 +1169,6 @@ int rrr_net_transport_bind_and_listen_dualstack (
 	return ret;
 }
 
-static int __rrr_net_transport_accept_callback_intermediate (
-		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS
-) {
-	(void)(arg);
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
-
-	final_callback(handle, sockaddr, socklen, final_callback_arg);
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
-
-	return 0;
-}
-
 int rrr_net_transport_accept_all_handles (
 		struct rrr_net_transport *transport,
 		int at_most_one_accept,
@@ -1086,13 +1211,28 @@ int rrr_net_transport_accept_all_handles (
 
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *accept_callback_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg,
+		int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS),
+		void *write_callback_arg
 ) {
 	int ret = 0;
 
 	rrr_net_transport_common_cleanup (transport);
 
 	transport->event_base = rrr_event_queue_base_get(queue);
+
+	transport->accept_callback = accept_callback;
+	transport->accept_callback_arg = accept_callback_arg;
+
+	transport->read_callback = read_callback;
+	transport->read_callback_arg = read_callback_arg;
+
+	transport->write_callback = write_callback;
+	transport->write_callback_arg = write_callback_arg;
 
 	out:
 	return ret;

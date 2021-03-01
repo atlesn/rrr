@@ -40,7 +40,10 @@ struct rrr_event_queue;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
+
+	// Once nobody uses threading, remove this
 	pthread_mutex_t lock_;
+
 	int lock_count;
 	struct rrr_net_transport *transport;
 	int handle;
@@ -78,24 +81,17 @@ struct rrr_net_transport_handle_close_tag_list {
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
 	int next_handle_position;
+
+	// Once nobody uses threading, remove this
 	pthread_mutex_t lock;
 	pthread_t owner;
+
 	struct rrr_net_transport_handle_close_tag_list close_tags;
 };
 
 /* TODO : Once MQTT no longer uses this struct, delete it and encapsulate all other structs to net_transport_struct.h */
 struct rrr_net_transport_collection {
     RRR_LL_HEAD(struct rrr_net_transport);
-};
-
-#define RRR_NET_TRANSPORT_HEAD(type)                           \
-    RRR_LL_NODE(type);                                         \
-    const struct rrr_net_transport_methods *methods;           \
-    struct rrr_net_transport_handle_collection handles;        \
-    struct event_base *event_base
-
-struct rrr_net_transport {
-    RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
 };
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
@@ -112,6 +108,30 @@ struct rrr_net_transport {
     const struct sockaddr *sockaddr,                           \
     socklen_t socklen,                                         \
     void *arg
+
+#define RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS             \
+    struct rrr_net_transport_handle *handle,                   \
+    void *arg
+
+#define RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS            \
+    struct rrr_net_transport_handle *handle,                   \
+    void *arg
+
+#define RRR_NET_TRANSPORT_HEAD(type)                                        \
+    RRR_LL_NODE(type);                                                      \
+    const struct rrr_net_transport_methods *methods;                        \
+    struct rrr_net_transport_handle_collection handles;                     \
+    struct event_base *event_base;                                          \
+    void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
+    void *accept_callback_arg;                                              \
+    int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
+    void *read_callback_arg;                                                \
+    int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS);     \
+    void *write_callback_arg
+
+struct rrr_net_transport {
+    RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
+};
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 int rrr_net_transport_handle_allocate_and_add (
@@ -264,6 +284,10 @@ int rrr_net_transport_match_data_set (
 		const char *string,
 		uint64_t number
 );
+void rrr_net_transport_ctx_set_want_write (
+		struct rrr_net_transport_handle *handle,
+		int want_write
+);
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
 		unsigned int port,
@@ -278,7 +302,13 @@ int rrr_net_transport_accept_all_handles (
 );
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
-		struct rrr_event_queue *queue
+		struct rrr_event_queue *queue,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *accept_callback_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg,
+		int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS),
+		void *write_callback_arg
 );
 
 #endif /* RRR_NET_TRANSPORT_H */
