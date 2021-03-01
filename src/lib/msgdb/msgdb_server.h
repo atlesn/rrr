@@ -38,9 +38,6 @@ void rrr_msgdb_server_destroy (
 void rrr_msgdb_server_destroy_void (
 		void *server
 );
-int rrr_msgdb_server_tick (
-		struct rrr_msgdb_server *server
-);
 uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
 );
