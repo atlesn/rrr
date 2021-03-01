@@ -60,7 +60,7 @@ static int __rrr_net_transport_plain_data_new (struct rrr_net_transport_plain_da
 }
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
-	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
+	if (rrr_socket_close(handle->submodule_fd) != 0) {
 		RRR_MSG_0("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
 	}
 	__rrr_net_transport_plain_data_destroy (handle->submodule_private_ptr);
@@ -89,7 +89,7 @@ static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 	data->ip_data = *(callback_data->ip_data);
 
 	*submodule_private_ptr = data;
-	*submodule_private_fd = callback_data->ip_data->fd;
+	*submodule_fd = callback_data->ip_data->fd;
 
 	return 0;
 }
@@ -185,7 +185,7 @@ static int __rrr_net_transport_plain_read_message (
 		ret = rrr_socket_read_message_default (
 				&bytes_read_tmp,
 				&handle->read_sessions,
-				handle->submodule_private_fd,
+				handle->submodule_fd,
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
@@ -233,7 +233,7 @@ static int __rrr_net_transport_plain_read (
 	ret = rrr_socket_read (
 			buf,
 			&bytes_read_s,
-			handle->submodule_private_fd,
+			handle->submodule_fd,
 			buf_size,
 			NULL,
 			NULL,
@@ -264,7 +264,7 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
+	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size)) != 0) {
 		if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 			goto out;
 		}
@@ -328,7 +328,7 @@ int __rrr_net_transport_plain_accept (
 
 	struct rrr_ip_data ip_data = {0};
 
-	ip_data.fd = listen_handle->submodule_private_fd;
+	ip_data.fd = listen_handle->submodule_fd;
 
 	if ((ret = rrr_ip_accept(&accept_data, &ip_data, "net_transport_plain", 0)) != 0) {
 		RRR_MSG_0("Error while accepting connection in plain server\n");
@@ -389,7 +389,7 @@ int __rrr_net_transport_plain_accept (
 static int __rrr_net_transport_plain_poll (
 		struct rrr_net_transport_handle *handle
 ) {
-	return rrr_socket_check_alive (handle->submodule_private_fd);
+	return rrr_socket_check_alive (handle->submodule_fd);
 }
 
 static int __rrr_net_transport_plain_is_tls (void) {

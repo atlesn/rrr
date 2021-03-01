@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "net_transport_tls.h"
 #endif
 
+#include "../event.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
@@ -142,7 +143,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	if ((ret = submodule_callback (
 			&new_handle->submodule_private_ptr,
-			&new_handle->submodule_private_fd,
+			&new_handle->submodule_fd,
 			submodule_callback_arg
 	)) != 0) {
 		RRR_NET_TRANSPORT_HANDLE_UNLOCK(new_handle, "__rrr_net_transport_handle_create_and_push");
@@ -252,6 +253,15 @@ static int __rrr_net_transport_handle_destroy (
 
 	RRR_FREE_IF_NOT_NULL(handle->match_string);
 
+	if (handle->event_read != NULL) {
+		event_del(handle->event_read);
+		event_free(handle->event_read);
+	}
+	if (handle->event_write != NULL) {
+		event_del(handle->event_write);
+		event_free(handle->event_write);
+	}
+
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle, "__rrr_net_transport_handle_destroy");
 	pthread_mutex_destroy(&handle->lock_);
 
@@ -271,6 +281,7 @@ void rrr_net_transport_common_cleanup (
 			struct rrr_net_transport_handle,
 			__rrr_net_transport_handle_destroy (node, 0)
 	);
+	transport->event_base = NULL;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
 
@@ -920,21 +931,60 @@ int rrr_net_transport_match_data_set (
 	return ret;
 }
 
-static int __rrr_net_transport_bind_and_listen_callback_intermediate (
-		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS
+static void __rrr_net_transport_event_accept (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+}
+
+static int __rrr_net_transport_handle_events_setup_listen (
+	struct event_base *event_base,
+	struct rrr_net_transport_handle *handle,
+	int fd
 ) {
 	int ret = 0;
 
-	(void)(arg);
-
-	if (final_callback) {
-		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_accept_callback_intermediate");
-
-		final_callback(handle, final_callback_arg);
-
-		RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
+	if ((handle->event_read = event_new (
+			event_base,
+			fd,
+			EV_READ|EV_TIMEOUT|EV_PERSIST,
+			__rrr_net_transport_event_accept,
+			handle
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup\n");
+		ret = 1;
+		goto out;
 	}
 
+	if (event_add(handle->event_read, NULL) != 0) {
+		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_net_transport_bind_and_listen_callback_intermediate (
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS
+) {
+	(void)(arg);
+
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_bind_and_listen_callback_intermediate");
+
+	if (transport->event_base) {
+	}
+
+	if (final_callback) {
+		final_callback(handle, final_callback_arg);
+	}
+
+	out:
+	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
 	return ret;
 }
 
@@ -1031,5 +1081,19 @@ int rrr_net_transport_accept_all_handles (
 	RRR_LL_ITERATE_END();
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+	return ret;
+}
+
+int rrr_net_transport_event_setup (
+		struct rrr_net_transport *transport,
+		struct rrr_event_queue *queue
+) {
+	int ret = 0;
+
+	rrr_net_transport_common_cleanup (transport);
+
+	transport->event_base = rrr_event_queue_base_get(queue);
+
+	out:
 	return ret;
 }

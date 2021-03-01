@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 #include <pthread.h>
+#include <event2/event.h>
 
 #include "net_transport_defines.h"
 
@@ -35,6 +36,7 @@ struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_nullsafe_str;
+struct rrr_event_queue;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
@@ -45,12 +47,15 @@ struct rrr_net_transport_handle {
 	enum rrr_net_transport_socket_mode mode;
 	struct rrr_read_session_collection read_sessions;
 
+	int submodule_fd;
+	struct event *event_read;
+	struct event *event_write;
+
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;
 
 	// Like SSL data or plain FD
 	void *submodule_private_ptr;
-	int submodule_private_fd;
 
 	// Like HTTP session
 	void *application_private_ptr;
@@ -86,7 +91,8 @@ struct rrr_net_transport_collection {
 #define RRR_NET_TRANSPORT_HEAD(type)                           \
     RRR_LL_NODE(type);                                         \
     const struct rrr_net_transport_methods *methods;           \
-    struct rrr_net_transport_handle_collection handles
+    struct rrr_net_transport_handle_collection handles;        \
+    struct event_base *event_base
 
 struct rrr_net_transport {
     RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
@@ -98,7 +104,7 @@ struct rrr_net_transport {
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS        \
     void **submodule_private_ptr,                              \
-    int *submodule_private_fd,                                 \
+    int *submodule_fd,                                         \
     void *arg
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS           \
@@ -269,6 +275,10 @@ int rrr_net_transport_accept_all_handles (
 		int at_most_one_accept,
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
+);
+int rrr_net_transport_event_setup (
+		struct rrr_net_transport *transport,
+		struct rrr_event_queue *queue
 );
 
 #endif /* RRR_NET_TRANSPORT_H */
