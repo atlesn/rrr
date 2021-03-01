@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,28 +39,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <arpa/inet.h>
 
-#include "read.h"
-#include "log.h"
-#include "array.h"
-#include "rrr_strerror.h"
-#include "read_constants.h"
-
-/*
-#include "messages/msg_msg.h"
-#include "messages/msg.h"
-#include "message_holder/message_holder.h"
-#include "message_holder/message_holder_struct.h"
-*/
-#include "ip/ip.h"
-#include "ip/ip_accept_data.h"
-#include "ip/ip_util.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_common.h"
-#include "socket/rrr_socket_read.h"
-#include "socket/rrr_socket_constants.h"
-#include "util/rrr_time.h"
-#include "util/posix.h"
-#include "util/crc32.h"
+#include "../log.h"
+#include "ip.h"
+#include "ip_accept_data.h"
+#include "ip_util.h"
+#include "../read.h"
+#include "../array.h"
+#include "../rrr_strerror.h"
+#include "../read_constants.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_common.h"
+#include "../socket/rrr_socket_read.h"
+#include "../socket/rrr_socket_constants.h"
+#include "../util/rrr_time.h"
+#include "../util/posix.h"
+#include "../util/crc32.h"
 
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
 
