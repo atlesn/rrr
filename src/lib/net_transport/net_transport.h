@@ -258,33 +258,6 @@ int rrr_net_transport_match_data_set (
 		const char *string,
 		uint64_t number
 );
-int rrr_net_transport_send_blocking (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_send_nonblock (
-		uint64_t *written_bytes,
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_read (
-		uint64_t *bytes_read,
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		char *buf,
-		size_t buf_size
-);
-int rrr_net_transport_bind_and_listen (
-		struct rrr_net_transport *transport,
-		unsigned int port,
-		int do_ipv6,
-		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
-		void *arg
-);
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
 		unsigned int port,

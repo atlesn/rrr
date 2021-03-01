@@ -920,59 +920,6 @@ int rrr_net_transport_match_data_set (
 	return ret;
 }
 
-int rrr_net_transport_send_blocking (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		const void *data,
-		ssize_t size
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
-
-	ret = rrr_net_transport_ctx_send_blocking(handle, data, size);
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
-
-	return ret;
-}
-
-int rrr_net_transport_send_nonblock (
-		uint64_t *written_bytes,
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		const void *data,
-		ssize_t size
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
-
-	ret = rrr_net_transport_ctx_send_nonblock(written_bytes, handle, data, size);
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
-
-	return ret;
-}
-
-int rrr_net_transport_read (
-		uint64_t *bytes_read,
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		char *buf,
-		size_t buf_size
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("rrr_net_transport_send");
-
-	ret = rrr_net_transport_ctx_read(bytes_read, handle, buf, buf_size);
-
-	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
-
-	return ret;
-}
-
 static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 		RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS
 ) {
@@ -989,24 +936,6 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 	}
 
 	return ret;
-}
-
-int rrr_net_transport_bind_and_listen (
-		struct rrr_net_transport *transport,
-		unsigned int port,
-		int do_ipv6,
-		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
-		void *arg
-) {
-	return transport->methods->bind_and_listen (
-			transport,
-			port,
-			do_ipv6,
-			__rrr_net_transport_bind_and_listen_callback_intermediate,
-			NULL,
-			callback,
-			arg
-	);
 }
 
 int rrr_net_transport_bind_and_listen_dualstack (
