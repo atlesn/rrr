@@ -35,10 +35,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <event2/event.h>
 
 #include "../log.h"
 
 #include "rrr_socket.h"
+#include "rrr_socket_send_chunk.h"
 
 #include "../rrr_strerror.h"
 #include "../log.h"
@@ -79,6 +81,9 @@ struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
 	char *creator;
 	char *filename;
+	struct event *event_read;
+	struct event *event_write;
+	struct rrr_socket_send_chunk_collection send_chunks;
 	struct rrr_socket_options options;
 	struct rrr_socket_private_data_collection private_data;
 };
@@ -158,6 +163,15 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 	__rrr_socket_private_data_collection_clear(&holder->private_data);
 	RRR_FREE_IF_NOT_NULL(holder->filename);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
+	if (holder->event_read != NULL) {
+		event_del(holder->event_read);
+		event_free(holder->event_read);
+	}
+	if (holder->event_write != NULL) {
+		event_del(holder->event_write);
+		event_free(holder->event_write);
+	}
+	rrr_socket_send_chunk_collection_clear(&holder->send_chunks);
 	free(holder);
 
 	// Must always return 0 or linked list won' remove the node

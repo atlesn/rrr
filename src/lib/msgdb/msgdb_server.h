@@ -41,12 +41,6 @@ void rrr_msgdb_server_destroy_void (
 uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
 );
-int rrr_msgdb_server_dispatch (
-		struct rrr_msgdb_server *server,
-		struct rrr_event_queue *queue,
-		int (*periodic_callback)(void *arg),
-		void *periodic_callback_arg
-);
 int rrr_msgdb_server_event_setup (
 		struct rrr_msgdb_server *server,
 		struct rrr_event_queue *queue
