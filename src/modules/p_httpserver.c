@@ -84,6 +84,8 @@ struct httpserver_data {
 	rrr_setting_uint response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
+	struct rrr_http_server *http_server;
+
 	struct rrr_fifo_buffer buffer;
 
 	struct rrr_map websocket_topic_filters;
@@ -104,6 +106,9 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_map_clear(&data->websocket_topic_filters);
 	rrr_fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
+	if (data->http_server != NULL) {
+		rrr_http_server_destroy(data->http_server);
+	}
 }
 
 static int httpserver_data_init (
@@ -243,14 +248,14 @@ static int httpserver_parse_config (
 	return ret;
 }
 
-static int httpserver_start_listening (struct httpserver_data *data, struct rrr_http_server *http_server) {
+static int httpserver_start_listening (struct httpserver_data *data) {
 	int ret = 0;
 
 	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
 		if ((ret = rrr_http_server_start_plain (
-				http_server,
+				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
 				data->port_plain
 		)) != 0) {
@@ -266,7 +271,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
 		if ((ret = rrr_http_server_start_tls (
-				http_server,
+				data->http_server,
 				INSTANCE_D_EVENTS(data->thread_data),
 				data->port_tls,
 				&data->net_transport_config,
@@ -461,7 +466,6 @@ static int httpserver_write_message_callback (
 
 struct httpserver_callback_data {
 	struct httpserver_data *httpserver_data;
-	struct rrr_thread_collection *threads;
 };
 
 static int httpserver_generate_unique_topic (
@@ -1478,8 +1482,6 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpserver started thread %p\n", thread_data);
 
-	struct rrr_http_server *http_server = NULL;
-
 	{
 		uint64_t startup_time = rrr_time_get_64() + data->startup_delay_us;
 		while (rrr_thread_signal_encourage_stop_check(thread) != 1 && startup_time > rrr_time_get_64()) {
@@ -1491,8 +1493,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	}
 
 	struct httpserver_callback_data callback_data = {
-			data,
-			http_server->threads
+			data
 	};
 
 	struct rrr_http_server_callbacks callbacks = {
@@ -1510,7 +1511,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		&callback_data
 	};
 
-	if (rrr_http_server_new(&http_server, data->do_disable_http2, &callbacks) != 0) {
+	if (rrr_http_server_new(&data->http_server, data->do_disable_http2, &callbacks) != 0) {
 		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -1520,10 +1521,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	//        not being freed upon program exit. This happens if a worker thread
 	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
 
-	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
-
-	if (httpserver_start_listening(data, http_server) != 0) {
-		goto out_cleanup_httpserver;
+	if (httpserver_start_listening(data) != 0) {
+		goto out_message;
 	}
 
 	unsigned int accept_count_total = 0;
@@ -1552,7 +1551,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 		if (rrr_http_server_tick (
 				&accept_count,
-				http_server,
+				data->http_server,
 				data->worker_threads,
 				&callbacks
 		) != 0) {
@@ -1584,14 +1583,11 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Thread httpserver %p instance %s looping ended\n", thread, INSTANCE_D_NAME(thread_data));
 
-	out_cleanup_httpserver:
-	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
-	pthread_cleanup_pop(1);
-
 	out_message:
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
-
 	pthread_cleanup_pop(1);
+
 	pthread_exit(0);
 }
 
