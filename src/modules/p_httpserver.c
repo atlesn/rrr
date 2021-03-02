@@ -89,6 +89,7 @@ struct httpserver_data {
 
 	struct rrr_http_server *http_server;
 
+	struct rrr_poll_helper_counters counters;
 	struct rrr_fifo_buffer buffer;
 
 	struct rrr_map websocket_topic_filters;
@@ -1434,6 +1435,18 @@ static int httpserver_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
+static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	(void)(flags);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
+
+	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback, 0);
+}
+
 // If we receive messages from senders which no worker seem to want, we must delete them
 static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
@@ -1459,6 +1472,31 @@ static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 
 	rrr_msg_holder_unlock(entry);
 	return ret;
+}
+
+static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	struct httpserver_callback_data callback_data = {
+		data
+	};
+
+	if (rrr_fifo_buffer_search (
+			&data->buffer,
+			httpserver_housekeep_callback,
+			&callback_data,
+			0
+	)) {
+		return 1;
+	}
+
+	return 0;
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
@@ -1524,71 +1562,16 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	// TODO : There are occasional (?) reports from valgrind that http_server is
-	//        not being freed upon program exit. This happens if a worker thread
-	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
-
 	if (httpserver_start_listening(data) != 0) {
 		goto out_message;
 	}
 
-	unsigned int accept_count_total = 0;
-	uint64_t prev_stats_time = rrr_time_get_64();
-
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		// TODO : Convert to events to prevent delay
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete (
-				&amount,
-				data->thread_data,
-				httpserver_poll_callback,
-				0
-		) != 0) {
-			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		if (amount == 100) {
-			rrr_posix_usleep(20000); // 20ms
-		}
-
-		int accept_count = 0;
-
-		if (rrr_http_server_tick (
-				&accept_count,
-				data->http_server,
-				data->worker_threads,
-				&callbacks
-		) != 0) {
-			RRR_MSG_0("Failure in main loop in httpserver instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		accept_count_total += accept_count;
-
-		uint64_t time_now = rrr_time_get_64();
-		if (time_now > prev_stats_time + 1000000) {
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "accepted", accept_count_total);
-
-			accept_count_total = 0;
-
-			prev_stats_time = time_now;
-		}
-
-		if (rrr_fifo_buffer_search (
-				&data->buffer,
-				httpserver_housekeep_callback,
-				&callback_data,
-				0
-		)) {
-			break;
-		}
-	}
-
-	RRR_DBG_1 ("Thread httpserver %p instance %s looping ended\n", thread, INSTANCE_D_NAME(thread_data));
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			httpserver_event_periodic,
+			thread
+	);
 
 	out_message:
 	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
@@ -1606,6 +1589,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	httpserver_event_broker_data_available
+};
+
 static const char *module_name = "httpserver";
 
 __attribute__((constructor)) void load(void) {
@@ -1616,6 +1603,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

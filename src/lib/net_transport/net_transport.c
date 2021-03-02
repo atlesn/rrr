@@ -993,8 +993,6 @@ static void __rrr_net_transport_event_maintenance (
 	(void)(fd);
 	(void)(flags);
 
-	printf("Maintenance\n");
-
 	rrr_net_transport_maintenance(transport);
 }
 
