@@ -45,6 +45,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/util/macro_utils.h"
 #include "lib/util/rrr_time.h"
 
+#define RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS  3000
+#define RRR_HTTP_SERVER_IDLE_TIMEOUT_MS        RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS * 2
+
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -280,7 +283,9 @@ int main (int argc, const char **argv, const char **env) {
 		if (rrr_http_server_start_plain (
 				http_server,
 				events,
-				data.http_port
+				data.http_port,
+				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -312,6 +317,8 @@ int main (int argc, const char **argv, const char **env) {
 				http_server,
 				events,
 				data.https_port,
+				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
 				&net_transport_config_tls,
 				flags
 		) != 0) {

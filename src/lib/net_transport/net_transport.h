@@ -54,6 +54,7 @@ struct rrr_net_transport_handle {
 	int submodule_fd;
 	struct event *event_read;
 	struct event *event_write;
+	struct event *event_first_read_timeout;
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;
@@ -128,6 +129,10 @@ struct rrr_net_transport_collection {
     struct rrr_net_transport_handle_collection handles;                     \
     struct event_base *event_base;                                          \
     struct event *event_maintenance;                                        \
+    uint64_t first_read_timeout_ms;                                         \
+    uint64_t read_timeout_ms;                                               \
+    struct timeval first_read_timeout_tv;                                   \
+    struct timeval read_timeout_tv;                                         \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
@@ -319,6 +324,8 @@ int rrr_net_transport_accept_all_handles (
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		struct rrr_event_queue *queue,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),

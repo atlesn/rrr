@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_time.h"
 
-#include "log.h"
-#include "rrr_strerror.h"
+#include "../log.h"
+#include "../rrr_strerror.h"
 
 // Allow gettimeofday on BSD
 
@@ -72,4 +72,11 @@ void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add) 
 	rrr_time_gettimeofday(&tval, usec_add);
 	tspec->tv_sec = tval.tv_sec;
 	tspec->tv_nsec = tval.tv_usec * 1000;
+}
+
+void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec) {
+	struct timeval result = {0};
+	result.tv_usec = usec % 1000000;
+	result.tv_sec = (usec - result.tv_usec) / 1000000;
+	*__tv = result;
 }

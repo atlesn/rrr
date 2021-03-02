@@ -673,6 +673,8 @@ static int __rrr_http_server_start (
 		struct rrr_http_server *http_server,
 		struct rrr_event_queue *queue,
 		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
 		const struct rrr_net_transport_config *net_transport_config,
 		int net_transport_flags
 ) {
@@ -714,6 +716,8 @@ static int __rrr_http_server_start (
 		if ((ret = rrr_net_transport_event_setup (
 			*result_transport,
 			queue,
+			first_read_timeout_ms,
+			read_timeout_ms,
 			__rrr_http_server_accept_callback,
 			http_server,
 			__rrr_http_server_read_write_callback,
@@ -741,7 +745,9 @@ static int __rrr_http_server_start (
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,
 		struct rrr_event_queue *queue,
-		uint16_t port
+		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms
 ) {
 	int ret = 0;
 
@@ -759,6 +765,8 @@ int rrr_http_server_start_plain (
 			server,
 			queue,
 			port,
+			first_read_timeout_ms,
+			read_timeout_ms,
 			&net_transport_config_plain,
 			0
 	);
@@ -771,6 +779,8 @@ int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		struct rrr_event_queue *queue,
 		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 ) {
@@ -789,6 +799,8 @@ int rrr_http_server_start_tls (
 			server,
 			queue,
 			port,
+			first_read_timeout_ms,
+			read_timeout_ms,
 			&net_transport_config_tls,
 			net_transport_flags
 	);
