@@ -48,20 +48,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                  "[-p|--port[=]HTTP PORT]"},
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-		{0,							'P',	"plain-disable",		"[-P|--plain-disable]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"ssl-port",				"[-s|--ssl-port[=]HTTPS PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
-		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
+        {0,                            'P',    "plain-disable",         "[-P|--plain-disable]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "ssl-port",              "[-s|--ssl-port[=]HTTPS PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "certificate",           "[-c|--certificate[=]PEM SSL CERTIFICATE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'k',    "key",                   "[-k|--key[=]PEM SSL PRIVATE KEY]"},
+        {0,                            'N',    "no-cert-verify",        "[-N|--no-cert-verify]"},
 #endif
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                  "[-h|--help]"},
+        {0,                            'v',    "version",               "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
 };
 
 struct rrr_http_server_data {
@@ -74,18 +74,6 @@ struct rrr_http_server_data {
 	int plain_disable;
 #endif
 };
-
-/*
-struct rrr_http_server_response {
-	int code;
-	char *argument;
-};
-
-static void __rrr_http_server_response_cleanup (struct rrr_http_server_response *response) {
-	RRR_FREE_IF_NOT_NULL(response->argument);
-	response->code = 0;
-}
-*/
 
 static void __rrr_http_server_data_init (struct rrr_http_server_data *data) {
 	memset (data, '\0', sizeof(*data));
