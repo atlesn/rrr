@@ -59,7 +59,8 @@ void rrr_http_server_destroy_void (void *server) {
 
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2
+		int disable_http2,
+		const struct rrr_http_server_callbacks *callbacks
 ) {
 	int ret = 0;
 
@@ -81,6 +82,7 @@ int rrr_http_server_new (
 	}
 
 	server->disable_http2 = disable_http2;
+	server->callbacks = *callbacks;
 
 	*target = server;
 	server = NULL;
@@ -113,103 +115,6 @@ static int __rrr_http_server_start_alpn_protos_callback (
 			alpn_protos_length
 	);
 }
-
-static int __rrr_http_server_start (
-		struct rrr_net_transport **result_transport,
-		uint16_t port,
-		const struct rrr_net_transport_config *net_transport_config,
-		int net_transport_flags
-) {
-	int ret = 0;
-
-	if (*result_transport != NULL) {
-		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
-	}
-
-	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
-		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
-				result_transport,
-				net_transport_config,
-				net_transport_flags
-		};
-
-		ret = rrr_http_application_alpn_protos_with_all_do (
-				__rrr_http_server_start_alpn_protos_callback,
-				&callback_data
-		);
-	}
-	else {
-		ret = rrr_net_transport_new (
-				result_transport,
-				net_transport_config,
-				net_transport_flags,
-				NULL,
-				0
-		);
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
-			*result_transport,
-			port,
-			NULL,
-			NULL
-	)) != 0) {
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_http_server_start_plain (
-		struct rrr_http_server *server,
-		uint16_t port
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_config net_transport_config_plain = {
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			RRR_NET_TRANSPORT_PLAIN
-	};
-
-	ret = __rrr_http_server_start (&server->transport_http, port, &net_transport_config_plain, 0);
-
-	return ret;
-}
-
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-int rrr_http_server_start_tls (
-		struct rrr_http_server *server,
-		uint16_t port,
-		const struct rrr_net_transport_config *net_transport_config_template,
-		int net_transport_flags
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_config net_transport_config_tls = *net_transport_config_template;
-
-	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
-
-	if (server->disable_http2) {
-		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
-	}
-
-	ret = __rrr_http_server_start (&server->transport_https, port, &net_transport_config_tls, net_transport_flags);
-
-	return ret;
-}
-#endif
 
 static void __rrr_http_server_accept_create_http_session_callback (
 		struct rrr_net_transport_handle *handle,
@@ -489,11 +394,6 @@ int rrr_http_server_tick (
 	return ret;
 }
 
-struct rrr_http_server_callback_data {
-	struct rrr_http_server *server;
-	const struct rrr_http_server_callbacks *callbacks;
-};
-
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
@@ -533,13 +433,16 @@ static void __rrr_http_server_accept_callback (
 static int __rrr_http_server_upgrade_verify_callback (
 		RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
-	(void)(callback_data);
 	(void)(from);
-	(void)(to);
 
-	*do_upgrade = 1;
+	if (to == RRR_HTTP_UPGRADE_MODE_HTTP2 && http_server->disable_http2) {
+		*do_upgrade = 0;
+	}
+	else {
+		*do_upgrade = 1;
+	}
 
 	return 0;
 }
@@ -547,15 +450,15 @@ static int __rrr_http_server_upgrade_verify_callback (
 static int __rrr_http_server_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
 	int ret = 0;
 
-	if (callback_data->callbacks->websocket_handshake_callback == NULL) {
+	if (http_server->callbacks.websocket_handshake_callback == NULL) {
 		RRR_DBG_1("Note: HTTP server received an HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
 		*do_websocket = 0;
 	}
-	else if ((ret = callback_data->callbacks->websocket_handshake_callback (
+	else if ((ret = http_server->callbacks.websocket_handshake_callback (
 			do_websocket,
 			application_topic,
 			handle,
@@ -563,7 +466,7 @@ static int __rrr_http_server_websocket_handshake_callback (
 			data_ptr,
 			overshoot_bytes,
 			next_protocol_version,
-			callback_data->callbacks->final_callback_arg
+			http_server->callbacks.final_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -598,7 +501,7 @@ static int __rrr_http_server_response_initialize (
 static int __rrr_http_server_receive_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
 	(void)(data_ptr);
 
@@ -629,15 +532,15 @@ static int __rrr_http_server_receive_callback (
 		goto out;
 	}
 
-	if (callback_data->callbacks->final_callback != NULL) {
-		if ((ret = callback_data->callbacks->final_callback (
+	if (http_server->callbacks.final_callback != NULL) {
+		if ((ret = http_server->callbacks.final_callback (
 				NULL,
 				handle,
 				transaction,
 				data_ptr,
 				overshoot_bytes,
 				next_protocol_version,
-				callback_data->callbacks->final_callback_arg
+				http_server->callbacks.final_callback_arg
 		)) == RRR_HTTP_NO_RESULT) {
 			// Return value propagates
 			goto out;
@@ -665,7 +568,7 @@ static int __rrr_http_server_receive_callback (
 static int __rrr_http_server_websocket_get_response_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
 	int ret = 0;
 
@@ -673,14 +576,14 @@ static int __rrr_http_server_websocket_get_response_callback (
 	*data_len = 0;
 	*is_binary = 0;
 
-	if (callback_data->callbacks->websocket_get_response_callback) {
-		ret = callback_data->callbacks->websocket_get_response_callback (
+	if (http_server->callbacks.websocket_get_response_callback) {
+		ret = http_server->callbacks.websocket_get_response_callback (
 				application_topic,
 				data,
 				data_len,
 				is_binary,
 				unique_id,
-				callback_data->callbacks->websocket_get_response_callback_arg
+				http_server->callbacks.websocket_get_response_callback_arg
 		);
 	}
 
@@ -690,18 +593,18 @@ static int __rrr_http_server_websocket_get_response_callback (
 static int __rrr_http_server_websocket_frame_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
 	int ret = 0;
 
-	if (callback_data->callbacks->websocket_frame_callback) {
-		ret = callback_data->callbacks->websocket_frame_callback (
+	if (http_server->callbacks.websocket_frame_callback) {
+		ret = http_server->callbacks.websocket_frame_callback (
 				application_topic,
 				handle,
 				payload,
 				is_binary,
 				unique_id,
-				callback_data->callbacks->websocket_handshake_callback_arg
+				http_server->callbacks.websocket_handshake_callback_arg
 		);
 	}
 
@@ -711,7 +614,7 @@ static int __rrr_http_server_websocket_frame_callback (
 static int __rrr_http_server_read_write_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_server_callback_data *callback_data = arg;
+	struct rrr_http_server *http_server = arg;
 
 	int ret = 0;
 
@@ -725,20 +628,20 @@ static int __rrr_http_server_read_write_callback (
 			&complete_transactions_total,
 			handle,
 			1 * 1024 * 1024, // 1 MB
-			callback_data->callbacks->unique_id_generator_callback,
-			callback_data->callbacks->unique_id_generator_callback_arg,
+			http_server->callbacks.unique_id_generator_callback,
+			http_server->callbacks.unique_id_generator_callback_arg,
 			__rrr_http_server_upgrade_verify_callback,
-			callback_data,
+			http_server,
 			__rrr_http_server_websocket_handshake_callback,
-			callback_data,
+			http_server,
 			__rrr_http_server_receive_callback,
-			callback_data,
-			callback_data->callbacks->async_response_get_callback,
-			callback_data->callbacks->async_response_get_callback_arg,
+			http_server,
+			http_server->callbacks.async_response_get_callback,
+			http_server->callbacks.async_response_get_callback_arg,
 			__rrr_http_server_websocket_get_response_callback,
-			callback_data,
+			http_server,
 			__rrr_http_server_websocket_frame_callback,
-			callback_data
+			http_server
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
 			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
@@ -751,45 +654,131 @@ static int __rrr_http_server_read_write_callback (
 	return ret;
 }
 
-int rrr_http_server_events_setup (
-		struct rrr_http_server *server,
+static int __rrr_http_server_start (
+		struct rrr_net_transport **result_transport,
+		struct rrr_http_server *http_server,
 		struct rrr_event_queue *queue,
-		const struct rrr_http_server_callbacks *callbacks
+		uint16_t port,
+		const struct rrr_net_transport_config *net_transport_config,
+		int net_transport_flags
 ) {
 	int ret = 0;
 
-	struct rrr_http_server_callback_data callback_data = {
-		server,
-		callbacks
+	if (*result_transport != NULL) {
+		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
+	}
+
+	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
+		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				result_transport,
+				net_transport_config,
+				net_transport_flags
+		};
+
+		ret = rrr_http_application_alpn_protos_with_all_do (
+				__rrr_http_server_start_alpn_protos_callback,
+				&callback_data
+		);
+	}
+	else {
+		ret = rrr_net_transport_new (
+				result_transport,
+				net_transport_config,
+				net_transport_flags,
+				NULL,
+				0
+		);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start return was %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (queue != NULL) {
+		if ((ret = rrr_net_transport_event_setup (
+			*result_transport,
+			queue,
+			__rrr_http_server_accept_callback,
+			http_server,
+			__rrr_http_server_read_write_callback,
+			http_server,
+			__rrr_http_server_read_write_callback,
+			http_server
+		)) != 0) {
+		}
+	}
+
+	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
+			*result_transport,
+			port,
+			NULL,
+			NULL
+	)) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_server_start_plain (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		uint16_t port
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_config net_transport_config_plain = {
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			RRR_NET_TRANSPORT_PLAIN
 	};
 
-	if (server->transport_http) {
-		ret |= rrr_net_transport_event_setup (
-			server->transport_http,
+	ret = __rrr_http_server_start (
+			&server->transport_http,
+			server,
 			queue,
-			__rrr_http_server_accept_callback,
-			&callback_data,
-			__rrr_http_server_read_write_callback,
-			&callback_data,
-			__rrr_http_server_read_write_callback,
-			&callback_data
-		);
-	}
-
-#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-	if (server->transport_https) {
-		ret |= rrr_net_transport_event_setup (
-			server->transport_https,
-			queue,
-			__rrr_http_server_accept_callback,
-			&callback_data,
-			__rrr_http_server_read_write_callback,
-			&callback_data,
-			__rrr_http_server_read_write_callback,
-			&callback_data
-		);
-	}
-#endif
+			port,
+			&net_transport_config_plain,
+			0
+	);
 
 	return ret;
 }
+
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+int rrr_http_server_start_tls (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		uint16_t port,
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_config net_transport_config_tls = *net_transport_config_template;
+
+	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
+
+	if (server->disable_http2) {
+		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
+	}
+
+	ret = __rrr_http_server_start (
+			&server->transport_https,
+			server,
+			queue,
+			port,
+			&net_transport_config_tls,
+			net_transport_flags
+	);
+
+	return ret;
+}
+#endif

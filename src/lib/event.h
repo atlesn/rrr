@@ -36,6 +36,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_EVENT_OK     RRR_READ_OK
 #define RRR_EVENT_EXIT   RRR_READ_EOF
 
+enum rrr_event_priority {
+	RRR_EVENT_PRIORITY_HIGH,
+	RRR_EVENT_PRIORITY_MID,
+	RRR_EVENT_PRIORITY_LOW
+};
+
+// Default priority for events is MID (3 / 2 == 1), integer division
+
+#define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
+
 struct rrr_event;
 struct rrr_event_queue;
 

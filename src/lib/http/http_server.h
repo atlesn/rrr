@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport;
 struct rrr_thread_collection;
 struct rrr_net_transport_config;
+struct rrr_event_queue;
 
 struct rrr_http_server {
 	struct rrr_net_transport *transport_http;
@@ -39,6 +40,8 @@ struct rrr_http_server {
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	struct rrr_net_transport *transport_https;
 #endif
+
+	struct rrr_http_server_callbacks callbacks;
 
 	struct rrr_thread_collection *threads;
 
@@ -53,15 +56,18 @@ void rrr_http_server_destroy_void (
 );
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2
+		int disable_http2,
+		const struct rrr_http_server_callbacks *callbacks
 );
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
 		uint16_t port
 );
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
 		uint16_t port,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags

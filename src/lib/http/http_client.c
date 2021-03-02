@@ -333,6 +333,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(overshoot_bytes);
 	(void)(next_protocol_version);
 	(void)(callback_data);
+	(void)(application_topic);
 
 	int ret = 0;
 

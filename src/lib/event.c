@@ -140,6 +140,12 @@ int rrr_event_queue_new (
 		goto out_destroy_lock;
 	}
 
+	if (event_base_priority_init (queue->event_base, RRR_EVENT_PRIORITY_COUNT) != 0) {
+		RRR_MSG_0("Failed to initialize priority queues in rrr_event_queue_new\n");
+		ret = 1;
+		goto out_destroy_event_base;
+	}
+
 	char buf[PATH_MAX];
 	snprintf(buf, PATH_MAX, "%s%s", rrr_config_global.run_directory, "/event.sock-XXXXXX");
 

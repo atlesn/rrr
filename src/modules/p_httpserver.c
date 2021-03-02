@@ -249,7 +249,11 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
-		if ((ret = rrr_http_server_start_plain(http_server, data->port_plain)) != 0) {
+		if ((ret = rrr_http_server_start_plain (
+				http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
+				data->port_plain
+		)) != 0) {
 			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
@@ -263,6 +267,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 	) {
 		if ((ret = rrr_http_server_start_tls (
 				http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
 				data->port_tls,
 				&data->net_transport_config,
 				0
@@ -1485,25 +1490,6 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 	}
 
-	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
-		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
-
-	// TODO : There are occasional (?) reports from valgrind that http_server is
-	//        not being freed upon program exit. This happens if a worker thread
-	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
-
-	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
-
-	if (httpserver_start_listening(data, http_server) != 0) {
-		goto out_cleanup_httpserver;
-	}
-
-	unsigned int accept_count_total = 0;
-	uint64_t prev_stats_time = rrr_time_get_64();
-
 	struct httpserver_callback_data callback_data = {
 			data,
 			http_server->threads
@@ -1523,6 +1509,25 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		httpserver_async_response_get,
 		&callback_data
 	};
+
+	if (rrr_http_server_new(&http_server, data->do_disable_http2, &callbacks) != 0) {
+		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	// TODO : There are occasional (?) reports from valgrind that http_server is
+	//        not being freed upon program exit. This happens if a worker thread
+	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
+
+	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
+
+	if (httpserver_start_listening(data, http_server) != 0) {
+		goto out_cleanup_httpserver;
+	}
+
+	unsigned int accept_count_total = 0;
+	uint64_t prev_stats_time = rrr_time_get_64();
 
 	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
 		rrr_thread_watchdog_time_update(thread);

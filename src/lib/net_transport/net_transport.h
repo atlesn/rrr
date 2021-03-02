@@ -127,6 +127,7 @@ struct rrr_net_transport_collection {
     const struct rrr_net_transport_methods *methods;                        \
     struct rrr_net_transport_handle_collection handles;                     \
     struct event_base *event_base;                                          \
+    struct event *event_maintenance;                                        \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \

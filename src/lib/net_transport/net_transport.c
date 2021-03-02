@@ -282,6 +282,10 @@ void rrr_net_transport_common_cleanup (
 			struct rrr_net_transport_handle,
 			__rrr_net_transport_handle_destroy (node, 0)
 	);
+	if (transport->event_maintenance) {
+		event_del(transport->event_maintenance);
+		event_free(transport->event_maintenance);
+	}
 	transport->event_base = NULL;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
@@ -975,12 +979,28 @@ void rrr_net_transport_ctx_set_want_write (
 	}
 }
 
+static void __rrr_net_transport_event_maintenance (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport *transport = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	printf("Maintenance\n");
+
+	rrr_net_transport_maintenance(transport);
+}
+
 #define CHECK_READ_WRITE_RETURN()                                                                              \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
         if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
             RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
             event_base_loopbreak(handle->transport->event_base);                                               \
         }                                                                                                      \
+	event_active(handle->transport->event_maintenance, 0, 0);                                              \
     }} while(0)
 
 static void __rrr_net_transport_event_read (
@@ -989,6 +1009,9 @@ static void __rrr_net_transport_event_read (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+	(void)(flags);
 
 	int ret_tmp = handle->transport->read_callback (
 		handle,
@@ -1004,6 +1027,9 @@ static void __rrr_net_transport_event_write (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+	(void)(flags);
 
 	int ret_tmp = handle->transport->write_callback (
 		handle,
@@ -1087,6 +1113,9 @@ static void __rrr_net_transport_event_accept (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+	(void)(flags);
 
 	int did_accept = 0;
 	int ret_tmp = handle->transport->methods->accept (
@@ -1262,6 +1291,30 @@ int rrr_net_transport_event_setup (
 
 	transport->write_callback = write_callback;
 	transport->write_callback_arg = write_callback_arg;
+
+	if ((transport->event_maintenance = event_new (
+			transport->event_base,
+			-1,
+			0,
+			__rrr_net_transport_event_maintenance,
+			transport
+	)) == NULL) {
+		RRR_MSG_0("Failed to create maintenance event in rrr_net_transport_event_setup\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_priority_set(transport->event_maintenance, RRR_EVENT_PRIORITY_HIGH) != 0) {
+		RRR_MSG_0("Failed to set maintenance event priority in rrr_net_transport_event_setup\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(transport->event_maintenance, NULL) != 0) {
+		RRR_MSG_0("Failed to add maintenance event in rrr_net_transport_event_setup\n");
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;

@@ -38,10 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http/http_server.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
+#include "lib/event.h"
 #include "lib/util/macro_utils.h"
 #include "lib/util/rrr_time.h"
 
@@ -210,6 +210,11 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
+static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	(void)(arg);
+	return (main_running ? 0 : RRR_EVENT_EXIT);
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -223,17 +228,21 @@ int main (int argc, const char **argv, const char **env) {
 	}
 	rrr_strerror_init();
 
-	int count = 0;
 	struct cmd_data cmd;
 	struct rrr_http_server_data data;
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_http_server *http_server = NULL;
-
+	struct rrr_event_queue *events = NULL;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_server_data_init(&data);
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
+
+	if (rrr_event_queue_new(&events) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
@@ -250,9 +259,14 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
+	struct rrr_http_server_callbacks callbacks = {
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	};
+
 	if (rrr_http_server_new (
 			&http_server,
-			0 // Don't disable http2
+			0, // Don't disable http2
+			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -265,6 +279,7 @@ int main (int argc, const char **argv, const char **env) {
 #endif
 		if (rrr_http_server_start_plain (
 				http_server,
+				events,
 				data.http_port
 		) != 0) {
 			ret = EXIT_FAILURE;
@@ -295,6 +310,7 @@ int main (int argc, const char **argv, const char **env) {
 
 		if (rrr_http_server_start_tls (
 				http_server,
+				events,
 				data.https_port,
 				&net_transport_config_tls,
 				flags
@@ -314,14 +330,17 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-	uint64_t prev_stats_time = rrr_time_get_64();
-	int accept_count_total = 0;
-
-	struct rrr_http_server_callbacks callbacks = {
-			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-	};
+//	uint64_t prev_stats_time = rrr_time_get_64();
+//	int accept_count_total = 0;
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
+
+	if (rrr_event_dispatch(events, 100000, rrr_http_server_event_periodic, NULL) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	/*
 	while (main_running) {
 		// We must do this here, the HTTP server library does not do this
 		// itself as it is also used by RRR modules for which this is performed
@@ -347,6 +366,7 @@ int main (int argc, const char **argv, const char **env) {
 			prev_stats_time = rrr_time_get_64();
 		}
 	}
+	*/
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
@@ -357,8 +377,9 @@ int main (int argc, const char **argv, const char **env) {
 			http_server = NULL;
 		}
 
-		rrr_thread_cleanup_postponed_run(&count);
-		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
+		if (events != NULL) {
+			rrr_event_queue_destroy(events);
+		}
 
 		rrr_signal_handler_remove(signal_handler);
 
