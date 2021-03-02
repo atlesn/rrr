@@ -321,6 +321,9 @@ int rrr_net_transport_accept_all_handles (
 		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *callback_arg
 );
+void rrr_net_transport_event_activate_all_connected_read (
+		struct rrr_net_transport *transport
+);
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		struct rrr_event_queue *queue,

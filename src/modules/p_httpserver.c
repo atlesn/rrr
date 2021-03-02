@@ -1442,6 +1442,8 @@ static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	(void)(flags);
 
+	rrr_http_server_response_available_notify(data->http_server);
+
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback, 0);

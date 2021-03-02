@@ -520,3 +520,16 @@ int rrr_http_server_start_tls (
 	return ret;
 }
 #endif
+
+void rrr_http_server_response_available_notify (
+		struct rrr_http_server *server
+) {
+	if (server->transport_http) {
+		rrr_net_transport_event_activate_all_connected_read(server->transport_http);
+	}
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
+	if (server->transport_https) {
+		rrr_net_transport_event_activate_all_connected_read(server->transport_https);
+	}
+#endif
+}

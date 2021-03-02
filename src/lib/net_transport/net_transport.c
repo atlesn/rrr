@@ -1325,6 +1325,18 @@ int rrr_net_transport_accept_all_handles (
 	return ret;
 }
 
+void rrr_net_transport_event_activate_all_connected_read (
+		struct rrr_net_transport *transport
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		if (node->event_read) {
+			event_active(node->event_read, 0, 0);
+		}
+	RRR_LL_ITERATE_END();
+}
+
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		struct rrr_event_queue *queue,

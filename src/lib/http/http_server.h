@@ -74,5 +74,8 @@ int rrr_http_server_start_tls (
 		int net_transport_flags
 );
 #endif
+void rrr_http_server_response_available_notify (
+		struct rrr_http_server *server
+);
 
 #endif /* RRR_HTTP_SERVER_H */
