@@ -56,6 +56,14 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 void rrr_http_server_destroy_void (void *server) {
 	rrr_http_server_destroy(server);
 }
+	
+static int __rrr_http_server_unique_id_generator_callback_dummy (
+		RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
+) {
+	(void)(arg);
+	*unique_id = 1;
+	return 0;
+}
 
 int rrr_http_server_new (
 		struct rrr_http_server **target,
@@ -83,6 +91,12 @@ int rrr_http_server_new (
 
 	server->disable_http2 = disable_http2;
 	server->callbacks = *callbacks;
+
+	// Must be set for HTTP application to run in server mode
+	if (server->callbacks.unique_id_generator_callback == NULL) {
+		server->callbacks.unique_id_generator_callback = __rrr_http_server_unique_id_generator_callback_dummy;
+
+	}
 
 	*target = server;
 	server = NULL;
