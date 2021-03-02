@@ -518,6 +518,7 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	struct rrr_http_client_data *http_client_data = arg;
 
 	(void)(unique_id);
+	(void)(handle);
 	(void)(http_client_data);
 
 	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));

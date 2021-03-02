@@ -543,6 +543,9 @@ static int __rrr_net_transport_connect (
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_connect");
 
+	memcpy(&handle->connected_addr, &addr, socklen);
+	handle->connected_addr_len = socklen;
+
 	callback(handle, (struct sockaddr *) &addr, socklen, callback_arg);
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_OUT();
@@ -833,7 +836,7 @@ int rrr_net_transport_ctx_is_tls (
 	return rrr_net_transport_is_tls(handle->transport);
 }
 
-void rrr_net_transport_ctx_handle_connected_ip_to_str (
+void rrr_net_transport_ctx_connected_address_to_str (
 		char *buf,
 		size_t buf_size,
 		struct rrr_net_transport_handle *handle
@@ -844,6 +847,15 @@ void rrr_net_transport_ctx_handle_connected_ip_to_str (
 	else {
 		rrr_ip_to_str(buf, buf_size, (const struct sockaddr *) &handle->connected_addr, handle->connected_addr_len);
 	}
+}
+
+void rrr_net_transport_ctx_connected_address_get (
+		const struct sockaddr **addr,
+		socklen_t *addr_len,
+		const struct rrr_net_transport_handle *handle
+) {
+	*addr = (const struct sockaddr *) &handle->connected_addr;
+	*addr_len = handle->connected_addr_len;
 }
 
 void rrr_net_transport_ctx_selected_proto_get (
@@ -1058,6 +1070,9 @@ static int __rrr_net_transport_accept_callback_intermediate (
 			goto out;
 		}
 	}
+
+	memcpy(&handle->connected_addr, sockaddr, socklen);
+	handle->connected_addr_len = socklen;
 
 	final_callback(handle, sockaddr, socklen, final_callback_arg);
 

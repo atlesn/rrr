@@ -613,7 +613,7 @@ static int __rrr_http_server_receive_callback (
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_buf, transaction->request_part->request_method_str_nullsafe);
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(uri_buf, transaction->request_part->request_uri_nullsafe);
 
-		rrr_net_transport_ctx_handle_connected_ip_to_str(ip_buf, sizeof(ip_buf), handle);
+		rrr_net_transport_ctx_connected_address_to_str(ip_buf, sizeof(ip_buf), handle);
 
 		RRR_MSG_2("HTTP server %i %s %s %s %s\n",
 				handle->submodule_fd,
@@ -636,8 +636,6 @@ static int __rrr_http_server_receive_callback (
 	if (callback_data->callbacks->final_callback != NULL) {
 		if ((ret = callback_data->callbacks->final_callback (
 				NULL,
-				NULL, // TODO : Don't pass address
-				0,
 				handle,
 				transaction,
 				data_ptr,
@@ -697,7 +695,7 @@ static int __rrr_http_server_websocket_get_response_callback (
 	return ret;
 }
 
-static int __rrr_http_server_worker_websocket_frame_callback (
+static int __rrr_http_server_websocket_frame_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_callback_data *callback_data = arg;
@@ -710,8 +708,7 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 	if (callback_data->callbacks->websocket_frame_callback) {
 		ret = callback_data->callbacks->websocket_frame_callback (
 				(void **) &websocket_application_data_dummy,
-				NULL, // TODO : Pass handle instead
-				0,
+				handle,
 				payload,
 				is_binary,
 				unique_id,
@@ -752,11 +749,11 @@ static int __rrr_http_server_read_write_callback (
 			callback_data->callbacks->async_response_get_callback_arg,
 			__rrr_http_server_websocket_get_response_callback,
 			callback_data,
-			__rrr_http_server_worker_websocket_frame_callback,
+			__rrr_http_server_websocket_frame_callback,
 			callback_data
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
-			RRR_MSG_0("HTTP server %i: Error while working with client\n",
+			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
 					handle->submodule_fd);
 		}
 		goto out;
@@ -791,6 +788,7 @@ int rrr_http_server_events_setup (
 		);
 	}
 
+#if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 	if (server->transport_https) {
 		ret |= rrr_net_transport_event_setup (
 			server->transport_https,
@@ -803,6 +801,7 @@ int rrr_http_server_events_setup (
 			&callback_data
 		);
 	}
+#endif
 
 	return ret;
 }

@@ -31,8 +31,6 @@ struct rrr_thread;
 
 #define RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS           \
     struct rrr_thread *thread,                                 \
-    const struct sockaddr *sockaddr,                           \
-    socklen_t socklen,                                         \
     RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS     \
@@ -44,8 +42,6 @@ struct rrr_thread;
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS   \
     void **websocket_application_data,                         \
-    const struct sockaddr *addr,                               \
-    socklen_t addr_len,                                        \
     RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \

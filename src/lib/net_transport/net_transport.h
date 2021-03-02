@@ -267,10 +267,15 @@ void rrr_net_transport_ctx_get_socket_stats (
 int rrr_net_transport_ctx_is_tls (
 		struct rrr_net_transport_handle *handle
 );
-void rrr_net_transport_ctx_handle_connected_ip_to_str (
+void rrr_net_transport_ctx_connected_address_to_str (
 		char *buf,
 		size_t buf_size,
 		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_connected_address_get (
+		const struct sockaddr **addr,
+		socklen_t *addr_len,
+		const struct rrr_net_transport_handle *handle
 );
 void rrr_net_transport_ctx_selected_proto_get (
 		const char **proto,

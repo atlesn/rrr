@@ -929,7 +929,6 @@ static int httpserver_receive_callback (
 	struct httpserver_data *data = receive_callback_data->httpserver_data;
 
 	(void)(thread);
-	(void)(handle);
 	(void)(overshoot_bytes);
 
 	int ret = 0;
@@ -988,10 +987,14 @@ static int httpserver_receive_callback (
 		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");
 	}
 	else {
+		const struct sockaddr *addr;
+		socklen_t addr_len;
+		rrr_net_transport_ctx_connected_address_get(&addr, &addr_len, handle);
+
 		if ((ret = rrr_message_broker_write_entry (
 				INSTANCE_D_BROKER_ARGS(data->thread_data),
-				sockaddr,
-				socklen,
+				addr,
+				addr_len,
 				RRR_IP_TCP,
 				httpserver_write_message_callback,
 				&write_callback_data,
@@ -1369,6 +1372,10 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 
 	// To avoid extra data copying and because payload is const, validation
 	// of any binary RRR message is performed in write callback
+
+	const struct sockaddr *addr;
+	socklen_t addr_len;
+	rrr_net_transport_ctx_connected_address_get(&addr, &addr_len, handle);
 
 	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),

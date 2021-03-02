@@ -171,8 +171,6 @@ static int __rrr_http_server_worker_receive_callback (
 	if (worker_data->config_data.callbacks.final_callback != NULL) {
 		if ((ret = worker_data->config_data.callbacks.final_callback (
 				worker_data->thread,
-				(const struct sockaddr *) &worker_data->config_data.addr,
-				worker_data->config_data.addr_len,
 				handle,
 				transaction,
 				data_ptr,
@@ -267,8 +265,7 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 	if (worker_data->config_data.callbacks.websocket_frame_callback) {
 		return worker_data->config_data.callbacks.websocket_frame_callback (
 				&worker_data->websocket_application_data,
-				(const struct sockaddr *) &worker_data->config_data.addr,
-				worker_data->config_data.addr_len,
+				handle,
 				payload,
 				is_binary,
 				unique_id,

@@ -1139,6 +1139,7 @@ static int __rrr_http_application_http1_receive_get_target_size (
 }
 
 struct rrr_http_application_http1_frame_callback_data {
+	struct rrr_net_transport_handle *handle;
 	rrr_http_unique_id unique_id;
 	int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *callback_arg;
@@ -1151,6 +1152,7 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 
 	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY || opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
 		return callback_data->callback (
+				callback_data->handle,
 				payload,
 				(opcode == RRR_WEBSOCKET_OPCODE_BINARY ? 1 : 0),
 				callback_data->unique_id,
@@ -1215,6 +1217,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	int ret = 0;
 
 	struct rrr_http_application_http1_frame_callback_data callback_data = {
+			handle,
 			http1->last_unique_id,
 			frame_callback,
 			frame_callback_arg
