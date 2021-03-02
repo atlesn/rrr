@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../event.h"
+#include "../ip/ip_util.h"
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
@@ -830,6 +831,19 @@ int rrr_net_transport_ctx_is_tls (
 		struct rrr_net_transport_handle *handle
 ) {
 	return rrr_net_transport_is_tls(handle->transport);
+}
+
+void rrr_net_transport_ctx_handle_connected_ip_to_str (
+		char *buf,
+		size_t buf_size,
+		struct rrr_net_transport_handle *handle
+) {
+	if (handle->connected_addr_len == 0) {
+		snprintf(buf, buf_size, "(unknown)");
+	}
+	else {
+		rrr_ip_to_str(buf, buf_size, (const struct sockaddr *) &handle->connected_addr, handle->connected_addr_len);
+	}
 }
 
 void rrr_net_transport_ctx_selected_proto_get (

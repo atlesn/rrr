@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <pthread.h>
 #include <event2/event.h>
+#include <sys/socket.h>
 
 #include "net_transport_defines.h"
 
@@ -56,6 +57,10 @@ struct rrr_net_transport_handle {
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;
+
+	// TODO : Write to these
+	struct sockaddr_storage connected_addr;
+	socklen_t connected_addr_len;
 
 	// Like SSL data or plain FD
 	void *submodule_private_ptr;
@@ -260,6 +265,11 @@ void rrr_net_transport_ctx_get_socket_stats (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_is_tls (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_handle_connected_ip_to_str (
+		char *buf,
+		size_t buf_size,
 		struct rrr_net_transport_handle *handle
 );
 void rrr_net_transport_ctx_selected_proto_get (

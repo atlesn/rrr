@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "http_server_worker.h"
 #include "http_application.h"
+#include "http_transaction.h"
 
 #include "../threads.h"
 #include "../ip/ip_util.h"
@@ -485,5 +486,323 @@ int rrr_http_server_tick (
 	*accept_count_final = accept_count;
 
 	out:
+	return ret;
+}
+
+struct rrr_http_server_callback_data {
+	struct rrr_http_server *server;
+	const struct rrr_http_server_callbacks *callbacks;
+};
+
+static void __rrr_http_server_accept_callback (
+		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	(void)(callback_data);
+
+	struct rrr_http_application *application = NULL;
+
+	const char *alpn_selected_proto = NULL;
+	rrr_net_transport_ctx_selected_proto_get(&alpn_selected_proto, handle);
+
+	if (rrr_http_application_new (
+			&application,
+			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
+			1 // Is server
+	) != 0) {
+		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_accept_callback\n");
+		goto out;
+	}
+
+	if (rrr_http_session_transport_ctx_server_new (&application, handle) != 0) {
+		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_callback\n");
+		goto out;
+	}
+
+	char buf[256];
+	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
+	RRR_DBG_3("HTTP accept for %s family %i using fd %i\n",
+			buf, sockaddr->sa_family, handle->submodule_fd);
+
+	out:
+	rrr_http_application_destroy_if_not_null(&application);
+	return;
+}
+
+static int __rrr_http_server_upgrade_verify_callback (
+		RRR_HTTP_SESSION_UPGRADE_VERIFY_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	(void)(callback_data);
+	(void)(from);
+	(void)(to);
+
+	*do_upgrade = 1;
+
+	return 0;
+}
+
+static int __rrr_http_server_websocket_handshake_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	// TODO ; Store this
+	void *websocket_application_data_dummy = NULL;
+
+	if (callback_data->callbacks->websocket_handshake_callback == NULL) {
+		RRR_DBG_1("Note: HTTP server received an HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
+		*do_websocket = 0;
+	}
+	else if ((ret = callback_data->callbacks->websocket_handshake_callback (
+			&websocket_application_data_dummy,
+			do_websocket,
+			handle,
+			transaction,
+			data_ptr,
+			overshoot_bytes,
+			next_protocol_version,
+			callback_data->callbacks->final_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
+	return ret;
+}
+
+static int __rrr_http_server_response_headers_push (
+		struct rrr_http_part *response_part
+) {
+	int ret = RRR_HTTP_OK;
+
+	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST, PUT");
+
+	return ret;
+}
+
+static int __rrr_http_server_response_initialize (
+		struct rrr_net_transport_handle *handle,
+		struct rrr_http_part *response_part
+) {
+	if (__rrr_http_server_response_headers_push(response_part) != 0) {
+		RRR_MSG_0("HTTP server %i: Could not push default response headers in __rrr_http_server_response_initialize\n",
+				handle->submodule_fd);
+		return RRR_HTTP_HARD_ERROR;
+	}
+
+	return RRR_HTTP_OK;
+}
+
+static int __rrr_http_server_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	(void)(data_ptr);
+
+	int ret = 0;
+
+	if (RRR_DEBUGLEVEL_2) {
+		char ip_buf[256];
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method_buf, transaction->request_part->request_method_str_nullsafe);
+		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(uri_buf, transaction->request_part->request_uri_nullsafe);
+
+		rrr_net_transport_ctx_handle_connected_ip_to_str(ip_buf, sizeof(ip_buf), handle);
+
+		RRR_MSG_2("HTTP server %i %s %s %s %s\n",
+				handle->submodule_fd,
+				ip_buf,
+				method_buf,
+				uri_buf,
+				(transaction->request_part->parsed_protocol_version == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
+		);
+
+		if (overshoot_bytes > 0) {
+			RRR_MSG_2("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
+					handle->submodule_fd, ip_buf, overshoot_bytes);
+		}
+	}
+
+	if ((ret = __rrr_http_server_response_initialize(handle, transaction->response_part)) != RRR_HTTP_OK) {
+		goto out;
+	}
+
+	if (callback_data->callbacks->final_callback != NULL) {
+		if ((ret = callback_data->callbacks->final_callback (
+				NULL,
+				NULL, // TODO : Don't pass address
+				0,
+				handle,
+				transaction,
+				data_ptr,
+				overshoot_bytes,
+				next_protocol_version,
+				callback_data->callbacks->final_callback_arg
+		)) == RRR_HTTP_NO_RESULT) {
+			// Return value propagates
+			goto out;
+		}
+	}
+
+	if (transaction->response_part->response_code == 0) {
+		switch (ret) {
+			case RRR_HTTP_OK:
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+				break;
+			case RRR_HTTP_SOFT_ERROR:
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+				break;
+			default:
+				transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+				break;
+		};
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_server_websocket_get_response_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	// TODO : Get stored value
+	char *websocket_application_data_dummy = strdup("xxx_websocket_application_data");
+
+	*data = NULL;
+	*data_len = 0;
+	*is_binary = 0;
+
+	if (callback_data->callbacks->websocket_get_response_callback) {
+		ret = callback_data->callbacks->websocket_get_response_callback (
+				(void **) &websocket_application_data_dummy,
+				data,
+				data_len,
+				is_binary,
+				unique_id,
+				callback_data->callbacks->websocket_get_response_callback_arg
+		);
+	}
+
+	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
+	return ret;
+}
+
+static int __rrr_http_server_worker_websocket_frame_callback (
+		RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	// TODO : Get stored value
+	char *websocket_application_data_dummy = strdup("xxx_websocket_application_data");
+
+	if (callback_data->callbacks->websocket_frame_callback) {
+		ret = callback_data->callbacks->websocket_frame_callback (
+				(void **) &websocket_application_data_dummy,
+				NULL, // TODO : Pass handle instead
+				0,
+				payload,
+				is_binary,
+				unique_id,
+				callback_data->callbacks->websocket_handshake_callback_arg
+		);
+	}
+
+	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
+	return ret;
+}
+
+static int __rrr_http_server_read_write_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	ssize_t received_bytes = 0;
+	uint64_t active_transaction_count = 0;
+	uint64_t complete_transactions_total = 0;
+
+	if ((ret = rrr_http_session_transport_ctx_tick_server (
+			&received_bytes,
+			&active_transaction_count,
+			&complete_transactions_total,
+			handle,
+			1 * 1024 * 1024, // 1 MB
+			callback_data->callbacks->unique_id_generator_callback,
+			callback_data->callbacks->unique_id_generator_callback_arg,
+			__rrr_http_server_upgrade_verify_callback,
+			callback_data,
+			__rrr_http_server_websocket_handshake_callback,
+			callback_data,
+			__rrr_http_server_receive_callback,
+			callback_data,
+			callback_data->callbacks->async_response_get_callback,
+			callback_data->callbacks->async_response_get_callback_arg,
+			__rrr_http_server_websocket_get_response_callback,
+			callback_data,
+			__rrr_http_server_worker_websocket_frame_callback,
+			callback_data
+	)) != 0) {
+		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
+			RRR_MSG_0("HTTP server %i: Error while working with client\n",
+					handle->submodule_fd);
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_server_events_setup (
+		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
+		const struct rrr_http_server_callbacks *callbacks
+) {
+	int ret = 0;
+
+	struct rrr_http_server_callback_data callback_data = {
+		server,
+		callbacks
+	};
+
+	if (server->transport_http) {
+		ret |= rrr_net_transport_event_setup (
+			server->transport_http,
+			queue,
+			__rrr_http_server_accept_callback,
+			&callback_data,
+			__rrr_http_server_read_write_callback,
+			&callback_data,
+			__rrr_http_server_read_write_callback,
+			&callback_data
+		);
+	}
+
+	if (server->transport_https) {
+		ret |= rrr_net_transport_event_setup (
+			server->transport_https,
+			queue,
+			__rrr_http_server_accept_callback,
+			&callback_data,
+			__rrr_http_server_read_write_callback,
+			&callback_data,
+			__rrr_http_server_read_write_callback,
+			&callback_data
+		);
+	}
+
 	return ret;
 }
