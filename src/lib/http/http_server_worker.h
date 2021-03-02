@@ -65,10 +65,6 @@ struct rrr_http_server_worker_data {
 	int request_complete;
 	uint64_t bytes_total;
 	uint64_t complete_transactions_total;
-
-	// May be set by application in websocket handshake callback, free()
-	// will be called on this when the worker exits
-	void *websocket_application_data;
 };
 
 int rrr_http_server_worker_preliminary_data_new (

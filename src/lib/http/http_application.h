@@ -46,14 +46,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS \
     int *do_websocket,                                         \
+    char **application_topic,                                  \
     RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
     void *arg 
 
-#define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS \
+#define RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS   \
+    const char *application_topic,                                  \
     void **data, ssize_t *data_len, int *is_binary, rrr_http_unique_id unique_id, void *arg
 
 #define RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS     \
-    struct rrr_net_transport_handle *handle, \
+    const char *application_topic,                             \
+    struct rrr_net_transport_handle *handle,                   \
     const struct rrr_nullsafe_str *payload, int is_binary, rrr_http_unique_id unique_id, void *arg
 
 #define RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS             \

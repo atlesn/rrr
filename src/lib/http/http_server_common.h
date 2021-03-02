@@ -37,15 +37,12 @@ struct rrr_thread;
     RRR_HTTP_SESSION_ASYNC_RESPONSE_GET_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS    \
-    void **websocket_application_data,                              \
     RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_FRAME_CALLBACK_ARGS   \
-    void **websocket_application_data,                         \
     RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS
 
 #define RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS \
-    void **websocket_application_data,                              \
     RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS
 
 struct rrr_http_server_callbacks {

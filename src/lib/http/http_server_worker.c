@@ -108,7 +108,6 @@ static void __rrr_http_server_worker_data_cleanup (
 	struct rrr_http_server_worker_data *worker_data = arg;
 	//printf("push handle %i to close tag list\n", worker_data->config_data.transport_handle);
 	rrr_net_transport_handle_close_tag_list_push(worker_data->config_data.transport, worker_data->config_data.transport_handle);
-	RRR_FREE_IF_NOT_NULL(worker_data->websocket_application_data);
 }
 
 static int __rrr_http_server_worker_response_headers_push (
@@ -213,8 +212,8 @@ static int __rrr_http_server_worker_websocket_handshake_callback (
 		*do_websocket = 0;
 	}
 	else if ((ret = worker_data->config_data.callbacks.websocket_handshake_callback (
-			&worker_data->websocket_application_data,
 			do_websocket,
+			application_topic,
 			handle,
 			transaction,
 			data_ptr,
@@ -245,7 +244,7 @@ static int __rrr_http_server_worker_websocket_get_response_callback (
 
 	if (worker_data->config_data.callbacks.websocket_get_response_callback) {
 		return worker_data->config_data.callbacks.websocket_get_response_callback (
-				&worker_data->websocket_application_data,
+				application_topic,
 				data,
 				data_len,
 				is_binary,
@@ -264,7 +263,7 @@ static int __rrr_http_server_worker_websocket_frame_callback (
 
 	if (worker_data->config_data.callbacks.websocket_frame_callback) {
 		return worker_data->config_data.callbacks.websocket_frame_callback (
-				&worker_data->websocket_application_data,
+				application_topic,
 				handle,
 				payload,
 				is_binary,

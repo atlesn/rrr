@@ -1166,7 +1166,7 @@ static int httpserver_websocket_handshake_callback (
 
 	int ret = 0;
 
-	void *new_application_data = NULL;
+	char *application_topic_new = NULL;
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, transaction->request_part->request_uri_nullsafe);
 
@@ -1217,17 +1217,14 @@ static int httpserver_websocket_handshake_callback (
 		goto out_not_found;
 	}
 
-	if ((new_application_data = malloc(strlen(topic_begin) + 1)) == NULL) {
+	if ((application_topic_new = strdup(topic_begin)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
 		ret = 1;
 		goto out;
 	}
 
-	memcpy(new_application_data, topic_begin, strlen(topic_begin) + 1);
-
-	RRR_FREE_IF_NOT_NULL(*websocket_application_data);
-	*websocket_application_data = new_application_data;
-	new_application_data = NULL;
+	*application_topic = application_topic_new;
+	application_topic_new = NULL;
 
 	goto out;
 	out_not_found:
@@ -1237,7 +1234,7 @@ static int httpserver_websocket_handshake_callback (
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		goto out;
 	out:
-		RRR_FREE_IF_NOT_NULL(new_application_data);
+		RRR_FREE_IF_NOT_NULL(application_topic_new);
 		return ret;
 }
 
@@ -1296,7 +1293,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct httpserver_callback_data *httpserver_callback_data = arg;
 
-	(void)(websocket_application_data);
+	(void)(application_topic);
 
 	int ret = 0;
 
@@ -1358,7 +1355,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			&topic,
 			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
 			unique_id,
-			*websocket_application_data
+			application_topic
 	)) != 0) {
 		goto out;
 	}

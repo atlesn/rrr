@@ -55,6 +55,7 @@ struct rrr_http_application_http1 {
 
 	enum rrr_http_upgrade_mode upgrade_active;
 	struct rrr_websocket_state ws_state;
+	char *application_websocket_topic;
 
 	uint64_t complete_transaction_count;
 
@@ -70,6 +71,7 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 		RRR_DBG_2("HTTP1 destroys application with 1 active transaction\n");
 	}
 
+	RRR_FREE_IF_NOT_NULL(http1->application_websocket_topic);
 	rrr_websocket_state_clear_all(&http1->ws_state);
 	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
 	free(http1);
@@ -429,9 +431,12 @@ static int __rrr_http_application_http1_response_receive_callback (
 				goto out;
 			}
 
+			RRR_FREE_IF_NOT_NULL(receive_data->http1->application_websocket_topic);
+
 			int do_websocket = 0;
 			if ((ret = receive_data->websocket_callback (
 					&do_websocket,
+					&receive_data->http1->application_websocket_topic,
 					receive_data->handle,
 					transaction,
 					read_session->rx_buf_ptr,
@@ -602,8 +607,11 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 		goto out_bad_request;
 	}
 
+	RRR_FREE_IF_NOT_NULL(receive_data->http1->application_websocket_topic);
+
 	if ((ret = receive_data->websocket_callback (
 			do_websocket,
+			&receive_data->http1->application_websocket_topic,
 			receive_data->handle,
 			transaction,
 			data_to_use,
@@ -1139,8 +1147,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 }
 
 struct rrr_http_application_http1_frame_callback_data {
+	struct rrr_http_application_http1 *http1;
 	struct rrr_net_transport_handle *handle;
-	rrr_http_unique_id unique_id;
 	int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -1152,10 +1160,11 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 
 	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY || opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
 		return callback_data->callback (
+				callback_data->http1->application_websocket_topic,
 				callback_data->handle,
 				payload,
 				(opcode == RRR_WEBSOCKET_OPCODE_BINARY ? 1 : 0),
-				callback_data->unique_id,
+				callback_data->http1->last_unique_id,
 				callback_data->callback_arg
 		);
 	}
@@ -1164,6 +1173,7 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 }
 
 static int __rrr_http_application_http1_websocket_responses_get (
+		struct rrr_http_application_http1 *http1,
 		struct rrr_websocket_state *ws_state,
 		rrr_http_unique_id unique_id,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
@@ -1178,6 +1188,7 @@ static int __rrr_http_application_http1_websocket_responses_get (
 	do {
 		RRR_FREE_IF_NOT_NULL(response_data);
 		if ((ret = callback (
+				http1->application_websocket_topic,
 				&response_data,
 				&response_data_len,
 				&response_is_binary,
@@ -1217,8 +1228,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	int ret = 0;
 
 	struct rrr_http_application_http1_frame_callback_data callback_data = {
+			http1,
 			handle,
-			http1->last_unique_id,
 			frame_callback,
 			frame_callback_arg
 	};
@@ -1234,6 +1245,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	}
 
 	if ((ret = __rrr_http_application_http1_websocket_responses_get (
+			http1,
 			&http1->ws_state,
 			http1->last_unique_id,
 			callback,

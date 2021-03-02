@@ -551,16 +551,13 @@ static int __rrr_http_server_websocket_handshake_callback (
 
 	int ret = 0;
 
-	// TODO ; Store this
-	void *websocket_application_data_dummy = NULL;
-
 	if (callback_data->callbacks->websocket_handshake_callback == NULL) {
 		RRR_DBG_1("Note: HTTP server received an HTTP1 request with upgrade to websocket, but no websocket callback is set\n");
 		*do_websocket = 0;
 	}
 	else if ((ret = callback_data->callbacks->websocket_handshake_callback (
-			&websocket_application_data_dummy,
 			do_websocket,
+			application_topic,
 			handle,
 			transaction,
 			data_ptr,
@@ -572,7 +569,6 @@ static int __rrr_http_server_websocket_handshake_callback (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
 	return ret;
 }
 
@@ -673,16 +669,13 @@ static int __rrr_http_server_websocket_get_response_callback (
 
 	int ret = 0;
 
-	// TODO : Get stored value
-	char *websocket_application_data_dummy = strdup("xxx_websocket_application_data");
-
 	*data = NULL;
 	*data_len = 0;
 	*is_binary = 0;
 
 	if (callback_data->callbacks->websocket_get_response_callback) {
 		ret = callback_data->callbacks->websocket_get_response_callback (
-				(void **) &websocket_application_data_dummy,
+				application_topic,
 				data,
 				data_len,
 				is_binary,
@@ -691,7 +684,6 @@ static int __rrr_http_server_websocket_get_response_callback (
 		);
 	}
 
-	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
 	return ret;
 }
 
@@ -702,12 +694,9 @@ static int __rrr_http_server_websocket_frame_callback (
 
 	int ret = 0;
 
-	// TODO : Get stored value
-	char *websocket_application_data_dummy = strdup("xxx_websocket_application_data");
-
 	if (callback_data->callbacks->websocket_frame_callback) {
 		ret = callback_data->callbacks->websocket_frame_callback (
-				(void **) &websocket_application_data_dummy,
+				application_topic,
 				handle,
 				payload,
 				is_binary,
@@ -716,7 +705,6 @@ static int __rrr_http_server_websocket_frame_callback (
 		);
 	}
 
-	RRR_FREE_IF_NOT_NULL(websocket_application_data_dummy);
 	return ret;
 }
 
