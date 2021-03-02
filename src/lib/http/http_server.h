@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_server_common.h"
 
 struct rrr_net_transport;
-struct rrr_thread_collection;
 struct rrr_net_transport_config;
 struct rrr_event_queue;
 
@@ -42,8 +41,6 @@ struct rrr_http_server {
 #endif
 
 	struct rrr_http_server_callbacks callbacks;
-
-	struct rrr_thread_collection *threads;
 
 	int disable_http2;
 };
@@ -77,11 +74,5 @@ int rrr_http_server_start_tls (
 		int net_transport_flags
 );
 #endif
-int rrr_http_server_tick (
-		int *accept_count_final,
-		struct rrr_http_server *server,
-		int max_threads,
-		const struct rrr_http_server_callbacks *callbacks
-);
 
 #endif /* RRR_HTTP_SERVER_H */

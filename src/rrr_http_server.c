@@ -337,43 +337,12 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-//	uint64_t prev_stats_time = rrr_time_get_64();
-//	int accept_count_total = 0;
-
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	if (rrr_event_dispatch(events, 100000, rrr_http_server_event_periodic, NULL) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-
-	/*
-	while (main_running) {
-		// We must do this here, the HTTP server library does not do this
-		// itself as it is also used by RRR modules for which this is performed
-		// by the main process
-		rrr_thread_cleanup_postponed_run(&count);
-
-		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, 5, &callbacks) != 0) {
-			ret = EXIT_FAILURE;
-			break;
-		}
-
-		if (accept_count == 0) {
-			rrr_posix_usleep(10000); // 10 ms
-		}
-		else {
-			accept_count_total += accept_count;
-		}
-
-		if (rrr_time_get_64() > prev_stats_time + 1000000) {
-			RRR_DBG_1("Accepted HTTP connections: %i/s\n", accept_count_total);
-			accept_count_total = 0;
-			prev_stats_time = rrr_time_get_64();
-		}
-	}
-	*/
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
