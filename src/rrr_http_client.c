@@ -55,24 +55,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
-		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
-		{0,							'O',	"no-output",			"[-O|--no-output]"},
-		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
-		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
-		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'q',	"query",				"[-q|--query[=]HTTP QUERY]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "server",               "{-s|--server[=]HTTP SERVER}"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                 "[-p|--port[=]HTTP PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "endpoint",             "[-e|--endpoint[=]HTTP ENDPOINT]"},
+        {0,                            'w',    "websocket-upgrade",    "[-w|--websocket-upgrade]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT |
+         CMD_ARG_FLAG_SPLIT_COMMA,     't',    "tags-to-send",         "[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
+        {0,                            'O',    "no-output",            "[-O|--no-output]"},
+        {0,                            'P',    "plain-force",          "[-P|--plain-force]"},
+        {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
+        {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",   "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                 "[-h|--help]"},
+        {0,                            'v',    "version",              "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
 };
 
 struct rrr_http_client_data {
