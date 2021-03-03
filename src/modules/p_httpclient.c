@@ -110,9 +110,7 @@ struct httpclient_data {
 
 	struct rrr_net_transport_config net_transport_config;
 
-	struct rrr_net_transport *keepalive_transport_plain;
-	struct rrr_net_transport *keepalive_transport_tls;
-
+	struct rrr_http_client *http_client;
 	struct rrr_http_client_request_data request_data;
 
 	rrr_http_unique_id unique_id_counter;
@@ -124,11 +122,8 @@ struct httpclient_data {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 
-	if (data->keepalive_transport_plain != NULL) {
-		rrr_net_transport_destroy(data->keepalive_transport_plain);
-	}
-	if (data->keepalive_transport_tls != NULL) {
-		rrr_net_transport_destroy(data->keepalive_transport_tls);
+	if (data->http_client) {
+		rrr_http_client_destroy(data->http_client);
 	}
 	rrr_msgdb_client_close(&data->msgdb_conn);
 	rrr_http_client_request_data_cleanup(&data->request_data);
@@ -1178,8 +1173,8 @@ static int httpclient_session_query_prepare_callback (
 static int httpclient_unique_id_generator (
 		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
-	struct httpclient_prepare_callback_data *callback_data = arg;
-	*unique_id = ++(callback_data->data->unique_id_counter);
+	struct httpclient_data *data = arg;
+	*unique_id = ++(data->unique_id_counter);
 	return 0;
 }
 
@@ -1233,12 +1228,9 @@ static int httpclient_request_send (
 
 	ret = rrr_http_client_request_send (
 			request_data,
-			&data->keepalive_transport_plain,
-			&data->keepalive_transport_tls,
+			data->http_client,
 			&data->net_transport_config,
 			remaining_redirects,
-			httpclient_unique_id_generator,
-			&prepare_callback_data,
 			httpclient_session_method_prepare_callback,
 			&prepare_callback_data,
 			httpclient_connection_prepare_callback,
@@ -1722,6 +1714,27 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	struct rrr_http_client_callbacks callbacks = {
+		httpclient_final_callback,
+		data,
+		httpclient_redirect_callback,
+		data,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		httpclient_unique_id_generator,
+		data
+	};
+
+	if (rrr_http_client_new (
+			&data->http_client,
+			RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
+			&callbacks
+	) != 0) {
+		goto out_message;
+	}
+
 	unsigned int consecutive_nothing_happened = 0; // NO NOT use signed
 	uint64_t prev_bytes_total = 0;
 	uint64_t prev_msgdb_index_time = 0; // Read at first loop
@@ -1740,18 +1753,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			if (rrr_http_client_tick (
 					&bytes_total,
 					&active_transaction_count,
-					data->keepalive_transport_plain,
-					data->keepalive_transport_tls,
-					RRR_HTTPCLIENT_READ_MAX_SIZE,
-					RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
-					httpclient_final_callback,
-					data,
-					httpclient_redirect_callback,
-					data,
-					NULL,
-					NULL,
-					NULL,
-					NULL
+					data->http_client
 			) != 0) {
 				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
 				goto out_message;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -77,14 +77,13 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
+	struct rrr_http_client *http_client;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
 	int no_output;
 	struct rrr_net_transport_config net_transport_config;
-	struct rrr_net_transport *net_transport_keepalive_plain;
-	struct rrr_net_transport *net_transport_keepalive_tls;
 	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
 };
@@ -92,13 +91,9 @@ struct rrr_http_client_data {
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
-	if (data->net_transport_keepalive_plain != NULL) {
-		rrr_net_transport_destroy(data->net_transport_keepalive_plain);
+	if (data->http_client != NULL) {
+		rrr_http_client_destroy(data->http_client);
 	}
-	if (data->net_transport_keepalive_tls != NULL) {
-		rrr_net_transport_destroy(data->net_transport_keepalive_tls);
-	}
-
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
@@ -378,12 +373,9 @@ static int __rrr_http_client_redirect_callback (
 
 	if (rrr_http_client_request_send (
 			&http_client_data->request_data,
-			&http_client_data->net_transport_keepalive_plain,
-			&http_client_data->net_transport_keepalive_tls,
+			http_client_data->http_client,
 			&http_client_data->net_transport_config,
 			5, // Max redirects
-			__rrr_http_client_unique_id_generator_callback,
-			http_client_data,
 			NULL,
 			NULL,
 			NULL,
@@ -592,14 +584,29 @@ int main (int argc, const char **argv, const char **env) {
 
 	data.net_transport_config.transport_type = RRR_NET_TRANSPORT_BOTH;
 
+	struct rrr_http_client_callbacks callbacks = {
+			__rrr_http_client_final_callback,
+			&data,
+			__rrr_http_client_redirect_callback,
+			&data,
+			__rrr_http_client_send_websocket_frame_callback,
+			&data,
+			__rrr_http_client_receive_websocket_frame_callback,
+			&data,
+			__rrr_http_client_unique_id_generator_callback,
+			&data
+	};
+
+	if (rrr_http_client_new(&data.http_client, 5000, &callbacks) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
 	if (rrr_http_client_request_send (
 			&data.request_data,
-			&data.net_transport_keepalive_plain,
-			&data.net_transport_keepalive_tls,
+			data.http_client,
 			&data.net_transport_config,
 			5, // Max redirects
-			__rrr_http_client_unique_id_generator_callback,
-			&data,
 			NULL,
 			NULL,
 			NULL,
@@ -613,8 +620,6 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	int targets_plain = 0;
-	int targets_tls = 0;
 	uint64_t prev_bytes_total = 0;
 	do {
 		uint64_t bytes_total = 0;
@@ -623,18 +628,7 @@ int main (int argc, const char **argv, const char **env) {
 		if ((ret = rrr_http_client_tick (
 				&bytes_total,
 				&active_transaction_count,
-				data.net_transport_keepalive_plain,
-				data.net_transport_keepalive_tls,
-				1 * 1024 * 1024 * 1024, // 1 GB
-				5000, // Idle timeout 5 sec
-				__rrr_http_client_final_callback,
-				&data,
-				__rrr_http_client_redirect_callback,
-				&data,
-				__rrr_http_client_send_websocket_frame_callback,
-				&data,
-				__rrr_http_client_receive_websocket_frame_callback,
-				&data
+				data.http_client
 		)) != 0) {
 			break;
 		}
@@ -645,13 +639,9 @@ int main (int argc, const char **argv, const char **env) {
 
 		prev_bytes_total = bytes_total;
 
-		if (data.net_transport_keepalive_plain) {
-			rrr_net_transport_stats_get(&targets_plain, data.net_transport_keepalive_plain);
-		}
-		if (data.net_transport_keepalive_tls) {
-			rrr_net_transport_stats_get(&targets_tls, data.net_transport_keepalive_tls);
-		}
-	} while (main_running && data.final_callback_count == 0 && targets_plain + targets_tls > 0);
+		// TODO : Does not break out, replace with events
+
+	} while (main_running && data.final_callback_count == 0);
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
