@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020-201 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,30 +27,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
-#define RRR_HTTP2_OK			RRR_READ_OK
-#define RRR_HTTP2_SOFT_ERROR	RRR_READ_SOFT_ERROR
-#define RRR_HTTP2_HARD_ERROR	RRR_READ_HARD_ERROR
-#define RRR_HTTP2_DONE			RRR_READ_EOF
+#define RRR_HTTP2_OK            RRR_READ_OK
+#define RRR_HTTP2_SOFT_ERROR    RRR_READ_SOFT_ERROR
+#define RRR_HTTP2_HARD_ERROR    RRR_READ_HARD_ERROR
+#define RRR_HTTP2_DONE          RRR_READ_EOF
 
-#define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS					\
-	struct rrr_http2_session *session,					\
-	struct rrr_http_header_field_collection *headers,	\
-	int32_t stream_id,									\
-	int is_header_end,									\
-	int is_data_end,									\
-	int is_stream_close,								\
-	void *data,											\
-	size_t data_size,									\
-	void *stream_application_data,						\
-	void *callback_arg
+#define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
+    struct rrr_http2_session *session,                         \
+    struct rrr_http_header_field_collection *headers,          \
+    int32_t stream_id,                                         \
+    int is_header_end,                                         \
+    int is_data_end,                                           \
+    int is_stream_close,                                       \
+    void *data,                                                \
+    size_t data_size,                                          \
+    void *stream_application_data,                             \
+    void *callback_arg
 
-#define RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS				\
-	int *done,											\
-	rrr_length *written_bytes,							\
-	uint8_t *buf,										\
-	size_t buf_size,									\
-	int32_t stream_id,									\
-	void *callback_arg
+#define RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS                    \
+    int *done,                                                 \
+    rrr_length *written_bytes,                                 \
+    uint8_t *buf,                                              \
+    size_t buf_size,                                           \
+    int32_t stream_id,                                         \
+    void *callback_arg
 
 enum rrr_http_method;
 struct rrr_http_header_field_collection;
