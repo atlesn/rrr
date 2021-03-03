@@ -168,5 +168,5 @@ int rrr_socket_send_chunk_collection_sendto_with_callback (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(chunks, 0; __rrr_socket_send_chunk_destroy(node));
 
-	return ret & ~(RRR_READ_EOF);
+	return ret;
 }

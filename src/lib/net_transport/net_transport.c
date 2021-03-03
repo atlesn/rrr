@@ -245,16 +245,8 @@ static int __rrr_net_transport_handle_destroy (
 		RRR_NET_TRANSPORT_HANDLE_LOCK(handle, "__rrr_net_transport_handle_destroy");
 	}
 
-	rrr_read_session_collection_clear(&handle->read_sessions);
-
-	handle->transport->methods->close(handle);
-
-	if (handle->application_private_ptr != NULL && handle->application_ptr_destroy != NULL) {
-		handle->application_ptr_destroy(handle->application_private_ptr);
-	}
-
-	RRR_FREE_IF_NOT_NULL(handle->match_string);
-
+	// Delete events first as libevent might produce warnings if
+	// this is performed after FD is closed
 	if (handle->event_read != NULL) {
 		event_del(handle->event_read);
 		event_free(handle->event_read);
@@ -267,6 +259,16 @@ static int __rrr_net_transport_handle_destroy (
 		event_del(handle->event_first_read_timeout);
 		event_free(handle->event_first_read_timeout);
 	}
+
+	rrr_read_session_collection_clear(&handle->read_sessions);
+
+	handle->transport->methods->close(handle);
+
+	if (handle->application_private_ptr != NULL && handle->application_ptr_destroy != NULL) {
+		handle->application_ptr_destroy(handle->application_private_ptr);
+	}
+
+	RRR_FREE_IF_NOT_NULL(handle->match_string);
 
 	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
@@ -329,7 +331,6 @@ static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
 		struct rrr_net_transport_handle_close_tag_node *node
 ) {
 	// Ignore errors
-	//printf("Close handle %i which has been tagged\n", node->transport_handle);
 	rrr_net_transport_handle_close(transport, node->transport_handle);
 	free(node);
 }
@@ -715,13 +716,13 @@ int rrr_net_transport_ctx_send_nonblock (
 			size
 	)) != 0) {
 		if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-			RRR_DBG_7("Error from submodule send() in rrr_net_transport_send_nonblock, connection should be closed\n");
+			RRR_DBG_7("Error %i from submodule send() in rrr_net_transport_send_nonblock, connection should be closed\n", ret);
 			goto out;
 		}
 	}
 
 	uint64_t size_tmp_u = size;
-	if (*written_bytes != size_tmp_u) {
+	if (ret == 0 && *written_bytes != size_tmp_u) {
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
 
@@ -941,8 +942,6 @@ int rrr_net_transport_iterate_with_callback (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-//		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
-
 		if (mode == RRR_NET_TRANSPORT_SOCKET_MODE_ANY || mode == node->mode) {
 			RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
 			if ((ret = callback (
@@ -1025,6 +1024,9 @@ static void __rrr_net_transport_event_maintenance (
             event_base_loopbreak(handle->transport->event_base);                                               \
         }                                                                                                      \
 	event_active(handle->transport->event_maintenance, 0, 0);                                              \
+    } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
+        rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
+        event_active(handle->event_read, 0, 0);                                                                \
     }} while(0)
 
 static void __rrr_net_transport_event_first_read_timeout (
@@ -1116,7 +1118,7 @@ static void __rrr_net_transport_event_write (
 	int ret_tmp = 0;
 
 	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
-		ret_tmp |= rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
+		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
 	}
 
 	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {

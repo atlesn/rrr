@@ -102,7 +102,7 @@ int rrr_read_session_collection_has_unprocessed_data (
 		const struct rrr_read_session_collection *collection
 ) {
 	RRR_LL_ITERATE_BEGIN(collection,struct rrr_read_session);
-		if (node->rx_overshoot != NULL || node->rx_buf_wpos > 0) {
+		if (node->rx_overshoot != NULL || (node->rx_buf_wpos > 0 && node->rx_buf_ptr != NULL)) {
 			return 1;
 		}
 	RRR_LL_ITERATE_END();
