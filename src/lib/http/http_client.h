@@ -70,6 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_HTTP_SESSION_HTTP2_RECEIVE_CALLBACK_ARGS
 
 struct rrr_http_client;
+struct rrr_event_queue;
 struct rrr_http_uri;
 struct rrr_nullsafe_str;
 struct rrr_net_transport_config;
@@ -128,6 +129,7 @@ struct rrr_http_client_request_callback_data {
 
 int rrr_http_client_new (
 		struct rrr_http_client **target,
+		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
 		const struct rrr_http_client_callbacks *callbacks
 );

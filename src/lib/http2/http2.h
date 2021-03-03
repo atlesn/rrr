@@ -120,6 +120,9 @@ int rrr_http2_transport_ctx_streams_iterate (
 int rrr_http2_streams_count (
 		struct rrr_http2_session *session
 );
+int rrr_http2_need_tick (
+		struct rrr_http2_session *session
+);
 int rrr_http2_transport_ctx_tick (
 		uint64_t *active_stream_count,
 		uint64_t *closed_stream_count,

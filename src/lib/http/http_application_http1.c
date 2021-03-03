@@ -1569,6 +1569,16 @@ static int __rrr_http_application_http1_tick (
 	return ret;
 }
 
+static int __rrr_http_application_http1_need_tick (
+		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
+) {
+	(void)(app);
+
+	/* No need for extra ticking in HTTP1 */
+
+	return 0;
+}
+
 static void __rrr_http_application_http1_polite_close (
 		RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS
 ) {
@@ -1583,6 +1593,7 @@ static const struct rrr_http_application_constants rrr_http_application_http1_co
 	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
+	__rrr_http_application_http1_need_tick,
 	__rrr_http_application_http1_polite_close
 };
 

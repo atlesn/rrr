@@ -1729,6 +1729,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	if (rrr_http_client_new (
 			&data->http_client,
+			INSTANCE_D_EVENTS(thread_data),
 			RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
 			&callbacks
 	) != 0) {

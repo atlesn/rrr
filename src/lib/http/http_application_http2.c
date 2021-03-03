@@ -635,6 +635,13 @@ static int __rrr_http_application_http2_tick (
 	return ret;
 }
 
+static int __rrr_http_application_http2_need_tick (
+		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+	return rrr_http2_need_tick(http2->http2_session);
+}
+
 static void __rrr_http_application_http2_alpn_protos_get (
 		RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS
 ) {
@@ -662,6 +669,7 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 	__rrr_http_application_http2_request_send_possible,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
+	__rrr_http_application_http2_need_tick,
 	__rrr_http_application_http2_polite_close
 };
 

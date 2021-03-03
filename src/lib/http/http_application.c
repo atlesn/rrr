@@ -86,6 +86,12 @@ int rrr_http_application_transport_ctx_request_send (
 	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, transaction);
 }
 
+int rrr_http_application_transport_ctx_need_tick (
+		struct rrr_http_application *app
+) {
+	return app->constants->need_tick(app);
+}
+
 int rrr_http_application_transport_ctx_tick (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,

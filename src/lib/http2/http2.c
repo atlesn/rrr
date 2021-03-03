@@ -208,7 +208,7 @@ static ssize_t __rrr_http2_send_callback (
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	return 0;
+	return length;
 }
 
 static ssize_t __rrr_http2_recv_callback (
@@ -975,6 +975,13 @@ int rrr_http2_streams_count (
 		struct rrr_http2_session *session
 ) {
 	return RRR_LL_COUNT(&session->streams);
+}
+
+int rrr_http2_need_tick (
+		struct rrr_http2_session *session
+) {
+	/* When a request is created and ready to be sent, we need to tick more */
+	return nghttp2_session_want_write(session->session);
 }
 
 int rrr_http2_transport_ctx_tick (

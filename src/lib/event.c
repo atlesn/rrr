@@ -393,7 +393,7 @@ int rrr_event_dispatch (
 
 	if ((periodic_event = event_new (
 			queue->event_base,
-			0,
+			-1,
 			EV_TIMEOUT|EV_PERSIST,
 			__rrr_event_periodic,
 			&callback_data

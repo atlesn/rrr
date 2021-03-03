@@ -519,6 +519,178 @@ int rrr_net_transport_handle_close (
 	return ret;
 }
 
+#define CHECK_READ_WRITE_RETURN()                                                                              \
+    do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
+        if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
+            RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
+            event_base_loopbreak(handle->transport->event_base);                                               \
+        }                                                                                                      \
+	event_active(handle->transport->event_maintenance, 0, 0);                                              \
+    } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
+        rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
+        event_active(handle->event_read, 0, 0);                                                                \
+    }} while(0)
+
+static void __rrr_net_transport_event_first_read_timeout (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(flags);
+
+	RRR_DBG_7("net transport fd %i no data received within %" PRIu64 " ms, closing connection\n",
+			fd, handle->transport->first_read_timeout_ms);
+
+	int ret_tmp = RRR_READ_EOF;
+	CHECK_READ_WRITE_RETURN();
+}
+
+static void __rrr_net_transport_event_read (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	int ret_tmp = 0;
+
+	if (flags & EV_TIMEOUT) {
+		RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
+				fd, handle->transport->read_timeout_ms);
+		ret_tmp = RRR_READ_EOF;
+		goto check_return;
+	}
+
+	if (handle->transport->read_timeout_ms > 0) {
+		if (event_add(handle->event_read, &handle->transport->read_timeout_tv) != 0) {
+			RRR_MSG_0("Failed to update read event with new timeout in __rrr_net_transport_event_read\n");
+			event_base_loopbreak(handle->transport->event_base);
+			return;
+		}
+	}
+
+	if (handle->event_first_read_timeout != NULL) {
+		// Ignore error
+		event_del(handle->event_first_read_timeout);
+	}
+
+	ret_tmp = handle->transport->read_callback (
+		handle,
+		handle->transport->read_callback_arg
+	);
+
+	check_return:
+	CHECK_READ_WRITE_RETURN();
+}
+
+static int __rrr_net_transport_event_write_send_chunk_callback (
+		ssize_t *written_bytes,
+		const void *data,
+		ssize_t data_size,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	uint64_t written_bytes_u64 = 0;
+
+	int ret = rrr_net_transport_ctx_send_nonblock (
+			&written_bytes_u64,
+			handle,
+			data,
+			data_size
+	);
+
+	*written_bytes = written_bytes_u64;
+
+	return ret;
+}
+
+static void __rrr_net_transport_event_write (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int ret_tmp = 0;
+
+	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
+		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
+	}
+
+	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
+		event_del(handle->event_write);
+	}
+
+	CHECK_READ_WRITE_RETURN();
+}
+
+static int __rrr_net_transport_handle_events_setup_connected (
+	struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	if ((handle->event_read = event_new (
+			handle->transport->event_base,
+			handle->submodule_fd,
+			EV_READ|EV_TIMEOUT|EV_PERSIST,
+			__rrr_net_transport_event_read,
+			handle
+	)) == NULL) {
+		RRR_MSG_0("Failed to create read event in __rrr_net_transport_handle_events_setup_connected\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_add(handle->event_read, (handle->transport->read_timeout_ms > 0 ? &handle->transport->read_timeout_tv : NULL)) != 0) {
+		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_connected\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((handle->event_write = event_new (
+			handle->transport->event_base,
+			handle->submodule_fd,
+			EV_WRITE|EV_TIMEOUT|EV_PERSIST,
+			__rrr_net_transport_event_write,
+			handle
+	)) == NULL) {
+		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_connected\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Don't add write to events, it is done when data is pushed and we need to write
+
+	if (handle->transport->first_read_timeout_ms > 0) {
+		if ((handle->event_first_read_timeout = event_new (
+				handle->transport->event_base,
+				handle->submodule_fd,
+				EV_TIMEOUT|EV_PERSIST,
+				__rrr_net_transport_event_first_read_timeout,
+				handle
+		)) == NULL) {
+			RRR_MSG_0("Failed to create first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (event_add(handle->event_first_read_timeout, &handle->transport->first_read_timeout_tv) != 0) {
+			RRR_MSG_0("Failed to add first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_net_transport_connect (
 		struct rrr_net_transport *transport,
 		unsigned int port,
@@ -555,8 +727,20 @@ static int __rrr_net_transport_connect (
 
 	RRR_NET_TRANSPORT_HANDLE_WRAP_LOCK_IN("__rrr_net_transport_connect");
 
+	if (handle->submodule_fd == 0) {
+		RRR_BUG("BUG: Submodule FD not set in __rrr_net_transport_connect\n");
+	}
+
 	memcpy(&handle->connected_addr, &addr, socklen);
 	handle->connected_addr_len = socklen;
+
+	if (transport->event_base != NULL) {
+		if ((ret = __rrr_net_transport_handle_events_setup_connected (
+				handle
+		)) != 0) {
+			goto out;
+		}
+	}
 
 	callback(handle, (struct sockaddr *) &addr, socklen, callback_arg);
 
@@ -1015,178 +1199,6 @@ static void __rrr_net_transport_event_maintenance (
 	(void)(flags);
 
 	rrr_net_transport_maintenance(transport);
-}
-
-#define CHECK_READ_WRITE_RETURN()                                                                              \
-    do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
-        if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
-            RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
-            event_base_loopbreak(handle->transport->event_base);                                               \
-        }                                                                                                      \
-	event_active(handle->transport->event_maintenance, 0, 0);                                              \
-    } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
-        rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
-        event_active(handle->event_read, 0, 0);                                                                \
-    }} while(0)
-
-static void __rrr_net_transport_event_first_read_timeout (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	(void)(flags);
-
-	RRR_DBG_7("net transport fd %i no data received within %" PRIu64 " ms, closing connection\n",
-			fd, handle->transport->first_read_timeout_ms);
-
-	int ret_tmp = RRR_READ_EOF;
-	CHECK_READ_WRITE_RETURN();
-}
-
-static void __rrr_net_transport_event_read (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	int ret_tmp = 0;
-
-	if (flags & EV_TIMEOUT) {
-		RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
-				fd, handle->transport->read_timeout_ms);
-		ret_tmp = RRR_READ_EOF;
-		goto check_return;
-	}
-
-	if (handle->transport->read_timeout_ms > 0) {
-		if (event_add(handle->event_read, &handle->transport->read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to update read event with new timeout in __rrr_net_transport_event_read\n");
-			event_base_loopbreak(handle->transport->event_base);
-			return;
-		}
-	}
-
-	if (handle->event_first_read_timeout != NULL) {
-		// Ignore error
-		event_del(handle->event_first_read_timeout);
-	}
-
-	ret_tmp = handle->transport->read_callback (
-		handle,
-		handle->transport->read_callback_arg
-	);
-
-	check_return:
-	CHECK_READ_WRITE_RETURN();
-}
-
-static int __rrr_net_transport_event_write_send_chunk_callback (
-		ssize_t *written_bytes,
-		const void *data,
-		ssize_t data_size,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	uint64_t written_bytes_u64 = 0;
-
-	int ret = rrr_net_transport_ctx_send_nonblock (
-			&written_bytes_u64,
-			handle,
-			data,
-			data_size
-	);
-
-	*written_bytes = written_bytes_u64;
-
-	return ret;
-}
-
-static void __rrr_net_transport_event_write (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	(void)(fd);
-	(void)(flags);
-
-	int ret_tmp = 0;
-
-	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
-		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
-	}
-
-	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
-		event_del(handle->event_write);
-	}
-
-	CHECK_READ_WRITE_RETURN();
-}
-
-static int __rrr_net_transport_handle_events_setup_connected (
-	struct rrr_net_transport_handle *handle
-) {
-	int ret = 0;
-
-	if ((handle->event_read = event_new (
-			handle->transport->event_base,
-			handle->submodule_fd,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
-			__rrr_net_transport_event_read,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create read event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (event_add(handle->event_read, (handle->transport->read_timeout_ms > 0 ? &handle->transport->read_timeout_tv : NULL)) != 0) {
-		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	if ((handle->event_write = event_new (
-			handle->transport->event_base,
-			handle->submodule_fd,
-			EV_WRITE|EV_TIMEOUT|EV_PERSIST,
-			__rrr_net_transport_event_write,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	// Don't add write to events, it is done when data is pushed and we need to write
-
-	if (handle->transport->first_read_timeout_ms > 0) {
-		if ((handle->event_first_read_timeout = event_new (
-				handle->transport->event_base,
-				handle->submodule_fd,
-				EV_TIMEOUT|EV_PERSIST,
-				__rrr_net_transport_event_first_read_timeout,
-				handle
-		)) == NULL) {
-			RRR_MSG_0("Failed to create first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (event_add(handle->event_first_read_timeout, &handle->transport->first_read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to add first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
 }
 
 static int __rrr_net_transport_accept_callback_intermediate (

@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
+#include "lib/event.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
@@ -77,6 +78,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
+	struct rrr_event_queue *events;
 	struct rrr_http_client *http_client;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
@@ -93,6 +95,9 @@ static void __rrr_http_client_data_cleanup (
 ) {
 	if (data->http_client != NULL) {
 		rrr_http_client_destroy(data->http_client);
+	}
+	if (data->events != NULL) {
+		rrr_event_queue_destroy(data->events);
 	}
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
@@ -532,6 +537,11 @@ int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
+static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	(void)(arg);
+	return (main_running ? 0 : RRR_EVENT_EXIT);
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -597,7 +607,13 @@ int main (int argc, const char **argv, const char **env) {
 			&data
 	};
 
-	if (rrr_http_client_new(&data.http_client, 5000, &callbacks) != 0) {
+	if (rrr_event_queue_new(&data.events) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+
+	}
+
+	if (rrr_http_client_new(&data.http_client, data.events, 5000, &callbacks) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -620,28 +636,15 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	uint64_t prev_bytes_total = 0;
-	do {
-		uint64_t bytes_total = 0;
-		uint64_t active_transaction_count = 0;
-
-		if ((ret = rrr_http_client_tick (
-				&bytes_total,
-				&active_transaction_count,
-				data.http_client
-		)) != 0) {
-			break;
-		}
-
-		if (prev_bytes_total == bytes_total) {
-			rrr_posix_usleep(0); // Schedule
-		}
-
-		prev_bytes_total = bytes_total;
-
-		// TODO : Does not break out, replace with events
-
-	} while (main_running && data.final_callback_count == 0);
+	if (rrr_event_dispatch (
+			data.events,
+			100000,
+			rrr_http_client_event_periodic,
+			NULL
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);

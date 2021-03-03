@@ -210,6 +210,13 @@ int rrr_http_session_transport_ctx_request_send (
 	);
 }
 
+int rrr_http_session_transport_ctx_need_tick (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return rrr_http_application_transport_ctx_need_tick(session->application);
+}
+
 static int __rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,

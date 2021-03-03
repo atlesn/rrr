@@ -112,6 +112,9 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode
 );
+int rrr_http_session_transport_ctx_need_tick (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_http_session_transport_ctx_tick_client (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,

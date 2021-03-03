@@ -521,7 +521,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	// TODO : Hostname verification
 
 	*submodule_private_ptr = ssl_data;
-	*submodule_fd = 0;
+	*submodule_fd = callback_data->accept_data->ip_data.fd;
 
 	// Set this data, including FD at the end. Caller will try to close the FD
 	// upon errors from this function, and we wish to avoid double close() as
