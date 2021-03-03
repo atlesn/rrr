@@ -337,7 +337,7 @@ static int __rrr_http_server_websocket_frame_callback (
 	return ret;
 }
 
-static int __rrr_http_server_read_write_callback (
+static int __rrr_http_server_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
 	struct rrr_http_server *http_server = arg;
@@ -432,9 +432,7 @@ static int __rrr_http_server_start (
 			read_timeout_ms,
 			__rrr_http_server_accept_callback,
 			http_server,
-			__rrr_http_server_read_write_callback,
-			http_server,
-			__rrr_http_server_read_write_callback,
+			__rrr_http_server_read_callback,
 			http_server
 		)) != 0) {
 		}

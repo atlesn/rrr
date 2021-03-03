@@ -40,10 +40,21 @@ int rrr_socket_send_chunk_collection_push (
 		void **data,
 		ssize_t data_size
 );
+int rrr_socket_send_chunk_collection_push_const (
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+);
 int rrr_socket_send_chunk_collection_sendto (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
+int rrr_socket_send_chunk_collection_sendto_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int (*callback)(ssize_t *written_bytes, const void *data, ssize_t data_size, void *arg),
+		void *callback_arg
+);
+
 #endif /* RRR_SOCKET_SEND_CHUNK_H */

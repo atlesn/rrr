@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
+#include "../socket/rrr_socket_send_chunk.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -58,6 +59,8 @@ struct rrr_net_transport_handle {
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;
+
+	struct rrr_socket_send_chunk_collection send_chunks;
 
 	// TODO : Write to these
 	struct sockaddr_storage connected_addr;
@@ -136,9 +139,7 @@ struct rrr_net_transport_collection {
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
-    void *read_callback_arg;                                                \
-    int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS);     \
-    void *write_callback_arg
+    void *read_callback_arg
 
 struct rrr_net_transport {
     RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
@@ -250,6 +251,18 @@ int rrr_net_transport_ctx_send_blocking_nullsafe (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_nullsafe_str *str
 );
+int rrr_net_transport_ctx_send_waiting (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_send_push (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+);
+int rrr_net_transport_ctx_send_push_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *nullsafe
+);
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -305,10 +318,6 @@ int rrr_net_transport_match_data_set (
 		const char *string,
 		uint64_t number
 );
-void rrr_net_transport_ctx_set_want_write (
-		struct rrr_net_transport_handle *handle,
-		int want_write
-);
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
 		unsigned int port,
@@ -332,9 +341,7 @@ int rrr_net_transport_event_setup (
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg,
-		int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS),
-		void *write_callback_arg
+		void *read_callback_arg
 );
 
 #endif /* RRR_NET_TRANSPORT_H */

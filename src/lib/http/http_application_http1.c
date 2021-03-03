@@ -154,7 +154,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
 		RRR_DBG_1("Error: Send failed in __rrr_http_application_http1_send_header_field_callback\n");
 		goto out;
 	}
@@ -164,13 +164,13 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 	return ret;
 }
 
-static int __rrr_http_application_http1_blocking_send_callback (
+static int __rrr_http_application_http1_send_callback (
 		const void *str,
 		rrr_length len,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
-	return rrr_net_transport_ctx_send_blocking (
+	return rrr_net_transport_ctx_send_push (
 			handle,
 			str,
 			len
@@ -198,7 +198,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
 		goto out;
 	}
 
@@ -218,14 +218,14 @@ static int __rrr_http_application_http1_response_send_final (
 
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, "\r\n", 2)) != 0 ) {
+	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, "\r\n", 2)) != 0 ) {
 		goto out;
 	}
 
 	if (rrr_nullsafe_str_len(send_data)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
 				send_data,
-				__rrr_http_application_http1_blocking_send_callback,
+				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_response_send_final\n");
@@ -1383,7 +1383,7 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (callback_data->handle, request_tmp)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_nullsafe (callback_data->handle, request_tmp)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
@@ -1415,13 +1415,13 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	int ret = 0;
 
 	if (rrr_string_builder_length(callback_data->header_builder) > 0) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
 			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, "\r\n", 2)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, "\r\n", 2)) != 0) {
 		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send_final_callback\n");
 		goto out;
 	}
@@ -1429,7 +1429,7 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	if (rrr_nullsafe_str_len(send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
 				send_body,
-				__rrr_http_application_http1_blocking_send_callback,
+				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send_final_callback\n");
@@ -1500,6 +1500,11 @@ static int __rrr_http_application_http1_tick (
 
 	*upgraded_app = NULL;
 
+	if (rrr_net_transport_ctx_send_waiting(handle)) {
+		printf("Send waiting in __rrr_http_application_http1_tick\n");
+		goto out;
+	}
+
 	if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 		ret = __rrr_http_application_http1_transport_ctx_tick_websocket (
 				http1,
@@ -1560,6 +1565,7 @@ static int __rrr_http_application_http1_tick (
 		RRR_BUG("__rrr_http_application_http1_tick called while active upgrade was not NONE or WEBSOCKET but %i, maybe caller forgot to switch to HTTP2?\n", http1->upgrade_active);
 	}
 
+	out:
 	return ret;
 }
 

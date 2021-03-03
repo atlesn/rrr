@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
+#include "../socket/rrr_socket_send_chunk.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK()             \
 	pthread_mutex_lock(&collection->lock)
@@ -266,6 +267,8 @@ static int __rrr_net_transport_handle_destroy (
 		event_del(handle->event_first_read_timeout);
 		event_free(handle->event_first_read_timeout);
 	}
+
+	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK(handle, "__rrr_net_transport_handle_destroy");
 	pthread_mutex_destroy(&handle->lock_);
@@ -790,6 +793,43 @@ int rrr_net_transport_ctx_send_blocking_nullsafe (
 	return rrr_nullsafe_str_with_raw_do_const(str, __rrr_net_transport_ctx_send_blocking_nullsafe_callback, handle);
 }
 
+int rrr_net_transport_ctx_send_waiting (
+		struct rrr_net_transport_handle *handle
+) {
+	return RRR_LL_COUNT(&handle->send_chunks) > 0;
+}
+
+int rrr_net_transport_ctx_send_push (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+) {
+	int ret = rrr_socket_send_chunk_collection_push_const (&handle->send_chunks, data, size);
+
+	if (handle->event_write != 0) {
+		event_add(handle->event_write, NULL);
+	}
+
+	return ret;
+}
+
+static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
+		const void *data,
+		rrr_nullsafe_len data_len,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	return rrr_net_transport_ctx_send_push(handle, data, data_len);
+}
+
+int rrr_net_transport_ctx_send_push_nullsafe (
+		struct rrr_net_transport_handle *handle,
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	return rrr_nullsafe_str_with_raw_do_const(nullsafe, __rrr_net_transport_ctx_send_push_nullsafe_callback, handle);
+}
+
 int rrr_net_transport_ctx_read (
 		uint64_t *bytes_read,
 		struct rrr_net_transport_handle *handle,
@@ -965,24 +1005,6 @@ int rrr_net_transport_match_data_set (
 	return ret;
 }
 
-void rrr_net_transport_ctx_set_want_write (
-		struct rrr_net_transport_handle *handle,
-		int want_write
-) {
-	int ret_tmp = 0;
-
-	if (want_write) {
-		ret_tmp = event_add(handle->event_write, NULL);
-	}
-	else {
-		ret_tmp = event_del(handle->event_write);
-	}
-
-	if (ret_tmp != 0) {
-		RRR_MSG_0("Warning: event_add/del failed in rrr_net_transport_ctx_set_want_write, removing handle\n");
-	}
-}
-
 static void __rrr_net_transport_event_maintenance (
 		evutil_socket_t fd,
 		short flags,
@@ -1059,6 +1081,28 @@ static void __rrr_net_transport_event_read (
 	CHECK_READ_WRITE_RETURN();
 }
 
+static int __rrr_net_transport_event_write_send_chunk_callback (
+		ssize_t *written_bytes,
+		const void *data,
+		ssize_t data_size,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	uint64_t written_bytes_u64 = 0;
+
+	int ret = rrr_net_transport_ctx_send_nonblock (
+			&written_bytes_u64,
+			handle,
+			data,
+			data_size
+	);
+
+	*written_bytes = written_bytes_u64;
+
+	return ret;
+}
+
 static void __rrr_net_transport_event_write (
 		evutil_socket_t fd,
 		short flags,
@@ -1069,10 +1113,15 @@ static void __rrr_net_transport_event_write (
 	(void)(fd);
 	(void)(flags);
 
-	int ret_tmp = handle->transport->write_callback (
-		handle,
-		handle->transport->write_callback_arg
-	);
+	int ret_tmp = 0;
+
+	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
+		ret_tmp |= rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
+	}
+
+	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
+		event_del(handle->event_write);
+	}
 
 	CHECK_READ_WRITE_RETURN();
 }
@@ -1345,9 +1394,7 @@ int rrr_net_transport_event_setup (
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg,
-		int (*write_callback)(RRR_NET_TRANSPORT_WRITE_CALLBACK_FINAL_ARGS),
-		void *write_callback_arg
+		void *read_callback_arg
 ) {
 	int ret = 0;
 
@@ -1366,9 +1413,6 @@ int rrr_net_transport_event_setup (
 
 	transport->read_callback = read_callback;
 	transport->read_callback_arg = read_callback_arg;
-
-	transport->write_callback = write_callback;
-	transport->write_callback_arg = write_callback_arg;
 
 	if ((transport->event_maintenance = event_new (
 			transport->event_base,

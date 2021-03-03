@@ -210,17 +210,6 @@ int rrr_http_session_transport_ctx_request_send (
 	);
 }
 
-int rrr_http_session_transport_ctx_request_raw_send (
-		struct rrr_net_transport_handle *handle,
-		const char *raw_request_data,
-		size_t raw_request_size
-) {
-	if (raw_request_size == 0) {
-		RRR_BUG("BUG: Received 0 size in rrr_http_session_transport_ctx_raw_request_send\n");
-	}
-	return rrr_net_transport_ctx_send_blocking (handle, raw_request_data, raw_request_size);
-}
-
 static int __rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
 		uint64_t *active_transaction_count,
