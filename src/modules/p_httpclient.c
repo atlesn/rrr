@@ -1700,9 +1700,12 @@ static void httpclient_event_msgdb_poll (
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
+		CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
 	}
-
-	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	else {
+		// Run again immediately
+		event_active(data->event_msgdb_poll, 0, 0);
+	}
 }
 
 static void httpclient_event_queue_process (
