@@ -149,7 +149,7 @@ static void __rrr_http_server_accept_callback (
 	char buf[256];
 	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
 	RRR_DBG_3("HTTP accept for %s family %i using fd %i\n",
-			buf, sockaddr->sa_family, handle->submodule_fd);
+			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
 
 	out:
 	rrr_http_application_destroy_if_not_null(&application);
@@ -217,7 +217,7 @@ static int __rrr_http_server_response_initialize (
 ) {
 	if (__rrr_http_server_response_headers_push(response_part) != 0) {
 		RRR_MSG_0("HTTP server %i: Could not push default response headers in __rrr_http_server_response_initialize\n",
-				handle->submodule_fd);
+				RRR_NET_TRANSPORT_CTX_FD(handle));
 		return RRR_HTTP_HARD_ERROR;
 	}
 
@@ -241,7 +241,7 @@ static int __rrr_http_server_receive_callback (
 		rrr_net_transport_ctx_connected_address_to_str(ip_buf, sizeof(ip_buf), handle);
 
 		RRR_MSG_2("HTTP server %i %s %s %s %s\n",
-				handle->submodule_fd,
+				RRR_NET_TRANSPORT_CTX_FD(handle),
 				ip_buf,
 				method_buf,
 				uri_buf,
@@ -250,7 +250,7 @@ static int __rrr_http_server_receive_callback (
 
 		if (overshoot_bytes > 0) {
 			RRR_MSG_2("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
-					handle->submodule_fd, ip_buf, overshoot_bytes);
+					RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
 		}
 	}
 
@@ -367,7 +367,7 @@ static int __rrr_http_server_read_callback (
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
 			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
-					handle->submodule_fd);
+					RRR_NET_TRANSPORT_CTX_FD(handle));
 		}
 		goto out;
 	}

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "net_transport.h"
+#include "net_transport_struct.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
 
@@ -808,6 +809,30 @@ int rrr_net_transport_is_tls (
 	return transport->methods->is_tls();
 }
 
+void rrr_net_transport_ctx_notify_read (
+		struct rrr_net_transport_handle *handle
+) {
+	event_active(handle->event_read, 0, 0);
+}
+
+int rrr_net_transport_ctx_get_fd (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->submodule_fd;
+}
+
+void *rrr_net_transport_ctx_get_private_ptr (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->application_private_ptr;
+}
+
+int rrr_net_transport_ctx_get_handle (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->handle;
+}
+
 int rrr_net_transport_ctx_handle_match_data_set (
 		struct rrr_net_transport_handle *handle,
 		const char *string,
@@ -1030,6 +1055,13 @@ void rrr_net_transport_ctx_handle_application_data_bind (
 	}
 	handle->application_private_ptr = application_data;
 	handle->application_ptr_destroy = application_data_destroy;
+}
+
+void rrr_net_transport_ctx_handle_pre_destroy_function_set (
+		struct rrr_net_transport_handle *handle,
+		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
+) {
+	handle->application_ptr_iterator_pre_destroy = pre_destroy_function;
 }
 
 void rrr_net_transport_ctx_get_socket_stats (

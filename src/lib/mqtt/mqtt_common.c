@@ -100,7 +100,7 @@ static int __rrr_mqtt_common_clear_session_from_connections_callback (
 
 	int ret = RRR_MQTT_OK;
 
-	if (handle->handle == callback_data->disregard_transport_handle) {
+	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->disregard_transport_handle) {
 		goto out_nolock;
 	}
 
@@ -1224,8 +1224,11 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 	struct rrr_mqtt_common_read_parse_handle_callback_data *callback_data = arg;
 	struct rrr_mqtt_session_iterate_send_queue_counters *counters = callback_data->counters;
 
-	uint64_t prev_bytes_read = handle->bytes_read_total;
-	uint64_t prev_bytes_written = handle->bytes_written_total;
+	uint64_t prev_bytes_read;
+	uint64_t prev_bytes_written;
+	uint64_t bytes_total_dummy;
+
+	rrr_net_transport_ctx_get_socket_stats(&prev_bytes_read, &prev_bytes_written, &bytes_total_dummy, handle);
 
 	if ((ret = __rrr_mqtt_common_read_parse_handle(handle, callback_data->data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
@@ -1237,7 +1240,12 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 		goto housekeeping;
 	}
 
-	if (prev_bytes_read != handle->bytes_read_total) {
+	uint64_t now_bytes_read;
+	uint64_t now_bytes_written;
+
+	rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &now_bytes_written, &bytes_total_dummy, handle);
+
+	if (prev_bytes_read != now_bytes_read) {
 		callback_data->something_happened = 1;
 	}
 
@@ -1255,7 +1263,9 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 		goto housekeeping;
 	}
 
-	if (prev_bytes_written != handle->bytes_written_total) {
+	rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &now_bytes_written, &bytes_total_dummy, handle);
+
+	if (prev_bytes_written != now_bytes_written) {
 		callback_data->something_happened = 1;
 	}
 

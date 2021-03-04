@@ -629,7 +629,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if (rrr_mqtt_common_clear_session_from_connections (
 			&data->mqtt_data,
 			session,
-			handle->handle
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle)
 	) != 0) {
 		RRR_MSG_0("Could not clear session from other connections in  __rrr_mqtt_broker_handle_connect\n");
 		goto out;

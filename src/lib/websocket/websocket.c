@@ -207,7 +207,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 	int ret = 0;
 
 	RRR_DBG_3("Websocket %i send frame opcode %i size %" PRIu64 "\n",
-			handle->handle, frame->header.opcode, frame->header.payload_len);
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle), frame->header.opcode, frame->header.payload_len);
 
 	uint8_t header[32]; // Make sure it's big enough when new stuff is added
 	memset(header, '\0', sizeof(header));
@@ -252,7 +252,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 		}
 
 		if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
-			RRR_DBG_1("Failed to send websocket header for handle %i\n", handle->handle);
+			RRR_DBG_1("Failed to send websocket header for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
 	}
@@ -263,7 +263,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 		}
 
 		if ((ret = rrr_net_transport_ctx_send_blocking(handle, frame->payload, frame->header.payload_len)) != 0) {
-			RRR_DBG_1("Failed to send websocket payload for handle %i\n", handle->handle);
+			RRR_DBG_1("Failed to send websocket payload for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
 	}

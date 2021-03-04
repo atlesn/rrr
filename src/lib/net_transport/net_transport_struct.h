@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -139,6 +139,68 @@ struct rrr_net_transport_methods {
 			const char **proto,
 			struct rrr_net_transport_handle *handle
 	);
+};
+
+struct rrr_net_transport_handle {
+	RRR_LL_NODE(struct rrr_net_transport_handle);
+
+	// Once nobody uses threading, remove this
+	pthread_mutex_t lock_;
+
+	int lock_count;
+	struct rrr_net_transport *transport;
+	int handle;
+	enum rrr_net_transport_socket_mode mode;
+	struct rrr_read_session_collection read_sessions;
+
+	int submodule_fd;
+	struct event *event_read;
+	struct event *event_write;
+	struct event *event_first_read_timeout;
+
+	uint64_t bytes_read_total;
+	uint64_t bytes_written_total;
+
+	struct rrr_socket_send_chunk_collection send_chunks;
+
+	// TODO : Write to these
+	struct sockaddr_storage connected_addr;
+	socklen_t connected_addr_len;
+
+	// Like SSL data or plain FD
+	void *submodule_private_ptr;
+
+	// Like HTTP session
+	void *application_private_ptr;
+	void (*application_ptr_destroy)(void *ptr);
+
+	// Optionally used to find existing connections to remotes
+	char *match_string;
+	uint64_t match_number;
+
+	// Called first when we try to destroy. When it returns 0,
+	// we go ahead with destruction and call ptr_destroy. Only
+	// used from within the iterator function.
+	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
+};
+
+struct rrr_net_transport_handle_close_tag_list {
+	RRR_LL_HEAD(struct rrr_net_transport_handle_close_tag_node);
+};
+
+struct rrr_net_transport_handle_collection {
+	RRR_LL_HEAD(struct rrr_net_transport_handle);
+	int next_handle_position;
+
+	// Once nobody uses threading, remove this
+	pthread_mutex_t lock;
+	pthread_t owner;
+
+	struct rrr_net_transport_handle_close_tag_list close_tags;
+};
+
+struct rrr_net_transport {
+    RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
 };
 
 #endif /* RRR_NET_TRANSPORT_STRUCT_H */

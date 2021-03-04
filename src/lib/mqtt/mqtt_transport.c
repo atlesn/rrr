@@ -275,7 +275,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_custom_callback (
 
 	struct with_iterator_ctx_do_custom_callback_data *callback_data = callback_arg;
 
-	if (handle->handle == callback_data->transport_handle) {
+	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->transport_handle) {
 		callback_data->connection_found = 1;
 		ret = callback_data->callback(handle, callback_data->callback_arg);
 	}
@@ -331,7 +331,7 @@ static int __rrr_mqtt_transport_with_iterator_ctx_do_callback (
 
 	int ret = RRR_MQTT_OK;
 
-	if (handle->handle == callback_data->transport_handle) {
+	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->transport_handle) {
 		struct with_iterator_ctx_do_callback_data *callback_data = callback_arg;
 		ret = callback_data->callback(handle, callback_data->packet);
 	}

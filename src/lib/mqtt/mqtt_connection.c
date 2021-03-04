@@ -582,14 +582,10 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 		goto out;
 	}
 
-//	new_connection->transport = handle->transport;
-	new_connection->transport_handle = handle->handle;
+	rrr_net_transport_ctx_handle_application_data_bind(handle, new_connection, __rrr_mqtt_connection_destroy_void);
+	rrr_net_transport_ctx_handle_pre_destroy_function_set(handle, __rrr_mqtt_connection_in_iterator_disconnect);
 
-	handle->application_private_ptr = new_connection;
-	handle->application_ptr_destroy = __rrr_mqtt_connection_destroy_void;
-	handle->application_ptr_iterator_pre_destroy = __rrr_mqtt_connection_in_iterator_disconnect;
-
-	callback_data->transport_handle = handle->handle;
+	new_connection->transport_handle = callback_data->transport_handle = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 
 	out:
 	return;
@@ -687,7 +683,7 @@ static int __rrr_mqtt_conn_read_get_target_size (
 	int ret = RRR_SOCKET_READ_INCOMPLETE;
 
 	struct rrr_mqtt_conn_read_callback_data *callback_data = arg;
-	struct rrr_mqtt_conn *connection = callback_data->handle->application_private_ptr;
+	struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(callback_data->handle);
 
 //	printf ("get target size in %p wpos %li target size %li buf size %li\n",
 //			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
@@ -723,7 +719,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	struct rrr_mqtt_p *packet = NULL;
 
 	struct rrr_mqtt_conn_read_callback_data *callback_data = arg;
-	struct rrr_mqtt_conn *connection = callback_data->handle->application_private_ptr;
+	struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(callback_data->handle);
 
 //	printf ("read_complete %p wpos %li target size %li buf size %li\n",
 //			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
@@ -825,8 +821,12 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	// TODO : Make this better
 	// Do this 60 times as we send 50 packets at a time (10 more)
 	for (int i = 0; i < read_per_round_max; i++) {
-		uint64_t prev_bytes_read = handle->bytes_read_total;
+		uint64_t bytes_written_dummy;
+		uint64_t bytes_total_dummy;
+		uint64_t prev_bytes_read;
 
+		rrr_net_transport_ctx_get_socket_stats(&prev_bytes_read, &bytes_written_dummy, &bytes_total_dummy, handle);
+		
 		if ((ret = rrr_net_transport_ctx_read_message (
 				handle,
 				2, // Read two times this round
@@ -841,7 +841,11 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			goto out;
 		}
 
-		if (prev_bytes_read == handle->bytes_read_total && ++consecutive_nothing_happened > 5) {
+		uint64_t now_bytes_read;
+
+		rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &bytes_written_dummy, &bytes_total_dummy, handle);
+
+		if (prev_bytes_read == now_bytes_read && ++consecutive_nothing_happened > 5) {
 			// Nothing was read
 			break;
 		}

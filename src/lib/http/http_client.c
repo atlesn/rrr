@@ -562,7 +562,7 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		event_active(handle->event_read, 0, 0);
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:
@@ -722,7 +722,7 @@ void __rrr_http_client_request_send_connect_callback (
 	(void)(socklen);
 
 	int *result = arg;
-	*result = handle->handle;
+	*result = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 }
 
 uint64_t __rrr_http_client_request_send_net_transport_match_data_make (

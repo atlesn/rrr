@@ -37,66 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
+struct rrr_net_transport_handle;
 struct rrr_nullsafe_str;
 struct rrr_event_queue;
-
-struct rrr_net_transport_handle {
-	RRR_LL_NODE(struct rrr_net_transport_handle);
-
-	// Once nobody uses threading, remove this
-	pthread_mutex_t lock_;
-
-	int lock_count;
-	struct rrr_net_transport *transport;
-	int handle;
-	enum rrr_net_transport_socket_mode mode;
-	struct rrr_read_session_collection read_sessions;
-
-	int submodule_fd;
-	struct event *event_read;
-	struct event *event_write;
-	struct event *event_first_read_timeout;
-
-	uint64_t bytes_read_total;
-	uint64_t bytes_written_total;
-
-	struct rrr_socket_send_chunk_collection send_chunks;
-
-	// TODO : Write to these
-	struct sockaddr_storage connected_addr;
-	socklen_t connected_addr_len;
-
-	// Like SSL data or plain FD
-	void *submodule_private_ptr;
-
-	// Like HTTP session
-	void *application_private_ptr;
-	void (*application_ptr_destroy)(void *ptr);
-
-	// Optionally used to find existing connections to remotes
-	char *match_string;
-	uint64_t match_number;
-
-	// Called first when we try to destroy. When it returns 0,
-	// we go ahead with destruction and call ptr_destroy. Only
-	// used from within the iterator function.
-	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
-};
-
-struct rrr_net_transport_handle_close_tag_list {
-	RRR_LL_HEAD(struct rrr_net_transport_handle_close_tag_node);
-};
-
-struct rrr_net_transport_handle_collection {
-	RRR_LL_HEAD(struct rrr_net_transport_handle);
-	int next_handle_position;
-
-	// Once nobody uses threading, remove this
-	pthread_mutex_t lock;
-	pthread_t owner;
-
-	struct rrr_net_transport_handle_close_tag_list close_tags;
-};
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
@@ -136,10 +79,6 @@ struct rrr_net_transport_handle_collection {
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg
 
-struct rrr_net_transport {
-    RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport);
-};
-
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 int rrr_net_transport_handle_allocate_and_add (
 		int *handle_final,
@@ -149,6 +88,10 @@ int rrr_net_transport_handle_allocate_and_add (
 		void *submodule_callback_arg
 );
 #endif
+
+#define RRR_NET_TRANSPORT_CTX_FD(handle) rrr_net_transport_ctx_get_fd(handle)
+#define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_private_ptr(handle)
+#define RRR_NET_TRANSPORT_CTX_HANDLE(handle) rrr_net_transport_ctx_get_handle(handle)
 
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
@@ -205,6 +148,18 @@ int rrr_net_transport_handle_get_by_match (
 );
 int rrr_net_transport_is_tls (
 		struct rrr_net_transport *transport
+);
+void rrr_net_transport_ctx_notify_read (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_get_fd (
+		struct rrr_net_transport_handle *handle
+);
+void *rrr_net_transport_ctx_get_private_ptr (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_get_handle (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_handle_match_data_set (
 		struct rrr_net_transport_handle *handle,
@@ -265,6 +220,10 @@ void rrr_net_transport_ctx_handle_application_data_bind (
 		struct rrr_net_transport_handle *handle,
 		void *application_data,
 		void (*application_data_destroy)(void *ptr)
+);
+void rrr_net_transport_ctx_handle_pre_destroy_function_set (
+		struct rrr_net_transport_handle *handle,
+		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
 );
 void rrr_net_transport_ctx_get_socket_stats (
 		uint64_t *bytes_read_total,

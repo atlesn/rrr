@@ -59,13 +59,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR								\
-		struct rrr_mqtt_conn *connection = handle->application_private_ptr;				\
+		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
 		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {	\
 			return RRR_MQTT_OK;															\
 		}} while (0)
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
-		struct rrr_mqtt_conn *connection = handle->application_private_ptr;															\
+		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
 		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
 			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)

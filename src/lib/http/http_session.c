@@ -81,7 +81,7 @@ void rrr_http_session_transport_ctx_application_set (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	if (application != NULL && *application != NULL) {
 		rrr_http_application_destroy_if_not_null(&session->application);
@@ -168,7 +168,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		);
 	}
 	else {
-		session = handle->application_private_ptr;
+		session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	}
 
 	session = NULL;
@@ -184,7 +184,7 @@ int rrr_http_session_transport_ctx_request_send_possible (
 		int *is_possible,
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_request_send_possible (
 			is_possible,
 			session->application
@@ -198,7 +198,7 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_request_send (
 			upgraded_app,
 			session->application,
@@ -213,7 +213,7 @@ int rrr_http_session_transport_ctx_request_send (
 uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	return rrr_http_application_active_transaction_count_get(session->application);
 }
@@ -221,13 +221,13 @@ uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
 void rrr_http_session_transport_ctx_websocket_response_available_notify (
 		struct rrr_net_transport_handle *handle
 ) {
-	event_active(handle->event_read, 0, 0);
+	rrr_net_transport_ctx_notify_read(handle);
 }
 
 int rrr_http_session_transport_ctx_need_tick (
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_need_tick(session->application);
 }
 
@@ -250,7 +250,7 @@ static int __rrr_http_session_transport_ctx_tick (
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	int ret = 0;
 
@@ -382,7 +382,7 @@ int rrr_http_session_transport_ctx_close_if_open (
 		void *arg
 ) {
 	(void)(arg);
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	rrr_http_application_polite_close(session->application, handle);
 	return 0; // Always return 0
 }
