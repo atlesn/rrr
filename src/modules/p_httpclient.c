@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
+#include "../lib/event.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
@@ -105,6 +106,11 @@ struct httpclient_data {
 
 	rrr_setting_uint redirects_max;
 
+	struct event *event_msgdb_poll;
+	struct event *event_queue_process;
+
+	struct rrr_poll_helper_counters counters;
+
 	char *msgdb_socket;
 	rrr_setting_uint msgdb_poll_interval_us;
 
@@ -122,6 +128,14 @@ struct httpclient_data {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 
+	if (data->event_msgdb_poll) {
+		event_del(data->event_msgdb_poll);
+		event_free(data->event_msgdb_poll);
+	}
+	if (data->event_queue_process) {
+		event_del(data->event_queue_process);
+		event_free(data->event_queue_process);
+	}
 	if (data->http_client) {
 		rrr_http_client_destroy(data->http_client);
 	}
@@ -1423,23 +1437,6 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
-static int httpclient_data_init (
-		struct httpclient_data *data,
-		struct rrr_instance_runtime_data *thread_data
-) {
-	int ret = 0;
-
-	memset(data, '\0', sizeof(*data));
-
-	data->thread_data = thread_data;
-
-	goto out;
-//	out_cleanup_data:
-//		httpclient_data_cleanup(httpclient_data);
-	out:
-		return ret;
-}
-
 #define HTTPCLIENT_OVERRIDE_TAG_GET(parameter)                                                                                                            \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_" RRR_QUOTE(parameter) "_tag", RRR_PASTE(parameter,_tag));                                 \
     RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_" RRR_QUOTE(parameter) "_tag_force", RRR_PASTE_3(do_,parameter,_tag_force), 0);                        \
@@ -1654,6 +1651,94 @@ static void httpclient_queue_process (
 	}
 }
 
+#define CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED()                                                         \
+	do {if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) { \
+		event_active(data->event_queue_process, 0, 0);                                              \
+	}} while (0)
+
+static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpclient_data *data = thread_data->private_data;
+
+	(void)(flags);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
+
+	int ret_tmp = rrr_poll_do_poll_delete (amount, thread_data, httpclient_poll_callback, 0);
+
+	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+
+	return ret_tmp;
+}
+
+static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
+}
+
+static void httpclient_event_msgdb_poll (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct httpclient_data *data = arg;
+
+	// After timer has passed and before polling, wait untill queues
+	// are empty (avoid dupes). In high traffic situations, it make
+	// take some time before the msgdb is polled.
+	if ( rrr_http_client_active_transaction_count_get(data->http_client) == 0 &&
+	     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
+	     RRR_LL_COUNT(&data->from_senders_queue) == 0
+	) {
+		httpclient_msgdb_poll(data);
+	}
+
+	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+}
+
+static void httpclient_event_queue_process (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct httpclient_data *data = arg;
+
+	// Priority to the msgdb queue, runs first 
+	httpclient_queue_process(&data->from_msgdb_queue, data);
+	httpclient_queue_process(&data->from_senders_queue, data);
+
+	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+}
+
+static int httpclient_data_init (
+		struct httpclient_data *data,
+		struct rrr_instance_runtime_data *thread_data
+) {
+	int ret = 0;
+
+	memset(data, '\0', sizeof(*data));
+
+	data->thread_data = thread_data;
+
+	goto out;
+//	out_cleanup_data:
+//		httpclient_data_cleanup(httpclient_data);
+	out:
+		return ret;
+}
+
 static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1736,72 +1821,46 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	unsigned int consecutive_nothing_happened = 0; // NO NOT use signed
-	uint64_t prev_bytes_total = 0;
-	uint64_t prev_msgdb_index_time = 0; // Read at first loop
-
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		const uint64_t time_now = rrr_time_get_64();
-
-		uint64_t bytes_total = 0;
-		uint64_t active_transaction_count = 0;
-
-		// We are allowed to pass NULL transport pointers
-		int max = 10;
-		do {
-			if (rrr_http_client_tick (
-					&bytes_total,
-					&active_transaction_count,
-					data->http_client
-			) != 0) {
-				RRR_MSG_0("httpclient instance %s error while ticking\n", INSTANCE_D_NAME(thread_data));
-				goto out_message;
-			}
-			//printf("httpclient %" PRIu64 "<>%" PRIu64 "\n", bytes_total, prev_bytes_total);
-		} while (bytes_total != prev_bytes_total && --max);
-
-
-		// After timer has passed and before polling, wait untill queues
-		// are empty (avoid dupes). In high traffic situations, it make
-		// take some time before the msgdb is polled.
-		if ( data->msgdb_socket != NULL &&
-		     prev_msgdb_index_time + data->msgdb_poll_interval_us < time_now &&
-		     active_transaction_count == 0 &&
-		     RRR_LL_COUNT(&data->from_msgdb_queue) == 0 &&
-		     RRR_LL_COUNT(&data->from_senders_queue) == 0
-		) {
-			httpclient_msgdb_poll(data);
-			prev_msgdb_index_time = time_now;
+	if (data->msgdb_socket != NULL) {
+		if ((data->event_msgdb_poll = event_new (
+				rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
+				-1,
+				EV_PERSIST|EV_TIMEOUT,
+				httpclient_event_msgdb_poll,
+				data
+		)) == NULL) {
+			RRR_MSG_0("Failed to create msgdb poll event in httpclient\n");
+			goto out_message;
 		}
 
-		// Priority to the msgdb queue, runs first 
-		httpclient_queue_process(&data->from_msgdb_queue, data);
-		httpclient_queue_process(&data->from_senders_queue, data);
+		struct timeval msgdb_poll_interval_tv;
+		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
 
-		// We must always poll to ensure messages are stored int msgdb, if active
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete(&amount, thread_data, httpclient_poll_callback, 0) != 0) {
-			RRR_MSG_0("Error while polling in httpclient instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
+		if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
+			RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
+			goto out_message;
 		}
-
-		if (prev_bytes_total == bytes_total) {
-			consecutive_nothing_happened++;
-			if (consecutive_nothing_happened > 200 && active_transaction_count == 0) {
-				rrr_posix_usleep(30000); // 30 ms
-			}
-			else if (consecutive_nothing_happened > 100) {
-				rrr_posix_usleep(1000); // 1 ms
-			}
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-		prev_bytes_total = bytes_total;
 	}
+
+	if ((data->event_queue_process = event_new (
+			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
+			-1,
+			0,
+			httpclient_event_queue_process,
+			data
+	)) == NULL) {
+		RRR_MSG_0("Failed to create queue process event in httpclient\n");
+		goto out_message;
+	}
+
+//	event_enable_debug_logging(EVENT_DBG_ALL);
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			httpclient_event_periodic,
+			thread
+	);
 
 	out_message:
 	RRR_DBG_1 ("Thread httpclient %p exiting\n", thread);
@@ -1818,6 +1877,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	httpclient_event_broker_data_available
+};
+
 static const char *module_name = "httpclient";
 
 __attribute__((constructor)) void load(void) {
@@ -1828,6 +1891,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

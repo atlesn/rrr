@@ -77,6 +77,14 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	free(http1);
 }
 
+static uint64_t __rrr_http_application_http1_active_transaction_count_get (
+		struct rrr_http_application *app
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
+
+	return (http1->active_transaction != NULL ? 1 : 0);
+}
+
 static void __rrr_http_application_http1_transaction_clear (
 		struct rrr_http_application_http1 *http1
 ) {
@@ -1495,9 +1503,6 @@ static int __rrr_http_application_http1_tick (
 
 	int ret = RRR_HTTP_OK;
 
-	*active_transaction_count = (http1->active_transaction != NULL ? 1 : 0);
-	*complete_transaction_count = (http1->complete_transaction_count);
-
 	*upgraded_app = NULL;
 
 	if (rrr_net_transport_ctx_send_waiting(handle)) {
@@ -1590,6 +1595,7 @@ static void __rrr_http_application_http1_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
+	__rrr_http_application_http1_active_transaction_count_get,
 	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,

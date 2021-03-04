@@ -105,6 +105,43 @@ void rrr_http_client_destroy (
 	free(client);
 }
 
+static int __rrr_http_client_active_transaction_count_get_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	uint64_t *result_accumulator = arg;
+
+	*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+
+	return 0;
+}
+
+uint64_t rrr_http_client_active_transaction_count_get (
+		const struct rrr_http_client *http_client
+) {
+	uint64_t result_accumulator = 0;
+
+	if (http_client->transport_keepalive_plain != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_plain,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_active_transaction_count_get_callback,
+				&result_accumulator
+		);
+	}
+
+	if (http_client->transport_keepalive_tls != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_active_transaction_count_get_callback,
+				&result_accumulator
+		);
+	}
+
+	return result_accumulator;
+}
+
 static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
 	void *ptr = *((void **) arg);
 	RRR_FREE_IF_NOT_NULL(ptr);
@@ -288,7 +325,6 @@ struct rrr_http_client_tick_callback_data {
 	struct rrr_http_client *http_client;
 
 	uint64_t bytes_total;
-	uint64_t active_transaction_count;
 };
 
 static int __rrr_http_client_chunks_iterate_callback (
@@ -464,13 +500,9 @@ static int __rrr_http_client_read_callback (
 	int ret = 0;
 
 	ssize_t received_bytes_dummy = 0;
-	uint64_t complete_transactions_count_dummy = 0;
-	uint64_t active_transaction_count_tmp = 0;
 
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
-			&active_transaction_count_tmp,
-			&complete_transactions_count_dummy,
 			handle,
 			10 * 1024 * 1024, // 10 MB
 			__rrr_http_client_websocket_handshake_callback,
@@ -1042,95 +1074,5 @@ void rrr_http_client_terminate_if_open (
 			rrr_http_session_transport_ctx_close_if_open,
 			NULL
 	);
-}
-
-static int __rrr_http_client_tick_handle_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	struct rrr_http_client_tick_callback_data *callback_data = arg;
-
-	ssize_t received_bytes_dummy = 0;
-	uint64_t complete_transactions_count_dummy = 0;
-	uint64_t active_transaction_count_tmp = 0;
-
-	int ret = rrr_http_session_transport_ctx_tick_client (
-			&received_bytes_dummy,
-			&active_transaction_count_tmp,
-			&complete_transactions_count_dummy,
-			handle,
-			10 * 1024 * 1024, // 10 MB
-			__rrr_http_client_websocket_handshake_callback,
-			NULL,
-			__rrr_http_client_receive_http_part_callback,
-			callback_data->http_client,
-			callback_data->http_client->callbacks.get_response_callback,
-			callback_data->http_client->callbacks.get_response_callback_arg,
-			callback_data->http_client->callbacks.frame_callback,
-			callback_data->http_client->callbacks.frame_callback_arg
-	);
-
-	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
-
-	callback_data->active_transaction_count += active_transaction_count_tmp;
-
-	return ret;
-}
-
-int rrr_http_client_tick (
-		uint64_t *bytes_total,
-		uint64_t *active_transaction_count,
-		struct rrr_http_client *http_client
-) {
-	int ret = 0;
-
-	*bytes_total = 0;
-
-	struct rrr_http_client_tick_callback_data callback_data = {
-			http_client,
-			0,
-			0
-	};
-
-	if (http_client->transport_keepalive_plain != NULL) {
-		if ((ret = rrr_net_transport_iterate_with_callback (
-				http_client->transport_keepalive_plain,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				__rrr_http_client_tick_handle_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	if (http_client->transport_keepalive_tls != NULL) {
-		if ((ret = rrr_net_transport_iterate_with_callback (
-				http_client->transport_keepalive_tls,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				__rrr_http_client_tick_handle_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
-			http_client->callbacks.redirect_callback,
-			http_client->callbacks.redirect_callback_arg
-	};
-
-	if ((ret = rrr_http_redirect_collection_iterate (
-			&http_client->redirects,
-			__rrr_http_client_redirect_callback,
-			&redirect_callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	*bytes_total = callback_data.bytes_total;
-	*active_transaction_count = callback_data.active_transaction_count;
-
-	out:
-	return ret;
 }
 

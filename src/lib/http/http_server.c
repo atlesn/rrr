@@ -345,13 +345,9 @@ static int __rrr_http_server_read_callback (
 	int ret = 0;
 
 	ssize_t received_bytes = 0;
-	uint64_t active_transaction_count = 0;
-	uint64_t complete_transactions_total = 0;
 
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes,
-			&active_transaction_count,
-			&complete_transactions_total,
 			handle,
 			1 * 1024 * 1024, // 1 MB
 			http_server->callbacks.unique_id_generator_callback,

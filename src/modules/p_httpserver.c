@@ -1479,7 +1479,7 @@ static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
+	struct httpserver_data *data = thread_data->private_data;
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;

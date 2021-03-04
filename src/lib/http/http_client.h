@@ -136,6 +136,9 @@ int rrr_http_client_new (
 void rrr_http_client_destroy (
 		struct rrr_http_client *client
 );
+uint64_t rrr_http_client_active_transaction_count_get (
+		const struct rrr_http_client *http_client
+);
 int rrr_http_client_request_data_reset_from_request_data (
 		struct rrr_http_client_request_data *target,
 		const struct rrr_http_client_request_data *source
@@ -185,11 +188,6 @@ int rrr_http_client_request_send (
 		void *query_prepare_callback_arg,
 		void **application_data,
 		void (*application_data_destroy)(void *arg)
-);
-int rrr_http_client_tick (
-		uint64_t *bytes_total,
-		uint64_t *active_transaction_count,
-		struct rrr_http_client *http_client
 );
 
 #endif /* RRR_HTTP_CLIENT_H */
