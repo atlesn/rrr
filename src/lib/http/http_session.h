@@ -115,6 +115,9 @@ int rrr_http_session_transport_ctx_request_send (
 uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_http_session_transport_ctx_websocket_response_available_notify (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_http_session_transport_ctx_need_tick (
 		struct rrr_net_transport_handle *handle
 );

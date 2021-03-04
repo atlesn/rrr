@@ -88,6 +88,7 @@ struct rrr_http_client_data {
 	struct rrr_net_transport_config net_transport_config;
 	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
+	struct event *event_stdin;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -95,6 +96,10 @@ static void __rrr_http_client_data_cleanup (
 ) {
 	if (data->http_client != NULL) {
 		rrr_http_client_destroy(data->http_client);
+	}
+	if (data->event_stdin) {
+		event_del(data->event_stdin);
+		event_free(data->event_stdin);
 	}
 	if (data->events != NULL) {
 		rrr_event_queue_destroy(data->events);
@@ -532,14 +537,41 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
+static void rrr_http_client_event_stdin (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_http_client_data *data = arg;
+
+	rrr_http_client_websocket_response_available_notify(data->http_client);
+}
+
 static int main_running = 1;
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
-	(void)(arg);
-	return (main_running ? 0 : RRR_EVENT_EXIT);
+	struct rrr_http_client_data *data = arg;
+
+	if (data->event_stdin != NULL) {
+		if (rrr_http_client_active_transaction_count_get(data->http_client) > 0) {
+			event_add(data->event_stdin, NULL);
+		}
+		else {
+			event_del(data->event_stdin);
+		}
+	}
+
+	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0 || !main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -613,6 +645,24 @@ int main (int argc, const char **argv, const char **env) {
 
 	}
 
+	if (data.tree != NULL) {
+		if ((data.event_stdin = event_new (
+				rrr_event_queue_base_get(data.events),
+				STDIN_FILENO,
+				EV_READ|EV_PERSIST,
+				rrr_http_client_event_stdin,
+				&data
+		)) == NULL) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		if (event_add(data.event_stdin, NULL) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+
 	if (rrr_http_client_new(&data.http_client, data.events, 5000, &callbacks) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -640,7 +690,7 @@ int main (int argc, const char **argv, const char **env) {
 			data.events,
 			100000,
 			rrr_http_client_event_periodic,
-			NULL
+			&data
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;

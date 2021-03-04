@@ -218,6 +218,12 @@ uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
 	return rrr_http_application_active_transaction_count_get(session->application);
 }
 
+void rrr_http_session_transport_ctx_websocket_response_available_notify (
+		struct rrr_net_transport_handle *handle
+) {
+	event_active(handle->event_read, 0, 0);
+}
+
 int rrr_http_session_transport_ctx_need_tick (
 		struct rrr_net_transport_handle *handle
 ) {

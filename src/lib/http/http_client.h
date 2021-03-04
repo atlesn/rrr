@@ -139,6 +139,9 @@ void rrr_http_client_destroy (
 uint64_t rrr_http_client_active_transaction_count_get (
 		const struct rrr_http_client *http_client
 );
+void rrr_http_client_websocket_response_available_notify (
+		struct rrr_http_client *http_client
+);
 int rrr_http_client_request_data_reset_from_request_data (
 		struct rrr_http_client_request_data *target,
 		const struct rrr_http_client_request_data *source

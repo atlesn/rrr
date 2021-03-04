@@ -142,6 +142,37 @@ uint64_t rrr_http_client_active_transaction_count_get (
 	return result_accumulator;
 }
 
+static int __rrr_http_client_websocket_response_available_notify_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	(void)(arg);
+	rrr_http_session_transport_ctx_websocket_response_available_notify(handle);
+	return 0;
+}
+
+void rrr_http_client_websocket_response_available_notify (
+		struct rrr_http_client *http_client
+) {
+	if (http_client->transport_keepalive_plain != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_plain,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_websocket_response_available_notify_callback,
+				NULL
+		);
+	}
+
+	if (http_client->transport_keepalive_tls != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_websocket_response_available_notify_callback,
+				NULL
+		);
+	}
+}
+
 static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
 	void *ptr = *((void **) arg);
 	RRR_FREE_IF_NOT_NULL(ptr);
