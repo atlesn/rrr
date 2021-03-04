@@ -37,27 +37,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
-		.numbers.session_expiry					= 0,
-		.numbers.receive_maximum				= 0,
-		.numbers.maximum_qos					= 0,
-		.numbers.retain_available				= 1,
-		.numbers.maximum_packet_size			= 0,
-		.numbers.wildcard_subscriptions_available		= 1,
-		.numbers.subscription_identifiers_availbable	= 1,
-		.numbers.shared_subscriptions_available			= 1,
-		.numbers.server_keep_alive				= 30,
-		.numbers.topic_alias_maximum			= 0,
-		.numbers.request_response_information	= 0,
-		.numbers.request_problem_information	= 0,
+        .numbers.session_expiry                      = 0,
+        .numbers.receive_maximum                     = 0,
+        .numbers.maximum_qos                         = 0,
+        .numbers.retain_available                    = 1,
+        .numbers.maximum_packet_size                 = 0,
+        .numbers.wildcard_subscriptions_available    = 1,
+        .numbers.subscription_identifiers_availbable = 1,
+        .numbers.shared_subscriptions_available      = 1,
+        .numbers.server_keep_alive                   = 30,
+        .numbers.topic_alias_maximum                 = 0,
+        .numbers.request_response_information        = 0,
+        .numbers.request_problem_information         = 0,
 
-		.user_properties						= {0},
+        .user_properties                             = {0},
 
-		.assigned_client_identifier				= NULL,
-		.reason_string							= NULL,
-		.response_information					= NULL,
-		.server_reference						= NULL,
-		.auth_method							= NULL,
-		.auth_data								= NULL
+        .assigned_client_identifier                  = NULL,
+        .reason_string                               = NULL,
+        .response_information                        = NULL,
+        .server_reference                            = NULL,
+        .auth_method                                 = NULL,
+        .auth_data                                   = NULL
 };
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
@@ -278,150 +278,150 @@ int rrr_mqtt_common_data_init (
 		return ret;
 }
 
-#define HANDLE_PROPERTY_CHECK_DUP()																				\
-	do {unsigned int dup_count = 0;																				\
-	if (	RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_USER_PROPERTY &&							\
-			RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_SUBSCRIPTION_ID &&							\
-			(dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0	\
-	) {																											\
-		RRR_MSG_0("Property '%s' was specified more than once (%u times) in packet\n",							\
-				RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1);											\
-		goto out_reason_protocol_error;																			\
-	}} while (0)
+#define HANDLE_PROPERTY_CHECK_DUP()                                                                             \
+    do {unsigned int dup_count = 0;                                                                             \
+    if (    RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_USER_PROPERTY &&                            \
+            RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_SUBSCRIPTION_ID &&                          \
+            (dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0   \
+    ) {                                                                                                         \
+        RRR_MSG_0("Property '%s' was specified more than once (%u times) in packet\n",                          \
+                RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1);                                           \
+        goto out_reason_protocol_error;                                                                         \
+    }} while (0)
 
 
-#define HANDLE_PROPERTY_SWITCH_INIT()										\
-		int ret = RRR_MQTT_OK;												\
-		HANDLE_PROPERTY_CHECK_DUP();										\
-		uint32_t tmp_u32 = 0; (void)(tmp_u32)
+#define HANDLE_PROPERTY_SWITCH_INIT()                                       \
+        int ret = RRR_MQTT_OK;                                              \
+        HANDLE_PROPERTY_CHECK_DUP();                                        \
+        uint32_t tmp_u32 = 0; (void)(tmp_u32)
 
-#define HANDLE_PROPERTY_SWITCH_BEGIN()										\
-	switch (RRR_MQTT_PROPERTY_GET_ID(property)) {							\
-		case 0:																\
-			RRR_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n");	\
-			break
+#define HANDLE_PROPERTY_SWITCH_BEGIN()                                      \
+    switch (RRR_MQTT_PROPERTY_GET_ID(property)) {                           \
+        case 0:                                                             \
+            RRR_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n"); \
+            break
 /*
 #include "../util/utf8.h"
-#define HANDLE_PROPERTY_UTF8(target,id,error_msg)							\
-		case id:															\
-			RRR_FREE_IF_NOT_NULL(target);									\
-			if (rrr_mqtt_property_get_blob_as_str(&(target),property)!=0) {	\
-				goto out_internal_error;									\
-			}																\
-			if (target == NULL || *target == '\0' ||						\
-				rrr_utf8_validate(target, strlen(target)) != 0) {			\
-				RRR_MSG_0(error_msg "\n");									\
-				goto out_reason_protocol_error;								\
-			}																\
-			break
+#define HANDLE_PROPERTY_UTF8(target,id,error_msg)                           \
+        case id:                                                            \
+            RRR_FREE_IF_NOT_NULL(target);                                   \
+            if (rrr_mqtt_property_get_blob_as_str(&(target),property)!=0) { \
+                goto out_internal_error;                                    \
+            }                                                               \
+            if (target == NULL || *target == '\0' ||                        \
+                rrr_utf8_validate(target, strlen(target)) != 0) {           \
+                RRR_MSG_0(error_msg "\n");                                  \
+                goto out_reason_protocol_error;                             \
+            }                                                               \
+            break
 */
-#define HANDLE_PROPERTY_U32_UNCHECKED(target,id) 							\
-		case id:															\
-			(target) = rrr_mqtt_property_get_uint32(property);				\
-			break
+#define HANDLE_PROPERTY_U32_UNCHECKED(target,id)                            \
+        case id:                                                            \
+            (target) = rrr_mqtt_property_get_uint32(property);              \
+            break
 
-#define HANDLE_PROPERTY_U32_NON_ZERO(target,id,error_msg)					\
-		case id:															\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
-			if (tmp_u32 == 0) {												\
-				RRR_MSG_0(error_msg "\n");									\
-				goto out_reason_protocol_error;								\
-			}																\
-			(target) = tmp_u32;												\
-			break
+#define HANDLE_PROPERTY_U32_NON_ZERO(target,id,error_msg)                   \
+        case id:                                                            \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
+            if (tmp_u32 == 0) {                                             \
+                RRR_MSG_0(error_msg "\n");                                  \
+                goto out_reason_protocol_error;                             \
+            }                                                               \
+            (target) = tmp_u32;                                             \
+            break
 
-#define HANDLE_PROPERTY_U32_QOS(target,id,error_msg)						\
-		case id:															\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
-			if (tmp_u32 > 2) {												\
-				RRR_MSG_0(error_msg "\n");									\
-				goto out_reason_protocol_error;								\
-			}																\
-			(target) = tmp_u32;												\
-			break
+#define HANDLE_PROPERTY_U32_QOS(target,id,error_msg)                        \
+        case id:                                                            \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
+            if (tmp_u32 > 2) {                                              \
+                RRR_MSG_0(error_msg "\n");                                  \
+                goto out_reason_protocol_error;                             \
+            }                                                               \
+            (target) = tmp_u32;                                             \
+            break
 
-#define HANDLE_PROPERTY_U32_ON_OFF_TO_U8(target,id,error_msg)				\
-		case id:															\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
-			if (tmp_u32 > 1) {												\
-				RRR_MSG_0(error_msg "\n");									\
-				goto out_reason_protocol_error;								\
-			}																\
-			(target) = tmp_u32;												\
-			break
+#define HANDLE_PROPERTY_U32_ON_OFF_TO_U8(target,id,error_msg)               \
+        case id:                                                            \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
+            if (tmp_u32 > 1) {                                              \
+                RRR_MSG_0(error_msg "\n");                                  \
+                goto out_reason_protocol_error;                             \
+            }                                                               \
+            (target) = tmp_u32;                                             \
+            break
 
-#define HANDLE_PROPERTY_U32_TO_U8(target,id)								\
-		case id:															\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
-			if (tmp_u32 > 0xff) {											\
-				RRR_BUG("U8 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
-			}																\
-			(target) = tmp_u32;												\
-			break
+#define HANDLE_PROPERTY_U32_TO_U8(target,id)                                \
+        case id:                                                            \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
+            if (tmp_u32 > 0xff) {                                           \
+                RRR_BUG("U8 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
+            }                                                               \
+            (target) = tmp_u32;                                             \
+            break
 
-#define HANDLE_PROPERTY_U32_TO_U16(target,id)								\
-		case id:															\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
-			if (tmp_u32 > 0xffff) {											\
-				RRR_BUG("U16 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
-			}																\
-			(target) = tmp_u32;												\
-			break
+#define HANDLE_PROPERTY_U32_TO_U16(target,id)                               \
+        case id:                                                            \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);               \
+            if (tmp_u32 > 0xffff) {                                         \
+                RRR_BUG("U16 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
+            }                                                               \
+            (target) = tmp_u32;                                             \
+            break
 
-#define HANDLE_PROPERTY_TO_COLLECTION(target,id)													\
-		case id:																					\
-			ret = rrr_mqtt_property_collection_add_cloned((target), property);						\
-			if (ret != 0) {																			\
-				RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
-				goto out_internal_error;															\
-			}																						\
-			break
+#define HANDLE_PROPERTY_TO_COLLECTION(target,id)                                                    \
+        case id:                                                                                    \
+            ret = rrr_mqtt_property_collection_add_cloned((target), property);                      \
+            if (ret != 0) {                                                                         \
+                RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");       \
+                goto out_internal_error;                                                            \
+            }                                                                                       \
+            break
 
-#define HANDLE_PROPERTY_TO_COLLECTION_NON_ZERO(target,id,error_msg)									\
-		case id:																					\
-			tmp_u32 = rrr_mqtt_property_get_uint32(property);										\
-			if (tmp_u32 == 0) {																		\
-				RRR_MSG_0(error_msg "\n");															\
-				goto out_reason_protocol_error;														\
-			}																						\
-			ret = rrr_mqtt_property_collection_add_cloned((target), property);						\
-			if (ret != 0) {																			\
-				RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
-				goto out_internal_error;															\
-			}																						\
-			break
+#define HANDLE_PROPERTY_TO_COLLECTION_NON_ZERO(target,id,error_msg)                                 \
+        case id:                                                                                    \
+            tmp_u32 = rrr_mqtt_property_get_uint32(property);                                       \
+            if (tmp_u32 == 0) {                                                                     \
+                RRR_MSG_0(error_msg "\n");                                                          \
+                goto out_reason_protocol_error;                                                     \
+            }                                                                                       \
+            ret = rrr_mqtt_property_collection_add_cloned((target), property);                      \
+            if (ret != 0) {                                                                         \
+                RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");       \
+                goto out_internal_error;                                                            \
+            }                                                                                       \
+            break
 
-#define HANDLE_PROPERTY_CLONE(target,id)															\
-		case id:																					\
-			if (rrr_mqtt_property_clone((target), property) != 0) {									\
-				RRR_MSG_0("Could not clone property HANDLE_PROPERTY_USER_PROPERTY\n");				\
-				goto out_internal_error;															\
-			}																						\
-			break;
+#define HANDLE_PROPERTY_CLONE(target,id)                                                            \
+        case id:                                                                                    \
+            if (rrr_mqtt_property_clone((target), property) != 0) {                                 \
+                RRR_MSG_0("Could not clone property HANDLE_PROPERTY_USER_PROPERTY\n");              \
+                goto out_internal_error;                                                            \
+            }                                                                                       \
+            break;
 
-#define HANDLE_PROPERTY_COPY_POINTER_DANGEROUS(target,id)											\
-		case id:																					\
-			(target) = property;																	\
-			break;
+#define HANDLE_PROPERTY_COPY_POINTER_DANGEROUS(target,id)                                           \
+        case id:                                                                                    \
+            (target) = property;                                                                    \
+            break;
 
-#define HANDLE_PROPERTY_SWITCH_END() 																\
-		default:																					\
-			RRR_MSG_0("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));				\
-			goto out_reason_protocol_error;															\
-		}
+#define HANDLE_PROPERTY_SWITCH_END()                                                                \
+        default:                                                                                    \
+            RRR_MSG_0("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));             \
+            goto out_reason_protocol_error;                                                         \
+        }
 
 // We do not return error as we want to parse the rest of the source_properties to check
 // for more errors. Caller checks for non-zero reason.
-#define HANDLE_PROPERTY_SWITCH_RETURN() 													\
-	goto out;																				\
-	out_internal_error:																		\
-		ret = RRR_MQTT_INTERNAL_ERROR;														\
-		return ret;																			\
-	out_reason_protocol_error:																\
-		ret = RRR_MQTT_SOFT_ERROR;															\
-		callback_data->reason_v5 = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;						\
-	out:																					\
-		return ret
+#define HANDLE_PROPERTY_SWITCH_RETURN()                                                     \
+    goto out;                                                                               \
+    out_internal_error:                                                                     \
+        ret = RRR_MQTT_INTERNAL_ERROR;                                                      \
+        return ret;                                                                         \
+    out_reason_protocol_error:                                                              \
+        ret = RRR_MQTT_SOFT_ERROR;                                                          \
+        callback_data->reason_v5 = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;                      \
+    out:                                                                                    \
+        return ret
 
 int rrr_mqtt_common_parse_connect_properties_callback (
 		const struct rrr_mqtt_property *property,
