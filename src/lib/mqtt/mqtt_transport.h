@@ -29,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "../net_transport/net_transport.h"
 
+#define RRR_MQTT_TRANSPORT_MAX 2
+
 struct rrr_net_transport_config;
 struct rrr_mqtt_p;
 
@@ -37,12 +39,16 @@ struct rrr_mqtt_transport {
 	ssize_t max;
 	uint64_t close_wait_time_usec;
 
-	struct rrr_net_transport_collection transports;
+	struct rrr_net_transport *transports[RRR_MQTT_TRANSPORT_MAX];
+	size_t transport_count;
 
 	int (*event_handler) (RRR_MQTT_EVENT_HANDLER_DEFINITION);
 	void *event_handler_static_arg;
 };
 
+void rrr_mqtt_transport_cleanup (
+		struct rrr_mqtt_transport *transport
+);
 void rrr_mqtt_transport_destroy (
 		struct rrr_mqtt_transport *transport
 );
@@ -56,7 +62,7 @@ int rrr_mqtt_transport_new (
 static inline struct rrr_net_transport *rrr_mqtt_transport_get_latest (
 		struct rrr_mqtt_transport *transport
 ) {
-	return RRR_LL_LAST(&transport->transports);
+	return (transport->transport_count == 0 ? NULL : transport->transports[transport->transport_count - 1]);
 }
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,

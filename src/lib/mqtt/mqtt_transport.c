@@ -31,6 +31,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
+void rrr_mqtt_transport_cleanup (
+		struct rrr_mqtt_transport *transport
+) {
+	for (size_t i = 0; i < transport->transport_count; i++) {
+		rrr_net_transport_common_cleanup(transport->transports[i]);
+	}
+}
+
 void rrr_mqtt_transport_destroy (
 		struct rrr_mqtt_transport *transport
 ) {
@@ -40,7 +48,10 @@ void rrr_mqtt_transport_destroy (
 
 	// Memory of individual connections are managed through net transport framework
 
-	rrr_net_transport_collection_destroy(&transport->transports);
+	for (size_t i = 0; i < transport->transport_count; i++) {
+		rrr_net_transport_destroy(transport->transports[i]);
+	}
+
 	free(transport);
 }
 
@@ -86,6 +97,12 @@ int rrr_mqtt_transport_start (
 ) {
 	int ret = 0;
 
+	if (transport->transport_count == RRR_MQTT_TRANSPORT_MAX) {
+		RRR_MSG_0("Too many transports in rrr_mqtt_transport_start\n");
+		ret = 1;
+		goto out;
+	}
+
 	struct rrr_net_transport *tmp = NULL;
 
 	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
@@ -116,11 +133,15 @@ int rrr_mqtt_transport_start (
 		RRR_BUG("BUG: Unknown transport type %i to rrr_mqtt_transport_start\n", net_transport_config->transport_type);
 	}
 
-	RRR_LL_APPEND(&transport->transports, tmp);
+	transport->transports[transport->transport_count++] = tmp;
 
 	out:
 	return ret;
 }
+
+#define RRR_MQTT_TRANSPORT_FOREACH_BEGIN()                                      \
+	for (size_t i = 0; i < transport->transport_count; i++) {               \
+		struct rrr_net_transport *node = transport->transports[i];
 
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,
@@ -143,7 +164,7 @@ int rrr_mqtt_transport_accept (
 			transport->event_handler_static_arg
 	};
 
-	RRR_LL_ITERATE_BEGIN(&transport->transports, struct rrr_net_transport);
+	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
 		if ((ret = rrr_net_transport_accept_all_handles (
 				node,
 				0, // Accept any number of connections
@@ -154,9 +175,9 @@ int rrr_mqtt_transport_accept (
 			goto out;
 		}
 		if ((*new_transport_handle = callback_data.transport_handle) > 0) {
-			RRR_LL_ITERATE_LAST();
+			break;
 		}
-	RRR_LL_ITERATE_END();
+	}
 
 	out:
 		return ret;
@@ -185,11 +206,11 @@ int rrr_mqtt_transport_connect (
 			transport->event_handler_static_arg
 	};
 
-	if (RRR_LL_COUNT(&transport->transports) > 1) {
+	if (transport->transport_count > 1) {
 		RRR_DBG_1("Note: More than one transport found in rrr_mqtt_transport_connect, using the first one.\n");
 	}
 
-	struct rrr_net_transport *net_transport = RRR_LL_FIRST(&transport->transports);
+	struct rrr_net_transport *net_transport = transport->transports[0];
 
 	if (net_transport == NULL) {
 		RRR_BUG("BUG: No transports started in rrr_mqtt_transport_connect\n");
@@ -220,7 +241,7 @@ int rrr_mqtt_transport_iterate (
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(&transport->transports, struct rrr_net_transport);
+	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
 		ret |= rrr_net_transport_iterate_with_callback (
 				node,
 				mode,
@@ -231,7 +252,7 @@ int rrr_mqtt_transport_iterate (
 			RRR_MSG_0("Internal error in rrr_mqtt_transport_iterate\n");
 			goto out;
 		}
-	RRR_LL_ITERATE_END();
+	}
 
 	ret = 0;
 
@@ -277,7 +298,7 @@ int rrr_mqtt_transport_with_iterator_ctx_do_custom (
 			0
 	};
 
-	if (RRR_LL_COUNT(&transport->transports) != 1) {
+	if (transport->transport_count != 1) {
 		RRR_BUG("BUG: Number of transports was not exactly 1 in rrr_mqtt_transport_with_iterator_ctx_do_custom\n");
 	}
 

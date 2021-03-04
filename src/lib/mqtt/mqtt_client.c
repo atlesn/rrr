@@ -93,10 +93,6 @@ int rrr_mqtt_client_connection_check_alive (
 		0, 0
 	};
 
-	if (RRR_LL_COUNT(&data->mqtt_data.transport->transports) != 1) {
-		RRR_BUG("BUG: Transport count was not exactly one in rrr_mqtt_client_connection_check_alive\n");
-	}
-
 	ret = rrr_mqtt_transport_with_iterator_ctx_do_custom (
 			data->mqtt_data.transport,
 			transport_handle,
@@ -278,7 +274,7 @@ int rrr_mqtt_client_unsubscribe (
 void rrr_mqtt_client_close_all_connections (
 		struct rrr_mqtt_client_data *data
 ) {
-	rrr_net_transport_collection_cleanup(&data->mqtt_data.transport->transports);
+	rrr_mqtt_transport_cleanup(data->mqtt_data.transport);
 }
 
 struct rrr_mqtt_client_property_override {

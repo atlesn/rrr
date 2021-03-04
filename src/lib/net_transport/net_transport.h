@@ -98,11 +98,6 @@ struct rrr_net_transport_handle_collection {
 	struct rrr_net_transport_handle_close_tag_list close_tags;
 };
 
-/* TODO : Once MQTT no longer uses this struct, delete it and encapsulate all other structs to net_transport_struct.h */
-struct rrr_net_transport_collection {
-    RRR_LL_HEAD(struct rrr_net_transport);
-};
-
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS  \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
@@ -182,12 +177,6 @@ void rrr_net_transport_destroy (
 void rrr_net_transport_destroy_void (
 		void *arg
 );
-void rrr_net_transport_collection_destroy (
-		struct rrr_net_transport_collection *collection
-);
-void rrr_net_transport_collection_cleanup (
-		struct rrr_net_transport_collection *collection)
-;
 void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 );
