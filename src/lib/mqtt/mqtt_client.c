@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,11 +37,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/posix.h"
 #include "../util/macro_utils.h"
 
-#define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
-#define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
-#define RRR_MQTT_CLIENT_MAX_SOCKETS					100
-#define RRR_MQTT_CLIENT_MAX_IN_FLIGHT				125
-#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME	2
+#define RRR_MQTT_CLIENT_RETRY_INTERVAL                 5
+#define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME                3
+#define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
+#define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
+#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
