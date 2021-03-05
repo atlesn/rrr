@@ -769,6 +769,79 @@ void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client)
 	rrr_mqtt_common_data_notify_pthread_cancel(&client->mqtt_data);
 }
 
+struct exceeded_keep_alive_callback_data {
+	struct rrr_mqtt_client_data *data;
+};
+
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
+	int ret = RRR_MQTT_OK;
+
+	struct exceeded_keep_alive_callback_data *callback_data = arg;
+	struct rrr_mqtt_client_data *data = callback_data->data;
+
+	struct rrr_mqtt_p_pingreq *pingreq = NULL;
+
+	if (connection->protocol_version == NULL) {
+		// CONNECT/CONNACK not yet done
+		goto out;
+	}
+
+	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > rrr_time_get_64()) {
+		goto out;
+	}
+
+	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
+
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet(
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) pingreq,
+					0
+			),
+			goto out,
+			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
+	);
+
+	data->last_pingreq_time = rrr_time_get_64();
+
+	out:
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
+		return ret;
+}
+
+static int __rrr_mqtt_client_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_mqtt_client_data *data = arg;
+
+	int ret = 0;
+
+	struct exceeded_keep_alive_callback_data callback_data = {
+		data
+	};
+
+	if ((ret = rrr_mqtt_common_read_parse_single_handle (
+			&data->session_counters,
+			&data->mqtt_data,
+			handle,
+			__rrr_mqtt_client_exceeded_keep_alive_callback,
+			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	// TODO : Don't do this for every read
+	if ((ret = data->mqtt_data.sessions->methods->maintain (
+			data->mqtt_data.sessions
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
@@ -802,7 +875,9 @@ int rrr_mqtt_client_new (
 			__rrr_mqtt_client_event_handler,
 			result,
 			__rrr_mqtt_client_acl_handler,
-			NULL
+			NULL,
+			__rrr_mqtt_client_read_callback,
+			result
 	);
 
 	if (ret != 0) {
@@ -888,47 +963,6 @@ int rrr_mqtt_client_get_session_properties (
 	);
 }
 
-struct exceeded_keep_alive_callback_data {
-	struct rrr_mqtt_client_data *data;
-};
-
-static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
-	int ret = RRR_MQTT_OK;
-
-	struct exceeded_keep_alive_callback_data *callback_data = arg;
-	struct rrr_mqtt_client_data *data = callback_data->data;
-
-	struct rrr_mqtt_p_pingreq *pingreq = NULL;
-
-	if (connection->protocol_version == NULL) {
-		// CONNECT/CONNACK not yet done
-		goto out;
-	}
-
-	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > rrr_time_get_64()) {
-		goto out;
-	}
-
-	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
-
-	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			data->mqtt_data.sessions->methods->send_packet(
-					data->mqtt_data.sessions,
-					&connection->session,
-					(struct rrr_mqtt_p *) pingreq,
-					0
-			),
-			goto out,
-			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
-	);
-
-	data->last_pingreq_time = rrr_time_get_64();
-
-	out:
-		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
-		return ret;
-}
-
 int rrr_mqtt_client_synchronized_tick (
 		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
 		int *something_happened,
@@ -941,7 +975,7 @@ int rrr_mqtt_client_synchronized_tick (
 	};
 
 	if ((ret = rrr_mqtt_common_read_parse_handle (
-			session_counters,
+			&data->session_counters,
 			something_happened,
 			&data->mqtt_data,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
@@ -949,6 +983,8 @@ int rrr_mqtt_client_synchronized_tick (
 	)) != 0) {
 		goto out;
 	}
+
+	*session_counters = data->session_counters;
 
 	if ((ret = data->mqtt_data.sessions->methods->maintain (
 			data->mqtt_data.sessions

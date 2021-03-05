@@ -1191,44 +1191,6 @@ int rrr_mqtt_broker_accept_connections (
 	return ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) ? 1 : 0;
 }
 
-int rrr_mqtt_broker_synchronized_tick (
-		int *something_happened,
-		struct rrr_mqtt_broker_data *data
-) {
-	int ret = 0;
-
-	if ((ret = rrr_mqtt_broker_accept_connections (
-			data
-	)) != 0) {
-		goto out;
-	}
-
-	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
-
-	if ((ret = rrr_mqtt_common_read_parse_handle (
-			&session_iterate_counters,
-			something_happened,
-			&data->mqtt_data,
-			NULL,
-			NULL
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = data->mqtt_data.sessions->methods->maintain (
-			data->mqtt_data.sessions
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	// Always update. Connection framework might successfully close connections before producing errors,
-	// in which the counter will have been incremented.
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->stats.total_connections_closed += 0);
-
-	return ret;
-}
-
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,
 		struct rrr_mqtt_broker_data *data

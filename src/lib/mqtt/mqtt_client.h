@@ -47,6 +47,8 @@ struct rrr_mqtt_client_data {
 	void *suback_unsuback_handler_arg;
 	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
 	void *packet_parsed_handler_arg;
+
+	struct rrr_mqtt_session_iterate_send_queue_counters session_counters;
 };
 
 int rrr_mqtt_client_connection_check_alive (

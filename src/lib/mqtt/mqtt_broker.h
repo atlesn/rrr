@@ -99,13 +99,6 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		const struct rrr_net_transport_config *net_transport_config,
 		int port
 );
-
-/* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
-int rrr_mqtt_broker_synchronized_tick (
-		int *something_happened,
-		struct rrr_mqtt_broker_data *data
-);
-
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,
 		struct rrr_mqtt_broker_data *data
