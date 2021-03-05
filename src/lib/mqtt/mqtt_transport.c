@@ -101,6 +101,8 @@ static void __rrr_mqtt_transport_accept_callback (
 ) {
 	struct rrr_mqtt_transport *transport = arg;
 
+	printf("Accept callback %p\n", transport->accept_callback);
+
 	struct rrr_mqtt_common_accept_and_connect_callback_data callback_data = {
 			0,
 			transport->close_wait_time_usec,
@@ -161,7 +163,7 @@ int rrr_mqtt_transport_start (
 			0, // TODO : Set timers?
 			0,
 			__rrr_mqtt_transport_accept_callback,
-			transport->transports[transport->transport_count - 1],
+			transport,
 			transport->read_callback,
 			transport->read_callback_arg
 	)) != 0) {
