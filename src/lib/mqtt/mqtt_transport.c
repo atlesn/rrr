@@ -60,7 +60,6 @@ int rrr_mqtt_transport_new (
 		struct rrr_mqtt_transport **result,
 		unsigned int max_connections,
 		uint64_t close_wait_time_usec,
-		uint64_t connection_hard_timeout_usec,
 		struct rrr_event_queue *queue,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg,
@@ -90,7 +89,6 @@ int rrr_mqtt_transport_new (
 	transport->read_callback_arg = read_callback_arg;
 	transport->max = max_connections;
 	transport->close_wait_time_usec = close_wait_time_usec;
-	transport->connection_hard_timeout_usec = connection_hard_timeout_usec;
 
 	*result = transport;
 
@@ -160,8 +158,9 @@ int rrr_mqtt_transport_start (
 	if ((ret = rrr_net_transport_event_setup (
 			tmp,
 			transport->queue,
-			0,
-			transport->connection_hard_timeout_usec / 1000,
+			2 * 2000,   // First read timeout 2s 
+			1 * 1000,   // Soft timeout 1 s, maintenance interval
+			0xffff * 2, // Hard timeout
 			__rrr_mqtt_transport_accept_callback,
 			transport,
 			transport->read_callback,

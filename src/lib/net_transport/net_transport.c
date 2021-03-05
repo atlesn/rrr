@@ -260,6 +260,10 @@ static int __rrr_net_transport_handle_destroy (
 		event_del(handle->event_first_read_timeout);
 		event_free(handle->event_first_read_timeout);
 	}
+	if (handle->event_hard_read_timeout != NULL) {
+		event_del(handle->event_hard_read_timeout);
+		event_free(handle->event_hard_read_timeout);
+	}
 
 	rrr_read_session_collection_clear(&handle->read_sessions);
 
@@ -535,6 +539,22 @@ static void __rrr_net_transport_event_first_read_timeout (
 	CHECK_READ_WRITE_RETURN();
 }
 
+static void __rrr_net_transport_event_hard_read_timeout (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(flags);
+
+	RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
+			fd, handle->transport->hard_read_timeout_ms);
+
+	int ret_tmp = RRR_READ_EOF;
+	CHECK_READ_WRITE_RETURN();
+}
+
 static void __rrr_net_transport_event_read (
 		evutil_socket_t fd,
 		short flags,
@@ -544,16 +564,9 @@ static void __rrr_net_transport_event_read (
 
 	int ret_tmp = 0;
 
-	if (flags & EV_TIMEOUT) {
-		RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
-				fd, handle->transport->read_timeout_ms);
-		ret_tmp = RRR_READ_EOF;
-		goto check_return;
-	}
-
-	if (handle->transport->read_timeout_ms > 0) {
-		if (event_add(handle->event_read, &handle->transport->read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to update read event with new timeout in __rrr_net_transport_event_read\n");
+	if (handle->transport->hard_read_timeout_ms > 0) {
+		if (event_add(handle->event_read, &handle->transport->hard_read_timeout_tv) != 0) {
+			RRR_MSG_0("Failed to update read event with new hard timeout in __rrr_net_transport_event_read\n");
 			event_base_loopbreak(handle->transport->event_base);
 			return;
 		}
@@ -635,7 +648,7 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	if (event_add(handle->event_read, (handle->transport->read_timeout_ms > 0 ? &handle->transport->read_timeout_tv : NULL)) != 0) {
+	if (event_add(handle->event_read, (handle->transport->soft_read_timeout_ms > 0 ? &handle->transport->soft_read_timeout_tv : NULL)) != 0) {
 		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_connected\n");
 		ret = 1;
 		goto out;
@@ -670,6 +683,26 @@ static int __rrr_net_transport_handle_events_setup_connected (
 
 		if (event_add(handle->event_first_read_timeout, &handle->transport->first_read_timeout_tv) != 0) {
 			RRR_MSG_0("Failed to add first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (handle->transport->hard_read_timeout_ms > 0) {
+		if ((handle->event_hard_read_timeout = event_new (
+				handle->transport->event_base,
+				handle->submodule_fd,
+				EV_TIMEOUT|EV_PERSIST,
+				__rrr_net_transport_event_hard_read_timeout,
+				handle
+		)) == NULL) {
+			RRR_MSG_0("Failed to create hard_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (event_add(handle->event_hard_read_timeout, &handle->transport->hard_read_timeout_tv) != 0) {
+			RRR_MSG_0("Failed to add hard_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
 			ret = 1;
 			goto out;
 		}
@@ -1423,7 +1456,8 @@ int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		struct rrr_event_queue *queue,
 		uint64_t first_read_timeout_ms,
-		uint64_t read_timeout_ms,
+		uint64_t soft_read_timeout_ms,
+		uint64_t hard_read_timeout_ms,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
@@ -1436,10 +1470,12 @@ int rrr_net_transport_event_setup (
 	transport->event_base = rrr_event_queue_base_get(queue);
 
 	transport->first_read_timeout_ms = first_read_timeout_ms;
-	transport->read_timeout_ms = read_timeout_ms;
+	transport->soft_read_timeout_ms = soft_read_timeout_ms;
+	transport->hard_read_timeout_ms = hard_read_timeout_ms;
 
 	rrr_time_from_usec(&transport->first_read_timeout_tv, first_read_timeout_ms * 1000);
-	rrr_time_from_usec(&transport->read_timeout_tv, read_timeout_ms * 1000);
+	rrr_time_from_usec(&transport->soft_read_timeout_tv, soft_read_timeout_ms * 1000);
+	rrr_time_from_usec(&transport->hard_read_timeout_tv, hard_read_timeout_ms * 1000);
 
 	transport->accept_callback = accept_callback;
 	transport->accept_callback_arg = accept_callback_arg;

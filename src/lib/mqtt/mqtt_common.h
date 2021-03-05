@@ -192,7 +192,6 @@ struct rrr_mqtt_common_init_data {
 	const char *client_name;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
-	uint64_t connection_hard_timeout_usec;
 	unsigned int max_socket_connections;
 };
 

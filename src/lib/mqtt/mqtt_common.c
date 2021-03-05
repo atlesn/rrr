@@ -259,7 +259,6 @@ int rrr_mqtt_common_data_init (
 			&data->transport,
 			init_data->max_socket_connections,
 			init_data->close_wait_time_usec,
-			init_data->connection_hard_timeout_usec,
 			queue,
 			__rrr_mqtt_common_connection_event_handler,
 			data,

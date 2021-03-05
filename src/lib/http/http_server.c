@@ -426,6 +426,7 @@ static int __rrr_http_server_start (
 			queue,
 			first_read_timeout_ms,
 			read_timeout_ms,
+			0,
 			__rrr_http_server_accept_callback,
 			http_server,
 			__rrr_http_server_read_callback,

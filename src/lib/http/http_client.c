@@ -825,6 +825,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup
 			transport,
 			http_client->events,
 			0,
+			0,
 			http_client->idle_timeout_ms,
 			NULL,
 			NULL,

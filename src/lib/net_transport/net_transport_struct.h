@@ -157,6 +157,7 @@ struct rrr_net_transport_handle {
 	struct event *event_read;
 	struct event *event_write;
 	struct event *event_first_read_timeout;
+	struct event *event_hard_read_timeout;
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;

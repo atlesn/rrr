@@ -71,9 +71,11 @@ struct rrr_event_queue;
     struct event_base *event_base;                                          \
     struct event *event_maintenance;                                        \
     uint64_t first_read_timeout_ms;                                         \
-    uint64_t read_timeout_ms;                                               \
+    uint64_t soft_read_timeout_ms;                                          \
+    uint64_t hard_read_timeout_ms;                                          \
     struct timeval first_read_timeout_tv;                                   \
-    struct timeval read_timeout_tv;                                         \
+    struct timeval soft_read_timeout_tv;                                    \
+    struct timeval hard_read_timeout_tv;                                    \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
@@ -285,7 +287,8 @@ int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		struct rrr_event_queue *queue,
 		uint64_t first_read_timeout_ms,
-		uint64_t read_timeout_ms,
+		uint64_t soft_read_timeout_ms,
+		uint64_t hard_read_timeout_ms,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
