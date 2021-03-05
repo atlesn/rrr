@@ -47,6 +47,8 @@ struct rrr_mqtt_client_data {
 	void *suback_unsuback_handler_arg;
 	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
 	void *packet_parsed_handler_arg;
+	int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void *receive_publish_callback_arg;
 
 	struct rrr_mqtt_session_iterate_send_queue_counters session_counters;
 };
@@ -109,7 +111,9 @@ int rrr_mqtt_client_new (
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
-		void *packet_parsed_handler_arg
+		void *packet_parsed_handler_arg,
+		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *receive_publish_callback_arg
 );
 int rrr_mqtt_client_late_set_client_identifier (
 		struct rrr_mqtt_client_data *client,
@@ -120,10 +124,9 @@ int rrr_mqtt_client_get_session_properties (
 		struct rrr_mqtt_client_data *client,
 		int transport_handle
 );
-int rrr_mqtt_client_synchronized_tick (
+void rrr_mqtt_client_counters_get (
 		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
-		int *something_happened,
-		struct rrr_mqtt_client_data *data
+		const struct rrr_mqtt_client_data *data
 );
 int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,

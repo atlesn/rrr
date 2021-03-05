@@ -810,6 +810,16 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 		return ret;
 }
 
+static int __rrr_mqtt_client_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_client_data *data
+) {
+	return rrr_mqtt_common_iterate_and_clear_local_delivery (
+			&data->mqtt_data,
+			data->receive_publish_callback,
+			data->receive_publish_callback_arg
+	) & RRR_MQTT_INTERNAL_ERROR; // Clear all errors but internal error
+}
+
 static int __rrr_mqtt_client_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
@@ -827,6 +837,12 @@ static int __rrr_mqtt_client_read_callback (
 			handle,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
 			&callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
+		data
 	)) != 0) {
 		goto out;
 	}
@@ -851,7 +867,9 @@ int rrr_mqtt_client_new (
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
-		void *packet_parsed_handler_arg
+		void *packet_parsed_handler_arg,
+		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *receive_publish_callback_arg
 ) {
 	int ret = 0;
 
@@ -891,6 +909,8 @@ int rrr_mqtt_client_new (
 	result->suback_unsuback_handler_arg = suback_unsuback_handler_arg;
 	result->packet_parsed_handler = packet_parsed_handler;
 	result->packet_parsed_handler_arg = packet_parsed_handler_arg;
+	result->receive_publish_callback = receive_publish_callback;
+	result->receive_publish_callback_arg = receive_publish_callback_arg;
 
 	*client = result;
 
@@ -962,50 +982,12 @@ int rrr_mqtt_client_get_session_properties (
 			&callback_data
 	);
 }
-
-int rrr_mqtt_client_synchronized_tick (
+		
+void rrr_mqtt_client_counters_get (
 		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
-		int *something_happened,
-		struct rrr_mqtt_client_data *data
+		const struct rrr_mqtt_client_data *data
 ) {
-	int ret = 0;
-
-	struct exceeded_keep_alive_callback_data callback_data = {
-			data
-	};
-
-	if ((ret = rrr_mqtt_common_read_parse_handle (
-			&data->session_counters,
-			something_happened,
-			&data->mqtt_data,
-			__rrr_mqtt_client_exceeded_keep_alive_callback,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	*session_counters = data->session_counters;
-
-	if ((ret = data->mqtt_data.sessions->methods->maintain (
-			data->mqtt_data.sessions
-	)) != 0) {
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_mqtt_client_iterate_and_clear_local_delivery (
-		struct rrr_mqtt_client_data *data,
-		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
-		void *callback_arg
-) {
-	return rrr_mqtt_common_iterate_and_clear_local_delivery (
-			&data->mqtt_data,
-			callback,
-			callback_arg
-	) & 1; // Clear all errors but internal error
+	*session_counters = data->session_counters;	
 }
 
 void rrr_mqtt_client_get_stats (

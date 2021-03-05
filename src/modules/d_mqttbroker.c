@@ -449,4 +449,3 @@ void init(struct rrr_instance_module_data *data) {
 void unload(void) {
 	RRR_DBG_1 ("Destroy mqtt broker module\n");
 }
-

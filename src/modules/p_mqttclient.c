@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -62,10 +62,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/utf8.h"
 #include "../lib/util/linked_list.h"
 
-//#define RRR_MQTT_FREEZE_TEST_ENABLE
-//#define RRR_BENCHMARK_ENABLE
-#include "../lib/benchmark.h"
-
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
 #define RRR_MQTT_DEFAULT_QOS 1
@@ -78,10 +74,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Number of incomplete PUBLISH QoS before we stop polling from other modules. This
 // limit is needed because operation gets extremely slow when to to_remote buffer
 // fills up in mqtt session_ram framework
-#define RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT 500
+// #define RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT 500
 
 // Hard limit to stop before things go really wrong
-#define RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT 2000
+// #define RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT 2000
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
@@ -1148,10 +1144,10 @@ static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_ms
 	return ret;
 }
 
-#define WRITE_TO_BUFFER_AND_SET_TO_NULL(message)								\
-	if ((ret = mqttclient_receive_publish_create_and_save_entry(message, data)) != 0) {	\
-		goto out;																\
-	}	RRR_FREE_IF_NOT_NULL(message)
+#define WRITE_TO_BUFFER_AND_SET_TO_NULL(message)                                                                               \
+    if ((ret = mqttclient_receive_publish_create_and_save_entry(message, data)) != 0) {                                        \
+        goto out;                                                                                                              \
+    } RRR_FREE_IF_NOT_NULL(message)
 
 static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
@@ -1343,49 +1339,47 @@ static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
 	return ret;
 }
 
-static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
-	int ret = RRR_MQTT_SOFT_ERROR; // Default is soft failure
+static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mqtt_client_data *data = thread_data->private_data;
 
-	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1) {
-		int alive = 0;
-		int send_allowed = 0;
-
-		if ((ret = rrr_mqtt_client_connection_check_alive (
-				&alive,
-				&send_allowed,
-				data->mqtt_client_data,
-				data->transport_handle
-		)) != 0) {
-			RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-
-		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
-		int something_happened = 0;
-		if ((ret = rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data)) != 0) {
-			RRR_MSG_0("Error in mqtt client instance %s while running tasks\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-
-		if (alive != 1) {
-			ret = RRR_MQTT_SOFT_ERROR;
-			goto out;
-		}
-
-		if (send_allowed != 0) {
-			ret = RRR_MQTT_OK;
-			goto out;
-		}
-
-		if (something_happened == 0) {
-			rrr_posix_usleep (50000); // 50 ms
-		}
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return 1;
 	}
 
-	out:
-	return ret;
+	int alive = 0;
+	int send_allowed = 0;
+
+	if (rrr_mqtt_client_connection_check_alive (
+			&alive,
+			&send_allowed,
+			data->mqtt_client_data,
+			data->transport_handle
+	) != 0) {
+		RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive\n",
+				INSTANCE_D_NAME(data->thread_data));
+		return RRR_MQTT_INTERNAL_ERROR;
+	}
+
+	if (alive != 1) {
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
+	if (send_allowed != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
+}
+		
+static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
+	return rrr_event_dispatch (
+			INSTANCE_D_EVENTS(data->thread_data),
+			1 * 100 * 1000, // 100 ms
+			mqttclient_wait_send_allowed_event_periodic,
+			INSTANCE_D_THREAD(data->thread_data)
+	);
 }
 
 static int mqttclient_late_client_identifier_update (struct mqtt_client_data *data) {
@@ -1637,7 +1631,6 @@ static void mqttlient_update_stats (
 		int to_remote_buffer_size,
 		int to_remote_unacknowledged_publish
 ) {
-
 	if (stats->stats_handle == 0) {
 		return;
 	}
@@ -1663,21 +1656,58 @@ static void mqttlient_update_stats (
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 }
 
-static void mqttclient_exit_message (void *arg) {
+static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	RRR_DBG_1 ("Thread mqtt client %p instance %s loop ended\n",
-			thread, INSTANCE_D_NAME(thread_data));
+	(void)(flags);
+
+	return rrr_poll_do_poll_delete (amount, thread_data, mqttclient_poll_callback, 0);
 }
 
-static void mqttclient_poststop (const struct rrr_thread *thread) {
-	// We only have this to show that poststop is called when we do freeze testing
-	RRR_DBG_1 ("Thread mqtt client %p in poststop\n", thread);
+static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mqtt_client_data *data = thread_data->private_data;
 
-#ifdef RRR_MQTT_FREEZE_TEST_ENABLE
-	printf("** FREEZE TEST POSTSTOP START %p *********************\n", thread);
-#endif /* RRR_MQTT_FREEZE_TEST_ENABLE */
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	int alive = 0;
+	int send_allowed = 0;
+
+	int ret_tmp;
+	if ((ret_tmp = rrr_mqtt_client_connection_check_alive (
+			&alive,
+			&send_allowed,
+			data->mqtt_client_data,
+			data->transport_handle
+	)) != 0) {
+		// Only returns OK or INTERNAL_ERROR
+		RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive return was %i\n",
+				INSTANCE_D_NAME(thread_data), ret_tmp);
+		return 1;
+	}
+
+	if (alive == 0) {
+		RRR_MSG_0("Connection lost for mqtt client instance %s, reconnecting\n",
+			INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_EXIT;
+	}
+
+	struct rrr_mqtt_session_iterate_send_queue_counters counters;
+
+	rrr_mqtt_client_counters_get(&counters, data->mqtt_client_data);
+
+	mqttlient_update_stats (
+			data,
+			INSTANCE_D_STATS(thread_data),
+			counters.buffer_size,
+			counters.incomplete_qos_publish_counter
+	);
+
+	return 0;
 }
 
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
@@ -1690,10 +1720,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
-
-	RRR_BENCHMARK_INIT(mqtt_client_deliver);
-	RRR_BENCHMARK_INIT(mqtt_client_sleep);
-	RRR_BENCHMARK_INIT(mqtt_client_tick);
 
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
@@ -1727,6 +1753,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			mqttclient_process_suback_unsuback,
 			data,
 			mqttclient_process_parsed_packet,
+			data,
+			mqttclient_receive_publish,
 			data
 		) != 0) {
 		RRR_MSG_0("Could not create new mqtt client\n");
@@ -1735,18 +1763,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
-
-	// This is done in mqttclient so to allow the message gets printed during when freeze test is enabled
-	pthread_cleanup_push(mqttclient_exit_message, thread);
-
-	int no_senders = 0;
-	if (rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
-		no_senders = 1;
-		if (data->publish_topic != NULL) {
-			RRR_MSG_0("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
-					INSTANCE_D_NAME(thread_data));
-		}
-	}
 
 	RRR_DBG_1 ("mqtt client started thread %p\n", thread_data);
 
@@ -1802,186 +1818,52 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto reconnect;
 	}
 
-	uint64_t startup_time = rrr_time_get_64() + RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000;
-
 	RRR_DBG_1("MQTT client %s startup send grace period %i ms started\n",
 			INSTANCE_D_NAME(data->thread_data),
 			RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS
 	);
 
+	rrr_posix_usleep (RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000);
+
 	// Successive connect attempts or re-connect does not require clean start to be set. Server
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
 	clean_start = 0;
 
-	// Main loop
+	ret_tmp = rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			mqttclient_event_periodic,
+			thread
+	);
 
-	// Defaults to 1, is set to 0 when to many PUBLISH are undelivered
-	int poll_allowed = 1;
-
-	unsigned int consecutive_nothing_happened = 0;
-
-#ifdef RRR_MQTT_FREEZE_TEST_ENABLE
-	uint64_t freeze_start_time = rrr_time_get_64() + 500000; // 500ms
-	uint64_t freeze_end_time = rrr_time_get_64() + 10000000; // 8s
-#endif
-
-	uint64_t prev_stats_time = rrr_time_get_64();
-
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_watchdog_time_update(thread);
-
-		int alive = 0;
-		int send_allowed = 0;
-
-		if ((ret_tmp = rrr_mqtt_client_connection_check_alive (
-				&alive,
-				&send_allowed,
-				data->mqtt_client_data,
-				data->transport_handle
-		)) != 0) {
-			// Only returns OK or INTERNAL_ERROR
-			RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive return was %i\n",
-					INSTANCE_D_NAME(thread_data), ret_tmp);
-			goto out_destroy_client;
-		}
-
-		if (alive == 0) {
-			RRR_MSG_0("Connection lost for mqtt client instance %s, reconnecting\n",
-				INSTANCE_D_NAME(thread_data));
-			goto reconnect;
-		}
-
-		int something_happened = 0;
-
-		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
-
-		RRR_BENCHMARK_IN(mqtt_client_tick);
-		ret_tmp = rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data);
-		RRR_BENCHMARK_OUT(mqtt_client_tick);
-		if (ret_tmp != RRR_MQTT_OK) {
-			if ((ret_tmp & RRR_MQTT_INTERNAL_ERROR) != 0) {
-				RRR_MSG_0("Error in mqtt client instance %s while running tasks return was %i\n",
-						INSTANCE_D_NAME(thread_data), ret_tmp);
-				break;
-			}
-			goto reconnect;
-		}
-
-
-		if (counters.incomplete_qos_publish_counter > RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT ||
-			counters.buffer_size > RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT
-		) {
-			if (poll_allowed == 1) {
-				RRR_DBG_2("Polling disabled in MQTT client instance %s, %u PUBLISH with QOS undelivered as this time with buffer size %u\n",
-						INSTANCE_D_NAME(thread_data),
-						counters.incomplete_qos_publish_counter,
-						counters.buffer_size
-				);
-			}
-			poll_allowed = 0;
-		}
-		else if (poll_allowed == 0) {
-			if (counters.incomplete_qos_publish_counter < (RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT / 2) &&
-				counters.buffer_size < (RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT / 2)
-			) {
-				RRR_DBG_2("Polling re-enabled in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
-				poll_allowed = 1;
-			}
-		}
-
-		RRR_BENCHMARK_IN(mqtt_client_deliver);
-		ret_tmp = rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data);
-		RRR_BENCHMARK_OUT(mqtt_client_deliver);
-		if (ret_tmp != RRR_MQTT_OK) {
-			if ((ret_tmp & RRR_MQTT_INTERNAL_ERROR) != 0) {
-				RRR_MSG_0("Error while iterating local delivery queue in mqtt client instance %s return was %i\n",
-						INSTANCE_D_NAME(thread_data), ret_tmp);
-				break;
-			}
-			goto reconnect;
-		}
-
-		// When adjusting sleep algorithm, test throughput properly afterwards with different configurations
-
-		int poll_sleep = 0;
-
-		if (something_happened == 0) {
-			if (++consecutive_nothing_happened > 100) {
-				poll_sleep = 30;
-			}
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		if (poll_allowed == 1 && (time_now > startup_time)) {
-			if (poll_sleep > 0) {
-				data->total_usleep_count++;
-			}
-
-			if (no_senders) {
-				rrr_posix_usleep(10000); // 10ms
-			}
-			else {
-				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				uint16_t amount = 100;
-				ret_tmp = rrr_poll_do_poll_delete (&amount, thread_data, mqttclient_poll_callback, poll_sleep);
-				RRR_BENCHMARK_OUT(mqtt_client_sleep);
-				if (ret_tmp != 0) {
-					RRR_MSG_0("Error while polling from senders in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
-					break;
-				}
-			}
-		}
-
-		data->total_ticks_count++;
-
-		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
-			mqttlient_update_stats (
-					data,
-					INSTANCE_D_STATS(thread_data),
-					counters.buffer_size,
-					counters.incomplete_qos_publish_counter
-			);
-			prev_stats_time = rrr_time_get_64();
-		}
-
-#ifdef RRR_MQTT_FREEZE_TEST_ENABLE
-		if (rrr_time_get_64() > freeze_start_time) {
-			printf("** FREEZE TEST START %p ******************************\n", thread);
-			while (rrr_time_get_64() < freeze_end_time) {
-				rrr_slow_noop();
-				// Freeze :-)
-			}
-			// Watchdog will send pthread_cancel while we are in the loop.
-			// We should jump directly to first pthread cleanup pop now
-			pthread_testcancel();
-			printf("** FREEZE TEST END %p (this should not print) ********\n", thread);
-		}
-#endif
+	if (ret_tmp != 0 || rrr_thread_signal_encourage_stop_check(thread)) {
+		goto out_destroy_client;
 	}
 
+	goto reconnect;
+
 	out_destroy_client:
-		pthread_cleanup_pop(1);
+		RRR_DBG_1 ("Thread mqtt client %p instance %s loop ended\n",
+				thread, INSTANCE_D_NAME(thread_data));
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p instance %s exiting\n",
 				thread, INSTANCE_D_NAME(thread_data));
 		pthread_cleanup_pop(1);
-		RRR_BENCHMARK_DUMP(mqtt_client_tick);
-		RRR_BENCHMARK_DUMP(mqtt_client_sleep);
-		RRR_BENCHMARK_DUMP(mqtt_client_deliver);
 		pthread_exit(0);
 }
 
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
-		mqttclient_poststop,
+		NULL,
 		NULL,
 		NULL
+};
+
+struct rrr_instance_event_functions event_functions = {
+	mqttclient_event_broker_data_available
 };
 
 static const char *module_name = "mqtt_client";
@@ -1994,6 +1876,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {
