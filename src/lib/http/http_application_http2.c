@@ -609,7 +609,7 @@ static int __rrr_http_application_http2_tick (
 			http2->transaction_incomplete_upgrade = NULL;
 		}
 
-		if (ret &= ~(RRR_HTTP_NO_RESULT) != 0) {
+		if (ret & ~(RRR_HTTP_NO_RESULT) != 0) {
 			goto out;
 		}
 	}
@@ -620,12 +620,12 @@ static int __rrr_http_application_http2_tick (
 					__rrr_http_application_http2_streams_iterate_callback,
 					&callback_data
 			)) != 0) {
-				printf("Streams iterate ret %i\n", ret);
 				goto out;
 			}
 		}
 	}
 
+	printf("Tick\n");
 	if ((ret = rrr_http2_transport_ctx_tick (
 			http2->http2_session,
 			handle,
