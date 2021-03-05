@@ -1741,6 +1741,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		data->client_identifier, // May be NULL
 		RRR_MQTT_COMMON_RETRY_INTERVAL,
 		RRR_MQTT_COMMON_CLOSE_WAIT_TIME,
+		RRR_MQTT_CLIENT_KEEP_ALIVE * 1.5,
 		RRR_MQTT_COMMON_MAX_CONNECTIONS
 	};
 

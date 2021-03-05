@@ -259,6 +259,7 @@ int rrr_mqtt_common_data_init (
 			&data->transport,
 			init_data->max_socket_connections,
 			init_data->close_wait_time_usec,
+			init_data->connection_hard_timeout_usec,
 			queue,
 			__rrr_mqtt_common_connection_event_handler,
 			data,
@@ -1312,35 +1313,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 	};
 
 	return __rrr_mqtt_common_read_parse_handle_callback(handle, &callback_data);
-}
-
-int rrr_mqtt_common_read_parse_handle (
-		struct rrr_mqtt_session_iterate_send_queue_counters *session_iterate_counters,
-		int *something_happened,
-		struct rrr_mqtt_data *data,
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	struct rrr_mqtt_common_read_parse_handle_callback_data callback_data = {
-			data,
-			{ exceeded_keep_alive_callback, callback_arg },
-			0,
-			session_iterate_counters
-	};
-
-	ret |= rrr_mqtt_transport_iterate (
-			data->transport,
-			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			__rrr_mqtt_common_read_parse_handle_callback,
-			&callback_data
-	);
-
-	*something_happened = callback_data.something_happened;
-
-	// Only let internal error propagate
-	return ret & RRR_MQTT_INTERNAL_ERROR;
 }
 
 int rrr_mqtt_common_iterate_and_clear_local_delivery (

@@ -328,6 +328,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data),
 			data->retry_interval * 1000 * 1000,
 			data->close_wait_time * 1000 * 1000,
+			data->max_keep_alive * 1.5,
 			RRR_MQTT_COMMON_MAX_CONNECTIONS
 	};
 
