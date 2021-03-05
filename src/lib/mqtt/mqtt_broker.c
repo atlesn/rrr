@@ -1041,6 +1041,40 @@ void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker)
 	rrr_mqtt_common_data_notify_pthread_cancel(&broker->mqtt_data);
 }
 
+static int __rrr_mqtt_broker_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_mqtt_broker_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
+
+	if ((ret = rrr_mqtt_common_read_parse_single_handle (
+			&session_iterate_counters,
+			&data->mqtt_data,
+			handle,
+			NULL,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	// TODO : Don't do this for every read
+	if ((ret = data->mqtt_data.sessions->methods->maintain (
+			data->mqtt_data.sessions
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	// Always update. Connection framework might successfully close connections before producing errors,
+	// in which the counter will have been incremented.
+	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->stats.total_connections_closed += 0);
+
+	return ret;
+}
+
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
@@ -1082,6 +1116,8 @@ int rrr_mqtt_broker_new (
 			__rrr_mqtt_broker_event_handler,
 			res,
 			__rrr_mqtt_broker_acl_handler,
+			res,
+			__rrr_mqtt_broker_read_callback,
 			res
 	)) != 0) {
 		RRR_MSG_0("Could not initialize mqtt data in rrr_mqtt_broker_new\n");

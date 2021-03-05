@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_session.h"
 #include "../read_constants.h"
+#include "../net_transport/net_transport.h"
 
 #define RRR_MQTT_OK                        RRR_READ_OK
 #define RRR_MQTT_INTERNAL_ERROR            RRR_READ_HARD_ERROR
@@ -253,7 +254,9 @@ int rrr_mqtt_common_data_init (
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_static_arg,
 		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
-		void *acl_handler_arg
+		void *acl_handler_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
 );
 int rrr_mqtt_common_parse_connect_properties_callback (
 		const struct rrr_mqtt_property *property,
@@ -313,6 +316,13 @@ int rrr_mqtt_common_update_conn_state_upon_disconnect (
 int rrr_mqtt_common_send_from_sessions_callback (
 		struct rrr_mqtt_p *packet,
 		void *arg
+);
+int rrr_mqtt_common_read_parse_single_handle (
+		struct rrr_mqtt_session_iterate_send_queue_counters *session_iterate_counters,
+		struct rrr_mqtt_data *data,
+		struct rrr_net_transport_handle *handle,
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		void *callback_arg
 );
 int rrr_mqtt_common_read_parse_handle (
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,

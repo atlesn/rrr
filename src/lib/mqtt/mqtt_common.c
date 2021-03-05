@@ -221,15 +221,6 @@ static int __rrr_mqtt_common_connection_event_handler (
 	return ret;
 }
 
-static int __rrr_mqtt_common_read_callback (
-		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
-) {
-	struct rrr_mqtt_data *data = arg;
-
-	printf("MQTT common read callback\n");
-	return 0;
-}
-
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
@@ -240,7 +231,9 @@ int rrr_mqtt_common_data_init (
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_static_arg,
 		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
-		void *acl_handler_arg
+		void *acl_handler_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
 ) {
 	int ret = 0;
 
@@ -270,8 +263,8 @@ int rrr_mqtt_common_data_init (
 			__rrr_mqtt_common_connection_event_handler,
 			data,
 			rrr_mqtt_conn_accept_and_connect_callback,
-			__rrr_mqtt_common_read_callback,
-			data
+			read_callback,
+			read_callback_arg
 	) != 0) {
 		RRR_MSG_0("Could not initialize connection collection in rrr_mqtt_data_new\n");
 		ret = 1;
@@ -1302,6 +1295,23 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 	out:
 	// Soft error will propagate to net transport framework which handles disconnection and destruction
 	return ret | ret_preserve;
+}
+
+int rrr_mqtt_common_read_parse_single_handle (
+		struct rrr_mqtt_session_iterate_send_queue_counters *session_iterate_counters,
+		struct rrr_mqtt_data *data,
+		struct rrr_net_transport_handle *handle,
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		void *callback_arg
+) {
+	struct rrr_mqtt_common_read_parse_handle_callback_data callback_data = {
+			data,
+			{ exceeded_keep_alive_callback, callback_arg },
+			0,
+			session_iterate_counters
+	};
+
+	return __rrr_mqtt_common_read_parse_handle_callback(handle, &callback_data);
 }
 
 int rrr_mqtt_common_read_parse_handle (
