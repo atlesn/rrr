@@ -1260,20 +1260,29 @@ int rrr_socket_send_blocking (
 }
 
 int rrr_socket_check_alive (int fd) {
-	int ret = RRR_SOCKET_OK;
-
 	struct pollfd pollfd = {0};
 
 	pollfd.fd = fd;
+	pollfd.events = POLLIN;
 
-	if ((ret = poll(&pollfd, 1, 10)) > 0) {
-		if (pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-			ret = RRR_SOCKET_SOFT_ERROR;
+	int ret_tmp = poll(&pollfd, 1, 10);
+
+	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
+		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n", fd, rrr_strerror(errno), pollfd.revents);
+		return RRR_SOCKET_SOFT_ERROR;
+	}
+	else if (ret_tmp > 0) {
+		char buf[1];
+		ret_tmp = recv(fd, buf, sizeof(buf), MSG_PEEK|MSG_DONTWAIT);
+		if (ret_tmp < 0) {
+			RRR_DBG_7("fd %i recv peek error in check alive: %s\n", fd, rrr_strerror(errno));
+			return RRR_SOCKET_SOFT_ERROR;
+		}
+		else if (ret_tmp == 0) {
+			RRR_DBG_7("fd %i recv EOF in check alive, connection closed\n", fd);
+			return RRR_READ_EOF;
 		}
 	}
-	else if (ret < 0) {
-		ret = RRR_SOCKET_SOFT_ERROR;
-	}
 
-	return ret;
+	return RRR_SOCKET_OK;
 }

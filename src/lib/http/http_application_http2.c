@@ -602,28 +602,27 @@ static int __rrr_http_application_http2_tick (
 	};
 
 	if (http2->transaction_incomplete_upgrade != NULL) {
-		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) != 0) {
-			ret &= ~(RRR_HTTP_NO_RESULT);
-			goto out;
+		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) == 0) {
+			ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
+
+			rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
+			http2->transaction_incomplete_upgrade = NULL;
 		}
 
-		ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
-
-		rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
-		http2->transaction_incomplete_upgrade = NULL;
-
-		if (ret != 0) {
+		if (ret &= ~(RRR_HTTP_NO_RESULT) != 0) {
 			goto out;
 		}
 	}
-
-	if (async_response_get_callback != NULL) {
-		if ((ret = rrr_http2_transport_ctx_streams_iterate (
-				http2->http2_session,
-				__rrr_http_application_http2_streams_iterate_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
+	else {
+		if (async_response_get_callback != NULL) {
+			if ((ret = rrr_http2_transport_ctx_streams_iterate (
+					http2->http2_session,
+					__rrr_http_application_http2_streams_iterate_callback,
+					&callback_data
+			)) != 0) {
+				printf("Streams iterate ret %i\n", ret);
+				goto out;
+			}
 		}
 	}
 
