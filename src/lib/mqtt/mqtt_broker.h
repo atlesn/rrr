@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 struct rrr_mqtt_acl;
+struct rrr_mqtt_broker_data;
+struct rrr_event_queue;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 
@@ -82,6 +84,7 @@ static inline void rrr_mqtt_broker_notify_pthread_cancel_void (void *broker) {
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		uint16_t max_keep_alive,
 		const char *password_file,
 		const char *permission_name,

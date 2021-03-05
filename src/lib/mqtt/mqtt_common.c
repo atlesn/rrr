@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
+
+struct rrr_event_queue *queue;
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
         .numbers.session_expiry                      = 0,
@@ -219,10 +221,20 @@ static int __rrr_mqtt_common_connection_event_handler (
 	return ret;
 }
 
+static int __rrr_mqtt_common_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_mqtt_data *data = arg;
+
+	printf("MQTT common read callback\n");
+	return 0;
+}
+
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
@@ -254,7 +266,11 @@ int rrr_mqtt_common_data_init (
 			&data->transport,
 			init_data->max_socket_connections,
 			init_data->close_wait_time_usec,
+			queue,
 			__rrr_mqtt_common_connection_event_handler,
+			data,
+			rrr_mqtt_conn_accept_and_connect_callback,
+			__rrr_mqtt_common_read_callback,
 			data
 	) != 0) {
 		RRR_MSG_0("Could not initialize connection collection in rrr_mqtt_data_new\n");

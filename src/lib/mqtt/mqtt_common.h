@@ -137,6 +137,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_net_transport;
 struct rrr_net_transport_handle;
+struct rrr_event_queue;
 struct rrr_mqtt_data;
 struct rrr_mqtt_conn;
 struct rrr_mqtt_p_publish;
@@ -246,6 +247,7 @@ int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),

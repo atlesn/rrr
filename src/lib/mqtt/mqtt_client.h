@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_common.h"
 
+struct rrr_event_queue;
 struct rrr_mqtt_session_collection;
 struct rrr_mqtt_p_suback_unsuback;
 struct rrr_net_transport_config;
@@ -100,6 +101,7 @@ static inline void rrr_mqtt_client_notify_pthread_cancel_void (void *client) {
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),

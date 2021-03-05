@@ -1721,6 +1721,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	if (rrr_mqtt_client_new (
 			&data->mqtt_client_data,
 			&init_data,
+			INSTANCE_D_EVENTS(thread_data),
 			rrr_mqtt_session_collection_ram_new,
 			NULL,
 			mqttclient_process_suback_unsuback,

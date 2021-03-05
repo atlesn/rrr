@@ -1044,6 +1044,7 @@ void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker)
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		uint16_t max_keep_alive,
 		const char *password_file,
 		const char *permission_name,
@@ -1075,6 +1076,7 @@ int rrr_mqtt_broker_new (
 			&res->mqtt_data,
 			handler_properties,
 			init_data,
+			queue,
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_broker_event_handler,

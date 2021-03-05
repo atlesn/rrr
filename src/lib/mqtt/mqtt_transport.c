@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 
+#include "../event.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
@@ -59,8 +60,12 @@ int rrr_mqtt_transport_new (
 		struct rrr_mqtt_transport **result,
 		unsigned int max_connections,
 		uint64_t close_wait_time_usec,
+		struct rrr_event_queue *queue,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_arg
+		void *event_handler_arg,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
 ) {
 	int ret = RRR_MQTT_OK;
 
@@ -76,19 +81,34 @@ int rrr_mqtt_transport_new (
 
 	memset (transport, '\0', sizeof(*transport));
 
-//	transport->invalid = 1;
 	transport->event_handler = event_handler;
 	transport->event_handler_static_arg = event_handler_arg;
+	transport->queue = queue;
+	transport->accept_callback = accept_callback;
+	transport->read_callback = read_callback;
+	transport->read_callback_arg = read_callback_arg;
 	transport->max = max_connections;
 	transport->close_wait_time_usec = close_wait_time_usec;
 
 	*result = transport;
 
-	goto out;
-//	out_destroy_transport_plain:
-//		rrr_net_transport_destroy(connections->transport_plain);
 	out:
-		return ret;
+	return ret;
+}
+
+static void __rrr_mqtt_transport_accept_callback (
+		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_mqtt_transport *transport = arg;
+
+	struct rrr_mqtt_common_accept_and_connect_callback_data callback_data = {
+			0,
+			transport->close_wait_time_usec,
+			transport->event_handler,
+			transport->event_handler_static_arg
+	};
+
+	transport->accept_callback(handle, sockaddr, socklen, &callback_data);
 }
 
 int rrr_mqtt_transport_start (
@@ -134,6 +154,19 @@ int rrr_mqtt_transport_start (
 	}
 
 	transport->transports[transport->transport_count++] = tmp;
+
+	if ((ret = rrr_net_transport_event_setup (
+			tmp,
+			transport->queue,
+			0, // TODO : Set timers?
+			0,
+			__rrr_mqtt_transport_accept_callback,
+			transport->transports[transport->transport_count - 1],
+			transport->read_callback,
+			transport->read_callback_arg
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

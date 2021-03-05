@@ -292,11 +292,6 @@ void rrr_net_transport_common_cleanup (
 			struct rrr_net_transport_handle,
 			__rrr_net_transport_handle_destroy (node, 0)
 	);
-	if (transport->event_maintenance) {
-		event_del(transport->event_maintenance);
-		event_free(transport->event_maintenance);
-	}
-	transport->event_base = NULL;
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
 
@@ -436,6 +431,12 @@ void rrr_net_transport_destroy (
 	rrr_net_transport_maintenance(transport);
 
 	rrr_net_transport_common_cleanup(transport);
+
+	if (transport->event_maintenance) {
+		event_del(transport->event_maintenance);
+		event_free(transport->event_maintenance);
+	}
+	transport->event_base = NULL;
 
 	pthread_mutex_destroy(&transport->handles.lock);
 

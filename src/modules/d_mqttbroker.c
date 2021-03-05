@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt/mqtt_common.h"
 #include "../lib/mqtt/mqtt_session_ram.h"
 #include "../lib/mqtt/mqtt_acl.h"
+#include "../lib/message_broker.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
@@ -309,6 +310,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	if (rrr_mqtt_broker_new (
 			&data->mqtt_broker_data,
 			&init_data,
+			INSTANCE_D_EVENTS(thread_data),
 			data->max_keep_alive,
 			data->password_file,
 			data->permission_name,

@@ -772,6 +772,7 @@ void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client)
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
@@ -795,6 +796,7 @@ int rrr_mqtt_client_new (
 			&result->mqtt_data,
 			handler_properties,
 			init_data,
+			queue,
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_client_event_handler,
