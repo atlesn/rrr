@@ -916,81 +916,10 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 //	return 0;
 }
 
-int rrr_msgdb_server_tick (
-		struct rrr_msgdb_server *server
-) {
-	int ret = 0;
-
-	if ((ret = rrr_socket_client_collection_accept (
-		server->clients,
-		__rrr_msgdb_server_client_new_void,
-		NULL,
-		__rrr_msgdb_server_client_destroy_void
-	)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_socket_client_collection_read_message (
-			server->clients,
-			4096,
-			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-			__rrr_msgdb_server_read_msg_msg_callback,
-			NULL,
-			NULL,
-			__rrr_msgdb_server_read_msg_ctrl_callback,
-			server
-	)) != 0) {
-		goto out;
-	}
-
-	rrr_socket_client_collection_send_tick (
-			server->clients
-	);
-
-	out:
-	return ret;
-}
-
 uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
 ) {
 	return server->recv_count;
-}
-
-/*
-static int __rrr_msgdb_server_dispatch_periodic (
-	void *arg
-) {
-	struct rrr_msgdb_server *server = arg;
-
-	(void)(server);
-
-	return 0;
-}
-*/
-int rrr_msgdb_server_dispatch (
-		struct rrr_msgdb_server *server,
-		struct rrr_event_queue *queue,
-		int (*periodic_callback)(void *arg),
-		void *periodic_callback_arg
-) {
-	return rrr_socket_client_collection_dispatch (
-			server->clients,
-			queue,
-			500 * 1000, // 500 ms
-			__rrr_msgdb_server_client_new_void,
-			__rrr_msgdb_server_client_destroy_void,
-			NULL,
-			periodic_callback,
-			periodic_callback_arg,
-			4096,
-			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-			__rrr_msgdb_server_read_msg_msg_callback,
-			NULL,
-			NULL,
-			__rrr_msgdb_server_read_msg_ctrl_callback,
-			server
-	);
 }
 
 int rrr_msgdb_server_event_setup (

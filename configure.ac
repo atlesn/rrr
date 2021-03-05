@@ -286,6 +286,9 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+# Make sure Perl-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -376,6 +379,9 @@ AS_IF([test "x$enable_perl5" = xno], [
 
 	AC_SUBST([PERL5_INTERPRETER])
 ])
+
+# Make sure Python-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
@@ -510,6 +516,9 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+# Make sure json-c-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([json-c bindings])
 AS_IF([test "x$enable_jsonc" = xno], [
 	AC_MSG_RESULT([Not compiling with json-c bindings])
@@ -569,6 +578,9 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LDFLAGS])
 	AC_SUBST([NGHTTP2_LIBS])
 ])
+
+# Make sure MySQL-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [

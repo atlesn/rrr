@@ -79,6 +79,29 @@ int rrr_socket_send_chunk_collection_push (
 	return ret;
 }
 
+int rrr_socket_send_chunk_collection_push_const (
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+) {
+	int ret = 0;
+
+	void *data_copy = malloc(data_size);
+	if (data_copy == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_socket_send_chunk_collection_push_const\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(data_copy, data, data_size);
+
+	ret = rrr_socket_send_chunk_collection_push (target, &data_copy, data_size);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_copy);
+	return ret;
+}
+
 int rrr_socket_send_chunk_collection_sendto (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
@@ -109,5 +132,41 @@ int rrr_socket_send_chunk_collection_sendto (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(chunks, 0; __rrr_socket_send_chunk_destroy(node));
 
 	out:
+	return ret;
+}
+
+int rrr_socket_send_chunk_collection_sendto_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int (*callback)(ssize_t *written_bytes, const void *data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(chunks, struct rrr_socket_send_chunk);
+		RRR_DBG_7("Chunk send with callback pos/size %lld/%lld\n",
+			(long long int) node->data_pos, (long long int) node->data_size);
+
+		ssize_t written_bytes = 0;
+
+		ret = callback (
+				&written_bytes,
+				node->data + node->data_pos,
+				node->data_size - node->data_pos,
+				callback_arg
+		) &~ RRR_SOCKET_WRITE_INCOMPLETE;
+
+		node->data_pos += written_bytes;
+		if (node->data_pos > node->data_size) {
+			RRR_BUG("BUG: Too many bytes written in rrr_socket_send_chunk_collection_sendto_with_callback\n");
+		}
+		else if (node->data_pos == node->data_size) {
+			RRR_LL_ITERATE_SET_DESTROY(); // Chunk complete
+		}
+
+		if (ret != 0 || written_bytes == 0) {
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(chunks, 0; __rrr_socket_send_chunk_destroy(node));
+
 	return ret;
 }

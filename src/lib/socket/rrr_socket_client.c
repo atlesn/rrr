@@ -47,10 +47,6 @@ struct rrr_socket_client_collection_event_callback_data {
 	void (*callback_private_data_destroy)(void *private_data);
 	void *callback_private_data_arg;
 
-	int  (*callback_periodic)(void *arg);
-	void *callback_periodic_arg;
-	int callback_periodic_ret;
-
 	ssize_t read_step_max_size;
 	int read_flags_socket;
 	RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
@@ -64,10 +60,10 @@ struct rrr_socket_client_collection {
 
 	struct rrr_socket_client_collection_event_callback_data callback_data;
 
-	// Managed pointers
 	struct event_base *event_base;
+
+	// Managed pointers
 	struct event *listen_event;
-	struct event *periodic_event;
 };
 
 struct rrr_socket_client {
@@ -180,11 +176,6 @@ static void __rrr_socket_client_collection_clear (
 		event_del(collection->listen_event);
 		event_free(collection->listen_event);
 		collection->listen_event = NULL;
-	}
-	if (collection->periodic_event != NULL) {
-		event_del(collection->periodic_event);
-		event_free(collection->periodic_event);
-		collection->periodic_event = NULL;
 	}
 }
 
@@ -761,117 +752,6 @@ static void __rrr_socket_client_collection_event_accept (
 	}
 }
 
-static void __rrr_socket_client_collection_event_periodic (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_socket_client_collection *collection = arg;
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
-
-	(void)(fd);
-	(void)(flags);
-
-	if ( callback_data->callback_periodic != NULL &&
-	    (callback_data->callback_periodic_ret = callback_data->callback_periodic(callback_data->callback_arg)) != 0
-	) {
-		event_base_loopbreak(collection->event_base);
-	}
-}
-
-int rrr_socket_client_collection_dispatch (
-		struct rrr_socket_client_collection *collection,
-		struct rrr_event_queue *queue,
-		uint64_t periodic_interval_us,
-		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
-		void (*callback_private_data_destroy)(void *private_data),
-		void *callback_private_data_arg,
-		int (*callback_periodic)(void *arg),
-		void *callback_periodic_arg,
-		ssize_t read_step_max_size,
-		int read_flags_socket,
-		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
-		void *callback_arg
-) {
-	int ret = 0;
-
-	__rrr_socket_client_collection_clear(collection);
-
-	collection->event_base = rrr_event_queue_base_get(queue);
-
-	{
-		struct rrr_socket_client_collection_event_callback_data callback_data = {
-			callback_private_data_new,
-			callback_private_data_destroy,
-			callback_private_data_arg,
-			callback_periodic,
-			callback_periodic_arg,
-			0,
-			read_step_max_size,
-			read_flags_socket,
-			callback_msg,
-			callback_addr_msg,
-			callback_log_msg,
-			callback_ctrl_msg,
-			callback_arg
-		};
-
-		collection->callback_data = callback_data;
-	}
-
-	if ((collection->listen_event = event_new (
-			collection->event_base,
-			collection->listen_fd,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
-			__rrr_socket_client_collection_event_accept,
-			collection
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
-		ret = 1;
-		goto out;
-	}
-
-	struct timeval tv_interval = {0};
-
-	tv_interval.tv_usec = periodic_interval_us % 1000000;
-	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
-
-	if ((collection->periodic_event = event_new (
-			collection->event_base,
-			0,
-			EV_PERSIST,
-			__rrr_socket_client_collection_event_periodic,
-			collection
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (event_add(collection->periodic_event, &tv_interval) || event_add(collection->listen_event, NULL)) {
-		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_dispatch\n");
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = event_base_dispatch(collection->event_base)) != 0) {
-		RRR_MSG_0("Error from event_base_dispatch in rrr_socket_client_collection_dispatch: %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	if (collection->callback_data.callback_periodic_ret != 0) {
-		ret = collection->callback_data.callback_periodic_ret & ~(RRR_READ_EOF);
-	}
-	else if (event_base_got_break(collection->event_base)) {
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 int rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,
@@ -894,9 +774,6 @@ int rrr_socket_client_collection_event_setup (
 			callback_private_data_new,
 			callback_private_data_destroy,
 			callback_private_data_arg,
-			NULL,
-			NULL,
-			0,
 			read_step_max_size,
 			read_flags_socket,
 			callback_msg,
@@ -916,13 +793,13 @@ int rrr_socket_client_collection_event_setup (
 			__rrr_socket_client_collection_event_accept,
 			collection
 	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_dispatch\n");
+		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_event_setup\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (event_add(collection->listen_event, NULL)) {
-		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_dispatch\n");
+		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_event_setup\n");
 		ret = 1;
 		goto out;
 	}

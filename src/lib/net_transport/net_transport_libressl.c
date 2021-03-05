@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "net_transport_libressl.h"
 #include "net_transport_tls_common.h"
+#include "net_transport_struct.h"
 #include "net_transport.h"
 
 #include "../rrr_strerror.h"
@@ -146,7 +147,7 @@ static int __rrr_net_transport_libressl_connect_callback (
 	struct rrr_net_transport_tls_data *data = NULL;
 
 	*submodule_private_ptr = NULL;
-	*submodule_private_fd = 0;
+	*submodule_fd = 0;
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&data)) != 0) {
 		RRR_MSG_0("Could not create TLS data in __rrr_net_transport_libressl_connect_callback\n");
@@ -186,7 +187,7 @@ static int __rrr_net_transport_libressl_connect_callback (
 	data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = data;
-	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
+	*submodule_fd = callback_data->accept_data->ip_data.fd;
 
 	goto out;
 	out_config_error:
@@ -271,7 +272,7 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 	struct rrr_net_transport_tls_data *data = NULL;
 
 	*submodule_private_ptr = NULL;
-	*submodule_private_fd = 0;
+	*submodule_fd = 0;
 
 	if ((ret = __rrr_net_transport_libressl_data_new(&data)) != 0) {
 		RRR_MSG_0("Could not create TLS data in __rrr_net_transport_libressl_bind_and_listen_callback\n");
@@ -300,7 +301,7 @@ static int __rrr_net_transport_libressl_bind_and_listen_callback (
 	}
 
 	*submodule_private_ptr = data;
-	*submodule_private_fd = data->ip_data.fd;
+	*submodule_fd = data->ip_data.fd;
 
 	goto out;
 	out_config_error:
@@ -370,7 +371,7 @@ int __rrr_net_transport_libressl_accept_callback (
 	int ret = 0;
 
 	*submodule_private_ptr = NULL;
-	*submodule_private_fd = 0;
+	*submodule_fd = 0;
 
 	struct rrr_net_transport_tls_data *new_data = NULL;
 
@@ -399,7 +400,7 @@ int __rrr_net_transport_libressl_accept_callback (
 	new_data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = new_data;
-	*submodule_private_fd = callback_data->accept_data->ip_data.fd;
+	*submodule_fd = callback_data->accept_data->ip_data.fd;
 
 	goto out;
 	out_destroy_data:
@@ -606,7 +607,7 @@ static int __rrr_net_transport_libressl_send (
 	ssize_t size_remaining = size;
 	struct pollfd pfd = {0};
 
-	pfd.fd = handle->submodule_private_fd;
+	pfd.fd = handle->submodule_fd;
 	pfd.events = POLLIN|POLLOUT;
 	while (size_remaining > 0 && --retries > 0) {
 		int ret_tmp = poll(&pfd, 1, 0);
@@ -657,7 +658,7 @@ static int __rrr_net_transport_libressl_send (
 static int __rrr_net_transport_libressl_poll (
 		struct rrr_net_transport_handle *handle
 ) {
-	return rrr_socket_check_alive (handle->submodule_private_fd);
+	return rrr_socket_check_alive (handle->submodule_fd);
 }
 
 static int __rrr_net_transport_libressl_is_tls (void) {

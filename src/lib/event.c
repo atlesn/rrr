@@ -109,6 +109,8 @@ int rrr_event_queue_new (
 ) {
 	int ret = 0;
 
+	struct event_config *cfg = NULL;
+
 	// TODO : use_pthreads might not be needed as the libevent
 	//        structures are only accessed by one thread.
 	pthread_mutex_lock(&init_lock);
@@ -127,6 +129,19 @@ int rrr_event_queue_new (
 
 	struct rrr_event_queue *queue = NULL;
 
+	if ((cfg = event_config_new()) == NULL) {
+		RRR_MSG_0("Could not create event config in rrr_event_queue_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	// epoll does not work with UNIX files, use poll instead
+	if (event_config_avoid_method(cfg, "epoll") != 0) {
+		RRR_MSG_0("event_config_avoid_method() failed in rrr_event_queue_new\n");
+		ret = 1;
+		goto out;
+	}
+
 	if ((queue = rrr_posix_mmap(sizeof(*queue))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
 		ret = 1;
@@ -139,10 +154,16 @@ int rrr_event_queue_new (
 		goto out_munmap;
 	}
 
-	if ((queue->event_base = event_base_new()) == NULL) {
+	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
 		ret = 1;
 		goto out_destroy_lock;
+	}
+
+	if (event_base_priority_init (queue->event_base, RRR_EVENT_PRIORITY_COUNT) != 0) {
+		RRR_MSG_0("Failed to initialize priority queues in rrr_event_queue_new\n");
+		ret = 1;
+		goto out_destroy_event_base;
 	}
 
 	char buf[PATH_MAX];
@@ -203,6 +224,9 @@ int rrr_event_queue_new (
 	out_munmap:
 		munmap(queue, sizeof(*queue));
 	out:
+		if (cfg != NULL) {
+		        event_config_free(cfg);
+		}
 		return ret;
 }
 
@@ -411,7 +435,7 @@ int rrr_event_dispatch (
 
 	if ((periodic_event = event_new (
 			queue->event_base,
-			0,
+			-1,
 			EV_TIMEOUT|EV_PERSIST,
 			__rrr_event_periodic,
 			&callback_data

@@ -200,25 +200,15 @@ static ssize_t __rrr_http2_send_callback (
 		length = SSIZE_MAX;
 	}
 
-	uint64_t bytes_written = 0;
+	// TODO : Maybe event framework can send from nghttp2 directly instead of copying data to net transport first
+
 	int ret = 0;
-	if ((ret = rrr_net_transport_ctx_send_nonblock(&bytes_written, session->callback_data.handle, data, length)) != 0) {
-		ret &= ~(RRR_NET_TRANSPORT_SEND_INCOMPLETE);
-		if (ret & RRR_NET_TRANSPORT_READ_READ_EOF) {
-			RRR_DBG_3("http2 EOF while sending\n");
-			return NGHTTP2_ERR_EOF;
-		}
-		else if (ret != 0) {
-			RRR_DBG_3("http2 send failed with error %i\n", ret);
-			return NGHTTP2_ERR_CALLBACK_FAILURE;
-		}
+	if ((ret = rrr_net_transport_ctx_send_push (session->callback_data.handle, data, length)) != 0) {
+		RRR_DBG_3("http2 send push failed with error %i\n", ret);
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	if (bytes_written > SSIZE_MAX) {
-		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_send_callback, this should not be possible\n");
-	}
-
-	return (bytes_written > 0 ? bytes_written : NGHTTP2_ERR_WOULDBLOCK);
+	return length;
 }
 
 static ssize_t __rrr_http2_recv_callback (
@@ -987,9 +977,14 @@ int rrr_http2_streams_count (
 	return RRR_LL_COUNT(&session->streams);
 }
 
+int rrr_http2_need_tick (
+		struct rrr_http2_session *session
+) {
+	/* When a request is created and ready to be sent, we need to tick more */
+	return nghttp2_session_want_write(session->session);
+}
+
 int rrr_http2_transport_ctx_tick (
-		uint64_t *active_stream_count,
-		uint64_t *closed_stream_count,
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),
@@ -1001,8 +996,7 @@ int rrr_http2_transport_ctx_tick (
 	// Just to clean up any streams needing deletion
 	__rrr_http2_stream_maintain_and_find(session, 0);
 
-	*active_stream_count = RRR_LL_COUNT(&session->streams);
-	*closed_stream_count = session->closed_stream_count;
+	// *closed_stream_count = session->closed_stream_count;
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function

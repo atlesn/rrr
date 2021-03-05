@@ -210,21 +210,29 @@ int rrr_http_session_transport_ctx_request_send (
 	);
 }
 
-int rrr_http_session_transport_ctx_request_raw_send (
-		struct rrr_net_transport_handle *handle,
-		const char *raw_request_data,
-		size_t raw_request_size
+uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
+		struct rrr_net_transport_handle *handle
 ) {
-	if (raw_request_size == 0) {
-		RRR_BUG("BUG: Received 0 size in rrr_http_session_transport_ctx_raw_request_send\n");
-	}
-	return rrr_net_transport_ctx_send_blocking (handle, raw_request_data, raw_request_size);
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	return rrr_http_application_active_transaction_count_get(session->application);
+}
+
+void rrr_http_session_transport_ctx_websocket_response_available_notify (
+		struct rrr_net_transport_handle *handle
+) {
+	event_active(handle->event_read, 0, 0);
+}
+
+int rrr_http_session_transport_ctx_need_tick (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return rrr_http_application_transport_ctx_need_tick(session->application);
 }
 
 static int __rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
@@ -256,8 +264,6 @@ static int __rrr_http_session_transport_ctx_tick (
 
 	if ((ret = rrr_http_application_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			&upgraded_app,
 			session->application,
 			handle,
@@ -298,8 +304,6 @@ static int __rrr_http_session_transport_ctx_tick (
 
 int rrr_http_session_transport_ctx_tick_client (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -313,8 +317,6 @@ int rrr_http_session_transport_ctx_tick_client (
 ) {
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			handle,
 			read_max_size,
 			NULL,
@@ -336,8 +338,6 @@ int rrr_http_session_transport_ctx_tick_client (
 
 int rrr_http_session_transport_ctx_tick_server (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
@@ -357,8 +357,6 @@ int rrr_http_session_transport_ctx_tick_server (
 ) {
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			handle,
 			read_max_size,
 			unique_id_generator_callback,

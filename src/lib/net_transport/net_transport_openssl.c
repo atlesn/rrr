@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "net_transport.h"
+#include "net_transport_struct.h"
 #include "net_transport_openssl.h"
 #include "net_transport_tls_common.h"
 
@@ -520,7 +521,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	// TODO : Hostname verification
 
 	*submodule_private_ptr = ssl_data;
-	*submodule_private_fd = 0;
+	*submodule_fd = callback_data->accept_data->ip_data.fd;
 
 	// Set this data, including FD at the end. Caller will try to close the FD
 	// upon errors from this function, and we wish to avoid double close() as
@@ -639,7 +640,7 @@ static int __rrr_net_transport_openssl_bind_and_listen_callback (
 	}
 
 	*submodule_private_ptr = ssl_data;
-	*submodule_private_fd = 0;
+	*submodule_fd = ssl_data->ip_data.fd;
 
 	goto out;
 //	out_destroy_ctx:
@@ -772,7 +773,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 	ssl_data->ip_data = callback_data->accept_data->ip_data;
 
 	*submodule_private_ptr = ssl_data;
-	*submodule_private_fd = 0;
+	*submodule_fd = ssl_data->ip_data.fd;
 
 	goto out;
 	out_destroy_ssl_data:
