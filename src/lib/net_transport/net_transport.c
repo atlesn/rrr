@@ -562,10 +562,12 @@ static void __rrr_net_transport_event_read (
 ) {
 	struct rrr_net_transport_handle *handle = arg;
 
+	(void)(fd);
+
 	int ret_tmp = 0;
 
 	if (handle->transport->hard_read_timeout_ms > 0) {
-		if (event_add(handle->event_read, &handle->transport->hard_read_timeout_tv) != 0) {
+		if (event_add(handle->event_hard_read_timeout, &handle->transport->hard_read_timeout_tv) != 0) {
 			RRR_MSG_0("Failed to update read event with new hard timeout in __rrr_net_transport_event_read\n");
 			event_base_loopbreak(handle->transport->event_base);
 			return;
@@ -582,7 +584,6 @@ static void __rrr_net_transport_event_read (
 		handle->transport->read_callback_arg
 	);
 
-	check_return:
 	CHECK_READ_WRITE_RETURN();
 }
 
