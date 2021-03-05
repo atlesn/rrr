@@ -876,16 +876,8 @@ static int __rrr_mqtt_conn_iterator_ctx_write (
 
 	int ret = 0;
 
-	uint64_t bytes_written = 0;
-
-	// NOTE : Partial sends are not supported, caller must produce error
-
-	if ((ret = rrr_net_transport_ctx_send_nonblock(&bytes_written, handle, data, data_size)) != 0) {
-		if (ret == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			ret = RRR_MQTT_INCOMPLETE;
-			goto out;
-		}
-		RRR_MSG_0("Error while sending packet in __rrr_mqtt_conn_iterator_ctx_write\n");
+	if ((ret = rrr_net_transport_ctx_send_push(handle, data, data_size)) != 0) {
+		RRR_MSG_0("Error while pushing packet to send queue in __rrr_mqtt_conn_iterator_ctx_write\n");
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto out;
 	}
