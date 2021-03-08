@@ -440,7 +440,13 @@ int rrr_event_dispatch (
 			__rrr_event_periodic,
 			&callback_data
 	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_event_dispatch\n");
+		RRR_MSG_0("Failed to create periodic event in rrr_event_dispatch\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (event_priority_set(periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
+		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
 		ret = 1;
 		goto out;
 	}

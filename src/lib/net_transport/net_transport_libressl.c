@@ -95,7 +95,7 @@ static int __rrr_net_transport_libressl_data_new (
 	out:
 	return ret;
 }
-
+/*
 static int __rrr_net_transport_libressl_handshake_perform (
 		struct tls *ctx
 ) {
@@ -128,7 +128,7 @@ static int __rrr_net_transport_libressl_handshake_perform (
 	out:
 	return ret;
 }
-
+*/
 struct rrr_net_transport_libressl_connect_callback_data {
 	struct rrr_net_transport_tls *tls;
 	struct rrr_ip_accept_data *accept_data;
@@ -177,11 +177,6 @@ static int __rrr_net_transport_libressl_connect_callback (
 		goto out_destroy_data;
 	}
 
-	if ((ret = __rrr_net_transport_libressl_handshake_perform(data->ctx)) != 0) {
-		goto out_destroy_data;
-	}
-
-	// Set after handshake to prevent double close of fd if there is any failure
 	data->sockaddr = callback_data->accept_data->addr;
 	data->socklen = callback_data->accept_data->len;
 	data->ip_data = callback_data->accept_data->ip_data;
@@ -390,11 +385,6 @@ int __rrr_net_transport_libressl_accept_callback (
 		goto out_destroy_data;
 	}
 
-	if ((ret = __rrr_net_transport_libressl_handshake_perform(new_data->ctx)) != 0) {
-		goto out_destroy_data;
-	}
-
-	// Set after handshake to prevent double close of fd if there is any failure
 	new_data->sockaddr = callback_data->accept_data->addr;
 	new_data->socklen = callback_data->accept_data->len;
 	new_data->ip_data = callback_data->accept_data->ip_data;
@@ -601,7 +591,7 @@ static int __rrr_net_transport_libressl_send (
 
 	*sent_bytes = 0;
 
-	int ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	int ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 
 	int retries = 1000;
 	ssize_t size_remaining = size;
@@ -661,6 +651,22 @@ static int __rrr_net_transport_libressl_poll (
 	return rrr_socket_check_alive (handle->submodule_fd);
 }
 
+static int __rrr_net_transport_libressl_handshake (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
+
+	int ret_tmp;
+	if ((ret_tmp = tls_handshake(tls_data->ctx)) != 0) {
+		return (ret_tmp == TLS_WANT_POLLIN || ret_tmp == TLS_WANT_POLLOUT
+			? RRR_NET_TRANSPORT_SEND_INCOMPLETE :
+			RRR_NET_TRANSPORT_SEND_SOFT_ERROR
+		);
+	}
+
+	return RRR_NET_TRANSPORT_SEND_OK;
+}
+
 static int __rrr_net_transport_libressl_is_tls (void) {
 	return 1;
 }
@@ -670,6 +676,7 @@ static void __rrr_net_transport_libressl_selected_proto_get (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_net_transport_tls_data *tls_data = handle->submodule_private_ptr;
+
 	*proto = tls_conn_alpn_selected(tls_data->ctx);
 }
 
@@ -683,6 +690,7 @@ static const struct rrr_net_transport_methods libressl_methods = {
 	__rrr_net_transport_libressl_read,
 	__rrr_net_transport_libressl_send,
 	__rrr_net_transport_libressl_poll,
+	__rrr_net_transport_libressl_handshake,
 	__rrr_net_transport_libressl_is_tls,
 	__rrr_net_transport_libressl_selected_proto_get
 };
@@ -738,8 +746,6 @@ int rrr_net_transport_libressl_new (
 	if (ca_file != NULL && *ca_file != '\0' && tls_config_set_ca_file(tls->config, ca_file) < 0) {
 		goto out_config_error;
 	}
-
-	printf("TLS CA PATH: %s\n", ca_path);
 
 	if (ca_path != NULL && *ca_path != '\0' && tls_config_set_ca_path(tls->config, ca_path) < 0) {
 		goto out_config_error;

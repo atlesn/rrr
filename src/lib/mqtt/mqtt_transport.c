@@ -163,6 +163,8 @@ int rrr_mqtt_transport_start (
 			0xffff * 2, // Hard timeout
 			__rrr_mqtt_transport_accept_callback,
 			transport,
+			NULL,
+			NULL,
 			transport->read_callback,
 			transport->read_callback_arg
 	)) != 0) {

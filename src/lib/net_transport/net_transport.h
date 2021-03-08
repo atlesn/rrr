@@ -56,6 +56,10 @@ struct rrr_event_queue;
     socklen_t socklen,                                         \
     void *arg
 
+#define RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS     \
+    struct rrr_net_transport_handle *handle,                   \
+    void *arg
+
 #define RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS             \
     struct rrr_net_transport_handle *handle,                   \
     void *arg
@@ -78,6 +82,8 @@ struct rrr_event_queue;
     struct timeval hard_read_timeout_tv;                                    \
     void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);  \
     void *accept_callback_arg;                                              \
+    void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS);  \
+    void *handshake_complete_callback_arg;                                  \
     int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);       \
     void *read_callback_arg
 
@@ -271,6 +277,10 @@ int rrr_net_transport_match_data_set (
 		const char *string,
 		uint64_t number
 );
+int rrr_net_transport_check_handshake_complete (
+		struct rrr_net_transport *transport,
+		int transport_handle
+);
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
 		unsigned int port,
@@ -294,6 +304,8 @@ int rrr_net_transport_event_setup (
 		uint64_t hard_read_timeout_ms,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
+		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg
 );

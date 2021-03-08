@@ -609,7 +609,7 @@ static int __rrr_http_application_http2_tick (
 			http2->transaction_incomplete_upgrade = NULL;
 		}
 
-		if (ret & ~(RRR_HTTP_NO_RESULT) != 0) {
+		if ((ret & ~(RRR_HTTP_NO_RESULT)) != 0) {
 			goto out;
 		}
 	}
@@ -625,7 +625,6 @@ static int __rrr_http_application_http2_tick (
 		}
 	}
 
-	printf("Tick\n");
 	if ((ret = rrr_http2_transport_ctx_tick (
 			http2->http2_session,
 			handle,
@@ -658,7 +657,7 @@ void rrr_http_application_http2_alpn_protos_get (
 		const char **target,
 		unsigned int *length
 ) {
-	return __rrr_http_application_http2_alpn_protos_get(target, length);
+	__rrr_http_application_http2_alpn_protos_get(target, length);
 }
 
 static void __rrr_http_application_http2_polite_close (

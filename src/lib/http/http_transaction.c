@@ -30,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "../util/rrr_time.h"
 
+uint64_t rrr_http_transaction_lifetime_get (
+		const struct rrr_http_transaction *transaction
+) {
+	return rrr_time_get_64() - transaction->creation_time;
+}
+
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,

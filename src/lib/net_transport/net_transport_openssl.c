@@ -346,7 +346,7 @@ const char *__rrr_net_transport_openssl_ssl_version_to_str (
 	};
 	return result;
 }
-
+/*
 static int __rrr_net_transport_openssl_handshake_perform (
 		struct rrr_net_transport_tls_data *ssl_data,
 		SSL *ssl
@@ -381,7 +381,7 @@ static int __rrr_net_transport_openssl_handshake_perform (
 	out:
 	return ret;
 }
-
+*/
 static int __rrr_net_transport_openssl_alpn_selected_proto_save (
 		struct rrr_net_transport_tls_data *ssl_data,
 		SSL *ssl
@@ -488,37 +488,7 @@ int __rrr_net_transport_openssl_connect_callback (
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
-	// Must complete handshake to get the selected ALPN protocol
 	SSL_set_connect_state(ssl);
-
-	if ((ret = __rrr_net_transport_openssl_handshake_perform (ssl_data, ssl)) != 0) {
-		goto out_destroy_ssl_data;
-	}
-
-	if ((ret = __rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) != 0) {
-		goto out_destroy_ssl_data;
-	}
-
-	X509 *cert = SSL_get_peer_certificate(ssl);
-	if (cert != NULL) {
-		X509_free(cert);
-	}
-	else {
-		RRR_MSG_0("No certificate received in TLS handshake with %s:%u\n",
-				callback_data->host, callback_data->port);
-		ret = 1;
-		goto out_destroy_ssl_data;
-	}
-
-	long verify_result = 0;
-	if ((verify_result = SSL_get_verify_result(ssl)) != X509_V_OK) {
-		RRR_MSG_0("Certificate verification failed for %s:%u with reason %li\n",
-				callback_data->host, callback_data->port, verify_result);
-		ret = 1;
-		goto out_destroy_ssl_data;
-	}
-
-	// TODO : Hostname verification
 
 	*submodule_private_ptr = ssl_data;
 	*submodule_fd = callback_data->accept_data->ip_data.fd;
@@ -750,20 +720,7 @@ static int __rrr_net_transport_openssl_accept_callback (
 
 	BIO_set_nbio(ssl_data->web, 1);
 
-	// Must complete handshake to get the selected ALPN protocol
 	SSL_set_accept_state(ssl);
-
-	// TODO : It is possible when using the HTTP-server to DDOS us by having the main thread
-	//        hanging around in the handshake-area constantly. Move accept-stuff to the worker
-	//        threads.
-
-	if ((ret = __rrr_net_transport_openssl_handshake_perform (ssl_data, ssl)) != 0) {
-		goto out_destroy_ssl_data;
-	}
-
-	if ((ret = __rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) != 0) {
-		goto out_destroy_ssl_data;
-	}
 
 	// Set this data, including FD at the end. Caller will try to close the FD
 	// upon errors from this function, and we wish to avoid double close() as
@@ -977,9 +934,8 @@ static int __rrr_net_transport_openssl_send (
 	int sent_bytes_tmp;
 	if ((sent_bytes_tmp = BIO_write(ssl_data->web, data, size)) <= 0) {
 		if (BIO_should_retry(ssl_data->web)) {
-			return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+			return RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 		}
-		RRR_DBG_7("Write failure in __rrr_net_transport_openssl_send, maybe remote has closed the connection\n");
 		return RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 	}
 	else {
@@ -987,6 +943,15 @@ static int __rrr_net_transport_openssl_send (
 	}
 
 	return RRR_NET_TRANSPORT_SEND_OK;
+}
+
+static void __rrr_net_transport_openssl_selected_proto_get (
+		const char **proto,
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
+
+	*proto = ssl_data->alpn_selected_proto;
 }
 
 static int __rrr_net_transport_openssl_poll (
@@ -999,19 +964,66 @@ static int __rrr_net_transport_openssl_poll (
 		return RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 	}
 
-	return rrr_socket_check_alive (fd);
+	if (rrr_socket_check_alive (fd) != 0) {
+		return RRR_READ_EOF;
+	}
+
+	return RRR_READ_OK;
+}
+
+static int __rrr_net_transport_openssl_handshake (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
+
+	SSL *ssl;
+	BIO_get_ssl(ssl_data->web, &ssl);
+
+	int ret_tmp;
+	if ((ret_tmp = SSL_do_handshake(ssl)) != 1) {
+		if (BIO_should_retry(ssl_data->web) || SSL_want_read(ssl) || SSL_want_write(ssl)) {
+			return RRR_NET_TRANSPORT_SEND_INCOMPLETE;
+		}
+		if (ret_tmp < 0) {
+			RRR_MSG_0("Fatal error during handshake: %s\n", SSL_get_error(ssl, ret_tmp));
+		}
+		else {
+			RRR_SSL_ERR("Handshake failure");
+		}
+		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	}
+
+	if (!SSL_is_server(ssl)) {
+		// TODO : Hostname verification
+
+		X509 *cert = SSL_get_peer_certificate(ssl);
+		if (cert != NULL) {
+			X509_free(cert);
+		}
+		else {
+			RRR_MSG_0("No certificate received in TLS handshake fd %i\n",
+					handle->submodule_fd);
+			return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+		}
+	}
+
+	long verify_result = 0;
+	if ((verify_result = SSL_get_verify_result(ssl)) != X509_V_OK) {
+		RRR_MSG_0("Certificate verification failed for fd %i with reason %li\n",
+				handle->submodule_fd, verify_result);
+		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	}
+
+	if (__rrr_net_transport_openssl_alpn_selected_proto_save (ssl_data, ssl)) {
+		RRR_MSG_0("Failed to save ALPN selected protocol\n");
+		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	}
+
+	return RRR_NET_TRANSPORT_SEND_OK;
 }
 
 static int __rrr_net_transport_openssl_is_tls (void) {
 	return 1;
-}
-
-static void __rrr_net_transport_openssl_selected_proto_get (
-		const char **proto,
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
-	*proto = ssl_data->alpn_selected_proto;
 }
 
 static const struct rrr_net_transport_methods tls_methods = {
@@ -1024,6 +1036,7 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_openssl_read,
 	__rrr_net_transport_openssl_send,
 	__rrr_net_transport_openssl_poll,
+	__rrr_net_transport_openssl_handshake,
 	__rrr_net_transport_openssl_is_tls,
 	__rrr_net_transport_openssl_selected_proto_get
 };

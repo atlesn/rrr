@@ -108,6 +108,10 @@ struct rrr_net_transport_handle_close_tag_node {
     char *buf,                                                 \
     size_t buf_size
 
+#define RRR_NET_TRANSPORT_POLL_ARGS                  \
+    unsigned char *want_read,                        \
+    unsigned char *want_write,                       \
+
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
 };
@@ -132,6 +136,9 @@ struct rrr_net_transport_methods {
 			ssize_t size
 	);
 	int (*poll)(
+    		struct rrr_net_transport_handle *handle
+	);
+	int (*handshake)(
 			struct rrr_net_transport_handle *handle
 	);
 	int (*is_tls)(void);
@@ -144,9 +151,6 @@ struct rrr_net_transport_methods {
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 
-	// Once nobody uses threading, remove this
-	pthread_mutex_t lock_;
-
 	int lock_count;
 	struct rrr_net_transport *transport;
 	int handle;
@@ -154,6 +158,7 @@ struct rrr_net_transport_handle {
 	struct rrr_read_session_collection read_sessions;
 
 	int submodule_fd;
+	struct event *event_handshake;
 	struct event *event_read;
 	struct event *event_write;
 	struct event *event_first_read_timeout;
@@ -179,6 +184,9 @@ struct rrr_net_transport_handle {
 	char *match_string;
 	uint64_t match_number;
 
+	// Transport handshake is complete, application may be called
+	int handshake_complete;
+
 	// Called first when we try to destroy. When it returns 0,
 	// we go ahead with destruction and call ptr_destroy. Only
 	// used from within the iterator function.
@@ -192,10 +200,6 @@ struct rrr_net_transport_handle_close_tag_list {
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
 	int next_handle_position;
-
-	// Once nobody uses threading, remove this
-	pthread_mutex_t lock;
-	pthread_t owner;
 
 	struct rrr_net_transport_handle_close_tag_list close_tags;
 };

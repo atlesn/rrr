@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../http/http_header_fields.h"
 #include "../map.h"
 
+// The actual ping interval will depend on how often the tick function is called
 #define RRR_HTTP2_PING_INTERVAL_S 1
-#define RRR_HTTP2_PING_TIMEOUT_S 5
 
 struct rrr_http2_stream {
 	RRR_LL_NODE(struct rrr_http2_stream);
@@ -1040,12 +1040,6 @@ int rrr_http2_transport_ctx_tick (
 			ret = RRR_HTTP2_SOFT_ERROR;
 			goto out;
 		}
-	}
-
-	if (rrr_time_get_64() - session->last_ping_receive_time > RRR_HTTP2_PING_TIMEOUT_S * 1000 * 1000) {
-		RRR_MSG_0("HTTP2 ping timeout after %i seconds\n", RRR_HTTP2_PING_TIMEOUT_S);
-		ret = RRR_HTTP2_SOFT_ERROR;
-		goto out;
 	}
 
 	if (nghttp2_session_want_read(session->session) == 0 && nghttp2_session_want_write(session->session) == 0) {

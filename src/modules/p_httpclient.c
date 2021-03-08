@@ -652,10 +652,11 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl "\n",
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms\n",
 			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
-			rrr_nullsafe_str_len(response_data)
+			rrr_nullsafe_str_len(response_data),
+			rrr_http_transaction_lifetime_get(transaction) / 1000
 	);
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
@@ -1578,6 +1579,8 @@ static void httpclient_queue_process (
 		return;
 	}
 
+	printf("Process queue\n");
+
 	// Check timeouts based on the time the loop starts to be fair
 	// if there are errors and the loop takes a while
 	const uint64_t loop_begin_time = rrr_time_get_64();
@@ -1701,10 +1704,6 @@ static void httpclient_event_msgdb_poll (
 	) {
 		httpclient_msgdb_poll(data);
 		CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
-	}
-	else {
-		// Run again immediately
-		event_active(data->event_msgdb_poll, 0, 0);
 	}
 }
 
@@ -1836,6 +1835,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			goto out_message;
 		}
 
+		if (event_priority_set (data->event_msgdb_poll, RRR_EVENT_PRIORITY_HIGH) != 0) {
+			RRR_MSG_0("Failed to set msgdb poll event priority in httpclient\n");
+			goto out_message;
+		}
+
 		struct timeval msgdb_poll_interval_tv;
 		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
 
@@ -1853,6 +1857,11 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			data
 	)) == NULL) {
 		RRR_MSG_0("Failed to create queue process event in httpclient\n");
+		goto out_message;
+	}
+
+	if (event_priority_set (data->event_queue_process, RRR_EVENT_PRIORITY_LOW) != 0) {
+		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
 		goto out_message;
 	}
 

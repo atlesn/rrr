@@ -127,6 +127,19 @@ static void __rrr_http_server_accept_callback (
 
 	(void)(callback_data);
 
+	char buf[256];
+	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
+	RRR_DBG_3("HTTP accept for %s family %i using fd %i\n",
+			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
+}
+
+static void __rrr_http_server_handshake_complete_callback (
+		RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS
+) {
+	struct rrr_http_server_callback_data *callback_data = arg;
+
+	(void)(callback_data);
+
 	struct rrr_http_application *application = NULL;
 
 	const char *alpn_selected_proto = NULL;
@@ -137,7 +150,7 @@ static void __rrr_http_server_accept_callback (
 			(alpn_selected_proto != NULL && strcmp(alpn_selected_proto, "h2") == 0 ? RRR_HTTP_APPLICATION_HTTP2 : RRR_HTTP_APPLICATION_HTTP1),
 			1 // Is server
 	) != 0) {
-		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_accept_callback\n");
+		RRR_MSG_0("Could not create HTTP application in __rrr_http_server_handshake_comlete_callback\n");
 		goto out;
 	}
 
@@ -146,10 +159,8 @@ static void __rrr_http_server_accept_callback (
 		goto out;
 	}
 
-	char buf[256];
-	rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
-	RRR_DBG_3("HTTP accept for %s family %i using fd %i\n",
-			buf, sockaddr->sa_family, RRR_NET_TRANSPORT_CTX_FD(handle));
+	RRR_DBG_3("HTTP handshake complete for fd %i\n",
+			RRR_NET_TRANSPORT_CTX_FD(handle));
 
 	out:
 	rrr_http_application_destroy_if_not_null(&application);
@@ -421,17 +432,23 @@ static int __rrr_http_server_start (
 	}
 
 	if (queue != NULL) {
+		const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
+		const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
+
 		if ((ret = rrr_net_transport_event_setup (
 			*result_transport,
 			queue,
 			first_read_timeout_ms,
-			read_timeout_ms,
-			0,
+			ping_timeout_ms,
+			hard_timeout_ms,
 			__rrr_http_server_accept_callback,
+			http_server,
+			__rrr_http_server_handshake_complete_callback,
 			http_server,
 			__rrr_http_server_read_callback,
 			http_server
 		)) != 0) {
+			goto out;
 		}
 	}
 

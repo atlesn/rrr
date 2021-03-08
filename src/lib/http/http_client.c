@@ -524,10 +524,6 @@ static int __rrr_http_client_read_callback (
 ) {
 	struct rrr_http_client *http_client = arg;
 
-//	event_enable_debug_logging(EVENT_DBG_ALL);
-
-	(void)(handle);
-
 	int ret = 0;
 
 	ssize_t received_bytes_dummy = 0;
@@ -703,6 +699,11 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		printf("Need tick after request\n");
+		rrr_net_transport_ctx_notify_read(handle);
+	}
+
 	goto out;
 	out:
 		rrr_http_application_destroy_if_not_null(&upgraded_app);
@@ -773,6 +774,11 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			)) != 0) {
 				goto out;
 			}
+
+		}
+
+		if ((ret = rrr_net_transport_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
+			goto out;
 		}
 
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
@@ -827,6 +833,8 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup
 			0,
 			0,
 			http_client->idle_timeout_ms,
+			NULL,
+			NULL,
 			NULL,
 			NULL,
 			__rrr_http_client_read_callback,
