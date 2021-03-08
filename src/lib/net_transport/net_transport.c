@@ -850,11 +850,13 @@ void rrr_net_transport_ctx_notify_read (
 	event_active(handle->event_read, 0, 0);
 }
 
-void rrr_net_transport_notify_read_all (
+void rrr_net_transport_notify_read_all_connected (
 		struct rrr_net_transport *transport
 ) {
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
-		rrr_net_transport_ctx_notify_read(node);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
+			rrr_net_transport_ctx_notify_read(node);
+		}
 	RRR_LL_ITERATE_END();
 }
 
