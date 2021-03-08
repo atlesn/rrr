@@ -115,10 +115,17 @@ int rrr_http_redirect_collection_iterate (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_redirect_collection_entry);
-		if ((ret = callback(node->transaction, node->uri, callback_arg)) != 0) {
-			goto out;
+		if ((ret = callback(node->transaction, node->uri, callback_arg)) == RRR_HTTP_BUSY) {
+			// OK, busy. Try again later.
+			ret = RRR_HTTP_OK;
 		}
-	RRR_LL_ITERATE_END();
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+			if (ret != 0) {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; __rrr_http_redirect_collection_entry_destroy(node));
 
 	out:
 	return ret;

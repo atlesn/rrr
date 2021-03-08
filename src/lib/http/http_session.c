@@ -228,6 +228,11 @@ int rrr_http_session_transport_ctx_need_tick (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	if (session == NULL) {
+		return 0;
+	}
+
 	return rrr_http_application_transport_ctx_need_tick(session->application);
 }
 
@@ -253,6 +258,10 @@ static int __rrr_http_session_transport_ctx_tick (
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	int ret = 0;
+
+	if (session == NULL) {
+		goto out_final;
+	}
 
 	struct rrr_http_application *upgraded_app = NULL;
 
@@ -298,8 +307,9 @@ static int __rrr_http_session_transport_ctx_tick (
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	return ret;
+		pthread_cleanup_pop(1);
+	out_final:
+		return ret;
 }
 
 int rrr_http_session_transport_ctx_tick_client (

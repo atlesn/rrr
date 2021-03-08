@@ -370,6 +370,37 @@ static int __rrr_http_client_unique_id_generator_callback (
 	return 0;
 }
 
+static int __rrr_http_client_request_send_loop (
+	struct rrr_http_client_data *http_client_data
+) {
+	int ret = 0;
+
+	int retries = 5000;
+	while (--retries) {
+		if ((ret = rrr_http_client_request_send (
+				&http_client_data->request_data,
+				http_client_data->http_client,
+				&http_client_data->net_transport_config,
+				5, // Max redirects
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL
+		)) == 0 || ret != RRR_HTTP_BUSY) {
+			goto out;
+		}
+		event_base_loop(rrr_event_queue_base_get(http_client_data->events), EVLOOP_ONCE);
+		rrr_posix_usleep(1000);
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -383,7 +414,7 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
-	if (rrr_http_client_request_send (
+	if ((ret = rrr_http_client_request_send (
 			&http_client_data->request_data,
 			http_client_data->http_client,
 			&http_client_data->net_transport_config,
@@ -396,7 +427,7 @@ static int __rrr_http_client_redirect_callback (
 			NULL,
 			NULL,
 			NULL
-	) != 0) {
+	)) != 0) {
 		goto out;
 	}
 
@@ -670,19 +701,8 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_http_client_request_send (
-			&data.request_data,
-			data.http_client,
-			&data.net_transport_config,
-			5, // Max redirects
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL
+	if (__rrr_http_client_request_send_loop (
+			&data
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;

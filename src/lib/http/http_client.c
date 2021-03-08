@@ -111,7 +111,9 @@ static int __rrr_http_client_active_transaction_count_get_callback (
 ) {
 	uint64_t *result_accumulator = arg;
 
-	*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+	if (RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) != NULL) {
+		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+	}
 
 	return 0;
 }
@@ -557,12 +559,11 @@ static int __rrr_http_client_read_callback (
 		goto out;
 	}
 
-	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
 		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:
-	rrr_http_redirect_collection_clear(&http_client->redirects);
 	return ret;
 }
 
