@@ -262,6 +262,8 @@ static int __rrr_http_session_transport_ctx_tick (
 		RRR_BUG("BUG: Application was NULL in rrr_http_session_transport_ctx_tick\n");
 	}
 
+//	printf("Tick app\n");
+
 	if ((ret = rrr_http_application_transport_ctx_tick (
 			received_bytes,
 			&upgraded_app,

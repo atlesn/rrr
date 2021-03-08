@@ -1525,13 +1525,15 @@ static int __rrr_http_application_http1_tick (
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
-			if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
-				ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
+			if ((ret = rrr_net_transport_ctx_check_alive(handle)) == 0) {
+				if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
+					ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
 
-				__rrr_http_application_http1_transaction_clear(http1);
+					__rrr_http_application_http1_transaction_clear(http1);
+				}
+
+				ret &= ~(RRR_HTTP_NO_RESULT);
 			}
-
-			ret &= ~(RRR_HTTP_NO_RESULT);
 		}
 		else {
 			struct rrr_http_application_http1_receive_data callback_data = {
@@ -1551,7 +1553,7 @@ static int __rrr_http_application_http1_tick (
 
 			ret = rrr_net_transport_ctx_read_message (
 						handle,
-						100,
+						1,
 						4096,
 						65535,
 						read_max_size,
