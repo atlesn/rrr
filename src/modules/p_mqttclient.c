@@ -98,7 +98,6 @@ struct rrr_array_tree;
 
 struct mqtt_client_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_fifo_buffer output_buffer;
 	struct rrr_mqtt_client_data *mqtt_client_data;
 	int transport_handle;
 	struct rrr_mqtt_session *session;
@@ -143,7 +142,6 @@ struct mqtt_client_data {
 
 static void mqttclient_data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
-	rrr_fifo_buffer_clear(&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
@@ -170,22 +168,14 @@ static int mqttclient_data_init (
 
 	data->thread_data = thread_data;
 
-	if ((ret = rrr_fifo_buffer_init(&data->output_buffer)) != 0) {
-		RRR_MSG_0("Could not initialize fifo buffer in mqtt client mqttclient_data_init\n");
-		goto out;
-	}
-
 	if (rrr_mqtt_subscription_collection_new(&data->requested_subscriptions) != 0) {
 		RRR_MSG_0("Could not create subscription collection in mqtt client mqttclient_data_init\n");
-		goto out_destroy_fifo_buffer;
+		goto out;
 	}
 
 	goto out;
 //	out_destroy_subscription_collection:
 //		rrr_mqtt_subscription_collection_destroy(&data->requested_subscriptions);
-	out_destroy_fifo_buffer:
-		rrr_fifo_buffer_clear(&data->output_buffer);
-		rrr_fifo_buffer_destroy(&data->output_buffer);
 	out:
 		return ret;
 }
