@@ -49,8 +49,6 @@ struct rrr_mqtt_client_data {
 	void *packet_parsed_handler_arg;
 	int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
 	void *receive_publish_callback_arg;
-
-	struct rrr_mqtt_session_iterate_send_queue_counters session_counters;
 };
 
 int rrr_mqtt_client_connection_check_alive (
@@ -123,10 +121,6 @@ int rrr_mqtt_client_get_session_properties (
 		struct rrr_mqtt_session_properties *target,
 		struct rrr_mqtt_client_data *client,
 		int transport_handle
-);
-void rrr_mqtt_client_counters_get (
-		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
-		const struct rrr_mqtt_client_data *data
 );
 int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,

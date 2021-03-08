@@ -154,6 +154,9 @@ int rrr_net_transport_is_tls (
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_notify_read_all (
+		struct rrr_net_transport *transport
+);
 int rrr_net_transport_ctx_get_fd (
 		struct rrr_net_transport_handle *handle
 );

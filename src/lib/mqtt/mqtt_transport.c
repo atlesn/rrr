@@ -267,6 +267,14 @@ int rrr_mqtt_transport_connect (
 		return ret;
 }
 
+void rrr_mqtt_transport_notify_tick (
+		struct rrr_mqtt_transport *transport
+) {
+	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
+		rrr_net_transport_notify_read_all(node);
+	}
+}
+
 int rrr_mqtt_transport_iterate (
 		struct rrr_mqtt_transport *transport,
 		enum rrr_net_transport_socket_mode mode,

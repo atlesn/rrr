@@ -2528,6 +2528,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 			goto out;
 		}
 	out_discard:
+		printf("DELETE\n");
 		counters->maintain_deleted_counter++;
 		ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	out:

@@ -115,6 +115,12 @@ int rrr_mqtt_client_connection_check_alive (
 	return ret;
 }
 
+static void __rrr_mqtt_client_event_notify_tick (
+		struct rrr_mqtt_client_data *data
+) {
+	rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
+}
+
 int rrr_mqtt_client_publish (
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_session **session,
@@ -132,6 +138,8 @@ int rrr_mqtt_client_publish (
 			goto out,
 			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
 	);
+
+	__rrr_mqtt_client_event_notify_tick(data);
 
 	out:
 	return ret;
@@ -194,6 +202,8 @@ int rrr_mqtt_client_subscribe (
 			goto out_decref,
 			" while sending SUBSCRIBE packet in rrr_mqtt_client_send_subscriptions\n"
 	);
+
+	__rrr_mqtt_client_event_notify_tick(data);
 
 	goto out_decref;
 	out_unlock:
@@ -261,6 +271,8 @@ int rrr_mqtt_client_unsubscribe (
 			goto out_decref,
 			" while sending UNSUBSCRIBE packet in rrr_mqtt_client_unsubscribe\n"
 	);
+
+	__rrr_mqtt_client_event_notify_tick(data);
 
 	goto out_decref;
 	out_unlock:
@@ -831,8 +843,10 @@ static int __rrr_mqtt_client_read_callback (
 		data
 	};
 
+	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
+
 	if ((ret = rrr_mqtt_common_read_parse_single_handle (
-			&data->session_counters,
+			&session_counters,
 			&data->mqtt_data,
 			handle,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
@@ -981,13 +995,6 @@ int rrr_mqtt_client_get_session_properties (
 			__rrr_mqtt_client_get_session_properties_callback,
 			&callback_data
 	);
-}
-		
-void rrr_mqtt_client_counters_get (
-		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
-		const struct rrr_mqtt_client_data *data
-) {
-	*session_counters = data->session_counters;	
 }
 
 void rrr_mqtt_client_get_stats (
