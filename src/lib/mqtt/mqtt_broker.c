@@ -139,7 +139,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_net_tra
 			goto out;
 		}
 
-		RRR_DBG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
+		RRR_DBG_2("Disconnecting existing client with client ID %s\n", connection->client_id);
 
 		RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
 		int ret_tmp = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle);
@@ -208,7 +208,7 @@ static int __rrr_mqtt_broker_check_unique_client_id (
 	// Do not replace error handling with macro, special case
 	if (ret != RRR_MQTT_OK) {
 		if (callback_data.name_was_taken != 0 && disconnect_other_client != 0) {
-			RRR_DBG_1("Client id %s was already used in an active connection, the old one was disconnected\n", client_id);
+			RRR_DBG_2("Client id %s was already used in an active connection, the old one was disconnected\n", client_id);
 			*other_client_was_disconnected = 1;
 		}
 
@@ -391,14 +391,14 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (connect->username != NULL && *(connect->username) != '\0') {
 		if (connect->password == NULL || *(connect->password) == '\0') {
-			RRR_DBG_1("Invalid CONNECT, username given but no password. The RRR MQTT broker requires passwords.\n");
+			RRR_DBG_2("Invalid CONNECT, username given but no password. The RRR MQTT broker requires passwords.\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			reason_v5 = RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR;
 			goto out_send_connack;
 		}
 
 		if (data->password_file == NULL) {
-			RRR_DBG_1("Received CONNECT with username and password but no password file is defined in configuration.\n");
+			RRR_DBG_2("Received CONNECT with username and password but no password file is defined in configuration.\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
 			goto out_send_connack;
@@ -410,14 +410,14 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				connect->password,
 				data->permission_name // May be NULL which means permissions are not checked
 		) != 0) {
-			RRR_DBG_1("Received CONNECT with username '%s' but authentication failed\n", connect->username);
+			RRR_DBG_2("Received CONNECT with username '%s' but authentication failed\n", connect->username);
 			ret = RRR_MQTT_SOFT_ERROR;
 			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
 			goto out_send_connack;
 		}
 	}
 	else if (data->disallow_anonymous_logins != 0) {
-		RRR_DBG_1("Received CONNECT without username but anonymous login is disabled by configuration\n");
+		RRR_DBG_2("Received CONNECT without username but anonymous login is disabled by configuration\n");
 		ret = RRR_MQTT_SOFT_ERROR;
 		reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
 		goto out_send_connack;
@@ -520,7 +520,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->client_count++);
 
-	RRR_DBG_1 ("CONNECT: Using client ID '%s'%s username '%s' clean session %i client count is %i\n",
+	RRR_DBG_2 ("CONNECT: Using client ID '%s'%s username '%s' clean session %i client count is %i\n",
 			(connection->client_id != NULL ? connection->client_id : "(empty)"),
 			(client_id_was_assigned ? " (generated)"  : ""),
 			(connect->username != NULL ? connect->username : ""),
@@ -687,7 +687,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
 		ret = ret & ~RRR_MQTT_SOFT_ERROR;
-		RRR_DBG_1("CONNACK which was sent had non-zero reason, destroying connection\n");
+		RRR_DBG_2("CONNACK which was sent had non-zero reason, destroying connection\n");
 		ret_destroy = RRR_MQTT_SOFT_ERROR;
 	}
 
@@ -861,7 +861,7 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 		}
 	}
 
-	RRR_DBG_1("DISCONNECT from client '%s' in MQTT broker reason %u\n",
+	RRR_DBG_2("DISCONNECT from client '%s' in MQTT broker reason %u\n",
 			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason_v5);
 
 //	printf("state before: %u\n", connection->state_flags);

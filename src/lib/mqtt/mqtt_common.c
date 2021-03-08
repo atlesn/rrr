@@ -950,7 +950,7 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
-			RRR_DBG_1("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_puback_pubcomp\n");
+			RRR_DBG_2("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_puback_pubcomp\n");
 			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 		RRR_MSG_0("Error while handling received %s packet, reason: %u\n",
@@ -960,7 +960,7 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	if (match_count != 1) {
-		RRR_DBG_1("No match for ACK of type %s id %u, possibly old packet\n",
+		RRR_DBG_3("No match for ACK of type %s id %u, possibly old packet\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet));
 	}
 
@@ -994,7 +994,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			goto out;
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
-			RRR_DBG_1("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_pubrec_pubrel\n");
+			RRR_DBG_2("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_pubrec_pubrel\n");
 			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 

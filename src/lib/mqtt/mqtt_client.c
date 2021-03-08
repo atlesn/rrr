@@ -696,7 +696,7 @@ int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 
 	if (match_count == 0) {
-		RRR_DBG_1("Received PINGRESP with no matching PINGREQ\n");
+		RRR_DBG_2("Received PINGRESP with no matching PINGREQ\n");
 	}
 
 	out:
