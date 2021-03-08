@@ -643,7 +643,7 @@ static int __rrr_http_application_http2_need_tick (
 		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
-	return rrr_http2_need_tick(http2->http2_session);
+	return rrr_http2_need_tick(http2->http2_session) || http2->transaction_incomplete_upgrade;
 }
 
 static void __rrr_http_application_http2_alpn_protos_get (

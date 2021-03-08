@@ -296,14 +296,12 @@ static int __rrr_http_session_transport_ctx_tick (
 	}
 
 	if (upgraded_app) {
-		// Returning INCOMPLETE makes caller to call tick() again, now
-		// with the new application being active.
 		RRR_DBG_3("HTTP upgrade transition from %s to %s\n",
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
 		);
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
-		ret = RRR_READ_INCOMPLETE;
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:

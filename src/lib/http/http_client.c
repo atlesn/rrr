@@ -141,7 +141,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 		);
 	}
 
-	return result_accumulator;
+	return result_accumulator + RRR_LL_COUNT(&http_client->redirects);;
 }
 
 static int __rrr_http_client_websocket_response_available_notify_callback (
@@ -701,7 +701,6 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		printf("Need tick after request\n");
 		rrr_net_transport_ctx_notify_read(handle);
 	}
 

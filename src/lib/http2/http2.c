@@ -981,7 +981,7 @@ int rrr_http2_need_tick (
 		struct rrr_http2_session *session
 ) {
 	/* When a request is created and ready to be sent, we need to tick more */
-	return nghttp2_session_want_write(session->session);
+	return nghttp2_session_want_write(session->session) || session->initial_receive_data_len > 0;
 }
 
 int rrr_http2_transport_ctx_tick (
