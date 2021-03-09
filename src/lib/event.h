@@ -69,6 +69,12 @@ void rrr_event_function_set (
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS)
 );
+void rrr_event_function_set_with_arg (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		int (*function)(RRR_EVENT_FUNCTION_ARGS),
+		void *arg
+);
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,

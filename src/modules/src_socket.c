@@ -58,6 +58,7 @@ struct socket_data {
 	struct rrr_socket_client_collection *clients;
 	int socket_fd;
 	uint64_t message_count;
+	struct rrr_array array_tmp;
 };
 
 void data_cleanup(void *arg) {
@@ -70,6 +71,7 @@ void data_cleanup(void *arg) {
 	}
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
+	rrr_array_clear(&data->array_tmp);
 }
 
 int data_init(struct socket_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -170,41 +172,8 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 	return ret;
 }
 
-struct read_data_receive_message_callback_data {
-	struct socket_data *data;
-	struct rrr_msg_holder *entry;
-	struct rrr_array *array_final;
-};
-
-int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *private_data, void *arg) {
-	struct read_data_receive_message_callback_data *callback_data = arg;
-	struct socket_data *data = callback_data->data;
-
-	(void)(private_data);
-
-	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
-		if (rrr_msg_msg_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			return 1;
-		}
-	}
-
-	callback_data->entry->message = *message;
-	callback_data->entry->data_length = MSG_TOTAL_SIZE(*message);
-	*message = NULL;
-
-	data->message_count++;
-
-	return 0;
-}
-
-int read_raw_data_callback (struct rrr_read_session *read_session, void *private_data, void *arg) {
-	struct read_data_receive_message_callback_data *callback_data = arg;
-	struct socket_data *data = callback_data->data;
-
-	(void)(private_data);
-	(void)(read_session);
+static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, void *arg) {
+	struct socket_data *data = arg;
 
 	int ret = 0;
 
@@ -212,7 +181,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *private
 
 	if ((ret = rrr_array_new_message_from_collection (
 			&message,
-			callback_data->array_final,
+			&data->array_tmp,
 			rrr_time_get_64(),
 			data->default_topic,
 			data->default_topic_length
@@ -222,8 +191,14 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *private
 		goto out;
 	}
 
-	callback_data->entry->message = message;
-	callback_data->entry->data_length = MSG_TOTAL_SIZE(message);
+	RRR_DBG_2("socket instance %s created a message form array data with timestamp %llu size %llu\n",
+			INSTANCE_D_NAME(data->thread_data),
+			(long long unsigned int) message->timestamp,
+			(unsigned long long) MSG_TOTAL_SIZE(message)
+	);
+
+	entry->message = message;
+	entry->data_length = MSG_TOTAL_SIZE(message);
 	message = NULL;
 
 	out:
@@ -231,89 +206,75 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *private
 	return ret;
 }
 
-int read_data_receive_callback (struct rrr_msg_holder *entry, void *arg) {
+static int socket_read_raw_data_callback (struct rrr_read_session *read_session, void *private_data, void *arg) {
 	struct socket_data *data = arg;
 
-	int ret = 0;
+	(void)(private_data);
+	(void)(read_session);
 
-	struct rrr_array array_tmp = {0};
-
-	struct read_data_receive_message_callback_data socket_callback_data = {
-			data,
-			entry,
-			&array_tmp
-	};
-
-	if (data->receive_rrr_message != 0) {
-		if ((ret = rrr_socket_client_collection_read_message (
-				data->clients,
-				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				read_rrr_msg_msg_callback,
-				NULL,
-				NULL,
-				NULL,
-				&socket_callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		/*
-
-		const struct rrr_array_tree *tree;
-		struct rrr_array *array_final;
-		int do_byte_by_byte_sync;
-		unsigned int message_max_size;
-
-		*/
-		struct rrr_read_common_get_session_target_length_from_array_tree_data callback_data = {
-				data->tree,
-				&array_tmp,
-				data->do_sync_byte_by_byte,
-				0 // TODO : Set max size?
-		};
-		if ((ret = rrr_socket_client_collection_read_raw (
-				data->clients,
-				4096,
-				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				rrr_read_common_get_session_target_length_from_array_tree,
-				&callback_data,
-				read_raw_data_callback,
-				&socket_callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	struct rrr_msg_msg *message = entry->message;
-
-	if (message == NULL) {
-		ret = RRR_MESSAGE_BROKER_DROP;
-	}
-	else {
-		RRR_DBG_2("socket instance %s created a message with timestamp %llu size %llu\n",
-				INSTANCE_D_NAME(data->thread_data),
-				(long long unsigned int) message->timestamp,
-				(unsigned long long) MSG_TOTAL_SIZE(message)
-		);
-	}
-
-	out:
-	rrr_array_clear(&array_tmp);
-	rrr_msg_holder_unlock(entry);
-	return ret;
-}
-
-int socket_read_data(struct socket_data *data) {
 	return rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,
-			read_data_receive_callback,
+			socket_read_raw_data_broker_callback,
 			data,
+			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+	);
+}
+
+struct socket_read_message_broker_callback_data {
+	struct socket_data *data;
+	struct rrr_msg_msg **message;
+};
+
+static int socket_read_message_broker_callback (struct rrr_msg_holder *entry, void *arg) {
+	struct socket_read_message_broker_callback_data *callback_data = arg;
+
+	if (MSG_TOPIC_LENGTH(*(callback_data->message)) == 0 && callback_data->data->default_topic != NULL) {
+		if (rrr_msg_msg_topic_set (
+				callback_data->message,
+				callback_data->data->default_topic,
+				callback_data->data->default_topic_length
+		) != 0) {
+			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
+					INSTANCE_D_NAME(callback_data->data->thread_data));
+			return 1;
+		}
+	}
+
+	RRR_DBG_2("socket instance %s received a message with timestamp %llu size %llu\n",
+			INSTANCE_D_NAME(callback_data->data->thread_data),
+			(long long unsigned int) (*(callback_data->message))->timestamp,
+			(unsigned long long) MSG_TOTAL_SIZE(*(callback_data->message))
+	);
+
+	entry->message = *(callback_data->message);
+	entry->data_length = MSG_TOTAL_SIZE(*(callback_data->message));
+	*(callback_data->message) = NULL;
+
+	callback_data->data->message_count++;
+
+	return 0;
+}
+
+static int socket_read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *private_data, void *arg) {
+	struct socket_data *data = arg;
+
+	(void)(private_data);
+
+	struct socket_read_message_broker_callback_data callback_data = {
+		data,
+		message
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			socket_read_message_broker_callback,
+			&callback_data,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	);
 }
@@ -368,7 +329,6 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
 
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 	pthread_cleanup_push(socket_stop, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
@@ -390,60 +350,85 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	RRR_DBG_2("socket instance %s listening on socket %s\n",
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
-	unsigned int consecutive_nothing_happened = 0;
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
+	struct rrr_read_common_get_session_target_length_from_array_tree_data raw_callback_data = {
+			data->tree,
+			&data->array_tmp,
+			data->do_sync_byte_by_byte,
+			0 // No max size
+	};
 
-		if (rrr_socket_client_collection_accept (
-			data->clients,
-			NULL,
-			NULL,
-			NULL
+	if (data->receive_rrr_message) {
+		if (rrr_socket_client_collection_event_setup (
+				data->clients,
+				INSTANCE_D_EVENTS(thread_data),
+				NULL,
+				NULL,
+				NULL,
+				4096,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				socket_read_rrr_msg_msg_callback,
+				NULL,
+				NULL,
+				NULL,
+				data
 		) != 0) {
-			RRR_MSG_0("Error while accepting connections in socket instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		int err = 0;
-		uint64_t prev_message_count = data->message_count;
-		if ((err = socket_read_data(data)) != 0) {
-			if (err == RRR_SOCKET_SOFT_ERROR) {
-				// Upon receival of invalid data, we must close the socket as sizes of
-				// the messages and boundaries might be out of sync
-				RRR_MSG_0("Invalid data received in socket instance %s, socket must be closed\n",
-						INSTANCE_D_NAME(thread_data));
-			}
-			else {
-				RRR_MSG_0("Error while reading data in socket instance %s, return was %i\n",
-						INSTANCE_D_NAME(thread_data), err);
-			}
-			break;
-		}
-
-		if (prev_message_count != data->message_count) {
-			consecutive_nothing_happened = 0;
-		}
-		else if (++consecutive_nothing_happened > 100) {
-			rrr_posix_usleep(25000); // 25ms
 		}
 	}
+	else {
+		if (rrr_socket_client_collection_event_setup_raw (
+				data->clients,
+				INSTANCE_D_EVENTS(thread_data),
+				NULL,
+				NULL,
+				NULL,
+				4096,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				rrr_read_common_get_session_target_length_from_array_tree,
+				&raw_callback_data,
+				socket_read_raw_data_callback,
+				data
+		) != 0) {
+		}
+	}
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
 
 	out_message:
 	RRR_DBG_1 ("socket instance %s received encourage stop\n",
 			INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
+
+static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+
+	(void)(thread);
+	(void)(amount);
+	(void)(flags);
+
+	RRR_BUG("BUG: socket_event_broker_data_available called in socket module\n");
+
+	return 0;
+}
+
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
 	NULL,
 	NULL,
 	NULL
+};
+
+struct rrr_instance_event_functions event_functions = {
+	socket_event_broker_data_available
 };
 
 static const char *module_name = "socket";
@@ -456,6 +441,7 @@ void init(struct rrr_instance_module_data *data) {
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
 		data->private_data = NULL;
+		data->event_functions = event_functions;
 }
 
 void unload(void) {

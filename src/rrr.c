@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "lib/rrr_config.h"
 #include "lib/log.h"
+#include "lib/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -195,6 +196,114 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
+struct main_loop_event_callback_data {
+	struct rrr_thread_collection **collection;
+	struct rrr_instance_collection *instances;
+	struct rrr_config *config;
+	struct cmd_data *cmd;
+	struct stats_data *stats_data;
+	struct rrr_message_broker *message_broker;
+	struct rrr_fork_handler *fork_handler;
+	const char *config_file;
+	struct rrr_event_queue *queue;
+};
+
+static void main_loop_close_sockets_except (
+		int stats_socket,
+		struct rrr_event_queue *queue
+) {
+	int a, b, c;
+	rrr_event_queue_fds_get (&a, &b, &c, queue);
+
+	int fds[] = { stats_socket, a, b, c };
+
+	rrr_socket_close_all_except_array_no_unlink (fds, sizeof(fds) / sizeof(fds[0]));
+}
+
+static int main_loop_threads_restart (
+	struct main_loop_event_callback_data *callback_data
+) {
+	int ret = 0;
+
+	main_loop_close_sockets_except (callback_data->stats_data->engine.socket, callback_data->queue);
+
+	if ((ret = rrr_main_create_and_start_threads (
+			callback_data->collection,
+			callback_data->instances,
+			callback_data->config,
+			callback_data->cmd,
+			&callback_data->stats_data->engine,
+			callback_data->message_broker,
+			callback_data->fork_handler
+	)) != 0) {
+		goto out;
+	}
+
+	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
+	// and then gets unregistered here.
+	if (callback_data->stats_data->handle != 0) {
+		rrr_stats_engine_handle_unregister(&callback_data->stats_data->engine, callback_data->stats_data->handle);
+		callback_data->stats_data->handle = 0;
+	}
+
+	if (callback_data->stats_data->engine.initialized != 0) {
+		if (main_stats_post_sticky_messages(callback_data->stats_data, callback_data->instances) != 0) {
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	if (!main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	struct main_loop_event_callback_data *callback_data = arg;
+
+	rrr_config_set_debuglevel_orig();
+
+	if (*(callback_data->collection) == NULL) {
+		if (main_loop_threads_restart (callback_data) != 0) {
+			return RRR_EVENT_EXIT;
+		}
+	}
+
+	rrr_fork_handle_sigchld_and_notify_if_needed(callback_data->fork_handler, 0);
+
+	if (rrr_instance_check_threads_stopped(callback_data->instances) == 1) {
+		RRR_DBG_1 ("One or more threads have finished for configuration %s\n", callback_data->config_file);
+
+		rrr_config_set_debuglevel_on_exit();
+		rrr_main_threads_stop_and_destroy(*(callback_data->collection));
+		*(callback_data->collection) = NULL;
+
+		// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
+		// as the handle usercount will be > 1. This handle will not be destroyed untill the
+		// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
+		// to find the handle as it will be removed from the costumer handle list.
+		rrr_message_broker_unregister_all(callback_data->message_broker);
+
+		if (main_running && rrr_config_global.no_thread_restart == 0) {
+			rrr_posix_usleep(1000000); // 1s
+		}
+		else {
+			return RRR_EVENT_EXIT;
+		}
+	}
+
+	int count;
+	rrr_thread_cleanup_postponed_run(&count);
+	if (count > 0) {
+		RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, callback_data->config_file);
+	}
+
+	return 0;
+}
+
 // We have one loop per fork and one fork per configuration file
 // Parent fork only monitors child forks
 static int main_loop (
@@ -206,6 +315,7 @@ static int main_loop (
 
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker *message_broker = NULL;
+	struct rrr_event_queue *queue = NULL;
 
 	struct rrr_config *config = NULL;
 	struct rrr_instance_collection instances = {0};
@@ -213,10 +323,15 @@ static int main_loop (
 
 	rrr_config_set_log_prefix(config_file);
 
+	if (rrr_event_queue_new(&queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
 	if (rrr_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
-		goto out;
+		goto out_destroy_events;
 	}
 
 	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
@@ -237,7 +352,7 @@ static int main_loop (
 	}
 
 	if (cmd_exists(cmd, "stats", 0)) {
-		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
+		if (rrr_stats_engine_init(&stats_data.engine, queue) != 0) {
 			RRR_MSG_0("Could not initialize statistics engine\n");
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
@@ -246,107 +361,62 @@ static int main_loop (
 
 	if (rrr_message_broker_new(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_destroy_instance_metadata;
+		goto out_destroy_stats_engine;
 	}
 
-	threads_restart:
-
-	rrr_socket_close_all_except(stats_data.engine.socket);
-
-	rrr_config_set_debuglevel_orig();
-	if ((ret = rrr_main_create_and_start_threads (
-			&collection,
-			&instances,
-			config,
-			cmd,
-			&stats_data.engine,
-			message_broker,
-			fork_handler
-	)) != 0) {
-		goto out_unregister_stats_handle;
-	}
-
-	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
-	// and then gets unregistered here.
-	if (stats_data.handle != 0) {
-		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
-		stats_data.handle = 0;
-	}
-
-	if (stats_data.engine.initialized != 0) {
-		if (main_stats_post_sticky_messages(&stats_data, &instances) != 0) {
-			goto out_stop_threads;
-		}
-	}
-
-	// Main loop
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-	while (main_running) {
-		rrr_posix_usleep (250000); // 250ms
 
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
+	struct main_loop_event_callback_data event_callback_data = {
+		&collection,
+		&instances,
+		config,
+		cmd,
+		&stats_data,
+		message_broker,
+		fork_handler,
+		config_file,
+		queue
+	};
 
-		if (rrr_instance_check_threads_stopped(&instances) == 1) {
-			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
-
-			rrr_config_set_debuglevel_on_exit();
-			rrr_main_threads_stop_and_destroy(collection);
-
-			// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
-			// as the handle usercount will be > 1. This handle will not be destroyed untill the
-			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
-			// to find the handle as it will be removed from the costumer handle list.
-			rrr_message_broker_unregister_all(message_broker);
-
-			if (main_running && rrr_config_global.no_thread_restart == 0) {
-				rrr_posix_usleep(1000000); // 1s
-				goto threads_restart;
-			}
-			else {
-				goto out_unload_modules;
-			}
-		}
-
-		if (stats_data.engine.initialized != 0) {
-			rrr_stats_engine_tick(&stats_data.engine);
-		}
-
-		int count;
-		rrr_thread_cleanup_postponed_run(&count);
-		if (count > 0) {
-			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
-		}
-	}
+	rrr_event_dispatch (
+			queue,
+			250 * 1000, // 250 ms
+			main_loop_periodic,
+			&event_callback_data
+	);
 
 	RRR_DBG_1 ("Main loop finished\n");
 
-	out_stop_threads:
+	if (collection != NULL) {
 		rrr_main_threads_stop_and_destroy(collection);
-	out_unregister_stats_handle:
-		if (stats_data.handle != 0) {
-			rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
-		}
-		rrr_config_set_debuglevel_on_exit();
-		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-		int count;
+	}
 
-		rrr_thread_cleanup_postponed_run(&count);
-		if (count > 0) {
-			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
-		}
+	if (stats_data.handle != 0) {
+		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
+	}
+	rrr_config_set_debuglevel_on_exit();
+	RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
+	int count;
 
-	out_unload_modules:
-#		ifndef RRR_NO_MODULE_UNLOAD
-			rrr_instance_unload_all(&instances);
-#		endif
+	rrr_thread_cleanup_postponed_run(&count);
+	if (count > 0) {
+		RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
+	}
+
+#ifndef RRR_NO_MODULE_UNLOAD
+	rrr_instance_unload_all(&instances);
+#endif
+	rrr_message_broker_destroy(message_broker);
+
+	out_destroy_stats_engine:
 		rrr_stats_engine_cleanup(&stats_data.engine);
-		rrr_message_broker_destroy(message_broker);
-		rrr_socket_close_all();
 	out_destroy_instance_metadata:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
 		rrr_config_destroy(config);
+	out_destroy_events:
+		rrr_event_queue_destroy(queue);
 	out:
 		return ret;
 }
@@ -475,6 +545,23 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 		return ret;
 }
 
+static int main_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	if (!main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	struct rrr_fork_handler *fork_handler = arg;
+
+	rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
+
+	if (some_fork_has_stopped) {
+		RRR_MSG_0("One or more forks has exited\n");
+		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
+}
+
 int main (int argc, const char *argv[], const char *env[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -489,6 +576,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 	rrr_strerror_init();
 
 	int is_child = 0;
+
+	struct rrr_event_queue *queue = NULL;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -585,19 +674,26 @@ int main (int argc, const char *argv[], const char *env[]) {
 	RRR_MAP_ITERATE_END();
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-	while (main_running) {
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
-		if (some_fork_has_stopped) {
-			RRR_MSG_0("One or more forks has exited\n");
-			goto out_cleanup_signal;
-		}
-
-		rrr_posix_usleep(250000); // 250 ms
+	// Create queue after forking to prevent it and it's FDs from existing in the forks
+	if (rrr_event_queue_new(&queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
 	}
+
+	rrr_event_dispatch (
+			queue,
+			250 * 1000, // 250 ms
+			main_periodic,
+			fork_handler
+	);
 
 	out_cleanup_signal:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
+
+		if (queue != NULL) {
+			rrr_event_queue_destroy(queue);
+		}
 
 		rrr_signal_handler_remove(signal_handler);
 		rrr_signal_handler_remove(signal_handler_fork);
@@ -616,6 +712,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
+		rrr_socket_close_all();
 		if (ret == 0) {
 			RRR_MSG_1("Exiting program without errors\n");
 		}

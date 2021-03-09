@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "event.h"
+#include "event_functions.h"
 #include "util/gnu.h"
 #include "util/posix.h"
 #include "util/macro_utils.h"
@@ -121,6 +123,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 
 struct rrr_log_hook {
 	void (*log)(
+			uint16_t *write_amount,
 			unsigned short loglevel_translated,
 			unsigned short loglevel_orig,
 			const char *prefix,
@@ -128,6 +131,7 @@ struct rrr_log_hook {
 			void *private_arg
 	);
 	void *private_arg;
+	struct rrr_event_queue *notify_queue;
 	int handle;
 };
 
@@ -138,13 +142,15 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
+				uint16_t *write_amount,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
-		void *private_arg
+		void *private_arg,
+		struct rrr_event_queue *notify_queue
 ) {
 	*handle = 0;
 
@@ -158,6 +164,7 @@ void rrr_log_hook_register (
 	struct rrr_log_hook hook = {
 		 log,
 		 private_arg,
+		 notify_queue,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -215,14 +222,20 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
+		uint16_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
+				&write_amount,
 				loglevel_translated,
 				loglevel_orig,
 				prefix,
 				message,
 				hook->private_arg
 		);
+
+		if (hook->notify_queue && write_amount > 0) {
+			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, 0, write_amount);
+		}
 	}
 
 	LOCK_HOOK_END;

@@ -703,11 +703,11 @@ int rrr_socket_close_all_no_unlink (void) {
 }
 
 int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
-	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
+	return __rrr_socket_close_all_except_array (fds, fd_count, 0);
 }
 
 int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
-	return __rrr_socket_close_all_except_array (fds, fd_count, 0);
+	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
 }
 
 int rrr_socket_fifo_create (

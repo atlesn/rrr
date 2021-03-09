@@ -1579,8 +1579,6 @@ static void httpclient_queue_process (
 		return;
 	}
 
-	printf("Process queue\n");
-
 	// Check timeouts based on the time the loop starts to be fair
 	// if there are errors and the loop takes a while
 	const uint64_t loop_begin_time = rrr_time_get_64();

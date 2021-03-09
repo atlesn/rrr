@@ -239,6 +239,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
+		
+struct rrr_event_queue;
 
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
@@ -246,13 +248,15 @@ void rrr_log_cleanup(void);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
+				uint16_t *write_count,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
-		void *private_arg
+		void *private_arg,
+		struct rrr_event_queue *notify_queue
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (

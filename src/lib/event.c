@@ -67,6 +67,7 @@ struct rrr_event_queue {
 	struct event_base *event_base;
 	struct rrr_event queue[QUEUE_MAX];
 	int (*functions[0x100])(RRR_EVENT_FUNCTION_ARGS);
+	void *function_args[0x100];
 	int signal_fd_listen;
 	int signal_fd_write;
 	int signal_fd_read;
@@ -254,6 +255,16 @@ void rrr_event_function_set (
 ) {
 	handle->functions[code] = function;
 }
+
+void rrr_event_function_set_with_arg (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		int (*function)(RRR_EVENT_FUNCTION_ARGS),
+		void *arg
+) {
+	handle->functions[code] = function;
+	handle->function_args[code] = arg;
+}
 				
 static void __rrr_event_write_signal_unlocked (
 		struct rrr_event_queue *queue
@@ -359,7 +370,11 @@ static void __rrr_event_dispatch (
 
 	while (amount > 0) {
 		uint16_t amount_new = amount;
-		if ((ret_tmp = callback_data->queue->functions[function](&amount_new, flags, callback_data->callback_arg)) != 0) {
+		if ((ret_tmp = callback_data->queue->functions[function] (
+				&amount_new,
+				flags,
+				callback_data->queue->function_args[function] != NULL ? callback_data->queue->function_args[function] : callback_data->callback_arg
+		)) != 0) {
 			RRR_DBG_9_PRINTF("EQ DISP FD %i => amount %u (remaining) value %i returned from function, stopping event loop\n",
 				queue->signal_fd_listen, amount, ret_tmp);
 			goto out;

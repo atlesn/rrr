@@ -48,43 +48,21 @@ void rrr_socket_client_collection_destroy (
 int rrr_socket_client_collection_count (
 		struct rrr_socket_client_collection *collection
 );
-int rrr_socket_client_collection_iterate (
+int rrr_socket_client_collection_send_push_const_multicast (
 		struct rrr_socket_client_collection *collection,
-		int (*callback)(int fd, void *private_data, void *arg),
-		void *callback_arg
-);
-int rrr_socket_client_collection_accept (
-		struct rrr_socket_client_collection *collection,
-		int (*private_data_new)(void **target, int fd, void *private_arg),
-		void *private_arg,
-		void (*private_data_destroy)(void *private_data)
-);
-int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
-		struct rrr_socket_client_collection *collection,
-		void *data,
-		size_t size
-);
-int rrr_socket_client_collection_read_raw (
-		struct rrr_socket_client_collection *collection,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags_socket,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
-		void *complete_callback_arg
-);
-int rrr_socket_client_collection_read_message (
-		struct rrr_socket_client_collection *collection,
-		ssize_t read_step_max_size,
-		int read_flags_socket,
-		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
-		void *callback_arg
+		const void *data,
+		ssize_t size
 );
 int rrr_socket_client_collection_send_push (
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		void **data,
+		ssize_t data_size
+);
+int rrr_socket_client_collection_send_push_const (
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		const void *data,
 		ssize_t data_size
 );
 void rrr_socket_client_collection_send_tick (
@@ -101,5 +79,20 @@ int rrr_socket_client_collection_event_setup (
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 );
+int rrr_socket_client_collection_event_setup_raw (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_event_queue *queue,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg,
+		ssize_t read_step_max_size,
+		int read_flags_socket,
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
+		void *complete_callback_arg
+);
+		
+
 
 #endif /* RRR_SOCKET_CLIENT_H */
