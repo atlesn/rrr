@@ -440,6 +440,13 @@ static void mqttclient_event_input_queue (
 	}
 
 	rrr_msg_holder_decref_while_locked_and_unlock(entry);
+
+	if (RRR_LL_COUNT(&data->input_queue) > 0) {
+		event_active(data->event_input_queue, 0, 0);
+	}
+	else {
+		event_del(data->event_input_queue);
+	}
 }
 
 static int mqttclient_event_input_queue_add_if_needed (
