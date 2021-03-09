@@ -89,35 +89,35 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 	pthread_mutex_unlock (&rrr_log_hook_lock);
 }
 
-#define LOCK_BEGIN													\
-		pthread_mutex_lock (&rrr_log_lock);							\
-		pthread_cleanup_push(__rrr_log_printf_unlock_void, NULL)
+#define LOCK_BEGIN                                                                                                             \
+        pthread_mutex_lock (&rrr_log_lock);                                                                                    \
+        pthread_cleanup_push(__rrr_log_printf_unlock_void, NULL)
 
-#define LOCK_END													\
-		pthread_cleanup_pop(1)
+#define LOCK_END                                                                                                               \
+        pthread_cleanup_pop(1)
 
-#define LOCK_HOOK_BEGIN												\
-		if (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) {		\
-			goto lock_hook_out;										\
-		}															\
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
+#define LOCK_HOOK_BEGIN                                                                                                        \
+        if (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) {                                                                 \
+            goto lock_hook_out;                                                                                                \
+        }                                                                                                                      \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
-#define LOCK_HOOK_END												\
-		pthread_cleanup_pop(1);										\
-		lock_hook_out:
+#define LOCK_HOOK_END                                                                                                          \
+        pthread_cleanup_pop(1);                                                                                                \
+        lock_hook_out:
 
-#define LOCK_HOOK_UNCHECKED_BEGIN									\
-		pthread_mutex_lock (&rrr_log_hook_lock);					\
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+#define LOCK_HOOK_UNCHECKED_BEGIN                                                                                              \
+        pthread_mutex_lock (&rrr_log_hook_lock);                                                                               \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
 // Register and unregister functions should spin to keep the thread alive
 // thus obtaining the lock faster when there's a lot of messages being generated.
-#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN								\
-		while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { } \
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN                                                                                         \
+        while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { }                                                            \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
-#define LOCK_HOOK_UNCHECKED_END										\
-		pthread_cleanup_pop(1)
+#define LOCK_HOOK_UNCHECKED_END                                                                                                \
+        pthread_cleanup_pop(1)
 
 struct rrr_log_hook {
 	void (*log)(
