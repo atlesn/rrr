@@ -257,7 +257,7 @@ static int __rrr_stats_attempt_connect_exact (
 		goto out;
 	}
 
-	RRR_DBG_1("Connected to socket %s\n");
+	RRR_DBG_1("Connected to socket %s\n", path);
 
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 	if ((data->socket_path_active = strdup(path)) == NULL) {

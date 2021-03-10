@@ -238,7 +238,7 @@ static void __rrr_udpstream_frame_packed_dump (
 	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
 	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
-	RRR_DBG ("Total size   : %u\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Total size   : %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Data size    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame));
 	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
 	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
@@ -319,12 +319,12 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		frame_new->data[0] = '\0';
 	}
 
-	RRR_DBG_3("UDP-stream TX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+	RRR_DBG_3("UDP-stream TX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %llu F/T: %u CH/ID/WS: %u\n",
 			rrr_be16toh(frame_new->stream_id),
 			rrr_be32toh(frame_new->frame_id),
 			rrr_be32toh(frame_new->header_crc32),
 			rrr_be32toh(frame_new->data_crc32),
-			rrr_be16toh(frame_new->data_size) + sizeof(*frame) - 1,
+			(unsigned long long int) rrr_be16toh(frame_new->data_size) + sizeof(*frame) - 1,
 			frame_new->flags_and_type,
 			rrr_be32toh(frame_new->connect_handle)
 	);
@@ -1059,12 +1059,12 @@ static int __rrr_udpstream_read_callback (
 
 	callback_data->receive_count++;
 
-	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %llu F/T: %u CH/ID/WS: %u\n",
 			rrr_be16toh(frame->stream_id),
 			rrr_be32toh(frame->frame_id),
 			rrr_be32toh(frame->header_crc32),
 			rrr_be32toh(frame->data_crc32),
-			rrr_be16toh(frame->data_size) + sizeof(*frame) - 1,
+			(unsigned long long int) rrr_be16toh(frame->data_size) + sizeof(*frame) - 1,
 			frame->flags_and_type,
 			rrr_be32toh(frame->connect_handle)
 	);
@@ -2051,7 +2051,7 @@ int rrr_udpstream_connect (
 			RRR_MSG_1("UDP-stream connection attempt to %s\n", buf);
 		}
 		if ((ret = rrr_udpstream_connect_raw(connect_handle, data, result->ai_addr, result->ai_addrlen)) != 0) {
-			RRR_DBG_1("UDP-stream failed to send connect packet to %s, return was %i\n", ret);
+			RRR_DBG_1("UDP-stream failed to send connect packet, return was %i\n", ret);
 		}
 		else {
 			break;

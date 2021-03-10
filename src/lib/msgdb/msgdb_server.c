@@ -347,7 +347,7 @@ static int __rrr_msgdb_server_put_path_split_callback (
 
 		// Note: Do not attempt to use size from the endian-converted message
 		if (write(fd, msg_tmp, MSG_TOTAL_SIZE(callback_data->msg)) != MSG_TOTAL_SIZE(callback_data->msg)) {
-			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", str, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -419,7 +419,7 @@ static int __rrr_msgdb_server_del_path_split_callback (
 			else {
 				if (errno == ENOENT) {
 					RRR_DBG_3("Note: Tried to delete file '%s' in message db server, but it had already been deleted.\n",
-						str, rrr_strerror(errno));
+						str);
 				}
 				else {
 					RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
@@ -572,7 +572,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		}
 
 		if (!RRR_MSG_IS_RRR_MESSAGE(msg_tmp)) {
-			RRR_MSG_0("Message type of '%s' was not RRR message in message db server\n");
+			RRR_MSG_0("Message type of '%u' was not RRR message in message db server\n", msg_tmp->msg_type);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
