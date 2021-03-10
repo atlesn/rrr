@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,6 +42,10 @@ int rrr_socket_client_collection_new (
 		int listen_fd,
 		const char *creator
 );
+int rrr_socket_client_collection_new_no_listen (
+		struct rrr_socket_client_collection **target,
+		const char *creator
+);
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 );
@@ -65,8 +69,9 @@ int rrr_socket_client_collection_send_push_const (
 		const void *data,
 		ssize_t data_size
 );
-void rrr_socket_client_collection_send_tick (
-		struct rrr_socket_client_collection *collection
+int rrr_socket_client_collection_connected_fd_push (
+		struct rrr_socket_client_collection *collection,
+		int fd
 );
 int rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,

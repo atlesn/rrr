@@ -101,7 +101,7 @@ static void __rrr_stats_engine_log_listener (
 
 	*write_amount = 0;
 
-	struct rrr_stats_message *new_message = NULL;
+	struct rrr_msg_stats *new_message = NULL;
 
 	if (stats->initialized == 0) {
 		return;
@@ -124,7 +124,7 @@ static void __rrr_stats_engine_log_listener (
 		msg_size = RRR_STATS_MESSAGE_DATA_MAX_SIZE;
 	}
 
-	if (rrr_stats_message_new (
+	if (rrr_msg_stats_new (
 			&new_message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			0,
@@ -145,12 +145,12 @@ static void __rrr_stats_engine_log_listener (
 	out:
 	JOURNAL_UNLOCK();
 	if (new_message != NULL) {
-		rrr_stats_message_destroy(new_message);
+		rrr_msg_stats_destroy(new_message);
 	}
 }
 
 static int __rrr_stats_engine_message_pack (
-		const struct rrr_stats_message *message,
+		const struct rrr_msg_stats *message,
 		int (*callback)(
 				struct rrr_msg *data,
 				size_t size,
@@ -158,10 +158,10 @@ static int __rrr_stats_engine_message_pack (
 		),
 		void *callback_arg
 ) {
-	struct rrr_stats_message_packed message_packed;
+	struct rrr_msg_stats_packed message_packed;
 	size_t total_size;
 
-	rrr_stats_message_pack_and_flip (
+	rrr_msg_stats_pack_and_flip (
 			&message_packed,
 			&total_size,
 			message
@@ -241,7 +241,7 @@ static void __rrr_stats_client_destroy_void (void *client) {
 static int __rrr_stats_named_message_list_destroy (
 		struct rrr_stats_named_message_list *list
 ) {
-	RRR_LL_DESTROY(list, struct rrr_stats_message, rrr_stats_message_destroy(node));
+	RRR_LL_DESTROY(list, struct rrr_msg_stats, rrr_msg_stats_destroy(node));
 	free(list);
 	return 0;
 }
@@ -255,7 +255,7 @@ static void __rrr_stats_named_message_list_collection_clear (
 static void __rrr_stats_log_journal_clear (
 		struct rrr_stats_log_journal *collection
 ) {
-	RRR_LL_DESTROY(collection, struct rrr_stats_message, rrr_stats_message_destroy(node));
+	RRR_LL_DESTROY(collection, struct rrr_msg_stats, rrr_msg_stats_destroy(node));
 }
 
 static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
@@ -287,7 +287,7 @@ static int __rrr_stats_engine_send_messages_from_list_unlocked (
 
 	// TODO : Consider having separate queue for sticky messages
 
-	RRR_LL_ITERATE_BEGIN(list, struct rrr_stats_message);
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_msg_stats);
 		if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(node)) {
 			if (node->timestamp == 0 || node->timestamp <= sticky_send_limit) {
 				node->timestamp = time_now;
@@ -314,7 +314,7 @@ static int __rrr_stats_engine_send_messages_from_list_unlocked (
 				goto out;
 			}
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_stats_message_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_msg_stats_destroy(node));
 
 	out:
 	return ret;
@@ -349,13 +349,13 @@ static int __rrr_stats_engine_event_log_journal_data_available (
 
 	JOURNAL_LOCK(stats);
 	while (--amount_int >= 0) {
-		struct rrr_stats_message *node = RRR_LL_SHIFT(&stats->log_journal_input);
+		struct rrr_msg_stats *node = RRR_LL_SHIFT(&stats->log_journal_input);
 		if (node == NULL) {
 			// Can happen after forking
 			break;
 		}
 		__rrr_stats_engine_message_pack(node, __rrr_stats_engine_multicast_send_intermediate, stats);
-		rrr_stats_message_destroy(node);
+		rrr_msg_stats_destroy(node);
 	}
 	JOURNAL_UNLOCK();
 
@@ -378,6 +378,20 @@ static void __rrr_stats_engine_event_periodic (
 		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
 		event_base_loopbreak(rrr_event_queue_base_get(stats->queue));
 	}
+}
+	
+static int __rrr_stats_engine_read_callback (
+		const struct rrr_msg_stats *message,
+		void *arg1,
+		void *arg2
+) {
+	(void)(message);
+	(void)(arg1);
+	(void)(arg2);
+
+	// Only keepalive messages are received, no useful content
+
+	return 0;
 }
 
 // To provide memory fence, this must be called prior to any thread starting or forking
@@ -429,6 +443,7 @@ int rrr_stats_engine_init (
 			NULL,
 			NULL,
 			NULL,
+			__rrr_stats_engine_read_callback,
 			NULL
 	) != 0) {
 		RRR_MSG_0("Could not setup events for client collection in statistics engine\n");
@@ -520,19 +535,19 @@ static void __rrr_stats_engine_message_sticky_remove_nolock (
 		struct rrr_stats_named_message_list *list,
 		const char *path
 ) {
-	RRR_LL_ITERATE_BEGIN(list, struct rrr_stats_message);
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_msg_stats);
 		if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(node) && strcmp(path, node->path) == 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_stats_message_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_msg_stats_destroy(node));
 }
 
 static int __rrr_stats_engine_message_register_nolock (
 		struct rrr_stats_engine *stats,
 		unsigned int stats_handle,
 		const char *path_prefix,
-		const struct rrr_stats_message *message
+		const struct rrr_msg_stats *message
 ) {
 	int ret = 0;
 	char prefix_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
@@ -545,9 +560,9 @@ static int __rrr_stats_engine_message_register_nolock (
 		goto out_final;
 	}
 
-	struct rrr_stats_message *new_message = NULL;
+	struct rrr_msg_stats *new_message = NULL;
 
-	if (rrr_stats_message_duplicate(&new_message, message) != 0) {
+	if (rrr_msg_stats_duplicate(&new_message, message) != 0) {
 		RRR_MSG_0("Could not duplicate message in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
 		goto out_final;
@@ -565,7 +580,7 @@ static int __rrr_stats_engine_message_register_nolock (
 	}
 	ret = 0;
 
-	if (rrr_stats_message_set_path(new_message, prefix_tmp) != 0) {
+	if (rrr_msg_stats_set_path(new_message, prefix_tmp) != 0) {
 		RRR_MSG_0("Could not set path in new message in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
 		goto out_free;
@@ -576,7 +591,7 @@ static int __rrr_stats_engine_message_register_nolock (
 
 	goto out_final;
 	out_free:
-		rrr_stats_message_destroy(new_message);
+		rrr_msg_stats_destroy(new_message);
 	out_final:
 		return ret;
 }
@@ -693,7 +708,7 @@ int rrr_stats_engine_post_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,
 		const char *path_prefix,
-		const struct rrr_stats_message *message
+		const struct rrr_msg_stats *message
 ) {
 	int ret = 0;
 

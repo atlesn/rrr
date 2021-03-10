@@ -162,7 +162,8 @@ int rrr_ip_network_start_udp_nobind (
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
 			"ip_network_start_udp_nobind",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
@@ -183,7 +184,8 @@ int rrr_ip_network_start_udp (
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
 			"ip_network_start_udp_ipv4",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
@@ -317,7 +319,8 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 			SOCK_STREAM|SOCK_NONBLOCK,
 			0,
 			"ip_network_connect_tcp_ipv4_or_ipv6_raw",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
@@ -425,7 +428,8 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 				rp->ai_socktype|SOCK_NONBLOCK,
 				rp->ai_protocol,
 				"ip_network_connect_tcp_ipv4_or_ipv6",
-				NULL
+				NULL,
+				0
 		);
 		if (fd == -1) {
 			RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
@@ -504,7 +508,8 @@ int rrr_ip_network_start_tcp (
 			SOCK_NONBLOCK|SOCK_STREAM,
 			0,
 			"ip_network_start",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));

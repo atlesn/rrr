@@ -270,6 +270,7 @@ static int __rrr_msg_to_host_and_dump (
 			__rrr_msg_addr_callback,
 			__rrr_msg_log_callback,
 			__rrr_msg_ctrl_callback,
+			NULL,
 			data,
 			NULL
 	)) != 0) {

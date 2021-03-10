@@ -938,6 +938,7 @@ int rrr_msgdb_server_event_setup (
 			NULL,
 			NULL,
 			__rrr_msgdb_server_read_msg_ctrl_callback,
+			NULL,
 			server
 	);
 }

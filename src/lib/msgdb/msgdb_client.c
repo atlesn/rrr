@@ -146,6 +146,7 @@ int rrr_msgdb_client_await_ack (
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback,
+			NULL,
 			conn,
 			positive_ack
 	)) != 0) {
@@ -196,6 +197,7 @@ int rrr_msgdb_client_await_msg (
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback_silent,
+			NULL,
 			conn,
 			result_msg
 	)) != 0) {

@@ -959,6 +959,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 			NULL,
 			NULL,
 			NULL,
+			NULL,
 			callback_data,
 			NULL
 	)) != 0) {

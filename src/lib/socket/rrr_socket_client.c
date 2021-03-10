@@ -124,7 +124,7 @@ static int __rrr_socket_client_destroy (
 static int __rrr_socket_client_new (
 		struct rrr_socket_client **result,
 		int fd,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len,
 		int (*private_data_new)(void **target, int fd, void *private_arg),
 		void *private_arg,
@@ -198,7 +198,7 @@ void rrr_socket_client_collection_destroy (
 	free(collection);
 }
 
-int rrr_socket_client_collection_new (
+static int __rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
 		int listen_fd,
 		const char *creator
@@ -230,6 +230,21 @@ int rrr_socket_client_collection_new (
 		free(collection);
 	out:
 		return ret;
+}
+
+int rrr_socket_client_collection_new (
+		struct rrr_socket_client_collection **target,
+		int listen_fd,
+		const char *creator
+) {
+	return __rrr_socket_client_collection_new(target, listen_fd, creator);
+}
+
+int rrr_socket_client_collection_new_no_listen (
+		struct rrr_socket_client_collection **target,
+		const char *creator
+) {
+	return __rrr_socket_client_collection_new(target, -1, creator);
 }
 
 int rrr_socket_client_collection_count (
@@ -381,6 +396,7 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 			callback_data->callback_addr_msg,
 			callback_data->callback_log_msg,
 			callback_data->callback_ctrl_msg,
+			callback_data->callback_stats_msg,
 			private_data,
 			callback_data->callback_arg
 	);
@@ -448,6 +464,7 @@ static void __rrr_socket_client_collection_event_read_message (
 		callback_data->callback_addr_msg,
 		callback_data->callback_log_msg,
 		callback_data->callback_ctrl_msg,
+		callback_data->callback_stats_msg,
 		callback_data->msg_callback_arg
 	};
 
@@ -501,15 +518,81 @@ static void __rrr_socket_client_collection_event_read_raw (
 	}
 }
 
-static int __rrr_socket_client_collection_accept (
+static int __rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
-		int (*private_data_new)(void **target, int fd, void *private_arg),
-		void *private_arg,
-		void (*private_data_destroy)(void *private_data)
+		const struct rrr_socket_client *temp
 ) {
+	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
+
 	int ret = 0;
 
 	struct rrr_socket_client *client_new = NULL;
+
+	if ((ret = __rrr_socket_client_new (
+			&client_new,
+			temp->connected_fd,
+			(const struct sockaddr *) &temp->addr,
+			temp->addr_len,
+			callback_data->callback_private_data_new,
+			callback_data->callback_private_data_arg,
+			callback_data->callback_private_data_destroy
+	)) != 0) {
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_connected_fd_push\n");
+		goto out;
+	}
+
+	RRR_DBG_7("Client connection added to collection with fd %i\n", temp->connected_fd);
+
+	if (collection->event_base != NULL) {
+		if ((client_new->event_read = event_new (
+				collection->event_base,
+				temp->connected_fd,
+				EV_READ|EV_PERSIST,
+				collection->callback_data.event_read_callback,
+				client_new
+		)) == NULL) {
+			RRR_MSG_0("Failed to create read event in __rrr_socket_client_collection_connected_fd_push\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (event_add(client_new->event_read, NULL) != 0) {
+			RRR_MSG_0("Failed to add read event in __rrr_socket_client_collection_connected_fd_push\n");
+			ret = 1;
+			goto out;
+		}
+
+		if ((client_new->event_write = event_new (
+				collection->event_base,
+				temp->connected_fd,
+				EV_WRITE|EV_PERSIST,
+				__rrr_socket_client_collection_event_write,
+				client_new
+		)) == NULL) {
+			RRR_MSG_0("Failed to create write event in __rrr_socket_client_collection_connected_fd_push\n");
+			ret = 1;
+			goto out;
+		}
+
+		// Don't add write event yet, wait until data is pushed
+	}
+
+	client_new->collection = collection;
+
+	RRR_LL_UNSHIFT(collection, client_new);
+	client_new = NULL;
+
+	out:
+	if (client_new != NULL) {
+		__rrr_socket_client_destroy(client_new);
+	}
+	return ret;
+}
+
+static int __rrr_socket_client_collection_accept (
+		struct rrr_socket_client_collection *collection
+) {
+	int ret = 0;
 
 	struct rrr_socket_client temp = {0};
 	temp.addr_len = sizeof(temp.addr);
@@ -527,64 +610,9 @@ static int __rrr_socket_client_collection_accept (
 
 	temp.connected_fd = ret;
 
-	if ((ret = __rrr_socket_client_new (
-			&client_new,
-			temp.connected_fd,
-			(struct sockaddr *) &temp.addr,
-			temp.addr_len,
-			private_data_new,
-			private_arg,
-			private_data_destroy
-	)) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_accept\n");
-		goto out;
-	}
-
-	RRR_DBG_7("Client connection accepted into collection with fd %i\n", temp.connected_fd);
-
-	if (collection->event_base != NULL) {
-		if ((client_new->event_read = event_new (
-				collection->event_base,
-				temp.connected_fd,
-				EV_READ|EV_PERSIST,
-				collection->callback_data.event_read_callback,
-				client_new
-		)) == NULL) {
-			RRR_MSG_0("Failed to create read event in __rrr_socket_client_collection_accept\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (event_add(client_new->event_read, NULL) != 0) {
-			RRR_MSG_0("Failed to add read event in __rrr_socket_client_collection_accept\n");
-			ret = 1;
-			goto out;
-		}
-
-		if ((client_new->event_write = event_new (
-				collection->event_base,
-				temp.connected_fd,
-				EV_WRITE|EV_PERSIST,
-				__rrr_socket_client_collection_event_write,
-				client_new
-		)) == NULL) {
-			RRR_MSG_0("Failed to create write event in __rrr_socket_client_collection_accept\n");
-			ret = 1;
-			goto out;
-		}
-
-		// Don't add write event yet, wait until data is pushed
-	}
-
-	client_new->collection = collection;
-
-	RRR_LL_UNSHIFT(collection, client_new);
-	client_new = NULL;
+	ret = __rrr_socket_client_collection_connected_fd_push (collection, &temp);
 
 	out:
-	if (client_new != NULL) {
-		__rrr_socket_client_destroy(client_new);
-	}
 	return ret;
 }
 
@@ -701,26 +729,12 @@ int rrr_socket_client_collection_send_push_const (
 	return __rrr_socket_client_send_push_const(client, data, data_size);
 }
 
-void rrr_socket_client_collection_send_tick (
-		struct rrr_socket_client_collection *collection
-) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		int ret_tmp;
-		if ((ret_tmp = __rrr_socket_client_send_tick (
-			node
-		)) != RRR_SOCKET_OK && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
-}
-
 static void __rrr_socket_client_collection_event_accept (
 		evutil_socket_t fd,
 		short flags,
 		void *arg
 ) {
 	struct rrr_socket_client_collection *collection = arg;
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
 
 	(void)(fd);
 	(void)(flags);
@@ -728,10 +742,7 @@ static void __rrr_socket_client_collection_event_accept (
 	int ret_tmp;
 
 	if ((ret_tmp = __rrr_socket_client_collection_accept (
-			collection,
-			callback_data->callback_private_data_new,
-			callback_data->callback_private_data_arg,
-			callback_data->callback_private_data_destroy
+			collection
 	)) != 0) {
 		event_base_loopbreak(collection->event_base);
 	}
@@ -749,26 +760,39 @@ static int __rrr_socket_client_collection_event_setup (
 	collection->event_base = rrr_event_queue_base_get(queue);
 	collection->callback_data = *callback_data;
 
-	if ((collection->listen_event = event_new (
-			collection->event_base,
-			collection->listen_fd,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
-			__rrr_socket_client_collection_event_accept,
-			collection
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_event_setup\n");
-		ret = 1;
-		goto out;
-	}
+	if (collection->listen_fd >= 0) {
+		if ((collection->listen_event = event_new (
+				collection->event_base,
+				collection->listen_fd,
+				EV_READ|EV_TIMEOUT|EV_PERSIST,
+				__rrr_socket_client_collection_event_accept,
+				collection
+		)) == NULL) {
+			RRR_MSG_0("Failed to create listening event in rrr_socket_client_collection_event_setup\n");
+			ret = 1;
+			goto out;
+		}
 
-	if (event_add(collection->listen_event, NULL)) {
-		RRR_MSG_0("Failed to add events in rrr_socket_client_collection_event_setup\n");
-		ret = 1;
-		goto out;
+		if (event_add(collection->listen_event, NULL)) {
+			RRR_MSG_0("Failed to add events in rrr_socket_client_collection_event_setup\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
 	return ret;
+}
+
+int rrr_socket_client_collection_connected_fd_push (
+		struct rrr_socket_client_collection *collection,
+		int fd
+) {
+	struct rrr_socket_client temp = {0};
+
+	temp.connected_fd = fd;
+
+	return __rrr_socket_client_collection_connected_fd_push (collection, &temp);
 }
 
 int rrr_socket_client_collection_event_setup (
@@ -793,6 +817,7 @@ int rrr_socket_client_collection_event_setup (
 		callback_addr_msg,
 		callback_log_msg,
 		callback_ctrl_msg,
+		callback_stats_msg,
 		callback_arg,
 		NULL,
 		NULL,
@@ -827,6 +852,7 @@ int rrr_socket_client_collection_event_setup_raw (
 		callback_private_data_arg,
 		read_step_max_size,
 		read_flags_socket,
+		NULL,
 		NULL,
 		NULL,
 		NULL,
