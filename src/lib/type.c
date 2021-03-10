@@ -1476,6 +1476,10 @@ int rrr_type_new_h (
 ) {
 	int ret = 0;
 
+	if (element_count == 0) {
+		RRR_BUG("BUG: Element count was 0 in rrr_type_new_h\n");
+	}
+
 	rrr_biglength stored_length = sizeof(uint64_t) * element_count;
 
 	if (stored_length > RRR_LENGTH_MAX) {
