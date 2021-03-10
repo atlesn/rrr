@@ -652,7 +652,6 @@ static int ip_read_loop (
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
 		RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
 		goto out;
 	}
 

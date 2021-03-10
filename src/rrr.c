@@ -117,9 +117,9 @@ struct stats_data {
 };
 
 static int main_stats_post_sticky_text_message (struct stats_data *stats_data, const char *path, const char *text) {
-	struct rrr_stats_message message;
+	struct rrr_msg_stats message;
 
-	if (rrr_stats_message_init (
+	if (rrr_msg_stats_init (
 			&message,
 			RRR_STATS_MESSAGE_TYPE_TEXT,
 			RRR_STATS_MESSAGE_FLAGS_STICKY,

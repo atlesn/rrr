@@ -527,7 +527,7 @@ int rrr_fifo_buffer_search_return_value_process (
 	}
 
 	if (*do_free == 0 && *do_stop == 0) {
-		RRR_BUG("Unknown return value %i to rrr_fifo_buffer_search_return_value_process\n");
+		RRR_BUG("BUG: Unknown return values to rrr_fifo_buffer_search_return_value_process\n");
 	}
 
 	out:

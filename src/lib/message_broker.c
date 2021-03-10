@@ -1371,8 +1371,12 @@ int rrr_message_broker_sender_add (
 			listener_costumer
 	)) != 0) {
 		RRR_MSG_0("Failed to add sender to costumer %s, too many senders\n", costumer->name);
+		goto out;
 	}
 
 	// Reverse arguments
-	return __rrr_message_broker_write_listener_add(listener_costumer, costumer);
+	ret = __rrr_message_broker_write_listener_add(listener_costumer, costumer);
+
+	out:
+	return ret;
 }

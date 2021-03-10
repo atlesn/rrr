@@ -43,6 +43,7 @@ rrr_http_server_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 rrr_stats_SOURCES = rrr_stats.c main.c
 rrr_stats_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
 rrr_stats_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
+rrr_stats_LDADD = -levent
 
 rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE

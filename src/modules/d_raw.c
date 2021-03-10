@@ -120,7 +120,7 @@ static int raw_event_periodic (void *arg) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(message_count, raw_data);
 
-	RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 " avg age %Lg ms\n",
+	RRR_DBG_1("Raw instance %s messages per second %" PRIu64 " total %" PRIu64 " avg age %Lg ms\n",
 			INSTANCE_D_NAME(thread_data),
 			message_count,
 			raw_data->counters.total_message_count,

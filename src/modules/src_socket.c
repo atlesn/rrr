@@ -373,8 +373,10 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 				NULL,
 				NULL,
 				NULL,
+				NULL,
 				data
 		) != 0) {
+			goto out_message;
 		}
 	}
 	else {
@@ -391,6 +393,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 				socket_read_raw_data_callback,
 				data
 		) != 0) {
+			goto out_message;
 		}
 	}
 

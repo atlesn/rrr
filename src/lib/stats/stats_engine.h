@@ -36,7 +36,7 @@ struct event;
 
 struct rrr_stats_named_message_list {
 	RRR_LL_NODE(struct rrr_stats_named_message_list);
-	RRR_LL_HEAD(struct rrr_stats_message);
+	RRR_LL_HEAD(struct rrr_msg_stats);
 	unsigned int owner_handle;
 	uint64_t last_seen;
 };
@@ -46,7 +46,7 @@ struct rrr_stats_named_message_list_collection {
 };
 
 struct rrr_stats_log_journal {
-	RRR_LL_HEAD(struct rrr_stats_message);
+	RRR_LL_HEAD(struct rrr_msg_stats);
 };
 
 struct rrr_stats_engine {
@@ -87,7 +87,7 @@ int rrr_stats_engine_post_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,
 		const char *path_prefix,
-		const struct rrr_stats_message *message
+		const struct rrr_msg_stats *message
 );
 
 #endif /* RRR_STATS_ENGINE_H */

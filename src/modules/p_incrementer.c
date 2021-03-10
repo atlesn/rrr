@@ -515,7 +515,6 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	if ((ret = rrr_mqtt_topic_tokenize (&data->subject_topic_filter_token, data->subject_topic_filter)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'incrementer_subject_topic_filter' in incrementer instance %s\n",
 			config->name);
-		ret = 1;
 		goto out;
 		
 	}

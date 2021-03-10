@@ -172,7 +172,6 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
 	)) != 0) {
 		RRR_MSG_0("Failed to create array message in mangler_poll_callback\n");
-		ret = 1;
 		goto out_drop;
 	}
 
@@ -216,7 +215,6 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 					config->name);
 			goto out;
 		}
-		ret = 0;
 	}
 
 	if ((ret = rrr_type_conversion_collection_new_from_map(&data->conversions, &data->conversions_map)) != 0) {

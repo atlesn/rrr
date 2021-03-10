@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <poll.h>
-#include <read.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../read.h"
 #include "../messages/msg.h"
+#include "../stats/stats_message.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
@@ -421,6 +421,7 @@ static int __rrr_socket_read_message_split_callbacks_complete_callback (
 			callback_data->callback_addr_msg,
 			callback_data->callback_log_msg,
 			callback_data->callback_ctrl_msg,
+			callback_data->callback_stats_msg,
 			callback_data->callback_arg1,
 			callback_data->callback_arg2
 	);
@@ -443,6 +444,7 @@ int rrr_socket_read_message_split_callbacks (
 			callback_addr_msg,
 			callback_log_msg,
 			callback_ctrl_msg,
+			callback_stats_msg,
 			callback_arg1,
 			callback_arg2
 	};

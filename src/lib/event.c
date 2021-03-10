@@ -170,7 +170,7 @@ int rrr_event_queue_new (
 	char buf[PATH_MAX];
 	snprintf(buf, PATH_MAX, "%s%s", rrr_config_global.run_directory, "/event.sock-XXXXXX");
 
-	if ((ret = rrr_socket_unix_create_bind_and_listen (
+	if (rrr_socket_unix_create_bind_and_listen (
 			&queue->signal_fd_listen,
 			"event",
 			buf,
@@ -178,7 +178,7 @@ int rrr_event_queue_new (
 			1,
 			1,
 			0
-	)) != 0) {
+	) != 0) {
 		RRR_MSG_0("Failed to create listen socket for event queue, path was '%s'\n", buf);
 		ret = 1;
 		goto out_destroy_event_base;

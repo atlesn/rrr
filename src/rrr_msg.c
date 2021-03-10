@@ -149,7 +149,7 @@ static int __rrr_msg_msg_callback (
 	}
 	else if (MSG_CLASS(msg) == MSG_CLASS_DATA) {
 		RRR_MSG_1("Class: data\n");
-		RRR_MSG_1("Data size: %" PRIrrrl "\n",  MSG_DATA_LENGTH(msg));
+		RRR_MSG_1("Data size: %llu\n", (unsigned long long int) MSG_DATA_LENGTH(msg));
 		if (RRR_DEBUGLEVEL_6) {
 			struct rrr_string_builder str_tmp = {0};
 			const unsigned char *buf = (const unsigned char *) MSG_DATA_PTR(msg);
@@ -270,6 +270,7 @@ static int __rrr_msg_to_host_and_dump (
 			__rrr_msg_addr_callback,
 			__rrr_msg_log_callback,
 			__rrr_msg_ctrl_callback,
+			NULL,
 			data,
 			NULL
 	)) != 0) {
