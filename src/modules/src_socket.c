@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -186,8 +186,7 @@ static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, v
 			data->default_topic,
 			data->default_topic_length
 	)) != 0) {
-		RRR_MSG_0("Could not create array message in read_data_receive_message_callback of socket instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Could not create array message in socket_read_raw_data_broker_callback\n");
 		goto out;
 	}
 
@@ -203,6 +202,7 @@ static int socket_read_raw_data_broker_callback (struct rrr_msg_holder *entry, v
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
+	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -231,15 +231,16 @@ struct socket_read_message_broker_callback_data {
 static int socket_read_message_broker_callback (struct rrr_msg_holder *entry, void *arg) {
 	struct socket_read_message_broker_callback_data *callback_data = arg;
 
+	int ret = 0;
+
 	if (MSG_TOPIC_LENGTH(*(callback_data->message)) == 0 && callback_data->data->default_topic != NULL) {
-		if (rrr_msg_msg_topic_set (
+		if ((ret = rrr_msg_msg_topic_set (
 				callback_data->message,
 				callback_data->data->default_topic,
 				callback_data->data->default_topic_length
-		) != 0) {
-			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
-					INSTANCE_D_NAME(callback_data->data->thread_data));
-			return 1;
+		)) != 0) {
+			RRR_MSG_0("Could not set topic of message in socket_read_message_broker_callback\n");
+			goto out;
 		}
 	}
 
@@ -255,7 +256,9 @@ static int socket_read_message_broker_callback (struct rrr_msg_holder *entry, vo
 
 	callback_data->data->message_count++;
 
-	return 0;
+	out:
+	rrr_msg_holder_unlock(entry);
+	return ret;
 }
 
 static int socket_read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *private_data, void *arg) {
