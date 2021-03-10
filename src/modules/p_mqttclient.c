@@ -136,8 +136,6 @@ struct mqtt_client_data {
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
-	uint64_t total_usleep_count;
-	uint64_t total_ticks_count;
 	uint64_t total_discarded_count;
 	char *username;
 	char *password;
@@ -420,47 +418,28 @@ static void mqttclient_event_input_queue (
 	(void)(flags);
 
 	if (RRR_LL_COUNT(&data->input_queue) == 0 || data->input_queue_disabled) {
-		event_del(data->event_input_queue);
 		return;
 	}
 
 	// Caution: Loose pointer
 	struct rrr_msg_holder *entry = RRR_LL_SHIFT(&data->input_queue);
+	while (entry != NULL) {
+		rrr_msg_holder_lock(entry);
 
-	rrr_msg_holder_lock(entry);
+		if (mqttclient_publish(data, entry) != 0) {
+			RRR_LL_UNSHIFT(&data->input_queue, entry);
+			rrr_msg_holder_unlock(entry);
 
-	if (mqttclient_publish(data, entry) != 0) {
-		RRR_LL_UNSHIFT(&data->input_queue, entry);
-		rrr_msg_holder_unlock(entry);
-
-		RRR_MSG_0("Warning: Failed to publish message in mqttclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
-		return;
-	}
-
-	rrr_msg_holder_decref_while_locked_and_unlock(entry);
-
-	if (RRR_LL_COUNT(&data->input_queue) > 0) {
-		event_active(data->event_input_queue, 0, 0);
-	}
-	else {
-		event_del(data->event_input_queue);
-	}
-}
-
-static int mqttclient_event_input_queue_add_if_needed (
-		struct mqtt_client_data *data
-) {
-	if (RRR_LL_COUNT(&data->input_queue) > 0) {
-		if (event_add(data->event_input_queue, NULL) != 0) {
-			RRR_MSG_0("Could not add input queue event in mqttclient_check_input_queue\n");
-			return 1;
+			RRR_MSG_0("Warning: Failed to publish message in mqttclient instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
+			return;
 		}
-		event_active(data->event_input_queue, 0, 0);
-	} 
 
-	return 0;
+		rrr_msg_holder_decref_while_locked_and_unlock(entry);
+
+		entry = RRR_LL_SHIFT(&data->input_queue);
+	}
 }
 
 static void mqttclient_event_input_queue_disable (
@@ -473,6 +452,7 @@ static void mqttclient_event_input_queue_enable (
 		struct mqtt_client_data *data
 ) {
 	data->input_queue_disabled = 0;
+	event_active(data->event_input_queue, 0, 0);
 }
 
 static int mqttclient_data_init (
@@ -1726,9 +1706,6 @@ static void mqttclient_update_stats (
 	// regardless of their origin. We therefore count it in the module poll callback function.
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
 
-	rrr_stats_instance_post_unsigned_base10_text(stats, "total_usleep", 0, data->total_usleep_count);
-	rrr_stats_instance_post_unsigned_base10_text(stats, "total_ticks", 0, data->total_ticks_count);
-
 	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
@@ -1748,12 +1725,8 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->input_queue, entry);
+	event_active(data->event_input_queue, 0, 0);
 
-	if ((ret = mqttclient_event_input_queue_add_if_needed (data)) != 0) {
-		goto out;
-	}
-
-	out:
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -1932,9 +1905,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data));
 
 	mqttclient_event_input_queue_enable (data);
-	if (mqttclient_event_input_queue_add_if_needed (data)) {
-		goto out_destroy_client;
-	}
 
 	// Successive connect attempts or re-connect does not require clean start to be set. Server
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
