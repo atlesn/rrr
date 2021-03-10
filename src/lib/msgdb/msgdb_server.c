@@ -545,14 +545,14 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		ssize_t file_size = 0;
 
 		// Note that successful return is an error
-		if ((ret = __rrr_msgdb_server_chdir(str, 1)) == 0) {
+		if (__rrr_msgdb_server_chdir(str, 1) == 0) {
 			RRR_MSG_0("Could not read file '%s' in message db server, it was a directory\n",
 				str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 
-		if ((ret = rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0)) != 0) {
+		if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0) != 0) {
 			RRR_MSG_0("Could not read file '%s' in message db server\n",
 				str);
 			ret = RRR_MSGDB_SOFT_ERROR;
@@ -565,7 +565,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_msg_head_to_host_and_verify(msg_tmp, file_size)) != 0) {
+		if (rrr_msg_head_to_host_and_verify(msg_tmp, file_size) != 0) {
 			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
@@ -577,7 +577,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size)) != 0) {
+		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
 			RRR_MSG_0("Head 2/2 verification of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
@@ -585,18 +585,18 @@ static int __rrr_msgdb_server_get_path_split_callback (
 
 		RRR_DBG_3("msgdb fd %i read from '%s' size %llu\n", callback_data->response_fd, str, (long long unsigned) MSG_TOTAL_SIZE(msg_tmp));
 
-		if ((ret = rrr_msgdb_common_msg_send (
+		if (rrr_msgdb_common_msg_send (
 				callback_data->response_fd,
 				(struct rrr_msg_msg *) msg_tmp,
 				__rrr_msgdb_server_send_callback,
 				callback_data->server
-		)) != 0) {
+		) != 0) {
 			ret = RRR_MSGDB_EOF;
 			goto out;
 		}
 	}
 	else {
-		if ((ret = __rrr_msgdb_server_chdir(str, 0)) != 0) {
+		if (__rrr_msgdb_server_chdir(str, 0) != 0) {
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -688,7 +688,7 @@ static int __rrr_msgdb_server_idx_make_index (
 	else {
 		RRR_MAP_ITERATE_BEGIN_CONST(path_base);
 			if (RRR_MAP_ITERATE_IS_LAST()) {
-				if ((ret = __rrr_msgdb_server_chdir(node_tag, 1)) != 0) {
+				if (__rrr_msgdb_server_chdir(node_tag, 1) != 0) {
 					last_was_file = 1;
 				}
 			}

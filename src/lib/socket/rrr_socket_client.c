@@ -739,11 +739,9 @@ static void __rrr_socket_client_collection_event_accept (
 	(void)(fd);
 	(void)(flags);
 
-	int ret_tmp;
-
-	if ((ret_tmp = __rrr_socket_client_collection_accept (
+	if (__rrr_socket_client_collection_accept (
 			collection
-	)) != 0) {
+	) != 0) {
 		event_base_loopbreak(collection->event_base);
 	}
 }
