@@ -978,7 +978,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 
 	struct rrr_mqtt_p *next_ack = NULL;
 
-	uint8_t reason_v5;
+	uint8_t reason_v5 = 0;
 	unsigned int match_count = 0;
 
 	ret = __rrr_mqtt_common_handle_general_ack (
