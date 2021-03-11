@@ -35,6 +35,10 @@ struct rrr_socket_send_chunk_collection {
 void rrr_socket_send_chunk_collection_clear (
 		struct rrr_socket_send_chunk_collection *target
 );
+void rrr_socket_send_chunk_collection_clear_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data)
+);
 int rrr_socket_send_chunk_collection_push (
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,

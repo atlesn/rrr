@@ -53,6 +53,16 @@ void rrr_socket_send_chunk_collection_clear (
 	RRR_LL_DESTROY(target, struct rrr_socket_send_chunk, __rrr_socket_send_chunk_destroy(node));
 }
 
+void rrr_socket_send_chunk_collection_clear_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data)
+) {
+	RRR_LL_ITERATE_BEGIN(chunks, struct rrr_socket_send_chunk);
+		callback(node->data, node->data_size, node->data_pos, node->private_data);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(chunks, 0; __rrr_socket_send_chunk_destroy(node));
+}
+
 static int __rrr_socket_send_chunk_collection_push (
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,

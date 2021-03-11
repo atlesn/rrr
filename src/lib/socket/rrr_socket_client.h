@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_socket_client_collection;
 struct rrr_event_queue;
+struct rrr_read_session;
+struct rrr_array;
 
 int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
@@ -68,6 +70,17 @@ int rrr_socket_client_collection_send_push_const (
 		int fd,
 		const void *data,
 		ssize_t data_size
+);
+int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+		struct rrr_socket_client_collection *collection,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const void *data,
+		ssize_t size,
+		void *chunk_private_data,
+		void (*chunk_private_data_destroy)(void *chunk_private_data),
+		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
+		void *connect_callback_data
 );
 int rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,

@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_COMMON_H
 #define RRR_SOCKET_COMMON_H
 
+#include <stdint.h>
+
 struct rrr_array;
 struct rrr_array_tree;
 struct rrr_msg;
