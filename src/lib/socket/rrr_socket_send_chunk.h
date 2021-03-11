@@ -40,10 +40,24 @@ int rrr_socket_send_chunk_collection_push (
 		void **data,
 		ssize_t data_size
 );
+int rrr_socket_send_chunk_collection_push_with_private_data (
+		struct rrr_socket_send_chunk_collection *target,
+		void **data,
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+);
 int rrr_socket_send_chunk_collection_push_const (
 		struct rrr_socket_send_chunk_collection *target,
 		const void *data,
 		ssize_t data_size
+);
+int rrr_socket_send_chunk_collection_push_const_with_private_data (
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
 );
 int rrr_socket_send_chunk_collection_sendto (
 		struct rrr_socket_send_chunk_collection *chunks,

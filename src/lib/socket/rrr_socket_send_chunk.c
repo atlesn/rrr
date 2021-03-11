@@ -33,11 +33,16 @@ struct rrr_socket_send_chunk {
 	void *data;
 	ssize_t data_size;
 	ssize_t data_pos;
+	void *private_data;
+	void (*private_data_destroy)(void *private_data);
 };
 
 static void __rrr_socket_send_chunk_destroy (
 		struct rrr_socket_send_chunk *chunk
 ) {
+	if (chunk->private_data) {
+		chunk->private_data_destroy(chunk->private_data);
+	}
 	RRR_FREE_IF_NOT_NULL(chunk->data);
 	free(chunk);
 }
@@ -48,15 +53,17 @@ void rrr_socket_send_chunk_collection_clear (
 	RRR_LL_DESTROY(target, struct rrr_socket_send_chunk, __rrr_socket_send_chunk_destroy(node));
 }
 
-int rrr_socket_send_chunk_collection_push (
+static int __rrr_socket_send_chunk_collection_push (
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,
-		ssize_t data_size
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
 
 	if (data_size < 0) {
-		RRR_BUG("BUG: Data size was < 0 in rrr_socket_send_chunk_collection_push\n");
+		RRR_BUG("BUG: Data size was < 0 in __rrr_socket_send_chunk_collection_push\n");
 	}
 
 	struct rrr_socket_send_chunk *new_chunk = NULL;
@@ -71,6 +78,8 @@ int rrr_socket_send_chunk_collection_push (
 
 	new_chunk->data_size = data_size;
 	new_chunk->data = *data;
+	new_chunk->private_data = private_data;
+	new_chunk->private_data_destroy = private_data_destroy;
 	*data = NULL;
 
 	RRR_LL_APPEND(target, new_chunk);
@@ -79,27 +88,65 @@ int rrr_socket_send_chunk_collection_push (
 	return ret;
 }
 
-int rrr_socket_send_chunk_collection_push_const (
+int rrr_socket_send_chunk_collection_push (
+		struct rrr_socket_send_chunk_collection *target,
+		void **data,
+		ssize_t data_size
+) {
+	return __rrr_socket_send_chunk_collection_push(target, data, data_size, NULL, NULL);
+}
+
+int rrr_socket_send_chunk_collection_push_with_private_data (
+		struct rrr_socket_send_chunk_collection *target,
+		void **data,
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+) {
+	return __rrr_socket_send_chunk_collection_push(target, data, data_size, private_data, private_data_destroy);
+}
+
+static int __rrr_socket_send_chunk_collection_push_const (
 		struct rrr_socket_send_chunk_collection *target,
 		const void *data,
-		ssize_t data_size
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
 
 	void *data_copy = malloc(data_size);
 	if (data_copy == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_send_chunk_collection_push_const\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_send_chunk_collection_push_const\n");
 		ret = 1;
 		goto out;
 	}
 
 	memcpy(data_copy, data, data_size);
 
-	ret = rrr_socket_send_chunk_collection_push (target, &data_copy, data_size);
+	ret = __rrr_socket_send_chunk_collection_push (target, &data_copy, data_size, private_data, private_data_destroy);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(data_copy);
 	return ret;
+}
+
+int rrr_socket_send_chunk_collection_push_const (
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+) {
+	return __rrr_socket_send_chunk_collection_push_const(target, data, data_size, NULL, NULL);
+}
+
+int rrr_socket_send_chunk_collection_push_const_with_private_data (
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+) {
+	return __rrr_socket_send_chunk_collection_push_const(target, data, data_size, private_data, private_data_destroy);
 }
 
 int rrr_socket_send_chunk_collection_sendto (
