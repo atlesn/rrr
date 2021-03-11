@@ -44,39 +44,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/macro_utils.h"
 
-// TODO : Remove this struct
-
-struct rrr_socket_client_collection_event_callback_data {
-	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
-
-	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
-	void (*callback_private_data_destroy)(void *private_data);
-	void *callback_private_data_arg;
-
-	ssize_t read_step_max_size;
-	int read_flags_socket;
-
-	// Callbacks for message mode
-	RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
-	void *msg_callback_arg;
-
-	// Callbacks for raw mode
-	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);
-	void *get_target_size_arg;
-	int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg);
-	void *complete_callback_arg;
-
-	// Callbacks for array tree mode
-	int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg);
-	void *array_callback_arg;
-};
-
 struct rrr_socket_client_collection {
 	RRR_LL_HEAD(struct rrr_socket_client);
 	int listen_fd;
 	char *creator;
-
-	struct rrr_socket_client_collection_event_callback_data callback_data;
 
 	struct event_base *event_base;
 
@@ -86,10 +57,35 @@ struct rrr_socket_client_collection {
 	// Called when a client is destroyed with unsent data (if set)
 	void (*chunk_send_fail_notify_callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data);
 
+	// Common settings
+	ssize_t read_step_max_size;
+	int read_flags_socket;
+
 	// Settings for array reading
 	int array_do_sync_byte_by_byte;
 	unsigned array_message_max_size;
 	const struct rrr_array_tree *array_tree;
+
+	// Common callbacks
+	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
+
+	int  (*callback_private_data_new)(void **target, int fd, void *private_arg);
+	void (*callback_private_data_destroy)(void *private_data);
+	void *callback_private_data_arg;
+
+	// Callbacks for message mode
+	RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
+	void *callback_msg_arg;
+
+	// Callbacks for raw mode
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);
+	void *get_target_size_arg;
+	int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg);
+	void *complete_callback_arg;
+
+	// Callbacks for array tree mode
+	int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg);
+	void *array_callback_arg;
 };
 
 struct rrr_socket_client {
@@ -310,22 +306,17 @@ static void __rrr_socket_client_collection_find_and_destroy (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(collection, node));
 }
 
-struct rrr_socket_client_collection_read_raw_complete_callback_data {
-		struct rrr_socket_client *client;
-		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg);
-		void *complete_callback_arg;
-};
-
 static int __rrr_socket_client_collection_read_raw_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_socket_client_collection_read_raw_complete_callback_data *callback_data = arg;
+	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
 
-	return callback_data->complete_callback (
-		read_session,
-		callback_data->client->private_data,
-		callback_data->complete_callback_arg
+	return collection->complete_callback (
+			read_session,
+			client->private_data,
+			collection->complete_callback_arg
 	);
 }
 
@@ -367,57 +358,14 @@ static void __rrr_socket_client_read_return_value_process (
 	}
 }
 
-static void __rrr_socket_client_read_raw (
-		struct rrr_socket_client_collection *collection,
-		struct rrr_socket_client *client,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags_socket,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
-		void *complete_callback_arg
-) {
-	struct rrr_socket_client_collection_read_raw_complete_callback_data complete_callback_data = {
-		client,
-		complete_callback,
-		complete_callback_arg
-	};
-
-	uint64_t bytes_read = 0;
-
-	__rrr_socket_client_read_return_value_process (
-		collection,
-		client,
-		rrr_socket_read_message_default (
-				&bytes_read,
-				&client->read_sessions,
-				client->connected_fd,
-				read_step_initial,
-				read_step_max_size,
-				0, // No max size
-				read_flags_socket,
-				get_target_size,
-				get_target_size_arg,
-				__rrr_socket_client_collection_read_raw_complete_callback,
-				&complete_callback_data
-		)
-	);
-}
-
-struct rrr_socket_client_collection_read_message_complete_callback_data {
-		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_SEMICOLON;
-		void *callback_arg;
-};
-
 static int __rrr_socket_client_collection_read_message_complete_callback (
 		struct rrr_read_session *read_session,
-		void *private_data,
 		void *arg
 ) {
-	int ret = 0;
+	struct rrr_socket_client *client = arg = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
 
-	struct rrr_socket_client_collection_read_message_complete_callback_data *callback_data = arg;
+	int ret = 0;
 
 	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Message was too long in __rrr_socket_client_collection_read_message_complete_callback\n");
@@ -431,13 +379,13 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 	ret = rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) &read_session->rx_buf_ptr,
 			(rrr_length) read_session->rx_buf_wpos,
-			callback_data->callback_msg,
-			callback_data->callback_addr_msg,
-			callback_data->callback_log_msg,
-			callback_data->callback_ctrl_msg,
-			callback_data->callback_stats_msg,
-			private_data,
-			callback_data->callback_arg
+			collection->callback_msg,
+			collection->callback_addr_msg,
+			collection->callback_log_msg,
+			collection->callback_ctrl_msg,
+			collection->callback_stats_msg,
+			client->private_data,
+			collection->callback_msg_arg
 	);
 
 	out:
@@ -493,30 +441,28 @@ static void __rrr_socket_client_collection_event_read_message (
 ) {
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
 
 	(void)(fd);
 	(void)(flags);
 
-	struct rrr_socket_client_collection_read_message_complete_callback_data complete_callback_data = {
-		callback_data->callback_msg,
-		callback_data->callback_addr_msg,
-		callback_data->callback_log_msg,
-		callback_data->callback_ctrl_msg,
-		callback_data->callback_stats_msg,
-		callback_data->msg_callback_arg
-	};
+	uint64_t bytes_read = 0;
 
-	__rrr_socket_client_read_raw (
-			collection,
-			client,
-			sizeof(struct rrr_msg),
-			callback_data->read_step_max_size,
-			callback_data->read_flags_socket,
-			rrr_read_common_get_session_target_length_from_message_and_checksum,
-			NULL,
-			__rrr_socket_client_collection_read_message_complete_callback,
-			&complete_callback_data
+	__rrr_socket_client_read_return_value_process (
+		collection,
+		client,
+		rrr_socket_read_message_default (
+				&bytes_read,
+				&client->read_sessions,
+				client->connected_fd,
+				sizeof(struct rrr_msg),
+				collection->read_step_max_size,
+				0, // No max size
+				collection->read_flags_socket,
+				rrr_read_common_get_session_target_length_from_message_and_checksum,
+				NULL,
+				__rrr_socket_client_collection_read_message_complete_callback,
+				client
+		)
 	);
 }
 
@@ -527,22 +473,40 @@ static void __rrr_socket_client_collection_event_read_raw (
 ) {
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
 
 	(void)(fd);
 	(void)(flags);
 
-	__rrr_socket_client_read_raw (
-			collection,
-			client,
-			sizeof(struct rrr_msg),
-			callback_data->read_step_max_size,
-			callback_data->read_flags_socket,
-			callback_data->get_target_size,
-			callback_data->get_target_size_arg,
-			callback_data->complete_callback,
-			callback_data->complete_callback_arg
+	uint64_t bytes_read = 0;
+
+	__rrr_socket_client_read_return_value_process (
+		collection,
+		client,
+		rrr_socket_read_message_default (
+				&bytes_read,
+				&client->read_sessions,
+				client->connected_fd,
+				4096,
+				collection->read_step_max_size,
+				0, // No max size
+				collection->read_flags_socket,
+				collection->get_target_size,
+				collection->get_target_size_arg,
+				__rrr_socket_client_collection_read_raw_complete_callback,
+				client
+		)
 	);
+}
+
+static int __rrr_socket_client_collection_event_read_array_tree_callback (
+		struct rrr_read_session *read_session,
+		struct rrr_array *array_final,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
+
+	return collection->array_callback(read_session, array_final, client->private_data, collection->array_callback_arg);
 }
 
 static void __rrr_socket_client_collection_event_read_array_tree (
@@ -552,7 +516,6 @@ static void __rrr_socket_client_collection_event_read_array_tree (
 ) {
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
 
 	(void)(fd);
 	(void)(flags);
@@ -568,14 +531,14 @@ static void __rrr_socket_client_collection_event_read_array_tree (
 			&bytes_read,
 			&client->read_sessions,
 			client->connected_fd,
-			callback_data->read_flags_socket,
+			collection->read_flags_socket,
 			&array_tmp,
 			collection->array_tree,
 			collection->array_do_sync_byte_by_byte,
-			callback_data->read_step_max_size,
+			collection->read_step_max_size,
 			collection->array_message_max_size,
-			callback_data->array_callback,
-			callback_data->array_callback_arg
+			__rrr_socket_client_collection_event_read_array_tree_callback,
+			client
 		)
 	);
 
@@ -587,8 +550,6 @@ static int __rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
 		const struct rrr_socket_client *temp
 ) {
-	struct rrr_socket_client_collection_event_callback_data *callback_data = &collection->callback_data;
-
 	int ret = 0;
 
 	struct rrr_socket_client *client_new = NULL;
@@ -598,9 +559,9 @@ static int __rrr_socket_client_collection_connected_fd_push (
 			temp->connected_fd,
 			(const struct sockaddr *) &temp->addr,
 			temp->addr_len,
-			callback_data->callback_private_data_new,
-			callback_data->callback_private_data_arg,
-			callback_data->callback_private_data_destroy
+			collection->callback_private_data_new,
+			collection->callback_private_data_arg,
+			collection->callback_private_data_destroy
 	)) != 0) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_connected_fd_push\n");
 		goto out;
@@ -613,7 +574,7 @@ static int __rrr_socket_client_collection_connected_fd_push (
 				collection->event_base,
 				temp->connected_fd,
 				EV_READ|EV_PERSIST,
-				collection->callback_data.event_read_callback,
+				collection->event_read_callback,
 				client_new
 		)) == NULL) {
 			RRR_MSG_0("Failed to create read event in __rrr_socket_client_collection_connected_fd_push\n");
@@ -918,14 +879,26 @@ static void __rrr_socket_client_collection_event_accept (
 static int __rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,
-		const struct rrr_socket_client_collection_event_callback_data *callback_data
+		ssize_t read_step_max_size,
+		int read_flags_socket,
+		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
+		int  (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg
 ) {
 	int ret = 0;
 
 	__rrr_socket_client_collection_clear(collection);
 
+	collection->read_step_max_size = read_step_max_size;
+	collection->read_flags_socket = read_flags_socket;
+
+	collection->event_read_callback = event_read_callback;
+
 	collection->event_base = rrr_event_queue_base_get(queue);
-	collection->callback_data = *callback_data;
+	collection->callback_private_data_new = callback_private_data_new;
+	collection->callback_private_data_destroy = callback_private_data_destroy;
+	collection->callback_private_data_arg = callback_private_data_arg;
 
 	if (collection->listen_fd >= 0) {
 		if ((collection->listen_event = event_new (
@@ -981,31 +954,22 @@ int rrr_socket_client_collection_event_setup (
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 ) {
-	struct rrr_socket_client_collection_event_callback_data callback_data = {
-		__rrr_socket_client_collection_event_read_message,
-		callback_private_data_new,
-		callback_private_data_destroy,
-		callback_private_data_arg,
-		read_step_max_size,
-		read_flags_socket,
-		callback_msg,
-		callback_addr_msg,
-		callback_log_msg,
-		callback_ctrl_msg,
-		callback_stats_msg,
-		callback_arg,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL
-	};
+	collection->callback_msg = callback_msg;
+	collection->callback_addr_msg = callback_addr_msg;
+	collection->callback_log_msg = callback_log_msg;
+	collection->callback_ctrl_msg = callback_ctrl_msg;
+	collection->callback_stats_msg = callback_stats_msg;
+	collection->callback_msg_arg = callback_arg;
 
 	return __rrr_socket_client_collection_event_setup (
 			collection,
 			queue,
-			&callback_data
+			read_step_max_size,
+			read_flags_socket,
+			__rrr_socket_client_collection_event_read_message,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
 	);
 }
 
@@ -1022,31 +986,20 @@ int rrr_socket_client_collection_event_setup_raw (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
 		void *complete_callback_arg
 ) {
-	struct rrr_socket_client_collection_event_callback_data callback_data = {
-		__rrr_socket_client_collection_event_read_raw,
-		callback_private_data_new,
-		callback_private_data_destroy,
-		callback_private_data_arg,
-		read_step_max_size,
-		read_flags_socket,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		get_target_size,
-		get_target_size_arg,
-		complete_callback,
-		complete_callback_arg,
-		NULL,
-		NULL
-	};
+	collection->get_target_size = get_target_size;
+	collection->get_target_size_arg = get_target_size_arg;
+	collection->complete_callback = complete_callback;
+	collection->complete_callback_arg = complete_callback_arg;
 
 	return __rrr_socket_client_collection_event_setup (
 			collection,
 			queue,
-			&callback_data
+			read_step_max_size,
+			read_flags_socket,
+			__rrr_socket_client_collection_event_read_raw,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
 	);
 }
 
@@ -1061,37 +1014,24 @@ int rrr_socket_client_collection_event_setup_array_tree (
 		int do_sync_byte_by_byte,
 		ssize_t read_step_max_size,
 		unsigned int message_max_size,
-		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
+		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
 		void *array_callback_arg
 ) {
-	struct rrr_socket_client_collection_event_callback_data callback_data = {
-		__rrr_socket_client_collection_event_read_array_tree,
-		callback_private_data_new,
-		callback_private_data_destroy,
-		callback_private_data_arg,
-		read_step_max_size,
-		read_flags_socket,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		array_callback,
-		array_callback_arg,
-	};
-
 	collection->array_do_sync_byte_by_byte = do_sync_byte_by_byte;
 	collection->array_message_max_size = message_max_size;
 	collection->array_tree = tree;
 
+	collection->array_callback = array_callback;
+	collection->array_callback_arg = array_callback_arg;
+
 	return __rrr_socket_client_collection_event_setup (
 			collection,
 			queue,
-			&callback_data
+			read_step_max_size,
+			read_flags_socket,
+			__rrr_socket_client_collection_event_read_array_tree,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
 	);
 }
