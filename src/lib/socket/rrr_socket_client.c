@@ -645,6 +645,20 @@ static int __rrr_socket_client_collection_accept (
 	return ret;
 }
 
+
+static int __rrr_socket_client_send_push_notify (
+		struct rrr_socket_client *client
+) {
+	if (client->event_write != NULL) {
+		if (event_add(client->event_write, NULL) != 0) {
+			RRR_MSG_0("Failed to add event in __rrr_socket_client_collection_send_push\n");
+			return RRR_READ_HARD_ERROR;
+		}
+	}
+
+	return 0;
+}
+
 static int __rrr_socket_client_send_push (
 		struct rrr_socket_client *client,
 		void **data,
@@ -656,34 +670,26 @@ static int __rrr_socket_client_send_push (
 		goto out;
 	}
 
-	if (client->event_write != NULL) {
-		if (event_add(client->event_write, NULL) != 0) {
-			RRR_MSG_0("Failed to add event in __rrr_socket_client_collection_send_push\n");
-			ret = RRR_READ_HARD_ERROR;
-			goto out;
-		}
-	}
+	ret = __rrr_socket_client_send_push_notify(client);
 
 	out:
 	return ret;
 }
 
-/* TODO : Use chunk collection const method */
 static int __rrr_socket_client_send_push_const (
 		struct rrr_socket_client *client,
 		const void *data,
 		ssize_t data_size
 ) {
-	void *data_tmp = malloc(data_size);
-	if (data_tmp == NULL) {
-		RRR_MSG_0("Failed to allocate memory in __rrr_socket_client_send_push_const\n");
-		return RRR_READ_HARD_ERROR;
+	int ret = 0;
+
+	if ((ret = rrr_socket_send_chunk_collection_push_const (&client->send_chunks, data, data_size)) != 0) {
+		goto out;
 	}
 
-	memcpy(data_tmp, data, data_size);
+	ret = __rrr_socket_client_send_push_notify(client);
 
-	int ret = __rrr_socket_client_send_push(client, &data_tmp, data_size);
-	RRR_FREE_IF_NOT_NULL(data_tmp);
+	out:
 	return ret;
 }
 
@@ -694,13 +700,22 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 		void *chunk_private_data,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
-	return rrr_socket_send_chunk_collection_push_const_with_private_data (
+	int ret = 0;
+
+	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
 			&client->send_chunks,
 			data,
 			data_size,
 			chunk_private_data,
 			chunk_private_data_destroy
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	ret = __rrr_socket_client_send_push_notify(client);
+
+	out:
+	return ret;
 }
 
 struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data {
