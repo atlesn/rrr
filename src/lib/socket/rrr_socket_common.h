@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_COMMON_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 struct rrr_array;
 struct rrr_array_tree;
@@ -44,7 +45,7 @@ int rrr_socket_common_receive_array_tree (
 		struct rrr_array *array_final,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
-		unsigned int read_step_max_size,
+		ssize_t read_step_max_size,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
