@@ -1505,7 +1505,7 @@ static int __rrr_http_application_http1_tick (
 
 	*upgraded_app = NULL;
 
-	if (rrr_net_transport_ctx_send_waiting(handle)) {
+	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > 0) {
 		printf("Send waiting in __rrr_http_application_http1_tick\n");
 		goto out;
 	}

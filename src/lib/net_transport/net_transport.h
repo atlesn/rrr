@@ -119,17 +119,11 @@ int rrr_net_transport_new (
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 );
-void rrr_net_transport_maintenance (
-		struct rrr_net_transport *transport
-);
 void rrr_net_transport_destroy (
 		struct rrr_net_transport *transport
 );
 void rrr_net_transport_destroy_void (
 		void *arg
-);
-void rrr_net_transport_ctx_handle_close_while_locked (
-		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
@@ -190,24 +184,6 @@ int rrr_net_transport_ctx_read_message (
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
-);
-int rrr_net_transport_ctx_send_nonblock (
-		uint64_t *written_bytes,
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_blocking (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_blocking_nullsafe (
-		struct rrr_net_transport_handle *handle,
-		const struct rrr_nullsafe_str *str
-);
-int rrr_net_transport_ctx_send_waiting (
-		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle

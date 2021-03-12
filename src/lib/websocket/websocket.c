@@ -251,7 +251,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			RRR_BUG("BUG: pos exceeds header size in __rrr_websocket_transport_ctx_send_frame\n");
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push(handle, header, pos)) != 0) {
 			RRR_DBG_1("Failed to send websocket header for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
@@ -262,7 +262,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			__rrr_websocket_payload_mask_unmask((uint8_t *) frame->payload, frame->header.payload_len, frame->header.masking_key);
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_blocking(handle, frame->payload, frame->header.payload_len)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push(handle, frame->payload, frame->header.payload_len)) != 0) {
 			RRR_DBG_1("Failed to send websocket payload for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
