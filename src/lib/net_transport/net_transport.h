@@ -209,6 +209,9 @@ int rrr_net_transport_ctx_send_blocking_nullsafe (
 int rrr_net_transport_ctx_send_waiting (
 		struct rrr_net_transport_handle *handle
 );
+int rrr_net_transport_ctx_send_waiting_chunk_count (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		const void *data,

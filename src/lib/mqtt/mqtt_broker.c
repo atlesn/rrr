@@ -1064,7 +1064,9 @@ static int __rrr_mqtt_broker_read_callback (
 
 	data->mqtt_data.sessions->methods->get_stats(&stats_before, data->mqtt_data.sessions);
 
+	uint64_t send_queue_count_dummy = 0;
 	if ((ret = data->mqtt_data.sessions->methods->maintain (
+			&send_queue_count_dummy,
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;

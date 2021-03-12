@@ -710,6 +710,7 @@ static int __rrr_mqtt_session_ram_decref_unlocked (
 	// session system to release packet ID when they are destroyed, which cause
 	// deadlock with main session collection lock. The whole ID pool is to be
 	// destroyed here anyway, not need for the packets to release IDs.
+
 	rrr_fifo_buffer_clear_with_callback(&session->to_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 	rrr_fifo_buffer_clear_with_callback(&session->from_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 	rrr_fifo_buffer_clear_with_callback(&session->publish_grace_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
@@ -1204,11 +1205,14 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 }
 
 static int __rrr_mqtt_session_collection_ram_maintain (
+		uint64_t *total_send_queue_count,
 		struct rrr_mqtt_session_collection *sessions
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	int ret = RRR_MQTT_SESSION_OK;
+
+	*total_send_queue_count = 0;
 
 	uint64_t expire_time = 0;
 	uint64_t time_now = rrr_time_get_64();
@@ -1246,6 +1250,8 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		int do_iterate_publish_grace_queue = 0;
 
 		SESSION_RAM_LOCK(node);
+
+		*total_send_queue_count += rrr_fifo_buffer_get_entry_count(&node->to_remote_queue.buffer);
 
 		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
 		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {

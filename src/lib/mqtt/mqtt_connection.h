@@ -211,6 +211,7 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 struct rrr_mqtt_conn_check_alive_callback_data {
 	int alive;
 	int send_allowed;
+	int send_discouraged;
 };
 int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 		struct rrr_net_transport_handle *handle,

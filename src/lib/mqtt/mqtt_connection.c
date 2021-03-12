@@ -613,6 +613,12 @@ int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 		callback_data->send_allowed = 1;
 	}
 
+	printf("Send chunks %i\n", rrr_net_transport_ctx_send_waiting_chunk_count(handle));
+
+	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT) {
+		callback_data->send_discouraged = 1;
+	}
+
 	return ret;
 }
 
@@ -815,18 +821,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			handler_callback_arg
 	};
 
-	int consecutive_nothing_happened = 0;
-	int read_loops = 0;
-
-	// TODO : Make this better
-	// Do this 60 times as we send 50 packets at a time (10 more)
-	for (int i = 0; i < read_per_round_max; i++) {
-		uint64_t bytes_written_dummy;
-		uint64_t bytes_total_dummy;
-		uint64_t prev_bytes_read;
-
-		rrr_net_transport_ctx_get_socket_stats(&prev_bytes_read, &bytes_written_dummy, &bytes_total_dummy, handle);
-		
+	do {
 		if ((ret = rrr_net_transport_ctx_read_message (
 				handle,
 				2, // Read two times this round
@@ -838,32 +833,14 @@ int rrr_mqtt_conn_iterator_ctx_read (
 				__rrr_mqtt_conn_read_complete_callback,
 				&callback_data
 		)) != 0) {
+			if (ret != RRR_SOCKET_READ_INCOMPLETE && connection->disconnect_reason_v5_ == 0) {
+				connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			}
 			goto out;
 		}
-
-		uint64_t now_bytes_read;
-
-		rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &bytes_written_dummy, &bytes_total_dummy, handle);
-
-		if (prev_bytes_read == now_bytes_read && ++consecutive_nothing_happened > 5) {
-			// Nothing was read
-			break;
-		}
-
-		rrr_posix_usleep(500);
-		read_loops++;
-	}
-
-	if (read_loops > 0) {
-//		printf("Read loops: %i\n", read_loops);
-	}
+	} while (--read_per_round_max && ret == 0);
 
 	out:
-	if (ret != 0) {
-		if (connection->disconnect_reason_v5_ == 0) {
-			connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
-		}
-	}
 	return ret;
 }
 

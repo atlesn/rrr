@@ -131,6 +131,7 @@ struct rrr_mqtt_session_collection_methods {
 
 	// Destroy old sessions, read from send queue
 	int (*maintain) (
+			uint64_t *total_send_queue_count,
 			struct rrr_mqtt_session_collection *
 	);
 

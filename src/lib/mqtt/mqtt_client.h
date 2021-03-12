@@ -54,6 +54,7 @@ struct rrr_mqtt_client_data {
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *send_discouraged,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 );

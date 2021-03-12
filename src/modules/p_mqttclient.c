@@ -83,6 +83,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
 
+#define RRR_MQTT_CONNACK_TIMEOUT_S 3
+
 // Timeout before we send PUBLISH packets to the broker. This is to allow,
 // if the broker has just been started, other clients to subscribe first
 // before we send anything (to prevent it from getting deleted by the broker)
@@ -139,6 +141,8 @@ struct mqtt_client_data {
 	uint64_t total_discarded_count;
 	char *username;
 	char *password;
+
+	uint64_t connect_time;
 
 	struct rrr_net_transport_config net_transport_config;
 };
@@ -1419,10 +1423,12 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 
 	int alive = 0;
 	int send_allowed = 0;
+	int send_discouraged = 0;
 
 	if (rrr_mqtt_client_connection_check_alive (
 			&alive,
 			&send_allowed,
+			&send_discouraged,
 			data->mqtt_client_data,
 			data->transport_handle
 	) != 0) {
@@ -1431,7 +1437,17 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
 
+	uint64_t timeout = data->connect_time + RRR_MQTT_CONNACK_TIMEOUT_S * 1000 * 1000;
+
+	if (rrr_time_get_64() > timeout) {
+		RRR_MSG_0("Timeout after %i seconds while waiting for CONNACK in mqtt client instance %s\n",
+			RRR_MQTT_CONNACK_TIMEOUT_S, INSTANCE_D_NAME(data->thread_data));
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
 	if (alive != 1) {
+		RRR_MSG_0("Connection lost while waiting for CONNACK in mqtt client instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
 		return RRR_MQTT_SOFT_ERROR;
 	}
 
@@ -1443,12 +1459,20 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 }
 		
 static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
-	return rrr_event_dispatch (
+	int ret;
+
+	mqttclient_event_input_queue_disable (data);
+
+	ret = rrr_event_dispatch (
 			INSTANCE_D_EVENTS(data->thread_data),
 			1 * 100 * 1000, // 100 ms
 			mqttclient_wait_send_allowed_event_periodic,
 			INSTANCE_D_THREAD(data->thread_data)
 	);
+
+	mqttclient_event_input_queue_enable (data);
+
+	return ret;
 }
 
 static int mqttclient_late_client_identifier_update (struct mqtt_client_data *data) {
@@ -1463,11 +1487,6 @@ static int mqttclient_late_client_identifier_update (struct mqtt_client_data *da
 
 	// Identifier already set?
 	if ((data->client_identifier != NULL && *(data->client_identifier) == '\0')) {
-		goto out;
-	}
-
-	// Make sure CONNACK has arrived
-	if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
 		goto out;
 	}
 
@@ -1649,6 +1668,18 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 				data->password,
 				&data->connect_properties
 		)) != 0) {
+			goto check_ret;
+		}
+
+		data->connect_time = rrr_time_get_64();
+
+		// Make sure CONNACK has arrived
+		if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
+			goto check_ret;
+		}
+
+		check_ret:
+		if (ret != 0) {
 			if (ret & RRR_MQTT_INTERNAL_ERROR) {
 				RRR_MSG_0("Internal error from rrr_mqtt_client_connect in MQTT client instance %s return was %i\n",
 						INSTANCE_D_NAME(data->thread_data), ret);
@@ -1751,11 +1782,13 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	int alive = 0;
 	int send_allowed = 0;
+	int send_discouraged = 0;
 
 	int ret_tmp;
 	if ((ret_tmp = rrr_mqtt_client_connection_check_alive (
 			&alive,
 			&send_allowed,
+			&send_discouraged,
 			data->mqtt_client_data,
 			data->transport_handle
 	)) != 0) {
@@ -1770,6 +1803,17 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 			INSTANCE_D_NAME(thread_data));
 		return RRR_EVENT_EXIT;
 	}
+
+	printf("Input queue: %i\n", RRR_LL_COUNT(&data->input_queue));
+
+	if (send_discouraged && ! data->input_queue_disabled) {
+		printf("Discourage\n");
+	}
+	else if (!send_discouraged && data->input_queue_disabled) {
+		printf("Encourage\n");
+	}
+
+	data->input_queue_disabled = send_discouraged;
 
 	mqttclient_update_stats(data);
 
@@ -1789,9 +1833,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt client instance %s thread %p, disabling processing of input queue until connection with broker is established.\n",
 			INSTANCE_D_NAME(thread_data), thread);
-
-	// Don't process input queue while connecting
-	mqttclient_event_input_queue_disable (data);
 
 	pthread_cleanup_push(mqttclient_data_cleanup, data);
 
@@ -1879,6 +1920,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto out_destroy_client;
 	}
 
+	// Successive connect attempts or re-connect does not require clean start to be set. Server
+	// will respond with CONNACK with session present=0 if we need to clean up our state.
+	clean_start = 0;
+
 	if ((ret_tmp = mqttclient_subscription_loop(data)) != RRR_MQTT_OK) {
 		if (ret_tmp & RRR_MQTT_INTERNAL_ERROR) {
 			goto out_destroy_client;
@@ -1904,15 +1949,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	RRR_DBG_1 ("MQTT client instance %s enabling processing of input queue.\n",
 			INSTANCE_D_NAME(thread_data));
 
-	mqttclient_event_input_queue_enable (data);
-
-	// Successive connect attempts or re-connect does not require clean start to be set. Server
-	// will respond with CONNACK with session present=0 if we need to clean up our state.
-	clean_start = 0;
-
 	ret_tmp = rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
-			1 * 1000 * 1000,
+			1 * 100 * 1000, // 100 ms
 			mqttclient_event_periodic,
 			thread
 	);

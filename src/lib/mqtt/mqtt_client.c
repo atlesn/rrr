@@ -81,6 +81,7 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
+		int *send_discouraged,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 ) {
@@ -88,9 +89,10 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = 0;
 	*send_allowed = 0;
+	*send_discouraged = 0;
 
 	struct rrr_mqtt_conn_check_alive_callback_data callback_data = {
-		0, 0
+		0, 0, 0
 	};
 
 	ret = rrr_mqtt_transport_with_iterator_ctx_do_custom (
@@ -110,6 +112,16 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = callback_data.alive;
 	*send_allowed = callback_data.send_allowed;
+
+	if (!callback_data.send_discouraged) {
+		uint64_t send_queue_count = 0;
+		data->mqtt_data.sessions->methods->maintain(&send_queue_count, data->mqtt_data.sessions);
+
+		*send_discouraged = send_queue_count > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT;
+	}
+	else {
+		*send_discouraged = callback_data.send_discouraged;
+	}
 
 	out:
 	return ret;
@@ -861,8 +873,9 @@ static int __rrr_mqtt_client_read_callback (
 		goto out;
 	}
 
-	// TODO : Don't do this for every read
+	uint64_t total_send_queue_count_dummy = 0;
 	if ((ret = data->mqtt_data.sessions->methods->maintain (
+			&total_send_queue_count_dummy,
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;

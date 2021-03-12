@@ -589,7 +589,11 @@ static void __rrr_net_transport_event_write (
 	int ret_tmp = 0;
 
 	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
-		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback(&handle->send_chunks, __rrr_net_transport_event_write_send_chunk_callback, handle);
+		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback (
+				&handle->send_chunks,
+				__rrr_net_transport_event_write_send_chunk_callback,
+				handle
+		);
 	}
 
 	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
@@ -1021,6 +1025,12 @@ int rrr_net_transport_ctx_send_waiting (
 		struct rrr_net_transport_handle *handle
 ) {
 	return RRR_LL_COUNT(&handle->send_chunks) > 0;
+}
+
+int rrr_net_transport_ctx_send_waiting_chunk_count (
+		struct rrr_net_transport_handle *handle
+) {
+	return RRR_LL_COUNT(&handle->send_chunks);
 }
 
 int rrr_net_transport_ctx_send_push (
