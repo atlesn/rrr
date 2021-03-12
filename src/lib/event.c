@@ -61,16 +61,26 @@ struct rrr_event {
 };
 
 struct rrr_event_queue {
+	struct event_base *event_base;
+
+	pthread_mutex_t lock;
+
 	unsigned int queue_rpos;
 	unsigned int queue_wpos;
-	pthread_mutex_t lock;
-	struct event_base *event_base;
 	struct rrr_event queue[QUEUE_MAX];
+
 	int (*functions[0x100])(RRR_EVENT_FUNCTION_ARGS);
 	void *function_args[0x100];
+
 	int signal_fd_listen;
 	int signal_fd_write;
 	int signal_fd_read;
+
+	struct event *signal_event;
+	struct event *periodic_event;
+
+	void (*callback_pause)(int *do_pause, void *callback_arg);
+	void *callback_pause_arg;
 };
 
 void rrr_event_queue_destroy (
@@ -86,6 +96,12 @@ void rrr_event_queue_destroy (
 	}
 	if (queue->signal_fd_listen != 0) {
 		rrr_socket_close(queue->signal_fd_listen);
+	}
+	if (queue->signal_event != NULL) {
+		event_free(queue->signal_event);
+	}
+	if (queue->periodic_event != NULL) {
+		event_free(queue->periodic_event);
 	}
 	pthread_mutex_destroy(&queue->lock);
 	event_base_free(queue->event_base);
@@ -291,15 +307,6 @@ static void __rrr_event_write_signal_unlocked (
 	}
 }
 
-static void __rrr_event_destroy_void_dbl_ptr (
-		void *arg
-) {
-	struct event **event = arg;
-	if (*event != NULL) {
-		event_free(*event);
-	}
-}
-
 struct rrr_event_callback_data {
 	struct rrr_event_queue *queue;
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
@@ -319,6 +326,14 @@ static void __rrr_event_dispatch (
 	(void)(event_flags);
 
 	int ret_tmp = 0;
+
+	if (queue->callback_pause_arg) {
+		int do_pause = 0;
+		queue->callback_pause(&do_pause, queue->callback_pause_arg);
+		if (do_pause) {
+			goto out;
+		}
+	}
 
 	char dummy_buf[128];
 
@@ -410,6 +425,15 @@ static void __rrr_event_periodic (
 	}
 }
 
+void rrr_event_callback_pause_set (
+		struct rrr_event_queue *queue,
+		void (*callback)(int *do_pause, void *callback_arg),
+		void *callback_arg
+) {
+	queue->callback_pause = callback;
+	queue->callback_pause_arg = callback_arg;
+}
+
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,
@@ -425,13 +449,16 @@ int rrr_event_dispatch (
 		0
 	};
 
-	struct event *signal_event = NULL;
-	struct event *periodic_event = NULL;
+	if (queue->signal_event != NULL) {
+		event_free(queue->signal_event);
+		queue->signal_event = NULL;
+	}
+	if (queue->periodic_event != NULL) {
+		event_free(queue->periodic_event);
+		queue->periodic_event = NULL;
+	}
 
-	pthread_cleanup_push(__rrr_event_destroy_void_dbl_ptr, &signal_event);
-	pthread_cleanup_push(__rrr_event_destroy_void_dbl_ptr, &periodic_event);
-
-	if ((signal_event = event_new (
+	if ((queue->signal_event = event_new (
 			queue->event_base,
 			queue->signal_fd_read,
 			EV_READ|EV_PERSIST,
@@ -448,7 +475,7 @@ int rrr_event_dispatch (
 	tv_interval.tv_usec = periodic_interval_us % 1000000;
 	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
 
-	if ((periodic_event = event_new (
+	if ((queue->periodic_event = event_new (
 			queue->event_base,
 			-1,
 			EV_TIMEOUT|EV_PERSIST,
@@ -460,16 +487,14 @@ int rrr_event_dispatch (
 		goto out;
 	}
 
-	if (event_priority_set(periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
+	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
 		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (event_add(periodic_event, &tv_interval) || event_add(signal_event, NULL)) {
+	if (event_add(queue->periodic_event, &tv_interval) || event_add(queue->signal_event, NULL)) {
 		RRR_MSG_0("Failed to add events in rrr_event_dispatch\n");
-		event_del(periodic_event);
-		event_del(signal_event);
 		ret = 1;
 		goto out;
 	}
@@ -489,8 +514,6 @@ int rrr_event_dispatch (
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	return ret;
 }
 
@@ -595,7 +618,7 @@ void rrr_event_pass (
 	}
 
 	out:
-	if (1||RRR_DEBUGLEVEL_9) {
+	if (RRR_DEBUGLEVEL_9) {
 		__rrr_event_queue_dump_unlocked (queue);
 	}
 	pthread_mutex_unlock(&queue->lock);

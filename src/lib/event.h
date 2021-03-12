@@ -75,6 +75,11 @@ void rrr_event_function_set_with_arg (
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
 		void *arg
 );
+void rrr_event_callback_pause_set (
+		struct rrr_event_queue *queue,
+		void (*callback)(int *do_pause, void *callback_arg),
+		void *callback_arg
+);
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,

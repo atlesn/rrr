@@ -613,8 +613,6 @@ int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 		callback_data->send_allowed = 1;
 	}
 
-	printf("Send chunks %i\n", rrr_net_transport_ctx_send_waiting_chunk_count(handle));
-
 	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT) {
 		callback_data->send_discouraged = 1;
 	}

@@ -1350,8 +1350,6 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 					(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2 && publish->qos_packets.pubcomp == NULL)
 			)
 	) {
-		RRR_DBG_1("Preserving outbound PUBLISH id %u when cleaning session. ID will be reset.\n", packet->packet_identifier);
-
 		// In case anybody else holds reference to the packet, we clone it. The payload
 		// is not cloned, but it is INCREF'ed by the clone function.
 		struct rrr_mqtt_p_publish *publish_new = rrr_mqtt_p_clone_publish (
@@ -1403,6 +1401,11 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 		RRR_MSG_0("Error from callback while clearing to_remote-buffer and preserving PUBLISH white cleaning ram session\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (RRR_LL_COUNT(&preserve_data) > 0) {
+		RRR_DBG_1("Preserved %i outbound PUBLISH when cleaning session. IDs will be reset.\n",
+				RRR_LL_COUNT(&preserve_data));
 	}
 
 	// Add PUBLISH-packets to preserve back to buffer. The list is finally cleared further down.
