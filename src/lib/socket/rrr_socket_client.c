@@ -362,7 +362,7 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct rrr_socket_client *client = arg = arg;
+	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
 
 	int ret = 0;
