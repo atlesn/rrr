@@ -190,8 +190,6 @@ int rrr_msg_stats_new (
 	int ret = 0;
 	*message = NULL;
 
-	// TODO : Support large messages?
-
 	struct rrr_msg_stats *new_message;
 	if (rrr_msg_stats_new_empty (&new_message) != 0) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_stats_new");

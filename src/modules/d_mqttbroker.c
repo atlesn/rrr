@@ -113,7 +113,6 @@ static int mqttbroker_data_init (
 	return ret;
 }
 
-// TODO : Provide more configuration arguments
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 

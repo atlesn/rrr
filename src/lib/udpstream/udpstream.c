@@ -271,7 +271,6 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 ) {
 	int ret = 0;
 
-	// TODO : Move allocation to init function
 	if (udpstream_data->send_buffer == NULL) {
 		udpstream_data->send_buffer = malloc(RRR_UDPSTREAM_MESSAGE_SIZE_MAX);
 		if (udpstream_data->send_buffer == NULL) {

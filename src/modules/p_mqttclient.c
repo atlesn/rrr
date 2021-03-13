@@ -96,34 +96,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_INPUT_QUEUE_MAX 10000
 
-// TODO : Clean this up
-
 struct rrr_mqtt_session;
 struct rrr_array_tree;
 
 struct mqtt_client_data {
 	struct rrr_instance_runtime_data *thread_data;
-	struct rrr_mqtt_client_data *mqtt_client_data;
-	int transport_handle;
-	struct rrr_mqtt_session *session;
-	rrr_setting_uint server_port;
-	struct rrr_mqtt_subscription_collection *requested_subscriptions;
-	struct rrr_mqtt_property_collection connect_properties;
-
-	struct event *event_input_queue;
-	struct rrr_msg_holder_collection input_queue;
-	int input_queue_disabled;
 
 	char *server;
 	char *publish_topic;
 	char *version_str;
 	char *client_identifier;
 	char *publish_values_from_array;
+
+	char *username;
+	char *password;
+
+	char *connect_error_action;
+	rrr_setting_uint connect_attempts;
+
 	struct rrr_map publish_values_from_array_list;
 	struct rrr_array_tree *tree;
 
+	rrr_setting_uint server_port;
 	rrr_setting_uint qos;
 	rrr_setting_uint version;
+
+	struct rrr_mqtt_subscription_collection *requested_subscriptions;
 
 	int do_prepend_publish_topic;
 	int do_force_publish_topic;
@@ -134,19 +132,23 @@ struct mqtt_client_data {
 	int do_recycle_assigned_client_identifier;
 	int do_discard_on_connect_retry;
 
-	char *connect_error_action;
-	rrr_setting_uint connect_attempts;
+	struct rrr_mqtt_client_data *mqtt_client_data;
+	struct rrr_mqtt_session *session;
+	struct rrr_mqtt_property_collection connect_properties;
+
+	struct event *event_input_queue;
+	struct rrr_msg_holder_collection input_queue;
+	int input_queue_disabled;
+
+	uint64_t connect_time;
+
+	struct rrr_net_transport_config net_transport_config;
+	int transport_handle;
 
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
 	uint64_t total_discarded_count;
-	char *username;
-	char *password;
-
-	uint64_t connect_time;
-
-	struct rrr_net_transport_config net_transport_config;
 };
 
 static void mqttclient_data_cleanup(void *arg) {
@@ -949,10 +951,8 @@ static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
 		goto out;
 	}
 
-	RRR_MQTT_P_LOCK(publish->payload);
-
 	if (publish->payload->length == 0) {
-		goto out_unlock_payload;
+		goto out;
 	}
 
 	ssize_t topic_len = strlen(publish->topic);
@@ -968,14 +968,11 @@ static int mqttclient_try_create_rrr_msg_msg_with_publish_data (
 		RRR_MSG_0("Could not initialize message_final in receive_publish of MQTT client instance %s (A)\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
-		goto out_unlock_payload;
+		goto out;
 	}
 
 	memcpy(MSG_TOPIC_PTR(*result), publish->topic, topic_len);
 	memcpy(MSG_DATA_PTR(*result), publish->payload->payload_start, publish->payload->length);
-
-	out_unlock_payload:
-	RRR_MQTT_P_UNLOCK(publish->payload);
 
 	out:
 	return ret;
@@ -989,7 +986,7 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	int ret = 0;
 
 	if (publish->payload == NULL) {
-		goto out_nolock;
+		goto out;
 	}
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) publish->payload->payload_start;
@@ -1014,8 +1011,6 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	}
 
 	*result = NULL;
-
-	RRR_MQTT_P_LOCK(publish->payload);
 
 	rrr_length message_stated_length = 0;
 	if (rrr_msg_get_target_size_and_check_checksum (
@@ -1059,9 +1054,6 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 	memcpy(*result, message, message_actual_length);
 
 	out:
-	RRR_MQTT_P_UNLOCK(publish->payload);
-
-	out_nolock:
 	return ret;
 }
 
@@ -1109,10 +1101,8 @@ static int mqttclient_try_create_array_message_from_publish (
 	*parsed_bytes = 0;
 
 	if (publish->payload == NULL) {
-		goto out_nolock;
+		goto out;
 	}
-
-	RRR_MQTT_P_LOCK(publish->payload);
 
 	if (publish->payload->length == 0) {
 		RRR_MSG_0("Received PUBLISH message had zero length in MQTT client instance %s\n",
@@ -1159,9 +1149,6 @@ static int mqttclient_try_create_array_message_from_publish (
 	}
 
 	out:
-	RRR_MQTT_P_UNLOCK(publish->payload);
-
-	out_nolock:
 	return ret;
 }
 

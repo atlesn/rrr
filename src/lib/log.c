@@ -76,8 +76,6 @@ void rrr_log_cleanup(void) {
 	pthread_mutex_destroy(&rrr_log_lock);
 }
 
-// TODO : Locking does not work across forks
-
 // This must be separately locked to detect recursion (log functions called from inside hooks)
 static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
 

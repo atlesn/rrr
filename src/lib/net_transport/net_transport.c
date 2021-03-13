@@ -554,7 +554,7 @@ static void __rrr_net_transport_event_read (
 		return;
 	}
 
-	if (flags & EV_READ && handle->transport->hard_read_timeout_ms > 0) {
+	if ((flags & EV_READ) && handle->transport->hard_read_timeout_ms > 0) {
 		if (event_add(handle->event_hard_read_timeout, &handle->transport->hard_read_timeout_tv) != 0) {
 			RRR_MSG_0("Failed to update read event with new hard timeout in __rrr_net_transport_event_read\n");
 			event_base_loopbreak(handle->transport->event_base);

@@ -368,19 +368,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
-	if (RRR_DEBUGLEVEL_3) {
-// TODO : Needs to be put in a buffer then written out
-/*		RRR_DBG("dump message: 0x");
-		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
-			char c = ((char*)message)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
-
 	if (!MSG_IS_ARRAY(message)) {
 		// Ignore non-array messages
 		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");

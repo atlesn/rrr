@@ -547,18 +547,6 @@ int rrr_perl5_settings_to_hv (
 
 	settings_hv->hv = newHV();
 
-/* TODO:	We don't actually fill up the HV but instead force the user to utilize the
- * 			get()-method so that we can update was_used-parameter, maybe delete the following
-
-	struct rrr_perl5_settings_to_hv_callback_args callback_args = {
-			ctx, settings_hv
-	};
-	ret = rrr_settings_iterate(source, __rrr_perl5_settings_to_hv_callback, &callback_args);
-	if (ret != 0) {
-		RRR_MSG_0("Error while converting instance settings to hv in perl5\n");
-		goto out;
-	}*/
-
 	*target = settings_hv;
 
 	out:

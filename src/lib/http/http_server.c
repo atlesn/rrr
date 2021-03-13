@@ -514,8 +514,6 @@ int rrr_http_server_start_tls (
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
 
-	// TODO : Add soft timeout / http2 ping
-
 	if (server->disable_http2) {
 		net_transport_flags |= RRR_NET_TRANSPORT_F_TLS_NO_ALPN;
 	}

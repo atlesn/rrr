@@ -334,19 +334,6 @@ static int __rrr_http2_on_frame_send_callback (
 
 	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
 
-	/* TODO : This seems not to be needed. If it needs to be used, the callback
-	 * must always be set and not only when debuglevel is active.
-	if (	(frame->hd.type == NGHTTP2_DATA || frame->hd.type == NGHTTP2_HEADERS) &&
-		(frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
-	) {
-		int tmp = nghttp2_submit_rst_stream(nghttp2_session, 0, frame->hd.stream_id, 0);
-		if (tmp != 0) {
-			RRR_MSG_0("http2 failed to send stream close in __rrr_http2_on_frame_send_callback: %s\n",
-					nghttp2_strerror(tmp));
-			return NGHTTP2_ERR_CALLBACK_FAILURE;
-		}
-	}*/
-
 	return 0;
 }
 

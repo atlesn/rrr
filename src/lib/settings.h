@@ -74,8 +74,6 @@ struct rrr_instance_settings {
 	struct rrr_setting *settings;
 };
 
-// TODO : convert to RRR linked list
-
 struct rrr_settings_list {
 	char *data;
 	char **list;
