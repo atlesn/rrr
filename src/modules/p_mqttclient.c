@@ -1958,7 +1958,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	ret_tmp = rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
-			1 * 500 * 1000, // 500 ms
+			1 * 100 * 1000, // 100 ms
 			mqttclient_event_periodic,
 			thread
 	);

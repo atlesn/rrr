@@ -581,30 +581,31 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 	return;
 }
 
-int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
-		struct rrr_net_transport_handle *handle,
-		void *rrr_mqtt_conn_check_alive_callback_data
+int rrr_mqtt_conn_iterator_ctx_check_alive (
+		int *alive,
+		int *send_allowed,
+		int *send_discouraged,
+		struct rrr_net_transport_handle *handle
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
 
-	struct rrr_mqtt_conn_check_alive_callback_data *callback_data = rrr_mqtt_conn_check_alive_callback_data;
-	callback_data->alive = 1;
+	*alive = 1;
 
 	if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection) ||
 		RRR_MQTT_CONN_STATE_IS_CLOSED(connection) ||
 		connection->session == NULL
 	) {
-		callback_data->alive = 0;
+		*alive = 0;
 	}
 
 	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
-		callback_data->send_allowed = 1;
+		*send_allowed = 1;
 	}
 
 	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT) {
-		callback_data->send_discouraged = 1;
+		*send_discouraged = 1;
 	}
 
 	return ret;

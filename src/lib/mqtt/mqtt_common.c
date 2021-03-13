@@ -33,8 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 
-#define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
-#define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
+#define RRR_MQTT_COMMON_READ_PER_ROUND_MAX 1000
 
 struct rrr_event_queue *queue;
 
@@ -736,6 +735,39 @@ int rrr_mqtt_common_parse_properties (
 	return ret;
 }
 
+int rrr_mqtt_common_send_from_sessions_callback (
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	// context is FIFO-buffer
+	int ret = RRR_FIFO_OK;
+
+	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
+
+	if (rrr_mqtt_conn_iterator_ctx_send_packet(callback_data->handle, packet) != 0) {
+		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
+		// Do not delete packet on error, retry with new connection if client reconnects.
+		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
+	}
+
+	return ret;
+}
+
+static int __rrr_mqtt_common_send_now_callback (
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle *handle = arg;
+
+	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, packet)) != 0) {
+		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_now_callback\n");
+	}
+
+	return ret;
+}
+
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -810,7 +842,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out_generate_ack
 	);
 
-//	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_INCREF(packet);
 	unsigned int dummy;
 	int ret_from_receive_publish = mqtt_data->sessions->methods->receive_packet(
@@ -820,7 +851,6 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			&dummy
 	);
 	RRR_MQTT_P_DECREF(packet);
-//	RRR_MQTT_P_LOCK(packet);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			ret_from_receive_publish,
@@ -870,7 +900,9 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					mqtt_data->sessions,
 					&connection->session,
 					ack,
-					allow_missing_originating_packet
+					allow_missing_originating_packet,
+					__rrr_mqtt_common_send_now_callback,
+					handle
 			),
 			goto out,
 			" in session send packet function in rrr_mqtt_common_handle_publish"
@@ -1011,7 +1043,14 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	next_ack->packet_identifier = packet->packet_identifier;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->send_packet(mqtt_data->sessions, &connection->session, next_ack, 0),
+			mqtt_data->sessions->methods->send_packet (
+					mqtt_data->sessions,
+					&connection->session,
+					next_ack,
+					0,
+					__rrr_mqtt_common_send_now_callback,
+					handle
+			),
 			goto out,
 			" while sending ACK for packet to session in __rrr_mqtt_broker_handle_pubrec_pubrel"
 	);
@@ -1139,24 +1178,6 @@ static int __rrr_mqtt_common_read_parse_handle (
 	return ret;
 }
 
-int rrr_mqtt_common_send_from_sessions_callback (
-		struct rrr_mqtt_p *packet,
-		void *arg
-) {
-	// context is FIFO-buffer
-	int ret = RRR_FIFO_OK;
-
-	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
-
-	if (rrr_mqtt_conn_iterator_ctx_send_packet(callback_data->handle, packet) != 0) {
-		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
-		// Do not delete packet on error, retry with new connection if client reconnects.
-		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
-	}
-
-	return ret;
-}
-
 static int __rrr_mqtt_common_send (
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_net_transport_handle *handle,
@@ -1180,8 +1201,7 @@ static int __rrr_mqtt_common_send (
 					data->sessions,
 					&connection->session,
 					rrr_mqtt_common_send_from_sessions_callback,
-					&callback_data,
-					RRR_MQTT_COMMON_SEND_PER_ROUND_MAX
+					&callback_data
 			),
 			goto out,
 			"while iterating session send queue"
@@ -1203,12 +1223,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
-	uint64_t prev_bytes_read;
-	uint64_t prev_bytes_written;
-	uint64_t bytes_total_dummy;
-
-	rrr_net_transport_ctx_get_socket_stats(&prev_bytes_read, &prev_bytes_written, &bytes_total_dummy, handle);
-
 	if ((ret = __rrr_mqtt_common_read_parse_handle(handle, data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while reading and parsing\n");
@@ -1218,11 +1232,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto housekeeping;
 	}
-
-	uint64_t now_bytes_read;
-	uint64_t now_bytes_written;
-
-	rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &now_bytes_written, &bytes_total_dummy, handle);
 
 	if ((ret = __rrr_mqtt_common_send (
 			counters,
@@ -1237,8 +1246,6 @@ int rrr_mqtt_common_read_parse_single_handle (
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto housekeeping;
 	}
-
-	rrr_net_transport_ctx_get_socket_stats(&now_bytes_read, &now_bytes_written, &bytes_total_dummy, handle);
 
 	housekeeping:
 

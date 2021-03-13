@@ -207,14 +207,11 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 		socklen_t socklen,
 		void *arg
 );
-struct rrr_mqtt_conn_check_alive_callback_data {
-	int alive;
-	int send_allowed;
-	int send_discouraged;
-};
-int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
-		struct rrr_net_transport_handle *handle,
-		void *rrr_mqtt_conn_check_alive_callback_data
+int rrr_mqtt_conn_iterator_ctx_check_alive (
+		int *alive,
+		int *send_allowed,
+		int *send_discouraged,
+		struct rrr_net_transport_handle *handle
 );
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,

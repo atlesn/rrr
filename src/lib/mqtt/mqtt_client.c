@@ -78,6 +78,72 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 	return ret;
 }
 
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
+	int ret = RRR_MQTT_OK;
+
+	struct rrr_mqtt_client_data *data = arg;
+
+	struct rrr_mqtt_p_pingreq *pingreq = NULL;
+
+	if (connection->protocol_version == NULL) {
+		// CONNECT/CONNACK not yet done
+		goto out;
+	}
+
+	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > rrr_time_get_64()) {
+		goto out;
+	}
+
+	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
+
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet(
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) pingreq,
+					0,
+					NULL,
+					NULL
+			),
+			goto out,
+			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
+	);
+
+	data->last_pingreq_time = rrr_time_get_64();
+
+	out:
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
+		return ret;
+}
+
+struct rrr_mqtt_client_check_alive_callback_data {
+	struct rrr_mqtt_client_data *data;
+	int alive;
+	int send_allowed;
+	int send_discouraged;
+};
+
+static int __rrr_mqtt_client_connection_check_alive_callback (
+		struct rrr_net_transport_handle *handle, 
+		void *arg
+) {
+	struct rrr_mqtt_client_check_alive_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_mqtt_conn_iterator_ctx_check_alive (
+			&callback_data->alive,
+			&callback_data->send_allowed,
+			&callback_data->send_discouraged,
+			handle
+	)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
@@ -91,14 +157,17 @@ int rrr_mqtt_client_connection_check_alive (
 	*send_allowed = 0;
 	*send_discouraged = 0;
 
-	struct rrr_mqtt_conn_check_alive_callback_data callback_data = {
-		0, 0, 0
+	struct rrr_mqtt_client_check_alive_callback_data callback_data = {
+		data,
+		0,
+		0,
+		0
 	};
 
 	ret = rrr_mqtt_transport_with_iterator_ctx_do_custom (
 			data->mqtt_data.transport,
 			transport_handle,
-			rrr_mqtt_conn_iterator_ctx_check_alive_callback,
+			__rrr_mqtt_client_connection_check_alive_callback,
 			&callback_data
 	);
 
@@ -127,7 +196,7 @@ int rrr_mqtt_client_connection_check_alive (
 	return ret;
 }
 
-static void __rrr_mqtt_client_event_notify_tick (
+void __rrr_mqtt_client_notify_tick (
 		struct rrr_mqtt_client_data *data
 ) {
 	rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);
@@ -145,13 +214,15 @@ int rrr_mqtt_client_publish (
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) publish,
-					0
+					0,
+					NULL,
+					NULL
 			),
 			goto out,
 			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
 	);
 
-	__rrr_mqtt_client_event_notify_tick(data);
+	__rrr_mqtt_client_notify_tick(data);
 
 	out:
 	return ret;
@@ -205,13 +276,15 @@ int rrr_mqtt_client_subscribe (
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) subscribe,
-					0
+					0,
+					NULL,
+					NULL
 			),
 			goto out_decref,
 			" while sending SUBSCRIBE packet in rrr_mqtt_client_send_subscriptions\n"
 	);
 
-	__rrr_mqtt_client_event_notify_tick(data);
+	__rrr_mqtt_client_notify_tick(data);
 
 	out_decref:
 		RRR_MQTT_P_DECREF(subscribe);
@@ -267,13 +340,15 @@ int rrr_mqtt_client_unsubscribe (
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) unsubscribe,
-					0
+					0,
+					NULL,
+					NULL
 			),
 			goto out_decref,
 			" while sending UNSUBSCRIBE packet in rrr_mqtt_client_unsubscribe\n"
 	);
 
-	__rrr_mqtt_client_event_notify_tick(data);
+	__rrr_mqtt_client_notify_tick(data);
 
 	out_decref:
 		RRR_MQTT_P_DECREF(unsubscribe);
@@ -776,47 +851,6 @@ void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client)
 	rrr_mqtt_common_data_notify_pthread_cancel(&client->mqtt_data);
 }
 
-struct exceeded_keep_alive_callback_data {
-	struct rrr_mqtt_client_data *data;
-};
-
-static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
-	int ret = RRR_MQTT_OK;
-
-	struct exceeded_keep_alive_callback_data *callback_data = arg;
-	struct rrr_mqtt_client_data *data = callback_data->data;
-
-	struct rrr_mqtt_p_pingreq *pingreq = NULL;
-
-	if (connection->protocol_version == NULL) {
-		// CONNECT/CONNACK not yet done
-		goto out;
-	}
-
-	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > rrr_time_get_64()) {
-		goto out;
-	}
-
-	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
-
-	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			data->mqtt_data.sessions->methods->send_packet(
-					data->mqtt_data.sessions,
-					&connection->session,
-					(struct rrr_mqtt_p *) pingreq,
-					0
-			),
-			goto out,
-			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
-	);
-
-	data->last_pingreq_time = rrr_time_get_64();
-
-	out:
-		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
-		return ret;
-}
-
 static int __rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data
 ) {
@@ -834,10 +868,6 @@ static int __rrr_mqtt_client_read_callback (
 
 	int ret = 0;
 
-	struct exceeded_keep_alive_callback_data callback_data = {
-		data
-	};
-
 	struct rrr_mqtt_session_iterate_send_queue_counters session_counters = {0};
 
 	if ((ret = rrr_mqtt_common_read_parse_single_handle (
@@ -845,10 +875,12 @@ static int __rrr_mqtt_client_read_callback (
 			&data->mqtt_data,
 			handle,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
-			&callback_data
+			data
 	)) != 0) {
 		goto out;
 	}
+
+	printf("ACK missing: %u\n", session_counters.maintain_ack_missing_counter);
 
 	if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
 		data

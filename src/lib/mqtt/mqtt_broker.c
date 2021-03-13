@@ -721,7 +721,9 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) suback,
-					0
+					0,
+					NULL,
+					NULL
 			),
 			goto out,
 			" while sending SUBACK to session in rrr_mqtt_p_handler_subscribe"
@@ -769,7 +771,9 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) unsuback,
-					0
+					0,
+					NULL,
+					NULL
 			),
 			goto out,
 			" while sending UNSUBACK to session in __rrr_mqtt_broker_handle_unsubscribe"
