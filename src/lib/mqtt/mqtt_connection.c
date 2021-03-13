@@ -584,7 +584,6 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 int rrr_mqtt_conn_iterator_ctx_check_alive (
 		int *alive,
 		int *send_allowed,
-		int *send_discouraged,
 		struct rrr_net_transport_handle *handle
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
@@ -602,10 +601,6 @@ int rrr_mqtt_conn_iterator_ctx_check_alive (
 
 	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
 		*send_allowed = 1;
-	}
-
-	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT) {
-		*send_discouraged = 1;
 	}
 
 	return ret;

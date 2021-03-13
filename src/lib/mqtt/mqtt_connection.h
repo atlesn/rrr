@@ -210,7 +210,6 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 int rrr_mqtt_conn_iterator_ctx_check_alive (
 		int *alive,
 		int *send_allowed,
-		int *send_discouraged,
 		struct rrr_net_transport_handle *handle
 );
 int rrr_mqtt_conn_iterator_ctx_read (

@@ -716,8 +716,11 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	suback->subscriptions_ = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
 
+	int send_queue_count_dummy = 0;
+
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
+					&send_queue_count_dummy,
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) suback,
@@ -766,8 +769,11 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 	unsuback->subscriptions_ = unsubscribe->subscriptions;
 	unsubscribe->subscriptions = NULL;
 
+	int send_queue_count_dummy = 0;
+
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
+					&send_queue_count_dummy,
 					mqtt_data->sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) unsuback,
@@ -1026,9 +1032,7 @@ static int __rrr_mqtt_broker_read_callback (
 
 	data->mqtt_data.sessions->methods->get_stats(&stats_before, data->mqtt_data.sessions);
 
-	uint64_t send_queue_count_dummy = 0;
 	if ((ret = data->mqtt_data.sessions->methods->maintain (
-			&send_queue_count_dummy,
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;

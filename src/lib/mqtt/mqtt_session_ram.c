@@ -1092,14 +1092,11 @@ static int __rrr_mqtt_session_collection_ram_maintain_postponed_will_callback (R
 }
 
 static int __rrr_mqtt_session_collection_ram_maintain (
-		uint64_t *total_send_queue_count,
 		struct rrr_mqtt_session_collection *sessions
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	int ret = RRR_MQTT_SESSION_OK;
-
-	*total_send_queue_count = 0;
 
 	uint64_t expire_time = 0;
 	uint64_t time_now = rrr_time_get_64();
@@ -1134,8 +1131,6 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		int do_iterate_publish_grace_queue = 0;
-
-		*total_send_queue_count += rrr_fifo_buffer_get_entry_count(&node->to_remote_queue.buffer);
 
 		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
 		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {
@@ -2264,30 +2259,42 @@ struct iterate_send_queue_callback_data {
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters;
 };
 
-int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain_ack_complete (
-		struct iterate_send_queue_callback_data *iterate_callback_data,
-		struct rrr_mqtt_p *packet
+int __rrr_mqtt_session_ram_packet_ack_complete (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p *packet,
+		uint64_t complete_publish_grace_time_usec
 ) {
 	int ret = 0;
 
-	packet->planned_expiry_time = rrr_time_get_64() + (iterate_callback_data->complete_publish_grace_time_usec);
+	packet->planned_expiry_time = rrr_time_get_64() + (complete_publish_grace_time_usec);
 
 	RRR_DBG_3("%s %p id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			packet,
 			RRR_MQTT_P_GET_IDENTIFIER(packet),
-			iterate_callback_data->complete_publish_grace_time_usec
+			complete_publish_grace_time_usec
 	);
 
 	RRR_MQTT_P_INCREF(packet);
-	if ((ret = __rrr_mqtt_session_ram_fifo_write(&iterate_callback_data->ram_session->publish_grace_queue.buffer, packet, 1, 0, 0)) != 0) {
+	if ((ret = __rrr_mqtt_session_ram_fifo_write(&ram_session->publish_grace_queue.buffer, packet, 1, 0, 0)) != 0) {
 		RRR_MQTT_P_DECREF(packet);
-		RRR_MSG_0("Could not add packet to publish grace queue in __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain_ack_complete\n");
+		RRR_MSG_0("Could not add packet to publish grace queue in __rrr_mqtt_session_ram_packet_ack_complete\n");
 		goto out;
 	}
 
 	out:
 	return ret;
+}
+
+int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain_ack_complete (
+		struct iterate_send_queue_callback_data *iterate_callback_data,
+		struct rrr_mqtt_p *packet
+) {
+	return __rrr_mqtt_session_ram_packet_ack_complete (
+			iterate_callback_data->ram_session,
+			packet,
+			iterate_callback_data->complete_publish_grace_time_usec
+	);
 }
 
 static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
@@ -2355,8 +2362,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 		return ret;
 }
 
-static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_identifier_ensure (
-		struct iterate_send_queue_callback_data *iterate_callback_data,
+static int __rrr_mqtt_session_ram_packet_identifier_ensure (
+		struct rrr_mqtt_session_collection_ram_data *ram_data,
+		struct rrr_mqtt_session_ram *ram_session,
 		struct rrr_mqtt_p *packet
 ) {
 	int ret = 0;
@@ -2369,7 +2377,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_identifier_
 		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
 		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE
 	) {
-		uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(&iterate_callback_data->ram_session->id_pool);
+		uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(&ram_session->id_pool);
 		if (packet_identifier == 0) {
 			RRR_DBG_2("ID pool exhausted while iterating MQTT send queue, must wait until more packets are sent to remote\n");
 			// Retry immediately
@@ -2385,11 +2393,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_identifier_
 				packet,
 				packet_identifier,
 				__rrr_mqtt_session_ram_release_packet_id,
-				iterate_callback_data->ram_data,
-				iterate_callback_data->ram_session
+				ram_data,
+				ram_session
 		);
-
-//			printf("Set pool ID for %p arg1 %p arg2 %p\n", packet, packet->release_packet_id_arg1, packet->release_packet_id_arg2);
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC ||
@@ -2573,7 +2579,11 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		goto out;
 	}
 
-	if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_identifier_ensure (iterate_callback_data, packet)) != 0) {
+	if ((ret = __rrr_mqtt_session_ram_packet_identifier_ensure (
+			iterate_callback_data->ram_data,
+			iterate_callback_data->ram_session,
+			packet
+	)) != 0) {
 		goto out;
 	}
 
@@ -2790,6 +2800,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 }
 
 static int __rrr_mqtt_session_ram_send_packet (
+		int *total_send_queue_count,
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p *packet,
@@ -2886,6 +2897,8 @@ static int __rrr_mqtt_session_ram_send_packet (
 	}
 
 	out:
+	*total_send_queue_count = rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer);
+
 	SESSION_RAM_DECREF();
 
 	return ret;

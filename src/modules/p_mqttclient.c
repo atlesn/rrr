@@ -199,7 +199,24 @@ static int mqttclient_message_data_to_payload (
 	return 0;
 }
 
-static int mqttclient_publish(struct mqtt_client_data *data, const struct rrr_msg_holder *entry) {
+static void mqttclient_event_input_queue_disable (
+		struct mqtt_client_data *data
+) {
+	data->input_queue_disabled = 1;
+}
+
+static void mqttclient_event_input_queue_enable (
+		struct mqtt_client_data *data
+) {
+	data->input_queue_disabled = 0;
+	event_active(data->event_input_queue, 0, 0);
+}
+
+static int mqttclient_publish (
+		int *send_discouraged,
+		struct mqtt_client_data *data,
+		const struct rrr_msg_holder *entry
+) {
 	const struct rrr_msg_msg *reading = (const struct rrr_msg_msg *) entry->message;
 
 	int ret = 0;
@@ -397,7 +414,7 @@ static int mqttclient_publish(struct mqtt_client_data *data, const struct rrr_ms
 	RRR_DBG_2 ("MQTT client %s: PUBLISH with topic %s payload size is %ld bytes\n",
 			INSTANCE_D_NAME(data->thread_data), publish->topic, (long int) payload_size);
 
-	if (rrr_mqtt_client_publish(data->mqtt_client_data, &data->session, publish) != 0) {
+	if (rrr_mqtt_client_publish(send_discouraged, data->mqtt_client_data, &data->session, publish) != 0) {
 		RRR_MSG_0("Could not publish message in MQTT client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -430,11 +447,15 @@ static void mqttclient_event_input_queue (
 	}
 
 	// Caution: Loose pointer
-	struct rrr_msg_holder *entry = RRR_LL_SHIFT(&data->input_queue);
-	while (entry != NULL) {
+	int count = 0;
+	while (RRR_LL_COUNT(&data->input_queue) > 0) {
+		struct rrr_msg_holder *entry = RRR_LL_SHIFT(&data->input_queue);
 		rrr_msg_holder_lock(entry);
 
-		if (mqttclient_publish(data, entry) != 0) {
+		int send_discouraged = 0;
+
+		if (mqttclient_publish(&send_discouraged, data, entry) != 0) {
+			// Putback
 			RRR_LL_UNSHIFT(&data->input_queue, entry);
 			rrr_msg_holder_unlock(entry);
 
@@ -444,23 +465,17 @@ static void mqttclient_event_input_queue (
 			return;
 		}
 
+		count++;
 		rrr_msg_holder_decref_while_locked_and_unlock(entry);
 
-		entry = RRR_LL_SHIFT(&data->input_queue);
+		// Send discouraged need not be checked with QoS 0 as there are no ACKs to worry about
+		if (data->qos != 0 && send_discouraged && !data->input_queue_disabled) {
+			RRR_DBG_1("MQTT client %s: Send discouraged active, client send buffers are full\n",
+					INSTANCE_D_NAME(data->thread_data));
+			mqttclient_event_input_queue_disable(data);
+			break;
+		}
 	}
-}
-
-static void mqttclient_event_input_queue_disable (
-		struct mqtt_client_data *data
-) {
-	data->input_queue_disabled = 1;
-}
-
-static void mqttclient_event_input_queue_enable (
-		struct mqtt_client_data *data
-) {
-	data->input_queue_disabled = 0;
-	event_active(data->event_input_queue, 0, 0);
 }
 
 static int mqttclient_data_init (
@@ -920,8 +935,6 @@ static int mqttclient_process_parsed_packet (
 	struct mqtt_client_data *data = arg;
 
 	(void)(mqtt_client_data);
-
-//	printf ("mqttclient parsed packet of type %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC) &&
@@ -1412,12 +1425,10 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 
 	int alive = 0;
 	int send_allowed = 0;
-	int send_discouraged = 0;
 
 	if (rrr_mqtt_client_connection_check_alive (
 			&alive,
 			&send_allowed,
-			&send_discouraged,
 			data->mqtt_client_data,
 			data->transport_handle
 	) != 0) {
@@ -1790,13 +1801,11 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	int alive = 0;
 	int send_allowed = 0;
-	int send_discouraged = 0;
 
 	int ret_tmp;
 	if ((ret_tmp = rrr_mqtt_client_connection_check_alive (
 			&alive,
 			&send_allowed,
-			&send_discouraged,
 			data->mqtt_client_data,
 			data->transport_handle
 	)) != 0) {
@@ -1812,14 +1821,11 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	if (send_discouraged) {
-		RRR_DBG_1("MQTT client %s: Send discouraged active, client send buffers are full\n",
-				INSTANCE_D_NAME(thread_data));
-	}
-
-	data->input_queue_disabled = send_discouraged;
-
 	mqttclient_update_stats(data);
+
+	if (RRR_LL_COUNT(&data->input_queue) > 0) {
+		mqttclient_event_input_queue_enable(data);
+	}
 
 	return 0;
 }
@@ -1945,10 +1951,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	);
 
 	rrr_posix_usleep (RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000);
-
-	// Add input queue event in case the queue is not empty
-	RRR_DBG_1 ("MQTT client instance %s enabling processing of input queue.\n",
-			INSTANCE_D_NAME(thread_data));
 
 	rrr_event_callback_pause_set (
 			INSTANCE_D_EVENTS(thread_data),

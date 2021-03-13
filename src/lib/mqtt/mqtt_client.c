@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
 #define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
+#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT      10000
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -96,8 +97,11 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
+	int send_queue_count_dummy = 0;
+
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			data->mqtt_data.sessions->methods->send_packet(
+			data->mqtt_data.sessions->methods->send_packet (
+					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					&connection->session,
 					(struct rrr_mqtt_p *) pingreq,
@@ -120,7 +124,6 @@ struct rrr_mqtt_client_check_alive_callback_data {
 	struct rrr_mqtt_client_data *data;
 	int alive;
 	int send_allowed;
-	int send_discouraged;
 };
 
 static int __rrr_mqtt_client_connection_check_alive_callback (
@@ -134,7 +137,6 @@ static int __rrr_mqtt_client_connection_check_alive_callback (
 	if ((ret = rrr_mqtt_conn_iterator_ctx_check_alive (
 			&callback_data->alive,
 			&callback_data->send_allowed,
-			&callback_data->send_discouraged,
 			handle
 	)) != 0) {
 		goto out;
@@ -147,7 +149,6 @@ static int __rrr_mqtt_client_connection_check_alive_callback (
 int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
-		int *send_discouraged,
 		struct rrr_mqtt_client_data *data,
 		int transport_handle
 ) {
@@ -155,11 +156,9 @@ int rrr_mqtt_client_connection_check_alive (
 
 	*alive = 0;
 	*send_allowed = 0;
-	*send_discouraged = 0;
 
 	struct rrr_mqtt_client_check_alive_callback_data callback_data = {
 		data,
-		0,
 		0,
 		0
 	};
@@ -182,16 +181,6 @@ int rrr_mqtt_client_connection_check_alive (
 	*alive = callback_data.alive;
 	*send_allowed = callback_data.send_allowed;
 
-	if (!callback_data.send_discouraged) {
-		uint64_t send_queue_count = 0;
-		data->mqtt_data.sessions->methods->maintain(&send_queue_count, data->mqtt_data.sessions);
-
-		*send_discouraged = send_queue_count > RRR_MQTT_COMMON_SEND_DISCOURAGE_LIMIT;
-	}
-	else {
-		*send_discouraged = callback_data.send_discouraged;
-	}
-
 	out:
 	return ret;
 }
@@ -203,14 +192,19 @@ void __rrr_mqtt_client_notify_tick (
 }
 
 int rrr_mqtt_client_publish (
+		int *send_discouraged,
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_session **session,
 		struct rrr_mqtt_p_publish *publish
 ) {
 	int ret = 0;
 
+	*send_discouraged = 0;
+
+	int send_queue_count = 0;
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
+					&send_queue_count,
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) publish,
@@ -221,6 +215,8 @@ int rrr_mqtt_client_publish (
 			goto out,
 			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
 	);
+
+	*send_discouraged = send_queue_count > RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT;
 
 	__rrr_mqtt_client_notify_tick(data);
 
@@ -271,8 +267,11 @@ int rrr_mqtt_client_subscribe (
 		goto out_decref;
 	}
 
+	int send_queue_count_dummy = 0;
+
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
+					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) subscribe,
@@ -335,8 +334,11 @@ int rrr_mqtt_client_unsubscribe (
 		goto out_decref;
 	}
 
+	int send_queue_count_dummy = 0;
+
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
+					&send_queue_count_dummy,
 					data->mqtt_data.sessions,
 					session,
 					(struct rrr_mqtt_p *) unsubscribe,
@@ -880,17 +882,13 @@ static int __rrr_mqtt_client_read_callback (
 		goto out;
 	}
 
-	printf("ACK missing: %u\n", session_counters.maintain_ack_missing_counter);
-
 	if ((ret = __rrr_mqtt_client_iterate_and_clear_local_delivery (
 		data
 	)) != 0) {
 		goto out;
 	}
 
-	uint64_t total_send_queue_count_dummy = 0;
 	if ((ret = data->mqtt_data.sessions->methods->maintain (
-			&total_send_queue_count_dummy,
 			data->mqtt_data.sessions
 	)) != 0) {
 		goto out;
