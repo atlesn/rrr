@@ -1015,16 +1015,23 @@ static int __rrr_mqtt_broker_read_callback (
 	struct rrr_mqtt_broker_data *data = arg;
 
 	int ret = 0;
+	int ret_from_read = 0;
 
 	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
-	if ((ret = rrr_mqtt_common_read_parse_single_handle (
+	if ((ret = ret_from_read = rrr_mqtt_common_read_parse_single_handle (
 			&session_iterate_counters,
 			&data->mqtt_data,
 			handle,
 			NULL,
 			NULL
 	)) != 0) {
-		goto out;
+		if (ret == RRR_MQTT_SOFT_ERROR) {
+			// Mayble client sent a PUBLISH followed by DISCONNECT, process
+			// PUBLISH forwarding below.
+		}
+		else {
+			goto out;
+		}
 	}
 
 	struct rrr_mqtt_session_collection_stats stats_before;
@@ -1040,7 +1047,7 @@ static int __rrr_mqtt_broker_read_callback (
 
 	data->mqtt_data.sessions->methods->get_stats(&stats_after, data->mqtt_data.sessions);
 
-	// In case a PUBLISH got forwarded, tick otherconnections to send them
+	// In case a PUBLISH got forwarded, tick other connections to send them
 	if (stats_before.total_publish_forwarded != stats_after.total_publish_forwarded) {
 		rrr_mqtt_transport_notify_tick (data->mqtt_data.transport);	
 	}
@@ -1050,7 +1057,7 @@ static int __rrr_mqtt_broker_read_callback (
 	// in which the counter will have been incremented.
 	data->stats.total_connections_closed += 0;
 
-	return ret;
+	return ret | ret_from_read;
 }
 
 int rrr_mqtt_broker_new (

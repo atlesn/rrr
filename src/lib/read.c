@@ -276,6 +276,7 @@ int rrr_read_message_using_callbacks (
 	read_session->eof_ok_now = 0;
 
 	process_overshoot:
+
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
 			read_session->rx_buf_ptr = read_session->rx_overshoot;

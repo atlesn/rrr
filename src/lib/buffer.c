@@ -935,12 +935,7 @@ int rrr_fifo_buffer_search_and_replace (
 	return ret;
 }
 
-/*
- * This reading method holds a write lock for a minimum amount of time by
- * taking control of the start of the queue making it inaccessible to
- * others. The callback function must store the data pointer or free it.
- */
-int rrr_fifo_buffer_read_clear_forward (
+static int __rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
@@ -1103,6 +1098,42 @@ int rrr_fifo_buffer_read_clear_forward (
 		RRR_BUG("BUG: buffer size mismatch\n");
 	}
 #endif /* FIFO_DEBUG_COUNTER */
+
+	return ret;
+}
+
+/*
+ * This reading method holds a write lock for a minimum amount of time by
+ * taking control of the start of the queue making it inaccessible to
+ * others. The callback function must store the data pointer or free it.
+ * Reads at most RRR_FIFO_MAX_READS entries.
+ */
+int rrr_fifo_buffer_read_clear_forward (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
+		unsigned int wait_milliseconds
+) {
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds);
+}
+/*
+ * Same as rrr_fifo_buffer_read_clear_forward(), but reads all entries.
+ */
+int rrr_fifo_buffer_read_clear_forward_all (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
+) {
+	int ret = RRR_FIFO_OK;
+	int entry_count = 0;
+
+	do {
+		ret = __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0);
+		
+		pthread_mutex_lock(&buffer->ratelimit_mutex);
+		entry_count = buffer->entry_count;
+		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+	} while (ret == 0 && entry_count > 0);
 
 	return ret;
 }

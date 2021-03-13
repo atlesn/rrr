@@ -528,6 +528,7 @@ int rrr_mqtt_conn_housekeeping (
 	if (connection->keep_alive > 0) {
 		uint64_t limit_ping = (double) connection->keep_alive;
 		uint64_t limit = (double) connection->keep_alive * 1.5;
+
 		limit_ping *= 1000000;
 		limit *= 1000000;
 		if (connection->last_write_time + limit < rrr_time_get_64() || connection->last_read_time + limit < rrr_time_get_64()) {

@@ -850,7 +850,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	if (session->session_properties.numbers.receive_maximum != 0 &&
 		publish->received_size > (int64_t) session->session_properties.numbers.receive_maximum) {
-		RRR_DBG_1("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
+		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
 				publish->received_size, session->session_properties.numbers.receive_maximum);
 		return RRR_MQTT_SESSION_OK;
 	}
@@ -957,7 +957,6 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 	);
 	// TODO : Probably don't need CHECK_DESTROY here, don't seem to destroy anything anyway
 
-
 	if (total_match_count == 0) {
 		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
 	}
@@ -1011,11 +1010,10 @@ static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 	};
 
 	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(
-			rrr_fifo_buffer_read_clear_forward(
+			rrr_fifo_buffer_read_clear_forward_all(
 					&data->publish_local_queue.buffer,
 					__rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback,
-					&iterate_callback_data,
-					0
+					&iterate_callback_data
 			),
 			goto out,
 			" while iterating local delivery queue in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery"
@@ -1115,11 +1113,10 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	}
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	ret = rrr_fifo_buffer_read_clear_forward (
+	ret = rrr_fifo_buffer_read_clear_forward_all (
 			&data->publish_forward_queue.buffer,
 			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
-			data,
-			0
+			data
 	);
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
