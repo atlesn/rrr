@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MQTT_ID_POOL_SIZE_IN_32 2
 
 // Number of 32-uints we allocate each time we need more IDs
-#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 16
+#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 512
 //#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 1
 
 // for debugging, use smaller size
