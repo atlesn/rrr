@@ -83,6 +83,9 @@ struct rrr_read_session {
 	// If EOF does not occur during the next read, the flag is reset to zero.
 	int eof_ok_now;
 
+	// Remaining buffer contents are moved to overshoot if bytes read exceed target size.
+	// At the next iteration, no read will be performed and the overshoot is moved to
+	// rx_buf_ptr before get target size is called.
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;
 
