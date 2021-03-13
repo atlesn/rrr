@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -55,6 +55,11 @@ struct rrr_read_session {
 //	struct rrr_socket_client *client;
 	uint64_t last_read_time;
 
+	// Ratelimit working values. If more than bytes_max has been read within the interval,
+	// no reading is performed. When interval has passed, the byte counter and time is reset.
+	uint64_t ratelimit_time;
+	ssize_t ratelimit_bytes;
+
 	// This is set if get socket options callback is used
 	int socket_options;
 
@@ -89,6 +94,9 @@ struct rrr_read_session {
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;
 
+	// Set to 1 before read complete callback and 0 after the callback unless it fails. If the
+	// final callback fails, the read session must be clear or a bugtrap will be triggered the
+	// next read.
 	int read_complete;
 };
 
@@ -124,6 +132,9 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
+		struct rrr_read_session *read_session_ratelimit,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
 				void *private_arg

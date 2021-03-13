@@ -529,6 +529,9 @@ static int __rrr_net_transport_libressl_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
+				RRR_LL_FIRST(&handle->read_sessions),
+				ratelimit_interval_us,
+				ratelimit_max_bytes,
 				rrr_net_transport_tls_common_read_get_target_size,
 				rrr_net_transport_tls_common_read_complete_callback,
 				__rrr_net_transport_libressl_read_read,
@@ -543,7 +546,7 @@ static int __rrr_net_transport_libressl_read_message (
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 			continue;
 		}
-		else if (ret == RRR_NET_TRANSPORT_READ_OK) {
+		else if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
 			break;
 		}
 		else {

@@ -458,6 +458,8 @@ static void __rrr_socket_client_collection_event_read_message (
 				collection->read_step_max_size,
 				0, // No max size
 				collection->read_flags_socket,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				__rrr_socket_client_collection_read_message_complete_callback,
@@ -490,6 +492,8 @@ static void __rrr_socket_client_collection_event_read_raw (
 				collection->read_step_max_size,
 				0, // No max size
 				collection->read_flags_socket,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes
 				collection->get_target_size,
 				collection->get_target_size_arg,
 				__rrr_socket_client_collection_read_raw_complete_callback,
@@ -536,6 +540,8 @@ static void __rrr_socket_client_collection_event_read_array_tree (
 			collection->array_tree,
 			collection->array_do_sync_byte_by_byte,
 			collection->read_step_max_size,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			collection->array_message_max_size,
 			__rrr_socket_client_collection_event_read_array_tree_callback,
 			client

@@ -1560,6 +1560,8 @@ int rrr_udpstream_do_read_tasks (
 				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
 				0, // No maximum size
 				RRR_SOCKET_READ_METHOD_RECVFROM,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes	
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,

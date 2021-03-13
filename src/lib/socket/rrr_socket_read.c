@@ -352,6 +352,8 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -374,6 +376,9 @@ int rrr_socket_read_message_default (
 			read_step_initial,
 			read_step_max_size,
 			read_max,
+			RRR_LL_FIRST(read_session_collection),
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			__rrr_socket_read_message_default_get_target_size,
 			__rrr_socket_read_message_default_complete_callback,
 			(socket_read_flags & RRR_SOCKET_READ_INPUT_DEVICE
@@ -435,6 +440,8 @@ int rrr_socket_read_message_split_callbacks (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags_socket,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg1,
 		void *callback_arg2
@@ -456,6 +463,8 @@ int rrr_socket_read_message_split_callbacks (
 			sizeof(struct rrr_msg),
 			4096,
 			0, // No max size
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			read_flags_socket,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,

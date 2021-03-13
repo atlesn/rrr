@@ -555,6 +555,8 @@ int rrr_websocket_transport_ctx_read_frames (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 ) {
@@ -570,6 +572,8 @@ int rrr_websocket_transport_ctx_read_frames (
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			__rrr_websocket_get_target_size,
 			&callback_data,
 			__rrr_websocket_receive_callback_interpret_step,

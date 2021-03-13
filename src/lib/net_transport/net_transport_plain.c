@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -189,6 +189,8 @@ static int __rrr_net_transport_plain_read_message (
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
+				ratelimit_interval_us,
+				ratelimit_max_bytes,
 				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
@@ -197,7 +199,7 @@ static int __rrr_net_transport_plain_read_message (
 		);
 		*bytes_read += bytes_read_tmp;
 
-		if (ret == RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_OK || ret == RRR_READ_RATELIMIT) {
 			// TODO : Check for persistent connection/more results which might be
 			//		  stored in read session overshoot buffer
 			goto out;

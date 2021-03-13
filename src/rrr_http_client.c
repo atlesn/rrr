@@ -485,17 +485,19 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 	uint64_t bytes_read = 0;
 	if ((ret = rrr_socket_common_receive_array_tree (
-		&bytes_read,
-		&http_client_data->read_sessions,
-		STDIN_FILENO,
-		RRR_SOCKET_READ_METHOD_READ_FILE|RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_NO_GETSOCKOPTS|RRR_SOCKET_READ_USE_POLL,
-		&array,
-		http_client_data->tree,
-		1, // Do sync byte by byte
-		65535,
-		1 * 1024 * 1024 * 1024, // 1 GB
-		__rrr_http_client_send_websocket_frame_final_callback,
-		&callback_data
+			&bytes_read,
+			&http_client_data->read_sessions,
+			STDIN_FILENO,
+			RRR_SOCKET_READ_METHOD_READ_FILE|RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_NO_GETSOCKOPTS|RRR_SOCKET_READ_USE_POLL,
+			&array,
+			http_client_data->tree,
+			1, // Do sync byte by byte
+			65535,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			1 * 1024 * 1024 * 1024, // 1 GB
+			__rrr_http_client_send_websocket_frame_final_callback,
+			&callback_data
 	)) != 0) {
 		goto out;
 	}

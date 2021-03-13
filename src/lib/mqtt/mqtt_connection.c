@@ -813,12 +813,17 @@ int rrr_mqtt_conn_iterator_ctx_read (
 				2, // Read only two bytes the first time
 				read_step_max_size,
 				0, // No max read size
+				100 * 1000, // 100 ms ratelimit interval
+				(1 * 1024 * 1024) / 20, // 1/20 MB
 				__rrr_mqtt_conn_read_get_target_size,
 				&callback_data,
 				__rrr_mqtt_conn_read_complete_callback,
 				&callback_data
 		)) != 0) {
-			if (ret != RRR_SOCKET_READ_INCOMPLETE && connection->disconnect_reason_v5_ == 0) {
+			if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
+				ret = RRR_SOCKET_READ_INCOMPLETE;
+			}
+			else if (ret != RRR_SOCKET_READ_INCOMPLETE && connection->disconnect_reason_v5_ == 0) {
 				connection->disconnect_reason_v5_ = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 			}
 			goto out;

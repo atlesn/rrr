@@ -574,6 +574,8 @@ static int ip_read_array_intermediate (struct rrr_msg_holder *entry, void *arg) 
 			data->definitions,
 			data->do_sync_byte_by_byte,
 			4096,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			data->message_max_size,
 			__rrr_ip_receive_array_tree_callback,
 			callback_data

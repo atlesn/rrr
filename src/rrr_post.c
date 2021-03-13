@@ -505,6 +505,8 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				&array_tmp,
 				data->tree,
 				data->sync_byte_by_byte,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes
 				4096,
 				data->max_message_size,
 				__rrr_post_read_callback,

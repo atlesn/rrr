@@ -74,6 +74,7 @@ struct rrr_event_queue;
     struct rrr_net_transport_handle_collection handles;                     \
     struct event_base *event_base;                                          \
     struct event *event_maintenance;                                        \
+    struct event *event_read_add;                                           \
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
     uint64_t hard_read_timeout_ms;                                          \
@@ -180,6 +181,8 @@ int rrr_net_transport_ctx_read_message (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),

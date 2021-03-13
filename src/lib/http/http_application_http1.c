@@ -1276,6 +1276,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 			4096,
 			65535,
 			read_max_size,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			__rrr_http_application_http1_websocket_frame_callback,
 			&callback_data
 	)) & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE)) != 0) {
@@ -1557,6 +1559,8 @@ static int __rrr_http_application_http1_tick (
 						4096,
 						65535,
 						read_max_size,
+						0, // No ratelimit interval
+						0, // No ratelimit max bytes
 						__rrr_http_application_http1_receive_get_target_size,
 						&callback_data,
 						unique_id_generator_callback == NULL // No generator indicates client

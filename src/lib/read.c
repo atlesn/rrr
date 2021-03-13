@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -164,6 +164,9 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
+		struct rrr_read_session *read_session_ratelimit,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -195,6 +198,7 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 ) {
 	int ret = RRR_READ_OK;
+	int ret_from_read = RRR_READ_OK;
 
 	*bytes_read = 0;
 
@@ -207,8 +211,30 @@ int rrr_read_message_using_callbacks (
 		goto process_overshoot;
 	}
 
+	/* Check ratelimit. It is not possible to distinguish different read sessions when ratelimiting e.g.
+	 * when there are multiple read sessions for an UDP socket. */
+	if (read_session_ratelimit != NULL) {
+		if (ratelimit_max_bytes > 0) {
+			const uint64_t time_now = rrr_time_get_64();
+			if (time_now - read_session_ratelimit->ratelimit_time > ratelimit_interval_us) {
+				read_session_ratelimit->ratelimit_time = time_now;
+				read_session_ratelimit->ratelimit_bytes = 0;
+			}
+			else if (read_session_ratelimit->ratelimit_bytes > ratelimit_max_bytes) {
+				RRR_DBG_7("Read ratelimited %lli > %lli within %llu us\n",
+					(long long int) read_session_ratelimit->ratelimit_bytes, (long long int) ratelimit_max_bytes, ratelimit_interval_us);
+				ret = RRR_READ_RATELIMIT;
+				goto out;
+			}
+		}
+		else {
+			read_session_ratelimit->ratelimit_bytes = 0;
+			read_session_ratelimit->ratelimit_time = 0;
+		}
+	}
+
 	/* Read */
-	int ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
+	ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
 
 	// We don't quit on soft error yet, downstream must be able to retrieve the correct read session to
 	// handle errors, which might include to remove the read_session from the collection
@@ -273,6 +299,7 @@ int rrr_read_message_using_callbacks (
 		}
 	}
 
+	read_session->ratelimit_bytes += bytes;
 	read_session->eof_ok_now = 0;
 
 	process_overshoot:
