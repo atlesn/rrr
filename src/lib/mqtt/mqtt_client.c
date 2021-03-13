@@ -189,8 +189,6 @@ int rrr_mqtt_client_subscribe (
 		goto out;
 	}
 
-	RRR_MQTT_P_LOCK(subscribe);
-
 	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 			subscribe->subscriptions,
 			subscriptions,
@@ -199,10 +197,8 @@ int rrr_mqtt_client_subscribe (
 			NULL
 	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
-		goto out_unlock;
+		goto out_decref;
 	}
-
-	RRR_MQTT_P_UNLOCK(subscribe);
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -217,9 +213,6 @@ int rrr_mqtt_client_subscribe (
 
 	__rrr_mqtt_client_event_notify_tick(data);
 
-	goto out_decref;
-	out_unlock:
-		RRR_MQTT_P_UNLOCK(subscribe);
 	out_decref:
 		RRR_MQTT_P_DECREF(subscribe);
 	out:
@@ -258,20 +251,16 @@ int rrr_mqtt_client_unsubscribe (
 		goto out;
 	}
 
-	RRR_MQTT_P_LOCK(unsubscribe);
-
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+	if ((ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 			unsubscribe->subscriptions,
 			subscriptions,
 			0,
 			NULL,
 			NULL
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not add subscriptions to UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
-		goto out_unlock;
+		goto out_decref;
 	}
-
-	RRR_MQTT_P_UNLOCK(unsubscribe);
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -286,9 +275,6 @@ int rrr_mqtt_client_unsubscribe (
 
 	__rrr_mqtt_client_event_notify_tick(data);
 
-	goto out_decref;
-	out_unlock:
-		RRR_MQTT_P_UNLOCK(unsubscribe);
 	out_decref:
 		RRR_MQTT_P_DECREF(unsubscribe);
 	out:
@@ -338,13 +324,13 @@ int rrr_mqtt_client_connect (
 			rrr_mqtt_conn_accept_and_connect_callback
 	)) != 0) {
 		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
-		goto out_nolock;
+		goto out;
 	}
 
 	if (*transport_handle == 0) {
 		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
-		goto out_nolock;
+		goto out;
 	}
 
 	const struct rrr_mqtt_p_protocol_version *protocol_version = rrr_mqtt_p_get_protocol_version(version);
@@ -353,7 +339,6 @@ int rrr_mqtt_client_connect (
 	}
 
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
-	RRR_MQTT_P_LOCK(connect);
 
 	if (data->mqtt_data.client_name != NULL && *(data->mqtt_data.client_name) != '\0') {
 		if ((connect->client_identifier = strdup(data->mqtt_data.client_name)) == NULL) {
@@ -533,8 +518,6 @@ int rrr_mqtt_client_connect (
 	}
 
 	out:
-		RRR_MQTT_P_UNLOCK(connect);
-	out_nolock:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(connect);
 		rrr_mqtt_session_properties_clear(&session_properties_tmp);
 		return ret;

@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -227,7 +226,7 @@ static int __rrr_mqtt_broker_check_unique_client_id (
 	return ret;
 }
 
-static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
+static int __rrr_mqtt_broker_generate_unique_client_id (
 		char **final_result,
 		const struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_broker_data *broker
@@ -238,10 +237,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 
 	*final_result = NULL;
 
-	// On error, the connection destroy function will free this memory, The
-	// current connection is locked since we come from packet handler context
-	// and it is not possible for others to read our unfinished client id, they
-	// will of course lock the connection before trying that.
+	// On error, the connection destroy function will free this memory
 
 	int retries = RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS;
 	while (--retries >= 0) {
@@ -251,7 +247,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 		RRR_FREE_IF_NOT_NULL(result);
 
 		if (rrr_asprintf(&result, RRR_MQTT_BROKER_CLIENT_PREFIX "%u", serial) < 0) {
-			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_broker_generate_unique_client_id\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
@@ -269,11 +265,11 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 		);
 
 		if (dummy != 0) {
-			RRR_BUG("dummy was not 0 in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
+			RRR_BUG("dummy was not 0 in __rrr_mqtt_broker_generate_unique_client_id\n");
 		}
 
 		if (ret != 0) {
-			RRR_MSG_0("Error while validating client ID in __rrr_mqtt_broker_generate_unique_client_id_unlocked: %i\n", ret);
+			RRR_MSG_0("Error while validating client ID in __rrr_mqtt_broker_generate_unique_client_id: %i\n", ret);
 			goto out;
 		}
 
@@ -283,7 +279,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 	}
 
 	if (retries <= 0) {
-		RRR_MSG_0("Number of generated client IDs reached maximum in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
+		RRR_MSG_0("Number of generated client IDs reached maximum in __rrr_mqtt_broker_generate_unique_client_id\n");
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto out;
 	}
@@ -293,29 +289,6 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(result);
-
-	return ret;
-}
-
-static int __rrr_mqtt_broker_generate_unique_client_id (
-		char **final_result,
-		const struct rrr_mqtt_conn *connection,
-		struct rrr_mqtt_broker_data *data
-) {
-	int ret = 0;
-
-	if (*final_result != NULL) {
-		RRR_BUG("final_result was not NULL in __rrr_mqtt_broker_generate_unique_client_id\n");
-	}
-
-	// We must hold this lock to check for unique ID, if not, it is possible to deadlock
-	// if two connections try to check each others ID at the same time. We must also
-	// protect the serial counter
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(ret = __rrr_mqtt_broker_generate_unique_client_id_unlocked (
-			final_result,
-			connection,
-			data)
-	);
 
 	return ret;
 }
@@ -504,8 +477,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	// Below this point, only access client identifier through connection struct, not connect struct (might be NULL)
 
-	int client_count = 0;
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(client_count = data->client_count);
+	int client_count = data->client_count;
 
 	// If max clients are reached, we only allow connection if another client with
 	// the same ID got disconnected. To disconnect it will of course cause the client
@@ -518,7 +490,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out_send_connack;
 	}
 
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->client_count++);
+	data->client_count++;
 
 	RRR_DBG_2 ("CONNECT: Using client ID '%s'%s username '%s' clean session %i client count is %i\n",
 			(connection->client_id != NULL ? connection->client_id : "(empty)"),
@@ -681,9 +653,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		// DO NOT store the v31 reason, assembler will convert the v5 reason again later
 	}
 
-	RRR_MQTT_P_LOCK(connack);
 	ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, (struct rrr_mqtt_p *) connack);
-	RRR_MQTT_P_UNLOCK(connack);
 
 	if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
 		ret = ret & ~RRR_MQTT_SOFT_ERROR;
@@ -742,11 +712,9 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 			" while sending SUBSCRIBE message to session in rrr_mqtt_p_handler_subscribe"
 	);
 
-	RRR_MQTT_P_LOCK(suback);
 	suback->packet_identifier = subscribe->packet_identifier;
 	suback->subscriptions_ = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
-	RRR_MQTT_P_UNLOCK(suback);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -792,11 +760,9 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 			" while sending UNSUBSCRIBE message to session in __rrr_mqtt_broker_handle_unsubscribe "
 	);
 
-	RRR_MQTT_P_LOCK(unsuback);
 	unsuback->packet_identifier = unsubscribe->packet_identifier;
 	unsuback->subscriptions_ = unsubscribe->subscriptions;
 	unsubscribe->subscriptions = NULL;
-	RRR_MQTT_P_UNLOCK(unsuback);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -829,9 +795,7 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	RRR_MQTT_P_LOCK(pingresp);
 	ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, (struct rrr_mqtt_p *) pingresp);
-	RRR_MQTT_P_UNLOCK(pingresp);
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingresp);
@@ -914,8 +878,6 @@ static int __rrr_mqtt_broker_will_publish (
 
 	int ret = 0;
 
-	RRR_MQTT_P_LOCK(connection->will_publish);
-
 	RRR_DBG_3("Will PUBLISH for client '%s' with topic '%s' retain '%u' in MQTT broker will delay is '%u'\n",
 			connection->client_id,
 			connection->will_publish->topic,
@@ -924,7 +886,6 @@ static int __rrr_mqtt_broker_will_publish (
 	);
 
 	ret = MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(&data->mqtt_data, connection->will_publish);
-	RRR_MQTT_P_UNLOCK(connection->will_publish);
 
 	return ret;
 }
@@ -947,13 +908,11 @@ static int __rrr_mqtt_broker_event_handler (
 			if (__rrr_mqtt_broker_will_publish(data, connection)) {
 				RRR_MSG_0("Warning: Failed to publish will message in __rrr_mqtt_broker_event_handler\n");
 			}
-			RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO (
-				data->client_count--;
-				data->stats.total_connections_closed++;
-				if (data->client_count < 0) {
-					RRR_BUG("client count was < 0 in __rrr_mqtt_broker_event_handler\n");
-				}
-			);
+			data->client_count--;
+			data->stats.total_connections_closed++;
+			if (data->client_count < 0) {
+				RRR_BUG("client count was < 0 in __rrr_mqtt_broker_event_handler\n");
+			}
 			break;
 		default:
 			break;
@@ -1033,7 +992,6 @@ static int __rrr_mqtt_broker_acl_handler (
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
-	pthread_mutex_destroy(&broker->client_serial_stats_lock);
 	free(broker);
 }
 
@@ -1082,7 +1040,7 @@ static int __rrr_mqtt_broker_read_callback (
 	out:
 	// Always update. Connection framework might successfully close connections before producing errors,
 	// in which the counter will have been incremented.
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->stats.total_connections_closed += 0);
+	data->stats.total_connections_closed += 0;
 
 	return ret;
 }
@@ -1136,11 +1094,6 @@ int rrr_mqtt_broker_new (
 		goto out_free;
 	}
 
-	if ((ret = rrr_posix_mutex_init(&res->client_serial_stats_lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize lock for client serial number in rrr_mqtt_broker_new\n");
-		goto out_destroy_data;
-	}
-
 	res->max_clients = init_data->max_socket_connections - 10;
 	res->max_keep_alive = max_keep_alive;
 	res->disallow_anonymous_logins = disallow_anonymous_logins;
@@ -1149,14 +1102,12 @@ int rrr_mqtt_broker_new (
 	res->permission_name = permission_name;
 	res->acl = acl;
 
-	goto out_success;
-
-	out_destroy_data:
-		rrr_mqtt_common_data_destroy(&res->mqtt_data);
+	*broker = res;
+	goto out;
+//	out_destroy_data:
+//		rrr_mqtt_common_data_destroy(&res->mqtt_data);
 	out_free:
 		RRR_FREE_IF_NOT_NULL(res);
-	out_success:
-		*broker = res;
 	out:
 		return ret;
 }
@@ -1184,9 +1135,7 @@ int rrr_mqtt_broker_accept_connections (
 
 	// Do this also upon errors
 	if (accepted_count > 0) {
-		RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO (
-				data->stats.total_connections_accepted += accepted_count
-		);
+		data->stats.total_connections_accepted += accepted_count;
 	}
 
 	if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
@@ -1207,16 +1156,14 @@ void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,
 		struct rrr_mqtt_broker_data *data
 ) {
-	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO (
-			if (data->mqtt_data.sessions->methods->get_stats (
-					&data->stats.session_stats,
-					data->mqtt_data.sessions
-			) != 0) {
-				RRR_MSG_0("Warning: Failed to get session stats in rrr_mqtt_broker_get_stats\n");
-			}
+	if (data->mqtt_data.sessions->methods->get_stats (
+			&data->stats.session_stats,
+			data->mqtt_data.sessions
+	) != 0) {
+		RRR_MSG_0("Warning: Failed to get session stats in rrr_mqtt_broker_get_stats\n");
+	}
 
-			data->stats.connections_active = data->client_count;
+	data->stats.connections_active = data->client_count;
 
-			*target = data->stats;
-	);
+	*target = data->stats;
 }

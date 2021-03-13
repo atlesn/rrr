@@ -81,7 +81,6 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	data->handler_properties = NULL;
 }
 
-/* Call this when a thread has been cancelled to make sure mutexes are unlocked etc. */
 void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
 	// Nothing to do at the moment
 	(void)(data);
@@ -103,14 +102,14 @@ static int __rrr_mqtt_common_clear_session_from_connections_callback (
 	int ret = RRR_MQTT_OK;
 
 	if (RRR_NET_TRANSPORT_CTX_HANDLE(handle) == callback_data->disregard_transport_handle) {
-		goto out_nolock;
+		goto out;
 	}
 
 	if (connection->session == callback_data->session_to_remove) {
 		connection->session = NULL;
 	}
 
-	out_nolock:
+	out:
 	return ret;
 }
 
@@ -841,10 +840,8 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 		}
 
-		RRR_MQTT_P_LOCK(puback);
 		puback->reason_v5 = reason_v5;
 		puback->packet_identifier = publish->packet_identifier;
-		RRR_MQTT_P_UNLOCK(puback);
 	}
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2) {
 		struct rrr_mqtt_p_pubrec *pubrec = (struct rrr_mqtt_p_pubrec *) rrr_mqtt_p_allocate (
@@ -857,10 +854,8 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out;
 		}
 
-		RRR_MQTT_P_LOCK(pubrec);
 		pubrec->reason_v5 = reason_v5;
 		pubrec->packet_identifier = publish->packet_identifier;
-		RRR_MQTT_P_UNLOCK(pubrec);
 	}
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) != 0) {
 		RRR_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish));
@@ -868,9 +863,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (ack != NULL) {
 		// NOTE : Connection subsystem will notify session system when ACK is successfully
-		//        sent. We also need to unlock the packet because the original publish needs
-		//        to be locked when the ACK notification is processed.
-		RRR_MQTT_P_UNLOCK(packet);
+		//        sent.
 
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -879,19 +872,14 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					ack,
 					allow_missing_originating_packet
 			),
-			goto out_relock,
+			goto out,
 			" in session send packet function in rrr_mqtt_common_handle_publish"
 		);
-
-		RRR_MQTT_P_LOCK(packet);
 	}
 
-	goto out;
-	out_relock:
-		RRR_MQTT_P_LOCK(packet);
 	out:
-		RRR_MQTT_P_DECREF_IF_NOT_NULL(ack);
-		return ret;
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(ack);
+	return ret;
 }
 
 static int __rrr_mqtt_common_handle_general_ack (
@@ -1019,12 +1007,8 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 		goto out;
 	}
 
-	RRR_MQTT_P_LOCK(next_ack);
-
 	next_ack->reason_v5 = reason_v5;
 	next_ack->packet_identifier = packet->packet_identifier;
-
-	RRR_MQTT_P_UNLOCK(next_ack);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(mqtt_data->sessions, &connection->session, next_ack, 0),
@@ -1072,8 +1056,6 @@ static int __rrr_mqtt_common_handle_packet_callback (
 
 	struct rrr_mqtt_data *mqtt_data = arg;
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
 			RRR_MSG_0("Received a CONNECT packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
@@ -1112,8 +1094,7 @@ static int __rrr_mqtt_common_handle_packet_callback (
 	}
 
 	out:
-		RRR_MQTT_P_UNLOCK(packet);
-		return ret;
+	return ret;
 }
 
 int rrr_mqtt_common_update_conn_state_upon_disconnect (
@@ -1166,10 +1147,6 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	int ret = RRR_FIFO_OK;
 
 	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
-
-	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
-		RRR_BUG("BUG: Packet %p was not locked in rrr_mqtt_common_send_from_sessions_callback\n", packet);
-	}
 
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(callback_data->handle, packet) != 0) {
 		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");

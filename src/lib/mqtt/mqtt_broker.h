@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <inttypes.h>
-#include <pthread.h>
 
 #include "mqtt_common.h"
 #include "../ip/ip.h"
@@ -52,7 +51,6 @@ struct rrr_mqtt_broker_data {
 	int max_clients;
 	uint16_t max_keep_alive;
 
-	pthread_mutex_t client_serial_stats_lock;
 	uint32_t client_serial;
 	int client_count;
 	struct rrr_mqtt_broker_stats stats;
@@ -64,11 +62,6 @@ struct rrr_mqtt_broker_data {
 	const char *permission_name;
 	const struct rrr_mqtt_acl *acl;
 };
-
-#define RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(action)				\
-	pthread_mutex_lock(&data->client_serial_stats_lock);		\
-	action;														\
-	pthread_mutex_unlock(&data->client_serial_stats_lock)
 
 int rrr_mqtt_broker_accept_connections (
 		struct rrr_mqtt_broker_data *data

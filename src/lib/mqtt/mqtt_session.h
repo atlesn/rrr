@@ -121,7 +121,7 @@ struct rrr_mqtt_session_collection_methods {
 	);
 
 	// Insert a packet into the forward queue. Done currenty only by broker when publishing
-	// will messages. Publish message must be locked when calling. If will delivery
+	// will messages. If will delivery
 	// interval is set in publish, it is put into will postpone queue. If not, it is
 	// published immediately.
 	int (*delivery_forward) (
