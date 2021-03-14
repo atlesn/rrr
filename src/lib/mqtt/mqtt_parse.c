@@ -1402,7 +1402,7 @@ void rrr_mqtt_packet_parse (
 	}
 
 	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
-		session->packet->received_size = session->buf_wpos;
+		session->packet->received_size = session->target_size;
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_COMPLETE);
 	}
 
