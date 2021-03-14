@@ -55,13 +55,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_holder/message_holder_collection.h"
 #include "../lib/ip/ip_accept_data.h"
 
-#define IP_DEFAULT_PORT					2222
-#define IP_DEFAULT_PROTOCOL				RRR_IP_UDP
-#define IP_SEND_TIME_LIMIT_MS			1000
-#define IP_RECEIVE_TIME_LIMIT_MS		1000
-#define IP_DEFAULT_MAX_MESSAGE_SIZE		4096
-#define IP_DEFAULT_GRAYLIST_TIMEOUT_MS 	2000
-#define IP_DEFAULT_CLOSE_GRACE_MS		5
+#define IP_DEFAULT_PORT                    2222
+#define IP_DEFAULT_PROTOCOL                RRR_IP_UDP
+#define IP_SEND_TIME_LIMIT_MS              1000
+#define IP_RECEIVE_TIME_LIMIT_MS           1000
+#define IP_DEFAULT_MAX_MESSAGE_SIZE        4096
+#define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     2000
+#define IP_DEFAULT_CLOSE_GRACE_MS          5
 
 enum ip_action {
 	IP_ACTION_RETRY,
@@ -72,16 +72,19 @@ enum ip_action {
 struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection send_buffer;
-	unsigned int source_udp_port;
-	unsigned int source_tcp_port;
+
 	struct rrr_ip_data ip_udp_4;
 	struct rrr_ip_data ip_udp_6;
 	struct rrr_ip_data ip_tcp_listen_4;
 	struct rrr_ip_data ip_tcp_listen_6;
+
 	int ip_tcp_default_target_fd;
-	struct rrr_array_tree *definitions;
+
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
+
+	struct rrr_array_tree *definitions;
+
 	int do_strip_array_separators;
 	int do_smart_timeout;
 	int do_sync_byte_by_byte;
@@ -91,19 +94,29 @@ struct ip_data {
 	int do_preserve_order;
 	int do_persistent_connections;
 	int do_multiple_per_connection;
+
 	rrr_setting_uint close_grace_ms;
+
 	char *timeout_action_str;
 	enum ip_action timeout_action;
+
 	rrr_setting_uint graylist_timeout_ms;
 	rrr_setting_uint message_send_timeout_s;
 	rrr_setting_uint message_ttl_us;
 	rrr_setting_uint message_max_size;
+
+	unsigned int source_udp_port;
+	unsigned int source_tcp_port;
+
+	ssize_t default_topic_length;
 	char *default_topic;
+
 	char *target_host;
 	unsigned int target_port;
 	int target_protocol;
-	ssize_t default_topic_length;
+
 	struct rrr_map array_send_tags;
+
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
 	uint64_t read_error_count;
