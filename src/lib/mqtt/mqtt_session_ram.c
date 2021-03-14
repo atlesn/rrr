@@ -1794,7 +1794,7 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
+	if (RRR_DEBUGLEVEL_2) {
 		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
 	}
 
@@ -1819,7 +1819,7 @@ static int __rrr_mqtt_session_ram_remove_subscriptions (
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
+	if (RRR_DEBUGLEVEL_2) {
 		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
 	}
 
@@ -1971,7 +1971,7 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 		}
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
+	if (RRR_DEBUGLEVEL_2) {
 		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
 	}
 

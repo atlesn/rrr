@@ -196,6 +196,11 @@ int rrr_net_transport_ctx_send_push (
 		const void *data,
 		ssize_t size
 );
+int rrr_net_transport_ctx_send_urgent (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+);
 int rrr_net_transport_ctx_send_push_nullsafe (
 		struct rrr_net_transport_handle *handle,
 		const struct rrr_nullsafe_str *nullsafe

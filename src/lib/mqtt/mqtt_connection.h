@@ -229,6 +229,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 );
+int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
+		struct rrr_net_transport_handle *handle,
+		struct rrr_mqtt_p *packet
+);
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_net_transport_handle *handle
 );

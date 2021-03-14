@@ -145,11 +145,11 @@ static void __rrr_socket_read_message_default_remove_read_session(struct rrr_rea
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 
 	if (read_session->rx_buf_ptr != NULL && read_session->rx_buf_wpos > 0) {
-		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed bytes left in read buffer\n",
+		RRR_DBG_7("Removing read session for fd %i with %li unprocessed bytes left in read buffer\n",
 				callback_data->fd, read_session->rx_buf_wpos);
 	}
 	if (read_session->rx_overshoot != NULL && read_session->rx_overshoot_size > 0) {
-		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed overshoot bytes left in read buffer\n",
+		RRR_DBG_7("Removing read session for fd %i with %li unprocessed overshoot bytes left in read buffer\n",
 				callback_data->fd, read_session->rx_overshoot_size);
 	}
 

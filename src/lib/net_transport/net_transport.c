@@ -978,6 +978,31 @@ int rrr_net_transport_ctx_send_push (
 	return ret;
 }
 
+int rrr_net_transport_ctx_send_urgent (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+) {
+	uint64_t written_bytes_u64 = 0;
+
+	int ret = __rrr_net_transport_ctx_send_nonblock (
+			&written_bytes_u64,
+			handle,
+			data,
+			size
+	);
+
+	if ((ssize_t) written_bytes_u64 != size || ret != 0) {
+		RRR_DBG_7("net transport fd %i not all bytes were sent in urgen send (%" PRIu64 "<%lli) ret was %i\n",
+			handle->submodule_fd, written_bytes_u64, (long long int) size, ret);
+
+		// Mask all errors
+		ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	}
+
+	return ret;
+}
+
 static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
 		const void *data,
 		rrr_nullsafe_len data_len,

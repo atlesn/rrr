@@ -331,7 +331,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
-	int ret_destroy = 0;
 
 	struct rrr_mqtt_broker_data *data = (struct rrr_mqtt_broker_data *) mqtt_data;
 	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
@@ -398,7 +397,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
 		if (RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect) == 0) {
-			RRR_MSG_0("Received CONNECT with zero bytes client identifier and clean start set to 0\n");
+			RRR_MSG_2("Received CONNECT with zero bytes client identifier and clean start set to 0\n");
 			reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
 			goto out_send_connack;
 		}
@@ -440,7 +439,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					goto out;
 				}
 				if (session == NULL) {
-					RRR_MSG_0("Client ID cannot begin with '" RRR_MQTT_BROKER_CLIENT_PREFIX "'\n");
+					RRR_DBG_2("Client ID cannot begin with '" RRR_MQTT_BROKER_CLIENT_PREFIX "'\n");
 					ret = RRR_MQTT_SOFT_ERROR;
 					reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
 					goto out_send_connack;
@@ -605,7 +604,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	RRR_DBG_2("Setting keep-alive to %u in __rrr_mqtt_broker_handle_connect\n", use_keep_alive);
+	RRR_DBG_2("Setting keep-alive to %u\n", use_keep_alive);
 
 	if (rrr_mqtt_property_collection_add_uint32 (
 			&connack->properties,
@@ -635,7 +634,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if ((ret & RRR_MQTT_SOFT_ERROR) != 0 && reason_v5 == 0) {
 		RRR_BUG("Reason was not set on soft error in rrr_mqtt_p_handler_connect\n");
 	}
-	RRR_DBG_2("Setting connection disconnect reason to %u in __rrr_mqtt_broker_handle_connect\n", reason_v5);
+	RRR_DBG_2("Setting connection disconnect reason to %u in CONNACK\n", reason_v5);
 	connack->reason_v5 = reason_v5;
 	RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, reason_v5);
 
@@ -651,25 +650,23 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		// DO NOT store the v31 reason, assembler will convert the v5 reason again later
 	}
 
-	ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, (struct rrr_mqtt_p *) connack);
-
-	if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
-		ret = ret & ~RRR_MQTT_SOFT_ERROR;
-		RRR_DBG_2("CONNACK which was sent had non-zero reason, destroying connection\n");
-		ret_destroy = RRR_MQTT_SOFT_ERROR;
-	}
+	ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, (struct rrr_mqtt_p *) connack);
 
 	if (ret != 0) {
-		RRR_MSG_0("Error occured while sending CONNACK for sending in rrr_mqtt_p_handler_connect\n");
-		ret_destroy = RRR_MQTT_SOFT_ERROR;
-		goto out;
+		RRR_MSG_0("Error while sending CONNACK, ret was %i\n", ret);
+		ret = RRR_MQTT_SOFT_ERROR;
+	}
+
+	if (connack->reason_v5 != 0) {
+		RRR_DBG_2("CONNACK which was sent had non-zero reason, destroying connection\n");
+		ret = RRR_MQTT_SOFT_ERROR;
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(client_id_tmp);
 	rrr_mqtt_session_properties_clear(&session_properties);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
-	return ret | ret_destroy;
+	return ret;
 }
 
 static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
