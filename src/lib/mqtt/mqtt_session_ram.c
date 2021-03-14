@@ -2307,13 +2307,18 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
-		if ((RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) ||
+		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0 && publish->last_attempt != 0) {
+			goto out_ack_complete;
+		}
+		else if (
 			(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1 && publish->qos_packets.puback != NULL) ||
 			(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2 && publish->qos_packets.pubcomp != NULL)
 		) {
 			goto out_ack_complete;
 		}
-		goto out_ack_missing;
+		else {
+			goto out_ack_missing;
+		}
 	}
 	else if (
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
