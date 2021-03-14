@@ -2635,26 +2635,15 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	if (packet_to_transmit == NULL || !do_transmit) {
 		goto out;
 	}
-	
+
 	++counters->sent_counter;
+
+	ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
+			iterate_callback_data,
+			packet_to_transmit,
+			packet
+	);
 	
-	// TODO : Function is messy/too big, prone to bugs. Clean up.
-
-	if (packet_to_transmit != packet) {
-		ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
-				iterate_callback_data,
-				packet_to_transmit,
-				packet
-		);
-	}
-	else {
-		ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
-				iterate_callback_data,
-				packet_to_transmit,
-				packet
-		);
-	}
-
 	// Set the last attempt of the holder packet, as packet_to transmit
 	// might be store inside another packet. Set last attempt regardless
 	// of return value.
