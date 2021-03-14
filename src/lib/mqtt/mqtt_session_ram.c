@@ -848,10 +848,10 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	struct receive_forwarded_publish_data *callback_data = arg;
 	struct rrr_mqtt_session_ram *session = callback_data->session;
 
-	if (session->session_properties.numbers.receive_maximum != 0 &&
-		publish->received_size > (int64_t) session->session_properties.numbers.receive_maximum) {
-		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
-				publish->received_size, session->session_properties.numbers.receive_maximum);
+	if (session->session_properties.numbers.maximum_packet_size != 0 &&
+		publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size) {
+		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%li>%u\n",
+				publish->received_size, session->session_properties.numbers.maximum_packet_size);
 		return RRR_MQTT_SESSION_OK;
 	}
 
