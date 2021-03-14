@@ -934,9 +934,9 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				65536,
 				65536,
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
+				socket_flags,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
-				socket_flags,
 				file_read_all_to_message_get_target_size_callback,
 				NULL,
 				file_read_all_to_message_complete_callback,
