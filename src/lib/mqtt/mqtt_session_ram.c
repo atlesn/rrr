@@ -2302,11 +2302,6 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 
 	int ret = RRR_FIFO_OK;
 
-	if (packet->last_attempt == 0) {
-		// Packet has not been sent yet
-		goto out;
-	}
-
 	// Packets for which we expect ACK are retained in the queue to be matched
 	// with their ACKs later
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
@@ -2338,8 +2333,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (
 		goto out_ack_missing;
 	}
 
-	// Last attempt is non-zero for packet not requiring ACK, it is complete
-	goto out_discard;
+	if (packet->last_attempt != 0) {
+		// Last attempt is non-zero for packet not requiring ACK, it is complete
+		goto out_discard;
+	}
+
+	goto out;
 
 	out_ack_missing:
 		counters->maintain_ack_missing_counter++;
@@ -2427,19 +2426,26 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 	}
 
 	if (	publish->is_outbound &&
-			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0 &&
-			publish->qos_packets.pubcomp == NULL &&
-			publish->qos_packets.pubrec == NULL &&
-			publish->planned_expiry_time == 0
+		RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0 &&
+		publish->qos_packets.pubcomp == NULL &&
+		publish->qos_packets.pubrec == NULL &&
+		publish->planned_expiry_time == 0
 	) {
 		counters->incomplete_qos_publish_counter++;
 	}
 
 	if (	publish->last_attempt == 0 &&
-			publish->is_outbound != 0 &&
-			counters->incomplete_qos_publish_counter >= iterate_callback_data->ram_session->max_in_flight
+		publish->is_outbound != 0 && (
+			counters->incomplete_qos_publish_counter >= iterate_callback_data->ram_session->max_in_flight ||
+			(
+				iterate_callback_data->ram_session->session_properties.numbers.receive_maximum != 0 &&
+				counters->incomplete_qos_publish_counter >= iterate_callback_data->ram_session->session_properties.numbers.receive_maximum
+			)
+		)
 	) {
-		// Only print message once per iteration
+		// Only print messages once per iteration
+
+		// Hard-coded limit
 		if (counters->incomplete_qos_publish_counter == iterate_callback_data->ram_session->max_in_flight) {
 			RRR_DBG_3("Session %p max in flight %u/%u reached\n",
 					iterate_callback_data->ram_session,
@@ -2447,6 +2453,16 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 					iterate_callback_data->ram_session->max_in_flight
 			);
 		}
+
+		// Limit from CONNECT properties
+		if (counters->incomplete_qos_publish_counter == iterate_callback_data->ram_session->session_properties.numbers.receive_maximum) {
+			RRR_DBG_3("Session %p receive maximum from properties %u/%u reached\n",
+					iterate_callback_data->ram_session,
+					counters->incomplete_qos_publish_counter,
+					iterate_callback_data->ram_session->session_properties.numbers.receive_maximum
+			);
+		}
+
 		goto out;
 	}
 
@@ -2572,6 +2588,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 
 	int ret = RRR_FIFO_OK;
 
+	int do_transmit = 0;
+
 	if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (iterate_callback_data, packet)) != 0) {
 		goto out;
 	}
@@ -2584,17 +2602,11 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		goto out;
 	}
 
-	{
-		int do_transmit;
-		__rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or_retransmit (&do_transmit, iterate_callback_data, packet);
-
-		if (!do_transmit) {
-			goto out;
-		}
-	}
+	__rrr_mqtt_session_ram_iterate_send_queue_callback_check_transmit_or_retransmit (&do_transmit, iterate_callback_data, packet);
 
 	struct rrr_mqtt_p *packet_to_transmit = NULL;
 
+	// We must check all publishes to count in flight QoS correctly, event when they are not to be (re)sent this round
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 				&packet_to_transmit,
@@ -2620,7 +2632,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		packet_to_transmit = packet;
 	}
 
-	if (packet_to_transmit == NULL) {
+	if (packet_to_transmit == NULL || !do_transmit) {
 		goto out;
 	}
 	
