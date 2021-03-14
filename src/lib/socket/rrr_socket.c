@@ -929,6 +929,47 @@ int rrr_socket_unix_create_bind_and_listen (
 	return ret;
 }
 
+int rrr_socket_send_check (
+		int fd
+) {
+	int ret = RRR_SOCKET_OK;
+
+	struct pollfd pollfd = {
+		fd, POLLOUT, 0
+	};
+
+	if ((poll(&pollfd, 1, 0) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+		if ((pollfd.revents & (POLLHUP)) != 0) {
+			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = RRR_SOCKET_NOT_READY;
+			goto out;
+		}
+		else if (errno == ECONNREFUSED) {
+			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+
+		RRR_MSG_0("Error from poll() in send check: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+	else if ((pollfd.revents & POLLOUT) != 0) {
+		goto out;
+	}
+	else {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_socket_send_check (
 		int fd
 ) {

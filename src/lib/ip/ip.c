@@ -385,6 +385,55 @@ static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {
 	}
 }
 
+int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
+		unsigned int port,
+		const char *host,
+		int (*callback)(const char *host, unsigned int port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	if (port < 1 || port > 65535) {
+		RRR_BUG ("rrr_ip_network_resolve_ipv4_or_ipv6_with_callback: port was not in the range 1-65535 (got '%d')\n", port);
+	}
+
+	char port_str[16];
+	sprintf(port_str, "%u", port);
+
+	struct addrinfo hints;
+	struct addrinfo *addrinfo_result = NULL;
+
+	pthread_cleanup_push(__rrr_ip_freeaddrinfo_void_dbl_ptr, &addrinfo_result);
+
+	memset (&hints, '\0', sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
+	if (s != 0) {
+		RRR_DBG_7("IP failed to get address of '%s': %s\n", host, gai_strerror(s));
+		ret = 1;
+		goto out;
+	}
+
+	int i = 1;
+	struct addrinfo *rp;
+	for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
+		RRR_DBG_7("IP resolve address suggestion #%i to %s:%u address family %u\n",
+				i, host, port, rp->ai_addr->sa_family);
+
+		if ((ret = callback(host, port, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, callback_arg)) != 0) {
+			goto out;
+		}
+
+		i++;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
 		unsigned int port,

@@ -94,6 +94,7 @@ struct rrr_socket_client {
 	struct rrr_socket_client_collection *collection;
 
 	int connected_fd;
+	int connected_check_required;
 
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_socket_send_chunk_collection send_chunks;
@@ -320,7 +321,7 @@ static int __rrr_socket_client_collection_read_raw_complete_callback (
 	);
 }
 
-static void __rrr_socket_client_read_return_value_process (
+static void __rrr_socket_client_return_value_process (
 		struct rrr_socket_client_collection *collection,
 	struct rrr_socket_client *client,
 	int ret
@@ -330,7 +331,7 @@ static void __rrr_socket_client_read_return_value_process (
 	if (ret == 0) {
 		client->last_seen = rrr_time_get_64();
 	}
-	else if (ret == RRR_READ_INCOMPLETE) {
+	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
 		if (client->last_seen < timeout) {
 			RRR_DBG_7("Disconnecting fd %i in client collection following inactivity timeout\n", client->connected_fd);
 			ret = RRR_READ_EOF;
@@ -421,16 +422,34 @@ static void __rrr_socket_client_collection_event_write (
 	(void)(fd);
 	(void)(flags);
 
-	int ret_tmp = __rrr_socket_client_send_tick (client);
+	if (client->connected_check_required) {
+		int ret_tmp = rrr_socket_send_check(client->connected_fd);
 
-	if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
-		__rrr_socket_client_collection_find_and_destroy (collection, client);
-		// Do nothing more, also not on hard errors
-		return;
+		RRR_DBG_7("fd %i in client collection result of connected send check was %i\n", ret_tmp);
+
+		__rrr_socket_client_return_value_process (
+				collection,
+				client,
+				ret_tmp
+		);
+
+		if (ret_tmp == 0) {
+			client->connected_check_required = 0;
+			event_del(client->event_write);
+		}
 	}
+	else {
+		int ret_tmp = __rrr_socket_client_send_tick (client);
 
-	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
-		event_del(client->event_write);
+		if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
+			__rrr_socket_client_collection_find_and_destroy (collection, client);
+			// Do nothing more, also not on hard errors
+			return;
+		}
+
+		if (RRR_LL_COUNT(&client->send_chunks) == 0) {
+			event_del(client->event_write);
+		}
 	}
 }
 
@@ -447,7 +466,7 @@ static void __rrr_socket_client_collection_event_read_message (
 
 	uint64_t bytes_read = 0;
 
-	__rrr_socket_client_read_return_value_process (
+	__rrr_socket_client_return_value_process (
 		collection,
 		client,
 		rrr_socket_read_message_default (
@@ -481,7 +500,7 @@ static void __rrr_socket_client_collection_event_read_raw (
 
 	uint64_t bytes_read = 0;
 
-	__rrr_socket_client_read_return_value_process (
+	__rrr_socket_client_return_value_process (
 		collection,
 		client,
 		rrr_socket_read_message_default (
@@ -528,7 +547,7 @@ static void __rrr_socket_client_collection_event_read_array_tree (
 
 	struct rrr_array array_tmp = {0};
 
-	__rrr_socket_client_read_return_value_process (
+	__rrr_socket_client_return_value_process (
 		collection,
 		client,
 		rrr_socket_common_receive_array_tree (
@@ -842,6 +861,14 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 			RRR_MSG_0("Failed to push new connection in rrr_socket_client_collection_send_push_const_with_address\n");
 			goto out_close;
 		}
+
+		client->connected_check_required = 1;
+	}
+
+	if (client->connected_check_required) {
+		RRR_DBG_7("fd %i in client collection connected send check active, write not yet possible\n");
+		ret = RRR_SOCKET_NOT_READY;
+		goto out;
 	}
 
 	*result = client;
