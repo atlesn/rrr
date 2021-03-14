@@ -531,7 +531,7 @@ int rrr_mqtt_conn_housekeeping (
 
 		limit_ping *= 1000000;
 		limit *= 1000000;
-		if (connection->last_write_time + limit < rrr_time_get_64() || connection->last_read_time + limit < rrr_time_get_64()) {
+		if (connection->last_read_time + limit < rrr_time_get_64()) {
 			RRR_DBG_1("Keep-alive exceeded for connection\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;

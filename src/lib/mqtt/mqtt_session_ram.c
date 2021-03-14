@@ -2674,7 +2674,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	};
 
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US AND MAINTAIN
-	printf ("To remote queue %i\n", rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer));
+//	printf ("To remote queue %i\n", rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer));
 	ret = rrr_fifo_buffer_search (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
@@ -2762,23 +2762,25 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 			reason_v5
 	);
 
-	if (ram_session->session_properties.numbers.session_expiry == 0xffffffff) { // 8 f's
-		ram_session->expire_time = 0; // Never
-	}
-	else if (ram_session->session_properties.numbers.session_expiry == 0) {
-		ram_session->expire_time = rrr_time_get_64(); // Now
-	}
-	else {
-		ram_session->expire_time = rrr_time_get_64() + ((uint64_t) 1000 * (uint64_t) 1000 * (uint64_t) ram_session->session_properties.numbers.session_expiry);
-	}
-
 	if (reason_v5 == RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER) {
 		RRR_DBG_1("Session notify disconnect no deletion due to session take-over\n");
+		ram_session->expire_time = 0; // Never
 		goto no_delete;
+	}
+	else {
+		if (ram_session->session_properties.numbers.session_expiry == 0xffffffff) { // 8 f's
+			ram_session->expire_time = 0; // Never
+		}
+		else if (ram_session->session_properties.numbers.session_expiry == 0) {
+			ram_session->expire_time = rrr_time_get_64(); // Now
+		}
+		else {
+			ram_session->expire_time = rrr_time_get_64() + ((uint64_t) 1000 * (uint64_t) 1000 * (uint64_t) ram_session->session_properties.numbers.session_expiry);
+		}
 	}
 
 	if (ram_session->session_properties.numbers.session_expiry == 0) {
-		RRR_DBG_2("Destroying session with zero session expiry upon disconnect\n");
+		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
 
