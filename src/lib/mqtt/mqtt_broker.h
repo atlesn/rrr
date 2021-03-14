@@ -52,7 +52,6 @@ struct rrr_mqtt_broker_data {
 	uint16_t max_keep_alive;
 
 	uint32_t client_serial;
-	int client_count;
 	struct rrr_mqtt_broker_stats stats;
 
 	int disallow_anonymous_logins;

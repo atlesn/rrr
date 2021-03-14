@@ -477,7 +477,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	// Below this point, only access client identifier through connection struct, not connect struct (might be NULL)
 
-	int client_count = data->client_count;
+	int client_count = rrr_mqtt_transport_client_count_get(data->mqtt_data.transport);
 
 	// If max clients are reached, we only allow connection if another client with
 	// the same ID got disconnected. To disconnect it will of course cause the client
@@ -490,14 +490,12 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out_send_connack;
 	}
 
-	data->client_count++;
-
 	RRR_DBG_2 ("CONNECT: Using client ID '%s'%s username '%s' clean session %i client count is %i\n",
 			(connection->client_id != NULL ? connection->client_id : "(empty)"),
 			(client_id_was_assigned ? " (generated)"  : ""),
 			(connect->username != NULL ? connect->username : ""),
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
-			client_count + 1
+			client_count 
 	);
 
 	if (session == NULL) {
@@ -918,11 +916,7 @@ static int __rrr_mqtt_broker_event_handler (
 			if (__rrr_mqtt_broker_will_publish(data, connection)) {
 				RRR_MSG_0("Warning: Failed to publish will message in __rrr_mqtt_broker_event_handler\n");
 			}
-			data->client_count--;
 			data->stats.total_connections_closed++;
-			if (data->client_count < 0) {
-				RRR_BUG("client count was < 0 in __rrr_mqtt_broker_event_handler\n");
-			}
 			break;
 		default:
 			break;
@@ -1178,7 +1172,7 @@ void rrr_mqtt_broker_get_stats (
 		RRR_MSG_0("Warning: Failed to get session stats in rrr_mqtt_broker_get_stats\n");
 	}
 
-	data->stats.connections_active = data->client_count;
+	data->stats.connections_active = rrr_mqtt_transport_client_count_get(data->mqtt_data.transport);
 
 	*target = data->stats;
 }

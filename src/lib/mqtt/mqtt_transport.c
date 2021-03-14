@@ -179,6 +179,24 @@ int rrr_mqtt_transport_start (
 	for (size_t i = 0; i < transport->transport_count; i++) {               \
 		struct rrr_net_transport *node = transport->transports[i];
 
+int rrr_mqtt_transport_client_count_get (
+		struct rrr_mqtt_transport *transport
+) {
+	int count = 0;
+
+	RRR_MQTT_TRANSPORT_FOREACH_BEGIN();
+		int count_tmp = 0;
+		rrr_net_transport_stats_get(&count_tmp, node);
+		if (count_tmp > 0) {
+			// Subtract listen handle
+			count_tmp--;
+		}
+		count += count_tmp;
+	}
+
+	return count;
+}
+
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,

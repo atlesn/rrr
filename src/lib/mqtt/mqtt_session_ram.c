@@ -2674,7 +2674,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	};
 
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US AND MAINTAIN
-	ret = rrr_fifo_buffer_search(
+	printf ("To remote queue %i\n", rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer));
+	ret = rrr_fifo_buffer_search (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
 			&callback_data,
