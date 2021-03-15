@@ -734,7 +734,7 @@ static void __rrr_socket_client_event_read_array_tree (
 			collection->array_message_max_size,
 			__rrr_socket_client_event_read_array_tree_callback,
 			client
-		)
+		) & ~(RRR_READ_SOFT_ERROR) // Prevent connection closure upon parse errors (read session is still cleared by read framework)
 	);
 
 	rrr_array_clear(&array_tmp);

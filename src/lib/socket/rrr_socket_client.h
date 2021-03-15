@@ -110,7 +110,19 @@ int rrr_socket_client_collection_event_setup_raw (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
 		void *complete_callback_arg
 );
-		
-
+int rrr_socket_client_collection_event_setup_array_tree (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_event_queue *queue,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg,
+		int read_flags_socket,
+		const struct rrr_array_tree *tree,
+		int do_sync_byte_by_byte,
+		ssize_t read_step_max_size,
+		unsigned int message_max_size,
+		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
+		void *array_callback_arg
+);
 
 #endif /* RRR_SOCKET_CLIENT_H */
