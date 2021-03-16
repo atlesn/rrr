@@ -73,7 +73,7 @@ static int __rrr_socket_read_poll (
 	items = poll(&pollfd, 1, 0);
 	// Noisy message, disabled by default
 /*	if (items > 0) {
-		RRR_DBG_7("Socket %i poll result was %i items\n", callback_data->fd, items);
+		RRR_DBG_7("fd %i poll result was %i items\n", callback_data->fd, items);
 	}*/
 
 	// Don't do else if's, check everything
@@ -85,19 +85,19 @@ static int __rrr_socket_read_poll (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_DBG_7("Socket %i poll error: %s\n", fd, rrr_strerror(errno));
+		RRR_DBG_7("fd %i poll error: %s\n", fd, rrr_strerror(errno));
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_DBG_7("Socket %i poll: Got POLLERR or POLLNVAL\n", fd);
+		RRR_DBG_7("fd %i poll: Got POLLERR or POLLNVAL\n", fd);
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & POLLHUP) != 0) {
-		RRR_DBG_7("Socket %i POLLHUP, read EOF imminent\n", fd);
+		RRR_DBG_7("fd %i POLLHUP, read EOF imminent\n", fd);
 
 		// Don't set error, caller chooses what to do
 		*got_pollhup_pollerr = 1;
@@ -187,12 +187,12 @@ int rrr_socket_read (
 		pollfd.fd = fd;
 
 		int frames = poll(&pollfd, 1, 0);
-		RRR_DBG_7("Socket %i poll result: %i\n", fd, frames);
+		RRR_DBG_7("fd %i poll result: %i\n", fd, frames);
 		if (frames < 0) {
 			if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
 				goto out;
 			}
-			RRR_DBG_7("Note: Error from poll in rrr_socket_read: %s\n", rrr_strerror(errno));
+			RRR_DBG_7("fd %i error from poll in rrr_socket_read: %s\n", fd, rrr_strerror(errno));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -235,7 +235,7 @@ int rrr_socket_read (
 	}
 
 	if (bytes > 0) {
-		RRR_DBG_7("Socket %i recvfrom/recv/read %li bytes time %" PRIu64 "\n", fd, bytes, rrr_time_get_64());
+		RRR_DBG_7("fd %i recvfrom/recv/read %li bytes time %" PRIu64 "\n", fd, bytes, rrr_time_get_64());
 	}
 
 	if (bytes == -1) {
@@ -249,7 +249,7 @@ int rrr_socket_read (
 			goto out;
 		}
 		if (errno == ECONNRESET) {
-			RRR_DBG_7("Socket %i recvfrom/recv/read connection reset by remote\n", fd);
+			RRR_DBG_7("fd %i recvfrom/recv/read connection reset by remote\n", fd);
 			if (flags & (RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_CHECK_POLLHUP)) {
 				goto out_emit_eof;
 			}
@@ -267,7 +267,7 @@ int rrr_socket_read (
 		}
 
 // Noisy message, not enabled by default
-//		RRR_DBG_7("Socket %i return from poll was %i\n", fd, ret);
+//		RRR_DBG_7("fd %i return from poll was %i\n", fd, ret);
 
 		if ( (flags & RRR_SOCKET_READ_CHECK_EOF) ||
 			((flags & RRR_SOCKET_READ_CHECK_POLLHUP) && got_pollhup_pollerr)
@@ -283,7 +283,7 @@ int rrr_socket_read (
 
 	goto out;
 	out_emit_eof:
-		RRR_DBG_7("Socket %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
+		RRR_DBG_7("fd %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
 		ret = RRR_READ_EOF;
 	out:
 		return ret;
