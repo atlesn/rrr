@@ -378,6 +378,56 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		return ret;
 }
 
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
+		int *result_fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		struct rrr_ip_graylist *graylist
+) {
+	int ret = RRR_SOCKET_OK;
+
+	int fd = 0;
+
+	if ((ret = __rrr_ip_network_connect_tcp_check_graylist (graylist, addr, addr_len)) != 0) {
+		goto out;
+	}
+
+	*result_fd = -1;
+
+	fd = rrr_socket (
+			AF_INET,
+			SOCK_STREAM|SOCK_NONBLOCK,
+			0,
+			"ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock",
+			NULL,
+			0
+	);
+	if (fd == -1) {
+		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
+		RRR_DBG_3("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out_error_graylist_push;
+	}
+
+	*result_fd = fd;
+
+	goto out;
+
+	out_error_graylist_push:
+	 	if (graylist != NULL) {
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
+	 	}
+	out_error_close_socket:
+		rrr_socket_close(fd);
+	out:
+		return ret;
+}
+
 static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {
 	struct addrinfo **addrinfo = arg;
 	if (*addrinfo != NULL) {

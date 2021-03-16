@@ -77,6 +77,24 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
 		void *connect_callback_data
 );
+
+int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string,
+		const void *data,
+		ssize_t size,
+		void *chunk_private_data,
+		void (*chunk_private_data_destroy)(void *chunk_private_data),
+		int (*resolve_callback)(
+				size_t *address_count,
+				struct sockaddr ***addresses,
+				socklen_t **address_lengths,
+				void *callback_data
+		),
+		void *resolve_callback_data,
+		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
+		void *connect_callback_data
+);
 int rrr_socket_client_collection_listen_fd_push (
 		struct rrr_socket_client_collection *collection,
 		int fd

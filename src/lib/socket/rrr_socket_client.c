@@ -94,8 +94,12 @@ struct rrr_socket_client_fd {
 	struct event *event_read;
 	struct event *event_write;
 
+	// Used when identified by raw address
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
+
+	// Used when identified by string (e.g. hostname)
+	char *addr_string;
 };
 
 /*
@@ -132,6 +136,7 @@ static int __rrr_socket_client_fd_destroy (
 	if (client_fd->fd > 0) {
 		rrr_socket_close(client_fd->fd);
 	}
+	RRR_FREE_IF_NOT_NULL(client_fd->addr_string);
 	free(client_fd);
 	return 0;
 }
@@ -140,7 +145,8 @@ static int __rrr_socket_client_fd_new (
 		struct rrr_socket_client_fd **result,
 		int fd,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		const char *addr_string
 ) {
 	int ret = 0;
 
@@ -149,6 +155,14 @@ static int __rrr_socket_client_fd_new (
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_fd_new\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (addr_string != NULL) {
+		if ((client_fd->addr_string = strdup(addr_string)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for address string in __rrr_socket_client_fd_new\n");
+			ret = 1;
+			goto out_free;
+		}
 	}
 
 	memset(client_fd, '\0', sizeof(*client_fd));
@@ -163,14 +177,18 @@ static int __rrr_socket_client_fd_new (
 
 	*result = client_fd;
 
+	goto out;
+	out_free:
+		free(client_fd);
 	out:
-	return ret;
+		return ret;
 }
 
 static int __rrr_socket_client_destroy (
-		struct rrr_socket_client_collection *collection,
 		struct rrr_socket_client *client
 ) {
+	struct rrr_socket_client_collection *collection = client->collection;
+
 	RRR_LL_DESTROY(client, struct rrr_socket_client_fd, __rrr_socket_client_fd_destroy(node));
 	if (client->private_data != NULL) {
 		client->collection->callback_private_data_destroy(client->private_data);
@@ -302,7 +320,8 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 }
 
 static int __rrr_socket_client_new (
-		struct rrr_socket_client **result
+		struct rrr_socket_client **result,
+		struct rrr_socket_client_collection *collection
 ) {
 	int ret = 0;
 
@@ -318,6 +337,7 @@ static int __rrr_socket_client_new (
 	memset(client, '\0', sizeof(*client));
 
 	client->last_seen = rrr_time_get_64();
+	client->collection = collection;
 
 	*result = client;
 
@@ -328,7 +348,7 @@ static int __rrr_socket_client_new (
 static void __rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection
 ) {
-	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(collection, node));
+	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(node));
 }
 
 void rrr_socket_client_collection_destroy (
@@ -401,7 +421,7 @@ static int __rrr_socket_client_collection_iterate (
 				goto out;
 			}
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(collection, node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 
 	out:
 	return ret;
@@ -416,7 +436,7 @@ static void __rrr_socket_client_collection_find_and_destroy (
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(collection, node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 }
 
 static void __rrr_socket_client_fd_find_and_destroy (
@@ -729,6 +749,7 @@ static int __rrr_socket_client_fd_push (
 		int fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
+		const char *addr_string,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg)
 ) {
@@ -736,7 +757,7 @@ static int __rrr_socket_client_fd_push (
 
 	struct rrr_socket_client_fd *client_fd = NULL;
 
-	if ((ret = __rrr_socket_client_fd_new(&client_fd, fd, addr, addr_len)) != 0) {
+	if ((ret = __rrr_socket_client_fd_new(&client_fd, fd, addr, addr_len, addr_string)) != 0) {
 		goto out;
 	}
 
@@ -770,6 +791,7 @@ static int __rrr_socket_client_collection_fd_push (
 		int fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
+		const char *addr_string,
 		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
 		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg)
 ) {
@@ -778,19 +800,19 @@ static int __rrr_socket_client_collection_fd_push (
 	struct rrr_socket_client *client_new = NULL;
 
 	if ((ret = __rrr_socket_client_new (
-			&client_new
+			&client_new,
+			collection
 	)) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_not_ready_fd_push\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_fd_push\n");
 		goto out;
 	}
-
-	client_new->collection = collection;
 
 	if ((ret = __rrr_socket_client_fd_push (
 			client_new,
 			fd,
 			addr,
 			addr_len,
+			addr_string,
 			event_read_callback,
 			event_write_callback
 	)) != 0) {
@@ -806,17 +828,22 @@ static int __rrr_socket_client_collection_fd_push (
 
 	out:
 	if (client_new != NULL) {
-		__rrr_socket_client_destroy(collection, client_new);
+		__rrr_socket_client_destroy(client_new);
 	}
 	return ret;
 }
+
+#define CONNECTED_CALLBACKS               \
+	collection->event_read_callback,  \
+	__rrr_socket_client_event_write
 
 static int __rrr_socket_client_collection_not_ready_fd_push (
 		struct rrr_socket_client **result,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		const char *addr_string
 ) {
 	return __rrr_socket_client_collection_fd_push (
 			result,
@@ -824,8 +851,27 @@ static int __rrr_socket_client_collection_not_ready_fd_push (
 			fd,
 			addr,
 			addr_len,
-			collection->event_read_callback,
-			__rrr_socket_client_event_write
+			addr_string,
+			CONNECTED_CALLBACKS
+	);
+}
+
+static int __rrr_socket_client_not_ready_fd_push (
+		struct rrr_socket_client *client,
+		int fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const char *addr_string
+) {
+	struct rrr_socket_client_collection *collection = client->collection;
+
+	return __rrr_socket_client_fd_push (
+			client,
+			fd,
+			addr,
+			addr_len,
+			addr_string,
+			CONNECTED_CALLBACKS
 	);
 }
 
@@ -834,7 +880,8 @@ static int __rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
 		int connected_fd,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		const char *addr_string
 ) {
 	int ret = 0;
 
@@ -845,7 +892,8 @@ static int __rrr_socket_client_collection_connected_fd_push (
 			collection,
 			connected_fd,
 			addr,
-			addr_len
+			addr_len,
+			addr_string
 	)) != 0) {
 		goto out;
 	}
@@ -971,6 +1019,21 @@ static struct rrr_socket_client *__rrr_socket_client_collection_find_by_address 
 	return NULL;
 }
 
+static struct rrr_socket_client *__rrr_socket_client_collection_find_by_address_string (
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		struct rrr_socket_client *client = node;
+		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+			if (node->addr_string != NULL && strcmp(node->addr_string, addr_string) == 0) {
+				return client;
+			}
+		RRR_LL_ITERATE_END();
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
 static struct rrr_socket_client *__rrr_socket_client_collection_find_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
@@ -1041,7 +1104,7 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 			RRR_BUG("BUG: FD not set after connect callback in rrr_socket_client_collection_send_push_const_with_address\n");
 		}
 
-		if ((ret = __rrr_socket_client_collection_not_ready_fd_push (&client, collection, tmp_fd, addr, addr_len)) != 0) {
+		if ((ret = __rrr_socket_client_collection_not_ready_fd_push (&client, collection, tmp_fd, addr, addr_len, NULL)) != 0) {
 			RRR_MSG_0("Failed to push new connection in rrr_socket_client_collection_send_push_const_with_address\n");
 			goto out_close;
 		}
@@ -1072,6 +1135,143 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 	struct rrr_socket_client *client = NULL;
 
 	if ((ret = __rrr_socket_client_collection_find_by_address_or_connect (&client, collection, addr, addr_len, connect_callback, connect_callback_data)) != 0)  {
+		goto out;
+	}
+
+	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data, chunk_private_data_destroy)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_socket_client_collection_find_by_address_string_or_connect (
+		struct rrr_socket_client **result,
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string,
+		int (*resolve_callback)(
+				size_t *address_count,
+				struct sockaddr ***addresses,
+				socklen_t **address_lengths,
+				void *callback_data
+		),
+		void *resolve_callback_data,
+		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
+		void *connect_callback_data
+) {
+	int ret = 0;
+
+	size_t address_count = 0;
+	struct sockaddr **addresses = NULL;
+	socklen_t *address_lengths = NULL;
+
+	*result = NULL;
+
+	int tmp_fd = -1;
+
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_address_string(collection, addr_string);
+
+	if (client != NULL) {
+		goto found;
+	}
+
+	if ((ret = resolve_callback (
+			&address_count,
+			&addresses,
+			&address_lengths,
+			resolve_callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if (address_count == 0) {
+		RRR_BUG("BUG: address count was zero after resolve callback in __rrr_socket_client_collection_find_by_address_string_or_connect, callback must return error\n");
+	}
+
+	if ((ret = __rrr_socket_client_new (
+			&client,
+			collection
+	)) != 0) {
+		RRR_MSG_0("Could not create client in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+		goto out;
+	}
+
+	for (size_t i = 0; i < address_count; i++) {
+		if ((ret = connect_callback (&tmp_fd, addresses[i], address_lengths[i], connect_callback_data)) == 0) {
+			if (tmp_fd < 0) {
+				RRR_BUG("BUG: FD not set after connect callback in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+			}
+
+			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i now pending\n", i + 1, addr_string, address_count);
+
+			if ((ret = __rrr_socket_client_not_ready_fd_push (
+					client,
+					tmp_fd, 
+					addresses[i], 
+					address_lengths[i],
+					addr_string
+			)) != 0) {
+				RRR_MSG_0("Failed to push new connection in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
+				goto out;
+			}
+			tmp_fd = -1;
+		}
+		else {
+			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i failed\n", i + 1, addr_string, address_count);
+		}
+	}
+
+	found:
+	*result = client;
+	client = NULL;
+
+	goto out;
+	out:
+	if (tmp_fd != -1) {
+		rrr_socket_close(tmp_fd);
+	}
+	for (size_t i = 0; i < address_count; i++) {
+		free(addresses[i]);
+	}
+	RRR_FREE_IF_NOT_NULL(addresses);
+	RRR_FREE_IF_NOT_NULL(address_lengths);
+	if (client != NULL) {
+		__rrr_socket_client_destroy(client);
+	}
+	return ret;
+}
+
+int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string,
+		const void *data,
+		ssize_t size,
+		void *chunk_private_data,
+		void (*chunk_private_data_destroy)(void *chunk_private_data),
+		int (*resolve_callback)(
+				size_t *address_count,
+				struct sockaddr ***addresses,
+				socklen_t **address_lengths,
+				void *callback_data
+		),
+		void *resolve_callback_data,
+		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
+		void *connect_callback_data
+) {
+	int ret = 0;
+
+	struct rrr_socket_client *client = NULL;
+
+	if ((ret = __rrr_socket_client_collection_find_by_address_string_or_connect (
+			&client,
+			collection,
+			addr_string,
+			resolve_callback,
+			resolve_callback_data,
+			connect_callback,
+			connect_callback_data
+	)) != 0)  {
 		goto out;
 	}
 
@@ -1117,7 +1317,8 @@ static void __rrr_socket_client_event_accept (
 			collection,
 			connected_fd,
 			(const struct sockaddr *) &addr,
-			addr_len
+			addr_len,
+			NULL
 	);
 
 	out:
@@ -1140,6 +1341,7 @@ int rrr_socket_client_collection_listen_fd_push (
 			fd,
 			NULL,
 			0,
+			NULL,
 			__rrr_socket_client_event_accept,
 			NULL
 	)) != 0) {
@@ -1180,7 +1382,7 @@ int rrr_socket_client_collection_connected_fd_push (
 		int fd
 ) {
 	struct rrr_socket_client *client_dummy = NULL;
-	return __rrr_socket_client_collection_connected_fd_push (&client_dummy, collection, fd, NULL, 0);
+	return __rrr_socket_client_collection_connected_fd_push (&client_dummy, collection, fd, NULL, 0, NULL);
 }
 
 void rrr_socket_client_collection_send_fail_notify_setup (

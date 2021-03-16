@@ -97,6 +97,12 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		socklen_t addr_len,
 		struct rrr_ip_graylist *graylist
 );
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
+		int *result_fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		struct rrr_ip_graylist *graylist
+);
 int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 		unsigned int port,
 		const char *host,
