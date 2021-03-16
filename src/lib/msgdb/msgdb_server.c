@@ -50,71 +50,6 @@ struct rrr_msgdb_server {
 	uint64_t recv_count;
 };
 
-int rrr_msgdb_server_new (
-		struct rrr_msgdb_server **result,
-		const char *directory,
-		const char *socket
-) {
-	int ret = 0;
-
-	struct rrr_msgdb_server *server = NULL;
-	int fd = 0;
-
-	if ((ret = rrr_socket_unix_create_bind_and_listen (
-		&fd,
-		"msgdb_server",
-		socket,
-		10, // Number of clients
-		1,  // Do nonblock
-		0,  // No mkstemp
-		1   // Do unlink if exists
-	)) != 0) {
-		RRR_MSG_0("Failed to create listening socket '%s' in message database server\n", socket);
-		goto out;
-	}
-
-	if ((server = malloc(sizeof(*server))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
-		ret = 1;
-		goto out_close;
-	}
-
-	memset(server, '\0', sizeof(*server));
-
-	if ((server->directory = strdup(directory)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
-		ret = 1;
-		goto out_free;
-	}
-
-	if ((ret = rrr_socket_client_collection_new(&server->clients, fd, "msgdb_server")) != 0) {
-		goto out_free_directory;
-	}
-
-	server->fd = fd;
-
-	*result = server;
-
-	goto out;
-	out_free_directory:
-		free(server->directory);
-	out_free:
-		free(server);
-	out_close:
-		rrr_socket_close(fd);
-	out:
-		return ret;
-}
-
-void rrr_msgdb_server_destroy (
-		struct rrr_msgdb_server *server
-) {
-	RRR_FREE_IF_NOT_NULL(server->directory);
-	rrr_socket_close(server->fd);
-	rrr_socket_client_collection_destroy(server->clients);
-	free(server);
-}
-
 void rrr_msgdb_server_destroy_void (
 		void *server
 ) {
@@ -922,11 +857,49 @@ uint64_t rrr_msgdb_server_recv_count_get (
 	return server->recv_count;
 }
 
-int rrr_msgdb_server_event_setup (
-		struct rrr_msgdb_server *server,
-		struct rrr_event_queue *queue
+int rrr_msgdb_server_new (
+		struct rrr_msgdb_server **result,
+		struct rrr_event_queue *queue,
+		const char *directory,
+		const char *socket
 ) {
-	return rrr_socket_client_collection_event_setup (
+	int ret = 0;
+
+	struct rrr_msgdb_server *server = NULL;
+	int fd = 0;
+
+	if ((ret = rrr_socket_unix_create_bind_and_listen (
+		&fd,
+		"msgdb_server",
+		socket,
+		10, // Number of clients
+		1,  // Do nonblock
+		0,  // No mkstemp
+		1   // Do unlink if exists
+	)) != 0) {
+		RRR_MSG_0("Failed to create listening socket '%s' in message database server\n", socket);
+		goto out;
+	}
+
+	if ((server = malloc(sizeof(*server))) == NULL) {
+		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
+		ret = 1;
+		goto out_close;
+	}
+
+	memset(server, '\0', sizeof(*server));
+
+	if ((server->directory = strdup(directory)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	if ((ret = rrr_socket_client_collection_new(&server->clients, "msgdb_server")) != 0) {
+		goto out_free_directory;
+	}
+
+	rrr_socket_client_collection_event_setup (
 			server->clients,
 			queue,
 			__rrr_msgdb_server_client_new_void,
@@ -941,4 +914,34 @@ int rrr_msgdb_server_event_setup (
 			NULL,
 			server
 	);
+
+	if ((ret = rrr_socket_client_collection_listen_fd_push (server->clients, fd)) != 0) {
+		RRR_MSG_0("Could not push listen handle to client collection in rrr_msgdb_server_new\n");
+		goto out_destroy_client_collection;
+	}
+
+	server->fd = fd;
+
+	*result = server;
+
+	goto out;
+	out_destroy_client_collection:
+		rrr_socket_client_collection_destroy(server->clients);
+	out_free_directory:
+		free(server->directory);
+	out_free:
+		free(server);
+	out_close:
+		rrr_socket_close(fd);
+	out:
+		return ret;
+}
+
+void rrr_msgdb_server_destroy (
+		struct rrr_msgdb_server *server
+) {
+	RRR_FREE_IF_NOT_NULL(server->directory);
+	rrr_socket_close(server->fd);
+	rrr_socket_client_collection_destroy(server->clients);
+	free(server);
 }

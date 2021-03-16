@@ -74,7 +74,7 @@ struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection send_buffer;
 
-	struct rrr_socket_client_collection *collection_udp;
+	struct rrr_socket_client_collection *collection_listen;
 
 	int ip_tcp_default_target_fd;
 
@@ -123,8 +123,8 @@ struct ip_data {
 static void ip_data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
 
-	if (data->collection_udp != NULL) {
-		rrr_socket_client_collection_destroy(data->collection_udp);
+	if (data->collection_listen != NULL) {
+		rrr_socket_client_collection_destroy(data->collection_listen);
 	}
 
 	rrr_msg_holder_collection_clear(&data->send_buffer);
@@ -1401,13 +1401,13 @@ static int ip_start_udp (struct ip_data *data) {
 	ip_udp_6.port = data->source_udp_port;
 	ip_udp_4.port = data->source_udp_port;
 
-	if ((ret = rrr_socket_client_collection_new_no_listen(&data->collection_udp, INSTANCE_D_NAME(data->thread_data))) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&data->collection_listen, INSTANCE_D_NAME(data->thread_data))) != 0) {
 		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if ((ret = rrr_socket_client_collection_event_setup_array_tree (
-			data->collection_udp,
+	rrr_socket_client_collection_event_setup_array_tree (
+			data->collection_listen,
 			INSTANCE_D_EVENTS(data->thread_data),
 			ip_private_data_new,
 			ip_private_data_destroy,
@@ -1419,8 +1419,7 @@ static int ip_start_udp (struct ip_data *data) {
 			0, // No message max size
 			ip_array_callback,
 			data
-	)) != 0) {
-	}
+	);
 
 	if (data->source_udp_port == 0) {
 		int ret_4, ret_6 = 0;
@@ -1477,7 +1476,7 @@ static int ip_start_udp (struct ip_data *data) {
 	}
 
 	if (ip_udp_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_listen, ip_udp_6.fd)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1485,7 +1484,7 @@ static int ip_start_udp (struct ip_data *data) {
 	}
 
 	if (ip_udp_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_listen, ip_udp_4.fd)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1499,7 +1498,7 @@ static int ip_start_udp (struct ip_data *data) {
 		return ret;
 }
 
-/*
+
 static int ip_start_tcp (struct ip_data *data) {
 	int ret = 0;
 
@@ -1547,7 +1546,7 @@ static int ip_start_tcp (struct ip_data *data) {
 	}
 
 	if (ip_tcp_listen_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_tcp_listen_6.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection_listen, ip_tcp_listen_6.fd)) != 0) {
 			RRR_MSG_0("Failed to push TCP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1555,17 +1554,19 @@ static int ip_start_tcp (struct ip_data *data) {
 	}
 
 	if (ip_tcp_listen_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_tcp_listen_4.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection_listen, ip_tcp_listen_4.fd)) != 0) {
 			RRR_MSG_0("Failed to push TCP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
-		ip_udp_4.fd = 0;
+		ip_tcp_listen_4.fd = 0;
 	}
 
 	out:
+	rrr_ip_network_cleanup(&ip_tcp_listen_6);
+	rrr_ip_network_cleanup(&ip_tcp_listen_4);
 	return ret;
 }
-*/
+
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1606,9 +1607,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-/*	if (ip_start_tcp(data) != 0) {
+	if (ip_start_tcp(data) != 0) {
 		goto out_message;
-	}*/
+	}
 
 	rrr_ip_graylist_init(&tcp_graylist, data->graylist_timeout_ms * 1000LLU);
 

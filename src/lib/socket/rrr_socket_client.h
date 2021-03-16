@@ -41,11 +41,6 @@ struct rrr_array;
 
 int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
-		int listen_fd,
-		const char *creator
-);
-int rrr_socket_client_collection_new_no_listen (
-		struct rrr_socket_client_collection **target,
 		const char *creator
 );
 void rrr_socket_client_collection_destroy (
@@ -82,11 +77,15 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
 		void *connect_callback_data
 );
+int rrr_socket_client_collection_listen_fd_push (
+		struct rrr_socket_client_collection *collection,
+		int fd
+);
 int rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
 		int fd
 );
-int rrr_socket_client_collection_event_setup (
+void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -97,7 +96,7 @@ int rrr_socket_client_collection_event_setup (
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
 );
-int rrr_socket_client_collection_event_setup_raw (
+void rrr_socket_client_collection_event_setup_raw (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
@@ -110,7 +109,7 @@ int rrr_socket_client_collection_event_setup_raw (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *private_data, void *arg),
 		void *complete_callback_arg
 );
-int rrr_socket_client_collection_event_setup_array_tree (
+void rrr_socket_client_collection_event_setup_array_tree (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),

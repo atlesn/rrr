@@ -114,15 +114,11 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
-	if ((ret = rrr_msgdb_server_new(&server, directory, socket)) != 0) {
-		goto out_cleanup_signal;
-	}
-
 	if ((ret = rrr_event_queue_new(&queue)) != 0) {
 		goto out_cleanup_signal;
 	}
 
-	if ((ret = rrr_msgdb_server_event_setup(server, queue)) != 0) {
+	if ((ret = rrr_msgdb_server_new(&server, queue, directory, socket)) != 0) {
 		goto out_cleanup_signal;
 	}
 

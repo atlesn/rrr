@@ -254,7 +254,7 @@ int rrr_socket_read (
 				goto out_emit_eof;
 			}
 		}
-		RRR_DBG_7("Note: Error from read in rrr_socket_read: %s\n", rrr_strerror(errno));
+		RRR_DBG_7("fd %i error from read in rrr_socket_read: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
