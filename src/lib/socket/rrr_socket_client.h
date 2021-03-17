@@ -43,6 +43,10 @@ int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
 		const char *creator
 );
+void rrr_socket_client_collection_set_connect_timeout (
+		struct rrr_socket_client_collection *collection,
+		uint64_t connect_timeout_us
+);
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 );
