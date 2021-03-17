@@ -487,7 +487,7 @@ static void __rrr_socket_client_return_value_process (
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
 		if (client->last_seen < timeout) {
-			RRR_DBG_7("Disconnecting fd %i in client collection following inactivity timeout\n", client->connected_fd);
+			RRR_DBG_7("Disconnecting fd %i in client collection following inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
 		}
 		// OK, mask
@@ -497,7 +497,7 @@ static void __rrr_socket_client_return_value_process (
 		// OK, propagate
 	}
 	else if (ret == RRR_READ_SOFT_ERROR) {
-		RRR_DBG_7("Disconnecting fd %i in client collection following soft error\n", client->connected_fd);
+		RRR_DBG_7("Disconnecting fd %i in client collection following soft error\n", client->connected_fd->fd);
 		// Mask with EOF
 		ret = RRR_READ_EOF;
 	}
@@ -587,7 +587,7 @@ static int __rrr_socket_client_send_tick (
 			client->connected_fd->fd
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
-				client->connected_fd, ret);
+				client->connected_fd->fd, ret);
 	}
 
 	return ret;
