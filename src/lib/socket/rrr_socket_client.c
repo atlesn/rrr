@@ -228,7 +228,7 @@ static int __rrr_socket_client_fd_event_setup (
 		}
 
 		if (event_add(client_fd->event_read, NULL) != 0) {
-			RRR_MSG_0("Failed to add event in __rrr_socket_client_fd_event_setup\n");
+			RRR_MSG_0("Failed to add read event in __rrr_socket_client_fd_event_setup\n");
 			goto out;
 		}
 	}
@@ -243,6 +243,11 @@ static int __rrr_socket_client_fd_event_setup (
 		)) == NULL) {
 			RRR_MSG_0("Failed to create write event in __rrr_socket_client_fd_event_setup\n");
 			ret = 1;
+			goto out;
+		}
+
+		if (event_add(client_fd->event_write, NULL) != 0) {
+			RRR_MSG_0("Failed to add write event in __rrr_socket_client_fd_event_setup\n");
 			goto out;
 		}
 	}
@@ -542,53 +547,6 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 	return ret;
 }
 
-static int __rrr_socket_client_send_tick (
-		struct rrr_socket_client *client
-) {
-	int ret;
-
-	if ((ret = rrr_socket_send_chunk_collection_send (
-			&client->send_chunks,
-			client->connected_fd->fd
-	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
-				client->connected_fd, ret);
-	}
-
-	return ret;
-}
-
-static void __rrr_socket_client_event_write (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_socket_client *client = arg;
-	struct rrr_socket_client_collection *collection = client->collection;
-
-	(void)(fd);
-	(void)(flags);
-
-	if (client->connected_fd == NULL) {
-		RRR_BUG("BUG: Connected FD not set in __rrr_socket_client_event_write\n");
-	}
-	if (client->connected_fd->fd != fd) {
-		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
-	}
-
-	int ret_tmp = __rrr_socket_client_send_tick (client);
-
-	if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
-		__rrr_socket_client_collection_find_and_destroy (collection, client);
-		// Do nothing more, also not on hard errors
-		return;
-	}
-
-	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
-		event_del(client->connected_fd->event_write);
-	}
-}
-
 static int __rrr_socket_client_connected_fd_ensure (
 		struct rrr_socket_client *client,
 		int fd
@@ -618,6 +576,55 @@ static int __rrr_socket_client_connected_fd_ensure (
 			return;                                                 \
 		}                                                               \
 	}} while(0)
+
+static int __rrr_socket_client_send_tick (
+		struct rrr_socket_client *client
+) {
+	int ret;
+
+	if ((ret = rrr_socket_send_chunk_collection_send (
+			&client->send_chunks,
+			client->connected_fd->fd
+	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
+		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
+				client->connected_fd, ret);
+	}
+
+	return ret;
+}
+
+static void __rrr_socket_client_event_write (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
+
+	(void)(fd);
+	(void)(flags);
+
+	CONNECTED_FD_ENSURE();
+
+	if (client->connected_fd == NULL) {
+		RRR_BUG("BUG: Connected FD not set in __rrr_socket_client_event_write\n");
+	}
+	if (client->connected_fd->fd != fd) {
+		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
+	}
+
+	int ret_tmp = __rrr_socket_client_send_tick (client);
+
+	if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
+		__rrr_socket_client_collection_find_and_destroy (collection, client);
+		// Do nothing more, also not on hard errors
+		return;
+	}
+
+	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
+		event_del(client->connected_fd->event_write);
+	}
+}
 
 static void __rrr_socket_client_event_read_message (
 		evutil_socket_t fd,
