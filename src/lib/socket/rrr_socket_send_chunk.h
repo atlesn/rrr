@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_SEND_CHUNK_H
 
 #include <sys/socket.h>
+#include <stdio.h>
 
 #include "../util/linked_list.h"
 
@@ -37,7 +38,8 @@ void rrr_socket_send_chunk_collection_clear (
 );
 void rrr_socket_send_chunk_collection_clear_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,
-		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data)
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
 );
 int rrr_socket_send_chunk_collection_push (
 		struct rrr_socket_send_chunk_collection *target,
@@ -76,9 +78,20 @@ int rrr_socket_send_chunk_collection_send (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd
 );
+int rrr_socket_send_chunk_collection_send_and_notify (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int fd,
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
+);
 int rrr_socket_send_chunk_collection_send_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int (*callback)(ssize_t *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, ssize_t data_size, void *arg),
+		void *callback_arg
+);
+void rrr_socket_send_chunk_collection_iterate (
+		struct rrr_socket_send_chunk_collection *chunks,
+		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 );
 

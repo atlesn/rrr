@@ -52,8 +52,9 @@ struct rrr_socket_client_collection {
 
 	struct event_base *event_base;
 
-	// Called when a client is destroyed with unsent data (if set)
-	void (*chunk_send_fail_notify_callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data);
+	// Called when a chunk is successfully sent or a client is destroyed with unsent data (if set)
+	void (*chunk_send_notify_callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg);
+	void *chunk_send_notify_callback_arg;
 
 	// Common settings
 	ssize_t read_step_max_size;
@@ -189,6 +190,46 @@ static int __rrr_socket_client_fd_new (
 		return ret;
 }
 
+static void __rrr_socket_client_chunk_send_notify_success_callback (
+		const void *data,
+		ssize_t data_size,
+		ssize_t data_pos,
+		void *chunk_private_data,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	if (client->collection->chunk_send_notify_callback) {
+		client->collection->chunk_send_notify_callback (
+				1, // Success
+				data,
+				data_size,
+				data_pos,
+				chunk_private_data,
+				client->collection->chunk_send_notify_callback_arg
+		);
+	}
+}
+
+static void __rrr_socket_client_chunk_send_notify_fail_callback (
+		const void *data,
+		ssize_t data_size,
+		ssize_t data_pos,
+		void *chunk_private_data,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	if (client->collection->chunk_send_notify_callback) {
+		client->collection->chunk_send_notify_callback (
+				0, // Fail
+				data,
+				data_size,
+				data_pos,
+				chunk_private_data,
+				client->collection->chunk_send_notify_callback_arg
+		);
+	}
+}
+
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client
 ) {
@@ -198,8 +239,12 @@ static int __rrr_socket_client_destroy (
 	if (client->private_data != NULL) {
 		client->collection->callback_private_data_destroy(client->private_data);
 	}
-	if (collection->chunk_send_fail_notify_callback) {
-		rrr_socket_send_chunk_collection_clear_with_callback(&client->send_chunks, collection->chunk_send_fail_notify_callback);
+	if (collection->chunk_send_notify_callback) {
+		rrr_socket_send_chunk_collection_clear_with_callback (
+				&client->send_chunks,
+				__rrr_socket_client_chunk_send_notify_fail_callback,
+				client
+		);
 	}
 	else {
 		rrr_socket_send_chunk_collection_clear(&client->send_chunks);
@@ -423,6 +468,16 @@ int rrr_socket_client_collection_count (
 	return RRR_LL_COUNT(collection);
 }
 
+void rrr_socket_client_collection_send_chunk_iterate (
+		struct rrr_socket_client_collection *collection,
+		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		rrr_socket_send_chunk_collection_iterate(&node->send_chunks, callback, callback_arg);
+	RRR_LL_ITERATE_END();
+}
+
 static int __rrr_socket_client_collection_iterate (
 		struct rrr_socket_client_collection *collection,
 		int (*callback)(struct rrr_socket_client *client, void *arg),
@@ -608,9 +663,11 @@ static int __rrr_socket_client_send_tick (
 ) {
 	int ret;
 
-	if ((ret = rrr_socket_send_chunk_collection_send (
+	if ((ret = rrr_socket_send_chunk_collection_send_and_notify (
 			&client->send_chunks,
-			client->connected_fd->fd
+			client->connected_fd->fd,
+			__rrr_socket_client_chunk_send_notify_success_callback,
+			client
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
 				client->connected_fd->fd, ret);
@@ -1473,11 +1530,13 @@ int rrr_socket_client_collection_connected_fd_push (
 	return __rrr_socket_client_collection_connected_fd_push (&client_dummy, collection, fd, NULL, 0, NULL);
 }
 
-void rrr_socket_client_collection_send_fail_notify_setup (
+void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*chunk_send_fail_notify_callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data)
+		void (*callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg),
+		void *callback_arg
 ) {
-	collection->chunk_send_fail_notify_callback = chunk_send_fail_notify_callback;
+	collection->chunk_send_notify_callback = callback;
+	collection->chunk_send_notify_callback_arg = callback_arg;
 }
 
 void rrr_socket_client_collection_event_setup (

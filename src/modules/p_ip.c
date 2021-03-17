@@ -158,7 +158,7 @@ static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *
 }
 
 struct ip_private_data {
-	int dummy;
+	struct ip_data *ip_data;
 };
 
 static int ip_private_data_new (void **result, int fd, void *arg) {
@@ -174,6 +174,8 @@ static int ip_private_data_new (void **result, int fd, void *arg) {
 	}
 
 	memset(private_data, '\0', sizeof(*private_data));
+
+	private_data->ip_data = arg;
 
 	*result = private_data;
 
@@ -824,7 +826,7 @@ static int ip_connect_raw_callback (
 	return ret;
 }
 
-struct ip_resolve_sendto_callback_data {
+struct ip_resolve_push_sendto_callback_data {
 	struct ip_data *ip_data;
 	int fd;
 	const void *send_data;
@@ -832,7 +834,7 @@ struct ip_resolve_sendto_callback_data {
 	struct rrr_msg_holder *entry_orig;
 };
 
-static int ip_resolve_sendto_callback (
+static int ip_resolve_push_sendto_callback (
 		const char *host,
 		unsigned int port,
 		const struct sockaddr *addr,
@@ -841,7 +843,7 @@ static int ip_resolve_sendto_callback (
 ) {
 	int ret = 0;
 
-	struct ip_resolve_sendto_callback_data *callback_data = arg;
+	struct ip_resolve_push_sendto_callback_data *callback_data = arg;
 
 	const char *dummy_data = "";
 
@@ -893,7 +895,7 @@ static int ip_resolve_sendto_callback (
 	return ret;
 }
 
-static int ip_send_message_raw_default_target (
+static int ip_push_raw_default_target (
 		struct ip_data *ip_data,
 		struct rrr_msg_holder *entry_orig,
 		const void *send_data,
@@ -931,7 +933,7 @@ static int ip_send_message_raw_default_target (
 		}
 	}
 	else {
-		struct ip_resolve_sendto_callback_data resolve_callback_data = {
+		struct ip_resolve_push_sendto_callback_data resolve_callback_data = {
 			ip_data,
 			ip_data->ip_udp_send_fd,
 			send_data,
@@ -942,7 +944,7 @@ static int ip_send_message_raw_default_target (
 		if ((ret = rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 				ip_data->target_port,
 				ip_data->target_host,
-				ip_resolve_sendto_callback,
+				ip_resolve_push_sendto_callback,
 				&resolve_callback_data
 		)) != RRR_SOCKET_READ_EOF) {
 			RRR_MSG_0("Error while sending message to default remote %s:%u using UDP in ip instance %s\n",
@@ -960,7 +962,7 @@ static int ip_send_message_raw_default_target (
 		return ret;
 }
 
-static int ip_send_raw (
+static int ip_push_raw (
 		struct ip_data *ip_data,
 		struct rrr_msg_holder *entry_orig,
 		int protocol,
@@ -991,7 +993,7 @@ static int ip_send_raw (
 		// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
 		//////////////////////////////////////////////////////
 
-		ret = ip_send_message_raw_default_target (
+		ret = ip_push_raw_default_target (
 				ip_data,
 				entry_orig,
 				send_data,
@@ -1051,7 +1053,7 @@ static int ip_send_raw (
 	return ret;
 }
 
-static int ip_send_message (
+static int ip_push_message (
 		struct ip_data *ip_data,
 		struct rrr_msg_holder *entry
 ) {
@@ -1178,7 +1180,7 @@ static int ip_send_message (
 		entry->send_time = rrr_time_get_64();
 	}
 
-	ret = ip_send_raw (
+	ret = ip_push_raw (
 			ip_data,
 			entry,
 			entry->protocol,
@@ -1192,78 +1194,75 @@ static int ip_send_message (
 		return ret;
 }
 
+static void ip_timeout_check (
+		int *ttl_timeout,
+		int *timeout,
+		struct ip_data *ip_data,
+		struct rrr_msg_holder *entry_locked
+) {
+	uint64_t timeout_limit = rrr_time_get_64() - (ip_data->message_send_timeout_s * 1000000);
+
+	if (ip_data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(entry_locked->message, ip_data->message_ttl_us)) {
+		*ttl_timeout = 1;
+	}
+	else if (ip_data->message_send_timeout_s > 0 && entry_locked->send_time > 0 && entry_locked->send_time < timeout_limit) {
+		*timeout = 1;
+	}
+}
+
 static int ip_send_loop (
-		struct ip_data *data
+		struct ip_data *ip_data
 ) {
 	int ret = 0;
 
-	if (data->do_preserve_order) {
-		rrr_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
+	if (ip_data->do_preserve_order) {
+		rrr_msg_holder_collection_sort(&ip_data->send_buffer, rrr_msg_msg_timestamp_compare_void);
 	}
 
-	uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
-	uint64_t send_loop_time_limit = rrr_time_get_64() + (IP_SEND_TIME_LIMIT_MS * 1000);
-	int max_iterations = 500;
 	int timeout_count = 0;
 	int ttl_reached_count = 0;
-	RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
+	RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
 		enum ip_action action = IP_ACTION_RETRY;
-
-		if (--max_iterations == 0 || rrr_time_get_64() > send_loop_time_limit) {
-			RRR_LL_ITERATE_LAST();
-		}
 
 		rrr_msg_holder_lock(node);
 
-		int message_was_sent = 1;
+		int message_was_pushed = 1;
+
+		int ttl_reached = 0;
 		int timeout_reached = 0;
 
-		if (data->message_ttl_us > 0 && !rrr_msg_msg_ttl_ok(node->message, data->message_ttl_us)) {
+		ip_timeout_check(&ttl_reached, &timeout_reached, ip_data, node);
+
+		if (ttl_reached) {
 			ttl_reached_count++;
 			RRR_DBG_1("TTL expired for a message after %" PRIrrrbl " seconds in ip instance %s, dropping it.\n",
-					data->message_ttl_us / 1000 / 1000, INSTANCE_D_NAME(data->thread_data));
+					ip_data->message_ttl_us / 1000 / 1000, INSTANCE_D_NAME(ip_data->thread_data));
 			action = IP_ACTION_DROP;
 			goto perform_action;
 		}
-		else if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
+		else if (timeout_reached) {
 			timeout_count++;
 			RRR_DBG_1("Message timed out after %" PRIrrrbl " seconds in ip instance %s, performing timeout action %s.\n",
-					data->message_send_timeout_s, INSTANCE_D_NAME(data->thread_data), data->timeout_action_str);
-			timeout_reached = 1;
+					ip_data->message_send_timeout_s, INSTANCE_D_NAME(ip_data->thread_data), ip_data->timeout_action_str);
 			goto perform_timeout_action;
 		}
 
-		if ((ret = ip_send_message(data, node)) != 0) {
+		if ((ret = ip_push_message(ip_data, node)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				message_was_sent = 0;
+				message_was_pushed = 0;
 				ret = 0;
 			}
 			else {
-				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
 				RRR_LL_ITERATE_LAST();
 			}
 		}
 
-		if (node->send_time == 0 || message_was_sent) {
+		if (node->send_time == 0) {
 			node->send_time = rrr_time_get_64();
 		}
 
-		if (message_was_sent) {
-			if (data->do_smart_timeout) {
-				const struct rrr_msg_holder *node_orig = node;
-				RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_holder);
-					if (node == node_orig) {
-						RRR_LL_ITERATE_NEXT();
-					}
-					rrr_msg_holder_lock(node);
-					if (	data->do_force_target == 1 ||
-							rrr_msg_holder_address_matches(node, node_orig)
-					) {
-						node->send_time = node_orig->send_time;
-					}
-					rrr_msg_holder_unlock(node);
-				RRR_LL_ITERATE_END();
-			}
+		if (message_was_pushed) {
 			action = IP_ACTION_DROP;
 		}
 
@@ -1272,7 +1271,7 @@ static int ip_send_loop (
 		// to spam timed out messages. We do not reset the send_time in the entry.
 		perform_timeout_action:
 		if (timeout_reached) {
-			action = data->timeout_action;
+			action = ip_data->timeout_action;
 		}
 
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
@@ -1295,12 +1294,12 @@ static int ip_send_loop (
 				}
 
 				if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-						INSTANCE_D_BROKER_ARGS(data->thread_data),
+						INSTANCE_D_BROKER_ARGS(ip_data->thread_data),
 						node,
-						INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+						INSTANCE_D_CANCEL_CHECK_ARGS(ip_data->thread_data)
 				)) != 0) {
 					RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
-							INSTANCE_D_NAME(data->thread_data));
+							INSTANCE_D_NAME(ip_data->thread_data));
 					RRR_LL_ITERATE_LAST(); // Destroy function must run and unlock
 				}
 			}
@@ -1308,21 +1307,21 @@ static int ip_send_loop (
 				// IP_ACTION_DROP, do nothing and just continue with destroy
 			}
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&ip_data->send_buffer, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
 
 	if (ret != 0) {
 		RRR_MSG_0("Error while sending messages in ip instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+				INSTANCE_D_NAME(ip_data->thread_data));
 		goto out;
 	}
 
 	if (timeout_count > 0) {
 		RRR_MSG_0("Send timeout for %i messages in ip instance %s\n",
-				timeout_count, INSTANCE_D_NAME(data->thread_data));
+				timeout_count, INSTANCE_D_NAME(ip_data->thread_data));
 	}
 	if (ttl_reached_count > 0) {
 		RRR_MSG_0("TTL reached for %i messages in ip instance %s, they have been dropped.\n",
-				ttl_reached_count, INSTANCE_D_NAME(data->thread_data));
+				ttl_reached_count, INSTANCE_D_NAME(ip_data->thread_data));
 	}
 
 	out:
@@ -1337,30 +1336,6 @@ static int ip_start_udp (struct ip_data *data) {
 
 	ip_udp_6.port = data->source_udp_port;
 	ip_udp_4.port = data->source_udp_port;
-
-	if ((ret = rrr_socket_client_collection_new(&data->collection, INSTANCE_D_NAME(data->thread_data))) != 0) {
-		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	rrr_socket_client_collection_event_setup_array_tree (
-			data->collection,
-			INSTANCE_D_EVENTS(data->thread_data),
-			ip_private_data_new,
-			ip_private_data_destroy,
-			data,
-			(	RRR_SOCKET_READ_METHOD_RECVFROM |
-				RRR_SOCKET_READ_CHECK_POLLHUP |
-				RRR_SOCKET_READ_CHECK_EOF |
-				RRR_SOCKET_READ_FIRST_EOF_OK
-			),
-			data->definitions,
-			data->do_sync_byte_by_byte,
-			4096,
-			0, // No message max size
-			ip_array_callback,
-			data
-	);
 
 	if (data->source_udp_port == 0) {
 		int ret_4, ret_6 = 0;
@@ -1509,6 +1484,78 @@ static int ip_start_tcp (struct ip_data *data) {
 	return ret;
 }
 
+struct chunk_send_smart_timeout_callback_data {
+	struct ip_data *ip_data;
+	const struct rrr_msg_holder *entry_orig;
+};
+
+static void ip_chunk_send_smart_timeout_callback (
+		int *do_remove,
+		const void *data,
+		ssize_t data_size,
+		ssize_t data_pos,
+		void *chunk_private_data,
+		void *callback_arg
+) {
+	struct chunk_send_smart_timeout_callback_data *callback_data = callback_arg;
+	struct rrr_msg_holder *entry = chunk_private_data;
+
+	(void)(data);
+	(void)(data_size);
+	(void)(data_pos);
+
+	*do_remove = 0;
+
+	if (entry == callback_data->entry_orig) {
+		return;
+	}
+
+	rrr_msg_holder_lock(entry);
+
+	if ( callback_data->ip_data->do_force_target == 1 ||
+	     rrr_msg_holder_address_matches(entry, callback_data->entry_orig)
+	) {
+		entry->send_time = callback_data->entry_orig->send_time;
+	}
+	rrr_msg_holder_unlock(entry);
+}
+
+static void ip_chunk_send_fail_notify_callback (
+		int was_sent,
+		const void *data,
+		ssize_t data_size,
+		ssize_t data_pos,
+		void *chunk_private_data,
+		void *callback_arg
+) {
+	struct ip_data *ip_data = callback_arg;
+	struct rrr_msg_holder *entry = chunk_private_data;
+
+	(void)(data);
+	(void)(data_size);
+	(void)(data_pos);
+
+	if (!was_sent) {
+		rrr_msg_holder_incref(entry);
+		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
+	}
+	else if (ip_data->do_smart_timeout) {
+		rrr_msg_holder_lock(entry);
+
+		struct chunk_send_smart_timeout_callback_data callback_data = {
+			ip_data,
+			entry
+		};
+		rrr_socket_client_collection_send_chunk_iterate (
+				ip_data->collection,
+				ip_chunk_send_smart_timeout_callback,
+				&callback_data
+		);
+
+		rrr_msg_holder_unlock(entry);
+	}
+}
+
 static void ip_event_send_buffer (
 		evutil_socket_t fd,
 		short flags,
@@ -1531,7 +1578,38 @@ static void ip_event_send_buffer (
 		event_add(ip_data->event_send_buffer_iterate, &tv);
 	}
 }
-		
+
+static void ip_send_chunk_periodic_callback (
+		int *do_remove,
+		const void *data,
+		ssize_t data_size,
+		ssize_t data_pos,
+		void *chunk_private_data,
+		void *callback_arg
+) {
+	struct ip_data *ip_data = callback_arg;
+	struct rrr_msg_holder *entry = chunk_private_data;
+
+	(void)(data);
+	(void)(data_size);
+	(void)(data_pos);
+
+	int ttl_reached = 0;
+	int timeout_reached = 0;
+
+	rrr_msg_holder_lock(entry);
+
+	ip_timeout_check(&ttl_reached, &timeout_reached, ip_data, entry);
+	if (ttl_reached || timeout_reached) {
+		rrr_msg_holder_incref_while_locked(entry);
+		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
+
+		*do_remove = 1;
+	}
+
+	rrr_msg_holder_unlock(entry);
+}
+
 static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -1566,6 +1644,8 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 				INSTANCE_D_NAME(thread_data));
 		return RRR_EVENT_EXIT;
 	}
+
+	rrr_socket_client_collection_send_chunk_iterate (ip_data->collection, ip_send_chunk_periodic_callback, ip_data);
 
 	return ret;
 }
@@ -1612,6 +1692,36 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	}
 
 	rrr_ip_graylist_init(&data->tcp_graylist, data->graylist_timeout_ms * 1000LLU);
+
+	if (rrr_socket_client_collection_new(&data->collection, INSTANCE_D_NAME(data->thread_data)) != 0) {
+		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_message;
+	}
+
+	rrr_socket_client_collection_event_setup_array_tree (
+			data->collection,
+			INSTANCE_D_EVENTS(data->thread_data),
+			ip_private_data_new,
+			ip_private_data_destroy,
+			data,
+			(	RRR_SOCKET_READ_METHOD_RECVFROM |
+				RRR_SOCKET_READ_CHECK_POLLHUP |
+				RRR_SOCKET_READ_CHECK_EOF |
+				RRR_SOCKET_READ_FIRST_EOF_OK
+			),
+			data->definitions,
+			data->do_sync_byte_by_byte,
+			4096,
+			0, // No message max size
+			ip_array_callback,
+			data
+	);
+
+	rrr_socket_client_collection_send_notify_setup (
+		data->collection,
+		ip_chunk_send_fail_notify_callback,
+		data
+	);
 
 	if (ip_start_udp(data) != 0) {
 		goto out_message;

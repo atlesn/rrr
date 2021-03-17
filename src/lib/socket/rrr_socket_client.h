@@ -53,6 +53,11 @@ void rrr_socket_client_collection_destroy (
 int rrr_socket_client_collection_count (
 		struct rrr_socket_client_collection *collection
 );
+void rrr_socket_client_collection_send_chunk_iterate (
+		struct rrr_socket_client_collection *collection,
+		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
+);
 int rrr_socket_client_collection_send_push_const_multicast (
 		struct rrr_socket_client_collection *collection,
 		const void *data,
@@ -115,6 +120,11 @@ int rrr_socket_client_collection_listen_fd_push (
 int rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
 		int fd
+);
+void rrr_socket_client_collection_send_notify_setup (
+		struct rrr_socket_client_collection *collection,
+		void (*callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg),
+		void *callback_arg
 );
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
