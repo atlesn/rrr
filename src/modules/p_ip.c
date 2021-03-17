@@ -124,7 +124,6 @@ struct ip_data {
 
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
-	uint64_t read_error_count;
 };
 
 static void ip_data_cleanup(void *arg) {
@@ -647,72 +646,6 @@ static int ip_array_callback (
 	return ret;
 }
 
-/*
-static int ip_tcp_read_data (
-		struct ip_data *data,
-		struct rrr_ip_data *listen_data,
-		struct rrr_ip_accept_data_collection *accept_data_collection,
-		uint64_t end_time
-) {
-	int ret = 0;
-	if (data->source_tcp_port == 0) {
-		goto out;
-	}
-
-	struct rrr_ip_accept_data *accept_data = NULL;
-
-	if (rrr_ip_accept (
-			&accept_data,
-			listen_data,
-			"ip",
-			0
-	) != 0) {
-		RRR_MSG_0("Error while accepting TCP connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	if (accept_data != NULL) {
-		RRR_LL_APPEND(accept_data_collection, accept_data);
-		accept_data = NULL;
-	}
-
-	RRR_LL_ITERATE_BEGIN(accept_data_collection, struct rrr_ip_accept_data);
-		if ((ret = ip_read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp, end_time)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR || ret == RRR_READ_EOF) {
-				RRR_DBG_1("Closing tcp connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
-				RRR_LL_ITERATE_SET_DESTROY();
-				ret = 0;
-			}
-			else {
-				RRR_DBG_1("Error %i while reading TCP data in ip instance %s\n", ret, INSTANCE_D_NAME(data->thread_data));
-				RRR_LL_ITERATE_LAST();
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(accept_data_collection, 0; rrr_ip_accept_data_close_and_destroy(node));
-
-	out:
-	return ret;
-}
-static int ip_udp_read_data (
-		struct ip_data *data,
-		uint64_t end_time
-) {
-	int ret = 0;
-
-	if (data->source_udp_port > 0) {
-		if (data->ip_udp_4.fd != 0 && (ret = ip_read_loop (data, 0, data->ip_udp_4.fd, &data->read_sessions_udp, end_time)) != 0) {
-			goto out;
-		}
-		if (data->ip_udp_6.fd != 0 && (ret = ip_read_loop (data, 0, data->ip_udp_6.fd, &data->read_sessions_udp, end_time)) != 0) {
-			goto out;
-		}
-	}
-
-	out:
-	return ret;
-}
-*/
 static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ip_data *ip_data = thread_data->private_data;
@@ -730,6 +663,8 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_msg_holder_unlock(entry);
 
 	event_active(ip_data->event_send_buffer_iterate, 0, 0);
+
+	ip_data->messages_count_polled++;
 
 	return 0;
 }
@@ -1256,64 +1191,15 @@ static int ip_send_message (
 		rrr_array_clear(&array_tmp);
 		return ret;
 }
-/*
 
-static int ip_preserve_order_list_push (
-		struct rrr_msg_holder_collection *collection,
-		const struct rrr_msg_holder *template
-) {
-	struct rrr_msg_holder *new_entry = NULL;
-
-	if (rrr_msg_holder_clone_no_data(&new_entry, template) != 0) {
-		return 1;
-	}
-
-	RRR_LL_PUSH(collection, new_entry);
-
-	return 0;
-}
-
-static int ip_preserve_order_list_has (
-		struct rrr_msg_holder_collection *collection,
-		const struct rrr_msg_holder *template
-) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
-		if (rrr_msg_holder_address_matches(template, node)) {
-				return 1;
-		}
-	RRR_LL_ITERATE_END();
-	return 0;
-}
-
-static void ip_preserve_order_list_clear (
-		struct rrr_msg_holder_collection *collection
-) {
-	RRR_LL_DESTROY(collection, struct rrr_msg_holder, rrr_msg_holder_decref(node));
-}
-
-*/
 static int ip_send_loop (
 		struct ip_data *data
 ) {
 	int ret = 0;
 
-//	struct rrr_msg_holder_collection preserve_order_list = {0};
-
 	if (data->do_preserve_order) {
 		rrr_msg_holder_collection_sort(&data->send_buffer, rrr_msg_msg_timestamp_compare_void);
 	}
-
-//		printf ("TCP connect count: %i\n", RRR_LL_COUNT(&tcp_connect_data));
-
-	// We use the custom data field to tag connections with problems. If there are errors detected
-	// on a particular connection detected during the send queue iteration,
-	// we don't attempt any more sends on this connection until next send
-	// queue iteration. A connection attempt counts as an error, no send
-	// attempts will be performed until the next round.
-
-	// We must also, to preserve order, postpone the destruction on any connection until
-	// the iteration has finished. Broken connections are tagged and destroyed
-	// here.
 
 	uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
 	uint64_t send_loop_time_limit = rrr_time_get_64() + (IP_SEND_TIME_LIMIT_MS * 1000);
@@ -1326,8 +1212,6 @@ static int ip_send_loop (
 		if (--max_iterations == 0 || rrr_time_get_64() > send_loop_time_limit) {
 			RRR_LL_ITERATE_LAST();
 		}
-
-		// Send time must be set prior to preserve order check to allow timer to start
 
 		rrr_msg_holder_lock(node);
 
@@ -1348,14 +1232,6 @@ static int ip_send_loop (
 			timeout_reached = 1;
 			goto perform_timeout_action;
 		}
-/*		else if (data->do_preserve_order && ip_preserve_order_list_has(&preserve_order_list, node)) {
-			// If another message to the same destaination blocks our send, make sure send_time is initialized
-			if (node->send_time == 0) {
-				node->send_time = rrr_time_get_64();
-			}
-			action = IP_ACTION_RETRY;
-			goto perform_action;
-		}*/
 
 		if ((ret = ip_send_message(data, node)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
@@ -1390,15 +1266,6 @@ static int ip_send_loop (
 			}
 			action = IP_ACTION_DROP;
 		}
-/*		else {
-			if (data->do_preserve_order) {
-				if ((ret = ip_preserve_order_list_push(&preserve_order_list, node)) != 0) {
-					RRR_MSG_0("Failed to add entry to preserve order list in ip_send_loop\n");
-					RRR_LL_ITERATE_LAST();
-					goto perform_action;
-				}
-			}
-		}*/
 
 		// Timeout overrides retry. Note that the configuration parser should check that
 		// default action is not retry while send_timeout is >0, would otherwise cause us
@@ -1407,9 +1274,6 @@ static int ip_send_loop (
 		if (timeout_reached) {
 			action = data->timeout_action;
 		}
-
-//		printf("Node send time: %" PRIu64 "\n", node->send_time);
-//		printf("Timeout action: %i, send status: %i\n", action, message_was_sent);
 
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
 		// do not destroy
@@ -1462,7 +1326,6 @@ static int ip_send_loop (
 	}
 
 	out:
-//	ip_preserve_order_list_clear(&preserve_order_list);
 	return ret;
 }
 
@@ -1685,6 +1548,25 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		event_active(ip_data->event_send_buffer_iterate, 0, 0);
 	}
 
+	rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", ip_data->messages_count_read);
+	rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "polled_count", ip_data->messages_count_polled);
+
+	ip_data->messages_count_read = 0;
+	ip_data->messages_count_polled = 0;
+
+	int delivery_entry_count = 0;
+	int delivery_ratelimit_active = 0;
+
+	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+			&delivery_entry_count,
+			&delivery_ratelimit_active,
+			thread_data
+	) != 0) {
+		RRR_MSG_0("Error while setting ratelimit in ip instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_EXIT;
+	}
+
 	return ret;
 }
 
@@ -1746,121 +1628,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			thread
 	);
 
-/*
-	uint64_t prev_read_error_count = 0;
-	uint64_t prev_read_count = 0;
-	uint64_t prev_polled_count = 0;
-
-	unsigned int consecutive_nothing_happened = 0;
-	uint64_t next_stats_time = 0;
-	unsigned int tick = 0;
-	while (!rrr_thread_signal_encourage_stop_check(thread)) {
-		rrr_thread_watchdog_time_update(thread);
-
-//		printf ("IP ticks: %u\n", tick);
-
-		if (has_senders != 0) {
-			uint16_t amount = 100;
-			if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 0) != 0) {
-				RRR_MSG_0("Error while polling in ip instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-		}
-
-		int did_send_something = 0;
-		if (ip_send_loop (
-				&did_send_something,
-				data,
-				&tcp_connect_data,
-				&tcp_graylist
-		) != 0) {
-			break;
-		}
-
-		uint64_t time_now = rrr_time_get_64();
-
-		if (data->definitions != NULL) {
-			uint64_t end_time = time_now + (IP_RECEIVE_TIME_LIMIT_MS * 1000);
-			if (ip_udp_read_data(data, end_time) != 0) {
-				RRR_MSG_0("Error while reading udp data in ip instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-			if (data->ip_tcp_listen_4.fd != 0 && ip_tcp_read_data(data, &data->ip_tcp_listen_4, &tcp_accept_data, end_time) != 0) {
-				RRR_MSG_0("Error while reading tcp data on IPv4 in ip instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-			if (data->ip_tcp_listen_6.fd != 0 && ip_tcp_read_data(data, &data->ip_tcp_listen_6, &tcp_accept_data, end_time) != 0) {
-				RRR_MSG_0("Error while reading tcp data on IPv6 in ip instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-		}
-
-		// Sleep if nothing happened
-		if (prev_read_count == data->messages_count_read &&
-			prev_polled_count == data->messages_count_polled &&
-			prev_read_error_count == data->read_error_count &&
-			did_send_something == 0
-		) {
-			if (++consecutive_nothing_happened > 10) {
-//				printf ("Sleep: %u\n", consecutive_nothing_happened);
-				rrr_posix_usleep(25000);
-			}
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		if (INSTANCE_D_STATS(thread_data) != NULL && time_now > next_stats_time) {
-			int delivery_entry_count = 0;
-			int delivery_ratelimit_active = 0;
-
-			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-					&delivery_entry_count,
-					&delivery_ratelimit_active,
-					thread_data
-			) != 0) {
-				RRR_MSG_0("Error while setting ratelimit in ip instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "read_error_count", data->read_error_count);
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", data->messages_count_read);
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "polled_count", data->messages_count_polled);
-			rrr_stats_instance_post_unsigned_base10_text (
-					INSTANCE_D_STATS(thread_data),
-					"delivery_buffer_count",
-					0,
-					delivery_entry_count
-			);
-
-			tick = 0;
-			data->read_error_count = 0;
-			data->messages_count_read = 0;
-			data->messages_count_polled = 0;
-
-			next_stats_time = time_now + 1000000;
-
-			printf ("-- Dump send buffer -----------------------------------\n");
-			RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_msg_msg_holder);
-				struct rrr_msg_msg *message = node->message;
-
-				printf ("timestamp %" PRIu64 "\n", (node->send_time > 0 ? be64toh(message->timestamp) : message->timestamp));
-			RRR_LL_ITERATE_END();
-			printf ("-- Dump send buffer end --------------------------------\n");
-		}
-
-		prev_read_error_count = data->read_error_count;
-		prev_read_count = data->messages_count_read;
-		prev_polled_count = data->messages_count_polled;
-
-		tick++;
-	}
-*/
 	out_message:
 
 	pthread_cleanup_pop(1);
