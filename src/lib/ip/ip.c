@@ -422,7 +422,6 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 	 	if (graylist != NULL) {
 	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
 	 	}
-	out_error_close_socket:
 		rrr_socket_close(fd);
 	out:
 		return ret;

@@ -574,11 +574,16 @@ static void __rrr_net_transport_event_read (
 
 static int __rrr_net_transport_event_write_send_chunk_callback (
 		ssize_t *written_bytes,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
 		const void *data,
 		ssize_t data_size,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(addr);
+	(void)(addr_len);
 
 	uint64_t written_bytes_u64 = 0;
 
@@ -611,7 +616,7 @@ static void __rrr_net_transport_event_write (
 	int ret_tmp = 0;
 
 	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
-		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback (
+		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
 				&handle->send_chunks,
 				__rrr_net_transport_event_write_send_chunk_callback,
 				handle

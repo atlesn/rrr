@@ -63,15 +63,22 @@ int rrr_socket_send_chunk_collection_push_const_with_private_data (
 		void *private_data,
 		void (*private_data_destroy)(void *private_data)
 );
-int rrr_socket_send_chunk_collection_sendto (
-		struct rrr_socket_send_chunk_collection *chunks,
-		int fd,
+int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
+		struct rrr_socket_send_chunk_collection *target,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		const void *data,
+		ssize_t data_size,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
 );
-int rrr_socket_send_chunk_collection_sendto_with_callback (
+int rrr_socket_send_chunk_collection_send (
 		struct rrr_socket_send_chunk_collection *chunks,
-		int (*callback)(ssize_t *written_bytes, const void *data, ssize_t data_size, void *arg),
+		int fd
+);
+int rrr_socket_send_chunk_collection_send_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int (*callback)(ssize_t *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, ssize_t data_size, void *arg),
 		void *callback_arg
 );
 

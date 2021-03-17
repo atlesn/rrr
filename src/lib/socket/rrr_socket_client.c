@@ -547,11 +547,9 @@ static int __rrr_socket_client_send_tick (
 ) {
 	int ret;
 
-	if ((ret = rrr_socket_send_chunk_collection_sendto (
+	if ((ret = rrr_socket_send_chunk_collection_send (
 			&client->send_chunks,
-			client->connected_fd->fd,
-			NULL,
-			0
+			client->connected_fd->fd
 	)) != RRR_SOCKET_OK && ret != RRR_SOCKET_WRITE_INCOMPLETE) {
 		RRR_DBG_7("Disconnecting fd %i in client collection following send error, return was %i\n",
 				client->connected_fd, ret);
@@ -973,6 +971,35 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 	return ret;
 }
 
+static int __rrr_socket_client_sendto_push_const (
+		struct rrr_socket_client *client,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const void *data,
+		ssize_t data_size,
+		void *chunk_private_data,
+		void (*chunk_private_data_destroy)(void *chunk_private_data)
+) {
+	int ret = 0;
+
+	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
+			&client->send_chunks,
+			addr,
+			addr_len,
+			data,
+			data_size,
+			chunk_private_data,
+			chunk_private_data_destroy
+	)) != 0) {
+		goto out;
+	}
+
+	ret = __rrr_socket_client_send_push_notify(client);
+
+	out:
+	return ret;
+}
+
 struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data {
 	const void *data;
 	ssize_t size;
@@ -1282,6 +1309,34 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 	out:
 	return ret;
 }
+
+int rrr_socket_client_collection_sendto_push_const (
+		struct rrr_socket_client_collection *collection,
+		int fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const void *data,
+		ssize_t size,
+		void *chunk_private_data,
+		void (*chunk_private_data_destroy)(void *chunk_private_data)
+) {
+	int ret = 0;
+
+	struct rrr_socket_client *client = NULL;
+
+	if ((client = __rrr_socket_client_collection_find_by_fd (collection, fd)) == NULL)  {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((ret = __rrr_socket_client_sendto_push_const (client, addr, addr_len, data, size, chunk_private_data, chunk_private_data_destroy)) != 0) {
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 
 static void __rrr_socket_client_event_accept (
 		evutil_socket_t fd,
