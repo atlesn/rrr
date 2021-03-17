@@ -114,11 +114,21 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	return rrr_read_session_collection_maintain_and_find_or_create (
+
+	int is_new = 0;
+
+	struct rrr_read_session *session = rrr_read_session_collection_maintain_and_find_or_create (
+		&is_new,
 		callback_data->read_sessions,
 		(struct sockaddr *) &callback_data->src_addr,
 		callback_data->src_addr_len
 	);
+
+	if (session != NULL && is_new && (callback_data->socket_read_flags & RRR_SOCKET_READ_FIRST_EOF_OK)) {
+		session->eof_ok_now = 1;
+	}
+
+	return session;
 }
 
 static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read_session *read_session, void *private_arg) {

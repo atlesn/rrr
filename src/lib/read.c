@@ -110,11 +110,14 @@ int rrr_read_session_collection_has_unprocessed_data (
 }
 
 struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create (
+		int *is_new,
 		struct rrr_read_session_collection *collection,
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
 	struct rrr_read_session *res = NULL;
+
+	*is_new = 0;
 
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t time_limit = time_now - RRR_READ_COLLECTION_CLIENT_TIMEOUT_S * 1000 * 1000;
@@ -141,6 +144,8 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 		}
 
 		RRR_LL_UNSHIFT(collection,res);
+
+		*is_new = 1;
 	}
 
 	out:

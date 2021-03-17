@@ -723,7 +723,6 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
 	entry->send_time = 0;
-	entry->bytes_sent = 0;
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
@@ -1145,24 +1144,15 @@ static int ip_send_message (
 			goto out;
 		}
 
-		ssize_t final_size = 0;
+		ssize_t final_size = entry->data_length;
 
-		// Check for second send attempt, message is then already in network order
+		// Check for message already in network order (second send attempt)
 		if (entry->endian_indicator != 0) {
-			final_size = entry->bytes_to_send;
-
 			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
 					INSTANCE_D_NAME(thread_data), rrr_be64toh(message->timestamp), final_size);
 		}
 		else {
-			final_size = MSG_TOTAL_SIZE(message);
-
-			// Since we need this parameter any successive send attempts, make sure it's the correct value
-			entry->data_length = final_size;
-
-			if (entry->data_length != final_size) {
-				RRR_BUG("message size mismatch in ip input_callback %li vs %li\n", entry->data_length, final_size);
-			}
+			entry->data_length = final_size = MSG_TOTAL_SIZE(message);
 
 			RRR_DBG_3 ("ip instance %s sends packet with rrr message timestamp from %" PRIu64 " size %li\n",
 					INSTANCE_D_NAME(thread_data), message->timestamp, final_size);
@@ -1179,7 +1169,6 @@ static int ip_send_message (
 			rrr_msg_checksum_and_to_network_endian (
 					(struct rrr_msg *) message
 			);
-
 			entry->endian_indicator = 1;
 		}
 
@@ -1254,26 +1243,13 @@ static int ip_send_message (
 		entry->send_time = rrr_time_get_64();
 	}
 
-	ssize_t written_bytes = 0;
-
 	ret = ip_send_raw (
 			ip_data,
 			entry,
 			entry->protocol,
-			send_data + entry->bytes_sent,
-			send_size - entry->bytes_sent
+			send_data,
+			send_size
 	);
-
-	entry->bytes_to_send = send_size;
-	entry->bytes_sent += written_bytes;
-
-	RRR_DBG_7("ip instance %s send status for entry: %li/%li bytes\n",
-			INSTANCE_D_NAME(ip_data->thread_data), entry->bytes_sent, entry->bytes_to_send);
-
-	if (entry->bytes_sent == entry->bytes_to_send) {
-		RRR_DBG_2("ip instance %s a message of %li bytes was completely sent\n",
-				INSTANCE_D_NAME(ip_data->thread_data), entry->bytes_to_send);
-	}
 
 	out:
 		RRR_FREE_IF_NOT_NULL(tmp_data);
@@ -1381,8 +1357,6 @@ static int ip_send_loop (
 			goto perform_action;
 		}*/
 
-		ssize_t bytes_sent_orig = node->bytes_sent;
-
 		if ((ret = ip_send_message(data, node)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
 				message_was_sent = 0;
@@ -1394,15 +1368,9 @@ static int ip_send_loop (
 			}
 		}
 
-		if (node->bytes_sent < node->bytes_to_send) {
-			message_was_sent = 0;
-		}
-
-		if (node->send_time == 0 || bytes_sent_orig != node->bytes_sent || message_was_sent) {
+		if (node->send_time == 0 || message_was_sent) {
 			node->send_time = rrr_time_get_64();
 		}
-
-//		printf("Sent for %p: %li/%li\n", node, node->bytes_sent, node->bytes_to_send);
 
 		if (message_was_sent) {
 			if (data->do_smart_timeout) {
@@ -1518,7 +1486,11 @@ static int ip_start_udp (struct ip_data *data) {
 			ip_private_data_new,
 			ip_private_data_destroy,
 			data,
-			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+			(	RRR_SOCKET_READ_METHOD_RECVFROM |
+				RRR_SOCKET_READ_CHECK_POLLHUP |
+				RRR_SOCKET_READ_CHECK_EOF |
+				RRR_SOCKET_READ_FIRST_EOF_OK
+			),
 			data->definitions,
 			data->do_sync_byte_by_byte,
 			4096,
