@@ -661,6 +661,10 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
+		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
+		RRR_LL_ITERATE_END();
+		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 
 	rrr_msg_holder_unlock(entry);
 
@@ -1538,6 +1542,10 @@ static void ip_chunk_send_fail_notify_callback (
 	if (!was_sent) {
 		rrr_msg_holder_incref(entry);
 		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
+		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
+		RRR_LL_ITERATE_END();
+		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 	}
 	else if (ip_data->do_smart_timeout) {
 		rrr_msg_holder_lock(entry);
@@ -1603,6 +1611,10 @@ static void ip_send_chunk_periodic_callback (
 	if (ttl_reached || timeout_reached) {
 		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
+		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
+		RRR_LL_ITERATE_END();
+		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 
 		*do_remove = 1;
 	}
