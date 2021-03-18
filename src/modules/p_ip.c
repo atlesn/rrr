@@ -78,9 +78,11 @@ struct ip_data {
 
 	struct event *event_send_buffer_iterate;
 
-	struct rrr_socket_client_collection *collection;
+	struct rrr_socket_client_collection *collection_udp;
+	struct rrr_socket_client_collection *collection_tcp;
 
-	int ip_udp_send_fd;
+	int udp_send_fd_ip4;
+	int udp_send_fd_ip6;
 
 	struct rrr_ip_graylist tcp_graylist;
 
@@ -129,8 +131,11 @@ struct ip_data {
 static void ip_data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
 
-	if (data->collection != NULL) {
-		rrr_socket_client_collection_destroy(data->collection);
+	if (data->collection_tcp != NULL) {
+		rrr_socket_client_collection_destroy(data->collection_tcp);
+	}
+	if (data->collection_udp != NULL) {
+		rrr_socket_client_collection_destroy(data->collection_udp);
 	}
 	if (data->event_send_buffer_iterate != NULL) {
 		event_free(data->event_send_buffer_iterate);
@@ -661,10 +666,6 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
-		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
-			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
-		RRR_LL_ITERATE_END();
-		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 
 	rrr_msg_holder_unlock(entry);
 
@@ -706,7 +707,7 @@ static int ip_resolve_suggestion_callback (
 		char buf[256];
 		*buf = '\0';
 		rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
-		RRR_DBG_7("ip instance %s resolve[%llu] %s:%u => [%s]\n",
+		RRR_DBG_7("ip instance %s resolve[%llu] %s:%u => %s\n",
 				INSTANCE_D_NAME(callback_data->ip_data->thread_data),
 				(long long unsigned int) callback_data->address_count,
 				host,
@@ -812,10 +813,6 @@ static int ip_connect_raw_callback (
 	
 	int ret = 0;
 
-	if (++i % 2 == 0) {
-		return 2;
-	}
-
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 			fd,
 			addr,
@@ -837,25 +834,54 @@ static int ip_connect_raw_callback (
 }
 
 static void ip_msg_holder_incref_while_loced (void **private_data, void *arg) {
-	printf("Incref %p\n", arg);
 	struct rrr_msg_holder *entry = arg;
 	rrr_msg_holder_incref_while_locked(entry);
 	*private_data = entry;
 }
 
 static void ip_msg_holder_decref_void (void *arg) {
-	printf("Decref %p\n", arg);
 	struct rrr_msg_holder *entry = arg;
 	rrr_msg_holder_decref(entry);
 }
 
 struct ip_resolve_push_sendto_callback_data {
 	struct ip_data *ip_data;
-	int fd;
 	const void *send_data;
 	ssize_t send_size;
 	struct rrr_msg_holder *entry_orig;
 };
+
+static int ip_resolve_push_sendto_callback_test_fd (
+		struct ip_data *ip_data,
+		int fd,
+		const char *dbg_ip,
+		const char *dbg_family,
+		const char *host,
+		unsigned int port,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	const char *dummy_data = "";
+
+	// Test send to validate address
+	if ((ret = sendto(fd, dummy_data, 0, 0, addr, addr_len)) != 0) {
+		RRR_DBG_7("ip instance %s resolve %s:%u => %s (sendto %s) failed: %s\n",
+				INSTANCE_D_NAME(ip_data->thread_data),
+				host,
+				port,
+				dbg_ip,
+				dbg_family,
+				rrr_strerror(errno)
+		);
+		// Try next suggestion
+		goto out;
+	}
+
+	out:
+	return ret;
+}
 
 static int ip_resolve_push_sendto_callback (
 		const char *host,
@@ -868,27 +894,52 @@ static int ip_resolve_push_sendto_callback (
 
 	struct ip_resolve_push_sendto_callback_data *callback_data = arg;
 
-	const char *dummy_data = "";
+	int send_fd = -1;
 
 	char buf[256];
 	*buf = '\0';
 	rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
 
-	// Test send to validate address
-	if ((ret = sendto(callback_data->fd, dummy_data, 0, 0, addr, addr_len)) != 0) {
-		RRR_DBG_7("ip instance %s resolve %s:%u => [%s] (sendto) failed: %s\n",
+	// If no translation is needed, the original address is copied
+	// rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
+
+	if ( callback_data->ip_data->udp_send_fd_ip6 > 0 &&
+	     ip_resolve_push_sendto_callback_test_fd (
+				callback_data->ip_data,
+				callback_data->ip_data->udp_send_fd_ip6,
+				buf,
+				"ip6",
+				host,
+				port,
+				addr,
+				addr_len
+	) == 0) {
+		send_fd = callback_data->ip_data->udp_send_fd_ip6;
+	}
+	else if ( callback_data->ip_data->udp_send_fd_ip4 > 0 &&
+	          ip_resolve_push_sendto_callback_test_fd (
+				callback_data->ip_data,
+				callback_data->ip_data->udp_send_fd_ip4,
+				buf,
+				"ip4",
+				host,
+				port,
+				addr,
+				addr_len
+	) == 0) {
+		send_fd = callback_data->ip_data->udp_send_fd_ip4;
+	}
+	else {
+		RRR_DBG_7("ip instance %s resolve %s:%u => [address family %u] (sendto) failure\n",
 				INSTANCE_D_NAME(callback_data->ip_data->thread_data),
 				host,
 				port,
-				buf,
-				rrr_strerror(errno)
+				addr->sa_family
 		);
-		// Try next suggestion
-		ret = 0;
 		goto out;
 	}
 
-	RRR_DBG_7("ip instance %s resolve %s:%u => [%s] (sendto)\n",
+	RRR_DBG_7("ip instance %s resolve %s:%u => %s (sendto)\n",
 			INSTANCE_D_NAME(callback_data->ip_data->thread_data),
 			host,
 			port,
@@ -896,8 +947,8 @@ static int ip_resolve_push_sendto_callback (
 	);
 
 	if ((ret = rrr_socket_client_collection_sendto_push_const (
-			callback_data->ip_data->collection,
-			callback_data->fd,
+			callback_data->ip_data->collection_udp,
+			send_fd,
 			addr,
 			addr_len,
 			callback_data->send_data,
@@ -935,13 +986,15 @@ static int ip_push_raw_default_target (
 	}
 
 	if (ip_data->target_protocol == RRR_IP_TCP) {
+		RRR_DBG_3("ip instance %s send using default target TCP [%s]\n", INSTANCE_D_NAME(thread_data), ip_data->target_host_and_port);
+
 		struct ip_resolve_callback_data resolve_callback_data = {
 			ip_data,
 			ip_data->target_host,
 			ip_data->target_port
 		};
 		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
-				ip_data->collection,
+				ip_data->collection_tcp,
 				ip_data->target_host_and_port,
 				send_data,
 				send_size,
@@ -955,9 +1008,10 @@ static int ip_push_raw_default_target (
 		);
 	}
 	else {
+		RRR_DBG_3("ip instance %s send using default target UDP [%s]\n", INSTANCE_D_NAME(thread_data), ip_data->target_host_and_port);
+
 		struct ip_resolve_push_sendto_callback_data resolve_callback_data = {
 			ip_data,
-			ip_data->ip_udp_send_fd,
 			send_data,
 			send_size,
 			entry_orig
@@ -968,15 +1022,19 @@ static int ip_push_raw_default_target (
 				ip_data->target_host,
 				ip_resolve_push_sendto_callback,
 				&resolve_callback_data
-		)) != RRR_SOCKET_READ_EOF) {
-			RRR_MSG_0("Error while sending message to default remote %s:%u using UDP in ip instance %s\n",
-					ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(ip_data->thread_data));
+		)) == RRR_SOCKET_READ_EOF) {
+			// OK, reslt found
+			ret = 0;
 		}
 		else if (ret == 0) {
 			// No address suggestions could be used
 			RRR_MSG_0("Error while sending message to default remote %s:%u using UDP in ip instance %s, no resolve suggestions could be used\n",
 					ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(ip_data->thread_data));
 			ret = RRR_SOCKET_SOFT_ERROR;
+		}
+		else {
+			RRR_MSG_0("Error while sending message to default remote %s:%u using UDP in ip instance %s\n",
+					ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(ip_data->thread_data));
 		}
 	}
 
@@ -995,9 +1053,6 @@ static int ip_push_raw (
 
 	struct sockaddr_storage addr;
 	socklen_t addr_len = sizeof(addr);
-
-	// If no translation is needed, the original address is copied
-	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
 	
 	int ret = 0;
 
@@ -1027,8 +1082,10 @@ static int ip_push_raw (
 		// ADDRESS FROM ENTRY, TCP
 		//////////////////////////////////////////////////////
 
+		RRR_DBG_3("ip instance %s send using address from entry TCP\n", INSTANCE_D_NAME(thread_data));
+
 		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
-				ip_data->collection,
+				ip_data->collection_tcp,
 				(const struct sockaddr *) &addr,
 				addr_len,
 				send_data,
@@ -1045,9 +1102,20 @@ static int ip_push_raw (
 		// ADDRESS FROM ENTRY, UDP
 		//////////////////////////////////////////////////////
 
+		RRR_DBG_3("ip instance %s send using address from entry UDP\n", INSTANCE_D_NAME(thread_data));
+
+		int send_fd = -1;
+
+		if (addr.ss_family == AF_INET) {
+			send_fd = (ip_data->udp_send_fd_ip4 > 0 ? ip_data->udp_send_fd_ip4 : ip_data->udp_send_fd_ip6);
+		}
+		else {
+			send_fd = (ip_data->udp_send_fd_ip6 > 0 ? ip_data->udp_send_fd_ip6 : ip_data->udp_send_fd_ip4);
+		}
+
 		ret = rrr_socket_client_collection_sendto_push_const (
-				ip_data->collection,
-				ip_data->ip_udp_send_fd,
+				ip_data->collection_udp,
+				send_fd,
 				(const struct sockaddr *) &addr,
 				addr_len,
 				send_data,
@@ -1059,8 +1127,8 @@ static int ip_push_raw (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Failed to push message to send queue in ip instance %s\n",
-				INSTANCE_D_NAME(thread_data)
+		RRR_MSG_0("Failed to push message to send queue in ip instance %s return was %i\n",
+				INSTANCE_D_NAME(thread_data), ret
 		);
 		goto out;
 	}
@@ -1246,8 +1314,6 @@ static int ip_send_loop (
 
 		rrr_msg_holder_lock(node);
 
-		printf("Send loop %p\n", node);
-
 		int ttl_reached = 0;
 		int timeout_reached = 0;
 
@@ -1292,11 +1358,9 @@ static int ip_send_loop (
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
 		// do not destroy
 		if (action == IP_ACTION_RETRY) {
-			printf("Keep in queue %p ret %i\n", node, ret);
 			rrr_msg_holder_unlock(node);
 		}
 		else {
-			printf("Remove from queue %p\n", node);
 			RRR_LL_ITERATE_SET_DESTROY();
 
 			if (action == IP_ACTION_RETURN) {
@@ -1407,10 +1471,11 @@ static int ip_start_udp (struct ip_data *data) {
 		}
 	}
 
-	data->ip_udp_send_fd = ip_udp_6.fd != 0 ? ip_udp_6.fd : ip_udp_4.fd;
+	data->udp_send_fd_ip4 = ip_udp_4.fd;
+	data->udp_send_fd_ip6 = ip_udp_6.fd;
 
 	if (ip_udp_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection, ip_udp_6.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1418,7 +1483,7 @@ static int ip_start_udp (struct ip_data *data) {
 	}
 
 	if (ip_udp_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection, ip_udp_4.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1479,7 +1544,7 @@ static int ip_start_tcp (struct ip_data *data) {
 	}
 
 	if (ip_tcp_listen_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection, ip_tcp_listen_6.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection_tcp, ip_tcp_listen_6.fd)) != 0) {
 			RRR_MSG_0("Failed to push TCP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1487,7 +1552,7 @@ static int ip_start_tcp (struct ip_data *data) {
 	}
 
 	if (ip_tcp_listen_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection, ip_tcp_listen_4.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_listen_fd_push(data->collection_tcp, ip_tcp_listen_4.fd)) != 0) {
 			RRR_MSG_0("Failed to push TCP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1551,33 +1616,32 @@ static void ip_chunk_send_fail_notify_callback (
 	(void)(data_size);
 	(void)(data_pos);
 
+	rrr_msg_holder_lock(entry);
+
 	if (!was_sent) {
-		rrr_msg_holder_incref(entry);
-		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
-			if (node == entry) {
-				RRR_BUG("Double add\n");
-			}
-			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
-		RRR_LL_ITERATE_END();
-		printf("Re-add %p\n", entry);
+		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
-		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 	}
 	else if (ip_data->do_smart_timeout) {
-		rrr_msg_holder_lock(entry);
+		// TODO : Don't iterate everything with n^2 complexity
 
 		struct chunk_send_smart_timeout_callback_data callback_data = {
 			ip_data,
 			entry
 		};
 		rrr_socket_client_collection_send_chunk_iterate (
-				ip_data->collection,
+				ip_data->collection_tcp,
 				ip_chunk_send_smart_timeout_callback,
 				&callback_data
 		);
-
-		rrr_msg_holder_unlock(entry);
+		rrr_socket_client_collection_send_chunk_iterate (
+				ip_data->collection_udp,
+				ip_chunk_send_smart_timeout_callback,
+				&callback_data
+		);
 	}
+
+	rrr_msg_holder_unlock(entry);
 }
 
 static void ip_event_send_buffer (
@@ -1627,10 +1691,6 @@ static void ip_send_chunk_periodic_callback (
 	if (ttl_reached || timeout_reached) {
 		rrr_msg_holder_incref_while_locked(entry);
 		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
-		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
-			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
-		RRR_LL_ITERATE_END();
-		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 
 		*do_remove = 1;
 	}
@@ -1673,10 +1733,32 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
-	rrr_socket_client_collection_send_chunk_iterate (ip_data->collection, ip_send_chunk_periodic_callback, ip_data);
+	rrr_socket_client_collection_send_chunk_iterate (ip_data->collection_udp, ip_send_chunk_periodic_callback, ip_data);
+	rrr_socket_client_collection_send_chunk_iterate (ip_data->collection_tcp, ip_send_chunk_periodic_callback, ip_data);
 
 	return ret;
 }
+
+#define SETUP_ARRAY_TREE(collection,socket_flags)              \
+    rrr_socket_client_collection_event_setup_array_tree (      \
+            collection,                                        \
+            INSTANCE_D_EVENTS(data->thread_data),              \
+            ip_private_data_new,                               \
+            ip_private_data_destroy,                           \
+            data,                                              \
+            socket_flags,                                      \
+            data->definitions,                                 \
+            data->do_sync_byte_by_byte,                        \
+            4096,                                              \
+            0, /* No message max size */                       \
+            ip_array_callback,                                 \
+            data                                               \
+    );                                                         \
+    rrr_socket_client_collection_send_notify_setup (           \
+            collection,                                        \
+            ip_chunk_send_fail_notify_callback,                \
+            data                                               \
+    )
 
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -1721,34 +1803,24 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_ip_graylist_init(&data->tcp_graylist, data->graylist_timeout_ms * 1000LLU);
 
-	if (rrr_socket_client_collection_new(&data->collection, INSTANCE_D_NAME(data->thread_data)) != 0) {
+	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_NAME(data->thread_data)) != 0) {
+		RRR_MSG_0("Failed to create TDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_message;
+	}
+
+	if (rrr_socket_client_collection_new(&data->collection_udp, INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}
 
-	rrr_socket_client_collection_event_setup_array_tree (
-			data->collection,
-			INSTANCE_D_EVENTS(data->thread_data),
-			ip_private_data_new,
-			ip_private_data_destroy,
-			data,
-			(	RRR_SOCKET_READ_METHOD_RECVFROM |
-				RRR_SOCKET_READ_CHECK_POLLHUP |
-				RRR_SOCKET_READ_CHECK_EOF |
-				RRR_SOCKET_READ_FIRST_EOF_OK
-			),
-			data->definitions,
-			data->do_sync_byte_by_byte,
-			4096,
-			0, // No message max size
-			ip_array_callback,
-			data
+	SETUP_ARRAY_TREE(
+		data->collection_tcp,
+		RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK
 	);
 
-	rrr_socket_client_collection_send_notify_setup (
-		data->collection,
-		ip_chunk_send_fail_notify_callback,
-		data
+	SETUP_ARRAY_TREE(
+		data->collection_udp,
+		RRR_SOCKET_READ_METHOD_RECVFROM
 	);
 
 	if (ip_start_udp(data) != 0) {

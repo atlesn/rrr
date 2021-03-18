@@ -395,7 +395,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 	*result_fd = -1;
 
 	fd = rrr_socket (
-			AF_INET,
+			addr->sa_family,
 			SOCK_STREAM|SOCK_NONBLOCK,
 			0,
 			"ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock",
