@@ -800,6 +800,8 @@ static int ip_resolve_callback (
 	return ret;
 }
 
+int i = 0;
+
 static int ip_connect_raw_callback (
 		int *fd,
 		const struct sockaddr *addr,
@@ -809,6 +811,10 @@ static int ip_connect_raw_callback (
 	struct ip_data *ip_data = callback_data;
 	
 	int ret = 0;
+
+	if (++i % 2 == 0) {
+		return 2;
+	}
 
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 			fd,
@@ -828,6 +834,19 @@ static int ip_connect_raw_callback (
 
 	out:
 	return ret;
+}
+
+static void ip_msg_holder_incref_while_loced (void **private_data, void *arg) {
+	printf("Incref %p\n", arg);
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_incref_while_locked(entry);
+	*private_data = entry;
+}
+
+static void ip_msg_holder_decref_void (void *arg) {
+	printf("Decref %p\n", arg);
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_decref(entry);
 }
 
 struct ip_resolve_push_sendto_callback_data {
@@ -883,11 +902,11 @@ static int ip_resolve_push_sendto_callback (
 			addr_len,
 			callback_data->send_data,
 			callback_data->send_size,
+			ip_msg_holder_incref_while_loced,
 			callback_data->entry_orig,
-			rrr_msg_holder_decref_void
+			ip_msg_holder_decref_void
 	)) == 0) {
 		// EOF breaks out from resolve iteration and indicates success
-		rrr_msg_holder_incref_while_locked(callback_data->entry_orig);
 		ret = RRR_SOCKET_READ_EOF;
 	}
 	else {
@@ -921,20 +940,19 @@ static int ip_push_raw_default_target (
 			ip_data->target_host,
 			ip_data->target_port
 		};
-		if ((ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
 				ip_data->collection,
 				ip_data->target_host_and_port,
 				send_data,
 				send_size,
+				ip_msg_holder_incref_while_loced,
 				entry_orig,
-				rrr_msg_holder_decref_void,
+				ip_msg_holder_decref_void,
 				ip_resolve_callback,
 				&resolve_callback_data,
 				ip_connect_raw_callback,
 				ip_data
-		)) == 0) {
-			rrr_msg_holder_incref_while_locked(entry_orig);
-		}
+		);
 	}
 	else {
 		struct ip_resolve_push_sendto_callback_data resolve_callback_data = {
@@ -1009,37 +1027,35 @@ static int ip_push_raw (
 		// ADDRESS FROM ENTRY, TCP
 		//////////////////////////////////////////////////////
 
-		if ((ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 				ip_data->collection,
 				(const struct sockaddr *) &addr,
 				addr_len,
 				send_data,
 				send_size,
+				ip_msg_holder_incref_while_loced,
 				entry_orig,
-				rrr_msg_holder_decref_void,
+				ip_msg_holder_decref_void,
 				ip_connect_raw_callback,
 				ip_data
-		)) == 0) {
-			rrr_msg_holder_incref_while_locked(entry_orig);
-		}
+		);
 	}
 	else {
 		//////////////////////////////////////////////////////
 		// ADDRESS FROM ENTRY, UDP
 		//////////////////////////////////////////////////////
 
-		if ((ret = rrr_socket_client_collection_sendto_push_const (
+		ret = rrr_socket_client_collection_sendto_push_const (
 				ip_data->collection,
 				ip_data->ip_udp_send_fd,
 				(const struct sockaddr *) &addr,
 				addr_len,
 				send_data,
 				send_size,
+				ip_msg_holder_incref_while_loced,
 				entry_orig,
-				rrr_msg_holder_decref_void
-		)) == 0) {
-			rrr_msg_holder_incref_while_locked(entry_orig);
-		}
+				ip_msg_holder_decref_void
+		);
 	}
 
 	if (ret != 0) {
@@ -1226,11 +1242,11 @@ static int ip_send_loop (
 	int timeout_count = 0;
 	int ttl_reached_count = 0;
 	RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
-		enum ip_action action = IP_ACTION_RETRY;
+		enum ip_action action = IP_ACTION_DROP;
 
 		rrr_msg_holder_lock(node);
 
-		int message_was_pushed = 1;
+		printf("Send loop %p\n", node);
 
 		int ttl_reached = 0;
 		int timeout_reached = 0;
@@ -1239,52 +1255,48 @@ static int ip_send_loop (
 
 		if (ttl_reached) {
 			ttl_reached_count++;
-			RRR_DBG_1("TTL expired for a message after %" PRIrrrbl " seconds in ip instance %s, dropping it.\n",
+			RRR_DBG_3("TTL expired for a message after %" PRIrrrbl " seconds in ip instance %s, dropping it.\n",
 					ip_data->message_ttl_us / 1000 / 1000, INSTANCE_D_NAME(ip_data->thread_data));
 			action = IP_ACTION_DROP;
-			goto perform_action;
 		}
 		else if (timeout_reached) {
 			timeout_count++;
-			RRR_DBG_1("Message timed out after %" PRIrrrbl " seconds in ip instance %s, performing timeout action %s.\n",
+			RRR_DBG_3("Message timed out after %" PRIrrrbl " seconds in ip instance %s, performing timeout action %s.\n",
 					ip_data->message_send_timeout_s, INSTANCE_D_NAME(ip_data->thread_data), ip_data->timeout_action_str);
-			goto perform_timeout_action;
-		}
 
-		if ((ret = ip_push_message(ip_data, node)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				message_was_pushed = 0;
-				ret = 0;
-			}
-			else {
-				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
-				RRR_LL_ITERATE_LAST();
-			}
-		}
-
-		if (node->send_time == 0) {
-			node->send_time = rrr_time_get_64();
-		}
-
-		if (message_was_pushed) {
-			action = IP_ACTION_DROP;
-		}
-
-		// Timeout overrides retry. Note that the configuration parser should check that
-		// default action is not retry while send_timeout is >0, would otherwise cause us
-		// to spam timed out messages. We do not reset the send_time in the entry.
-		perform_timeout_action:
-		if (timeout_reached) {
+			// Timeout overrides retry. Note that the configuration parser should check that
+			// default action is not retry while send_timeout is >0, would otherwise cause us
+			// to spam timed out messages. We do not reset the send_time in the entry.
 			action = ip_data->timeout_action;
+		}
+		else {
+			if ((ret = ip_push_message(ip_data, node)) != 0) {
+				if (ret == RRR_SOCKET_SOFT_ERROR) {
+					RRR_DBG_3("Message dropped after send soft error in ip instance %s\n",
+							INSTANCE_D_NAME(ip_data->thread_data));
+					ret = 0;
+				}
+				else {
+					RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
+					RRR_LL_ITERATE_LAST();
+				}
+			}
+
+			if (node->send_time == 0) {
+				node->send_time = rrr_time_get_64();
+			}
+
+			action = IP_ACTION_DROP;
 		}
 
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
 		// do not destroy
-		perform_action:
-		if (ret != 0 || action == IP_ACTION_RETRY) {
+		if (action == IP_ACTION_RETRY) {
+			printf("Keep in queue %p ret %i\n", node, ret);
 			rrr_msg_holder_unlock(node);
 		}
 		else {
+			printf("Remove from queue %p\n", node);
 			RRR_LL_ITERATE_SET_DESTROY();
 
 			if (action == IP_ACTION_RETURN) {
@@ -1541,10 +1553,14 @@ static void ip_chunk_send_fail_notify_callback (
 
 	if (!was_sent) {
 		rrr_msg_holder_incref(entry);
-		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
 		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			if (node == entry) {
+				RRR_BUG("Double add\n");
+			}
 			RRR_LL_VERIFY_NODE(&ip_data->send_buffer);
 		RRR_LL_ITERATE_END();
+		printf("Re-add %p\n", entry);
+		RRR_LL_UNSHIFT(&ip_data->send_buffer, entry);
 		RRR_LL_VERIFY_HEAD(&ip_data->send_buffer);
 	}
 	else if (ip_data->do_smart_timeout) {

@@ -1040,7 +1040,8 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 		struct rrr_socket_client *client,
 		const void *data,
 		ssize_t data_size,
-		void *chunk_private_data,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
 	int ret = 0;
@@ -1049,7 +1050,8 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 			&client->send_chunks,
 			data,
 			data_size,
-			chunk_private_data,
+			chunk_private_data_new,
+			chunk_private_data_arg,
 			chunk_private_data_destroy
 	)) != 0) {
 		goto out;
@@ -1067,7 +1069,8 @@ static int __rrr_socket_client_sendto_push_const (
 		socklen_t addr_len,
 		const void *data,
 		ssize_t data_size,
-		void *chunk_private_data,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
 	int ret = 0;
@@ -1078,7 +1081,8 @@ static int __rrr_socket_client_sendto_push_const (
 			addr_len,
 			data,
 			data_size,
-			chunk_private_data,
+			chunk_private_data_new,
+			chunk_private_data_arg,
 			chunk_private_data_destroy
 	)) != 0) {
 		goto out;
@@ -1242,7 +1246,8 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		socklen_t addr_len,
 		const void *data,
 		ssize_t size,
-		void *chunk_private_data,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
 		int (*connect_callback)(int *fd, const struct sockaddr *addr, socklen_t addr_len, void *callback_data),
 		void *connect_callback_data
@@ -1255,7 +1260,7 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
 		goto out;
 	}
 
@@ -1364,7 +1369,8 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		const char *addr_string,
 		const void *data,
 		ssize_t size,
-		void *chunk_private_data,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
 		int (*resolve_callback)(
 				size_t *address_count,
@@ -1392,7 +1398,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
 		goto out;
 	}
 
@@ -1407,7 +1413,8 @@ int rrr_socket_client_collection_sendto_push_const (
 		socklen_t addr_len,
 		const void *data,
 		ssize_t size,
-		void *chunk_private_data,
+		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
+		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
 	int ret = 0;
@@ -1419,7 +1426,7 @@ int rrr_socket_client_collection_sendto_push_const (
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_sendto_push_const (client, addr, addr_len, data, size, chunk_private_data, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_sendto_push_const (client, addr, addr_len, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
 		goto out;
 	}
 
