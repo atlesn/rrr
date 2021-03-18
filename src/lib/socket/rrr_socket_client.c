@@ -1320,7 +1320,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 				RRR_BUG("BUG: FD not set after connect callback in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
 			}
 
-			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i now pending\n", i + 1, addr_string, address_count);
+			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i now pending\n", addr_string, i + 1, address_count);
 
 			if ((ret = __rrr_socket_client_not_ready_fd_push (
 					client,
@@ -1335,7 +1335,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 			tmp_fd = -1;
 		}
 		else {
-			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i failed\n", i + 1, addr_string, address_count);
+			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i failed\n", addr_string, i + 1, address_count);
 		}
 	}
 
