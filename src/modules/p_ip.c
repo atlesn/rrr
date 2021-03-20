@@ -828,6 +828,9 @@ static int ip_connect_raw_callback (
 			RRR_DBG_7("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
 					ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(ip_data->thread_data));
 		}
+		else if (ret == RRR_SOCKET_NOT_READY) {
+			// Address possibly graylisted
+		}
 		else {
 			RRR_MSG_0("Hard error during TCP connect in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
 		}
@@ -1152,7 +1155,7 @@ static int ip_push_raw (
 		);
 	}
 
-	if (ret != 0) {
+	if (ret != 0 && ret != RRR_SOCKET_NOT_READY) {
 		RRR_MSG_0("Failed to push message to send queue in ip instance %s return was %i\n",
 				INSTANCE_D_NAME(thread_data), ret
 		);
@@ -1363,13 +1366,24 @@ static int ip_send_loop (
 		}
 		else {
 			if ((ret = ip_push_message(ip_data, node)) != 0) {
-				if (ret == RRR_SOCKET_SOFT_ERROR) {
+				if (ret == RRR_SOCKET_NOT_READY) {
+					// Address possibly graylisted
+					action = IP_ACTION_RETRY;
+					ret = 0;
+					if (ip_data->do_preserve_order) {
+						// Must stop iteration to preserve order
+						RRR_LL_ITERATE_LAST();
+					}
+				}
+				else if (ret == RRR_SOCKET_SOFT_ERROR) {
 					RRR_DBG_3("Message dropped after send soft error in ip instance %s\n",
 							INSTANCE_D_NAME(ip_data->thread_data));
+					action = IP_ACTION_DROP;
 					ret = 0;
 				}
 				else {
 					RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
+					action = IP_ACTION_DROP;
 					RRR_LL_ITERATE_LAST();
 				}
 			}
@@ -1377,8 +1391,6 @@ static int ip_send_loop (
 			if (node->send_time == 0) {
 				node->send_time = rrr_time_get_64();
 			}
-
-			action = IP_ACTION_DROP;
 		}
 
 		// Make sure we always unlock, ether in ITERATE_END destroy or here if we
@@ -1684,8 +1696,7 @@ static void ip_fd_close_notify_callback (
 	(void)(addr_string);
 
 	if (create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND && addr_len > 0) {
-		printf("Push to graylist upon close\n");
-		rrr_ip_graylist_push(
+		rrr_ip_graylist_push (
 			&ip_data->tcp_graylist,
 			addr,
 			addr_len,

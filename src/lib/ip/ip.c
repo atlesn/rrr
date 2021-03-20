@@ -300,7 +300,7 @@ static int __rrr_ip_network_connect_tcp_check_graylist (
 	}
 
 	if (__rrr_ip_graylist_exists(graylist, addr, addr_len)) {
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_SOCKET_NOT_READY;
 		return ret;
 	}
 
