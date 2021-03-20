@@ -1,4 +1,4 @@
-.Dd 2021-02-14
+.Dd 2021-03-20
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -473,6 +473,9 @@ If set to no or left unset, messages with arrays will have their array packed an
 Attempt to send messages in order according to their timestamp.
 Messages to a particular destination will be sent in order according to their creation timestamp.
 If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+The parameter
+.B ip_send_multiple_per_connection
+should be set to yes to ensure order in all situations.
 This will impact performance when destinations are unreachable.
 Defaults no no.
 

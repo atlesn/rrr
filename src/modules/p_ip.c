@@ -361,7 +361,7 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
 
 	if (data->do_preserve_order && !data->do_multiple_per_connection) {
-		RRR_MSG_0("Warning: ip_preserve_order is set while ip_send_multiple_per_connection is not in ip instance %s, send order may not be guaranteed in all situations.\n",
+		RRR_DBG_1("Note: ip_preserve_order is set while ip_send_multiple_per_connection is not in ip instance %s, send order may not be guaranteed in all situations.\n",
 				config->name);
 	}
 
