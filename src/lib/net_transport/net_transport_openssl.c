@@ -525,7 +525,7 @@ static int __rrr_net_transport_openssl_connect (
 
 	int ret = 0;
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_DBG_3("Could not create TCP connection to %s:%u for TLS usage\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;

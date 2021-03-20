@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip/ip_util.h"
 #include "../lib/socket/rrr_socket_common.h"
 #include "../lib/socket/rrr_socket_client.h"
+#include "../lib/socket/rrr_socket_graylist.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/message_holder/message_holder_collection.h"
@@ -63,7 +64,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_SEND_TIME_LIMIT_MS              1000
 #define IP_RECEIVE_TIME_LIMIT_MS           1000
 #define IP_DEFAULT_MAX_MESSAGE_SIZE        4096
-#define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     2000
+#define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     100
 #define IP_DEFAULT_CLOSE_GRACE_MS          5
 
 enum ip_action {
@@ -84,7 +85,7 @@ struct ip_data {
 	int udp_send_fd_ip4;
 	int udp_send_fd_ip6;
 
-	struct rrr_ip_graylist tcp_graylist;
+	struct rrr_socket_graylist tcp_graylist;
 
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
@@ -151,7 +152,7 @@ static void ip_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->target_host_and_port);
 	RRR_FREE_IF_NOT_NULL(data->timeout_action_str);
 	rrr_map_clear(&data->array_send_tags);
-	rrr_ip_graylist_clear(&data->tcp_graylist);
+	rrr_socket_graylist_clear(&data->tcp_graylist);
 }
 
 static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -818,18 +819,19 @@ static int ip_connect_raw_callback (
 	
 	int ret = 0;
 
+	if (rrr_socket_graylist_exists(&ip_data->tcp_graylist, addr, addr_len)) {
+		ret = RRR_SOCKET_NOT_READY;
+		goto out;
+	}
+
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 			fd,
 			addr,
-			addr_len,
-			&ip_data->tcp_graylist
+			addr_len
 	)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_DBG_7("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
 					ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(ip_data->thread_data));
-		}
-		else if (ret == RRR_SOCKET_NOT_READY) {
-			// Address possibly graylisted
 		}
 		else {
 			RRR_MSG_0("Hard error during TCP connect in ip instance %s\n", INSTANCE_D_NAME(ip_data->thread_data));
@@ -1688,6 +1690,7 @@ static void ip_fd_close_notify_callback (
 		socklen_t addr_len,
 		const char *addr_string,
 		enum rrr_socket_client_collection_create_type create_type,
+		short was_finalized,
 		void *arg
 ) {
 	struct ip_data *ip_data = arg;
@@ -1696,11 +1699,24 @@ static void ip_fd_close_notify_callback (
 	(void)(addr_string);
 
 	if (create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND && addr_len > 0) {
-		rrr_ip_graylist_push (
-			&ip_data->tcp_graylist,
-			addr,
-			addr_len,
-			ip_data->graylist_timeout_ms * 1000LLU
+		if (RRR_DEBUGLEVEL_7) {
+			char buf[256];
+			rrr_ip_to_str(buf, sizeof(buf), addr, addr_len);
+			if (was_finalized) {
+				RRR_DBG_7("fd %i connection to %s closed in ip instance %s, graylisting for %llu ms\n",
+					fd, buf, INSTANCE_D_NAME(ip_data->thread_data), (long long unsigned int) ip_data->close_grace_ms);
+			}
+			else {
+				RRR_DBG_7("fd %i connection to %s failed in ip instance %s, graylisting for %llu ms\n",
+					fd, buf, INSTANCE_D_NAME(ip_data->thread_data), (long long unsigned int) ip_data->graylist_timeout_ms);
+			}
+		}
+
+		rrr_socket_graylist_push (
+				&ip_data->tcp_graylist,
+				addr,
+				addr_len,
+				was_finalized ? ip_data->close_grace_ms * 1000LLU : ip_data->graylist_timeout_ms * 1000LLU
 		);
 	}
 }
@@ -1872,7 +1888,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_ip_graylist_init(&data->tcp_graylist, data->graylist_timeout_ms * 1000LLU);
+	rrr_socket_graylist_init(&data->tcp_graylist);
 
 	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create TDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));

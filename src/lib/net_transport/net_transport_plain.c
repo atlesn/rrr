@@ -109,7 +109,7 @@ static int __rrr_net_transport_plain_connect (
 		RRR_BUG("BUG: socklen too small in __rrr_net_transport_plain_connect\n");
 	}
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_DBG_1("Could not connect to server '%s' port '%u'\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;

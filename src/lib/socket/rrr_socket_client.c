@@ -57,7 +57,7 @@ struct rrr_socket_client_collection {
 	void *chunk_send_notify_callback_arg;
 
 	// Called when a client FD is closed for whatever reason (if set)
-	void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg);
+	void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg);
 	void *client_fd_close_callback_arg;
 
 	// Common settings
@@ -149,6 +149,7 @@ static int __rrr_socket_client_fd_destroy (
 				client_fd->addr_len,
 				client_fd->addr_string,
 				client_fd->client->create_type,
+				client_fd->client->connected_fd == client_fd,
 				collection->client_fd_close_callback_arg
 		);
 	}
@@ -662,11 +663,7 @@ static int __rrr_socket_client_connected_fd_ensure (
 	}
 
 	RRR_DBG_7("fd %i in client collection send check failed, return was %i. Closing.\n", fd, ret);
-	goto out_destroy;
 
-	// Note : client pointer might have been destroyed at this point
-
-	goto out;
 	out_destroy:
 		__rrr_socket_client_fd_find_and_destroy(client->collection, client, fd);
 	out:
@@ -1675,7 +1672,7 @@ void rrr_socket_client_collection_send_notify_setup (
 
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg),
+		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg),
 		void *client_fd_close_callback_arg
 ) {
 	collection->client_fd_close_callback = client_fd_close_callback;

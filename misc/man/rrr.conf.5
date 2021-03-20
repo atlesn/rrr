@@ -521,7 +521,10 @@ must be set to zero or left undefined.
 
 .It ip_graylist_timeout_ms=MILLISECONDS
 If a TCP destination is unreachable, add it to the graylist and retry only after the specified  number of milliseconds has passed.
-Defaults to 2000 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+Defaults to 100 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+If graylisting is used in while
+.B ip_preserve_order
+is also enabled, messages waiting to be sent to a graylisted host may temporarily prevent messages to other hosts from being sent.
 
 .It ip_ttl_seconds=SECONDS
 Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.

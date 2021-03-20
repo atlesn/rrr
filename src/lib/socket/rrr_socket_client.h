@@ -155,7 +155,7 @@ void rrr_socket_client_collection_send_notify_setup (
 );
 void rrr_socket_client_collection_fd_close_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg),
+		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, short was_finalized, void *arg),
 		void *client_fd_close_callback_arg
 );
 void rrr_socket_client_collection_event_setup (
