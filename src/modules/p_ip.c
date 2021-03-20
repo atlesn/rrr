@@ -668,8 +668,7 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_2 ("ip instance %s result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	// Used to check for successive send attempts and timeout
-	entry->send_time = rrr_time_get_64();
+	entry->send_time = 0;
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
@@ -1295,6 +1294,11 @@ static int ip_push_message (
 		RRR_BUG("Invalid target_port/target_host configuration in ip input_callback\n");
 	}
 
+	// Used to check for successive send attempts and timeout
+	if (entry->send_time == 0) {
+		entry->send_time = rrr_time_get_64();
+	}
+
 	ret = ip_push_raw (
 			ip_data,
 			entry,
@@ -1384,6 +1388,10 @@ static int ip_send_loop (
 					action = IP_ACTION_DROP;
 					RRR_LL_ITERATE_LAST();
 				}
+			}
+
+			if (node->send_time == 0) {
+				node->send_time = rrr_time_get_64();
 			}
 		}
 
