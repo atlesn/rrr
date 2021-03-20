@@ -1670,6 +1670,30 @@ static void ip_chunk_send_fail_notify_callback (
 	rrr_msg_holder_unlock(entry);
 }
 
+static void ip_fd_close_notify_callback (
+		int fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const char *addr_string,
+		enum rrr_socket_client_collection_create_type create_type,
+		void *arg
+) {
+	struct ip_data *ip_data = arg;
+
+	(void)(fd);
+	(void)(addr_string);
+
+	if (create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND && addr_len > 0) {
+		printf("Push to graylist upon close\n");
+		rrr_ip_graylist_push(
+			&ip_data->tcp_graylist,
+			addr,
+			addr_len,
+			ip_data->graylist_timeout_ms * 1000LLU
+		);
+	}
+}
+
 static void ip_event_send_buffer (
 		evutil_socket_t fd,
 		short flags,
@@ -1788,6 +1812,11 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
     rrr_socket_client_collection_send_notify_setup (           \
             collection,                                        \
             ip_chunk_send_fail_notify_callback,                \
+            data                                               \
+    );                                                         \
+    rrr_socket_client_collection_fd_close_notify_setup (       \
+            collection,                                        \
+            ip_fd_close_notify_callback,                       \
             data                                               \
     )
 

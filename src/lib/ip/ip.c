@@ -77,13 +77,14 @@ static int __rrr_ip_graylist_exists (
 static int __rrr_ip_graylist_push (
 		struct rrr_ip_graylist *target,
 		const struct sockaddr *addr,
-		socklen_t len
+		socklen_t len,
+		uint64_t graylist_period_us
 ) {
 	int ret = 0;
 
 	struct rrr_ip_graylist_entry *new_entry = NULL;
 
-	if (target->graylist_period_us == 0) {
+	if (graylist_period_us == 0) {
 		goto out;
 	}
 
@@ -93,9 +94,9 @@ static int __rrr_ip_graylist_push (
 
 	char ip_str[256];
 	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_DBG_3("Host '%s' graylisting for %llu ms following connection error\n",
+	RRR_DBG_3("Host '%s' graylisting for %llu ms\n",
 			ip_str,
-			target->graylist_period_us / 1000LLU
+			graylist_period_us / 1000LLU
 	);
 
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
@@ -113,7 +114,7 @@ static int __rrr_ip_graylist_push (
 
 	memcpy (&new_entry->addr, addr, len);
 	new_entry->addr_len = len;
-	new_entry->expire_time = rrr_time_get_64() + target->graylist_period_us;
+	new_entry->expire_time = rrr_time_get_64() + graylist_period_us;
 
 	RRR_LL_APPEND(target, new_entry);
 	new_entry = NULL;
@@ -121,6 +122,15 @@ static int __rrr_ip_graylist_push (
 	out:
 	RRR_FREE_IF_NOT_NULL(new_entry);
 	return ret;
+}
+
+int rrr_ip_graylist_push (
+		struct rrr_ip_graylist *target,
+		const struct sockaddr *addr,
+		socklen_t len,
+		uint64_t graylist_period_us
+) {
+	return __rrr_ip_graylist_push(target, addr, len, graylist_period_us);
 }
 
 void rrr_ip_graylist_clear (
@@ -369,7 +379,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 
 	out_error_free_accept:
 	 	if (graylist != NULL) {
-	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, graylist->graylist_period_us);
 	 	}
 		free(accept_result);
 	out_error_close_socket:
@@ -420,7 +430,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 
 	out_error_graylist_push:
 	 	if (graylist != NULL) {
-	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, graylist->graylist_period_us);
 	 	}
 		rrr_socket_close(fd);
 	out:
@@ -554,7 +564,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		// This means connection refused or some other error, skip to next address suggestion
 
 		if (graylist != NULL) {
-			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen);
+			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, graylist->graylist_period_us);
 		}
 
 		graylist_next:

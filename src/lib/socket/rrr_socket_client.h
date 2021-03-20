@@ -153,6 +153,11 @@ void rrr_socket_client_collection_send_notify_setup (
 		void (*callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg),
 		void *callback_arg
 );
+void rrr_socket_client_collection_fd_close_notify_setup (
+		struct rrr_socket_client_collection *collection,
+		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg),
+		void *client_fd_close_callback_arg
+);
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_event_queue *queue,

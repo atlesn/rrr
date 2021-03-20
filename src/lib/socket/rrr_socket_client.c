@@ -56,6 +56,10 @@ struct rrr_socket_client_collection {
 	void (*chunk_send_notify_callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg);
 	void *chunk_send_notify_callback_arg;
 
+	// Called when a client FD is closed for whatever reason (if set)
+	void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg);
+	void *client_fd_close_callback_arg;
+
 	// Common settings
 	ssize_t read_step_max_size;
 	int read_flags_socket;
@@ -136,6 +140,19 @@ struct rrr_socket_client {
 static int __rrr_socket_client_fd_destroy (
 		struct rrr_socket_client_fd *client_fd
 ) {
+	struct rrr_socket_client_collection *collection = client_fd->client->collection;
+
+	if (collection->client_fd_close_callback) {
+		collection->client_fd_close_callback (
+				client_fd->fd,
+				(const struct sockaddr *) &client_fd->addr,
+				client_fd->addr_len,
+				client_fd->addr_string,
+				client_fd->client->create_type,
+				collection->client_fd_close_callback_arg
+		);
+	}
+
 	if (client_fd->event_read != NULL) {
 		event_free(client_fd->event_read);
 	}
@@ -1654,6 +1671,15 @@ void rrr_socket_client_collection_send_notify_setup (
 ) {
 	collection->chunk_send_notify_callback = callback;
 	collection->chunk_send_notify_callback_arg = callback_arg;
+}
+
+void rrr_socket_client_collection_fd_close_notify_setup (
+		struct rrr_socket_client_collection *collection,
+		void (*client_fd_close_callback)(int fd, const struct sockaddr *addr, socklen_t addr_len, const char *addr_string, enum rrr_socket_client_collection_create_type create_type, void *arg),
+		void *client_fd_close_callback_arg
+) {
+	collection->client_fd_close_callback = client_fd_close_callback;
+	collection->client_fd_close_callback_arg = client_fd_close_callback_arg;
 }
 
 void rrr_socket_client_collection_event_setup (

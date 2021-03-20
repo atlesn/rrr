@@ -498,7 +498,7 @@ May be set to zero, defaults to 5 milliseconds.
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
-Default is not timeout (same as 0).
+Default is no timeout (same as 0).
 
 .It ip_smart_timeout={yes|no}
 If set to yes and a message is successfully sent, reset the timeout counter for all other unsent messages destined for the same host, port and protocol currently in the queue.

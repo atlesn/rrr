@@ -62,6 +62,12 @@ struct rrr_ip_graylist {
 	uint64_t graylist_period_us;
 };
 
+int rrr_ip_graylist_push (
+		struct rrr_ip_graylist *target,
+		const struct sockaddr *addr,
+		socklen_t len,
+		uint64_t graylist_period_us
+);
 void rrr_ip_graylist_clear (
 		struct rrr_ip_graylist *target
 );
