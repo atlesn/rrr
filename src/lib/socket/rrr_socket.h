@@ -147,7 +147,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 );
 int rrr_socket_connect_nonblock (
 		int fd,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_unix_connect (

@@ -315,7 +315,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 	*accept_data = NULL;
 
 	fd = rrr_socket (
-			AF_INET,
+			addr->sa_family,
 			SOCK_STREAM|SOCK_NONBLOCK,
 			0,
 			"ip_network_connect_tcp_ipv4_or_ipv6_raw",
@@ -323,7 +323,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 			0
 	);
 	if (fd == -1) {
-		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while creating socket (raw): %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
@@ -397,18 +397,18 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 	fd = rrr_socket (
 			addr->sa_family,
 			SOCK_STREAM|SOCK_NONBLOCK,
-			0,
+			IPPROTO_TCP,
 			"ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock",
 			NULL,
 			0
 	);
 	if (fd == -1) {
-		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while creating socket (raw nonblock): %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
 
-	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
+	if (rrr_socket_connect_nonblock(fd, addr, addr_len) != 0) {
 		RRR_DBG_3("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_error_graylist_push;
@@ -530,7 +530,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 				0
 		);
 		if (fd == -1) {
-			RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error while creating socket (resolve loop): %s\n", rrr_strerror(errno));
 			continue;
 		}
 

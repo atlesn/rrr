@@ -993,6 +993,7 @@ static int ip_push_raw_default_target (
 			ip_data->target_host,
 			ip_data->target_port
 		};
+
 		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
 				ip_data->collection_tcp,
 				ip_data->target_host_and_port,
@@ -1006,6 +1007,13 @@ static int ip_push_raw_default_target (
 				ip_connect_raw_callback,
 				ip_data
 		);
+
+		if (!ip_data->do_multiple_per_connection) {
+			rrr_socket_client_collection_close_when_send_complete_by_address_string (
+					ip_data->collection_tcp,
+					ip_data->target_host_and_port
+			);
+		}
 	}
 	else {
 		RRR_DBG_3("ip instance %s send using default target UDP [%s]\n", INSTANCE_D_NAME(thread_data), ip_data->target_host_and_port);
@@ -1051,9 +1059,6 @@ static int ip_push_raw (
 ) {
 	struct rrr_instance_runtime_data *thread_data = ip_data->thread_data;
 
-	struct sockaddr_storage addr;
-	socklen_t addr_len = sizeof(addr);
-	
 	int ret = 0;
 
 	if (send_size == 0) {
@@ -1065,7 +1070,7 @@ static int ip_push_raw (
 
 	// Configuration validation should produce an error if do_force_target is set
 	// but no target_port/target_host
-	if (ip_data->do_force_target == 1 || addr_len == 0) {
+	if (ip_data->do_force_target == 1 || entry_orig->addr_len == 0) {
 		//////////////////////////////////////////////////////
 		// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
 		//////////////////////////////////////////////////////
@@ -1082,12 +1087,16 @@ static int ip_push_raw (
 		// ADDRESS FROM ENTRY, TCP
 		//////////////////////////////////////////////////////
 
-		RRR_DBG_3("ip instance %s send using address from entry TCP\n", INSTANCE_D_NAME(thread_data));
+		if (RRR_DEBUGLEVEL_3) {
+			char buf[256];
+			rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
+			RRR_DBG_3("ip instance %s send using address from entry TCP (%s)\n", INSTANCE_D_NAME(thread_data), buf);
+		}
 
 		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 				ip_data->collection_tcp,
-				(const struct sockaddr *) &addr,
-				addr_len,
+				(const struct sockaddr *) &entry_orig->addr,
+				entry_orig->addr_len,
 				send_data,
 				send_size,
 				ip_msg_holder_incref_while_loced,
@@ -1096,17 +1105,29 @@ static int ip_push_raw (
 				ip_connect_raw_callback,
 				ip_data
 		);
+
+		if (!ip_data->do_multiple_per_connection) {
+			rrr_socket_client_collection_close_when_send_complete_by_address (
+					ip_data->collection_tcp,
+					(const struct sockaddr *) &entry_orig->addr,
+					entry_orig->addr_len
+			);
+		}
 	}
 	else {
 		//////////////////////////////////////////////////////
 		// ADDRESS FROM ENTRY, UDP
 		//////////////////////////////////////////////////////
 
-		RRR_DBG_3("ip instance %s send using address from entry UDP\n", INSTANCE_D_NAME(thread_data));
+		if (RRR_DEBUGLEVEL_3) {
+			char buf[256];
+			rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) &entry_orig->addr, entry_orig->addr_len);
+			RRR_DBG_3("ip instance %s send using address from entry UDP (%s)\n", INSTANCE_D_NAME(thread_data), buf);
+		}
 
 		int send_fd = -1;
 
-		if (addr.ss_family == AF_INET) {
+		if (entry_orig->addr.ss_family == AF_INET) {
 			send_fd = (ip_data->udp_send_fd_ip4 > 0 ? ip_data->udp_send_fd_ip4 : ip_data->udp_send_fd_ip6);
 		}
 		else {
@@ -1116,8 +1137,8 @@ static int ip_push_raw (
 		ret = rrr_socket_client_collection_sendto_push_const (
 				ip_data->collection_udp,
 				send_fd,
-				(const struct sockaddr *) &addr,
-				addr_len,
+				(const struct sockaddr *) &entry_orig->addr,
+				entry_orig->addr_len,
 				send_data,
 				send_size,
 				ip_msg_holder_incref_while_loced,

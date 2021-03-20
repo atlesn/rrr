@@ -75,6 +75,19 @@ int rrr_socket_client_collection_send_push_const (
 		const void *data,
 		ssize_t data_size
 );
+void rrr_socket_client_collection_close_when_send_complete_by_address (
+		struct rrr_socket_client_collection *collection,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
+void rrr_socket_client_collection_close_when_send_complete_by_address_string (
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string
+);
+void rrr_socket_client_collection_close_when_send_complete_by_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+);
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,

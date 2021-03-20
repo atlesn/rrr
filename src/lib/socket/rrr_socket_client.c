@@ -127,6 +127,8 @@ struct rrr_socket_client {
 
 	uint64_t last_seen;
 
+	int close_when_send_complete;
+
 	void *private_data;
 };
 
@@ -699,14 +701,24 @@ static void __rrr_socket_client_event_write (
 	int ret_tmp = __rrr_socket_client_send_tick (client);
 
 	if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
-		__rrr_socket_client_collection_find_and_destroy (collection, client);
 		// Do nothing more, also not on hard errors
-		return;
+		goto destroy;
 	}
 
 	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
 		event_del(client->connected_fd->event_write);
+		if (client->close_when_send_complete) {
+			RRR_DBG_7("Disconnecting fd %i in client collection as close when send complete is set and send buffer is empty\n",
+					client->connected_fd->fd);
+			goto destroy;
+		}
 	}
+
+	return;
+
+	destroy:
+	__rrr_socket_client_collection_find_and_destroy (collection, client);
+	return;
 }
 
 static void __rrr_socket_client_event_read_message (
@@ -1094,6 +1106,24 @@ static int __rrr_socket_client_sendto_push_const (
 	return ret;
 }
 
+static void __rrr_socket_client_close_when_send_complete (
+		struct rrr_socket_client *client
+) {
+	if (client->connected_fd != NULL) {
+		RRR_DBG_7("fd %i in client collection close when send complete set, close is now pending\n",
+				client->connected_fd->fd);
+	}
+	else {
+		RRR_DBG_7("fd (not ready) in client collection close when send complete set, close is now pending\n");
+	}
+
+	client->close_when_send_complete = 1;
+
+	if (__rrr_socket_client_send_push_notify(client) != 0) {
+		RRR_MSG_0("Warning: Send notification failed in __rrr_socket_client_close_when_send_complete\n");
+	}
+}
+
 struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data {
 	const void *data;
 	ssize_t size;
@@ -1124,19 +1154,28 @@ int rrr_socket_client_collection_send_push_const_multicast (
 	);
 }
 
+#define FIND_LOOP_BEGIN()                                                 \
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);       \
+		if (node->close_when_send_complete) {                     \
+			RRR_LL_ITERATE_NEXT();                            \
+		}                                                         \
+		struct rrr_socket_client *client = node;                  \
+		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd)
+
+#define FIND_LOOP_END()                                                   \
+		RRR_LL_ITERATE_END();                                     \
+	RRR_LL_ITERATE_END()
+
 static struct rrr_socket_client *__rrr_socket_client_collection_find_by_address (
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		struct rrr_socket_client *client = node;
-		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
-			if (node->addr_len == addr_len && memcmp(&node->addr, addr, addr_len) == 0) {
-				return client;
-			}
-		RRR_LL_ITERATE_END();
-	RRR_LL_ITERATE_END();
+	FIND_LOOP_BEGIN();
+		if (node->addr_len == addr_len && memcmp(&node->addr, addr, addr_len) == 0) {
+			return client;
+		}
+	FIND_LOOP_END();
 	return NULL;
 }
 
@@ -1144,14 +1183,11 @@ static struct rrr_socket_client *__rrr_socket_client_collection_find_by_address_
 		struct rrr_socket_client_collection *collection,
 		const char *addr_string
 ) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		struct rrr_socket_client *client = node;
-		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
-			if (node->addr_string != NULL && strcmp(node->addr_string, addr_string) == 0) {
-				return client;
-			}
-		RRR_LL_ITERATE_END();
-	RRR_LL_ITERATE_END();
+	FIND_LOOP_BEGIN();
+		if (node->addr_string != NULL && strcmp(node->addr_string, addr_string) == 0) {
+			return client;
+		}
+	FIND_LOOP_END();
 	return NULL;
 }
 
@@ -1159,14 +1195,11 @@ static struct rrr_socket_client *__rrr_socket_client_collection_find_by_fd (
 		struct rrr_socket_client_collection *collection,
 		int fd
 ) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		struct rrr_socket_client *client = node;
-		RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
-			if (node->fd == fd) {
-				return client;
-			}
-		RRR_LL_ITERATE_END();
-	RRR_LL_ITERATE_END();
+	FIND_LOOP_BEGIN();
+		if (node->fd == fd) {
+			return client;
+		}
+	FIND_LOOP_END();
 	return NULL;
 }
 
@@ -1198,6 +1231,40 @@ int rrr_socket_client_collection_send_push_const (
 	}
 
 	return __rrr_socket_client_send_push_const(client, data, data_size);
+}
+
+void rrr_socket_client_collection_close_when_send_complete_by_address (
+		struct rrr_socket_client_collection *collection,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_address(collection, addr, addr_len);
+
+	if (client != NULL) {
+		__rrr_socket_client_close_when_send_complete (client);
+	}
+}
+
+void rrr_socket_client_collection_close_when_send_complete_by_address_string (
+		struct rrr_socket_client_collection *collection,
+		const char *addr_string
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_address_string(collection, addr_string);
+
+	if (client != NULL) {
+		__rrr_socket_client_close_when_send_complete (client);
+	}
+}
+
+void rrr_socket_client_collection_close_when_send_complete_by_fd (
+		struct rrr_socket_client_collection *collection,
+		int fd
+) {
+	struct rrr_socket_client *client = __rrr_socket_client_collection_find_by_fd(collection, fd);
+
+	if (client != NULL) {
+		__rrr_socket_client_close_when_send_complete (client);
+	}
 }
 
 static int __rrr_socket_client_collection_find_by_address_or_connect (
