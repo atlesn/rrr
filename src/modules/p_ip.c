@@ -360,6 +360,11 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
 
+	if (data->do_preserve_order && !data->do_multiple_per_connection) {
+		RRR_MSG_0("Warning: ip_preserve_order is set while ip_send_multiple_per_connection is not in ip instance %s, send order may not be guaranteed in all situations.\n",
+				config->name);
+	}
+
 	if (data->do_strip_array_separators && data->definitions == NULL) {
 		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
 				config->name);
