@@ -39,6 +39,13 @@ struct rrr_event_queue;
 struct rrr_read_session;
 struct rrr_array;
 
+enum rrr_socket_client_collection_create_type {
+	RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_UNSPECIFIED,
+	RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND,
+	RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_INBOUND,
+	RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN
+};
+
 int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
 		const char *creator
@@ -57,6 +64,9 @@ void rrr_socket_client_collection_send_chunk_iterate (
 		struct rrr_socket_client_collection *collection,
 		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
+);
+void rrr_socket_client_collection_close_outbound_when_send_complete (
+		struct rrr_socket_client_collection *collection
 );
 int rrr_socket_client_collection_send_push_const_multicast (
 		struct rrr_socket_client_collection *collection,
@@ -135,7 +145,8 @@ int rrr_socket_client_collection_listen_fd_push (
 );
 int rrr_socket_client_collection_connected_fd_push (
 		struct rrr_socket_client_collection *collection,
-		int fd
+		int fd,
+		enum rrr_socket_client_collection_create_type create_type
 );
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,

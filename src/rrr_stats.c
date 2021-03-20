@@ -266,7 +266,7 @@ static int __rrr_stats_attempt_connect_exact (
 		goto out_close;
 	}
 
-	if ((ret = rrr_socket_client_collection_connected_fd_push(data->connections, fd)) != 0) {
+	if ((ret = rrr_socket_client_collection_connected_fd_push(data->connections, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND)) != 0) {
 		goto out_close;
 	}
 

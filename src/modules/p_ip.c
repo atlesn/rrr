@@ -98,8 +98,8 @@ struct ip_data {
 	int do_force_target;
 	int do_extract_rrr_messages;
 	int do_preserve_order;
-	int do_persistent_connections; // TODO : Implement
-	int do_multiple_per_connection; // TODO : Implement
+	int do_persistent_connections;
+	int do_multiple_per_connection;
 
 	rrr_setting_uint close_grace_ms;
 
@@ -1496,7 +1496,7 @@ static int ip_start_udp (struct ip_data *data) {
 	data->udp_send_fd_ip6 = ip_udp_6.fd;
 
 	if (ip_udp_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_UNSPECIFIED)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1504,7 +1504,7 @@ static int ip_start_udp (struct ip_data *data) {
 	}
 
 	if (ip_udp_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_UNSPECIFIED)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1685,6 +1685,11 @@ static void ip_event_send_buffer (
 		// Short wait
 		struct timeval tv = {0, 10 * 1000}; // 10 ms
 		event_add(ip_data->event_send_buffer_iterate, &tv);
+	}
+	else {
+		if (!ip_data->do_persistent_connections) {
+			rrr_socket_client_collection_close_outbound_when_send_complete(ip_data->collection_tcp);
+		}
 	}
 }
 
