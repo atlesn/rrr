@@ -55,6 +55,9 @@ void rrr_event_queue_destroy (
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );
+int rrr_event_queue_reinit (
+		struct rrr_event_queue *queue
+);
 struct event_base *rrr_event_queue_base_get (
 		struct rrr_event_queue *queue
 );

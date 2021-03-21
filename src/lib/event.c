@@ -247,6 +247,12 @@ int rrr_event_queue_new (
 		return ret;
 }
 
+int rrr_event_queue_reinit (
+		struct rrr_event_queue *queue
+) {
+	return event_reinit(queue->event_base) != 0;
+}
+
 struct event_base *rrr_event_queue_base_get (
 		struct rrr_event_queue *queue
 ) {
