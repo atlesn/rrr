@@ -1169,7 +1169,7 @@ int rrr_socket_sendto_nonblock (
 	RRR_DBG_7("fd %i nonblock send loop starting, writing %li bytes (where of %li is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
-	if (addr == NULL) {
+	if (addr == NULL || addr_len == 0) {
 		done_bytes = send(fd, data + done_bytes_total, size - done_bytes_total, flags);
 	}
 	else {
