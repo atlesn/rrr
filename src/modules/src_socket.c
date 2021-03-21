@@ -282,7 +282,10 @@ static int socket_read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void 
 	);
 }
 
-static int socket_start (struct socket_data *data) {
+static int socket_start (
+		struct socket_data *data,
+		struct rrr_read_common_get_session_target_length_from_array_tree_data *raw_callback_data
+) {
 	int ret = 0;
 
 	char socket_name[64 + 1];
@@ -301,7 +304,44 @@ static int socket_start (struct socket_data *data) {
 
 	data->socket_fd = fd;
 
-	if ((ret = rrr_socket_client_collection_new(&data->clients, fd, socket_name)) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&data->clients, socket_name)) != 0) {
+		goto out;
+	}
+
+	if (data->receive_rrr_message) {
+		rrr_socket_client_collection_event_setup (
+				data->clients,
+				INSTANCE_D_EVENTS(data->thread_data),
+				NULL,
+				NULL,
+				NULL,
+				4096,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				socket_read_rrr_msg_msg_callback,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				data
+		);
+	}
+	else {
+		rrr_socket_client_collection_event_setup_raw (
+				data->clients,
+				INSTANCE_D_EVENTS(data->thread_data),
+				NULL,
+				NULL,
+				NULL,
+				4096,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
+				rrr_read_common_get_session_target_length_from_array_tree,
+				raw_callback_data,
+				socket_read_raw_data_callback,
+				data
+		);
+	}
+
+	if ((ret = rrr_socket_client_collection_listen_fd_push (data->clients, fd)) != 0) {
 		goto out;
 	}
 
@@ -344,15 +384,6 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (socket_start(data) != 0) {
-		RRR_MSG_0("Could not start socket in socket instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
-
-	RRR_DBG_2("socket instance %s listening on socket %s\n",
-			INSTANCE_D_NAME(thread_data), data->socket_path);
-
 	struct rrr_read_common_get_session_target_length_from_array_tree_data raw_callback_data = {
 			data->tree,
 			&data->array_tmp,
@@ -360,42 +391,14 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			0 // No max size
 	};
 
-	if (data->receive_rrr_message) {
-		if (rrr_socket_client_collection_event_setup (
-				data->clients,
-				INSTANCE_D_EVENTS(thread_data),
-				NULL,
-				NULL,
-				NULL,
-				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				socket_read_rrr_msg_msg_callback,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				data
-		) != 0) {
-			goto out_message;
-		}
+	if (socket_start(data, &raw_callback_data) != 0) {
+		RRR_MSG_0("Could not start socket in socket instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
 	}
-	else {
-		if (rrr_socket_client_collection_event_setup_raw (
-				data->clients,
-				INSTANCE_D_EVENTS(thread_data),
-				NULL,
-				NULL,
-				NULL,
-				4096,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
-				rrr_read_common_get_session_target_length_from_array_tree,
-				&raw_callback_data,
-				socket_read_raw_data_callback,
-				data
-		) != 0) {
-			goto out_message;
-		}
-	}
+
+	RRR_DBG_2("socket instance %s listening on socket %s\n",
+			INSTANCE_D_NAME(thread_data), data->socket_path);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

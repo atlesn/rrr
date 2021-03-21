@@ -143,7 +143,7 @@ static int __rrr_stats_data_init (
 		goto out_clear_stats_tree;
 	}
 
-	if ((ret = rrr_socket_client_collection_new_no_listen(&data->connections, "rrr_stats")) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&data->connections, "rrr_stats")) != 0) {
 		goto out_destroy_event_queue;
 	}
 
@@ -266,7 +266,7 @@ static int __rrr_stats_attempt_connect_exact (
 		goto out_close;
 	}
 
-	if ((ret = rrr_socket_client_collection_connected_fd_push(data->connections, fd)) != 0) {
+	if ((ret = rrr_socket_client_collection_connected_fd_push(data->connections, fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND)) != 0) {
 		goto out_close;
 	}
 
@@ -692,7 +692,7 @@ int main (int argc, const char **argv, const char **env) {
 	// Exit immediately with EXIT_FAILURE
 	sigaction (SIGTERM, &action, NULL);
 
-	if (rrr_socket_client_collection_event_setup (
+	rrr_socket_client_collection_event_setup (
 			data.connections,
 			data.queue,
 			NULL,
@@ -709,10 +709,7 @@ int main (int argc, const char **argv, const char **env) {
 				: __rrr_stats_process_message
 			),
 			&data
-	) != 0) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
+	);
 
 	if (__rrr_stats_attempt_connect(&data) != 0) {
 		ret = EXIT_FAILURE;

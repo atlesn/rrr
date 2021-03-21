@@ -425,13 +425,13 @@ int rrr_stats_engine_init (
 		goto out_destroy_main_lock;
 	}
 
-	if (rrr_socket_client_collection_new(&stats->client_collection, stats->socket, "rrr_stats_engine") != 0) {
+	if (rrr_socket_client_collection_new(&stats->client_collection, "rrr_stats_engine") != 0) {
 		RRR_MSG_0("Could not create client collection in statistics engine\n");
 		ret = 1;
 		goto out_close_socket;
 	}
 
-	if (rrr_socket_client_collection_event_setup (
+	rrr_socket_client_collection_event_setup (
 			stats->client_collection,
 			queue, 
 			__rrr_stats_client_new_void,
@@ -445,8 +445,10 @@ int rrr_stats_engine_init (
 			NULL,
 			__rrr_stats_engine_read_callback,
 			NULL
-	) != 0) {
-		RRR_MSG_0("Could not setup events for client collection in statistics engine\n");
+	);
+
+	if (rrr_socket_client_collection_listen_fd_push (stats->client_collection, stats->socket) != 0) {
+		RRR_MSG_0("Could not push listen handle to client collection in statistics engine\n");
 		ret = 1;
 		goto out_destroy_client_collection;
 	}

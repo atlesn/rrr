@@ -574,11 +574,16 @@ static void __rrr_net_transport_event_read (
 
 static int __rrr_net_transport_event_write_send_chunk_callback (
 		ssize_t *written_bytes,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
 		const void *data,
 		ssize_t data_size,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
+
+	(void)(addr);
+	(void)(addr_len);
 
 	uint64_t written_bytes_u64 = 0;
 
@@ -611,7 +616,7 @@ static void __rrr_net_transport_event_write (
 	int ret_tmp = 0;
 
 	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
-		ret_tmp = rrr_socket_send_chunk_collection_sendto_with_callback (
+		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
 				&handle->send_chunks,
 				__rrr_net_transport_event_write_send_chunk_callback,
 				handle
@@ -628,7 +633,7 @@ static void __rrr_net_transport_event_write (
 static int __rrr_net_transport_handle_event_read_add_if_needed (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!event_pending (handle->event_read, EV_READ, NULL)) {
+	if (!event_pending (handle->event_read, EV_READ|EV_TIMEOUT, NULL)) {
 		if (event_add(handle->event_read, (handle->transport->soft_read_timeout_ms > 0 ? &handle->transport->soft_read_timeout_tv : NULL)) != 0) {
 			RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_event_read_add_if_needed\n");
 			return 1;
@@ -1227,6 +1232,8 @@ static void __rrr_net_transport_event_read_add (
 
 	(void)(fd);
 	(void)(flags);
+
+	// Re-add read-events (if they where deleted due to ratelimiting)
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		__rrr_net_transport_handle_event_read_add_if_needed(node);

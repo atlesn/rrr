@@ -50,28 +50,6 @@ struct rrr_ip_data {
 	unsigned int port;
 };
 
-struct rrr_ip_graylist_entry {
-	RRR_LL_NODE(struct rrr_ip_graylist_entry);
-	struct sockaddr_storage addr;
-	socklen_t addr_len;
-	uint64_t expire_time;
-};
-
-struct rrr_ip_graylist {
-	RRR_LL_HEAD(struct rrr_ip_graylist_entry);
-	uint64_t graylist_period_us;
-};
-
-void rrr_ip_graylist_clear (
-		struct rrr_ip_graylist *target
-);
-void rrr_ip_graylist_clear_void (
-		void *target
-);
-void rrr_ip_graylist_init (
-		struct rrr_ip_graylist *target,
-		uint64_t graylist_period_us
-);
 void rrr_ip_network_cleanup (
 		void *arg
 );
@@ -94,8 +72,12 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		struct rrr_ip_accept_data **accept_data,
 		struct sockaddr *addr,
-		socklen_t addr_len,
-		struct rrr_ip_graylist *graylist
+		socklen_t addr_len
+);
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
+		int *result_fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len
 );
 int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 		unsigned int port,
@@ -106,8 +88,7 @@ int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
 		unsigned int port,
-		const char *host,
-		struct rrr_ip_graylist *graylist
+		const char *host
 );
 int rrr_ip_network_start_tcp (
 		struct rrr_ip_data *data,

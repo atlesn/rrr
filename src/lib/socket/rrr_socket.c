@@ -445,11 +445,11 @@ int rrr_socket_accept (
 	if (fd_out != -1 && (options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
-			RRR_MSG_0("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("fd %i<-%i error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", fd_in, fd_out, rrr_strerror(errno));
 			goto out_close;
 		}
 		if (fcntl(fd_out, F_SETFL, flags | O_NONBLOCK) == -1) {
-			RRR_MSG_0("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("fd %i<-%i error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", fd_in, fd_out, rrr_strerror(errno));
 			goto out_close;
 		}
 	}
@@ -867,7 +867,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	if (do_mkstemp != 0) {
 		fd = rrr_socket_mkstemp(filename_tmp, creator);
 		if (fd < 0) {
-			RRR_MSG_0("mkstemp failed in rrr_socket_unix_create_bind_and_listen: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("mkstemp ('%s') failed in while creating unix socket: %s\n", filename_tmp, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -916,7 +916,7 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	RRR_DBG_7("rrr_socket_unix_create_bind_and_listen complete fd %i file %s pid %i clients %i umask %i\n",
+	RRR_DBG_7("fd %i unix socket created file %s pid %i clients %i umask %i\n",
 			fd, addr.sun_path, getpid(), num_clients, RRR_SOCKET_UNIX_DEFAULT_UMASK);
 
 	*fd_result = fd;
@@ -940,7 +940,7 @@ int rrr_socket_send_check (
 
 	if ((poll(&pollfd, 1, 0) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
+			RRR_DBG_7("fd %i connection refused or closed in send check (POLLHUP)\n", fd);
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -949,12 +949,12 @@ int rrr_socket_send_check (
 			goto out;
 		}
 		else if (errno == ECONNREFUSED) {
-			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
+			RRR_DBG_7("fd %i connection refused in send check (ECONNREFUSED)\n", fd);
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 
-		RRR_MSG_0("Error from poll() in send check: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("fd %i error from poll() in send check: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -997,7 +997,7 @@ static int __rrr_socket_send_check (
 			goto out;
 		}
 
-		RRR_MSG_0("Error from poll() while connecting: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("fd %i error from poll() while connecting: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
@@ -1041,7 +1041,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 
 int rrr_socket_connect_nonblock (
 		int fd,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	int ret = 0;
@@ -1050,17 +1050,18 @@ int rrr_socket_connect_nonblock (
 		goto out;
 	}
 	else if (errno == EINPROGRESS || errno == EAGAIN) {
+		RRR_DBG_7 ("fd %i connection in progress\n", fd);
 		ret = 0;
 		goto out;
 	}
 	else if (errno == ECONNREFUSED) {
-		RRR_MSG_0 ("Connection refused in rrr_socket_connect_nonblock\n");
+		RRR_DBG_7 ("fd %i connection refused\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else {
-		RRR_MSG_0("Error while connecting, address family was %u: %s\n",
-				addr->sa_family, rrr_strerror(errno));
+		RRR_MSG_0 ("fd %i error while connecting, address family was %u: %s\n",
+				fd, addr->sa_family, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -1102,8 +1103,8 @@ int rrr_socket_unix_connect (
 	int connected = 0;
 	for (int i = 0; i < 10 && connected == 0; i++) {
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
-			RRR_MSG_0("Could not connect to socket %s try %i of %i: %s\n",
-					filename, i, 10, rrr_strerror(errno));
+			RRR_MSG_0("fd %i could not connect to socket %s try %i of %i: %s\n",
+					socket_fd, filename, i, 10, rrr_strerror(errno));
 			rrr_posix_usleep(25000);
 		}
 		else {
@@ -1160,12 +1161,12 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_7("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
+		RRR_DBG_7("fd %i max retries reached in rrr_socket_sendto_nonblock\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
-	RRR_DBG_7("Non-blocking send on fd %i starting, writing %li bytes (where of %li is complete) address length %u\n",
+	RRR_DBG_7("fd %i nonblock send loop starting, writing %li bytes (where of %li is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
 	if (addr == NULL) {
@@ -1201,7 +1202,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_DBG_7("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_DBG_7("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
@@ -1270,7 +1271,7 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("Blocking send on fd %i starting, writing %li bytes (where of %li is complete)\n",
+		RRR_DBG_7("fd %i blocking send loop writing %li bytes (where of %li is complete)\n",
 				fd, size, written_bytes_total);
 
 		if ((ret = rrr_socket_sendto_nonblock_check_retry (
@@ -1287,7 +1288,7 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_7("Blocking send on fd %i, written bytes total is %li (this round was %li)\n",
+		RRR_DBG_7("fd %i blocking send loop written bytes total is %li (this round was %li)\n",
 				fd, written_bytes_total, written_bytes);
 	}
 

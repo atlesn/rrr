@@ -66,7 +66,7 @@ mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
 socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chunk.c \
-         socket/rrr_socket_common.c socket/rrr_socket_client.c 
+         socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_graylist.c
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
        http/http_common.c http/http_query_builder.c http/http_client_config.c \

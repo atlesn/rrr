@@ -150,7 +150,10 @@ struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session(void
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
 
+	int is_new_dummy = 0;
+
 	return rrr_read_session_collection_maintain_and_find_or_create (
+			&is_new_dummy,
 			&callback_data->handle->read_sessions,
 			(struct sockaddr *) &ssl_data->sockaddr,
 			ssl_data->socklen

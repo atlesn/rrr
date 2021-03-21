@@ -107,6 +107,7 @@ void rrr_read_session_collection_clear (
 		struct rrr_read_session_collection *collection
 );
 struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create (
+		int *is_new,
 		struct rrr_read_session_collection *collection,
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len

@@ -29,6 +29,7 @@ struct rrr_event_queue;
 
 int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
+		struct rrr_event_queue *queue,
 		const char *directory,
 		const char *socket
 );
@@ -40,10 +41,6 @@ void rrr_msgdb_server_destroy_void (
 );
 uint64_t rrr_msgdb_server_recv_count_get (
 		struct rrr_msgdb_server *server
-);
-int rrr_msgdb_server_event_setup (
-		struct rrr_msgdb_server *server,
-		struct rrr_event_queue *queue
 );
 
 #endif /* RRR_MSGDB_SERVER_H */
