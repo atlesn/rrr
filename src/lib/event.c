@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #include <event2/thread.h>
 
+
+#include <poll.h>
+
 #include "log.h"
 #include "event.h"
 #include "threads.h"
