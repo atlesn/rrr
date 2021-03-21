@@ -600,7 +600,10 @@ int rrr_cmodule_worker_main (
 	int log_hook_handle;
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
 
-	int was_found = 0;
+	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
+		RRR_MSG_0("Re-init of event queue failed in rrr_cmodule_worker_main\n");
+		goto out;
+	}
 
 	{
 		// There is no guarantee for whether signals are active or not at this point. Disable
@@ -608,6 +611,7 @@ int rrr_cmodule_worker_main (
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		// Preserve fork signal andler in case child makes any forks
+		int was_found = 0;
 		rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
 		if (was_found == 0) {
 			RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_main, should have been added in main()\n");
@@ -640,8 +644,8 @@ int rrr_cmodule_worker_main (
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
 
+	out:
 	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
-
 	return ret;
 }
 
