@@ -57,5 +57,10 @@ int rrr_instance_friend_collection_iterate (
 		int (*callback)(struct rrr_instance *instance, void *arg),
 		void *arg
 );
+int rrr_instance_friend_collection_iterate_const (
+		const struct rrr_instance_friend_collection *collection,
+		int (*callback)(const struct rrr_instance *instance, void *arg),
+		void *arg
+);
 
 #endif /* RRR_INSTANCE_FRIENDS_H */

@@ -474,7 +474,8 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (rrr_poll_do_poll_delete(thread_data, &thread_data->poll, averager_poll_callback, 50) != 0) {
+		uint16_t amount = 100;
+		if (rrr_poll_do_poll_delete(&amount, thread_data, averager_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -492,8 +493,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		if (RRR_LL_COUNT(&data->output_list) > 0) {
 			if (rrr_message_broker_write_entries_from_collection_unsafe (
-					INSTANCE_D_BROKER(thread_data),
-					INSTANCE_D_HANDLE(thread_data),
+					INSTANCE_D_BROKER_ARGS(thread_data),
 					&data->output_list,
 					INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 			) != 0) {
@@ -531,7 +531,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
 }
 
 void unload(void) {

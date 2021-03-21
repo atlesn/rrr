@@ -46,74 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_msgdb_server {
 	char *directory;
 	int fd;
-	struct rrr_socket_client_collection clients;
+	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
 };
-
-int rrr_msgdb_server_new (
-		struct rrr_msgdb_server **result,
-		const char *directory,
-		const char *socket
-) {
-	int ret = 0;
-
-	struct rrr_msgdb_server *server = NULL;
-	int fd = 0;
-
-	if ((ret = rrr_socket_unix_create_bind_and_listen (
-		&fd,
-		"msgdb_server",
-		socket,
-		10, // Number of clients
-		1,  // Do nonblock
-		0,  // No mkstemp
-		1   // Do unlink if exists
-	)) != 0) {
-		RRR_MSG_0("Failed to create listening socket '%s' in message database server\n", socket);
-		goto out;
-	}
-
-	if ((server = malloc(sizeof(*server))) == NULL) {
-		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
-		ret = 1;
-		goto out_close;
-	}
-
-	memset(server, '\0', sizeof(*server));
-
-	if ((server->directory = strdup(directory)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
-		ret = 1;
-		goto out_free;
-	}
-
-	if ((ret = rrr_socket_client_collection_init(&server->clients, fd, "msgdb_server")) != 0) {
-		goto out_free_directory;
-	}
-
-	server->fd = fd;
-
-	*result = server;
-
-	goto out;
-	out_free_directory:
-		free(server->directory);
-	out_free:
-		free(server);
-	out_close:
-		rrr_socket_close(fd);
-	out:
-		return ret;
-}
-
-void rrr_msgdb_server_destroy (
-		struct rrr_msgdb_server *server
-) {
-	RRR_FREE_IF_NOT_NULL(server->directory);
-	rrr_socket_close(server->fd);
-	rrr_socket_client_collection_clear(&server->clients);
-	free(server);
-}
 
 void rrr_msgdb_server_destroy_void (
 		void *server
@@ -239,8 +174,8 @@ struct rrr_msgdb_server_path_iterate_callback_data {
 };
 
 static int __rrr_msgdb_server_path_iterate_str_callback (
-	const char *str,
-	void *arg
+		const char *str,
+		void *arg
 ) {
 	struct rrr_msgdb_server_path_iterate_callback_data *callback_data = arg;
 
@@ -347,7 +282,7 @@ static int __rrr_msgdb_server_put_path_split_callback (
 
 		// Note: Do not attempt to use size from the endian-converted message
 		if (write(fd, msg_tmp, MSG_TOTAL_SIZE(callback_data->msg)) != MSG_TOTAL_SIZE(callback_data->msg)) {
-			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", str, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -419,7 +354,7 @@ static int __rrr_msgdb_server_del_path_split_callback (
 			else {
 				if (errno == ENOENT) {
 					RRR_DBG_3("Note: Tried to delete file '%s' in message db server, but it had already been deleted.\n",
-						str, rrr_strerror(errno));
+						str);
 				}
 				else {
 					RRR_MSG_0("Could not unlink file '%s' in message db server: %s\n",
@@ -502,7 +437,7 @@ static int __rrr_msgdb_server_send_callback (
 ) {
 	struct rrr_msgdb_server *server = arg;
 	return rrr_socket_client_collection_send_push (
-			&server->clients,
+			server->clients,
 			fd,
 			data,
 			data_size
@@ -545,14 +480,14 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		ssize_t file_size = 0;
 
 		// Note that successful return is an error
-		if ((ret = __rrr_msgdb_server_chdir(str, 1)) == 0) {
+		if (__rrr_msgdb_server_chdir(str, 1) == 0) {
 			RRR_MSG_0("Could not read file '%s' in message db server, it was a directory\n",
 				str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 
-		if ((ret = rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0)) != 0) {
+		if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0) != 0) {
 			RRR_MSG_0("Could not read file '%s' in message db server\n",
 				str);
 			ret = RRR_MSGDB_SOFT_ERROR;
@@ -565,19 +500,19 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_msg_head_to_host_and_verify(msg_tmp, file_size)) != 0) {
+		if (rrr_msg_head_to_host_and_verify(msg_tmp, file_size) != 0) {
 			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 
 		if (!RRR_MSG_IS_RRR_MESSAGE(msg_tmp)) {
-			RRR_MSG_0("Message type of '%s' was not RRR message in message db server\n");
+			RRR_MSG_0("Message type of '%u' was not RRR message in message db server\n", msg_tmp->msg_type);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
 
-		if ((ret = rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size)) != 0) {
+		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
 			RRR_MSG_0("Head 2/2 verification of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
@@ -585,18 +520,18 @@ static int __rrr_msgdb_server_get_path_split_callback (
 
 		RRR_DBG_3("msgdb fd %i read from '%s' size %llu\n", callback_data->response_fd, str, (long long unsigned) MSG_TOTAL_SIZE(msg_tmp));
 
-		if ((ret = rrr_msgdb_common_msg_send (
+		if (rrr_msgdb_common_msg_send (
 				callback_data->response_fd,
 				(struct rrr_msg_msg *) msg_tmp,
 				__rrr_msgdb_server_send_callback,
 				callback_data->server
-		)) != 0) {
+		) != 0) {
 			ret = RRR_MSGDB_EOF;
 			goto out;
 		}
 	}
 	else {
-		if ((ret = __rrr_msgdb_server_chdir(str, 0)) != 0) {
+		if (__rrr_msgdb_server_chdir(str, 0) != 0) {
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -688,7 +623,7 @@ static int __rrr_msgdb_server_idx_make_index (
 	else {
 		RRR_MAP_ITERATE_BEGIN_CONST(path_base);
 			if (RRR_MAP_ITERATE_IS_LAST()) {
-				if ((ret = __rrr_msgdb_server_chdir(node_tag, 1)) != 0) {
+				if (__rrr_msgdb_server_chdir(node_tag, 1) != 0) {
 					last_was_file = 1;
 				}
 			}
@@ -916,43 +851,97 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 //	return 0;
 }
 
-int rrr_msgdb_server_tick (
-	struct rrr_msgdb_server *server
+uint64_t rrr_msgdb_server_recv_count_get (
+		struct rrr_msgdb_server *server
+) {
+	return server->recv_count;
+}
+
+int rrr_msgdb_server_new (
+		struct rrr_msgdb_server **result,
+		struct rrr_event_queue *queue,
+		const char *directory,
+		const char *socket
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_socket_client_collection_accept (
-		&server->clients,
-		__rrr_msgdb_server_client_new_void,
-		NULL,
-		__rrr_msgdb_server_client_destroy_void
+	struct rrr_msgdb_server *server = NULL;
+	int fd = 0;
+
+	if ((ret = rrr_socket_unix_create_bind_and_listen (
+		&fd,
+		"msgdb_server",
+		socket,
+		10, // Number of clients
+		1,  // Do nonblock
+		0,  // No mkstemp
+		1   // Do unlink if exists
 	)) != 0) {
+		RRR_MSG_0("Failed to create listening socket '%s' in message database server\n", socket);
 		goto out;
 	}
 
-	if ((ret = rrr_socket_client_collection_read_message (
-			&server->clients,
+	if ((server = malloc(sizeof(*server))) == NULL) {
+		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
+		ret = 1;
+		goto out_close;
+	}
+
+	memset(server, '\0', sizeof(*server));
+
+	if ((server->directory = strdup(directory)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	if ((ret = rrr_socket_client_collection_new(&server->clients, "msgdb_server")) != 0) {
+		goto out_free_directory;
+	}
+
+	rrr_socket_client_collection_event_setup (
+			server->clients,
+			queue,
+			__rrr_msgdb_server_client_new_void,
+			__rrr_msgdb_server_client_destroy_void,
+			NULL,
 			4096,
 			RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_CHECK_POLLHUP,
 			__rrr_msgdb_server_read_msg_msg_callback,
 			NULL,
 			NULL,
 			__rrr_msgdb_server_read_msg_ctrl_callback,
+			NULL,
 			server
-	)) != 0) {
-		goto out;
-	}
-
-	rrr_socket_client_collection_send_tick (
-			&server->clients
 	);
 
+	if ((ret = rrr_socket_client_collection_listen_fd_push (server->clients, fd)) != 0) {
+		RRR_MSG_0("Could not push listen handle to client collection in rrr_msgdb_server_new\n");
+		goto out_destroy_client_collection;
+	}
+
+	server->fd = fd;
+
+	*result = server;
+
+	goto out;
+	out_destroy_client_collection:
+		rrr_socket_client_collection_destroy(server->clients);
+	out_free_directory:
+		free(server->directory);
+	out_free:
+		free(server);
+	out_close:
+		rrr_socket_close(fd);
 	out:
-	return ret;
+		return ret;
 }
 
-uint64_t rrr_msgdb_server_recv_count_get (
-	struct rrr_msgdb_server *server
+void rrr_msgdb_server_destroy (
+		struct rrr_msgdb_server *server
 ) {
-	return server->recv_count;
+	RRR_FREE_IF_NOT_NULL(server->directory);
+	rrr_socket_close(server->fd);
+	rrr_socket_client_collection_destroy(server->clients);
+	free(server);
 }

@@ -30,12 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_TREE_HARD_ERROR	1
 #define RRR_STATS_TREE_SOFT_ERROR	2
 
-struct rrr_stats_message;
+struct rrr_msg_stats;
 
 struct rrr_stats_tree_branch {
 	RRR_LL_NODE(struct rrr_stats_tree_branch);
 	RRR_LL_HEAD(struct rrr_stats_tree_branch);
-	struct rrr_stats_message *value;
+	struct rrr_msg_stats *value;
 	char *name;
 	uint64_t last_seen;
 };
@@ -46,7 +46,7 @@ struct rrr_stats_tree {
 
 int rrr_stats_tree_init (struct rrr_stats_tree *tree);
 void rrr_stats_tree_clear (struct rrr_stats_tree *tree);
-int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct rrr_stats_message *message);
+int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct rrr_msg_stats *message);
 int rrr_stats_tree_has_leaf (struct rrr_stats_tree *tree, const char *path_postfix);
 void rrr_stats_tree_dump (struct rrr_stats_tree *tree);
 void rrr_stats_tree_purge_old_branches (unsigned int *purged_total, struct rrr_stats_tree *tree, uint64_t min_time);

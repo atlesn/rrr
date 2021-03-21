@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt/mqtt_common.h"
 #include "../lib/mqtt/mqtt_session_ram.h"
 #include "../lib/mqtt/mqtt_acl.h"
+#include "../lib/message_broker.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
@@ -112,7 +113,6 @@ static int mqttbroker_data_init (
 	return ret;
 }
 
-// TODO : Provide more configuration arguments
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -270,6 +270,30 @@ static int mqttbroker_parse_acl (struct mqtt_broker_data *data) {
 	return ret;
 }
 
+static int mqttbroker_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	(void)(amount);
+	(void)(flags);
+	(void)(arg);
+
+	RRR_BUG("BUG: mqttbroker_event_broker_data_available was called\n");
+
+	return 0;
+}
+
+static int mqttbroker_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mqtt_broker_data *data = thread_data->private_data;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	mqttbroker_update_stats(data, INSTANCE_D_STATS(thread_data));
+
+	return 0;
+}
+
 static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
@@ -309,6 +333,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	if (rrr_mqtt_broker_new (
 			&data->mqtt_broker_data,
 			&init_data,
+			INSTANCE_D_EVENTS(thread_data),
 			data->max_keep_alive,
 			data->password_file,
 			data->permission_name,
@@ -374,42 +399,12 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 	}
 
-	// DO NOT use signed, let it overflow
-	unsigned long int consecutive_nothing_happened = 0;
-
-	uint64_t prev_stats_time = rrr_time_get_64();
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		uint64_t time_now = rrr_time_get_64();
-		rrr_thread_watchdog_time_update(thread);
-
-		int something_happened = 0;
-
-		if (rrr_mqtt_broker_synchronized_tick(&something_happened, data->mqtt_broker_data) != 0) {
-			RRR_MSG_0("Error from MQTT broker while running tasks\n");
-			break;
-		}
-
-		if (something_happened == 0) {
-			consecutive_nothing_happened++;
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		if (consecutive_nothing_happened > 5000) {
-//			printf("Broker long sleep %lu\n", consecutive_nothing_happened);
-			rrr_posix_usleep(50000); // 50 ms
-		}
-		if (consecutive_nothing_happened > 50) {
-//			printf("Broker short sleep %lu\n", consecutive_nothing_happened);
-			rrr_posix_usleep(2000); // 2ms
-		}
-
-		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
-			mqttbroker_update_stats(data, INSTANCE_D_STATS(thread_data));
-			prev_stats_time = rrr_time_get_64();
-		}
-	}
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			mqttbroker_event_periodic,
+			thread
+	);
 
 	// If clients run on the same machine, we hope they close the connection first
 	// to await TCP timeout
@@ -433,6 +428,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	mqttbroker_event_broker_data_available
+};
+
 static const char *module_name = "mqtt_broker";
 
 __attribute__((constructor)) void load(void) {
@@ -443,10 +442,9 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_NETWORK;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {
 	RRR_DBG_1 ("Destroy mqtt broker module\n");
 }
-

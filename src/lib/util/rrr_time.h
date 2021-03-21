@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,5 +30,6 @@ struct timespec;
 uint64_t rrr_time_get_64(void);
 void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
 void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
+void rrr_time_from_usec (struct timeval *__restrict __tv, uint64_t usec);
 
 #endif /* RRR_TIME_H */

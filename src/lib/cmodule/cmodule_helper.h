@@ -24,8 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "../messages/msg_addr.h"
 #include "cmodule_defines.h"
+#include "../instances.h"
+#include "../event.h"
 
 struct rrr_instance_runtime_data;
 struct rrr_stats_instance;
@@ -34,15 +35,23 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_cmodule;
 
+extern struct rrr_instance_event_functions rrr_cmodule_helper_event_functions;
+
+const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
+		struct rrr_instance_runtime_data *thread_data
+);
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_stats_instance *stats,
-		struct rrr_poll_collection *poll
+		unsigned int periodic_interval_us
 );
 int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_runtime_data *thread_data,
 		const char *config_prefix,
 		const char *config_suffix
+);
+void rrr_cmodule_helper_mmap_channel_event_function_set (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*function)(RRR_EVENT_FUNCTION_ARGS)
 );
 int rrr_cmodule_helper_worker_forks_start (
 		struct rrr_instance_runtime_data *thread_data,
@@ -55,6 +64,7 @@ int rrr_cmodule_helper_worker_forks_start (
 );
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
+		unsigned int tick_interval_us,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),

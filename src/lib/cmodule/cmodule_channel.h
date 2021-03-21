@@ -23,28 +23,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_CHANNEL_H
 
 #include <sys/types.h>
-
-#include "../util/linked_list.h"
+#include <stdint.h>
 
 struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_setting_packed;
 struct rrr_mmap_channel;
+struct rrr_event_queue;
 
 int rrr_cmodule_channel_count (
 		struct rrr_mmap_channel *channel
 );
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
+		uint8_t queue_flags,
 		const struct rrr_msg *message
 );
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
+		uint8_t queue_flags,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 );
 int rrr_cmodule_channel_receive_messages (
+		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),

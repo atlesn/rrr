@@ -25,9 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_msgdb_server;
+struct rrr_event_queue;
 
 int rrr_msgdb_server_new (
 		struct rrr_msgdb_server **result,
+		struct rrr_event_queue *queue,
 		const char *directory,
 		const char *socket
 );
@@ -37,11 +39,8 @@ void rrr_msgdb_server_destroy (
 void rrr_msgdb_server_destroy_void (
 		void *server
 );
-int rrr_msgdb_server_tick (
-		struct rrr_msgdb_server *server
-);
 uint64_t rrr_msgdb_server_recv_count_get (
-	struct rrr_msgdb_server *server
+		struct rrr_msgdb_server *server
 );
 
 #endif /* RRR_MSGDB_SERVER_H */

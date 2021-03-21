@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+
+#define RRR_HTTP_REDIRECT_TIMEOUT_MS 5000
 
 static void __rrr_http_redirect_collection_entry_destroy (
 		struct rrr_http_redirect_collection_entry *entry
@@ -115,10 +118,24 @@ int rrr_http_redirect_collection_iterate (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_redirect_collection_entry);
-		if ((ret = callback(node->transaction, node->uri, callback_arg)) != 0) {
-			goto out;
+		if (rrr_http_transaction_lifetime_get(node->transaction) > RRR_HTTP_REDIRECT_TIMEOUT_MS * 1000) {
+			char *endpoint_path_tmp = NULL;
+			rrr_http_transaction_endpoint_path_get(&endpoint_path_tmp, node->transaction);
+			RRR_MSG_0("Redirect timeout after %u ms for HTTP transaction with endpoint %s\n",
+					RRR_HTTP_REDIRECT_TIMEOUT_MS, endpoint_path_tmp);
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LL_ITERATE_END();
+		else if ((ret = callback(node->transaction, node->uri, callback_arg)) == RRR_HTTP_BUSY) {
+			// OK, busy. Try again later.
+			ret = RRR_HTTP_OK;
+		}
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+			if (ret != 0) {
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; __rrr_http_redirect_collection_entry_destroy(node));
 
 	out:
 	return ret;

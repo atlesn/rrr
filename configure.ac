@@ -174,6 +174,14 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([no])
 ])
 
+AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
+AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
+AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
+
+AC_SUBST([TLS_CFLAGS])
+AC_SUBST([TLS_LDFLAGS])
+AC_SUBST([TLS_LIBADD])
+
 TLS_CFLAGS=
 TLS_LDFLAGS=
 TLS_LIBADD=
@@ -282,6 +290,9 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+# Make sure Perl-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -372,6 +383,9 @@ AS_IF([test "x$enable_perl5" = xno], [
 
 	AC_SUBST([PERL5_INTERPRETER])
 ])
+
+# Make sure Python-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
@@ -506,6 +520,9 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+# Make sure json-c-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([json-c bindings])
 AS_IF([test "x$enable_jsonc" = xno], [
 	AC_MSG_RESULT([Not compiling with json-c bindings])
@@ -565,6 +582,9 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LDFLAGS])
 	AC_SUBST([NGHTTP2_LIBS])
 ])
+
+# Make sure MySQL-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [

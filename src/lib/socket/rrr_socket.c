@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,10 +35,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <event2/event.h>
 
 #include "../log.h"
 
 #include "rrr_socket.h"
+#include "rrr_socket_send_chunk.h"
 
 #include "../rrr_strerror.h"
 #include "../log.h"
@@ -78,7 +80,11 @@ struct rrr_socket_private_data_collection {
 struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
 	char *creator;
-	char *filename;
+	char *filename_unlink;
+	char *filename_no_unlink;
+	struct event *event_read;
+	struct event *event_write;
+	struct rrr_socket_send_chunk_collection send_chunks;
 	struct rrr_socket_options options;
 	struct rrr_socket_private_data_collection private_data;
 };
@@ -151,13 +157,23 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 			}
 		}
 	}
-	if (no_unlink == 0 && holder->filename != NULL) {
-		RRR_DBG_7("socket pid %i filename %s unlink\n", getpid(), holder->filename);
-		unlink(holder->filename);
+	if (no_unlink == 0 && holder->filename_unlink != NULL) {
+		RRR_DBG_7("socket pid %i filename %s unlink\n", getpid(), holder->filename_unlink);
+		unlink(holder->filename_unlink);
 	}
 	__rrr_socket_private_data_collection_clear(&holder->private_data);
-	RRR_FREE_IF_NOT_NULL(holder->filename);
+	RRR_FREE_IF_NOT_NULL(holder->filename_unlink);
+	RRR_FREE_IF_NOT_NULL(holder->filename_no_unlink);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
+	if (holder->event_read != NULL) {
+		event_del(holder->event_read);
+		event_free(holder->event_read);
+	}
+	if (holder->event_write != NULL) {
+		event_del(holder->event_write);
+		event_free(holder->event_write);
+	}
+	rrr_socket_send_chunk_collection_clear(&holder->send_chunks);
 	free(holder);
 
 	// Must always return 0 or linked list won' remove the node
@@ -168,6 +184,7 @@ int __rrr_socket_holder_new (
 		struct rrr_socket_holder **holder,
 		const char *creator,
 		const char *filename,
+		int filename_unlink,
 		int fd,
 		int domain,
 		int type,
@@ -193,11 +210,17 @@ int __rrr_socket_holder_new (
 	result->creator = strdup(creator);
 
 	if (filename != NULL) {
-		result->filename = strdup(filename);
-		if (result->filename == NULL) {
+		char *filename_tmp = strdup(filename);
+		if (filename_tmp == NULL) {
 			RRR_MSG_0("Could not allocate memory for filename in __rrr_socket_holder_new\n");
 			ret = 1;
 			goto out;
+		}
+		if (filename_unlink) {
+			result->filename_unlink = filename_tmp;
+		}
+		else {
+			result->filename_no_unlink = filename_tmp;
 		}
 	}
 
@@ -214,6 +237,25 @@ int __rrr_socket_holder_new (
 	return ret;
 }
 
+int rrr_socket_with_filename_do (
+		int fd,
+		int (*callback)(const char *filename, void *arg),
+		void *callback_arg
+) {
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			if (node->filename_unlink) {
+				return callback(node->filename_unlink, callback_arg);
+			}
+			else {
+				return callback(node->filename_no_unlink, callback_arg);
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	return 1;
+}
+		
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd
@@ -226,16 +268,37 @@ int rrr_socket_get_filename_from_fd (
 
 	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
 		if (node->options.fd == fd) {
-			if (node->filename != NULL && *(node->filename) != '\0') {
-				char *filename = strdup(node->filename);
-				if (filename == NULL) {
+			const char *filename = (node->filename_unlink ? node->filename_unlink : node->filename_no_unlink);
+			if (filename != NULL && *(filename) != '\0') {
+				char *filename_new = strdup(filename);
+				if (filename_new == NULL) {
 					RRR_MSG_0("Could not allocate memory in rrr_socket_get_filename_from_fd\n");
 					ret = 1;
 					goto out;
 				}
-				*result = filename;
+				*result = filename_new;
 			}
 			ret = 0;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	pthread_mutex_unlock(&socket_lock);
+	return ret;
+}
+		
+int rrr_socket_get_fd_from_filename (
+		const char *filename
+) {
+	pthread_mutex_lock(&socket_lock);
+
+	int ret = -1;
+
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		const char *filename_node = (node->filename_unlink ? node->filename_unlink : node->filename_no_unlink);
+		if (filename_node != NULL && strcmp(filename, filename_node) == 0) {
+			ret = node->options.fd;
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
@@ -314,7 +377,8 @@ int rrr_socket_with_lock_do (
 
 static void __rrr_socket_dump_unlocked (void) {
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		RRR_DBG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
+		const char *filename = (node->filename_unlink ? node->filename_unlink : node->filename_no_unlink);
+		RRR_DBG_7 ("fd %i pid %i creator %s filename %s%s\n", node->options.fd, getpid(), node->creator, filename, node->filename_unlink ? " (listen)" : "");
 	RRR_LL_ITERATE_END();
 	RRR_DBG_7("---\n");
 }
@@ -325,12 +389,13 @@ static int __rrr_socket_add_unlocked (
 		int type,
 		int protocol,
 		const char *creator,
-		const char *filename
+		const char *filename,
+		int filename_unlink
 ) {
 	int ret = 0;
 	struct rrr_socket_holder *holder = NULL;
 
-	if (__rrr_socket_holder_new(&holder, creator, filename, fd, domain, type, protocol) != 0) {
+	if (__rrr_socket_holder_new(&holder, creator, filename, filename_unlink, fd, domain, type, protocol) != 0) {
 		RRR_MSG_0("Could not create socket holder in __rrr_socket_add_unlocked\n");
 		ret = 1;
 		goto out;
@@ -370,7 +435,7 @@ int rrr_socket_accept (
 	socklen_t addr_len_orig = *addr_len;
 	fd_out = accept(fd_in, (struct sockaddr *) addr, addr_len);
 	if (fd_out != -1) {
-		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL);
+		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL, 0);
 	}
 	if (*addr_len > addr_len_orig) {
 		RRR_BUG("BUG: Given addr_len was to short in rrr_socket_accept\n");
@@ -380,11 +445,11 @@ int rrr_socket_accept (
 	if (fd_out != -1 && (options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
-			RRR_MSG_0("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("fd %i<-%i error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", fd_in, fd_out, rrr_strerror(errno));
 			goto out_close;
 		}
 		if (fcntl(fd_out, F_SETFL, flags | O_NONBLOCK) == -1) {
-			RRR_MSG_0("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("fd %i<-%i error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", fd_in, fd_out, rrr_strerror(errno));
 			goto out_close;
 		}
 	}
@@ -406,7 +471,7 @@ int rrr_socket_mkstemp (
 	pthread_mutex_lock(&socket_lock);
 	fd = mkstemp(filename);
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename, 1);
 	}
 	pthread_mutex_unlock(&socket_lock);
 
@@ -449,7 +514,7 @@ static int __rrr_socket_open_nolock (
 	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL));
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, (register_for_unlink ? filename : NULL), register_for_unlink);
 	}
 
 	RRR_DBG_7("rrr_socket_open fd %i pid %i filename %s creator %s flags %i\n", fd, getpid(), filename, creator, flags);
@@ -547,14 +612,15 @@ int rrr_socket (
 		int type,
 		int protocol,
 		const char *creator,
-		const char *filename
+		const char *filename,
+		int register_for_unlink
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
 	fd = socket(domain, type, protocol);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename);
+		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename, register_for_unlink);
 	}
 
 	RRR_DBG_7("rrr_socket fd %i pid %i filename %s\n", fd, getpid(), filename);
@@ -616,36 +682,32 @@ int rrr_socket_close_ignore_unregistered (int fd) {
 	return __rrr_socket_close (fd, 1, 0);
 }
 
-static int __rrr_socket_close_all_except (int fd, int no_unlink) {
+int __rrr_socket_close_all_except_array (int *fds, size_t fd_count, int no_unlink) {
 	int ret = 0;
 
-	if (fd < 0) {
-		RRR_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
-	}
-
-	RRR_DBG_7("rrr_socket_close_all_except fd %i pid %i no_unlink %i\n", fd, getpid(), no_unlink);
+	RRR_DBG_7("rrr_socket_close_all_except_array pid %i no_unlink %i\n", getpid(), no_unlink);
 
 	int count = 0;
-	int found = 0;
 
 	pthread_mutex_lock(&socket_lock);
 
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		if (node->options.fd != fd) {
+		int match = 0;
+		for (size_t i = 0; i < fd_count; i++) {
+			if (node->options.fd == fds[i]) {
+				match = 1;
+				break;
+			}
+		}
+		if (match) {
+			RRR_DBG_7("- Not closing %i, was in except list\n", node->options.fd);
+		}
+		else {
+			RRR_DBG_7("- Closing %i\n", node->options.fd);
 			RRR_LL_ITERATE_SET_DESTROY();
 			count++;
 		}
-		else {
-			if (found != 0) {
-				RRR_BUG("At least two equal FD %i in socket list in rrr_socket_close_all_except\n", fd);
-			}
-			found = 1;
-		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
-
-	if (found != 1 && fd != 0) {
-		RRR_MSG_0("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
-	}
 
 	if (RRR_DEBUGLEVEL_7) {
 		__rrr_socket_dump_unlocked();
@@ -656,6 +718,10 @@ static int __rrr_socket_close_all_except (int fd, int no_unlink) {
 	RRR_DBG_1("Closed %i sockets pid %i\n", count, getpid());
 
 	return ret;
+}
+
+static int __rrr_socket_close_all_except (int fd, int no_unlink) {
+	return __rrr_socket_close_all_except_array(&fd, 1, no_unlink);
 }
 
 int rrr_socket_close_all_except (int fd) {
@@ -672,6 +738,14 @@ int rrr_socket_close_all (void) {
 
 int rrr_socket_close_all_no_unlink (void) {
 	return __rrr_socket_close_all_except(0, 1);
+}
+
+int rrr_socket_close_all_except_array (int *fds, size_t fd_count) {
+	return __rrr_socket_close_all_except_array (fds, fd_count, 0);
+}
+
+int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count) {
+	return __rrr_socket_close_all_except_array (fds, fd_count, 1);
 }
 
 int rrr_socket_fifo_create (
@@ -793,7 +867,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	if (do_mkstemp != 0) {
 		fd = rrr_socket_mkstemp(filename_tmp, creator);
 		if (fd < 0) {
-			RRR_MSG_0("mkstemp failed in rrr_socket_unix_create_bind_and_listen: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("mkstemp ('%s') failed in while creating unix socket: %s\n", filename_tmp, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -819,7 +893,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	strcpy(addr.sun_path, filename_tmp);
 	addr.sun_family = AF_UNIX;
 
-	fd = rrr_socket(AF_UNIX, SOCK_STREAM | (nonblock != 0 ? SOCK_NONBLOCK : 0), 0, creator, filename_tmp);
+	fd = rrr_socket(AF_UNIX, SOCK_STREAM | (nonblock != 0 ? SOCK_NONBLOCK : 0), 0, creator, filename_tmp, 1);
 
 	if (fd < 0) {
 		RRR_MSG_0("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");
@@ -842,7 +916,7 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	RRR_DBG_7("rrr_socket_unix_create_bind_and_listen complete fd %i file %s pid %i clients %i umask %i\n",
+	RRR_DBG_7("fd %i unix socket created file %s pid %i clients %i umask %i\n",
 			fd, addr.sun_path, getpid(), num_clients, RRR_SOCKET_UNIX_DEFAULT_UMASK);
 
 	*fd_result = fd;
@@ -852,6 +926,47 @@ int rrr_socket_unix_create_bind_and_listen (
 	if (fd > 0) {
 		rrr_socket_close(fd);
 	}
+	return ret;
+}
+
+int rrr_socket_send_check (
+		int fd
+) {
+	int ret = RRR_SOCKET_OK;
+
+	struct pollfd pollfd = {
+		fd, POLLOUT, 0
+	};
+
+	if ((poll(&pollfd, 1, 0) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+		if ((pollfd.revents & (POLLHUP)) != 0) {
+			RRR_DBG_7("fd %i connection refused or closed in send check (POLLHUP)\n", fd);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = RRR_SOCKET_NOT_READY;
+			goto out;
+		}
+		else if (errno == ECONNREFUSED) {
+			RRR_DBG_7("fd %i connection refused in send check (ECONNREFUSED)\n", fd);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+
+		RRR_MSG_0("fd %i error from poll() in send check: %s\n", fd, rrr_strerror(errno));
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+	else if ((pollfd.revents & POLLOUT) != 0) {
+		goto out;
+	}
+	else {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
@@ -882,7 +997,7 @@ static int __rrr_socket_send_check (
 			goto out;
 		}
 
-		RRR_MSG_0("Error from poll() while connecting: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("fd %i error from poll() while connecting: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
@@ -926,7 +1041,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 
 int rrr_socket_connect_nonblock (
 		int fd,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	int ret = 0;
@@ -935,17 +1050,18 @@ int rrr_socket_connect_nonblock (
 		goto out;
 	}
 	else if (errno == EINPROGRESS || errno == EAGAIN) {
+		RRR_DBG_7 ("fd %i connection in progress\n", fd);
 		ret = 0;
 		goto out;
 	}
 	else if (errno == ECONNREFUSED) {
-		RRR_MSG_0 ("Connection refused in rrr_socket_connect_nonblock\n");
+		RRR_DBG_7 ("fd %i connection refused\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else {
-		RRR_MSG_0("Error while connecting, address family was %u: %s\n",
-				addr->sa_family, rrr_strerror(errno));
+		RRR_MSG_0 ("fd %i error while connecting, address family was %u: %s\n",
+				fd, addr->sa_family, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -977,7 +1093,7 @@ int rrr_socket_unix_connect (
 	addr.sun_family = AF_UNIX;
 	strcpy(addr.sun_path, filename);
 
-	socket_fd = rrr_socket(AF_UNIX, SOCK_STREAM|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
+	socket_fd = rrr_socket(AF_UNIX, SOCK_STREAM|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, filename, 0);
 	if (socket_fd < 0) {
 		RRR_MSG_0("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
@@ -987,8 +1103,8 @@ int rrr_socket_unix_connect (
 	int connected = 0;
 	for (int i = 0; i < 10 && connected == 0; i++) {
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
-			RRR_MSG_0("Could not connect to socket %s try %i of %i: %s\n",
-					filename, i, 10, rrr_strerror(errno));
+			RRR_MSG_0("fd %i could not connect to socket %s try %i of %i: %s\n",
+					socket_fd, filename, i, 10, rrr_strerror(errno));
 			rrr_posix_usleep(25000);
 		}
 		else {
@@ -1045,12 +1161,12 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_7("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
+		RRR_DBG_7("fd %i max retries reached in rrr_socket_sendto_nonblock\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
-	RRR_DBG_7("Non-blocking send on fd %i starting, writing %li bytes (where of %li is complete) address length %u\n",
+	RRR_DBG_7("fd %i nonblock send loop starting, writing %li bytes (where of %li is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
 	if (addr == NULL) {
@@ -1086,7 +1202,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_DBG_7("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_DBG_7("fd %i error from sendto flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,
@@ -1155,7 +1271,7 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("Blocking send on fd %i starting, writing %li bytes (where of %li is complete)\n",
+		RRR_DBG_7("fd %i blocking send loop writing %li bytes (where of %li is complete)\n",
 				fd, size, written_bytes_total);
 
 		if ((ret = rrr_socket_sendto_nonblock_check_retry (
@@ -1172,7 +1288,7 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_7("Blocking send on fd %i, written bytes total is %li (this round was %li)\n",
+		RRR_DBG_7("fd %i blocking send loop written bytes total is %li (this round was %li)\n",
 				fd, written_bytes_total, written_bytes);
 	}
 
@@ -1224,20 +1340,29 @@ int rrr_socket_send_blocking (
 }
 
 int rrr_socket_check_alive (int fd) {
-	int ret = RRR_SOCKET_OK;
-
 	struct pollfd pollfd = {0};
 
 	pollfd.fd = fd;
+	pollfd.events = POLLIN;
 
-	if ((ret = poll(&pollfd, 1, 10)) > 0) {
-		if (pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-			ret = RRR_SOCKET_SOFT_ERROR;
+	int ret_tmp = poll(&pollfd, 1, 10);
+
+	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
+		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n", fd, rrr_strerror(errno), pollfd.revents);
+		return RRR_SOCKET_SOFT_ERROR;
+	}
+	else if (ret_tmp > 0) {
+		char buf[1];
+		ret_tmp = recv(fd, buf, sizeof(buf), MSG_PEEK|MSG_DONTWAIT);
+		if (ret_tmp < 0) {
+			RRR_DBG_7("fd %i recv peek error in check alive: %s\n", fd, rrr_strerror(errno));
+			return RRR_SOCKET_SOFT_ERROR;
+		}
+		else if (ret_tmp == 0) {
+			RRR_DBG_7("fd %i recv EOF in check alive, connection closed\n", fd);
+			return RRR_READ_EOF;
 		}
 	}
-	else if (ret < 0) {
-		ret = RRR_SOCKET_SOFT_ERROR;
-	}
 
-	return ret;
+	return RRR_SOCKET_OK;
 }

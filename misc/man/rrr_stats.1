@@ -1,4 +1,4 @@
-.Dd 2020-09-16
+.Dd 2021-03-10
 .TH RRR_STATS 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -6,6 +6,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .PP
 .B rrr_stats
 connects to RRR through a socket and displays information about the running modules.
+Multiple RRR instances can be monitored simultaneously.
 
 .SH SYNOPSIS
 .B rrr_stats [RRR SOCKET (PREFIX)]
@@ -23,7 +24,7 @@ This program requires
 to be running and listening on a UNIX socket by starting it with the
 .B -s
 argument. The socket name is usually in the format
-.B /tmp/rrr_stats.xxxxx,
+.B /var/run/rrr_stats.xxxxx,
 where xxxxx is the PID of the running RRR process, and
 .B rrr_stats
 will look for a socket named this unless another name is specified at command line.

@@ -23,9 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PACKET_H
 
 #include <inttypes.h>
+#include <stdlib.h>
 
 #include "mqtt_property.h"
 #include "../buffer.h"
+#include "../log.h"
 #include "../util/linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
@@ -154,7 +156,6 @@ struct rrr_mqtt_p_reason {
 
 #define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER					\
 	int users;													\
-	pthread_mutex_t refcount_lock;								\
 	void (*destroy)(void *arg)
 
 struct rrr_mqtt_p_standarized_usercount {
@@ -163,7 +164,6 @@ struct rrr_mqtt_p_standarized_usercount {
 
 struct rrr_mqtt_p_payload {
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;
-	pthread_mutex_t data_lock;
 
 	// Pointer to full packet, used only by free()
 	char *packet_data;
@@ -191,7 +191,6 @@ struct rrr_mqtt_p_payload {
 
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
-	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
 	uint8_t is_outbound;												\
 	uint16_t packet_identifier;											\
@@ -277,9 +276,7 @@ static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	}
 // Noisy
 //	RRR_DBG_3("INCREF %p users %i\n", p, (p)->users);
-	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
-	pthread_mutex_unlock(&p->refcount_lock);
 }
 
 static inline void rrr_mqtt_p_standardized_decref (void *arg) {
@@ -289,14 +286,11 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
 // Noisy
 //	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
-	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
-	pthread_mutex_unlock(&(p)->refcount_lock);
 	if ((p)->users < 0) {
 		RRR_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
 	}
 	if (p->users == 0) {
-		pthread_mutex_destroy(&p->refcount_lock);
 		p->destroy(p);
 	}
 }
@@ -304,9 +298,7 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 	int ret = 0;
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	pthread_mutex_lock(&p->refcount_lock);
 	ret = p->users;
-	pthread_mutex_unlock(&p->refcount_lock);
 	return ret;
 }
 
@@ -319,36 +311,6 @@ static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
 		RRR_MQTT_P_DECREF(p)
-
-static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
-	// Cast away const is OK
-	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) arg;
-	if (pthread_mutex_trylock(&packet->data_lock) == 0) {
-		RRR_BUG("BUG: Packet not locked triggered in rrr_mqtt_p_bug_if_not_locked(), run in debugger to get call stack.\n");
-	}
-}
-
-// The _dummy is just to keep the (pre)compiler from going crazy
-
-#define RRR_MQTT_P_LOCK_IN(p)													\
-	pthread_mutex_lock(&((p)->data_lock));int _dummy=0;do{_dummy=0
-
-#define RRR_MQTT_P_LOCK_BREAK()													\
-	goto p_unlock_out
-
-#define RRR_MQTT_P_LOCK_OUT(p)													\
-	p_unlock_out:(void)(_dummy);}while(0);pthread_mutex_unlock(&((p)->data_lock))
-
-//	printf ("packet %p lock\n", (p));
-#define RRR_MQTT_P_LOCK(p)		\
-	pthread_mutex_lock(&((p)->data_lock))
-
-//	printf ("packet %p unlock\n", (p));
-#define RRR_MQTT_P_UNLOCK(p)	\
-	pthread_mutex_unlock(&((p)->data_lock))
-
-#define RRR_MQTT_P_TRYLOCK(p)	\
-	pthread_mutex_trylock(&((p)->data_lock))
 
 struct rrr_mqtt_p_connect {
 	RRR_MQTT_P_PACKET_HEADER;

@@ -32,9 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
 #define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 
-// TODO : Make this smaller
-// TODO : Change data_length to unsigned
-
 struct rrr_msg_holder {
 	RRR_LL_NODE(struct rrr_msg_holder);
 	pthread_mutex_t lock;
@@ -46,9 +43,14 @@ struct rrr_msg_holder {
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	int protocol;
-	uint64_t send_time;
 	const void *source;
 	void *message;
+
+	// Message broker updates this on writes to buffer
+	uint64_t buffer_time;
+
+	// Avaialbe for modules
+	uint64_t send_time;
 
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;

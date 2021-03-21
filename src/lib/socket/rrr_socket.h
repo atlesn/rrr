@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,9 +48,17 @@ struct rrr_socket_options {
 	int protocol;
 };
 
+int rrr_socket_with_filename_do (
+		int fd,
+		int (*callback)(const char *filename, void *arg),
+		void *callback_arg
+);
 int rrr_socket_get_filename_from_fd (
 		char **result,
 		int fd
+);
+int rrr_socket_get_fd_from_filename (
+		const char *filename
 );
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
@@ -101,7 +109,8 @@ int rrr_socket (
 		int type,
 		int protocol,
 		const char *creator,
-		const char *filename
+		const char *filename,
+		int register_for_unlink
 );
 int rrr_socket_close (int fd);
 int rrr_socket_close_no_unlink (int fd);
@@ -110,6 +119,8 @@ int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_close_all_no_unlink (void);
+int rrr_socket_close_all_except_array (int *fds, size_t fd_count);
+int rrr_socket_close_all_except_array_no_unlink (int *fds, size_t fd_count);
 int rrr_socket_fifo_create (
 		int *fd_result,
 		const char *filename,
@@ -127,13 +138,16 @@ int rrr_socket_unix_create_bind_and_listen (
 		int do_mkstemp,
 		int do_unlink_if_exists
 );
+int rrr_socket_send_check (
+		int fd
+);
 int rrr_socket_connect_nonblock_postcheck_loop (
 		int fd,
 		uint64_t timeout_ms
 );
 int rrr_socket_connect_nonblock (
 		int fd,
-		struct sockaddr *addr,
+		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_unix_connect (

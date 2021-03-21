@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
-#include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
@@ -51,6 +50,8 @@ int rrr_cmodule_channel_count (
 
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
+		uint8_t queue_flags,
 		const struct rrr_msg *message
 ) {
 	int ret = 0;
@@ -61,6 +62,8 @@ int rrr_cmodule_channel_send_message_simple (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
+			notify_queue,
+			queue_flags,
 			sizeof(*message),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
@@ -93,6 +96,8 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
+		struct rrr_event_queue *notify_queue,
+		uint8_t queue_flags,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 ) {
@@ -109,6 +114,8 @@ int rrr_cmodule_channel_send_message_and_address (
 
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			channel,
+			notify_queue,
+			queue_flags,
 			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
@@ -128,6 +135,7 @@ int rrr_cmodule_channel_send_message_and_address (
 }
 
 int rrr_cmodule_channel_receive_messages (
+		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
@@ -135,17 +143,22 @@ int rrr_cmodule_channel_receive_messages (
 ) {
 	int ret = 0;
 
-	int retry_max = 100;
 	int retry_sleep_start = 90;
+	int max = 100;
 
 	do {
+		int did_read = 0;
 		ret = rrr_mmap_channel_read_with_callback (
+				&did_read,
 				channel,
 				(--retry_sleep_start > 0 ? 0 : empty_wait_time_us),
 				callback,
 				callback_arg
 		);
-	} while (--retry_max >= 0 && ret == 0);
+		if (did_read) {
+			(*amount)--;
+		}
+	} while (--max >= 0 && *amount > 0 && ret == 0);
 
 	return ret;
 }

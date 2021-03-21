@@ -33,12 +33,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
+#include "event.h"
+#include "event_functions.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
 
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
+
+struct rrr_mmap_channel_block {
+	pthread_mutex_t block_lock;
+	size_t size_capacity;
+	size_t size_data; // If set to 0, block is free
+	int shmid;
+	void *ptr_shm_or_mmap;
+};
+
+struct rrr_mmap_channel {
+	struct rrr_mmap *mmap;
+	pthread_mutex_t index_lock;
+	int entry_count;
+	int wpos;
+	int rpos;
+	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+	char name[64];
+
+	unsigned long long int read_starvation_counter;
+	unsigned long long int write_full_counter;
+};
 
 int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
@@ -164,6 +187,8 @@ static int __rrr_mmap_channel_allocate (
 
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
+		uint8_t queue_flags,
 		size_t data_size,
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
@@ -240,6 +265,10 @@ int rrr_mmap_channel_write_using_callback (
 	}
 	pthread_mutex_unlock(&target->index_lock);
 
+	if (queue_notify != NULL) {
+		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, queue_flags, 1);
+	}
+
 	out_unlock:
 	if (do_unlock_block) {
 		pthread_mutex_unlock(&block->block_lock);
@@ -261,6 +290,8 @@ static int __rrr_mmap_channel_write_callback (void *target_ptr, void *arg) {
 
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
+		uint8_t queue_flags,
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
@@ -272,6 +303,8 @@ int rrr_mmap_channel_write (
 	};
 	return rrr_mmap_channel_write_using_callback (
 			target,
+			queue_notify,
+			queue_flags,
 			data_size,
 			full_wait_time_us,
 			retries_max,
@@ -281,12 +314,15 @@ int rrr_mmap_channel_write (
 }
 
 int rrr_mmap_channel_read_with_callback (
+		int *read_count,
 		struct rrr_mmap_channel *source,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
+
+	*read_count = 0;
 
 	int do_rpos_increment = 1;
 
@@ -367,6 +403,7 @@ int rrr_mmap_channel_read_with_callback (
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
+		*read_count = 1;
 		block->size_data = 0;
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
