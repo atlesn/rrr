@@ -104,6 +104,10 @@ int rrr_socket_open_and_read_file (
 		int options,
 		int mode
 );
+int rrr_socket_pipe (
+		int result[2],
+		const char *creator
+);
 int rrr_socket (
 		int domain,
 		int type,

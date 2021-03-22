@@ -610,11 +610,14 @@ static int __rrr_instance_before_start_tasks (
 	int ret = 0;
 
 	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
-	rrr_event_function_set (
-		rrr_message_broker_event_queue_get(self),
-		RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
-		instance->module_data->event_functions.broker_data_available
-	);
+
+	if (instance->module_data->event_functions.broker_data_available != NULL) {
+		rrr_event_function_set (
+			rrr_message_broker_event_queue_get(self),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			instance->module_data->event_functions.broker_data_available
+		);
+	}
 
 	struct rrr_instance *faulty_instance = NULL;
 	if (__rrr_instance_add_senders_to_broker(&faulty_instance, broker, instance) != 0) {

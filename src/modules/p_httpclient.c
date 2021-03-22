@@ -1662,8 +1662,6 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data;
 
-	(void)(flags);
-
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	int ret_tmp = rrr_poll_do_poll_delete (amount, thread_data, httpclient_poll_callback, 0);

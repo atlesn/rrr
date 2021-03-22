@@ -212,12 +212,13 @@ static void main_loop_close_sockets_except (
 		int stats_socket,
 		struct rrr_event_queue *queue
 ) {
-	int a, b, c;
-	rrr_event_queue_fds_get (&a, &b, &c, queue);
+	int fds[RRR_EVENT_QUEUE_FD_MAX + 1];
+	size_t fds_count;
+	rrr_event_queue_fds_get (fds, &fds_count, queue);
 
-	int fds[] = { stats_socket, a, b, c };
+	fds[fds_count++] = stats_socket;
 
-	rrr_socket_close_all_except_array_no_unlink (fds, sizeof(fds) / sizeof(fds[0]));
+	rrr_socket_close_all_except_array_no_unlink (fds, fds_count);
 }
 
 static int main_loop_threads_restart (

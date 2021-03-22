@@ -136,7 +136,6 @@ static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *wo
 	if (rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
-			0,
 			&msg
 	) != 0) {
 		// Don't trigger error here. The reader thread will exit causing restart
@@ -184,7 +183,6 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
-			0,
 			message,
 			&addr_msg
 	)) != 0) {
@@ -251,8 +249,6 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	if (rrr_thread_signal_encourage_stop_check(thread)) {
 		return RRR_EVENT_EXIT;
 	}
-
-	(void)(flags);
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
 
@@ -446,39 +442,43 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
-	if (flags >= cmodule->worker_count) {
-		RRR_BUG("BUG: Flag > worker count in __rrr_cmodule_helper_event_mmap_channel_data_available\n");
-	}
+	// Note : Bias here to read from the first worker
 
-	struct rrr_cmodule_worker *worker = &cmodule->workers[flags];
+	int worker_i = 0;
+	while (*amount > 0) {
+		struct rrr_cmodule_worker *worker = &cmodule->workers[worker_i];
 
-	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
-	callback_data.thread_data = thread_data;
+		struct rrr_cmodule_helper_read_callback_data callback_data = {0};
+		callback_data.thread_data = thread_data;
 
-	if (__rrr_cmodule_helper_read_from_worker (
-			amount,
-			worker,
-			__rrr_cmodule_helper_read_callback,
-			&callback_data
-	) != 0) {
-		return 1;
-	}
+		if (__rrr_cmodule_helper_read_from_worker (
+				amount,
+				worker,
+				__rrr_cmodule_helper_read_callback,
+				&callback_data
+		) != 0) {
+			return 1;
+		}
 
-	if (cmodule->config_check_complete_message_printed == 0) {
-		int complete_count = 0;
+		if (cmodule->config_check_complete_message_printed == 0) {
+			int complete_count = 0;
 
-		WORKER_LOOP_BEGIN();
-			if (worker->config_complete) {
-				complete_count++;
+			WORKER_LOOP_BEGIN();
+				if (worker->config_complete) {
+					complete_count++;
+				}
+			WORKER_LOOP_END();
+
+			if (complete_count == cmodule->worker_count) {
+				RRR_DBG_1("Instance %s child config function (if any) complete for all %u workers, checking for unused values\n",
+						INSTANCE_D_NAME(thread_data), cmodule->worker_count);
+				rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(thread_data));
+				cmodule->config_check_complete_message_printed = 1;
+				cmodule->config_check_complete = 1;
 			}
-		WORKER_LOOP_END();
-
-		if (complete_count == cmodule->worker_count) {
-			RRR_DBG_1("Instance %s child config function (if any) complete for all %u workers, checking for unused values\n",
-					INSTANCE_D_NAME(thread_data), cmodule->worker_count);
-			rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(thread_data));
-			cmodule->config_check_complete_message_printed = 1;
-			cmodule->config_check_complete = 1;
+		}
+		if (++worker_i == cmodule->worker_count) {
+			worker_i = 0;
 		}
 	}
 

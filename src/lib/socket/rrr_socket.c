@@ -607,6 +607,53 @@ int rrr_socket_open_and_read_file (
 
 }
 
+int rrr_socket_pipe (
+		int result[2],
+		const char *creator
+) {
+	int ret = 0;
+
+	int fds[2];
+
+	if (pipe(fds) != 0) {
+		RRR_MSG_0("Failed to create pipe in rrr_socket_pipe: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	for (int i = 0; i < 2; i++) {
+		if (fcntl (fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK) != 0) {
+			RRR_MSG_0("fcntl() failed in rrr_socket_pipe: %s\n", rrr_strerror(errno));
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out_close;
+		}
+	}
+
+	pthread_mutex_lock(&socket_lock);
+	ret |= __rrr_socket_add_unlocked(fds[0], 0, 0, 0, creator, NULL, 0);
+	ret |= __rrr_socket_add_unlocked(fds[1], 0, 0, 0, creator, NULL, 0);
+	pthread_mutex_unlock(&socket_lock);
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to add sockets in rrr_socket_pipe\n");
+		goto out_destroy;
+	}
+
+	memcpy(result, fds, sizeof(fds));
+
+	goto out;
+	out_destroy:
+		rrr_socket_close(fds[0]);
+		rrr_socket_close(fds[1]);
+		goto out;
+	out_close:
+		close(fds[0]);
+		close(fds[1]);
+		goto out;
+	out:
+		return ret;
+}
+
 int rrr_socket (
 		int domain,
 		int type,

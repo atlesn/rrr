@@ -232,7 +232,7 @@ void rrr_log_hooks_call_raw (
 		);
 
 		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, 0, write_amount);
+			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, write_amount);
 		}
 	}
 

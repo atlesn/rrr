@@ -343,8 +343,6 @@ static int __rrr_stats_engine_event_log_journal_data_available (
 ) {
 	struct rrr_stats_engine *stats = arg;
 
-	(void)(flags);
-
 	int amount_int = *amount;
 
 	JOURNAL_LOCK(stats);

@@ -52,7 +52,6 @@ int rrr_mmap_channel_count (
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
-		uint8_t queue_flags,
 		size_t data_size,
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
@@ -62,7 +61,6 @@ int rrr_mmap_channel_write_using_callback (
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
-		uint8_t queue_flags,
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,

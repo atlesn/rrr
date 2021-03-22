@@ -106,8 +106,6 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raw_data *data = thread_data->private_data = thread_data->private_memory;
 
-	(void)(flags);
-
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback, 0);

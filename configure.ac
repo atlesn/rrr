@@ -170,6 +170,23 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([precense of eventfd()])
+AC_RUN_IFELSE([
+	AC_LANG_SOURCE([[
+		#include <sys/eventfd.h>
+
+		int main (int argc, char *argv[]) {
+			int fd = eventfd(0, 0);
+			return 0;
+		}
+	]])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_HAVE_EVENTFD], [1], [Linux-specific eventfd() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
 AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
