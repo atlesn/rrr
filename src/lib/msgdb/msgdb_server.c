@@ -45,7 +45,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msgdb_server {
 	char *directory;
-	int fd;
 	struct rrr_socket_client_collection *clients;
 	uint64_t recv_count;
 };
@@ -920,8 +919,6 @@ int rrr_msgdb_server_new (
 		goto out_destroy_client_collection;
 	}
 
-	server->fd = fd;
-
 	*result = server;
 
 	goto out;
@@ -941,7 +938,6 @@ void rrr_msgdb_server_destroy (
 		struct rrr_msgdb_server *server
 ) {
 	RRR_FREE_IF_NOT_NULL(server->directory);
-	rrr_socket_close(server->fd);
 	rrr_socket_client_collection_destroy(server->clients);
 	free(server);
 }
