@@ -1681,6 +1681,29 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return 0;
 }
 
+static int httpclient_event_msgdb_poll_add (
+		struct httpclient_data *data,
+		int do_short_timeout
+) {
+	struct timeval msgdb_poll_interval_tv;
+
+	const uint64_t short_timeout_us = 100 * 1000; // 100 ms
+
+	if (do_short_timeout && data->msgdb_poll_interval_us > short_timeout_us) {
+		rrr_time_from_usec(&msgdb_poll_interval_tv, short_timeout_us);
+	}
+	else {
+		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
+	}
+
+	if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
+		RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 static void httpclient_event_msgdb_poll (
 		evutil_socket_t fd,
 		short flags,
@@ -1691,6 +1714,10 @@ static void httpclient_event_msgdb_poll (
 
 	struct httpclient_data *data = arg;
 
+	printf("Active transactions: %lu\n", rrr_http_client_active_transaction_count_get(data->http_client));
+
+	int do_short_timeout = 0;
+
 	// After timer has passed and before polling, wait untill queues
 	// are empty (avoid dupes). In high traffic situations, it make
 	// take some time before the msgdb is polled.
@@ -1700,6 +1727,13 @@ static void httpclient_event_msgdb_poll (
 	) {
 		httpclient_msgdb_poll(data);
 		CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	}
+	else {
+		do_short_timeout = 1;
+	}
+
+	if (httpclient_event_msgdb_poll_add (data, do_short_timeout) != 0) {
+		event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
 	}
 }
 
@@ -1839,8 +1873,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		struct timeval msgdb_poll_interval_tv;
 		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
 
-		if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
-			RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
+		if (httpclient_event_msgdb_poll_add (data, 0) != 0) {
 			goto out_message;
 		}
 	}
@@ -1860,8 +1893,6 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
 		goto out_message;
 	}
-
-//	event_enable_debug_logging(EVENT_DBG_ALL);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
