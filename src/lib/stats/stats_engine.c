@@ -479,7 +479,13 @@ int rrr_stats_engine_init (
 
 	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats, queue);
 
-	rrr_event_function_set_with_arg (queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,  __rrr_stats_engine_event_log_journal_data_available, stats);
+	rrr_event_function_set_with_arg (
+			queue,
+			RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
+			__rrr_stats_engine_event_log_journal_data_available,
+			stats,
+			"stats engine journal data available"
+	);
 
 	RRR_DBG_1("Statistics engine started, listening at %s, log hook handle is %i\n",
 			filename, stats->log_hook_handle);

@@ -103,12 +103,13 @@ void rrr_event_queue_fds_get (
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,
-		int (*function)(RRR_EVENT_FUNCTION_ARGS)
+		int (*function)(RRR_EVENT_FUNCTION_ARGS),
+		const char *description
 ) {
 	if (function == NULL) {
 		RRR_BUG("BUG: Function was NULL in rrr_event_function_set\n");
 	}
-	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p\n", handle, code, function);
+	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p (%s)\n", handle, code, function, description);
 	handle->functions[code].function = function;
 }
 
@@ -116,14 +117,15 @@ void rrr_event_function_set_with_arg (
 		struct rrr_event_queue *handle,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
-		void *arg
+		void *arg,
+		const char *description
 ) {
 	if (function == NULL) {
 		RRR_BUG("BUG: Function was NULL in rrr_event_function_set_with_arg\n");
 	}
 	handle->functions[code].function = function;
 	handle->functions[code].function_arg = arg;
-	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p(%p)\n", handle, code, function, arg);
+	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p(%p) (%s)\n", handle, code, function, arg, description);
 }
 
 static void __rrr_event_periodic (
@@ -183,7 +185,6 @@ static void __rrr_event_signal_event (
 		uint16_t amount = (count > 0xffff ? 0xffff : count);
 		count -= amount;
 
-	printf("Amount %u\n", amount);
 		if ((ret = function->function (
 				&amount,
 				function->function_arg != NULL
@@ -194,12 +195,6 @@ static void __rrr_event_signal_event (
 			event_base_loopbreak(queue->event_base);
 			goto out;
 		}
-
-		if (amount != 0) {
-			RRR_BUG("BUG");
-		}
-
-	printf("----> %u\n", amount);
 
 		if (amount > 0) {
 			count += amount;
@@ -288,12 +283,16 @@ int rrr_event_pass (
 ) {
 	int ret = 0;
 
+	if (function > RRR_EVENT_FUNCTION_MAX) {
+		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
+	}
+
 	pthread_mutex_lock(&queue->lock);
 
 	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
 		queue, function, amount);
 
-	if ((ret = rrr_socket_eventfd_write(&queue->functions->eventfd, amount)) != 0) {
+	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
 		RRR_MSG_0("Failed to pass event in rrr_event_pass, return was %i\n", ret);
 		ret = RRR_EVENT_ERR;
 		goto out;
@@ -385,6 +384,8 @@ int rrr_event_queue_new (
 		goto out_destroy_event_base;
 	}
 
+	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
+
 	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
 		queue->functions[i].queue = queue;
 		if ((ret = rrr_socket_eventfd_init(&queue->functions[i].eventfd)) != 0) {
@@ -406,6 +407,12 @@ int rrr_event_queue_new (
 			ret = 1;
 			break;
 		}
+
+		RRR_DBG_9_PRINTF(" -      function %llu fds %i<-%i\n",
+				(long long unsigned int) i,
+				RRR_SOCKET_EVENTFD_READ_FD(&queue->functions[i].eventfd),
+				RRR_SOCKET_EVENTFD_WRITE_FD(&queue->functions[i].eventfd)
+		);
 	}
 
 	if (ret != 0) {
@@ -413,9 +420,6 @@ int rrr_event_queue_new (
 		ret = 1;
 		goto out_cleanup_eventfd;
 	}
-
-	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n",
-		queue, (long long unsigned) rrr_gettid());
 
 	*target = queue;
 

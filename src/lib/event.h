@@ -73,13 +73,15 @@ void rrr_event_queue_fds_get (
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,
-		int (*function)(RRR_EVENT_FUNCTION_ARGS)
+		int (*function)(RRR_EVENT_FUNCTION_ARGS),
+		const char *description
 );
 void rrr_event_function_set_with_arg (
 		struct rrr_event_queue *handle,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
-		void *arg
+		void *arg,
+		const char *description
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,

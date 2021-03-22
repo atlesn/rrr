@@ -693,7 +693,8 @@ static int __rrr_cmodule_main_worker_fork_start_intermediate (
 	rrr_event_function_set (
 			INSTANCE_D_EVENTS(thread_data),
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
-			__rrr_cmodule_helper_event_mmap_channel_data_available
+			__rrr_cmodule_helper_event_mmap_channel_data_available,
+			"mmap channel data available (helper)"
 	);
 
 	return rrr_cmodule_main_worker_fork_start (

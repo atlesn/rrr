@@ -634,6 +634,8 @@ int rrr_socket_pipe (
 	ret |= __rrr_socket_add_unlocked(fds[1], 0, 0, 0, creator, NULL, 0);
 	pthread_mutex_unlock(&socket_lock);
 
+	RRR_DBG_7("rrr_socket_pipe fd %i<-%i pid %i\n", fds[0], fds[1], getpid());
+
 	if (ret != 0) {
 		RRR_MSG_0("Failed to add sockets in rrr_socket_pipe\n");
 		goto out_destroy;
@@ -687,8 +689,6 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 
 	int did_destroy = 0;
 
-	__rrr_socket_dump_unlocked();
-
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		if (node->options.fd == fd) {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -696,8 +696,6 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 			did_destroy = 1;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
-
-	__rrr_socket_dump_unlocked();
 
 	pthread_mutex_unlock(&socket_lock);
 
