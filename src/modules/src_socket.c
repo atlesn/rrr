@@ -421,7 +421,6 @@ static int socket_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	(void)(thread);
 	(void)(amount);
-	(void)(flags);
 
 	RRR_BUG("BUG: socket_event_broker_data_available called in socket module\n");
 

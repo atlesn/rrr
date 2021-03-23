@@ -272,7 +272,6 @@ static int mqttbroker_parse_acl (struct mqtt_broker_data *data) {
 
 static int mqttbroker_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	(void)(amount);
-	(void)(flags);
 	(void)(arg);
 
 	RRR_BUG("BUG: mqttbroker_event_broker_data_available was called\n");

@@ -652,11 +652,12 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms\n",
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
 			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data),
-			rrr_http_transaction_lifetime_get(transaction) / 1000
+			rrr_http_transaction_lifetime_get(transaction) / 1000,
+			transaction->endpoint_str
 	);
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
@@ -1652,23 +1653,31 @@ static void httpclient_queue_process (
 	}
 }
 
-#define CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED()                                                         \
-	do {if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) { \
-		event_active(data->event_queue_process, 0, 0);                                              \
-	}} while (0)
+static void httpclient_check_queues_and_activate_event_as_needed (
+	struct httpclient_data *data
+) {
+	if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) {
+		if (!event_pending(data->event_queue_process, EV_TIMEOUT, NULL)) {
+			struct timeval tv = {0, 5000}; // 5 ms
+			event_add(data->event_queue_process, &tv);
+			event_active(data->event_queue_process, 0, 0);
+		}
+	}
+	else {
+		event_del(data->event_queue_process);
+	}
+}
 
 static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpclient_data *data = thread_data->private_data;
 
-	(void)(flags);
-
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	int ret_tmp = rrr_poll_do_poll_delete (amount, thread_data, httpclient_poll_callback, 0);
 
-	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	httpclient_check_queues_and_activate_event_as_needed(data);
 
 	return ret_tmp;
 }
@@ -1678,6 +1687,29 @@ static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
 		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
+}
+
+static int httpclient_event_msgdb_poll_add (
+		struct httpclient_data *data,
+		int do_short_timeout
+) {
+	struct timeval msgdb_poll_interval_tv;
+
+	const uint64_t short_timeout_us = 100 * 1000; // 100 ms
+
+	if (do_short_timeout && data->msgdb_poll_interval_us > short_timeout_us) {
+		rrr_time_from_usec(&msgdb_poll_interval_tv, short_timeout_us);
+	}
+	else {
+		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
+	}
+
+	if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
+		RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
+		return 1;
 	}
 
 	return 0;
@@ -1693,6 +1725,8 @@ static void httpclient_event_msgdb_poll (
 
 	struct httpclient_data *data = arg;
 
+	int do_short_timeout = 0;
+
 	// After timer has passed and before polling, wait untill queues
 	// are empty (avoid dupes). In high traffic situations, it make
 	// take some time before the msgdb is polled.
@@ -1701,7 +1735,14 @@ static void httpclient_event_msgdb_poll (
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
-		CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+		httpclient_check_queues_and_activate_event_as_needed(data);
+	}
+	else {
+		do_short_timeout = 1;
+	}
+
+	if (httpclient_event_msgdb_poll_add (data, do_short_timeout) != 0) {
+		event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
 	}
 }
 
@@ -1719,7 +1760,7 @@ static void httpclient_event_queue_process (
 	httpclient_queue_process(&data->from_msgdb_queue, data);
 	httpclient_queue_process(&data->from_senders_queue, data);
 
-	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	httpclient_check_queues_and_activate_event_as_needed(data);
 }
 
 static int httpclient_data_init (
@@ -1841,8 +1882,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		struct timeval msgdb_poll_interval_tv;
 		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
 
-		if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
-			RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
+		if (httpclient_event_msgdb_poll_add (data, 0) != 0) {
 			goto out_message;
 		}
 	}
@@ -1850,7 +1890,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	if ((data->event_queue_process = event_new (
 			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
 			-1,
-			0,
+			EV_PERSIST|EV_TIMEOUT,
 			httpclient_event_queue_process,
 			data
 	)) == NULL) {
@@ -1862,8 +1902,6 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
 		goto out_message;
 	}
-
-//	event_enable_debug_logging(EVENT_DBG_ALL);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

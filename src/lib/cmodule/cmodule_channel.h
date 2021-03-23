@@ -38,13 +38,11 @@ int rrr_cmodule_channel_count (
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
-		uint8_t queue_flags,
 		const struct rrr_msg *message
 );
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
-		uint8_t queue_flags,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr
 );

@@ -28,12 +28,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
-	uint16_t *amount, uint8_t flags, void *arg
+	uint16_t *amount, void *arg
 
 #define RRR_EVENT_FUNCTION_PERIODIC_ARGS \
 	void *arg
 
+#define RRR_EVENT_QUEUE_FD_MAX \
+	(0x100 * 2)
+
 #define RRR_EVENT_OK     RRR_READ_OK
+#define RRR_EVENT_ERR    RRR_READ_HARD_ERROR
 #define RRR_EVENT_EXIT   RRR_READ_EOF
 
 enum rrr_event_priority {
@@ -62,21 +66,22 @@ struct event_base *rrr_event_queue_base_get (
 		struct rrr_event_queue *queue
 );
 void rrr_event_queue_fds_get (
-		int *fd_listen,
-		int *fd_read,
-		int *fd_write,
+		int fds[RRR_EVENT_QUEUE_FD_MAX],
+		size_t *fds_count,
 		struct rrr_event_queue *queue
 );
 void rrr_event_function_set (
 		struct rrr_event_queue *handle,
 		uint8_t code,
-		int (*function)(RRR_EVENT_FUNCTION_ARGS)
+		int (*function)(RRR_EVENT_FUNCTION_ARGS),
+		const char *description
 );
 void rrr_event_function_set_with_arg (
 		struct rrr_event_queue *handle,
 		uint8_t code,
 		int (*function)(RRR_EVENT_FUNCTION_ARGS),
-		void *arg
+		void *arg,
+		const char *description
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
@@ -89,10 +94,9 @@ int rrr_event_dispatch (
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 );
-void rrr_event_pass (
+int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint8_t flags,
 		uint16_t amount
 );
 

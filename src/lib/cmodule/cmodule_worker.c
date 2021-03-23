@@ -62,7 +62,6 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 	ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			worker->index,
 			message,
 			message_addr
 	);
@@ -150,7 +149,6 @@ static void __rrr_cmodule_worker_log_hook (
 	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			worker->index,
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -185,7 +183,6 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 	if (rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			worker->index,
 			setting,
 			sizeof(*setting),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -280,8 +277,6 @@ static int __rrr_cmodule_worker_event_mmap_channel_data_available (
 	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
 	struct rrr_cmodule_worker *worker = callback_data->worker;
 
-	(void)(flags);
-
 	callback_data->read_callback_data.total_count = 0;
 
 	retry:
@@ -365,7 +360,6 @@ int __rrr_cmodule_worker_send_pong (
 	ret = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			worker->index,
 			&msg
 	);
 
@@ -512,7 +506,6 @@ int rrr_cmodule_worker_loop_start (
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			worker->index,
 			&control_msg,
 			sizeof(control_msg),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
@@ -590,11 +583,14 @@ int rrr_cmodule_worker_main (
 
 	rrr_log_hook_unregister_all_after_fork();
 
-	int event_fds[6];
+	int event_fds[RRR_EVENT_QUEUE_FD_MAX * 2];
+	size_t event_fds_count = 0;
+
+	memset(event_fds, '\0', sizeof(event_fds));
 
 	// We need to preserve the open event signal sockets, any other FDs are closed
-	rrr_event_queue_fds_get(&event_fds[0], &event_fds[1], &event_fds[2], worker->event_queue_parent);
-	rrr_event_queue_fds_get(&event_fds[3], &event_fds[4], &event_fds[5], worker->event_queue_worker);
+	rrr_event_queue_fds_get(event_fds, &event_fds_count, worker->event_queue_parent);
+	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	int log_hook_handle;
@@ -713,7 +709,8 @@ int rrr_cmodule_worker_init (
 	rrr_event_function_set (
 			worker->event_queue_worker,
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
-			__rrr_cmodule_worker_event_mmap_channel_data_available
+			__rrr_cmodule_worker_event_mmap_channel_data_available,
+			"mmap channel data available (worker)"
 	);
 
 	if (sleep_time_us > spawn_interval_us) {

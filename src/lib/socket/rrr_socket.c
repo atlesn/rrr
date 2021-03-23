@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../../../config.h"
+
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
 #include <sys/socket.h>
@@ -36,6 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <event2/event.h>
+
+#ifdef RRR_HAVE_EVENTFD
+#	include <sys/eventfd.h>
+#endif
 
 #include "../log.h"
 
@@ -607,6 +613,77 @@ int rrr_socket_open_and_read_file (
 
 }
 
+#ifdef RRR_HAVE_EVENTFD
+int rrr_socket_eventfd (
+		const char *creator
+) {
+	int fd = 0;
+
+	if ((fd = eventfd(0, EFD_NONBLOCK)) < 0) {
+		RRR_MSG_0("Failed to create eventfd in rrr_socket_eventfd: %s\n", rrr_strerror(errno));
+	}
+
+	if (fd != -1) {
+		pthread_mutex_lock(&socket_lock);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, NULL, 0);
+		pthread_mutex_unlock(&socket_lock);
+	}
+
+	RRR_DBG_7("rrr_socket_eventfd fd %i pid %i\n", fd, getpid());
+
+	return fd;
+}
+#endif /* RRR_HAVE_EVENTFD */
+
+int rrr_socket_pipe (
+		int result[2],
+		const char *creator
+) {
+	int ret = 0;
+
+	int fds[2];
+
+	if (pipe(fds) != 0) {
+		RRR_MSG_0("Failed to create pipe in rrr_socket_pipe: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	for (int i = 0; i < 2; i++) {
+		if (fcntl (fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK) != 0) {
+			RRR_MSG_0("fcntl() failed in rrr_socket_pipe: %s\n", rrr_strerror(errno));
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out_close;
+		}
+	}
+
+	pthread_mutex_lock(&socket_lock);
+	ret |= __rrr_socket_add_unlocked(fds[0], 0, 0, 0, creator, NULL, 0);
+	ret |= __rrr_socket_add_unlocked(fds[1], 0, 0, 0, creator, NULL, 0);
+	pthread_mutex_unlock(&socket_lock);
+
+	RRR_DBG_7("rrr_socket_pipe fd %i<-%i pid %i\n", fds[0], fds[1], getpid());
+
+	if (ret != 0) {
+		RRR_MSG_0("Failed to add sockets in rrr_socket_pipe\n");
+		goto out_destroy;
+	}
+
+	memcpy(result, fds, sizeof(fds));
+
+	goto out;
+	out_destroy:
+		rrr_socket_close(fds[0]);
+		rrr_socket_close(fds[1]);
+		goto out;
+	out_close:
+		close(fds[0]);
+		close(fds[1]);
+		goto out;
+	out:
+		return ret;
+}
+
 int rrr_socket (
 		int domain,
 		int type,
@@ -640,8 +717,6 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 
 	int did_destroy = 0;
 
-	__rrr_socket_dump_unlocked();
-
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		if (node->options.fd == fd) {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -649,8 +724,6 @@ static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 			did_destroy = 1;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
-
-	__rrr_socket_dump_unlocked();
 
 	pthread_mutex_unlock(&socket_lock);
 

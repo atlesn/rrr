@@ -1440,8 +1440,6 @@ static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data;
 
-	(void)(flags);
-
 	rrr_http_server_response_available_notify(data->http_server);
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);

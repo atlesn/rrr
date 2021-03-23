@@ -1766,8 +1766,6 @@ static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	(void)(flags);
-
 	return rrr_poll_do_poll_delete (amount, thread_data, mqttclient_poll_callback, 0);
 }
 

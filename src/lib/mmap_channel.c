@@ -188,7 +188,6 @@ static int __rrr_mmap_channel_allocate (
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
-		uint8_t queue_flags,
 		size_t data_size,
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
@@ -266,7 +265,7 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
-		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, queue_flags, 1);
+		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 1);
 	}
 
 	out_unlock:
@@ -291,7 +290,6 @@ static int __rrr_mmap_channel_write_callback (void *target_ptr, void *arg) {
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
-		uint8_t queue_flags,
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
@@ -304,7 +302,6 @@ int rrr_mmap_channel_write (
 	return rrr_mmap_channel_write_using_callback (
 			target,
 			queue_notify,
-			queue_flags,
 			data_size,
 			full_wait_time_us,
 			retries_max,
