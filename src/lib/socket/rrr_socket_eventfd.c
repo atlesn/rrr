@@ -108,11 +108,11 @@ int rrr_socket_eventfd_write (
 		goto out;
 	}
 
+	eventfd->count += count;
+
 	if ((ret = __rrr_socket_eventfd_notify_if_needed (eventfd)) != 0) {
 		goto out;
 	}
-
-	eventfd->count += count;
 
 	out:
 	return ret;

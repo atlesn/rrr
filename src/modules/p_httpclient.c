@@ -652,11 +652,12 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
-	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms\n",
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
 			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data),
-			rrr_http_transaction_lifetime_get(transaction) / 1000
+			rrr_http_transaction_lifetime_get(transaction) / 1000,
+			transaction->endpoint_str
 	);
 
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
