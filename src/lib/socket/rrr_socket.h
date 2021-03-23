@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_H
 #define RRR_SOCKET_H
 
+#include "../../../config.h"
+
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
 #include <sys/socket.h>
@@ -104,6 +106,11 @@ int rrr_socket_open_and_read_file (
 		int options,
 		int mode
 );
+#ifdef RRR_HAVE_EVENTFD
+int rrr_socket_eventfd (
+		const char *creator
+);
+#endif
 int rrr_socket_pipe (
 		int result[2],
 		const char *creator

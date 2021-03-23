@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../../../config.h"
+
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
 #include <sys/socket.h>
@@ -36,6 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <event2/event.h>
+
+#ifdef RRR_HAVE_EVENTFD
+#	include <sys/eventfd.h>
+#endif
 
 #include "../log.h"
 
@@ -606,6 +612,28 @@ int rrr_socket_open_and_read_file (
 	return ret;
 
 }
+
+#ifdef RRR_HAVE_EVENTFD
+int rrr_socket_eventfd (
+		const char *creator
+) {
+	int fd = 0;
+
+	if ((fd = eventfd(0, EFD_NONBLOCK)) < 0) {
+		RRR_MSG_0("Failed to create eventfd in rrr_socket_eventfd: %s\n", rrr_strerror(errno));
+	}
+
+	if (fd != -1) {
+		pthread_mutex_lock(&socket_lock);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, NULL, 0);
+		pthread_mutex_unlock(&socket_lock);
+	}
+
+	RRR_DBG_7("rrr_socket_eventfd fd %i pid %i\n", fd, getpid());
+
+	return fd;
+}
+#endif /* RRR_HAVE_EVENTFD */
 
 int rrr_socket_pipe (
 		int result[2],

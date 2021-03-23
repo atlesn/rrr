@@ -19,13 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../../../config.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <errno.h>
 
-#include "../../../config.h"
 #include "../log.h"
 #include "../rrr_strerror.h"
 #include "rrr_socket_eventfd.h"
@@ -38,12 +39,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_socket_eventfd_cleanup (
 		struct rrr_socket_eventfd *eventfd
 ) {
+#ifdef RRR_HAVE_EVENTFD
+	if (eventfd->fd > 0) {
+		rrr_socket_close(eventfd->fd);
+	}
+#else
 	if (eventfd->fds[0] > 0) {
 		rrr_socket_close(eventfd->fds[0]);
 	}
 	if (eventfd->fds[1] > 0) {
 		rrr_socket_close(eventfd->fds[1]);
 	}
+#endif
 	memset(eventfd, '\0', sizeof(*eventfd));
 }
 
@@ -52,6 +59,16 @@ int rrr_socket_eventfd_init (
 ) {
 	int ret = 0;
 
+#ifdef RRR_HAVE_EVENTFD
+	if ((ret = rrr_socket_eventfd("rrr_socket_eventfd_init")) < 0) {
+		RRR_MSG_0("Failed to create eventfd in rrr_socket_eventfd_init\n");
+		ret = 1;
+		goto out;
+	}
+
+	eventfd->fd = ret;
+	ret = 0;
+#else
 	int fds[2];
 
 	if ((ret = rrr_socket_pipe(fds, "rrr_socket_eventfd_init")) != 0) {
@@ -62,11 +79,13 @@ int rrr_socket_eventfd_init (
 	rrr_socket_eventfd_cleanup(eventfd);	
 
 	memcpy(eventfd->fds, fds, sizeof(fds));
+#endif
 
 	out:
 	return ret;
 }
 
+#ifndef RRR_HAVE_EVENTFD
 static int __rrr_socket_eventfd_notify_if_needed (
 		struct rrr_socket_eventfd *eventfd
 ) {
@@ -82,7 +101,8 @@ static int __rrr_socket_eventfd_notify_if_needed (
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;
 		}
-		RRR_MSG_0("Failed to write in __rrr_socket_eventfd_notify_if_needed: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("fd %i<-%i (pipe) error while writing in __rrr_socket_eventfd_notify_if_needed: %s\n",
+				eventfd->fds[0], eventfd->fds[1], rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -92,17 +112,30 @@ static int __rrr_socket_eventfd_notify_if_needed (
 	out:
 	return ret;
 }
+#endif
 
 int rrr_socket_eventfd_write (
 		struct rrr_socket_eventfd *eventfd,
 		uint64_t count
 ) {
-	int ret = 0;
+	int ret = RRR_SOCKET_OK;
 
 	if (!RRR_SOCKET_EVENTFD_INITIALIZED(eventfd)) {
 		RRR_BUG("BUG: Not initialized in rrr_socket_eventfd_write\n");
 	}
 
+#ifdef RRR_HAVE_EVENTFD
+	if (write(eventfd->fd, &count, sizeof(count)) != sizeof(count)) {
+		if (errno == EAGAIN) {
+			ret = RRR_SOCKET_NOT_READY;
+			goto out;
+		}
+		RRR_MSG_0("fd %i (eventfd) error while writing in rrr_socket_eventfd_write: %s\n",
+				eventfd->fd, rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+#else
 	if (UINT64_MAX - eventfd->count <= count) {
 		ret = RRR_SOCKET_NOT_READY;
 		goto out;
@@ -113,6 +146,7 @@ int rrr_socket_eventfd_write (
 	if ((ret = __rrr_socket_eventfd_notify_if_needed (eventfd)) != 0) {
 		goto out;
 	}
+#endif
 
 	out:
 	return ret;
@@ -125,7 +159,25 @@ int rrr_socket_eventfd_read (
 	int ret = 0;
 
 	*count = 0;
+	errno = 0;
 
+#ifdef RRR_HAVE_EVENTFD
+
+	ssize_t bytes = read(eventfd->fd, count, sizeof(*count));
+	if (bytes == sizeof(*count)) {
+		// OK
+	}
+	else if (errno == EAGAIN) {
+		// EAGAIN means count is zero
+		*count = 0;
+	}
+	else {
+		RRR_MSG_0("fd %i (eventfd) error while reading in rrr_socket_eventfd_read: %s\n",
+				eventfd->fd, rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+#else
 	char buf[64];
 	ssize_t res = read(eventfd->fds[0], buf, sizeof(buf));
 	if (res == 1) {
@@ -152,6 +204,7 @@ int rrr_socket_eventfd_read (
 	*count = eventfd->count;
 	eventfd->count = 0;
 	eventfd->notify_pending = 0;
+#endif
 
 	out:
 	return ret;

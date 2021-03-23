@@ -24,20 +24,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+#include "../../../config.h"
+
 struct rrr_socket_eventfd {
+#ifdef RRR_HAVE_EVENTFD
+	int fd;
+#else
 	int fds[2];
 	uint64_t count;
 	int notify_pending;
+#endif
 };
 
-#define RRR_SOCKET_EVENTFD_INITIALIZED(eventfd) \
-	((eventfd)->fds[0] > 0)
-
-#define RRR_SOCKET_EVENTFD_READ_FD(eventfd) \
-	((eventfd)->fds[0])
-
-#define RRR_SOCKET_EVENTFD_WRITE_FD(eventfd) \
-	((eventfd)->fds[1])
+#ifdef RRR_HAVE_EVENTFD
+#	define RRR_SOCKET_EVENTFD_INITIALIZED(eventfd) \
+		((eventfd)->fd > 0)
+#	define RRR_SOCKET_EVENTFD_READ_FD(eventfd) \
+		((eventfd)->fd)
+#	define RRR_SOCKET_EVENTFD_WRITE_FD(eventfd) \
+		((eventfd)->fd)
+#else
+#	define RRR_SOCKET_EVENTFD_INITIALIZED(eventfd) \
+		((eventfd)->fds[0] > 0)
+#	define RRR_SOCKET_EVENTFD_READ_FD(eventfd) \
+		((eventfd)->fds[0])
+#	define RRR_SOCKET_EVENTFD_WRITE_FD(eventfd) \
+		((eventfd)->fds[1])
+#endif
 
 void rrr_socket_eventfd_cleanup (
 		struct rrr_socket_eventfd *eventfd
