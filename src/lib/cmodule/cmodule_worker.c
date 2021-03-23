@@ -758,4 +758,6 @@ void rrr_cmodule_worker_cleanup (
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
+
+	rrr_event_queue_destroy(worker->event_queue_worker);
 }
