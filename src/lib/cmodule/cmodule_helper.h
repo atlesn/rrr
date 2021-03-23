@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_defines.h"
 #include "../instances.h"
-#include "../event.h"
+#include "../event/event.h"
 
 struct rrr_instance_runtime_data;
 struct rrr_stats_instance;

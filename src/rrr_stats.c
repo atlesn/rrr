@@ -28,9 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #undef _DEFAULT_SOURCE
 #undef __XSI_VISIBLE
 
-#include <event2/event.h>
-#undef _GNU_SOURCE
-
 #include <sys/types.h>
 #include <dirent.h>
 #include <signal.h>
@@ -46,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "../build_timestamp.h"
 #include "lib/log.h"
-#include "lib/event.h"
+#include "lib/event/event.h"
 #include "lib/rrr_strerror.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/map.h"

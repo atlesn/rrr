@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 
-#include "../event.h"
+#include "../event/event.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 

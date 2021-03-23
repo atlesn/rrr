@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 #include <netdb.h>
-#include <event2/event.h>
 
 #include "../log.h"
 
@@ -36,8 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_config.h"
 #include "../read.h"
 #include "../random.h"
-#include "../event.h"
-#include "../event_functions.h"
+#include "../event/event.h"
+#include "../event/event_functions.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
 #include "../messages/msg.h"

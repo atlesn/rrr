@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_umask.h"
 #include "lib/util/posix.h"
 #include "lib/msgdb/msgdb_server.h"
-#include "lib/event.h"
+#include "lib/event/event.h"
 #include "paths.h"
 #include "main.h"
 

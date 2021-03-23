@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_redirect.h"
 
-#include "../event.h"
+#include "../event/event.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 #include "../util/posix.h"

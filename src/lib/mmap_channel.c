@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
-#include "event.h"
-#include "event_functions.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
 

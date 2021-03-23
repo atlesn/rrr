@@ -28,22 +28,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <event2/event.h>
 #include <event2/thread.h>
 
-
 #include <poll.h>
 
-#include "log.h"
+#include "../log.h"
 #include "event.h"
 #include "event_functions.h"
-#include "threads.h"
-#include "rrr_strerror.h"
-#include "rrr_config.h"
-#include "rrr_path_max.h"
-#include "string_builder.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_eventfd.h"
-#include "util/gnu.h"
-#include "util/posix.h"
-#include "util/rrr_time.h"
+#include "../threads.h"
+#include "../rrr_strerror.h"
+#include "../rrr_config.h"
+#include "../rrr_path_max.h"
+#include "../string_builder.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_eventfd.h"
+#include "../util/gnu.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int rrr_event_libevent_initialized = 0;

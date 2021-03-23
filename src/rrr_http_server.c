@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
-#include "lib/event.h"
+#include "lib/event/event.h"
 #include "lib/util/macro_utils.h"
 #include "lib/util/rrr_time.h"
 

@@ -25,7 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 
-#include "read_constants.h"
+#include <event2/event.h>
+#undef _GNU_SOURCE
+
+#include "../read_constants.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
 	uint16_t *amount, void *arg

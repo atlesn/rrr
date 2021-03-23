@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <event2/event.h>
 
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
@@ -42,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
 #include "../lib/message_broker.h"
+#include "../lib/event/event.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/util/rrr_time.h"

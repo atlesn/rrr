@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
-#include "event_functions.h"
+#include "event/event_functions.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 #include "util/gnu.h"

@@ -24,11 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 #include <pthread.h>
-#include <event2/event.h>
 #include <sys/socket.h>
 
 #include "net_transport_defines.h"
 
+#include "../event/event.h"
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"

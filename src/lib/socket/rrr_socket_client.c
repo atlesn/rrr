@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <event2/event.h>
 
 #include "../log.h"
 
@@ -36,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../rrr_strerror.h"
-#include "../event.h"
+#include "../event/event.h"
 #include "../array.h"
 #include "../messages/msg.h"
 #include "../util/posix.h"
