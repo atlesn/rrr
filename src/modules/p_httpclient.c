@@ -1653,10 +1653,20 @@ static void httpclient_queue_process (
 	}
 }
 
-#define CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED()                                                         \
-	do {if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) { \
-		event_active(data->event_queue_process, 0, 0);                                              \
-	}} while (0)
+static void httpclient_check_queues_and_activate_event_as_needed (
+	struct httpclient_data *data
+) {
+	if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) {
+		if (!event_pending(data->event_queue_process, EV_TIMEOUT, NULL)) {
+			struct timeval tv = {0, 5000}; // 5 ms
+			event_add(data->event_queue_process, &tv);
+			event_active(data->event_queue_process, 0, 0);
+		}
+	}
+	else {
+		event_del(data->event_queue_process);
+	}
+}
 
 static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
@@ -1667,7 +1677,7 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	int ret_tmp = rrr_poll_do_poll_delete (amount, thread_data, httpclient_poll_callback, 0);
 
-	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	httpclient_check_queues_and_activate_event_as_needed(data);
 
 	return ret_tmp;
 }
@@ -1715,8 +1725,6 @@ static void httpclient_event_msgdb_poll (
 
 	struct httpclient_data *data = arg;
 
-	printf("Active transactions: %lu\n", rrr_http_client_active_transaction_count_get(data->http_client));
-
 	int do_short_timeout = 0;
 
 	// After timer has passed and before polling, wait untill queues
@@ -1727,7 +1735,7 @@ static void httpclient_event_msgdb_poll (
 	     RRR_LL_COUNT(&data->from_senders_queue) == 0
 	) {
 		httpclient_msgdb_poll(data);
-		CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+		httpclient_check_queues_and_activate_event_as_needed(data);
 	}
 	else {
 		do_short_timeout = 1;
@@ -1752,7 +1760,7 @@ static void httpclient_event_queue_process (
 	httpclient_queue_process(&data->from_msgdb_queue, data);
 	httpclient_queue_process(&data->from_senders_queue, data);
 
-	CHECK_QUEUES_AND_ACTIVATE_EVENT_AS_NEEDED();
+	httpclient_check_queues_and_activate_event_as_needed(data);
 }
 
 static int httpclient_data_init (
@@ -1882,7 +1890,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	if ((data->event_queue_process = event_new (
 			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
 			-1,
-			0,
+			EV_PERSIST|EV_TIMEOUT,
 			httpclient_event_queue_process,
 			data
 	)) == NULL) {
