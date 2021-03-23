@@ -56,7 +56,6 @@ struct socket_data {
 	int do_unlink_if_exists;
 	struct rrr_array_tree *tree;
 	struct rrr_socket_client_collection *clients;
-	int socket_fd;
 	uint64_t message_count;
 	struct rrr_array array_tmp;
 };
@@ -302,8 +301,6 @@ static int socket_start (
 	RRR_DBG_1("socket instance %s listening on %s\n",
 			INSTANCE_D_NAME(data->thread_data), data->socket_path);
 
-	data->socket_fd = fd;
-
 	if ((ret = rrr_socket_client_collection_new(&data->clients, socket_name)) != 0) {
 		goto out;
 	}
@@ -351,9 +348,6 @@ static int socket_start (
 
 static void socket_stop (void *arg) {
 	struct socket_data *data = arg;
-	if (data->socket_fd != 0) {
-		rrr_socket_close(data->socket_fd);
-	}
 	rrr_socket_client_collection_destroy(data->clients);
 	data->clients = NULL;
 }

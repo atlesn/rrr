@@ -1482,11 +1482,11 @@ int rrr_net_transport_event_setup (
 	}
 
 	// Must be run with high priority to prevent more events being run on FDs which are to be closed.
-	if (event_priority_set(transport->event_maintenance, RRR_EVENT_PRIORITY_HIGH) != 0) {
+/*	if (event_priority_set(transport->event_maintenance, RRR_EVENT_PRIORITY_HIGH) != 0) {
 		RRR_MSG_0("Failed to set maintenance event priority in rrr_net_transport_event_setup\n");
 		ret = 1;
 		goto out;
-	}
+	}*/
 
 	if (event_add(transport->event_maintenance, NULL) != 0) {
 		RRR_MSG_0("Failed to add maintenance event in rrr_net_transport_event_setup\n");
