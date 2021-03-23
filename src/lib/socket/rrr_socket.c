@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 #include <sys/un.h>
 #include <sys/stat.h>
-#include <event2/event.h>
 
 #ifdef RRR_HAVE_EVENTFD
 #	include <sys/eventfd.h>
@@ -88,8 +87,6 @@ struct rrr_socket_holder {
 	char *creator;
 	char *filename_unlink;
 	char *filename_no_unlink;
-	struct event *event_read;
-	struct event *event_write;
 	struct rrr_socket_send_chunk_collection send_chunks;
 	struct rrr_socket_options options;
 	struct rrr_socket_private_data_collection private_data;
@@ -171,14 +168,6 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 	RRR_FREE_IF_NOT_NULL(holder->filename_unlink);
 	RRR_FREE_IF_NOT_NULL(holder->filename_no_unlink);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
-	if (holder->event_read != NULL) {
-		event_del(holder->event_read);
-		event_free(holder->event_read);
-	}
-	if (holder->event_write != NULL) {
-		event_del(holder->event_write);
-		event_free(holder->event_write);
-	}
 	rrr_socket_send_chunk_collection_clear(&holder->send_chunks);
 	free(holder);
 
