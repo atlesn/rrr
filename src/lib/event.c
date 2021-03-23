@@ -230,18 +230,6 @@ int rrr_event_dispatch (
 	tv_interval.tv_usec = periodic_interval_us % 1000000;
 	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
 
-	if ((queue->periodic_event = event_new (
-			queue->event_base,
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
-			__rrr_event_periodic,
-			queue
-	)) == NULL) {
-		RRR_MSG_0("Failed to create periodic event in rrr_event_dispatch\n");
-		ret = 1;
-		goto out;
-	}
-
 /*	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
 		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
 		ret = 1;
@@ -384,6 +372,18 @@ int rrr_event_queue_new (
 		goto out_destroy_event_base;
 	}
 
+	if ((queue->periodic_event = event_new (
+			queue->event_base,
+			-1,
+			EV_TIMEOUT|EV_PERSIST,
+			__rrr_event_periodic,
+			queue
+	)) == NULL) {
+		RRR_MSG_0("Failed to create periodic event in rrr_event_queue_new\n");
+		ret = 1;
+		goto out_destroy_event_base;
+	}
+
 	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
 
 	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
@@ -431,6 +431,8 @@ int rrr_event_queue_new (
 				event_free(queue->functions[i].signal_event);
 			}
 		}
+	// out_destroy_periodic_event: (Label currently not used)
+		event_free(queue->periodic_event);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
 	out_destroy_lock:
