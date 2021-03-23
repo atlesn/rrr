@@ -1660,7 +1660,6 @@ static void httpclient_check_queues_and_activate_event_as_needed (
 		if (!event_pending(data->event_queue_process, EV_TIMEOUT, NULL)) {
 			struct timeval tv = {0, 5000}; // 5 ms
 			event_add(data->event_queue_process, &tv);
-			event_active(data->event_queue_process, 0, 0);
 		}
 	}
 	else {
@@ -1874,10 +1873,10 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			goto out_message;
 		}
 
-		if (event_priority_set (data->event_msgdb_poll, RRR_EVENT_PRIORITY_HIGH) != 0) {
+/*		if (event_priority_set (data->event_msgdb_poll, RRR_EVENT_PRIORITY_HIGH) != 0) {
 			RRR_MSG_0("Failed to set msgdb poll event priority in httpclient\n");
 			goto out_message;
-		}
+		}*/
 
 		struct timeval msgdb_poll_interval_tv;
 		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
@@ -1898,10 +1897,10 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	if (event_priority_set (data->event_queue_process, RRR_EVENT_PRIORITY_LOW) != 0) {
-		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
-		goto out_message;
-	}
+//	if (event_priority_set (data->event_queue_process, RRR_EVENT_PRIORITY_LOW) != 0) {
+//		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
+//		goto out_message;
+//	}
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

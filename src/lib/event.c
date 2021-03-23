@@ -242,11 +242,11 @@ int rrr_event_dispatch (
 		goto out;
 	}
 
-	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
+/*	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
 		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
 		ret = 1;
 		goto out;
-	}
+	}*/
 
 	if (event_add(queue->periodic_event, &tv_interval)) {
 		RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
