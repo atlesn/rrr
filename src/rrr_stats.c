@@ -558,7 +558,7 @@ static void __rrr_stats_event_keepalive (
 	(void)(flags);
 
 	if (__rrr_stats_send_keepalive(data) != 0) {
-		event_base_loopbreak(rrr_event_queue_base_get(data->queue));
+		rrr_event_dispatch_break(data->queue);
 	}
 }
 
