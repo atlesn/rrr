@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/log.h"
 #include "lib/event/event.h"
+#include "lib/event/event_collection.h"
 #include "lib/rrr_strerror.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/map.h"
@@ -101,9 +102,10 @@ struct rrr_stats_data {
 	struct rrr_socket_client_collection *connections;
 
 	struct rrr_event_queue *queue;
+	struct rrr_event_collection events;
 
-	struct event *event_keepalive;
-	struct event *event_dump_tree;
+	rrr_event_handle event_keepalive;
+	rrr_event_handle event_dump_tree;
 };
 
 static void __rrr_stats_signal_handler (int s) {
@@ -140,6 +142,8 @@ static int __rrr_stats_data_init (
 		goto out_clear_stats_tree;
 	}
 
+	rrr_event_collection_init(&data->events, data->queue);
+
 	if ((ret = rrr_socket_client_collection_new(&data->connections, "rrr_stats")) != 0) {
 		goto out_destroy_event_queue;
 	}
@@ -163,12 +167,7 @@ static void __rrr_stats_data_cleanup (
 	rrr_stats_tree_clear(&data->message_tree);
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 	rrr_socket_client_collection_destroy(data->connections);
-	if (data->event_keepalive != NULL) {
-		event_free(data->event_keepalive);
-	}
-	if (data->event_dump_tree != NULL) {
-		event_free(data->event_dump_tree);
-	}
+	rrr_event_collection_clear(&data->events);
 	rrr_event_queue_destroy(data->queue);
 }
 
@@ -587,36 +586,28 @@ static void __rrr_stats_event_dump_tree (
 static int __rrr_stats_events_setup (struct rrr_stats_data *data) {
 	int ret = 0;
 
-	data->event_keepalive = event_new (
-			rrr_event_queue_base_get(data->queue),
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_keepalive,
+			&data->events,
 			__rrr_stats_event_keepalive,
-			data
-	);
+			data,
+			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000 * 1000
+	)) != 0) {
+		goto out;
+	}
 
-	data->event_dump_tree = event_new (
-			rrr_event_queue_base_get(data->queue),
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_dump_tree,
+			&data->events,
 			__rrr_stats_event_dump_tree,
-			data
-	);
-	
-	if (data->event_keepalive == NULL || data->event_dump_tree == NULL) {
-		RRR_MSG_0("Failed to create events\n");
-		ret = 1;
+			data,
+			RRR_STATS_DUMP_TREE_INTERVAL_S * 1000 * 1000
+	)) != 0) {
 		goto out;
 	}
 
-	struct timeval tv_keepalive = { RRR_SOCKET_CLIENT_TIMEOUT_S / 2, 0 };
-	struct timeval tv_dump_tree = { RRR_STATS_DUMP_TREE_INTERVAL_S, 0 };
-
-	if (event_add (data->event_keepalive, &tv_keepalive) != 0 || event_add(data->event_dump_tree, &tv_dump_tree) != 0) {
-		RRR_MSG_0("Failed add events\n");
-		ret = 1;
-		goto out;
-	}
+	EVENT_ADD(data->event_keepalive);
+	EVENT_ADD(data->event_dump_tree);
 
 	out:
 	return ret;

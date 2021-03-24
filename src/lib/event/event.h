@@ -138,11 +138,19 @@ static inline int rrr_event_pending (
 	return event_pending((struct event *) handle->event, EV_READ|EV_WRITE|EV_TIMEOUT, NULL);
 }
 
+/* Run the event asap */
 #define EVENT_ACTIVATE(event)    rrr_event_activate(&event)
+
+/* Add the event to be run when needed */
 #define EVENT_ADD(event)         rrr_event_add(&event)
+
+/* Remove the event from the run queue */
 #define EVENT_REMOVE(event)      rrr_event_remove(&event)
+
+/* Check if the event is added */
 #define EVENT_PENDING(event)     rrr_event_pending(&event)
 
+/* Change the timeout interval for the event, 0 disables timeout. EVENT_ADD should follow. */
 #define EVENT_INTERVAL_SET(event, us) \
     rrr_time_from_usec(&event.interval, us)
 
