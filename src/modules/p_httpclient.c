@@ -1730,7 +1730,7 @@ static void httpclient_event_msgdb_poll (
 	}
 
 	if (httpclient_event_msgdb_poll_add (data, do_short_timeout) != 0) {
-		event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 	}
 }
 
