@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "event.h"
+#include "event_struct.h"
 #include "event_collection.h"
 #include "../util/rrr_time.h"
 
@@ -33,7 +34,7 @@ void rrr_event_collection_init (
 		struct rrr_event_queue *queue
 ) {
 	memset(collection, '\0', sizeof(*collection));
-	collection->event_base = rrr_event_queue_base_get(queue);
+	collection->event_base = queue->event_base;
 }
 
 void rrr_event_collection_clear (

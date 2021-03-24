@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "event.h"
+#include "event_struct.h"
 #include "event_functions.h"
 #include "../threads.h"
 #include "../rrr_strerror.h"
@@ -46,43 +47,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int rrr_event_libevent_initialized = 0;
 
-struct rrr_event_queue;
-
-struct rrr_event_function {
-	int (*function)(RRR_EVENT_FUNCTION_ARGS);
-	void *function_arg;
-	struct rrr_socket_eventfd eventfd;
-	struct event *signal_event;
-	struct rrr_event_queue *queue;
-};
-
-struct rrr_event_queue {
-	struct event_base *event_base;
-
-	pthread_mutex_t lock;
-
-	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
-
-	struct event *periodic_event;
-
-	void (*callback_pause)(int *do_pause, void *callback_arg);
-	void *callback_pause_arg;
-
-	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
-	void *callback_arg;
-	int callback_periodic_ret;
-};
 
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 ) {
 	return event_reinit(queue->event_base) != 0;
-}
-
-struct event_base *rrr_event_queue_base_get (
-		struct rrr_event_queue *queue
-) {
-	return queue->event_base;
 }
 
 void rrr_event_queue_fds_get (
@@ -213,6 +182,12 @@ void rrr_event_callback_pause_set (
 ) {
 	queue->callback_pause = callback;
 	queue->callback_pause_arg = callback_arg;
+}
+
+int rrr_event_dispatch_once (
+		struct rrr_event_queue *queue
+) {
+	return (event_base_loop(queue->event_base, EVLOOP_ONCE) < 0);
 }
 
 int rrr_event_dispatch (

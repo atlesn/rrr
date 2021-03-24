@@ -70,9 +70,6 @@ int rrr_event_queue_new (
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 );
-struct event_base *rrr_event_queue_base_get (
-		struct rrr_event_queue *queue
-);
 void rrr_event_queue_fds_get (
 		int fds[RRR_EVENT_QUEUE_FD_MAX],
 		size_t *fds_count,
@@ -95,6 +92,9 @@ void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
 		void (*callback)(int *do_pause, void *callback_arg),
 		void *callback_arg
+);
+int rrr_event_dispatch_once (
+		struct rrr_event_queue *queue
 );
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
