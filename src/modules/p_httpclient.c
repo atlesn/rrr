@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
@@ -106,8 +107,9 @@ struct httpclient_data {
 
 	rrr_setting_uint redirects_max;
 
-	struct event *event_msgdb_poll;
-	struct event *event_queue_process;
+	struct rrr_event_collection events;
+	rrr_event_handle event_msgdb_poll;
+	rrr_event_handle event_queue_process;
 
 	struct rrr_poll_helper_counters counters;
 
@@ -128,14 +130,7 @@ struct httpclient_data {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 
-	if (data->event_msgdb_poll) {
-		event_del(data->event_msgdb_poll);
-		event_free(data->event_msgdb_poll);
-	}
-	if (data->event_queue_process) {
-		event_del(data->event_queue_process);
-		event_free(data->event_queue_process);
-	}
+	rrr_event_collection_clear(&data->events);
 	if (data->http_client) {
 		rrr_http_client_destroy(data->http_client);
 	}
@@ -1657,13 +1652,12 @@ static void httpclient_check_queues_and_activate_event_as_needed (
 	struct httpclient_data *data
 ) {
 	if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) {
-		if (!event_pending(data->event_queue_process, EV_TIMEOUT, NULL)) {
-			struct timeval tv = {0, 5000}; // 5 ms
-			event_add(data->event_queue_process, &tv);
+		if (!EVENT_PENDING(data->event_queue_process)) {
+			EVENT_ADD(data->event_queue_process);
 		}
 	}
 	else {
-		event_del(data->event_queue_process);
+		EVENT_REMOVE(data->event_queue_process);
 	}
 }
 
@@ -1695,21 +1689,16 @@ static int httpclient_event_msgdb_poll_add (
 		struct httpclient_data *data,
 		int do_short_timeout
 ) {
-	struct timeval msgdb_poll_interval_tv;
-
 	const uint64_t short_timeout_us = 100 * 1000; // 100 ms
 
 	if (do_short_timeout && data->msgdb_poll_interval_us > short_timeout_us) {
-		rrr_time_from_usec(&msgdb_poll_interval_tv, short_timeout_us);
+		EVENT_INTERVAL_SET(data->event_msgdb_poll, short_timeout_us);
 	}
 	else {
-		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
+		EVENT_INTERVAL_SET(data->event_msgdb_poll, data->msgdb_poll_interval_us);
 	}
 
-	if (event_add(data->event_msgdb_poll, &msgdb_poll_interval_tv) != 0) {
-		RRR_MSG_0("Failed to add msgdb poll event in httpclient\n");
-		return 1;
-	}
+	EVENT_ADD(data->event_msgdb_poll);
 
 	return 0;
 }
@@ -1771,6 +1760,7 @@ static int httpclient_data_init (
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 
 	goto out;
 //	out_cleanup_data:
@@ -1862,45 +1852,32 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 	}
 
 	if (data->msgdb_socket != NULL) {
-		if ((data->event_msgdb_poll = event_new (
-				rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
-				-1,
-				EV_PERSIST|EV_TIMEOUT,
+		if (rrr_event_collection_push_periodic (
+				&data->event_msgdb_poll,
+				&data->events,
 				httpclient_event_msgdb_poll,
-				data
-		)) == NULL) {
+				data,
+				data->msgdb_poll_interval_us
+		) != 0) {
 			RRR_MSG_0("Failed to create msgdb poll event in httpclient\n");
 			goto out_message;
 		}
-
-/*		if (event_priority_set (data->event_msgdb_poll, RRR_EVENT_PRIORITY_HIGH) != 0) {
-			RRR_MSG_0("Failed to set msgdb poll event priority in httpclient\n");
-			goto out_message;
-		}*/
-
-		struct timeval msgdb_poll_interval_tv;
-		rrr_time_from_usec(&msgdb_poll_interval_tv, data->msgdb_poll_interval_us);
 
 		if (httpclient_event_msgdb_poll_add (data, 0) != 0) {
 			goto out_message;
 		}
 	}
 
-	if ((data->event_queue_process = event_new (
-			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
-			-1,
-			EV_PERSIST|EV_TIMEOUT,
+	if (rrr_event_collection_push_periodic (
+			&data->event_queue_process,
+			&data->events,
 			httpclient_event_queue_process,
-			data
-	)) == NULL) {
-		RRR_MSG_0("Failed to create queue process event in httpclient\n");
+			data,
+			5000 // 5 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create event queue processl event in httpclient\n");
 		goto out_message;
 	}
-
-//	if (event_priority_set (data->event_queue_process, RRR_EVENT_PRIORITY_LOW) != 0) {
-//		RRR_MSG_0("Failed to set queue process event priority in httpclient\n");
-//		goto out_message;
-//	}
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

@@ -143,4 +143,7 @@ static inline int rrr_event_pending (
 #define EVENT_REMOVE(event)      rrr_event_remove(&event)
 #define EVENT_PENDING(event)     rrr_event_pending(&event)
 
+#define EVENT_INTERVAL_SET(event, us) \
+    rrr_time_from_usec(&event.interval, us)
+
 #endif /* RRR_EVENT_H */
