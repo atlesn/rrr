@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 #include <netdb.h>
-#include <event2/event.h>
 
 #include "../log.h"
 
@@ -36,8 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_config.h"
 #include "../read.h"
 #include "../random.h"
-#include "../event.h"
-#include "../event_functions.h"
+#include "../event/event.h"
+#include "../event/event_functions.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_client.h"
 #include "../messages/msg.h"
@@ -374,7 +373,7 @@ static void __rrr_stats_engine_event_periodic (
 
 	if ( __rrr_stats_engine_send_messages(stats)) {
 		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
-		event_base_loopbreak(rrr_event_queue_base_get(stats->queue));
+		rrr_event_dispatch_break(stats->queue);
 	}
 }
 	
@@ -423,7 +422,7 @@ int rrr_stats_engine_init (
 		goto out_destroy_main_lock;
 	}
 
-	if (rrr_socket_client_collection_new(&stats->client_collection, "rrr_stats_engine") != 0) {
+	if (rrr_socket_client_collection_new(&stats->client_collection, queue, "rrr_stats_engine") != 0) {
 		RRR_MSG_0("Could not create client collection in statistics engine\n");
 		ret = 1;
 		goto out_close_socket;
@@ -431,7 +430,6 @@ int rrr_stats_engine_init (
 
 	rrr_socket_client_collection_event_setup (
 			stats->client_collection,
-			queue, 
 			__rrr_stats_client_new_void,
 			__rrr_stats_client_destroy_void,
 			stats,
@@ -457,25 +455,20 @@ int rrr_stats_engine_init (
 		goto out_destroy_client_collection;
 	}
 
-	if ((stats->event_periodic = event_new (
-			rrr_event_queue_base_get(queue),
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
+	rrr_event_collection_init(&stats->events, queue);
+
+	if ((ret = rrr_event_collection_push_periodic (
+			&stats->event_periodic,
+			&stats->events,
 			__rrr_stats_engine_event_periodic,
-			stats
-	)) == NULL) {
+			stats,
+			1 * 1000 * 1000 // 1 s
+	)) != 0) {
 		RRR_MSG_0("Could not create periodic event in rrr_stats_engine_init\n");
-		ret = 1;
 		goto out_destroy_journal_lock;
 	}
 
-	struct timeval tv = {1, 0};
-
-	if (event_add(stats->event_periodic, &tv) != 0) {
-		RRR_MSG_0("Could not addd periodic event in rrr_stats_engine_init\n");
-		ret = 1;
-		goto out_destroy_journal_lock;
-	}
+	EVENT_ADD(stats->event_periodic);
 
 	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats, queue);
 
@@ -528,8 +521,7 @@ void rrr_stats_engine_cleanup (
 
 	pthread_mutex_unlock(&stats->main_lock);
 
-	event_del(stats->event_periodic);
-	event_free(stats->event_periodic);
+	rrr_event_collection_clear(&stats->events);
 	rrr_socket_close_ignore_unregistered(stats->socket);
 	stats->socket = 0;
 	pthread_mutex_destroy(&stats->main_lock);

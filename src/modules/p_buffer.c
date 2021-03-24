@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/event.h"
+#include "../lib/event/event.h"
 
 struct buffer_data {
 	struct rrr_instance_runtime_data *thread_data;

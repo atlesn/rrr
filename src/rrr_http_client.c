@@ -37,7 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
-#include "lib/event.h"
+#include "lib/event/event.h"
+#include "lib/event/event_collection.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
@@ -80,7 +81,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
-	struct rrr_event_queue *events;
+	struct rrr_event_queue *queue;
 	struct rrr_http_client *http_client;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
@@ -90,7 +91,9 @@ struct rrr_http_client_data {
 	struct rrr_net_transport_config net_transport_config;
 	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
-	struct event *event_stdin;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_stdin;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -99,12 +102,9 @@ static void __rrr_http_client_data_cleanup (
 	if (data->http_client != NULL) {
 		rrr_http_client_destroy(data->http_client);
 	}
-	if (data->event_stdin) {
-		event_del(data->event_stdin);
-		event_free(data->event_stdin);
-	}
-	if (data->events != NULL) {
-		rrr_event_queue_destroy(data->events);
+	rrr_event_collection_clear(&data->events);
+	if (data->queue != NULL) {
+		rrr_event_queue_destroy(data->queue);
 	}
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
@@ -393,7 +393,7 @@ static int __rrr_http_client_request_send_loop (
 		)) == 0 || ret != RRR_HTTP_BUSY) {
 			goto out;
 		}
-		event_base_loop(rrr_event_queue_base_get(http_client_data->events), EVLOOP_ONCE);
+		rrr_event_dispatch_once(http_client_data->queue);
 		rrr_posix_usleep(1000);
 	}
 
@@ -593,12 +593,12 @@ int rrr_signal_handler(int s, void *arg) {
 static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
-	if (data->event_stdin != NULL) {
+	if (EVENT_INITIALIZED(data->event_stdin)) {
 		if (rrr_http_client_active_transaction_count_get(data->http_client) > 0) {
-			event_add(data->event_stdin, NULL);
+			EVENT_ADD(data->event_stdin);
 		}
 		else {
-			event_del(data->event_stdin);
+			EVENT_REMOVE(data->event_stdin);
 		}
 	}
 
@@ -674,31 +674,31 @@ int main (int argc, const char **argv, const char **env) {
 			&data
 	};
 
-	if (rrr_event_queue_new(&data.events) != 0) {
+	if (rrr_event_queue_new(&data.queue) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 
 	}
 
+	rrr_event_collection_init(&data.events, data.queue);
+
 	if (data.tree != NULL) {
-		if ((data.event_stdin = event_new (
-				rrr_event_queue_base_get(data.events),
+		if (rrr_event_collection_push_read (
+				&data.event_stdin,
+				&data.events,
 				STDIN_FILENO,
-				EV_READ|EV_PERSIST,
 				rrr_http_client_event_stdin,
-				&data
-		)) == NULL) {
+				&data,
+				0
+		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
-		if (event_add(data.event_stdin, NULL) != 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
+		EVENT_ADD(data.event_stdin);
 	}
 
-	if (rrr_http_client_new(&data.http_client, data.events, 5000, &callbacks) != 0) {
+	if (rrr_http_client_new(&data.http_client, data.queue, 5000, &callbacks) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -711,7 +711,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (rrr_event_dispatch (
-			data.events,
+			data.queue,
 			100000,
 			rrr_http_client_event_periodic,
 			&data

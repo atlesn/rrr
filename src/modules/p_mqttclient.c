@@ -52,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/array_tree.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -136,7 +138,9 @@ struct mqtt_client_data {
 	struct rrr_mqtt_session *session;
 	struct rrr_mqtt_property_collection connect_properties;
 
-	struct event *event_input_queue;
+	struct rrr_event_collection events;
+	rrr_event_handle  event_input_queue;
+
 	struct rrr_msg_holder_collection input_queue;
 	int input_queue_disabled;
 
@@ -164,10 +168,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_msg_holder_collection_clear(&data->input_queue);
-	if (data->event_input_queue != NULL) {
-		event_del(data->event_input_queue);
-		event_free(data->event_input_queue);
-	}
+	rrr_event_collection_clear(&data->events);
 	rrr_mqtt_property_collection_clear(&data->connect_properties);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
@@ -209,7 +210,7 @@ static void mqttclient_event_input_queue_enable (
 		struct mqtt_client_data *data
 ) {
 	data->input_queue_disabled = 0;
-	event_active(data->event_input_queue, 0, 0);
+	EVENT_ACTIVATE(data->event_input_queue);
 }
 
 static int mqttclient_publish (
@@ -461,7 +462,7 @@ static void mqttclient_event_input_queue (
 
 			RRR_MSG_0("Warning: Failed to publish message in mqttclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
-			event_base_loopbreak(rrr_event_queue_base_get(INSTANCE_D_EVENTS(data->thread_data)));
+			rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
 			return;
 		}
 
@@ -482,10 +483,9 @@ static int mqttclient_data_init (
 		struct mqtt_client_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
-	memset(data, '\0', sizeof(*data));
 	int ret = 0;
 
-	data->thread_data = thread_data;
+	memset(data, '\0', sizeof(*data));
 
 	if (rrr_mqtt_subscription_collection_new(&data->requested_subscriptions) != 0) {
 		RRR_MSG_0("Could not create subscription collection in MQTT client mqttclient_data_init\n");
@@ -493,21 +493,23 @@ static int mqttclient_data_init (
 		goto out;
 	}
 
-	if ((data->event_input_queue = event_new (
-			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
-			-1,
-			EV_PERSIST,
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
+	if ((ret = rrr_event_collection_push_oneshot (
+			&data->event_input_queue,
+			&data->events,
 			mqttclient_event_input_queue,
 			data
-	)) == NULL) {
+	)) != 0) {
 		RRR_MSG_0("Could not create input queue event in mqttclient_data_init\n");
-		ret = 1;
 		goto out_destroy_subscription_collection;
 	}
 
+	data->thread_data = thread_data;
+
 	goto out;
-//	out_destroy_event:
-//		event_free(data->event_input_queue);
+//	out_clear_events:
+//		rrr_event_collection_clear(&data->events);
 	out_destroy_subscription_collection:
 		rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	out:
@@ -1756,7 +1758,6 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->input_queue, entry);
-	event_active(data->event_input_queue, 0, 0);
 
 	rrr_msg_holder_unlock(entry);
 	return ret;
@@ -1765,6 +1766,9 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mqtt_client_data *data = thread_data->private_data;
+
+	EVENT_ACTIVATE(data->event_input_queue);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, mqttclient_poll_callback, 0);
 }
@@ -1779,7 +1783,7 @@ static void mqttclient_event_callback_pause (
 
 	if (RRR_LL_COUNT(&data->input_queue) > RRR_MQTT_INPUT_QUEUE_MAX) {
 		// Make sure queue is processed when paused
-		event_active(data->event_input_queue, 0, 0);
+		EVENT_ACTIVATE(data->event_input_queue);
 
 		*do_pause = 1;
 	}

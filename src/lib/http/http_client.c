@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_redirect.h"
 
-#include "../event.h"
+#include "../event/event.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 #include "../util/posix.h"
@@ -829,7 +829,6 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup
 ) {
 	return rrr_net_transport_event_setup (
 			transport,
-			http_client->events,
 			0,
 			0,
 			http_client->idle_timeout_ms,
@@ -871,6 +870,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				&http_client->transport_keepalive_tls,
 				&net_transport_config_tmp,
 				tls_flags,
+				http_client->events,
 				alpn_protos,
 				alpn_protos_length
 		) != 0) {
@@ -905,6 +905,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				&http_client->transport_keepalive_plain,
 				&net_transport_config_tmp,
 				0,
+				http_client->events,
 				NULL,
 				0
 		) != 0) {

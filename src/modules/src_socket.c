@@ -301,14 +301,13 @@ static int socket_start (
 	RRR_DBG_1("socket instance %s listening on %s\n",
 			INSTANCE_D_NAME(data->thread_data), data->socket_path);
 
-	if ((ret = rrr_socket_client_collection_new(&data->clients, socket_name)) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&data->clients, INSTANCE_D_EVENTS(data->thread_data), socket_name)) != 0) {
 		goto out;
 	}
 
 	if (data->receive_rrr_message) {
 		rrr_socket_client_collection_event_setup (
 				data->clients,
-				INSTANCE_D_EVENTS(data->thread_data),
 				NULL,
 				NULL,
 				NULL,
@@ -325,7 +324,6 @@ static int socket_start (
 	else {
 		rrr_socket_client_collection_event_setup_raw (
 				data->clients,
-				INSTANCE_D_EVENTS(data->thread_data),
 				NULL,
 				NULL,
 				NULL,

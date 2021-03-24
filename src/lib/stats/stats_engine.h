@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../socket/rrr_socket_client.h"
 #include "../util/linked_list.h"
+#include "../event/event.h"
+#include "../event/event_collection.h"
 #include "stats_message.h"
 
 #define RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS 1000
@@ -60,7 +62,8 @@ struct rrr_stats_engine {
 	int journal_lock_usercount;
 
 	struct rrr_event_queue *queue;
-	struct event *event_periodic;
+	struct rrr_event_collection events;
+	rrr_event_handle event_periodic;
 
 	struct rrr_stats_named_message_list_collection named_message_list;
 	struct rrr_socket_client_collection *client_collection;

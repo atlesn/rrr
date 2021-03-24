@@ -513,6 +513,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			&transport,
 			&influxdb_data->net_transport_config,
 			0,
+			INSTANCE_D_EVENTS(thread_data),
 			NULL,
 			0
 	) != 0) {

@@ -25,66 +25,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <errno.h>
 #include <sys/mman.h>
-#include <event2/event.h>
 #include <event2/thread.h>
-
 
 #include <poll.h>
 
-#include "log.h"
+#include "../log.h"
 #include "event.h"
+#include "event_struct.h"
 #include "event_functions.h"
-#include "threads.h"
-#include "rrr_strerror.h"
-#include "rrr_config.h"
-#include "rrr_path_max.h"
-#include "string_builder.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_eventfd.h"
-#include "util/gnu.h"
-#include "util/posix.h"
-#include "util/rrr_time.h"
+#include "../threads.h"
+#include "../rrr_strerror.h"
+#include "../rrr_config.h"
+#include "../rrr_path_max.h"
+#include "../string_builder.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_eventfd.h"
+#include "../util/gnu.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int rrr_event_libevent_initialized = 0;
 
-struct rrr_event_queue;
-
-struct rrr_event_function {
-	int (*function)(RRR_EVENT_FUNCTION_ARGS);
-	void *function_arg;
-	struct rrr_socket_eventfd eventfd;
-	struct event *signal_event;
-	struct rrr_event_queue *queue;
-};
-
-struct rrr_event_queue {
-	struct event_base *event_base;
-
-	pthread_mutex_t lock;
-
-	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
-
-	struct event *periodic_event;
-
-	void (*callback_pause)(int *do_pause, void *callback_arg);
-	void *callback_pause_arg;
-
-	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
-	void *callback_arg;
-	int callback_periodic_ret;
-};
 
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 ) {
 	return event_reinit(queue->event_base) != 0;
-}
-
-struct event_base *rrr_event_queue_base_get (
-		struct rrr_event_queue *queue
-) {
-	return queue->event_base;
 }
 
 void rrr_event_queue_fds_get (
@@ -217,6 +184,12 @@ void rrr_event_callback_pause_set (
 	queue->callback_pause_arg = callback_arg;
 }
 
+int rrr_event_dispatch_once (
+		struct rrr_event_queue *queue
+) {
+	return (event_base_loop(queue->event_base, EVLOOP_ONCE) < 0);
+}
+
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,
@@ -262,6 +235,12 @@ int rrr_event_dispatch (
 
 	out:
 	return ret;
+}
+
+void rrr_event_dispatch_break (
+		struct rrr_event_queue *queue
+) {
+	event_base_loopbreak(queue->event_base);
 }
 
 int rrr_event_pass (

@@ -48,6 +48,7 @@ enum rrr_socket_client_collection_create_type {
 
 int rrr_socket_client_collection_new (
 		struct rrr_socket_client_collection **target,
+		struct rrr_event_queue *queue,
 		const char *creator
 );
 void rrr_socket_client_collection_set_connect_timeout (
@@ -160,7 +161,6 @@ void rrr_socket_client_collection_fd_close_notify_setup (
 );
 void rrr_socket_client_collection_event_setup (
 		struct rrr_socket_client_collection *collection,
-		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
@@ -171,7 +171,6 @@ void rrr_socket_client_collection_event_setup (
 );
 void rrr_socket_client_collection_event_setup_raw (
 		struct rrr_socket_client_collection *collection,
-		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
@@ -184,7 +183,6 @@ void rrr_socket_client_collection_event_setup_raw (
 );
 void rrr_socket_client_collection_event_setup_array_tree (
 		struct rrr_socket_client_collection *collection,
-		struct rrr_event_queue *queue,
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,

@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <event2/event.h>
 
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
@@ -42,6 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
 #include "../lib/message_broker.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/util/rrr_time.h"
@@ -77,7 +78,8 @@ struct ip_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection send_buffer;
 
-	struct event *event_send_buffer_iterate;
+	struct rrr_event_collection events;
+	rrr_event_handle event_send_buffer_iterate;
 
 	struct rrr_socket_client_collection *collection_udp;
 	struct rrr_socket_client_collection *collection_tcp;
@@ -138,9 +140,7 @@ static void ip_data_cleanup(void *arg) {
 	if (data->collection_udp != NULL) {
 		rrr_socket_client_collection_destroy(data->collection_udp);
 	}
-	if (data->event_send_buffer_iterate != NULL) {
-		event_free(data->event_send_buffer_iterate);
-	}
+	rrr_event_collection_clear(&data->events);
 	rrr_msg_holder_collection_clear(&data->send_buffer);
 	if (data->definitions != NULL) {
 		rrr_array_tree_destroy(data->definitions);
@@ -159,6 +159,8 @@ static int ip_data_init(struct ip_data *data, struct rrr_instance_runtime_data *
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
+
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 
 	return 0;
 }
@@ -676,8 +678,6 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_unlock(entry);
 
-	event_active(ip_data->event_send_buffer_iterate, 0, 0);
-
 	ip_data->messages_count_polled++;
 
 	return 0;
@@ -686,6 +686,9 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static int ip_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ip_data *ip_data = thread_data->private_data;
+
+	EVENT_ACTIVATE(ip_data->event_send_buffer_iterate);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback, 0);
 }
@@ -1722,15 +1725,13 @@ static void ip_event_send_buffer (
 	(void)(flags);
 
 	if (ip_send_loop(ip_data) != 0) {
-		event_base_loopbreak (
-			rrr_event_queue_base_get(INSTANCE_D_EVENTS(ip_data->thread_data))
-		);
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(ip_data->thread_data));
 	}
 
 	if (RRR_LL_COUNT(&ip_data->send_buffer) > 0) {
 		// Short wait
-		struct timeval tv = {0, 10 * 1000}; // 10 ms
-		event_add(ip_data->event_send_buffer_iterate, &tv);
+		EVENT_INTERVAL_SET(ip_data->event_send_buffer_iterate, 10 * 1000); // 10 ms
+		EVENT_ADD(ip_data->event_send_buffer_iterate);
 	}
 	else {
 		if (!ip_data->do_persistent_connections) {
@@ -1783,7 +1784,7 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	rrr_thread_watchdog_time_update(thread);
 
 	if (RRR_LL_COUNT(&ip_data->send_buffer) > 0) {
-		event_active(ip_data->event_send_buffer_iterate, 0, 0);
+		EVENT_ACTIVATE(ip_data->event_send_buffer_iterate);
 	}
 
 	rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", ip_data->messages_count_read);
@@ -1814,7 +1815,6 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 #define SETUP_ARRAY_TREE(collection,socket_flags)              \
     rrr_socket_client_collection_event_setup_array_tree (      \
             collection,                                        \
-            INSTANCE_D_EVENTS(data->thread_data),              \
             ip_private_data_new,                               \
             ip_private_data_destroy,                           \
             data,                                              \
@@ -1852,13 +1852,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if ((data->event_send_buffer_iterate = event_new (
-			rrr_event_queue_base_get(INSTANCE_D_EVENTS(thread_data)),
-			-1,
-			EV_TIMEOUT,
+	if (rrr_event_collection_push_oneshot (
+			&data->event_send_buffer_iterate,
+			&data->events,
 			ip_event_send_buffer,
 			data
-	)) == NULL) {
+	) != 0) {
 		RRR_MSG_0("Failed to create send buffer event in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
@@ -1880,12 +1879,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_socket_graylist_init(&data->tcp_graylist);
 
-	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_NAME(data->thread_data)) != 0) {
+	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create TDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}
 
-	if (rrr_socket_client_collection_new(&data->collection_udp, INSTANCE_D_NAME(data->thread_data)) != 0) {
+	if (rrr_socket_client_collection_new(&data->collection_udp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}

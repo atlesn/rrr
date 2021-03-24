@@ -101,6 +101,8 @@ helpers = helpers/nullsafe_str.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
+event = event/event.c event/event_collection.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
@@ -111,7 +113,7 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c event.c cmdlineparser/cmdline.c rrr_config.c \
+librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
                     read.c rrr_mmap.c mmap_channel.c \
@@ -123,7 +125,7 @@ librrr_la_SOURCES = buffer.c threads.c event.c cmdlineparser/cmdline.c rrr_confi
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} \
-		    ${msgdb}
+		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 

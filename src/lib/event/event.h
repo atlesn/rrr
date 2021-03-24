@@ -25,7 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 
-#include "read_constants.h"
+#include <event2/event.h>
+#undef _GNU_SOURCE
+
+#include "../read_constants.h"
 
 #define RRR_EVENT_FUNCTION_ARGS \
 	uint16_t *amount, void *arg
@@ -50,8 +53,13 @@ enum rrr_event_priority {
 
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
-struct rrr_event;
+typedef void *rrr_event;
 struct rrr_event_queue;
+
+typedef struct rrr_event_handle {
+	rrr_event event;
+	struct timeval interval;
+} rrr_event_handle;
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
@@ -60,9 +68,6 @@ int rrr_event_queue_new (
 		struct rrr_event_queue **target
 );
 int rrr_event_queue_reinit (
-		struct rrr_event_queue *queue
-);
-struct event_base *rrr_event_queue_base_get (
 		struct rrr_event_queue *queue
 );
 void rrr_event_queue_fds_get (
@@ -88,16 +93,69 @@ void rrr_event_callback_pause_set (
 		void (*callback)(int *do_pause, void *callback_arg),
 		void *callback_arg
 );
+int rrr_event_dispatch_once (
+		struct rrr_event_queue *queue
+);
 int rrr_event_dispatch (
 		struct rrr_event_queue *queue,
 		unsigned int periodic_interval_us,
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 );
+void rrr_event_dispatch_break (
+		struct rrr_event_queue *queue
+);
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
 		uint16_t amount
 );
+
+static inline void rrr_event_activate (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_active((struct event *) handle->event, 0, 0);
+	}
+}
+static inline void rrr_event_add (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_add((struct event *) handle->event, (handle->interval.tv_sec != 0 || handle->interval.tv_usec != 0 ? &handle->interval : NULL));
+	}
+}
+static inline void rrr_event_remove (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_del((struct event *) handle->event);
+	}
+}
+static inline int rrr_event_pending (
+		rrr_event_handle *handle
+) {
+	return event_pending((struct event *) handle->event, EV_READ|EV_WRITE|EV_TIMEOUT, NULL);
+}
+
+/* Run the event asap */
+#define EVENT_ACTIVATE(e)    rrr_event_activate(&e)
+
+/* Add the e to be run when needed */
+#define EVENT_ADD(e)         rrr_event_add(&e)
+
+/* Remove the e from the run queue */
+#define EVENT_REMOVE(e)      rrr_event_remove(&e)
+
+/* Check if the e is added */
+#define EVENT_PENDING(e)     rrr_event_pending(&e)
+
+/* Change the timeout interval for the e, 0 disables timeout. EVENT_ADD should follow. */
+#define EVENT_INTERVAL_SET(e, us) \
+    rrr_time_from_usec(&(e.interval), us)
+
+/* Check if e handle is initialized */
+#define EVENT_INITIALIZED(e) \
+    (e.event != NULL)
 
 #endif /* RRR_EVENT_H */

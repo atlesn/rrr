@@ -32,8 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
-#include "event.h"
-#include "event_functions.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "util/gnu.h"
 #include "util/posix.h"
 #include "util/macro_utils.h"
