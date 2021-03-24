@@ -56,6 +56,10 @@ static int __rrr_event_collection_push (
 ) {
 	int ret = 0;
 
+	if (collection->event_base == NULL) {
+		RRR_BUG("BUG: Collection not initialized in __rrr_event_collection_push\n");
+	}
+
 	struct event *event;
 
 	struct timeval tv;
