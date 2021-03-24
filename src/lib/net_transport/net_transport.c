@@ -1399,7 +1399,7 @@ int rrr_net_transport_event_setup (
 	transport->read_callback = read_callback;
 	transport->read_callback_arg = read_callback_arg;
 
-	if ((ret = rrr_event_collection_push (
+	if ((ret = rrr_event_collection_push_oneshot (
 			&transport->event_maintenance,
 			&transport->events,
 			__rrr_net_transport_event_maintenance,

@@ -1852,7 +1852,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (rrr_event_collection_push (
+	if (rrr_event_collection_push_oneshot (
 			&data->event_send_buffer_iterate,
 			&data->events,
 			ip_event_send_buffer,

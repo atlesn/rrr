@@ -99,7 +99,7 @@ static int __rrr_event_collection_push (
 		return ret;
 }
 
-int rrr_event_collection_push (
+int rrr_event_collection_push_oneshot (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,
 		void (callback)(evutil_socket_t fd, short flags, void *arg),
