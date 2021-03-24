@@ -179,7 +179,7 @@ int rrr_msg_msg_new_with_data_nullsafe (
 
 int rrr_msg_msg_to_string (
 	char **final_target,
-	struct rrr_msg_msg *message
+	const struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 

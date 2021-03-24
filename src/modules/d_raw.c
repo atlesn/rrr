@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/event.h"
+#include "../lib/event/event.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -106,8 +106,6 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct raw_data *data = thread_data->private_data = thread_data->private_memory;
 
-	(void)(flags);
-
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback, 0);
@@ -120,7 +118,7 @@ static int raw_event_periodic (void *arg) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_PERIODIC(message_count, raw_data);
 
-	RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 " avg age %Lg ms\n",
+	RRR_DBG_1("Raw instance %s messages per second %" PRIu64 " total %" PRIu64 " avg age %Lg ms\n",
 			INSTANCE_D_NAME(thread_data),
 			message_count,
 			raw_data->counters.total_message_count,

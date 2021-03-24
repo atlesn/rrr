@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
-#include "event_functions.h"
+#include "event/event_functions.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 #include "util/gnu.h"
@@ -610,11 +610,15 @@ static int __rrr_instance_before_start_tasks (
 	int ret = 0;
 
 	struct rrr_message_broker_costumer *self = rrr_message_broker_costumer_find_by_name(broker, instance->config->name);
-	rrr_event_function_set (
-		rrr_message_broker_event_queue_get(self),
-		RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
-		instance->module_data->event_functions.broker_data_available
-	);
+
+	if (instance->module_data->event_functions.broker_data_available != NULL) {
+		rrr_event_function_set (
+			rrr_message_broker_event_queue_get(self),
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			instance->module_data->event_functions.broker_data_available,
+			"broker data available"
+		);
+	}
 
 	struct rrr_instance *faulty_instance = NULL;
 	if (__rrr_instance_add_senders_to_broker(&faulty_instance, broker, instance) != 0) {
@@ -914,6 +918,7 @@ int rrr_instances_create_and_start_threads (
 	// Task which needs to be performed when all instances have been initialized, but
 	// which cannot be performed after threads have started.
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		RRR_DBG_1("Before start tasks instance %p '%s'\n", node, node->config->name);
 		if ((ret = __rrr_instance_before_start_tasks(message_broker, node)) != 0) {
 			goto out_destroy_collection;
 		}

@@ -128,16 +128,9 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 
 	struct rrr_msgdb_server *msgdb = NULL;
 
-	if (rrr_msgdb_server_new(&msgdb, data->directory, data->socket) != 0) {
+	if (rrr_msgdb_server_new(&msgdb, rrr_cmodule_worker_get_event_queue(worker), data->directory, data->socket) != 0) {
 		RRR_MSG_0("Could not start message db server in msgdb instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	if ((rrr_msgdb_server_event_setup(msgdb, rrr_cmodule_worker_get_event_queue(worker))) != 0) {
-		RRR_MSG_0("Could not setup message db events in msgdb instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		goto out;
 		goto out;
 	}
 

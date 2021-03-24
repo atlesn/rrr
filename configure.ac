@@ -46,6 +46,7 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
+AC_ARG_WITH([eventfd],[AS_HELP_STRING([--without-eventfd],[build without the eventfd bindings event when available])],[enable_eventfd=no],[enable_eventfd=yes])
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
@@ -56,7 +57,7 @@ AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL b
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
-AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sytemd bindings])],[enable_systemd=no],[enable_systemd=yes])
+AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the systemd bindings])],[enable_systemd=no],[enable_systemd=yes])
 AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
 AC_ARG_WITH([openrc],[AS_HELP_STRING([--with-openrc],[build with the OpenRC bindings])],[enable_openrc=yes],[enable_openrc=no])
 AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
@@ -166,6 +167,29 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_HAVE_GETTID], [1], [Linux-specific gettid() is present])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([usage of eventfd()])
+AS_IF([test "x$enable_eventfd" != "xno"], [
+	AC_MSG_RESULT([yes])
+	AC_MSG_CHECKING([precense of eventfd()])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <sys/eventfd.h>
+
+			int main (int argc, char *argv[]) {
+				int fd = eventfd(0, 0);
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_EVENTFD], [1], [Linux-specific eventfd() is present])
+	], [
+		AC_MSG_RESULT([no])
+	])
 ], [
 	AC_MSG_RESULT([no])
 ])
@@ -286,6 +310,9 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+# Make sure Perl-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -376,6 +403,9 @@ AS_IF([test "x$enable_perl5" = xno], [
 
 	AC_SUBST([PERL5_INTERPRETER])
 ])
+
+# Make sure Python-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
@@ -510,6 +540,9 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+# Make sure json-c-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([json-c bindings])
 AS_IF([test "x$enable_jsonc" = xno], [
 	AC_MSG_RESULT([Not compiling with json-c bindings])
@@ -569,6 +602,9 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LDFLAGS])
 	AC_SUBST([NGHTTP2_LIBS])
 ])
+
+# Make sure MySQL-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [

@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_friends.h"
 #include "threads.h"
 #include "poll_helper.h"
-#include "event.h"
+#include "event/event.h"
 #include "util/linked_list.h"
 
 #define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER   (1<<0)

@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../http/http_header_fields.h"
 #include "../map.h"
 
+// The actual ping interval will depend on how often the tick function is called
 #define RRR_HTTP2_PING_INTERVAL_S 1
-#define RRR_HTTP2_PING_TIMEOUT_S 5
 
 struct rrr_http2_stream {
 	RRR_LL_NODE(struct rrr_http2_stream);
@@ -200,25 +200,15 @@ static ssize_t __rrr_http2_send_callback (
 		length = SSIZE_MAX;
 	}
 
-	uint64_t bytes_written = 0;
+	// TODO : Maybe event framework can send from nghttp2 directly instead of copying data to net transport first
+
 	int ret = 0;
-	if ((ret = rrr_net_transport_ctx_send_nonblock(&bytes_written, session->callback_data.handle, data, length)) != 0) {
-		ret &= ~(RRR_NET_TRANSPORT_SEND_INCOMPLETE);
-		if (ret & RRR_NET_TRANSPORT_READ_READ_EOF) {
-			RRR_DBG_3("http2 EOF while sending\n");
-			return NGHTTP2_ERR_EOF;
-		}
-		else if (ret != 0) {
-			RRR_DBG_3("http2 send failed with error %i\n", ret);
-			return NGHTTP2_ERR_CALLBACK_FAILURE;
-		}
+	if ((ret = rrr_net_transport_ctx_send_push (session->callback_data.handle, data, length)) != 0) {
+		RRR_DBG_3("http2 send push failed with error %i\n", ret);
+		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	if (bytes_written > SSIZE_MAX) {
-		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_send_callback, this should not be possible\n");
-	}
-
-	return (bytes_written > 0 ? bytes_written : NGHTTP2_ERR_WOULDBLOCK);
+	return length;
 }
 
 static ssize_t __rrr_http2_recv_callback (
@@ -343,19 +333,6 @@ static int __rrr_http2_on_frame_send_callback (
 	struct rrr_http2_session *session = user_data;
 
 	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
-
-	/* TODO : This seems not to be needed. If it needs to be used, the callback
-	 * must always be set and not only when debuglevel is active.
-	if (	(frame->hd.type == NGHTTP2_DATA || frame->hd.type == NGHTTP2_HEADERS) &&
-		(frame->hd.flags & NGHTTP2_FLAG_END_STREAM)
-	) {
-		int tmp = nghttp2_submit_rst_stream(nghttp2_session, 0, frame->hd.stream_id, 0);
-		if (tmp != 0) {
-			RRR_MSG_0("http2 failed to send stream close in __rrr_http2_on_frame_send_callback: %s\n",
-					nghttp2_strerror(tmp));
-			return NGHTTP2_ERR_CALLBACK_FAILURE;
-		}
-	}*/
 
 	return 0;
 }
@@ -987,9 +964,14 @@ int rrr_http2_streams_count (
 	return RRR_LL_COUNT(&session->streams);
 }
 
+int rrr_http2_need_tick (
+		struct rrr_http2_session *session
+) {
+	/* When a request is created and ready to be sent, we need to tick more */
+	return nghttp2_session_want_write(session->session) || session->initial_receive_data_len > 0;
+}
+
 int rrr_http2_transport_ctx_tick (
-		uint64_t *active_stream_count,
-		uint64_t *closed_stream_count,
 		struct rrr_http2_session *session,
 		struct rrr_net_transport_handle *handle,
 		int (*data_receive_callback)(RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS),
@@ -1001,8 +983,7 @@ int rrr_http2_transport_ctx_tick (
 	// Just to clean up any streams needing deletion
 	__rrr_http2_stream_maintain_and_find(session, 0);
 
-	*active_stream_count = RRR_LL_COUNT(&session->streams);
-	*closed_stream_count = session->closed_stream_count;
+	// *closed_stream_count = session->closed_stream_count;
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function
@@ -1046,12 +1027,6 @@ int rrr_http2_transport_ctx_tick (
 			ret = RRR_HTTP2_SOFT_ERROR;
 			goto out;
 		}
-	}
-
-	if (rrr_time_get_64() - session->last_ping_receive_time > RRR_HTTP2_PING_TIMEOUT_S * 1000 * 1000) {
-		RRR_MSG_0("HTTP2 ping timeout after %i seconds\n", RRR_HTTP2_PING_TIMEOUT_S);
-		ret = RRR_HTTP2_SOFT_ERROR;
-		goto out;
 	}
 
 	if (nghttp2_session_want_read(session->session) == 0 && nghttp2_session_want_write(session->session) == 0) {

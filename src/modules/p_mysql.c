@@ -500,7 +500,6 @@ int connect_to_mysql(struct mysql_data *data) {
 void stop_mysql(void *arg) {
 	struct mysql_data *data = arg;
 	if (data->mysql_initialized == 1) {
-		// TODO : Maybe do stuff here
 		mysql_thread_end();
 	}
 	mysql_disconnect(data);

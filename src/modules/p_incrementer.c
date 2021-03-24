@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/event.h"
+#include "../lib/event/event.h"
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
 #include "../lib/messages/msg_msg.h"
@@ -484,8 +484,6 @@ static int incrementer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	(void)(flags);
-
 	return rrr_poll_do_poll_delete (amount, thread_data, incrementer_poll_callback, 0);
 }
 
@@ -515,7 +513,6 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	if ((ret = rrr_mqtt_topic_tokenize (&data->subject_topic_filter_token, data->subject_topic_filter)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'incrementer_subject_topic_filter' in incrementer instance %s\n",
 			config->name);
-		ret = 1;
 		goto out;
 		
 	}

@@ -67,6 +67,7 @@ int rrr_mmap_channel_write (
 		int retries_max
 );
 int rrr_mmap_channel_read_with_callback (
+		int *read_count,
 		struct rrr_mmap_channel *source,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),

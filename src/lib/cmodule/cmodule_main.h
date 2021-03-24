@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defines.h"
 #include "../settings.h"
 #include "../message_holder/message_holder_collection.h"
-#include "../util/linked_list.h"
 
 #define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S 10
 
@@ -63,9 +62,6 @@ int rrr_cmodule_main_worker_fork_start (
 		void *process_callback_arg,
 		int (*init_custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *init_custom_tick_callback_arg
-);
-void rrr_cmodule_main_workers_stop (
-		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule

@@ -30,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "../util/rrr_time.h"
 
+uint64_t rrr_http_transaction_lifetime_get (
+		const struct rrr_http_transaction *transaction
+) {
+	return rrr_time_get_64() - transaction->creation_time;
+}
+
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,
@@ -139,7 +145,7 @@ void rrr_http_transaction_decref_if_not_null (
 
 	if (RRR_DEBUGLEVEL_3) {
 		uint64_t total_time = rrr_time_get_64() - transaction->creation_time;
-		RRR_MSG_3("HTTP Transaction lifetime at destruction: %" PRIu64 " ms\n", total_time / 1000);
+		RRR_MSG_3("HTTP transaction lifetime at destruction: %" PRIu64 " ms, endpoint str %s\n", total_time / 1000, transaction->endpoint_str);
 	}
 
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);

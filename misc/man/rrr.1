@@ -71,22 +71,26 @@ set a new debuglevel when the main loop exits. If none is set,
 is used.
 The debuglevel is calculated by adding any of the following numbers together:
 .Bl -tag -width -indent
+.It 0
+Severe errors (always printed)
 .It 1
-Info about loading and closing of modules (low rate)
+Info about loading and closing of modules, threads and forks.
 .It 2
-Runtime information in modules, they tell what they do at (high rate)
+Messages between modules, including backstop indication, and requests sent/received by modules.
 .It 4
-Some data debugging is printed (high rate)
+Detailed information about message processing withing modules
 .It 8
-Debug locking, thread states and buffers (very high rate)
+Messages between forks (mmap channels) and buffer searching, ratelimiting and cleanup
 .It 16
-Debug cmodule worker forks (for modules cmodule, perl5 and python3)
+Cmodule processing (for modules cmodule, perl5 and python3)
 .It 32
-Not used
+Hex dumps during endian conversion and validation of messages
 .It 64
-Debug socket closing and opening (high rate at initialization)
+Socket open, close, read, write
 .It 128
-Debug startup and closing of threads (high rate if modules start and stop threads frequently, otherwise low rate)
+Thread handling
+.It 256
+Event queue processing (printed to standard output, not delivered through journal module or systemd logging)
 .El
 .IP -W|--no-watchdog-timers
 Do not monitor threads for becoming unresponsive. If not set and a thread is found to be hung, all threads are terminated and

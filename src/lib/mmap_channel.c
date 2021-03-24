@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
-#include "event.h"
-#include "event_functions.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "util/rrr_time.h"
 #include "util/posix.h"
 
@@ -265,7 +265,7 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
-		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 0, 1);
+		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 1);
 	}
 
 	out_unlock:
@@ -311,12 +311,15 @@ int rrr_mmap_channel_write (
 }
 
 int rrr_mmap_channel_read_with_callback (
+		int *read_count,
 		struct rrr_mmap_channel *source,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
+
+	*read_count = 0;
 
 	int do_rpos_increment = 1;
 
@@ -397,6 +400,7 @@ int rrr_mmap_channel_read_with_callback (
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
+		*read_count = 1;
 		block->size_data = 0;
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;

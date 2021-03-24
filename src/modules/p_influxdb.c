@@ -314,14 +314,10 @@ static void influxdb_send_data_callback (
 	};
 
 	ssize_t received_bytes = 0;
-	uint64_t complete_transactions_count = 0;
-	uint64_t active_transaction_count = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
-				&active_transaction_count,
-				&complete_transactions_count,
 				handle,
 				0, // No max read size
 				NULL,
@@ -517,6 +513,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			&transport,
 			&influxdb_data->net_transport_config,
 			0,
+			INSTANCE_D_EVENTS(thread_data),
 			NULL,
 			0
 	) != 0) {

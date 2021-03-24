@@ -155,6 +155,12 @@ static inline void rrr_thread_unlock (
 #endif
 }
 
+static inline void rrr_thread_unlock_void (
+		void *thread
+) {
+	rrr_thread_unlock((struct rrr_thread *) thread);
+}
+
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
 static inline void rrr_thread_watchdog_time_update(struct rrr_thread *thread) {
 	rrr_thread_lock(thread);
@@ -172,14 +178,17 @@ static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thre
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
 }
 
-static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {
-	struct rrr_thread *thread = (struct rrr_thread *) arg;
+static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(struct rrr_thread *thread) {
 	int signal;
 	rrr_thread_lock(thread);
 	thread->watchdog_time = rrr_time_get_64();
 	signal = thread->signal;
 	rrr_thread_unlock(thread);
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) != 0);
+}
+
+static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer((struct rrr_thread *) arg);
 }
 
 void rrr_thread_signal_set (

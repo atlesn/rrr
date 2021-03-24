@@ -74,7 +74,7 @@ static void __rrr_cmodule_main_worker_kill (
 		return;
 }
 
-static void __rrr_cmodule_worker_kill_and_destroy (
+static void __rrr_cmodule_worker_kill_and_cleanup (
 		struct rrr_cmodule_worker *worker
 ) {
 	// Must unregister exit handler prior to killing worker to
@@ -87,7 +87,7 @@ static void __rrr_cmodule_worker_kill_and_destroy (
 
 	// OK to call kill etc. despite fork not being started
 	__rrr_cmodule_main_worker_kill(worker);
-	rrr_cmodule_worker_destroy(worker);
+	rrr_cmodule_worker_cleanup(worker);
 }
 
 static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
@@ -125,10 +125,14 @@ int rrr_cmodule_main_worker_fork_start (
 
 	// Use of global locks NOT ALLOWED before we are in child code
 
-	struct rrr_cmodule_worker *worker = NULL;
+	if (cmodule->worker_count == RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
+		RRR_BUG("BUG: Maximum worker count exceeded in rrr_cmodule_main_worker_fork_start\n");
+	}
 
-	if ((ret = rrr_cmodule_worker_new (
-			&worker,
+	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
+
+	if ((ret = rrr_cmodule_worker_init (
+			worker,
 			name,
 			settings,
 			notify_queue,
@@ -145,7 +149,7 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent;
 	}
 
-	// Append to LL after forking is OK
+	worker->index = cmodule->worker_count - 1;
 
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,
@@ -157,16 +161,13 @@ int rrr_cmodule_main_worker_fork_start (
 		// Don't use rrr_strerror() due to use of global lock
 		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n", errno);
 		ret = 1;
-		goto out_parent;
+		goto out_parent_cleanup;
 	}
 	else if (pid > 0) {
 		// If we deadlock here, exit handler unregister will not be called
 		pthread_mutex_lock(&worker->pid_lock);
 		worker->pid = pid;
 		pthread_mutex_unlock(&worker->pid_lock);
-
-		RRR_LL_APPEND(cmodule, worker);
-		worker = NULL;
 
 		goto out_parent;
 	}
@@ -189,17 +190,21 @@ int rrr_cmodule_main_worker_fork_start (
 
 	exit(ret);
 
+	goto out_parent;
+	out_parent_cleanup:
+		rrr_cmodule_worker_cleanup(worker);
+		cmodule->worker_count--;
 	out_parent:
-		if (worker != NULL) {
-			rrr_cmodule_worker_destroy(worker);
-		}
 		return ret;
 }
 
-void rrr_cmodule_main_workers_stop (
+void __rrr_cmodule_main_workers_stop (
 		struct rrr_cmodule *cmodule
 ) {
-	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
+	for (int i = 0; i < cmodule->worker_count; i++) {
+		__rrr_cmodule_worker_kill_and_cleanup(&cmodule->workers[i]);
+	}
+	cmodule->worker_count = 0;
 	rrr_fork_handle_sigchld_and_notify_if_needed(cmodule->fork_handler, 1);
 }
 
@@ -215,7 +220,7 @@ static void __rrr_cmodule_config_data_cleanup (
 void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
-	rrr_cmodule_main_workers_stop(cmodule);
+	__rrr_cmodule_main_workers_stop(cmodule);
 	if (cmodule->mmap != NULL) {
 		rrr_mmap_destroy(cmodule->mmap);
 		cmodule->mmap = NULL;
@@ -283,8 +288,8 @@ void rrr_cmodule_main_maintain (
 ) {
 	// We don't check for SIGCHLD while maintaining, main() handles that for us
 
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		__rrr_cmodule_main_worker_maintain(node);
-	RRR_LL_ITERATE_END();
+	for (int i = 0; i < cmodule->worker_count; i++) {
+		__rrr_cmodule_main_worker_maintain(&cmodule->workers[i]);
+	}
 }
 

@@ -19,9 +19,9 @@ sub source {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	if ($count >= 1000) {
-		return 1;
-	}
+#	if ($count++ >= 3) {
+#		return 1;
+#	}
 
 	my $t = time();
 	my $r = rand(10000);

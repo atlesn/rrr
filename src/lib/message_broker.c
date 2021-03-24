@@ -28,8 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "modules.h"
 #include "message_broker.h"
-#include "event.h"
-#include "event_functions.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "ip/ip.h"
 #include "message_holder/message_holder.h"
 #include "message_holder/message_holder_slot.h"
@@ -495,22 +495,24 @@ int rrr_message_broker_setup_split_output_buffer (
 	return ret;
 }
 
-static void __rrr_message_broker_write_notifications_send (
+static int __rrr_message_broker_write_notifications_send (
 	struct rrr_message_broker_costumer *costumer,
 	uint16_t amount
 ) {
 	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
 		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
 		if (listener == NULL) {
-			return;
+			return 0;
 		}
-		rrr_event_pass (
+		if ((rrr_event_pass (
 				listener->events,
 				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
-				0,
 				amount
-		);
+		)) != 0) {
+			return 1;
+		}
 	}
+	return 0;
 }
 
 struct rrr_message_broker_write_entry_intermediate_callback_data {
@@ -574,7 +576,7 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 	}
 
 	if (!(*write_drop)) {
-		__rrr_message_broker_write_notifications_send (costumer, 1);
+		ret = __rrr_message_broker_write_notifications_send (costumer, 1);
 	}
 
 	return ret;
@@ -866,7 +868,7 @@ int rrr_message_broker_clone_and_write_entry (
 		}
 	}
 
-	__rrr_message_broker_write_notifications_send(costumer, 1);
+	ret = __rrr_message_broker_write_notifications_send(costumer, 1);
 
 	out:
 	// Cast away const OK
@@ -918,7 +920,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		}
 	}
 
-	__rrr_message_broker_write_notifications_send(costumer, 1);
+	ret = __rrr_message_broker_write_notifications_send(costumer, 1);
 
 	out:
 	return ret;
@@ -969,11 +971,11 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 
 	while (written_entries > 0) {
 		if (written_entries > 0xffff) {
-			__rrr_message_broker_write_notifications_send(costumer, 0xffff);
+			ret = __rrr_message_broker_write_notifications_send(costumer, 0xffff);
 			written_entries -= 0xffff;
 		}
 		else {
-			__rrr_message_broker_write_notifications_send(costumer, written_entries);
+			ret = __rrr_message_broker_write_notifications_send(costumer, written_entries);
 			written_entries = 0;
 		}
 	}
@@ -1371,8 +1373,12 @@ int rrr_message_broker_sender_add (
 			listener_costumer
 	)) != 0) {
 		RRR_MSG_0("Failed to add sender to costumer %s, too many senders\n", costumer->name);
+		goto out;
 	}
 
 	// Reverse arguments
-	return __rrr_message_broker_write_listener_add(listener_costumer, costumer);
+	ret = __rrr_message_broker_write_listener_add(listener_costumer, costumer);
+
+	out:
+	return ret;
 }

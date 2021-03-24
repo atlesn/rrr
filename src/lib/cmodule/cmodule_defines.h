@@ -24,7 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../socket/rrr_socket_constants.h"
 #include "../read_constants.h"
-#include "../util/linked_list.h"
 #include "../settings.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
@@ -42,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT             1
 #define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS        1000
 
+// This value may not exceed 256 due to limits in event queue flags
 #define RRR_CMODULE_WORKER_MAX_WORKER_COUNT                 16
 
 #define RRR_CMODULE_CHANNEL_SIZE             (1024*1024*2*RRR_CMODULE_WORKER_MAX_WORKER_COUNT)

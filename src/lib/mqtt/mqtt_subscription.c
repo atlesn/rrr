@@ -270,12 +270,12 @@ void rrr_mqtt_subscription_collection_dump (
 		const struct rrr_mqtt_subscription_collection *subscriptions
 ) {
 	int i = 0;
-	RRR_MSG_1("=== DUMPING SUBSCRIPTIONS IN COLLECTION %p ===\n", subscriptions);
+	RRR_MSG_2("=== DUMPING SUBSCRIPTIONS IN COLLECTION %p ===\n", subscriptions);
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		i++;
-		RRR_MSG_1("%i: %s\n", i, node->topic_filter);
+		RRR_MSG_2("%i: %s\n", i, node->topic_filter);
 	RRR_LL_ITERATE_END();
-	RRR_MSG_1("===\n");
+	RRR_MSG_2("===\n");
 }
 
 void rrr_mqtt_subscription_collection_clear (

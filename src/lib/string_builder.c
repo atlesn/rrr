@@ -127,7 +127,7 @@ int rrr_string_builder_reserve (
 		struct rrr_string_builder *string_builder,
 		rrr_biglength bytes
 ) {
-	if (string_builder->wpos + bytes + 1 > string_builder->size) {
+	if (string_builder->wpos + bytes + 1 > string_builder->size || string_builder->buf == NULL) {
 		rrr_biglength new_size = bytes + 1 + string_builder->size + 1024;
 		char *new_buf = realloc(string_builder->buf, new_size);
 		if (new_buf == NULL) {

@@ -311,9 +311,6 @@ int rrr_mmap_heap_reallocate (
 	int ret = 0;
 
 	pthread_mutex_lock(&mmap->mutex);
-	if (mmap->usercount != 1) {
-		RRR_BUG("BUG: Attempted to re-allocate heap while there was more than one user in rrr_mmap_new_heap_size\n");
-	}
 
 	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
 
@@ -379,8 +376,6 @@ int rrr_mmap_new (
     strncpy(result->name, name, sizeof(result->name));
     result->name[sizeof(result->name) - 1] = '\0';
 
-    result->usercount++;
-
     *target = result;
     result = NULL;
 
@@ -394,28 +389,10 @@ int rrr_mmap_new (
 		return ret;
 }
 
-// TODO : Usercount seems not to be used
-
-void rrr_mmap_incref (
-		struct rrr_mmap *mmap
-) {
-	pthread_mutex_lock(&mmap->mutex);
-	mmap->usercount++;
-	pthread_mutex_unlock(&mmap->mutex);
-}
-
 void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
 ) {
-	int usercount_result;
-
-	pthread_mutex_lock(&mmap->mutex);
-	usercount_result = --(mmap->usercount);
-	pthread_mutex_unlock(&mmap->mutex);
-
-	if (usercount_result == 0) {
-		pthread_mutex_destroy(&mmap->mutex);
-		munmap(mmap->heap, mmap->heap_size);
-		munmap(mmap, sizeof(*mmap));
-	}
+	pthread_mutex_destroy(&mmap->mutex);
+	munmap(mmap->heap, mmap->heap_size);
+	munmap(mmap, sizeof(*mmap));
 }

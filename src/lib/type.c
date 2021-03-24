@@ -255,7 +255,7 @@ static int __rrr_type_import_numeric_str_raw (
 	}
 
 	int found_end_char = 0;
-	unsigned int total_length = 0;
+	int total_length = 0;
 
 	union {
 		long long int s;
@@ -275,7 +275,7 @@ static int __rrr_type_import_numeric_str_raw (
 			tmp[total_length++] = *pos;
 
 			// Make sure we don't overwrite last \0 needed by conversion function
-			if (total_length > sizeof(tmp) - 1) {
+			if ((unsigned int) total_length > sizeof(tmp) - 1) {
 				RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, number too long (> 63 characters)\n");
 				return RRR_TYPE_PARSE_SOFT_ERR;
 			}
@@ -445,7 +445,7 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	node->data = malloc(found);
+	node->data = malloc((size_t) found);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_sep_stx\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
@@ -612,6 +612,12 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	if (count != node->element_count && node->element_count != 0) {
 		RRR_MSG_0("Number of messages in array did not match definition. Found %i but expected %" PRIu32 "\n",
 				count, node->element_count);
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	if (target_size_total > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Total size too long in _rrr_type_import_msg\n");
 		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -1476,6 +1482,10 @@ int rrr_type_new_h (
 ) {
 	int ret = 0;
 
+	if (element_count == 0) {
+		RRR_BUG("BUG: Element count was 0 in rrr_type_new_h\n");
+	}
+
 	rrr_biglength stored_length = sizeof(uint64_t) * element_count;
 
 	if (stored_length > RRR_LENGTH_MAX) {
@@ -1500,7 +1510,7 @@ int rrr_type_new_h (
 		goto out;
 	}
 
-	memset((*target)->data, '\0', stored_length);
+	memset((*target)->data, '\0', (long unsigned int) stored_length);
 
 	out:
 	return ret;
@@ -1549,7 +1559,7 @@ int rrr_type_value_clone (
 			ret = 1;
 			goto out;
 		}
-		memcpy(new_value->data, source->data, source->total_stored_length);
+		memcpy(new_value->data, source->data, (size_t) source->total_stored_length);
 		new_value->total_stored_length = source->total_stored_length;
 	}
 	else {

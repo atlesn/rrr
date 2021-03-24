@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,12 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+#include "../../../config.h"
+
 #include "http_session.h"
 #include "http_server_common.h"
 
 struct rrr_net_transport;
-struct rrr_thread_collection;
 struct rrr_net_transport_config;
+struct rrr_event_queue;
 
 struct rrr_http_server {
 	struct rrr_net_transport *transport_http;
@@ -38,7 +40,7 @@ struct rrr_http_server {
 	struct rrr_net_transport *transport_https;
 #endif
 
-	struct rrr_thread_collection *threads;
+	struct rrr_http_server_callbacks callbacks;
 
 	int disable_http2;
 };
@@ -51,25 +53,29 @@ void rrr_http_server_destroy_void (
 );
 int rrr_http_server_new (
 		struct rrr_http_server **target,
-		int disable_http2
+		int disable_http2,
+		const struct rrr_http_server_callbacks *callbacks
 );
 int rrr_http_server_start_plain (
 		struct rrr_http_server *server,
-		uint16_t port
+		struct rrr_event_queue *queue,
+		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms
 );
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
+		struct rrr_event_queue *queue,
 		uint16_t port,
+		uint64_t first_read_timeout_ms,
+		uint64_t read_timeout_ms,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 );
 #endif
-int rrr_http_server_tick (
-		int *accept_count_final,
-		struct rrr_http_server *server,
-		int max_threads,
-		const struct rrr_http_server_callbacks *callbacks
+void rrr_http_server_response_available_notify (
+		struct rrr_http_server *server
 );
 
 #endif /* RRR_HTTP_SERVER_H */

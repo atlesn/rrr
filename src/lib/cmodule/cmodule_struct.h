@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_STRUCT_H
 	
 #include "cmodule_config_data.h"
-#include "../message_holder/message_holder_collection.h"
+#include "cmodule_defines.h"
 
 struct rrr_mmap_channel;
 struct rrr_instance_settings;
@@ -32,7 +32,7 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 
 struct rrr_cmodule_worker {
-	RRR_LL_NODE(struct rrr_cmodule_worker);
+	uint8_t index;
 
 	rrr_setting_uint spawn_interval_us;
 	rrr_setting_uint sleep_time_us;
@@ -78,7 +78,6 @@ struct rrr_cmodule_worker {
 };
 
 struct rrr_cmodule {
-	RRR_LL_HEAD(struct rrr_cmodule_worker);
 	struct rrr_mmap *mmap;
 
 	struct rrr_cmodule_config_data config_data;
@@ -89,7 +88,8 @@ struct rrr_cmodule {
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
 
-//	struct rrr_msg_holder_collection queue_to_forks;
+	int worker_count;
+	struct rrr_cmodule_worker workers[RRR_CMODULE_WORKER_MAX_WORKER_COUNT];
 };
 
 #endif /* RRR_CMODULE_STRUCT_H */
