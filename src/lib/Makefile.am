@@ -101,7 +101,7 @@ helpers = helpers/nullsafe_str.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
-event = event/event.c
+event = event/event.c event/event_collection.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c

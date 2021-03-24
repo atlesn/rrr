@@ -72,6 +72,7 @@ struct rrr_event_queue;
     RRR_LL_NODE(type);                                                      \
     const struct rrr_net_transport_methods *methods;                        \
     struct rrr_net_transport_handle_collection handles;                     \
+    struct rrr_event_queue *event_queue;                                    \
     struct event_base *event_base;                                          \
     struct event *event_maintenance;                                        \
     struct event *event_read_add;                                           \

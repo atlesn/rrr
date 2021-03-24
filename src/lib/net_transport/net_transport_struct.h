@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../util/linked_list.h"
+#include "../event/event_collection.h"
 
 struct rrr_read_session;
 struct rrr_net_transport;
@@ -160,11 +161,13 @@ struct rrr_net_transport_handle {
 	struct rrr_read_session_collection read_sessions;
 
 	int submodule_fd;
-	struct event *event_handshake;
-	struct event *event_read;
-	struct event *event_write;
-	struct event *event_first_read_timeout;
-	struct event *event_hard_read_timeout;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_handshake;
+	rrr_event_handle event_read;
+	rrr_event_handle event_write;
+	rrr_event_handle event_first_read_timeout;
+	rrr_event_handle event_hard_read_timeout;
 
 	uint64_t bytes_read_total;
 	uint64_t bytes_written_total;

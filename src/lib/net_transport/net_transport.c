@@ -105,6 +105,8 @@ static int __rrr_net_transport_handle_create_and_push (
 	new_handle->handle = handle;
 	new_handle->mode = mode;
 
+	rrr_event_collection_init(&new_handle->events, transport->event_queue);
+
 	if ((ret = submodule_callback (
 			&new_handle->submodule_private_ptr,
 			&new_handle->submodule_fd,
@@ -197,21 +199,7 @@ static int __rrr_net_transport_handle_destroy (
 ) {
 	// Delete events first as libevent might produce warnings if
 	// this is performed after FD is closed
-	if (handle->event_read != NULL) {
-		event_free(handle->event_read);
-	}
-	if (handle->event_handshake != NULL) {
-		event_free(handle->event_handshake);
-	}
-	if (handle->event_write != NULL) {
-		event_free(handle->event_write);
-	}
-	if (handle->event_first_read_timeout != NULL) {
-		event_free(handle->event_first_read_timeout);
-	}
-	if (handle->event_hard_read_timeout != NULL) {
-		event_free(handle->event_hard_read_timeout);
-	}
+	rrr_event_collection_clear(&handle->events);
 
 	rrr_read_session_collection_clear(&handle->read_sessions);
 
@@ -459,7 +447,7 @@ static int __rrr_net_transport_ctx_send_nonblock (
 	event_active(handle->transport->event_maintenance, 0, 0);                                              \
     } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
         rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
-        event_active(handle->event_read, 0, 0);                                                                \
+        EVENT_ACTIVATE(handle->event_read);                                                                    \
     }} while(0)
 
 static void __rrr_net_transport_event_first_read_timeout (
@@ -511,7 +499,7 @@ static void __rrr_net_transport_event_handshake (
 
 	if ((ret_tmp = handle->transport->methods->handshake(handle)) != 0) {
 		if (ret_tmp == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			event_active(handle->event_handshake, 0, 0);
+			EVENT_ACTIVATE(handle->event_handshake);
 			return;
 		}
 
@@ -530,7 +518,7 @@ static void __rrr_net_transport_event_handshake (
 	}
 
 	handle->handshake_complete = 1;
-	event_del(handle->event_handshake);
+	EVENT_REMOVE(handle->event_handshake);
 
 	check_return:
 	CHECK_READ_WRITE_RETURN();
@@ -552,17 +540,10 @@ static void __rrr_net_transport_event_read (
 	}
 
 	if ((flags & EV_READ) && handle->transport->hard_read_timeout_ms > 0) {
-		if (event_add(handle->event_hard_read_timeout, &handle->transport->hard_read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to update read event with new hard timeout in __rrr_net_transport_event_read\n");
-			event_base_loopbreak(handle->transport->event_base);
-			return;
-		}
+		EVENT_ADD(handle->event_hard_read_timeout);
 	}
 
-	if (handle->event_first_read_timeout != NULL) {
-		// Ignore error
-		event_del(handle->event_first_read_timeout);
-	}
+	EVENT_REMOVE(handle->event_first_read_timeout);
 
 	ret_tmp = handle->transport->read_callback (
 		handle,
@@ -624,22 +605,18 @@ static void __rrr_net_transport_event_write (
 	}
 
 	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
-		event_del(handle->event_write);
+		EVENT_REMOVE(handle->event_write);
 	}
 
 	CHECK_READ_WRITE_RETURN();
 }
 
-static int __rrr_net_transport_handle_event_read_add_if_needed (
+static void __rrr_net_transport_handle_event_read_add_if_needed (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!event_pending (handle->event_read, EV_READ|EV_TIMEOUT, NULL)) {
-		if (event_add(handle->event_read, (handle->transport->soft_read_timeout_ms > 0 ? &handle->transport->soft_read_timeout_tv : NULL)) != 0) {
-			RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_event_read_add_if_needed\n");
-			return 1;
-		}
+	if (!EVENT_PENDING(handle->event_read)) {
+		EVENT_ADD(handle->event_read);
 	}
-	return 0;
 }
 
 static int __rrr_net_transport_handle_events_setup_connected (
@@ -649,101 +626,74 @@ static int __rrr_net_transport_handle_events_setup_connected (
 
 	// READ
 
-	if ((handle->event_read = event_new (
-			handle->transport->event_base,
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_read,
+			&handle->events,
 			handle->submodule_fd,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
 			__rrr_net_transport_event_read,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create read event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
+			handle,
+			handle->transport->soft_read_timeout_ms * 1000
+	)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_handle_event_read_add_if_needed (handle)) != 0) {
-		goto out;
-	}
+	__rrr_net_transport_handle_event_read_add_if_needed (handle);
 
 	// HANDSHAKE
 
-	if ((handle->event_handshake = event_new (
-			handle->transport->event_base,
-			-1,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
+	if ((ret = rrr_event_collection_push_periodic (
+			&handle->event_handshake,
+			&handle->events,
 			__rrr_net_transport_event_handshake,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create handshake event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
+			handle,
+			1000 // 1 ms
+	)) != 0) {
 		goto out;
 	}
 
-	struct timeval tv_handshake = {0};
-	tv_handshake.tv_usec = 1000; // 1 ms
-
-	if (event_add(handle->event_handshake, &tv_handshake) != 0) {
-		RRR_MSG_0("Failed to add handshake event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	event_active(handle->event_handshake, 0, 0);
+	EVENT_ACTIVATE(handle->event_handshake);
 
 	// WRITE
 
-	if ((handle->event_write = event_new (
-			handle->transport->event_base,
+	if ((ret = rrr_event_collection_push_write (
+			&handle->event_write,
+			&handle->events,
 			handle->submodule_fd,
-			EV_WRITE|EV_TIMEOUT|EV_PERSIST,
 			__rrr_net_transport_event_write,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_connected\n");
-		ret = 1;
+			handle,
+			handle->transport->soft_read_timeout_ms * 1000
+	)) != 0) {
 		goto out;
 	}
 
 	// Don't add write to events, it is done when data is pushed and we need to write
 
 	if (handle->transport->first_read_timeout_ms > 0) {
-		if ((handle->event_first_read_timeout = event_new (
-				handle->transport->event_base,
-				handle->submodule_fd,
-				EV_TIMEOUT|EV_PERSIST,
+		if ((ret = rrr_event_collection_push_periodic (
+				&handle->event_first_read_timeout,
+				&handle->events,
 				__rrr_net_transport_event_first_read_timeout,
-				handle
-		)) == NULL) {
-			RRR_MSG_0("Failed to create first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
+				handle,
+				handle->transport->first_read_timeout_ms * 1000
+		)) != 0) {
 			goto out;
 		}
 
-		if (event_add(handle->event_first_read_timeout, &handle->transport->first_read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to add first_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
-			goto out;
-		}
+		EVENT_ADD(handle->event_first_read_timeout);
 	}
 
 	if (handle->transport->hard_read_timeout_ms > 0) {
-		if ((handle->event_hard_read_timeout = event_new (
-				handle->transport->event_base,
-				handle->submodule_fd,
-				EV_TIMEOUT|EV_PERSIST,
+		if ((ret = rrr_event_collection_push_periodic (
+				&handle->event_hard_read_timeout,
+				&handle->events,
 				__rrr_net_transport_event_hard_read_timeout,
-				handle
-		)) == NULL) {
-			RRR_MSG_0("Failed to create hard_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
+				handle,
+				handle->transport->hard_read_timeout_ms * 1000
+		)) != 0) {
 			goto out;
 		}
 
-		if (event_add(handle->event_hard_read_timeout, &handle->transport->hard_read_timeout_tv) != 0) {
-			RRR_MSG_0("Failed to add hard_read_timeout event in __rrr_net_transport_handle_events_setup_connected\n");
-			ret = 1;
-			goto out;
-		}
+		EVENT_ADD(handle->event_hard_read_timeout);
 	}
 
 	out:
@@ -869,7 +819,7 @@ int rrr_net_transport_is_tls (
 void rrr_net_transport_ctx_notify_read (
 		struct rrr_net_transport_handle *handle
 ) {
-	event_active(handle->event_read, 0, 0);
+	EVENT_ACTIVATE(handle->event_read);
 }
 
 void rrr_net_transport_notify_read_all_connected (
@@ -957,7 +907,7 @@ int rrr_net_transport_ctx_read_message (
 	handle->bytes_read_total += bytes_read;
 
 	if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
-		event_del(handle->event_read);
+		EVENT_REMOVE(handle->event_read);
 	}
 
 	return ret;
@@ -976,9 +926,7 @@ int rrr_net_transport_ctx_send_push (
 ) {
 	int ret = rrr_socket_send_chunk_collection_push_const (&handle->send_chunks, data, size);
 
-	if (handle->event_write != 0) {
-		event_add(handle->event_write, NULL);
-	}
+	EVENT_ADD(handle->event_write);
 
 	return ret;
 }
@@ -1263,9 +1211,7 @@ static int __rrr_net_transport_accept_callback_intermediate (
 	final_callback(handle, sockaddr, socklen, final_callback_arg);
 
 	// For handshake purposes
-	if (handle->event_read) {
-		event_active(handle->event_read, 0, 0);
-	}
+	EVENT_ACTIVATE(handle->event_read);
 
 	out:
 	return ret;
@@ -1301,23 +1247,18 @@ static int __rrr_net_transport_handle_events_setup_listen (
 ) {
 	int ret = 0;
 
-	if ((handle->event_read = event_new (
-			handle->transport->event_base,
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_read,
+			&handle->events,
 			handle->submodule_fd,
-			EV_READ|EV_TIMEOUT|EV_PERSIST,
 			__rrr_net_transport_event_accept,
-			handle
-	)) == NULL) {
-		RRR_MSG_0("Failed to create listening event in __rrr_net_transport_handle_events_setup_listen\n");
-		ret = 1;
+			handle,
+			0
+	)) != 0) {
 		goto out;
 	}
 
-	if (event_add(handle->event_read, NULL) != 0) {
-		RRR_MSG_0("Failed to add read event in __rrr_net_transport_handle_events_setup_listen\n");
-		ret = 1;
-		goto out;
-	}
+	EVENT_ADD(handle->event_read);
 
 	out:
 	return ret;
@@ -1427,9 +1368,7 @@ void rrr_net_transport_event_activate_all_connected_read (
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (node->event_read) {
-			event_active(node->event_read, 0, 0);
-		}
+		EVENT_ACTIVATE(node->event_read);
 	RRR_LL_ITERATE_END();
 }
 
@@ -1450,6 +1389,7 @@ int rrr_net_transport_event_setup (
 
 	rrr_net_transport_common_cleanup (transport);
 
+	transport->event_queue = queue;
 	transport->event_base = rrr_event_queue_base_get(queue);
 
 	transport->first_read_timeout_ms = first_read_timeout_ms;

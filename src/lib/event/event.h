@@ -53,8 +53,13 @@ enum rrr_event_priority {
 
 #define RRR_EVENT_PRIORITY_COUNT (RRR_EVENT_PRIORITY_LOW + 1)
 
-struct rrr_event;
+typedef void *rrr_event;
 struct rrr_event_queue;
+
+typedef struct rrr_event_handle {
+	rrr_event event;
+	struct timeval interval;
+} rrr_event_handle;
 
 void rrr_event_queue_destroy (
 		struct rrr_event_queue *queue
@@ -102,5 +107,37 @@ int rrr_event_pass (
 		uint8_t function,
 		uint16_t amount
 );
+
+static inline void rrr_event_activate (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_active((struct event *) handle->event, 0, 0);
+	}
+}
+static inline void rrr_event_add (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_add((struct event *) handle->event, (handle->interval.tv_sec != 0 || handle->interval.tv_usec != 0 ? &handle->interval : NULL));
+	}
+}
+static inline void rrr_event_remove (
+		rrr_event_handle *handle
+) {
+	if (handle->event != NULL) {
+		event_del((struct event *) handle->event);
+	}
+}
+static inline int rrr_event_pending (
+		rrr_event_handle *handle
+) {
+	return event_pending((struct event *) handle->event, EV_READ|EV_WRITE|EV_TIMEOUT, NULL);
+}
+
+#define EVENT_ACTIVATE(event)    rrr_event_activate(&event)
+#define EVENT_ADD(event)         rrr_event_add(&event)
+#define EVENT_REMOVE(event)      rrr_event_remove(&event)
+#define EVENT_PENDING(event)     rrr_event_pending(&event)
 
 #endif /* RRR_EVENT_H */
