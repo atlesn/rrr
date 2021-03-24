@@ -50,6 +50,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_PERL5_DEFINE_AND_FETCH_ARRAY_PTR_FROM_HV(hv)				\
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(rrr_array_ptr, hv);				\
-	struct rrr_array *array = (struct rrr_array *) SvIV(rrr_array_ptr)
+	struct rrr_array *array = (struct rrr_array *) (intptr_t) SvIV(rrr_array_ptr);\
+	do {if ((intptr_t) array != SvIV(rrr_array_ptr) || array == NULL || SvIV(rrr_array_ptr) > INTPTR_MAX) { \
+		RRR_BUG("BUG: Invalid array pointer value retrieved from HV\n"); \
+	}} while(0)
+
 
 #endif /* RRR_PERL5_HV_MACROS_H */
