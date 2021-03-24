@@ -416,20 +416,19 @@ static int __rrr_socket_read_message_split_callbacks_complete_callback (
 	struct rrr_read_session *read_session,
 	void *arg
 ) {
-	int ret = 0;
-
 	struct rrr_socket_read_message_split_callbacks_complete_callback_data *callback_data = arg;
 
-	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if ((rrr_slength) read_session->rx_buf_wpos > (rrr_slength) RRR_LENGTH_MAX) {
 		RRR_MSG_0("Message was too long in __rrr_socket_read_message_split_callbacks_complete_callback\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
+		return RRR_READ_SOFT_ERROR;
 	}
+#endif
 
 	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
 	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
 
-	ret = rrr_msg_to_host_and_verify_with_callback (
+	return rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) &read_session->rx_buf_ptr,
 			(rrr_length) read_session->rx_buf_wpos,
 			callback_data->callback_msg,
@@ -440,9 +439,6 @@ static int __rrr_socket_read_message_split_callbacks_complete_callback (
 			callback_data->callback_arg1,
 			callback_data->callback_arg2
 	);
-
-	out:
-	return ret;
 }
 
 int rrr_socket_read_message_split_callbacks (

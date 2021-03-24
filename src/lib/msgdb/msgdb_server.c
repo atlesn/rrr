@@ -280,7 +280,7 @@ static int __rrr_msgdb_server_put_path_split_callback (
 		rrr_msg_checksum_and_to_network_endian(msg_tmp);
 
 		// Note: Do not attempt to use size from the endian-converted message
-		if (write(fd, msg_tmp, MSG_TOTAL_SIZE(callback_data->msg)) != MSG_TOTAL_SIZE(callback_data->msg)) {
+		if (write(fd, msg_tmp, MSG_TOTAL_SIZE(callback_data->msg)) != (rrr_slength) MSG_TOTAL_SIZE(callback_data->msg)) {
 			RRR_MSG_0("Could not write to file '%s' in message db server: %s\n", str, rrr_strerror(errno));
 			ret = 1;
 			goto out;

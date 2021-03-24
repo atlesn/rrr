@@ -305,7 +305,11 @@ static int __rrr_msg_read (
 
 	RRR_MSG_1("== Size: %lli\n", (long long signed) file_size);
 
-	if (file_size < (ssize_t) sizeof(struct rrr_msg) || file_size > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if (file_size < (ssize_t) sizeof(struct rrr_msg) || file_size > (rrr_slength) RRR_LENGTH_MAX) {
+#else
+	if (file_size < (ssize_t) sizeof(struct rrr_msg)) {
+#endif
 		RRR_MSG_0("File size of file '%s' was out of range while reading (must have %llu <= size <= %llu, got %lli)\n",
 			file,
 			(long long unsigned) sizeof(struct rrr_msg),

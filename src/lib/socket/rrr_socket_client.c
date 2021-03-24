@@ -606,18 +606,17 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 	struct rrr_socket_client *client = arg;
 	struct rrr_socket_client_collection *collection = client->collection;
 
-	int ret = 0;
-
-	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if ((rrr_slength) read_session->rx_buf_wpos > (rrr_slength) RRR_LENGTH_MAX) {
 		RRR_MSG_0("Message was too long in __rrr_socket_client_collection_read_message_complete_callback\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
+		return RRR_READ_SOFT_ERROR;
 	}
+#endif
 
 	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
 	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
 
-	ret = rrr_msg_to_host_and_verify_with_callback (
+	return rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) &read_session->rx_buf_ptr,
 			(rrr_length) read_session->rx_buf_wpos,
 			collection->callback_msg,
@@ -628,9 +627,6 @@ static int __rrr_socket_client_collection_read_message_complete_callback (
 			client->private_data,
 			collection->callback_msg_arg
 	);
-
-	out:
-	return ret;
 }
 
 static int __rrr_socket_client_connected_fd_ensure (

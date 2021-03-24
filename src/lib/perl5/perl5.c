@@ -814,7 +814,10 @@ static int __rrr_perl5_message_to_hv (
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(rrr_array_ptr, hv);
 
 	SvFLAGS(rrr_array_ptr) &= ~(SVf_PROTECT|SVf_READONLY);
-	sv_setiv(rrr_array_ptr, (IV) array);
+	sv_setiv(rrr_array_ptr, (intptr_t) array);
+	if (SvIV(rrr_array_ptr) != (intptr_t) array) {
+		RRR_BUG("BUG: RRR array pointer storage failure in __rrr_perl5_message_to_hv, possibly a problem on this particular architecture\n");
+	}
 	SvFLAGS(rrr_array_ptr) |= SVf_PROTECT|SVf_READONLY;
 
     SvUTF8_off(ip_addr);

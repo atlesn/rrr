@@ -548,7 +548,8 @@ static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
 		void *arg
 ) {
 	(void)(arg);
-	write (STDOUT_FILENO, str, len);
+	ssize_t bytes = write (STDOUT_FILENO, str, len);
+	RRR_DBG_3("%lli bytes printed\n", (long long int) bytes);
 	return 0;
 }
 
