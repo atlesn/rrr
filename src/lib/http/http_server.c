@@ -102,6 +102,7 @@ struct rrr_http_server_start_alpn_protos_callback_data {
 	struct rrr_net_transport **result_transport;
 	const struct rrr_net_transport_config *net_transport_config;
 	int net_transport_flags;
+	struct rrr_event_queue *queue;
 };
 
 static int __rrr_http_server_start_alpn_protos_callback (
@@ -115,6 +116,7 @@ static int __rrr_http_server_start_alpn_protos_callback (
 			callback_data->result_transport,
 			callback_data->net_transport_config,
 			callback_data->net_transport_flags,
+			callback_data->queue,
 			alpn_protos,
 			alpn_protos_length
 	);
@@ -407,7 +409,8 @@ static int __rrr_http_server_start (
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
 				result_transport,
 				net_transport_config,
-				net_transport_flags
+				net_transport_flags,
+				queue
 		};
 
 		ret = rrr_http_application_alpn_protos_with_all_do (
@@ -420,6 +423,7 @@ static int __rrr_http_server_start (
 				result_transport,
 				net_transport_config,
 				net_transport_flags,
+				queue,
 				NULL,
 				0
 		);
@@ -437,7 +441,6 @@ static int __rrr_http_server_start (
 
 		if ((ret = rrr_net_transport_event_setup (
 			*result_transport,
-			queue,
 			first_read_timeout_ms,
 			ping_timeout_ms,
 			hard_timeout_ms,

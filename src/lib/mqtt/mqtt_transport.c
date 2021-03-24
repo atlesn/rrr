@@ -130,6 +130,7 @@ int rrr_mqtt_transport_start (
 				&tmp,
 				net_transport_config,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
+				transport->queue,
 				NULL,
 				0
 		)) != 0) {
@@ -142,6 +143,7 @@ int rrr_mqtt_transport_start (
 				&tmp,
 				net_transport_config,
 				0,
+				transport->queue,
 				NULL,
 				0
 		)) != 0) {
@@ -157,7 +159,6 @@ int rrr_mqtt_transport_start (
 
 	if ((ret = rrr_net_transport_event_setup (
 			tmp,
-			transport->queue,
 			2 * 2000,   // First read timeout 2s 
 			1 * 1000,   // Soft timeout 1 s, maintenance interval
 			0xffff * 2, // Hard timeout

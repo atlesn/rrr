@@ -44,6 +44,12 @@ void rrr_event_collection_init (
 void rrr_event_collection_clear (
 		struct rrr_event_collection *collection
 );
+int rrr_event_collection_push (
+		struct rrr_event_handle *target,
+		struct rrr_event_collection *collection,
+		void (callback)(evutil_socket_t fd, short flags, void *arg),
+		void *arg
+);
 int rrr_event_collection_push_periodic (
 		struct rrr_event_handle *target,
 		struct rrr_event_collection *collection,

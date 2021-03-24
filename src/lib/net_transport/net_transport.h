@@ -73,9 +73,9 @@ struct rrr_event_queue;
     const struct rrr_net_transport_methods *methods;                        \
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
-    struct event_base *event_base;                                          \
-    struct event *event_maintenance;                                        \
-    struct event *event_read_add;                                           \
+    struct rrr_event_collection events;                                     \
+    rrr_event_handle event_maintenance;                                     \
+    rrr_event_handle event_read_add;                                        \
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
     uint64_t hard_read_timeout_ms;                                          \
@@ -118,6 +118,7 @@ int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
 		int flags,
+		struct rrr_event_queue *queue,
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 );
@@ -286,7 +287,6 @@ void rrr_net_transport_event_activate_all_connected_read (
 );
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
-		struct rrr_event_queue *queue,
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,

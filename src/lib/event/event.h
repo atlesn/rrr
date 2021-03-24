@@ -102,6 +102,9 @@ int rrr_event_dispatch (
 		int (*function_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS),
 		void *arg
 );
+void rrr_event_dispatch_break (
+		struct rrr_event_queue *queue
+);
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,

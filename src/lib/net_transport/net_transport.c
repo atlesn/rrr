@@ -284,6 +284,7 @@ int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
 		int flags,
+		struct rrr_event_queue *queue,
 		const char *alpn_protos,
 		unsigned int alpn_protos_length
 ) {
@@ -333,6 +334,9 @@ int rrr_net_transport_new (
 		goto out;
 	}
 
+	rrr_event_collection_init(&new_transport->events, queue);
+	new_transport->event_queue = queue;
+
 	*result = new_transport;
 
 	goto out;
@@ -349,13 +353,7 @@ void rrr_net_transport_destroy (
 
 	rrr_net_transport_common_cleanup(transport);
 
-	if (transport->event_maintenance) {
-		event_free(transport->event_maintenance);
-	}
-	if (transport->event_read_add) {
-		event_free(transport->event_read_add);
-	}
-	transport->event_base = NULL;
+	rrr_event_collection_clear(&transport->events);
 
 	// The matching destroy function of the new function which allocated
 	// memory for the transport will free()
@@ -442,9 +440,9 @@ static int __rrr_net_transport_ctx_send_nonblock (
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
         if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
             RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
-            event_base_loopbreak(handle->transport->event_base);                                               \
+            rrr_event_dispatch_break(handle->transport->event_queue);                                          \
         }                                                                                                      \
-	event_active(handle->transport->event_maintenance, 0, 0);                                              \
+	EVENT_ACTIVATE(handle->transport->event_maintenance);                                                  \
     } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
         rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
         EVENT_ACTIVATE(handle->event_read);                                                                    \
@@ -743,7 +741,7 @@ static int __rrr_net_transport_connect (
 	memcpy(&handle->connected_addr, &addr, socklen);
 	handle->connected_addr_len = socklen;
 
-	if (transport->event_base != NULL) {
+	if (transport->event_queue != NULL) {
 		if ((ret = __rrr_net_transport_handle_events_setup_connected (
 				handle
 		)) != 0) {
@@ -1197,12 +1195,10 @@ static int __rrr_net_transport_accept_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_accept_callback_intermediate");
 
-	if (transport->event_base != NULL) {
-		if ((ret = __rrr_net_transport_handle_events_setup_connected (
-				handle
-		)) != 0) {
-			goto out;
-		}
+	if ((ret = __rrr_net_transport_handle_events_setup_connected (
+			handle
+	)) != 0) {
+		goto out;
 	}
 
 	memcpy(&handle->connected_addr, sockaddr, socklen);
@@ -1238,7 +1234,7 @@ static void __rrr_net_transport_event_accept (
 	);
 
 	if (ret_tmp != 0) {
-		event_base_loopbreak(handle->transport->event_base);
+		rrr_event_dispatch_break(handle->transport->event_queue);
 	}
 }
 
@@ -1273,12 +1269,10 @@ static int __rrr_net_transport_bind_and_listen_callback_intermediate (
 
 	RRR_NET_TRANSPORT_HANDLE_GET("__rrr_net_transport_bind_and_listen_callback_intermediate");
 
-	if (transport->event_base) {
-		if ((ret = __rrr_net_transport_handle_events_setup_listen (
-				handle
-		)) != 0) {
-			goto out;
-		}
+	if ((ret = __rrr_net_transport_handle_events_setup_listen (
+			handle
+	)) != 0) {
+		goto out;
 	}
 
 	if (final_callback) {
@@ -1374,7 +1368,6 @@ void rrr_net_transport_event_activate_all_connected_read (
 
 int rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
-		struct rrr_event_queue *queue,
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
@@ -1388,9 +1381,6 @@ int rrr_net_transport_event_setup (
 	int ret = 0;
 
 	rrr_net_transport_common_cleanup (transport);
-
-	transport->event_queue = queue;
-	transport->event_base = rrr_event_queue_base_get(queue);
 
 	transport->first_read_timeout_ms = first_read_timeout_ms;
 	transport->soft_read_timeout_ms = soft_read_timeout_ms;
@@ -1409,50 +1399,26 @@ int rrr_net_transport_event_setup (
 	transport->read_callback = read_callback;
 	transport->read_callback_arg = read_callback_arg;
 
-	if ((transport->event_maintenance = event_new (
-			transport->event_base,
-			-1,
-			0,
+	if ((ret = rrr_event_collection_push (
+			&transport->event_maintenance,
+			&transport->events,
 			__rrr_net_transport_event_maintenance,
 			transport
-	)) == NULL) {
-		RRR_MSG_0("Failed to create maintenance event in rrr_net_transport_event_setup\n");
-		ret = 1;
+	)) != 0) {
 		goto out;
 	}
 
-	// Must be run with high priority to prevent more events being run on FDs which are to be closed.
-/*	if (event_priority_set(transport->event_maintenance, RRR_EVENT_PRIORITY_HIGH) != 0) {
-		RRR_MSG_0("Failed to set maintenance event priority in rrr_net_transport_event_setup\n");
-		ret = 1;
-		goto out;
-	}*/
-
-	if (event_add(transport->event_maintenance, NULL) != 0) {
-		RRR_MSG_0("Failed to add maintenance event in rrr_net_transport_event_setup\n");
-		ret = 1;
-		goto out;
-	}
-
-	if ((transport->event_read_add = event_new (
-			transport->event_base,
-			-1,
-			EV_TIMEOUT|EV_PERSIST,
+	if ((ret = rrr_event_collection_push_periodic (
+			&transport->event_read_add,
+			&transport->events,
 			__rrr_net_transport_event_read_add,
-			transport
-	)) == NULL) {
-		RRR_MSG_0("Failed to create read_add event in rrr_net_transport_event_setup\n");
-		ret = 1;
+			transport,
+			50 * 1000 // 50 ms
+	)) != 0) {
 		goto out;
 	}
 
-	struct timeval tv_read_add = {0, 50 * 1000}; // 50 ms
-
-	if (event_add(transport->event_read_add, &tv_read_add) != 0) {
-		RRR_MSG_0("Failed to add read_add event in rrr_net_transport_event_setup\n");
-		ret = 1;
-		goto out;
-	}
+	EVENT_ADD(transport->event_read_add);
 
 	out:
 	return ret;
