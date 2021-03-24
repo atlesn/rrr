@@ -142,13 +142,13 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 			goto out;
 		}
 
-		if ((buf = malloc(new_size)) == NULL) {
+		if ((buf = malloc((long unsigned int) new_size)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_type_convert_h2str\n");
 			ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 			goto out;
 		}
 
-		memset (buf, ' ', new_size); // Set whole buffer to spaces
+		memset (buf, ' ', (long unsigned int) new_size); // Set whole buffer to spaces
 
 		for (size_t i = 0; i < source->element_count; i++) {
 			const rrr_biglength rpos = i * sizeof(uint64_t);
@@ -316,7 +316,14 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	}
 
 	const rrr_biglength size_new = source->element_count * sizeof(uint64_t);
-	if ((data_new = malloc(size_new)) == NULL) {
+
+	if (size_new > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Size exceeds maximum in __rrr_type_convert_str2h\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((data_new = malloc((long unsigned int) size_new)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_convert_str2h\n");
 		ret = 1;
 		goto out;

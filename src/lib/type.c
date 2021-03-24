@@ -255,7 +255,7 @@ static int __rrr_type_import_numeric_str_raw (
 	}
 
 	int found_end_char = 0;
-	unsigned int total_length = 0;
+	int total_length = 0;
 
 	union {
 		long long int s;
@@ -275,7 +275,7 @@ static int __rrr_type_import_numeric_str_raw (
 			tmp[total_length++] = *pos;
 
 			// Make sure we don't overwrite last \0 needed by conversion function
-			if (total_length > sizeof(tmp) - 1) {
+			if ((unsigned int) total_length > sizeof(tmp) - 1) {
 				RRR_MSG_0("Import failed in rrr_type_import_numeric_str_raw, number too long (> 63 characters)\n");
 				return RRR_TYPE_PARSE_SOFT_ERR;
 			}
