@@ -144,7 +144,7 @@ static int __rrr_stats_data_init (
 
 	rrr_event_collection_init(&data->events, data->queue);
 
-	if ((ret = rrr_socket_client_collection_new(&data->connections, "rrr_stats")) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&data->connections, data->queue, "rrr_stats")) != 0) {
 		goto out_destroy_event_queue;
 	}
 
@@ -682,7 +682,6 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_socket_client_collection_event_setup (
 			data.connections,
-			data.queue,
 			NULL,
 			NULL,
 			NULL,

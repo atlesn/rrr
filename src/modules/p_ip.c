@@ -1814,7 +1814,6 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 #define SETUP_ARRAY_TREE(collection,socket_flags)              \
     rrr_socket_client_collection_event_setup_array_tree (      \
             collection,                                        \
-            INSTANCE_D_EVENTS(data->thread_data),              \
             ip_private_data_new,                               \
             ip_private_data_destroy,                           \
             data,                                              \
@@ -1880,12 +1879,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_socket_graylist_init(&data->tcp_graylist);
 
-	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_NAME(data->thread_data)) != 0) {
+	if (rrr_socket_client_collection_new(&data->collection_tcp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create TDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}
 
-	if (rrr_socket_client_collection_new(&data->collection_udp, INSTANCE_D_NAME(data->thread_data)) != 0) {
+	if (rrr_socket_client_collection_new(&data->collection_udp, INSTANCE_D_EVENTS(thread_data), INSTANCE_D_NAME(data->thread_data)) != 0) {
 		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}

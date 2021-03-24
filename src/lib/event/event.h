@@ -139,19 +139,23 @@ static inline int rrr_event_pending (
 }
 
 /* Run the event asap */
-#define EVENT_ACTIVATE(event)    rrr_event_activate(&event)
+#define EVENT_ACTIVATE(e)    rrr_event_activate(&e)
 
-/* Add the event to be run when needed */
-#define EVENT_ADD(event)         rrr_event_add(&event)
+/* Add the e to be run when needed */
+#define EVENT_ADD(e)         rrr_event_add(&e)
 
-/* Remove the event from the run queue */
-#define EVENT_REMOVE(event)      rrr_event_remove(&event)
+/* Remove the e from the run queue */
+#define EVENT_REMOVE(e)      rrr_event_remove(&e)
 
-/* Check if the event is added */
-#define EVENT_PENDING(event)     rrr_event_pending(&event)
+/* Check if the e is added */
+#define EVENT_PENDING(e)     rrr_event_pending(&e)
 
-/* Change the timeout interval for the event, 0 disables timeout. EVENT_ADD should follow. */
-#define EVENT_INTERVAL_SET(event, us) \
-    rrr_time_from_usec(&event.interval, us)
+/* Change the timeout interval for the e, 0 disables timeout. EVENT_ADD should follow. */
+#define EVENT_INTERVAL_SET(e, us) \
+    rrr_time_from_usec(&(e.interval), us)
+
+/* Check if e handle is initialized */
+#define EVENT_INITIALIZED(e) \
+    (e.event != NULL)
 
 #endif /* RRR_EVENT_H */

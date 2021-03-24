@@ -894,13 +894,12 @@ int rrr_msgdb_server_new (
 		goto out_free;
 	}
 
-	if ((ret = rrr_socket_client_collection_new(&server->clients, "msgdb_server")) != 0) {
+	if ((ret = rrr_socket_client_collection_new(&server->clients, queue, "msgdb_server")) != 0) {
 		goto out_free_directory;
 	}
 
 	rrr_socket_client_collection_event_setup (
 			server->clients,
-			queue,
 			__rrr_msgdb_server_client_new_void,
 			__rrr_msgdb_server_client_destroy_void,
 			NULL,

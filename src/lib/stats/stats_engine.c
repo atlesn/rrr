@@ -422,7 +422,7 @@ int rrr_stats_engine_init (
 		goto out_destroy_main_lock;
 	}
 
-	if (rrr_socket_client_collection_new(&stats->client_collection, "rrr_stats_engine") != 0) {
+	if (rrr_socket_client_collection_new(&stats->client_collection, queue, "rrr_stats_engine") != 0) {
 		RRR_MSG_0("Could not create client collection in statistics engine\n");
 		ret = 1;
 		goto out_close_socket;
@@ -430,7 +430,6 @@ int rrr_stats_engine_init (
 
 	rrr_socket_client_collection_event_setup (
 			stats->client_collection,
-			queue, 
 			__rrr_stats_client_new_void,
 			__rrr_stats_client_destroy_void,
 			stats,
