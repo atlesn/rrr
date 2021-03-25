@@ -103,3 +103,20 @@ int rrr_instance_friend_collection_iterate (
 
 	return ret;
 }
+
+int rrr_instance_friend_collection_iterate_const (
+		const struct rrr_instance_friend_collection *collection,
+		int (*callback)(const struct rrr_instance *instance, void *arg),
+		void *arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_instance_friend);
+		ret = callback(node->instance, arg);
+		if (ret != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}

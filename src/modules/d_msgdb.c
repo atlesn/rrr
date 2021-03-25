@@ -36,16 +36,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/msgdb/msgdb_server.h"
 #include "../lib/instance_config.h"
+#include "../lib/rrr_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
+#include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/util/macro_utils.h"
+#include "../lib/util/gnu.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
+#include "../lib/cmodule/cmodule_config_data.h"
 
 #define RRR_MSGDB_DEFAULT_DIRECTORY  "/var/lib/rrr/msgdb"
-#define RRR_MSGDB_DEFAULT_SOCKET     "/var/run/rrr/msgdb.sock"
+#define RRR_MSGDB_DEFAULT_SOCKET     "msgdb.sock"
 
 struct msgdb_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -75,7 +79,15 @@ static int msgdb_parse_config (struct msgdb_data *data, struct rrr_instance_conf
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_directory", directory, RRR_MSGDB_DEFAULT_DIRECTORY);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8("msgdb_socket", socket, RRR_MSGDB_DEFAULT_SOCKET);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("msgdb_socket", socket);
+
+	if (data->directory == NULL) {
+		if ((ret = rrr_asprintf(&data->directory, "%s/%s", rrr_config_global.run_directory, RRR_MSGDB_DEFAULT_SOCKET)) <= 0) {
+			RRR_MSG_0("rrr_asprintf() failed in msgdb_parse_config\n");
+			ret = 1;
+			goto out;
+		}
+	}
 
 	out:
 	return ret;
@@ -94,25 +106,15 @@ static int msgdb_fork_tick_callback (RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS) {
 	struct msgdb_data *data = callback_data->data;
 
 	(void)(worker);
+	(void)(msgdb);
+	(void)(data);
 
 	int ret = 0;
 
 	*something_happened = 0;
 
-	if ((ret = rrr_msgdb_server_tick(msgdb)) != 0) {
-		RRR_MSG_0("Error from message db server while ticking in msgdb instance %s\n",
-			INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
+	// Do nothing
 
-	const uint64_t recv_count = rrr_msgdb_server_recv_count_get(msgdb);
-
-	if (recv_count != callback_data->prev_recv_count) {
-		*something_happened = 1;
-	}
-	callback_data->prev_recv_count = recv_count;
-
-	out:
 	return ret;
 }
 
@@ -126,7 +128,7 @@ static int msgdb_fork_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_A
 
 	struct rrr_msgdb_server *msgdb = NULL;
 
-	if (rrr_msgdb_server_new(&msgdb, data->directory, data->socket) != 0) {
+	if (rrr_msgdb_server_new(&msgdb, rrr_cmodule_worker_get_event_queue(worker), data->directory, data->socket) != 0) {
 		RRR_MSG_0("Could not start message db server in msgdb instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -169,10 +171,11 @@ static int msgdb_fork (void *arg) {
 		goto out;
 	}
 
-	// Don't parse cmodule config, not used
+	// Don't parse cmodule config, not used.
 
         if (rrr_cmodule_helper_worker_custom_fork_start (
                         thread_data,
+			250, // 250ms
 			msgdb_fork_init_wrapper_callback,
 			thread_data,
 			msgdb_fork_tick_callback,
@@ -213,8 +216,7 @@ static void *thread_entry_msgdb (struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll
+			1 * 1000 * 1000 // 1 s
 	);
 
 	out_message:
@@ -241,7 +243,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_NETWORK;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
 }
 
 void unload(void) {

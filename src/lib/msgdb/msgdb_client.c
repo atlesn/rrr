@@ -142,10 +142,13 @@ int rrr_msgdb_client_await_ack (
 			&conn->read_sessions,
 			conn->fd,
 			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			NULL,
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback,
+			NULL,
 			conn,
 			positive_ack
 	)) != 0) {
@@ -192,10 +195,13 @@ int rrr_msgdb_client_await_msg (
 			&conn->read_sessions,
 			conn->fd,
 			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			__rrr_msgdb_client_await_msg_callback,
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback_silent,
+			NULL,
 			conn,
 			result_msg
 	)) != 0) {
@@ -234,8 +240,8 @@ int rrr_msgdb_client_send (
 
 	if (RRR_DEBUGLEVEL_2) {
 		if (rrr_msg_msg_topic_get(&topic_tmp, msg) == 0) {
-			RRR_DBG_3("msgdb fd %i %s size %li topic '%s'\n",
-				conn->fd, MSG_TYPE_NAME(msg), MSG_TOTAL_SIZE(msg), topic_tmp);
+			RRR_DBG_3("msgdb fd %i %s size %llu topic '%s'\n",
+				conn->fd, MSG_TYPE_NAME(msg), (long long unsigned int) MSG_TOTAL_SIZE(msg), topic_tmp);
 		}
 		else {
 			RRR_MSG_0("Warning: Failed to allocate memory for debug message in rrr_msgdb_client_send\n");

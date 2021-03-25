@@ -239,6 +239,11 @@ int rrr_fifo_buffer_read_clear_forward (
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
+int rrr_fifo_buffer_read_clear_forward_all (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
+);
 int rrr_fifo_buffer_read (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),

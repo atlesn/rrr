@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
+#include "../lib/buffer.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
@@ -55,6 +56,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 #define RRR_HTTPSERVER_DEFAULT_WORKER_THREADS                   5
 #define RRR_HTTPSERVER_DEFAULT_RESPONSE_FROM_SENDERS_TIMEOUT_MS 2000
+
+#define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
+#define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -83,6 +87,11 @@ struct httpserver_data {
 	rrr_setting_uint response_timeout_ms;
 	rrr_setting_uint worker_threads;
 
+	struct rrr_http_server *http_server;
+
+	struct rrr_poll_helper_counters counters;
+	struct rrr_fifo_buffer buffer;
+
 	struct rrr_map websocket_topic_filters;
 
 	char *allow_origin_header;
@@ -99,7 +108,11 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
+	rrr_fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
+	if (data->http_server != NULL) {
+		rrr_http_server_destroy(data->http_server);
+	}
 }
 
 static int httpserver_data_init (
@@ -109,6 +122,10 @@ static int httpserver_data_init (
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
+
+	if (rrr_fifo_buffer_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
+		return 1;
+	}
 
 	return 0;
 }
@@ -235,13 +252,19 @@ static int httpserver_parse_config (
 	return ret;
 }
 
-static int httpserver_start_listening (struct httpserver_data *data, struct rrr_http_server *http_server) {
+static int httpserver_start_listening (struct httpserver_data *data) {
 	int ret = 0;
 
 	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
-		if ((ret = rrr_http_server_start_plain(http_server, data->port_plain)) != 0) {
+		if ((ret = rrr_http_server_start_plain (
+				data->http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
+				data->port_plain,
+				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTPSERVER_IDLE_TIMEOUT_MS
+		)) != 0) {
 			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
@@ -254,8 +277,11 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
 	) {
 		if ((ret = rrr_http_server_start_tls (
-				http_server,
+				data->http_server,
+				INSTANCE_D_EVENTS(data->thread_data),
 				data->port_tls,
+				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
 				&data->net_transport_config,
 				0
 		)) != 0) {
@@ -448,7 +474,6 @@ static int httpserver_write_message_callback (
 
 struct httpserver_callback_data {
 	struct httpserver_data *httpserver_data;
-	struct rrr_thread_collection *threads;
 };
 
 static int httpserver_generate_unique_topic (
@@ -499,12 +524,18 @@ struct receive_get_response_callback_data {
 };
 
 static int httpserver_receive_get_response_callback (
-		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+		RRR_FIFO_READ_CALLBACK_ARGS
 ) {
 	struct receive_get_response_callback_data *callback_data = arg;
-	struct rrr_msg_msg *msg = entry->message;
+	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
+
+	(void)(size);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
+
+	rrr_msg_holder_lock(entry);
+
+	struct rrr_msg_msg *msg = entry->message;
 
 	if (MSG_TOPIC_LENGTH(msg) > 0) {
 		if ((ret = rrr_mqtt_topic_match_str_with_end (
@@ -704,9 +735,8 @@ static int httpserver_receive_callback_response_get (
 		response_data->time_begin = rrr_time_get_64();
 	}
 
-	if ((ret = rrr_poll_do_poll_search (
-			data->thread_data,
-			&data->thread_data->poll,
+	if ((ret = rrr_fifo_buffer_search (
+			&data->buffer,
 			httpserver_receive_get_response_callback,
 			&callback_data,
 			0
@@ -729,10 +759,12 @@ static int httpserver_receive_callback_response_get (
 		RRR_DBG_3("httpserver instance %s got a response from senders with filter %s\n",
 				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
 
+		rrr_msg_holder_lock(callback_data.entry);
 		ret = httpserver_receive_get_response_extract_data (
 				&response_data->target,
 				(struct rrr_msg_msg *) callback_data.entry->message
 		);
+		rrr_msg_holder_unlock(callback_data.entry);
 
 		goto out;
 	}
@@ -811,7 +843,7 @@ static int httpserver_receive_callback_response_process (
 
 		unsigned long long response_code = value_response_code->definition->to_ull(value_response_code);
 		if (response_code < 100 || response_code > 599) {
-			RRR_MSG_0("Warning: Invalid response code %" PRIu64 " in response from senders in httpserver instance %s. Data type of array field was %s. Defaulting to 200.\n",
+			RRR_MSG_0("Warning: Invalid response code %llu in response from senders in httpserver instance %s. Data type of array field was %s. Defaulting to 200.\n",
 				response_code, INSTANCE_D_NAME(data->thread_data), value_response_code->definition->identifier);
 			response_code = 200;
 		}
@@ -914,7 +946,6 @@ static int httpserver_receive_callback (
 	struct httpserver_data *data = receive_callback_data->httpserver_data;
 
 	(void)(thread);
-	(void)(handle);
 	(void)(overshoot_bytes);
 
 	int ret = 0;
@@ -973,11 +1004,14 @@ static int httpserver_receive_callback (
 		RRR_DBG_3("No array values set after processing request from HTTP client, not creating RRR array message\n");
 	}
 	else {
+		const struct sockaddr *addr;
+		socklen_t addr_len;
+		rrr_net_transport_ctx_connected_address_get(&addr, &addr_len, handle);
+
 		if ((ret = rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER(data->thread_data),
-				INSTANCE_D_HANDLE(data->thread_data),
-				sockaddr,
-				socklen,
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				addr,
+				addr_len,
 				RRR_IP_TCP,
 				httpserver_write_message_callback,
 				&write_callback_data,
@@ -1149,7 +1183,7 @@ static int httpserver_websocket_handshake_callback (
 
 	int ret = 0;
 
-	void *new_application_data = NULL;
+	char *application_topic_new = NULL;
 
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, transaction->request_part->request_uri_nullsafe);
 
@@ -1200,17 +1234,14 @@ static int httpserver_websocket_handshake_callback (
 		goto out_not_found;
 	}
 
-	if ((new_application_data = malloc(strlen(topic_begin) + 1)) == NULL) {
+	if ((application_topic_new = strdup(topic_begin)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
 		ret = 1;
 		goto out;
 	}
 
-	memcpy(new_application_data, topic_begin, strlen(topic_begin) + 1);
-
-	RRR_FREE_IF_NOT_NULL(*websocket_application_data);
-	*websocket_application_data = new_application_data;
-	new_application_data = NULL;
+	*application_topic = application_topic_new;
+	application_topic_new = NULL;
 
 	goto out;
 	out_not_found:
@@ -1220,7 +1251,7 @@ static int httpserver_websocket_handshake_callback (
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
 		goto out;
 	out:
-		RRR_FREE_IF_NOT_NULL(new_application_data);
+		RRR_FREE_IF_NOT_NULL(application_topic_new);
 		return ret;
 }
 
@@ -1279,7 +1310,7 @@ static int httpserver_websocket_get_response_callback_extract_data (
 static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET_GET_RESPONSE_CALLBACK_ARGS) {
 	struct httpserver_callback_data *httpserver_callback_data = arg;
 
-	(void)(websocket_application_data);
+	(void)(application_topic);
 
 	int ret = 0;
 
@@ -1301,9 +1332,8 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	callback_data.topic_filter = topic_filter;
 
-	if ((ret = rrr_poll_do_poll_search (
-			httpserver_callback_data->httpserver_data->thread_data,
-			&httpserver_callback_data->httpserver_data->thread_data->poll,
+	if ((ret = rrr_fifo_buffer_search (
+			&httpserver_callback_data->httpserver_data->buffer,
 			httpserver_receive_get_response_callback,
 			&callback_data,
 			0
@@ -1342,7 +1372,7 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 			&topic,
 			RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX,
 			unique_id,
-			*websocket_application_data
+			application_topic
 	)) != 0) {
 		goto out;
 	}
@@ -1356,6 +1386,10 @@ static int httpserver_websocket_frame_callback (RRR_HTTP_SERVER_WORKER_WEBSOCKET
 
 	// To avoid extra data copying and because payload is const, validation
 	// of any binary RRR message is performed in write callback
+
+	const struct sockaddr *addr;
+	socklen_t addr_len;
+	rrr_net_transport_ctx_connected_address_get(&addr, &addr_len, handle);
 
 	ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->httpserver_data->thread_data),
@@ -1383,17 +1417,52 @@ static int httpserver_unique_id_generator_callback (
 	);
 }
 
+static int httpserver_poll_callback_write (RRR_FIFO_WRITE_CALLBACK_ARGS) {
+	struct rrr_msg_holder *entry = arg;
+	rrr_msg_holder_incref_while_locked(entry);
+	*data = (char *) entry;
+	*size = sizeof(*entry);
+	*order = 0;
+	return RRR_FIFO_OK;
+}
+
+static int httpserver_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct httpserver_data *data = thread_data->private_data;
+
+	int ret = rrr_fifo_buffer_write(&data->buffer, httpserver_poll_callback_write, entry);
+	rrr_msg_holder_unlock(entry);
+	return ret;
+}
+
+static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	rrr_http_server_response_available_notify(data->http_server);
+
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
+
+	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback, 0);
+}
+
 // If we receive messages from senders which no worker seem to want, we must delete them
-static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int httpserver_housekeep_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct httpserver_callback_data *callback_data = arg;
+	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
+
+	(void)(size);
 
 	int ret = RRR_FIFO_SEARCH_KEEP;
 
-	if (entry->send_time == 0) {
-		entry->send_time = rrr_time_get_64();
+	rrr_msg_holder_lock(entry);
+
+	if (entry->buffer_time == 0) {
+		RRR_BUG("BUG: Buffer time was 0 for entry in httpserver_housekeep_callback\n");
 	}
 
-	uint64_t timeout = entry->send_time + callback_data->httpserver_data->response_timeout_ms * 1000;
+	uint64_t timeout = entry->buffer_time + callback_data->httpserver_data->response_timeout_ms * 1000;
 	if (rrr_time_get_64() > timeout) {
 		struct rrr_msg_msg *msg = entry->message;
 		RRR_DBG_1("httpserver instance %s deleting message from senders of size %u which has timed out\n",
@@ -1403,6 +1472,31 @@ static int httpserver_housekeep_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_unlock(entry);
 	return ret;
+}
+
+static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct httpserver_data *data = thread_data->private_data;
+
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread) != 0) {
+		return RRR_EVENT_EXIT;
+	}
+
+	struct httpserver_callback_data callback_data = {
+		data
+	};
+
+	if (rrr_fifo_buffer_search (
+			&data->buffer,
+			httpserver_housekeep_callback,
+			&callback_data,
+			0
+	)) {
+		return 1;
+	}
+
+	return 0;
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
@@ -1433,8 +1527,6 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpserver started thread %p\n", thread_data);
 
-	struct rrr_http_server *http_server = NULL;
-
 	{
 		uint64_t startup_time = rrr_time_get_64() + data->startup_delay_us;
 		while (rrr_thread_signal_encourage_stop_check(thread) != 1 && startup_time > rrr_time_get_64()) {
@@ -1445,28 +1537,8 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 	}
 
-	if (rrr_http_server_new(&http_server, data->do_disable_http2) != 0) {
-		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
-
-	// TODO : There are occasional (?) reports from valgrind that http_server is
-	//        not being freed upon program exit. This happens if a worker thread
-	//        hangs (e.g. on blocking send with full pipe) while we try to exit.
-
-	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
-
-	if (httpserver_start_listening(data, http_server) != 0) {
-		goto out_cleanup_httpserver;
-	}
-
-	unsigned int accept_count_total = 0;
-	uint64_t prev_stats_time = rrr_time_get_64();
-
 	struct httpserver_callback_data callback_data = {
-			data,
-			http_server->threads
+			data
 	};
 
 	struct rrr_http_server_callbacks callbacks = {
@@ -1484,60 +1556,28 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		&callback_data
 	};
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		int accept_count = 0;
-
-		if (rrr_http_server_tick (
-				&accept_count,
-				http_server,
-				data->worker_threads,
-				&callbacks
-		) != 0) {
-			RRR_MSG_0("Failure in main loop in httpserver instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		if (accept_count == 0) {
-			rrr_posix_usleep(100000); // 100 ms
-		}
-		else {
-			accept_count_total += accept_count;
-		}
-
-		uint64_t time_now = rrr_time_get_64();
-		if (time_now > prev_stats_time + 1000000) {
-			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "accepted", accept_count_total);
-
-			accept_count_total = 0;
-
-			prev_stats_time = time_now;
-		}
-
-		if (rrr_poll_do_poll_search (
-				data->thread_data,
-				&data->thread_data->poll,
-				httpserver_housekeep_callback,
-				&callback_data,
-				0
-		) != 0) {
-			RRR_MSG_0("Error from poll in httpserver instance %s\n", INSTANCE_D_NAME(thread_data));
-			break;
-		}
+	if (rrr_http_server_new(&data->http_server, data->do_disable_http2, &callbacks) != 0) {
+		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
 	}
 
-	RRR_DBG_1 ("Thread httpserver %p instance %s looping ended\n", thread, INSTANCE_D_NAME(thread_data));
+	if (httpserver_start_listening(data) != 0) {
+		goto out_message;
+	}
 
-	out_cleanup_httpserver:
-	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
-	pthread_cleanup_pop(1);
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			httpserver_event_periodic,
+			thread
+	);
 
 	out_message:
+	rrr_thread_state_set(thread, RRR_THREAD_STATE_STOPPING);
 	RRR_DBG_1 ("Thread httpserver %p instance %s exiting\n", thread, INSTANCE_D_NAME(thread_data));
-
 	pthread_cleanup_pop(1);
+
 	pthread_exit(0);
 }
 
@@ -1547,6 +1587,10 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		NULL,
 		NULL
+};
+
+struct rrr_instance_event_functions event_functions = {
+	httpserver_event_broker_data_available
 };
 
 static const char *module_name = "httpserver";
@@ -1559,7 +1603,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

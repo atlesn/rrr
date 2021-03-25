@@ -945,17 +945,19 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	callback_data->udpstream_receive_data = receive_data;
 
-	if (receive_data->data_size > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if ((rrr_slength) receive_data->data_size > (rrr_slength) RRR_LENGTH_MAX) {
 		RRR_MSG_0("Received message too big in __rrr_udpstream_asd_receive_messages_callback\n");
 		ret = RRR_UDPSTREAM_ASD_HARD_ERR;
 		goto out;
 	}
-
+#endif
 
 	if ((ret = rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) joined_data,
 			receive_data->data_size,
 			__rrr_udpstream_asd_receive_messages_callback_final,
+			NULL,
 			NULL,
 			NULL,
 			NULL,

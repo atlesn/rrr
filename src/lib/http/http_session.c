@@ -81,7 +81,7 @@ void rrr_http_session_transport_ctx_application_set (
 		struct rrr_http_application **application,
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	if (application != NULL && *application != NULL) {
 		rrr_http_application_destroy_if_not_null(&session->application);
@@ -168,7 +168,7 @@ int rrr_http_session_transport_ctx_client_new_or_clean (
 		);
 	}
 	else {
-		session = handle->application_private_ptr;
+		session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	}
 
 	session = NULL;
@@ -184,7 +184,7 @@ int rrr_http_session_transport_ctx_request_send_possible (
 		int *is_possible,
 		struct rrr_net_transport_handle *handle
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_request_send_possible (
 			is_possible,
 			session->application
@@ -198,7 +198,7 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_request_send (
 			upgraded_app,
 			session->application,
@@ -210,21 +210,34 @@ int rrr_http_session_transport_ctx_request_send (
 	);
 }
 
-int rrr_http_session_transport_ctx_request_raw_send (
-		struct rrr_net_transport_handle *handle,
-		const char *raw_request_data,
-		size_t raw_request_size
+uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
+		struct rrr_net_transport_handle *handle
 ) {
-	if (raw_request_size == 0) {
-		RRR_BUG("BUG: Received 0 size in rrr_http_session_transport_ctx_raw_request_send\n");
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	return rrr_http_application_active_transaction_count_get(session->application);
+}
+
+void rrr_http_session_transport_ctx_websocket_response_available_notify (
+		struct rrr_net_transport_handle *handle
+) {
+	rrr_net_transport_ctx_notify_read(handle);
+}
+
+int rrr_http_session_transport_ctx_need_tick (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	if (session == NULL) {
+		return 0;
 	}
-	return rrr_net_transport_ctx_send_blocking (handle, raw_request_data, raw_request_size);
+
+	return rrr_http_application_transport_ctx_need_tick(session->application);
 }
 
 static int __rrr_http_session_transport_ctx_tick (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
@@ -242,9 +255,13 @@ static int __rrr_http_session_transport_ctx_tick (
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *frame_callback_arg
 ) {
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 
 	int ret = 0;
+
+	if (session == NULL) {
+		goto out_final;
+	}
 
 	struct rrr_http_application *upgraded_app = NULL;
 
@@ -256,8 +273,6 @@ static int __rrr_http_session_transport_ctx_tick (
 
 	if ((ret = rrr_http_application_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			&upgraded_app,
 			session->application,
 			handle,
@@ -281,25 +296,22 @@ static int __rrr_http_session_transport_ctx_tick (
 	}
 
 	if (upgraded_app) {
-		// Returning INCOMPLETE makes caller to call tick() again, now
-		// with the new application being active.
 		RRR_DBG_3("HTTP upgrade transition from %s to %s\n",
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get(session->application)),
 				RRR_HTTP_APPLICATION_TO_STR(rrr_http_application_type_get (upgraded_app))
 		);
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
-		ret = RRR_READ_INCOMPLETE;
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	return ret;
+		pthread_cleanup_pop(1);
+	out_final:
+		return ret;
 }
 
 int rrr_http_session_transport_ctx_tick_client (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -313,8 +325,6 @@ int rrr_http_session_transport_ctx_tick_client (
 ) {
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			handle,
 			read_max_size,
 			NULL,
@@ -336,8 +346,6 @@ int rrr_http_session_transport_ctx_tick_client (
 
 int rrr_http_session_transport_ctx_tick_server (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
@@ -357,8 +365,6 @@ int rrr_http_session_transport_ctx_tick_server (
 ) {
 	return __rrr_http_session_transport_ctx_tick (
 			received_bytes,
-			active_transaction_count,
-			complete_transactions_total,
 			handle,
 			read_max_size,
 			unique_id_generator_callback,
@@ -384,7 +390,7 @@ int rrr_http_session_transport_ctx_close_if_open (
 		void *arg
 ) {
 	(void)(arg);
-	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	rrr_http_application_polite_close(session->application, handle);
 	return 0; // Always return 0
 }
