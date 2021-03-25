@@ -1,4 +1,4 @@
-.Dd 2021-02-14
+.Dd 2021-03-20
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -473,6 +473,9 @@ If set to no or left unset, messages with arrays will have their array packed an
 Attempt to send messages in order according to their timestamp.
 Messages to a particular destination will be sent in order according to their creation timestamp.
 If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+The parameter
+.B ip_send_multiple_per_connection
+should be set to yes to ensure order in all situations.
 This will impact performance when destinations are unreachable.
 Defaults no no.
 
@@ -495,7 +498,7 @@ May be set to zero, defaults to 5 milliseconds.
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
-Default is not timeout (same as 0).
+Default is no timeout (same as 0).
 
 .It ip_smart_timeout={yes|no}
 If set to yes and a message is successfully sent, reset the timeout counter for all other unsent messages destined for the same host, port and protocol currently in the queue.
@@ -518,7 +521,10 @@ must be set to zero or left undefined.
 
 .It ip_graylist_timeout_ms=MILLISECONDS
 If a TCP destination is unreachable, add it to the graylist and retry only after the specified  number of milliseconds has passed.
-Defaults to 2000 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+Defaults to 100 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+If graylisting is used in while
+.B ip_preserve_order
+is also enabled, messages waiting to be sent to a graylisted host may temporarily prevent messages to other hosts from being sent.
 
 .It ip_ttl_seconds=SECONDS
 Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.
@@ -1603,6 +1609,11 @@ resectively, and the same values may be used in the messages.
 
 Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
 
+.It http_meta_tags_ignore={yes|no}
+Ignore the above defined tags when array values to the HTTP query (controlled by)
+.B http_tags.
+If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If
@@ -1639,19 +1650,25 @@ section for more details.
 .It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
+.It http_fields=HTTP FIELD NAME[=VALUE][,...]
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
-A comma separated list of array tags to find in RRR messages from other modules.
-If left unspecified, all array values found will be sent to the HTTP server.
+.B http_tags
+is a comma separated list of array tags to find in RRR messages from other modules.
+If left unspecified, all array values found will be sent to the HTTP server in default configurations.
 If a tag is postfixed with a
 .B HTTP FIELD NAME,
 this name instead of the array tag name when sending data to the HTTP server.
-If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced.
- 
-.It http_fields=HTTP FIELD NAME[=VALUE][,...]
-A set of fixed fields to send to the HTTP server, optionally with values. Values from
+If tags are specified and an RRR message from a sender is missing one or more of the specified tags, an error is produced.
+
 .B http_fields
-are always sent regardless of
+is a set of fixed fields to send to the HTTP server, optionally with values. Values from
+.B http_fields
+are sent regardless of the configuration of
 .B http_tags.
+
+If a message is to have it's raw body sent in a PUT or POST request, controlled by
+.B http_body_tag,
+fields from these parameters will not added to the query.
 
 .It http_rrr_msg_to_array={yes|no}
 Convert fields in RRR messages from other modules to array values. The fields used are

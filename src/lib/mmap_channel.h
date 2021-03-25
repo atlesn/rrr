@@ -43,33 +43,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_DBG(...)    RRR_DBG_4(__VA_ARGS__)
 
 struct rrr_mmap;
-
-struct rrr_mmap_channel_block {
-	pthread_mutex_t block_lock;
-	size_t size_capacity;
-	size_t size_data; // If set to 0, block is free
-	int shmid;
-	void *ptr_shm_or_mmap;
-};
-
-struct rrr_mmap_channel {
-	struct rrr_mmap *mmap;
-	pthread_mutex_t index_lock;
-	int entry_count;
-	int wpos;
-	int rpos;
-	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
-	char name[64];
-
-	unsigned long long int read_starvation_counter;
-	unsigned long long int write_full_counter;
-};
+struct rrr_mmap_channel;
+struct rrr_event_queue;
 
 int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
 );
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
 		size_t data_size,
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
@@ -78,12 +60,14 @@ int rrr_mmap_channel_write_using_callback (
 );
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
+		struct rrr_event_queue *queue_notify,
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
 		int retries_max
 );
 int rrr_mmap_channel_read_with_callback (
+		int *read_count,
 		struct rrr_mmap_channel *source,
 		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),

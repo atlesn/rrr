@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
+#include "../../../config.h"
 #include "../log.h"
 
 #include "http_client.h"
@@ -38,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_transaction.h"
 #include "http_redirect.h"
 
+#include "../event/event.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 #include "../util/posix.h"
@@ -45,6 +47,133 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
 #include "../helpers/nullsafe_str.h"
+
+struct rrr_http_client {
+	struct rrr_event_queue *events;
+
+	uint64_t idle_timeout_ms;
+
+	struct rrr_net_transport *transport_keepalive_plain;
+	struct rrr_net_transport *transport_keepalive_tls;
+
+	struct rrr_http_redirect_collection redirects;
+
+	struct rrr_http_client_callbacks callbacks;
+};
+
+int rrr_http_client_new (
+		struct rrr_http_client **target,
+		struct rrr_event_queue *events,
+		uint64_t idle_timeout_ms,
+		const struct rrr_http_client_callbacks *callbacks
+) {
+	int ret = 0;
+
+	struct rrr_http_client *client = malloc(sizeof(*client));
+
+	if (client == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_http_client_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(client, '\0', sizeof(*client));
+
+	client->events = events;
+	client->idle_timeout_ms = idle_timeout_ms;
+	client->callbacks = *callbacks;
+
+	*target = client;
+
+	goto out;
+//	out_free:
+//		free(client);
+	out:
+		return ret;
+}
+
+void rrr_http_client_destroy (
+		struct rrr_http_client *client
+) {
+	if (client->transport_keepalive_plain) {
+		rrr_net_transport_destroy(client->transport_keepalive_plain);
+	}
+	if (client->transport_keepalive_tls) {
+		rrr_net_transport_destroy(client->transport_keepalive_tls);
+	}
+	rrr_http_redirect_collection_clear(&client->redirects);
+	free(client);
+}
+
+static int __rrr_http_client_active_transaction_count_get_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	uint64_t *result_accumulator = arg;
+
+	if (RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) != NULL) {
+		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+	}
+
+	return 0;
+}
+
+uint64_t rrr_http_client_active_transaction_count_get (
+		const struct rrr_http_client *http_client
+) {
+	uint64_t result_accumulator = 0;
+
+	if (http_client->transport_keepalive_plain != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_plain,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_active_transaction_count_get_callback,
+				&result_accumulator
+		);
+	}
+
+	if (http_client->transport_keepalive_tls != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_active_transaction_count_get_callback,
+				&result_accumulator
+		);
+	}
+
+	return result_accumulator + RRR_LL_COUNT(&http_client->redirects);;
+}
+
+static int __rrr_http_client_websocket_response_available_notify_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	(void)(arg);
+	rrr_http_session_transport_ctx_websocket_response_available_notify(handle);
+	return 0;
+}
+
+void rrr_http_client_websocket_response_available_notify (
+		struct rrr_http_client *http_client
+) {
+	if (http_client->transport_keepalive_plain != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_plain,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_websocket_response_available_notify_callback,
+				NULL
+		);
+	}
+
+	if (http_client->transport_keepalive_tls != NULL) {
+		rrr_net_transport_iterate_with_callback (
+				http_client->transport_keepalive_tls,
+				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+				__rrr_http_client_websocket_response_available_notify_callback,
+				NULL
+		);
+	}
+}
 
 static void __rrr_http_client_dbl_ptr_free_if_not_null (void *arg) {
 	void *ptr = *((void **) arg);
@@ -226,19 +355,9 @@ void rrr_http_client_request_data_cleanup_void (
 }
 
 struct rrr_http_client_tick_callback_data {
-	int idle_timeout_ms;
-	ssize_t read_max_size;
+	struct rrr_http_client *http_client;
+
 	uint64_t bytes_total;
-	uint64_t active_transaction_count;
-
-	struct rrr_http_redirect_collection *redirects;
-
-	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
-	void *final_callback_arg;
-	int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS);
-	void *get_response_callback_arg;
-	int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS);
-	void *frame_callback_arg;
 };
 
 static int __rrr_http_client_chunks_iterate_callback (
@@ -256,7 +375,7 @@ static int __rrr_http_client_chunks_iterate_callback (
 static int __rrr_http_client_receive_http_part_callback (
 		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
-	struct rrr_http_client_tick_callback_data *callback_data = arg;
+	struct rrr_http_client *http_client = arg;
 
 	(void)(handle);
 	(void)(overshoot_bytes);
@@ -293,7 +412,7 @@ static int __rrr_http_client_receive_http_part_callback (
 			RRR_DBG_3("HTTP client redirect to '%s'\n", value);
 		}
 
-		if ((ret = rrr_http_redirect_collection_push (callback_data->redirects, transaction, location->value)) != 0) {
+		if ((ret = rrr_http_redirect_collection_push (&http_client->redirects, transaction, location->value)) != 0) {
 			goto out;
 		}
 		rrr_http_transaction_incref(transaction);
@@ -311,10 +430,10 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 
-	ret = callback_data->final_callback (
+	ret = http_client->callbacks.final_callback (
 			transaction,
 			chunks_merged,
-			callback_data->final_callback_arg
+			http_client->callbacks.final_callback_arg
 	);
 
 	out:
@@ -325,14 +444,13 @@ static int __rrr_http_client_receive_http_part_callback (
 static int __rrr_http_client_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
-	struct rrr_http_client_request_callback_data *callback_data = arg;
-
+	(void)(arg);
 	(void)(handle);
 	(void)(transaction);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
 	(void)(next_protocol_version);
-	(void)(callback_data);
+	(void)(application_topic);
 
 	int ret = 0;
 
@@ -340,6 +458,112 @@ static int __rrr_http_client_websocket_handshake_callback (
 
 	*do_websocket = 1;
 
+	return ret;
+}
+
+struct rrr_http_client_redirect_callback_data {
+	int (*callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
+	void *callback_arg;
+};
+
+static int __rrr_http_client_redirect_callback (
+		struct rrr_http_transaction *transaction,
+		const struct rrr_nullsafe_str *uri_nullsafe,
+		void *arg
+) {
+	struct rrr_http_client_redirect_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_http_uri *uri = NULL;
+	char *endpoint_path_tmp = NULL;
+
+	pthread_cleanup_push(__rrr_http_client_uri_dbl_ptr_destroy_if_not_null, &uri);
+	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
+
+	if (callback_data->callback == NULL) {
+		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	if (rrr_http_util_uri_parse(&uri, uri_nullsafe) != 0) {
+		RRR_MSG_0("Could not parse Location from redirect response header\n");
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+
+	if (uri->endpoint == NULL || *(uri->endpoint) != '/') {
+		if ((ret = rrr_http_transaction_endpoint_path_get (&endpoint_path_tmp, transaction)) != 0) {
+			goto out;
+		}
+		if ((ret = rrr_http_util_uri_endpoint_prepend(uri, endpoint_path_tmp)) != 0) {
+			goto out;
+		}
+	}
+
+	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
+	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s'\n",
+			response_arg,
+			(uri->protocol != NULL ? uri->protocol : "-"),
+			(uri->host != NULL ? uri->host : "-"),
+			(uri->endpoint != NULL ? uri->endpoint : "-"),
+			uri->port,
+			transaction->endpoint_str
+	);
+
+	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
+
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
+static int __rrr_http_client_read_callback (
+		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	int ret = 0;
+
+	ssize_t received_bytes_dummy = 0;
+
+	if ((ret = rrr_http_session_transport_ctx_tick_client (
+			&received_bytes_dummy,
+			handle,
+			10 * 1024 * 1024, // 10 MB
+			__rrr_http_client_websocket_handshake_callback,
+			NULL,
+			__rrr_http_client_receive_http_part_callback,
+			http_client,
+			http_client->callbacks.get_response_callback,
+			http_client->callbacks.get_response_callback_arg,
+			http_client->callbacks.frame_callback,
+			http_client->callbacks.frame_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
+			http_client->callbacks.redirect_callback,
+			http_client->callbacks.redirect_callback_arg
+	};
+
+	if ((ret = rrr_http_redirect_collection_iterate (
+			&http_client->redirects,
+			__rrr_http_client_redirect_callback,
+			&redirect_callback_data
+	)) != 0) {
+		goto out;
+	}
+
+	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
+		rrr_net_transport_ctx_notify_read(handle);
+	}
+
+	out:
 	return ret;
 }
 
@@ -476,6 +700,10 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		rrr_http_session_transport_ctx_application_set(&upgraded_app, handle);
 	}
 
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		rrr_net_transport_ctx_notify_read(handle);
+	}
+
 	goto out;
 	out:
 		rrr_http_application_destroy_if_not_null(&upgraded_app);
@@ -495,7 +723,7 @@ void __rrr_http_client_request_send_connect_callback (
 	(void)(socklen);
 
 	int *result = arg;
-	*result = handle->handle;
+	*result = RRR_NET_TRANSPORT_CTX_HANDLE(handle);
 }
 
 uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
@@ -546,6 +774,11 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			)) != 0) {
 				goto out;
 			}
+
+		}
+
+		if ((ret = rrr_net_transport_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
+			goto out;
 		}
 
 		ret = rrr_net_transport_handle_with_transport_ctx_do (
@@ -562,15 +795,14 @@ static int __rrr_http_client_request_send_intermediate_connect (
 
 static int __rrr_http_client_request_send_transport_keepalive_select (
 		struct rrr_net_transport **transport_keepalive_use,
-		struct rrr_net_transport *transport_keepalive_plain,
-		struct rrr_net_transport *transport_keepalive_tls,
+		struct rrr_http_client *http_client,
 		const enum rrr_http_transport transport_force,
 		const enum rrr_http_transport transport_code
 ) {
 	int ret = 0;
 
 	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-		*transport_keepalive_use = transport_keepalive_tls;
+		*transport_keepalive_use = http_client->transport_keepalive_tls;
 	}
 	else if (transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 		RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
@@ -578,7 +810,7 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 		goto out;
 	}
 	else {
-		*transport_keepalive_use = transport_keepalive_plain;
+		*transport_keepalive_use = http_client->transport_keepalive_plain;
 	}
 
 	if (*transport_keepalive_use == NULL) {
@@ -591,16 +823,33 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
+static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
+		struct rrr_http_client *http_client,
+		struct rrr_net_transport *transport
+) {
+	return rrr_net_transport_event_setup (
+			transport,
+			0,
+			0,
+			http_client->idle_timeout_ms,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			__rrr_http_client_read_callback,
+			http_client
+	);
+}
+
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
-		struct rrr_net_transport **transport_keepalive_plain,
-		struct rrr_net_transport **transport_keepalive_tls,
+		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
 		const int ssl_no_cert_verify
 ) {
 	int ret = 0;
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
-	if (*transport_keepalive_tls == NULL) {
+	if (http_client->transport_keepalive_tls == NULL) {
 		struct rrr_net_transport_config net_transport_config_tmp = *net_transport_config;
 
 		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
@@ -618,9 +867,10 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 #endif /* RRR_WITH_NGHTTP2 */
 
 		if (rrr_net_transport_new (
-				transport_keepalive_tls,
+				&http_client->transport_keepalive_tls,
 				&net_transport_config_tmp,
 				tls_flags,
+				http_client->events,
 				alpn_protos,
 				alpn_protos_length
 		) != 0) {
@@ -628,14 +878,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
 		}
+
+		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
+				http_client,
+				http_client->transport_keepalive_tls
+		)) != 0) {
+			goto out;
+		}
 	}
 #else
-	(void)(transport_keepalive_tls);
 	(void)(net_transport_config);
 	(void)(ssl_no_cert_verify);
 #endif
 
-	if (*transport_keepalive_plain == NULL) {
+	if (http_client->transport_keepalive_plain == NULL) {
 		struct rrr_net_transport_config net_transport_config_tmp = {
 				NULL,
 				NULL,
@@ -646,14 +902,22 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		};
 
 		if (rrr_net_transport_new (
-				transport_keepalive_plain,
+				&http_client->transport_keepalive_plain,
 				&net_transport_config_tmp,
 				0,
+				http_client->events,
 				NULL,
 				0
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+
+		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
+				http_client,
+				http_client->transport_keepalive_plain
+		)) != 0) {
 			goto out;
 		}
 	}
@@ -664,14 +928,11 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 
 // Note that data in the struct may change if there are any redirects
 // Note that query prepare callback is not called if raw request data is set
-static int __rrr_http_client_request_send (
+int rrr_http_client_request_send (
 		const struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive_plain,
-		struct rrr_net_transport **transport_keepalive_tls,
+		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
 		rrr_biglength remaining_redirects,
-		int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
 		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
 		void *method_prepare_callback_arg,
 		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
@@ -685,20 +946,17 @@ static int __rrr_http_client_request_send (
 
 	struct rrr_http_transaction *transaction = NULL;
 	char *server_to_free = NULL;
+	char *request_header_host_to_free = NULL;
 
 	struct rrr_http_client_request_callback_data callback_data = {0};
-
-	if (transport_keepalive_plain == NULL || transport_keepalive_tls == NULL) {
-		RRR_BUG("BUG: Transport keepalive return pointer was NULL in __rrr_http_client_request_send\n");
-	}
 
 	if ((ret = rrr_http_transaction_new (
 			&transaction,
 			data->method,
 			data->body_format,
 			remaining_redirects,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
+			http_client->callbacks.unique_id_generator_callback,
+			http_client->callbacks.unique_id_generator_callback_arg,
 			application_data,
 			application_data_destroy
 	)) != 0) {
@@ -706,9 +964,9 @@ static int __rrr_http_client_request_send (
 		goto out;
 	}
 
-	callback_data.data = data;
 	callback_data.query_prepare_callback = query_prepare_callback;
 	callback_data.query_prepare_callback_arg = query_prepare_callback_arg;
+	callback_data.data = data;
 	callback_data.application_type = RRR_HTTP_APPLICATION_HTTP1;
 	callback_data.transaction = transaction;
 
@@ -759,6 +1017,14 @@ static int __rrr_http_client_request_send (
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
+	if (rrr_asprintf(&request_header_host_to_free, "%s:%u", server_to_use, port_to_use) <= 0) {
+		RRR_MSG_0("Failed to allocate memory for host header in __rrr_http_client_request_send\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	callback_data.request_header_host = request_header_host_to_free;
+
 #ifdef RRR_WITH_NGHTTP2
 	// If upgrade mode is HTTP2, force HTTP2 application when HTTPS is used
 	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
@@ -769,8 +1035,6 @@ static int __rrr_http_client_request_send (
 		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
 #endif /* RRR_WITH_NGHTTP2 */
-
-	callback_data.request_header_host = server_to_use;
 
 	if (method_prepare_callback != NULL) {
 		enum rrr_http_method chosen_method = data->method;
@@ -795,8 +1059,7 @@ static int __rrr_http_client_request_send (
 	);
 
 	if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure (
-			transport_keepalive_plain,
-			transport_keepalive_tls,
+			http_client,
 			net_transport_config,
 			data->ssl_no_cert_verify
 	)) != 0) {
@@ -807,8 +1070,7 @@ static int __rrr_http_client_request_send (
 
 	if ((ret = __rrr_http_client_request_send_transport_keepalive_select (
 			&transport_keepalive_to_use,
-			*transport_keepalive_plain,
-			*transport_keepalive_tls,
+			http_client,
 			data->transport_force,
 			transport_code
 	)) != 0) {
@@ -835,6 +1097,7 @@ static int __rrr_http_client_request_send (
 	out:
 	rrr_http_transaction_decref_if_not_null(transaction);
 	RRR_FREE_IF_NOT_NULL(server_to_free);
+	RRR_FREE_IF_NOT_NULL(request_header_host_to_free);
 	return ret;
 }
 
@@ -852,215 +1115,5 @@ void rrr_http_client_terminate_if_open (
 			rrr_http_session_transport_ctx_close_if_open,
 			NULL
 	);
-}
-
-int rrr_http_client_request_send (
-		struct rrr_http_client_request_data *data,
-		struct rrr_net_transport **transport_keepalive_plain,
-		struct rrr_net_transport **transport_keepalive_tls,
-		const struct rrr_net_transport_config *net_transport_config,
-		rrr_biglength remaining_redirects,
-		int (*unique_id_generator_callback)(RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
-		void *unique_id_generator_callback_arg,
-		int (*method_prepare_callback)(RRR_HTTP_CLIENT_METHOD_PREPARE_CALLBACK_ARGS),
-		void *method_prepare_callback_arg,
-		int (*connection_prepare_callback)(RRR_HTTP_CLIENT_CONNECTION_PREPARE_CALLBACK_ARGS),
-		void *connection_prepare_callback_arg,
-		int (*query_prepare_callback)(RRR_HTTP_CLIENT_QUERY_PREPARE_CALLBACK_ARGS),
-		void *query_prepare_callback_arg,
-		void **application_data,
-		void (*application_data_destroy)(void *arg)
-) {
-	return __rrr_http_client_request_send (
-			data,
-			transport_keepalive_plain,
-			transport_keepalive_tls,
-			net_transport_config,
-			remaining_redirects,
-			unique_id_generator_callback,
-			unique_id_generator_callback_arg,
-			method_prepare_callback,
-			method_prepare_callback_arg,
-			connection_prepare_callback,
-			connection_prepare_callback_arg,
-			query_prepare_callback,
-			query_prepare_callback_arg,
-			application_data,
-			application_data_destroy
-	);
-}
-
-struct rrr_http_client_redirect_callback_data {
-	int (*callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
-	void *callback_arg;
-};
-
-static int __rrr_http_client_redirect_callback (
-		struct rrr_http_transaction *transaction,
-		const struct rrr_nullsafe_str *uri_nullsafe,
-		void *arg
-) {
-	struct rrr_http_client_redirect_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	struct rrr_http_uri *uri = NULL;
-	char *endpoint_path_tmp = NULL;
-
-	pthread_cleanup_push(__rrr_http_client_uri_dbl_ptr_destroy_if_not_null, &uri);
-	pthread_cleanup_push(__rrr_http_client_dbl_ptr_free_if_not_null, &endpoint_path_tmp);
-
-	if (callback_data->callback == NULL) {
-		RRR_MSG_0("HTTP client got a redirect response but no redirect callback is defined\n");
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_http_util_uri_parse(&uri, uri_nullsafe) != 0) {
-		RRR_MSG_0("Could not parse Location from redirect response header\n");
-		ret = RRR_HTTP_SOFT_ERROR;
-		goto out;
-	}
-
-
-	if (uri->endpoint == NULL || *(uri->endpoint) != '/') {
-		if ((ret = rrr_http_transaction_endpoint_path_get (&endpoint_path_tmp, transaction)) != 0) {
-			goto out;
-		}
-		if ((ret = rrr_http_util_uri_endpoint_prepend(uri, endpoint_path_tmp)) != 0) {
-			goto out;
-		}
-	}
-
-	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(response_arg, uri_nullsafe);
-	RRR_DBG_3("HTTP redirect to '%s' (%s, %s, %s, %u) original endpoint was '%s'\n",
-			response_arg,
-			(uri->protocol != NULL ? uri->protocol : "-"),
-			(uri->host != NULL ? uri->host : "-"),
-			(uri->endpoint != NULL ? uri->endpoint : "-"),
-			uri->port,
-			transaction->endpoint_str
-	);
-
-	ret = callback_data->callback(transaction, uri, callback_data->callback_arg);
-
-	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	return ret;
-}
-
-static int __rrr_http_client_tick_handle_callback (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	struct rrr_http_client_tick_callback_data *callback_data = arg;
-
-	ssize_t received_bytes_dummy = 0;
-	uint64_t complete_transactions_count_dummy = 0;
-	uint64_t active_transaction_count_tmp = 0;
-
-	int ret = rrr_http_session_transport_ctx_tick_client (
-			&received_bytes_dummy,
-			&active_transaction_count_tmp,
-			&complete_transactions_count_dummy,
-			handle,
-			callback_data->read_max_size,
-			__rrr_http_client_websocket_handshake_callback,
-			callback_data,
-			__rrr_http_client_receive_http_part_callback,
-			callback_data,
-			callback_data->get_response_callback,
-			callback_data->get_response_callback_arg,
-			callback_data->frame_callback,
-			callback_data->frame_callback_arg
-	);
-
-	rrr_net_transport_ctx_get_socket_stats(NULL, NULL, &callback_data->bytes_total, handle);
-
-	callback_data->active_transaction_count += active_transaction_count_tmp;
-
-	return ret;
-}
-
-int rrr_http_client_tick (
-		uint64_t *bytes_total,
-		uint64_t *active_transaction_count,
-		struct rrr_net_transport *transport_keepalive_plain,
-		struct rrr_net_transport *transport_keepalive_tls,
-		ssize_t read_max_size,
-		unsigned int idle_timeout_ms,
-		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg,
-		int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS),
-		void *redirect_callback_arg,
-		int (*get_response_callback)(RRR_HTTP_CLIENT_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
-		void *get_response_callback_arg,
-		int (*frame_callback)(RRR_HTTP_CLIENT_WEBSOCKET_FRAME_CALLBACK_ARGS),
-		void *frame_callback_arg
-) {
-	int ret = 0;
-
-	*bytes_total = 0;
-
-	struct rrr_http_redirect_collection redirects = {0};
-
-	pthread_cleanup_push(rrr_http_redirect_collection_clear_void, &redirects);
-
-	struct rrr_http_client_tick_callback_data callback_data = {
-			idle_timeout_ms,
-			read_max_size,
-			0,
-			0,
-			&redirects,
-			final_callback,
-			final_callback_arg,
-			get_response_callback,
-			get_response_callback_arg,
-			frame_callback,
-			frame_callback_arg
-	};
-
-	if (transport_keepalive_plain != NULL) {
-		if ((ret = rrr_net_transport_iterate_with_callback (
-				transport_keepalive_plain,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				__rrr_http_client_tick_handle_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	if (transport_keepalive_tls != NULL) {
-		if ((ret = rrr_net_transport_iterate_with_callback (
-				transport_keepalive_tls,
-				RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-				__rrr_http_client_tick_handle_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
-			redirect_callback,
-			redirect_callback_arg
-	};
-
-	if ((ret = rrr_http_redirect_collection_iterate (
-			&redirects,
-			__rrr_http_client_redirect_callback,
-			&redirect_callback_data
-	)) != 0) {
-		goto out;
-	}
-
-	*bytes_total = callback_data.bytes_total;
-	*active_transaction_count = callback_data.active_transaction_count;
-
-	out:
-	pthread_cleanup_pop(1);
-	return ret;
 }
 

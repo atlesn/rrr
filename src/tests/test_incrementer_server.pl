@@ -29,7 +29,7 @@ sub source {
 			($suffix eq "B" ? 3 :
 			($suffix eq "C" ? 4 : 0)));
 
-		foreach my $id (sort @{$results{$suffix}}) {
+		foreach my $id (sort keys %{$results{$suffix}}) {
 			if ($id != $id_check) {
 				$dbg->msg(1,  "Server - Endpoint $suffix id mismatch $id_check<>$id\n");
 				return 1;
@@ -61,9 +61,10 @@ sub process {
 
 	if ($endpoint =~ /^\Q$endpoint_prefix\E\/(\w+)\/(\d+)$/) {
 		if (!defined $results{$1}) {
-			$results{$1} = [];
+			$results{$1} = {};
 		}
-		push @{$results{$1}}, $2;
+
+		$results{$1}->{$2} = 1;
 	}
 
 	$message->clear_array();

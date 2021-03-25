@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,13 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <inttypes.h>
-#include <pthread.h>
 
 #include "mqtt_common.h"
 #include "../ip/ip.h"
 #include "../util/linked_list.h"
 
 struct rrr_mqtt_acl;
+struct rrr_mqtt_broker_data;
+struct rrr_event_queue;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
 
@@ -50,9 +51,7 @@ struct rrr_mqtt_broker_data {
 	int max_clients;
 	uint16_t max_keep_alive;
 
-	pthread_mutex_t client_serial_stats_lock;
 	uint32_t client_serial;
-	int client_count;
 	struct rrr_mqtt_broker_stats stats;
 
 	int disallow_anonymous_logins;
@@ -62,11 +61,6 @@ struct rrr_mqtt_broker_data {
 	const char *permission_name;
 	const struct rrr_mqtt_acl *acl;
 };
-
-#define RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(action)				\
-	pthread_mutex_lock(&data->client_serial_stats_lock);		\
-	action;														\
-	pthread_mutex_unlock(&data->client_serial_stats_lock)
 
 int rrr_mqtt_broker_accept_connections (
 		struct rrr_mqtt_broker_data *data
@@ -82,6 +76,7 @@ static inline void rrr_mqtt_broker_notify_pthread_cancel_void (void *broker) {
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		uint16_t max_keep_alive,
 		const char *password_file,
 		const char *permission_name,
@@ -96,13 +91,6 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		const struct rrr_net_transport_config *net_transport_config,
 		int port
 );
-
-/* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
-int rrr_mqtt_broker_synchronized_tick (
-		int *something_happened,
-		struct rrr_mqtt_broker_data *data
-);
-
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,
 		struct rrr_mqtt_broker_data *data

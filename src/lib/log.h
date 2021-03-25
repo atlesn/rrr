@@ -36,7 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * 5 /  16 - Cmodule worker fork processing
  * 6 /  32 - Hex dumps of RRR messages when converted to/from host endianess
  * 7 /  64 - Socket open/close/read/write
- * 8 / 128- Thread handling
+ * 8 / 128 - Thread handling
+ * 9 / 256 - Event queue pass and dispatch (printf only)
  */
 
 #define __RRR_DEBUGLEVEL_0  (0)     // 0
@@ -48,10 +49,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define __RRR_DEBUGLEVEL_6  (1<<5)  // 32
 #define __RRR_DEBUGLEVEL_7  (1<<6)  // 64
 #define __RRR_DEBUGLEVEL_8  (1<<7)  // 128
+#define __RRR_DEBUGLEVEL_9  (1<<8)  // 256
 
 #define __RRR_DEBUGLEVEL_ALL (                                                            \
              __RRR_DEBUGLEVEL_1|__RRR_DEBUGLEVEL_2|__RRR_DEBUGLEVEL_3|__RRR_DEBUGLEVEL_4| \
-             __RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8)
+             __RRR_DEBUGLEVEL_5|__RRR_DEBUGLEVEL_6|__RRR_DEBUGLEVEL_7|__RRR_DEBUGLEVEL_8| \
+	     __RRR_DEBUGLEVEL_9)
 
 #define __RRR_LOG_PREFIX_0  0
 #define __RRR_LOG_PREFIX_1  1
@@ -62,6 +65,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define __RRR_LOG_PREFIX_6  6
 #define __RRR_LOG_PREFIX_7  7
 #define __RRR_LOG_PREFIX_8  8
+
+#define __RRR_LOG_PREFIX_0_Q  "0"
+#define __RRR_LOG_PREFIX_9_Q  "9"
 
 #define RRR_DEBUGLEVEL_OK(x) \
 	(x >= __RRR_LOG_PREFIX_0 && x <= __RRR_LOG_PREFIX_8)
@@ -103,6 +109,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define RRR_DBG_6(...) printf(__VA_ARGS__)
 #	define RRR_DBG_7(...) printf(__VA_ARGS__)
 #	define RRR_DBG_8(...) printf(__VA_ARGS__)
+	/* Debuglevel 9 is always printf */
 #	define RRR_DBG(...) printf(__VA_ARGS__)
 #	define RRR_BUG(...) do {printf(__VA_ARGS__); abort();}while(0)
 #else
@@ -183,6 +190,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
 #endif
 
+#define RRR_MSG_0_PRINTF(...) \
+	do { printf ("<" __RRR_LOG_PREFIX_0_Q "> <rrr> " __VA_ARGS__); } while(0)
+
+#define RRR_DBG_9_PRINTF(...) \
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_9) != 0) { printf ("<" __RRR_LOG_PREFIX_9_Q "> <rrr> " __VA_ARGS__); }} while(0)
+
 #define RRR_DEBUGLEVEL_1 \
 	((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0)
 
@@ -207,6 +220,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DEBUGLEVEL_8 \
 		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0)
 
+#define RRR_DEBUGLEVEL_9 \
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_9) != 0)
+
 #define RRR_DEBUGLEVEL \
 		(rrr_config_global.debuglevel)
 
@@ -223,6 +239,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LOG_HEADER_FORMAT_FULL "<%u> <%s> "
 
 #define RRR_LOG_HOOK_MSG_MAX_SIZE 512
+		
+struct rrr_event_queue;
 
 // Call from main() before and after /anything/ else
 int rrr_log_init(void);
@@ -230,13 +248,15 @@ void rrr_log_cleanup(void);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
+				uint16_t *write_count,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
-		void *private_arg
+		void *private_arg,
+		struct rrr_event_queue *notify_queue
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (

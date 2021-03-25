@@ -176,6 +176,7 @@ static int journal_preload (struct rrr_thread *thread) {
 
 // Note : Context here is ANY thread
 static void journal_log_hook (
+		uint16_t *amount_written,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,
@@ -185,6 +186,8 @@ static void journal_log_hook (
 	struct journal_data *data = private_arg;
 
 	(void)(loglevel_orig);
+
+	*amount_written = 0;
 
 	// Make the calling thread pause a bit to reduce the amount of messages
 	// coming in. This is done if we are unable to handle request due to
@@ -246,6 +249,8 @@ static void journal_log_hook (
 	entry = NULL;
 
 	data->is_in_hook = 0;
+
+	*amount_written = 1;
 
 	out_unlock:
 		if (entry != NULL) {
@@ -385,7 +390,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data);
+	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data, NULL);
 
 	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
@@ -427,8 +432,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 		};
 
 		if (rrr_message_broker_write_entry (
-				INSTANCE_D_BROKER(thread_data),
-				INSTANCE_D_HANDLE(thread_data),
+				INSTANCE_D_BROKER_ARGS(thread_data),
 				NULL,
 				0,
 				0,
@@ -517,7 +521,6 @@ void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
-		data->dl_ptr = NULL;
 		data->private_data = NULL;
 }
 

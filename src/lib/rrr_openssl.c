@@ -76,6 +76,7 @@ int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const 
 
 	if (SSL_CTX_load_verify_locations(ctx, ca_file_use, ca_path_use) != 1) {
 		RRR_SSL_ERR("Could not set certificate verification file/path");
+		RRR_MSG_0("ca_file: '%s', ca_path: '%s'\n", ca_file, ca_path);
 		ret = 1;
 		goto out;
 	}

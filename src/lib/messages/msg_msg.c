@@ -179,7 +179,7 @@ int rrr_msg_msg_new_with_data_nullsafe (
 
 int rrr_msg_msg_to_string (
 	char **final_target,
-	struct rrr_msg_msg *message
+	const struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
@@ -430,7 +430,7 @@ int rrr_msg_msg_topic_match (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
 	) != 0) {
-		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic\n");
+		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic of length %u\n", MSG_TOPIC_LENGTH(message));
 		ret = 0;
 		goto out;
 	}

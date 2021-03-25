@@ -547,18 +547,6 @@ int rrr_perl5_settings_to_hv (
 
 	settings_hv->hv = newHV();
 
-/* TODO:	We don't actually fill up the HV but instead force the user to utilize the
- * 			get()-method so that we can update was_used-parameter, maybe delete the following
-
-	struct rrr_perl5_settings_to_hv_callback_args callback_args = {
-			ctx, settings_hv
-	};
-	ret = rrr_settings_iterate(source, __rrr_perl5_settings_to_hv_callback, &callback_args);
-	if (ret != 0) {
-		RRR_MSG_0("Error while converting instance settings to hv in perl5\n");
-		goto out;
-	}*/
-
 	*target = settings_hv;
 
 	out:
@@ -826,7 +814,10 @@ static int __rrr_perl5_message_to_hv (
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(rrr_array_ptr, hv);
 
 	SvFLAGS(rrr_array_ptr) &= ~(SVf_PROTECT|SVf_READONLY);
-	sv_setiv(rrr_array_ptr, (IV) array);
+	sv_setiv(rrr_array_ptr, (intptr_t) array);
+	if (SvIV(rrr_array_ptr) != (intptr_t) array) {
+		RRR_BUG("BUG: RRR array pointer storage failure in __rrr_perl5_message_to_hv, possibly a problem on this particular architecture\n");
+	}
 	SvFLAGS(rrr_array_ptr) |= SVf_PROTECT|SVf_READONLY;
 
     SvUTF8_off(ip_addr);
