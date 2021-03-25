@@ -31,8 +31,6 @@ struct rrr_socket_eventfd {
 	int fd;
 #else
 	int fds[2];
-	uint64_t count;
-	int notify_pending;
 #endif
 };
 

@@ -33,6 +33,9 @@ void rrr_event_collection_init (
 		struct rrr_event_collection *collection,
 		struct rrr_event_queue *queue
 ) {
+	if (collection->event_base != NULL) {
+		RRR_BUG("BUG: Double call of rrr_event_collection_init()\n");
+	}
 	memset(collection, '\0', sizeof(*collection));
 	collection->event_base = queue->event_base;
 }

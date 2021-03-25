@@ -86,17 +86,13 @@ int rrr_socket_eventfd_init (
 }
 
 #ifndef RRR_HAVE_EVENTFD
-static int __rrr_socket_eventfd_notify_if_needed (
-		struct rrr_socket_eventfd *eventfd
+static int __rrr_socket_eventfd_notify (
+		struct rrr_socket_eventfd *eventfd,
+		uint8_t count
 ) {
 	int ret = 0;
 
-	if (eventfd->count == 0 || eventfd->notify_pending) {
-		goto out;
-	}
-
-	const char *signal = "";
-	if (write(eventfd->fds[1], signal, 1) != 1) {
+	if (write(eventfd->fds[1], &count, sizeof(count)) != 1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;
@@ -106,8 +102,6 @@ static int __rrr_socket_eventfd_notify_if_needed (
 		ret = 1;
 		goto out;
 	}
-
-	eventfd->notify_pending = 1;
 
 	out:
 	return ret;
@@ -136,14 +130,7 @@ int rrr_socket_eventfd_write (
 		goto out;
 	}
 #else
-	if (UINT64_MAX - eventfd->count <= count) {
-		ret = RRR_SOCKET_NOT_READY;
-		goto out;
-	}
-
-	eventfd->count += count;
-
-	if ((ret = __rrr_socket_eventfd_notify_if_needed (eventfd)) != 0) {
+	if ((ret = __rrr_socket_eventfd_notify (eventfd, count)) != 0) {
 		goto out;
 	}
 #endif
@@ -178,9 +165,9 @@ int rrr_socket_eventfd_read (
 		goto out;
 	}
 #else
-	char buf[64];
+	uint8_t buf[64];
 	ssize_t res = read(eventfd->fds[0], buf, sizeof(buf));
-	if (res == 1) {
+	if (res > 0) {
 		// OK
 	}
 	else if (res == 0) {
@@ -191,9 +178,6 @@ int rrr_socket_eventfd_read (
 	else if (errno == EWOULDBLOCK || errno == EAGAIN) {
 		goto out;
 	}
-	else if (res > 1) {
-		RRR_BUG("BUG: res was > 1 in rrr_socket_eventfd_read\n");
-	}
 	else {
 		RRR_MSG_0("fd %i<-%i (pipe) error while reading in rrr_socket_eventfd_read: %s\n",
 				eventfd->fds[0], eventfd->fds[1], rrr_strerror(errno));
@@ -201,9 +185,12 @@ int rrr_socket_eventfd_read (
 		goto out;
 	}
 
-	*count = eventfd->count;
-	eventfd->count = 0;
-	eventfd->notify_pending = 0;
+	uint64_t count_tmp = 0;
+	for (ssize_t i = 0; i < res; i++) {
+		count_tmp += buf[i];
+	}
+
+	*count = count_tmp;
 #endif
 
 	out:

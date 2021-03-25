@@ -259,7 +259,11 @@ int rrr_event_pass (
 	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
 		queue, function, amount);
 
+	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
+		if (ret == RRR_SOCKET_NOT_READY) {
+			goto retry;
+		}
 		RRR_MSG_0("Failed to pass event in rrr_event_pass, return was %i\n", ret);
 		ret = RRR_EVENT_ERR;
 		goto out;
