@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../common.h"
 #include "../event/event.h"
+#include "../event/event_collection.h"
 #include "../event/event_functions.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
@@ -371,6 +372,46 @@ int __rrr_cmodule_worker_send_pong (
 	return ret;
 }
 
+static void __rrr_cmodule_worker_event_spawn (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_cmodule_worker_event_callback_data *callback_data = arg;
+	struct rrr_cmodule_worker *worker = callback_data->worker;
+
+	(void)(fd);
+	(void)(flags);
+
+	if (worker->do_spawning) {
+		RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
+		if (__rrr_cmodule_worker_spawn_message (
+				worker,
+				callback_data->read_callback_data.process_callback,
+				callback_data->read_callback_data.process_callback_arg
+		) != 0) {
+			rrr_event_dispatch_break(worker->event_queue_worker);
+		}
+	}
+
+	int custom_tick_something_happened = 1;
+	int retries = 100;
+	while (--retries && custom_tick_something_happened) {
+		if (callback_data->custom_tick_callback != NULL) {
+			if (callback_data->custom_tick_callback (
+					&custom_tick_something_happened,
+					worker,
+					callback_data->custom_tick_callback_arg
+			) != 0) {
+				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
+						worker->name, (long) getpid());
+				rrr_event_dispatch_break(worker->event_queue_worker);
+			}
+		}
+	}
+
+}
+
 static int __rrr_cmodule_worker_event_periodic (
 		RRR_EVENT_FUNCTION_PERIODIC_ARGS
 ) {
@@ -394,33 +435,6 @@ static int __rrr_cmodule_worker_event_periodic (
 		worker->ping_received = 0;
 	}
 
-	if (worker->do_spawning) {
-		RRR_DBG_5("cmodule worker %s spawning\n", worker->name);
-		if (__rrr_cmodule_worker_spawn_message (
-				worker,
-				callback_data->read_callback_data.process_callback,
-				callback_data->read_callback_data.process_callback_arg
-		) != 0) {
-			return 1;
-		}
-	}
-
-	int custom_tick_something_happened = 1;
-	int retries = 100;
-	while (--retries && custom_tick_something_happened) {
-		if (callback_data->custom_tick_callback != NULL) {
-			if (callback_data->custom_tick_callback (
-					&custom_tick_something_happened,
-					worker,
-					callback_data->custom_tick_callback_arg
-			) != 0) {
-				RRR_MSG_0("Error from custom tick function in worker fork named %s pid %ld\n",
-						worker->name, (long) getpid());
-				return 1;
-			}
-		}
-	}
-
 	return 0;
 }
 
@@ -437,6 +451,11 @@ static int __rrr_cmodule_worker_loop (
 
 	RRR_DBG_5("cmodule worker %s starting loop\n", worker->name);
 
+	struct rrr_event_collection events = {0};
+	rrr_event_handle event_spawn;
+
+	rrr_event_collection_init(&events, worker->event_queue_worker);
+
 	struct rrr_cmodule_worker_event_callback_data callback_data = {
 		worker,
 		custom_tick_callback,
@@ -449,9 +468,22 @@ static int __rrr_cmodule_worker_loop (
 		}
 	};
 
+	if (rrr_event_collection_push_periodic (
+			&event_spawn,
+			&events,
+			__rrr_cmodule_worker_event_spawn,
+			&callback_data,
+			worker->spawn_interval_us
+	) != 0) {
+		RRR_MSG_0("Failed to create spawn event in  __rrr_cmodule_worker_loop\n");
+		goto out_cleanup_events;
+	}
+
+	EVENT_ADD(event_spawn);
+
 	int ret_tmp = rrr_event_dispatch (
 			worker->event_queue_worker,
-			worker->spawn_interval_us,
+			100 * 1000, // 100 ms
 			__rrr_cmodule_worker_event_periodic,
 			&callback_data
 	);
@@ -462,6 +494,8 @@ static int __rrr_cmodule_worker_loop (
 			ret_tmp
 	);
 
+	out_cleanup_events:
+	rrr_event_collection_clear(&events);
 	return 0;
 }
 
@@ -636,8 +670,6 @@ int rrr_cmodule_worker_main (
 	);
 
 	rrr_log_hook_unregister(log_hook_handle);
-
-	printf("Worker clear mmap\n");
 
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
