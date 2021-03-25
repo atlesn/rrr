@@ -637,6 +637,8 @@ int rrr_cmodule_worker_main (
 
 	rrr_log_hook_unregister(log_hook_handle);
 
+	printf("Worker clear mmap\n");
+
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
 
@@ -662,6 +664,7 @@ int rrr_cmodule_worker_init (
 		const char *name,
 		struct rrr_instance_settings *settings,
 		struct rrr_event_queue *event_queue_parent,
+		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,
@@ -701,13 +704,8 @@ int rrr_cmodule_worker_init (
 		goto out_free_name;
 	}
 
-	if ((ret = rrr_event_queue_new(&worker->event_queue_worker)) != 0) {
-		RRR_MSG_0("Could not initialize event queue in __rrr_cmodule_worker_new\n");
-		goto out_destroy_pid_lock;
-	}
-
 	rrr_event_function_set (
-			worker->event_queue_worker,
+			event_queue_worker,
 			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 			__rrr_cmodule_worker_event_mmap_channel_data_available,
 			"mmap channel data available (worker)"
@@ -717,6 +715,7 @@ int rrr_cmodule_worker_init (
 		sleep_time_us = spawn_interval_us;
 	}
 
+	worker->event_queue_worker = event_queue_worker;
 	worker->settings = settings;
 	worker->event_queue_parent = event_queue_parent;
 	worker->fork_handler = fork_handler;
@@ -734,8 +733,8 @@ int rrr_cmodule_worker_init (
 	worker = NULL;
 
 	goto out;
-	out_destroy_pid_lock:
-		pthread_mutex_destroy(&worker->pid_lock);
+//	out_destroy_pid_lock:
+//		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
 		free(worker->name);
 	out_destroy_channel_to_parent:
@@ -758,6 +757,4 @@ void rrr_cmodule_worker_cleanup (
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
-
-	rrr_event_queue_destroy(worker->event_queue_worker);
 }

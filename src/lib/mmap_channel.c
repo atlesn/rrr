@@ -485,6 +485,7 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
 			if (++msg_count == 1) {
 				RRR_MSG_1("Note: Pointer was still present in block in rrr_mmap_channel_destroy, fork might not have exited yet or has been killed before cleanup.\n");
+				abort();
 			}
 		}
 		if (pthread_mutex_trylock(&target->blocks[i].block_lock) != 0) {

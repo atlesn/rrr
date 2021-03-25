@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_worker.h"
 #include "cmodule_struct.h"
 #include "cmodule_config_data.h"
+#include "../event/event.h"
 #include "../fork.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
@@ -82,11 +83,13 @@ static void __rrr_cmodule_worker_kill_and_cleanup (
 	rrr_fork_unregister_exit_handler(worker->fork_handler, worker->pid);
 
 	// This is to avoid warning when mmap channel is destroyed.
-	// Child fork will call write_free_blocks on channel_to_parent.
+	// Child fork will call writer_free_blocks on channel_to_parent.
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_fork);
 
 	// OK to call kill etc. despite fork not being started
 	__rrr_cmodule_main_worker_kill(worker);
+
+	rrr_event_queue_destroy(worker->event_queue_worker);
 	rrr_cmodule_worker_cleanup(worker);
 }
 
@@ -131,11 +134,18 @@ int rrr_cmodule_main_worker_fork_start (
 
 	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
 
+	struct rrr_event_queue *worker_queue = NULL;
+	if ((ret = rrr_event_queue_new(&worker_queue)) != 0) {
+		RRR_MSG_0("Failed to create event queue in rrr_cmodule_main_worker_fork_start\n");
+		goto out_parent;
+	}
+
 	if ((ret = rrr_cmodule_worker_init (
 			worker,
 			name,
 			settings,
 			notify_queue,
+			worker_queue,
 			cmodule->fork_handler,
 			cmodule->mmap,
 			cmodule->config_data.worker_spawn_interval_us,
@@ -146,7 +156,7 @@ int rrr_cmodule_main_worker_fork_start (
 			cmodule->config_data.do_drop_on_error
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
-		goto out_parent;
+		goto out_parent_destroy_event_queue;
 	}
 
 	worker->index = cmodule->worker_count - 1;
@@ -161,7 +171,7 @@ int rrr_cmodule_main_worker_fork_start (
 		// Don't use rrr_strerror() due to use of global lock
 		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork errno %i\n", errno);
 		ret = 1;
-		goto out_parent_cleanup;
+		goto out_parent_cleanup_worker;
 	}
 	else if (pid > 0) {
 		// If we deadlock here, exit handler unregister will not be called
@@ -188,12 +198,17 @@ int rrr_cmodule_main_worker_fork_start (
 			custom_tick_callback_arg
 	);
 
+	// Clean up any events created after forking
+	rrr_event_queue_destroy(worker_queue);
+
 	exit(ret);
 
 	goto out_parent;
-	out_parent_cleanup:
+	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
 		cmodule->worker_count--;
+	out_parent_destroy_event_queue:
+		rrr_event_queue_destroy(worker_queue);
 	out_parent:
 		return ret;
 }

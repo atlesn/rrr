@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_eventfd.h"
 #include "../util/gnu.h"
-#include "../util/posix.h"
 #include "../util/rrr_time.h"
 
 static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -290,7 +289,7 @@ void rrr_event_queue_destroy (
 	}
 	pthread_mutex_destroy(&queue->lock);
 	event_base_free(queue->event_base);
-	munmap(queue, sizeof(*queue));
+	free(queue);
 }
 
 int rrr_event_queue_new (
@@ -331,16 +330,18 @@ int rrr_event_queue_new (
 		goto out;
 	}
 
-	if ((queue = rrr_posix_mmap(sizeof(*queue))) == NULL) {
+	if ((queue = malloc(sizeof(*queue))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
 		ret = 1;
 		goto out;
 	}
 
+	memset(queue, '\0', sizeof(*queue));
+
 	if ((rrr_posix_mutex_init(&queue->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
 		ret = 1;
-		goto out_munmap;
+		goto out_free;
 	}
 
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
@@ -420,8 +421,8 @@ int rrr_event_queue_new (
 		event_base_free(queue->event_base);
 	out_destroy_lock:
 		pthread_mutex_destroy(&queue->lock);
-	out_munmap:
-		munmap(queue, sizeof(*queue));
+	out_free:
+		free(queue);
 	out:
 		if (cfg != NULL) {
 		        event_config_free(cfg);
