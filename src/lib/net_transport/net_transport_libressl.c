@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../../../config.h"
+
 #include <tls.h>
 #include <poll.h>
 #include <string.h>
@@ -208,7 +210,7 @@ static int __rrr_net_transport_libressl_connect (
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_DBG_1("Could not create TLS connection to %s:%u\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
