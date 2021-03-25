@@ -495,29 +495,6 @@ void rrr_socket_client_collection_send_chunk_iterate (
 	RRR_LL_ITERATE_END();
 }
 
-static int __rrr_socket_client_collection_iterate (
-		struct rrr_socket_client_collection *collection,
-		int (*callback)(struct rrr_socket_client *client, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		if ((ret = callback(node, callback_arg)) != 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-				ret = 0;
-			}
-			else {
-				goto out;
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
-
-	out:
-	return ret;
-}
-
 static void __rrr_socket_client_collection_find_and_destroy (
 		struct rrr_socket_client_collection *collection,
 		const struct rrr_socket_client *client
@@ -1037,6 +1014,10 @@ static int __rrr_socket_client_send_push (
 ) {
 	int ret = 0;
 
+	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
+		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push\n");
+	}
+
 	if ((ret = rrr_socket_send_chunk_collection_push (&client->send_chunks, data, data_size)) != 0) {
 		goto out;
 	}
@@ -1053,6 +1034,10 @@ static int __rrr_socket_client_send_push_const (
 		ssize_t data_size
 ) {
 	int ret = 0;
+
+	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
+		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push_const\n");
+	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const (&client->send_chunks, data, data_size)) != 0) {
 		goto out;
@@ -1073,6 +1058,10 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
 	int ret = 0;
+
+	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
+		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push_const_with_private_data\n");
+	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
 			&client->send_chunks,
@@ -1102,6 +1091,10 @@ static int __rrr_socket_client_sendto_push_const (
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
 ) {
 	int ret = 0;
+
+	if (client->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
+		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_sendto_push_const\n");
+	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 			&client->send_chunks,
@@ -1152,34 +1145,22 @@ void rrr_socket_client_collection_close_outbound_when_send_complete (
 	RRR_LL_ITERATE_END();
 }
 
-struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data {
-	const void *data;
-	ssize_t size;
-};
-
-static int __rrr_socket_client_collection_multicast_send_push_callback (
-		struct rrr_socket_client *client,
-		void *arg
-) {
-	struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data *callback_data = arg;
-	return __rrr_socket_client_send_push_const (client, callback_data->data, callback_data->size); 
-}
-
-int rrr_socket_client_collection_send_push_const_multicast (
+void rrr_socket_client_collection_send_push_const_multicast (
 		struct rrr_socket_client_collection *collection,
 		const void *data,
 		ssize_t size
 ) {
-	struct rrr_socket_client_collection_multicast_send_ignore_full_pipe_callback_data callback_data = {
-		data,
-		size
-	};
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
+			RRR_LL_ITERATE_NEXT();
+		}
 
-	return __rrr_socket_client_collection_iterate (
-			collection,
-			__rrr_socket_client_collection_multicast_send_push_callback,
-			&callback_data
-	);
+		int ret_tmp;
+		if ((ret_tmp = __rrr_socket_client_send_push_const (node, data, size)) != 0) {
+			RRR_DBG_7("Send failed with return value %i during multicast send, destroying client\n", ret_tmp);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 }
 
 #define FIND_LOOP_BEGIN()                                                 \
