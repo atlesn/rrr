@@ -69,7 +69,7 @@ void rrr_socket_client_collection_send_chunk_iterate (
 void rrr_socket_client_collection_close_outbound_when_send_complete (
 		struct rrr_socket_client_collection *collection
 );
-int rrr_socket_client_collection_send_push_const_multicast (
+void rrr_socket_client_collection_send_push_const_multicast (
 		struct rrr_socket_client_collection *collection,
 		const void *data,
 		ssize_t size

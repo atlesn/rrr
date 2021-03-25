@@ -685,6 +685,7 @@ static int __rrr_mqtt_conn_read_get_target_size (
 				RRR_MQTT_CONN_SET_DISCONNECT_REASON_IF_ZERO(connection, RRR_MQTT_P_5_REASON_MALFORMED_PACKET);
 			}
 			ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
+			RRR_MSG_0("Returned error from __rrr_mqtt_conn_parse: %i\n", ret);
 			goto out;
 		}
 		// Don't got out, fixed header might be done

@@ -87,6 +87,7 @@ int rrr_cmodule_worker_init (
 		const char *name,
 		struct rrr_instance_settings *settings,
 		struct rrr_event_queue *event_queue_parent,
+		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,

@@ -194,11 +194,12 @@ int __rrr_stats_engine_multicast_send_intermediate (
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
-	return rrr_socket_client_collection_send_push_const_multicast (
+	rrr_socket_client_collection_send_push_const_multicast (
 			stats->client_collection,
 			data,
 			size
 	);
+	return 0;
 }
 
 static int __rrr_stats_client_new (
