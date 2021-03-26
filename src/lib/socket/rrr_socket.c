@@ -1166,7 +1166,7 @@ int rrr_socket_unix_connect (
 	for (int i = 0; i < 10 && connected == 0; i++) {
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
 			RRR_MSG_0("fd %i could not connect to socket %s try %i of %i: %s\n",
-					socket_fd, filename, i, 10, rrr_strerror(errno));
+					socket_fd, filename, i + 1, 10, rrr_strerror(errno));
 			rrr_posix_usleep(25000);
 		}
 		else {
