@@ -1348,7 +1348,7 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 #ifdef RRR_FIFO_BUFFER_RATELIMIT_DEBUG
 	uint64_t time = rrr_time_get_64() - ratelimit_in;
 	if (time > 0) {
-		printf("Ratelimit %p: %" PRIu64 "\n", buffer, time);
+		printf("Ratelimit %p: %" PRIu64 "\tc: %i\n", buffer, time, buffer->entry_count);
 	}
 #endif
 }

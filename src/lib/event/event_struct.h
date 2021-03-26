@@ -47,7 +47,8 @@ struct rrr_event_queue {
 
 	struct event *periodic_event;
 
-	void (*callback_pause)(int *do_pause, void *callback_arg);
+	int is_paused;
+	void (*callback_pause)(int *do_pause, int is_paused, void *callback_arg);
 	void *callback_pause_arg;
 
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);

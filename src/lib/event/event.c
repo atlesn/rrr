@@ -125,19 +125,28 @@ static void __rrr_event_signal_event (
  	int ret = 0;
 	uint64_t count = 0;
 
-	pthread_mutex_lock(&queue->lock);
-
-	if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
-		if (ret == RRR_SOCKET_NOT_READY) {
-			// OK, nothing to do
-		}
-		else {
-			RRR_DBG_9_PRINTF("EQ DISP %p error from eventfd read, ending loop\n", queue);
-			event_base_loopbreak(queue->event_base);
-		}
+	if (queue->callback_pause) {
+		queue->callback_pause(&queue->is_paused, queue->is_paused, queue->callback_pause_arg);
 	}
 
-	pthread_mutex_unlock(&queue->lock);
+	if (queue->is_paused) {
+		RRR_DBG_9_PRINTF("EQ DISP %p paused function %p\n",
+			queue, function->function);
+		goto out;
+	}
+	else {
+		pthread_mutex_lock(&queue->lock);
+		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
+			if (ret == RRR_SOCKET_NOT_READY) {
+				// OK, nothing to do
+			}
+			else {
+				RRR_DBG_9_PRINTF("EQ DISP %p error from eventfd read, ending loop\n", queue);
+				event_base_loopbreak(queue->event_base);
+			}
+		}
+		pthread_mutex_unlock(&queue->lock);
+	}
 
 	if (function->function == NULL) {
 		RRR_DBG_9_PRINTF("EQ DISP %p function not registered\n", queue);
@@ -176,7 +185,7 @@ static void __rrr_event_signal_event (
 
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, void *callback_arg),
+		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
 		void *callback_arg
 ) {
 	queue->callback_pause = callback;

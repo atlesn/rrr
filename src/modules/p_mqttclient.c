@@ -139,10 +139,9 @@ struct mqtt_client_data {
 	struct rrr_mqtt_property_collection connect_properties;
 
 	struct rrr_event_collection events;
-	rrr_event_handle  event_input_queue;
-
+	rrr_event_handle event_input_queue;
 	struct rrr_msg_holder_collection input_queue;
-	int input_queue_disabled;
+	int send_disabled;;
 
 	uint64_t connect_time;
 
@@ -198,19 +197,6 @@ static int mqttclient_message_data_to_payload (
 	*result_size = MSG_DATA_LENGTH(reading);
 
 	return 0;
-}
-
-static void mqttclient_event_input_queue_disable (
-		struct mqtt_client_data *data
-) {
-	data->input_queue_disabled = 1;
-}
-
-static void mqttclient_event_input_queue_enable (
-		struct mqtt_client_data *data
-) {
-	data->input_queue_disabled = 0;
-	EVENT_ACTIVATE(data->event_input_queue);
 }
 
 static int mqttclient_publish (
@@ -443,13 +429,12 @@ static void mqttclient_event_input_queue (
 	(void)(fd);
 	(void)(flags);
 
-	if (RRR_LL_COUNT(&data->input_queue) == 0 || data->input_queue_disabled) {
+	if (data->send_disabled) {
 		return;
 	}
 
-	// Caution: Loose pointer
-	int count = 0;
 	while (RRR_LL_COUNT(&data->input_queue) > 0) {
+		// Caution: Loose pointer
 		struct rrr_msg_holder *entry = RRR_LL_SHIFT(&data->input_queue);
 		rrr_msg_holder_lock(entry);
 
@@ -466,14 +451,9 @@ static void mqttclient_event_input_queue (
 			return;
 		}
 
-		count++;
 		rrr_msg_holder_decref_while_locked_and_unlock(entry);
 
-		// Send discouraged need not be checked with QoS 0 as there are no ACKs to worry about
-		if (data->qos != 0 && send_discouraged && !data->input_queue_disabled) {
-			RRR_DBG_1("MQTT client %s: Send discouraged active, client send buffers are full\n",
-					INSTANCE_D_NAME(data->thread_data));
-			mqttclient_event_input_queue_disable(data);
+		if ((data->send_disabled = send_discouraged) != 0) {
 			break;
 		}
 	}
@@ -1463,7 +1443,7 @@ static int mqttclient_wait_send_allowed_event_periodic (RRR_EVENT_FUNCTION_PERIO
 static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
 	int ret;
 
-	mqttclient_event_input_queue_disable (data);
+	data->send_disabled = 1;
 
 	ret = rrr_event_dispatch (
 			INSTANCE_D_EVENTS(data->thread_data),
@@ -1472,7 +1452,7 @@ static int mqttclient_wait_send_allowed (struct mqtt_client_data *data) {
 			INSTANCE_D_THREAD(data->thread_data)
 	);
 
-	mqttclient_event_input_queue_enable (data);
+	data->send_disabled = 0;
 
 	return ret;
 }
@@ -1775,6 +1755,7 @@ static int mqttclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static void mqttclient_event_callback_pause (
 		int *do_pause,
+		int is_paused,
 		void *arg
 ) {
 	struct rrr_thread *thread = arg;
@@ -1782,13 +1763,20 @@ static void mqttclient_event_callback_pause (
 	struct mqtt_client_data *data = thread_data->private_data;
 
 	if (RRR_LL_COUNT(&data->input_queue) > RRR_MQTT_INPUT_QUEUE_MAX) {
-		// Make sure queue is processed when paused
 		EVENT_ACTIVATE(data->event_input_queue);
-
+		*do_pause = 1;
+	}
+	else if (is_paused && RRR_LL_COUNT(&data->input_queue) > (RRR_MQTT_INPUT_QUEUE_MAX / 2)) {
+		EVENT_ACTIVATE(data->event_input_queue);
 		*do_pause = 1;
 	}
 	else {
+		// Read callback will be called, don't activate event
 		*do_pause = 0;
+	}
+
+	if (*do_pause != is_paused) {
+		printf("Pause callback is %i do %i count %i\n", is_paused, *do_pause, RRR_LL_COUNT(&data->input_queue));
 	}
 }
 
@@ -1825,9 +1813,8 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	mqttclient_update_stats(data);
 
-	if (RRR_LL_COUNT(&data->input_queue) > 0) {
-		mqttclient_event_input_queue_enable(data);
-	}
+	printf("Send discourage: %i\n", data->send_disabled);
+	data->send_disabled = 0;
 
 	return 0;
 }

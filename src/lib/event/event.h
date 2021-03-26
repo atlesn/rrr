@@ -90,7 +90,7 @@ void rrr_event_function_set_with_arg (
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, void *callback_arg),
+		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
 		void *callback_arg
 );
 int rrr_event_dispatch_once (
