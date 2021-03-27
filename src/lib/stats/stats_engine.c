@@ -79,12 +79,12 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	__rrr_stats_engine_journal_unlock(engine);
 }
 
-#define JOURNAL_LOCK(engine) 												\
-	__rrr_stats_engine_journal_lock(engine);								\
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)		\
+#define JOURNAL_LOCK(engine)                                   \
+    __rrr_stats_engine_journal_lock(engine);                   \
+    pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)
 
-#define JOURNAL_UNLOCK()													\
-	pthread_cleanup_pop(1)
+#define JOURNAL_UNLOCK()                                       \
+    pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (
 		uint16_t *write_amount,
