@@ -111,6 +111,43 @@ static void __rrr_event_periodic (
 	}
 }
 
+static void __rrr_event_set_pause (
+		struct rrr_event_queue *queue,
+		int do_pause
+) {
+	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		if (queue->functions[i].signal_event) {
+			if (do_pause) {
+				event_del(queue->functions[i].signal_event);
+			}
+			else {
+				event_add(queue->functions[i].signal_event, NULL);
+			}
+		}
+	}
+
+	if ((queue->is_paused = do_pause) != 0) {
+		struct timeval tv = { 0, 50 }; // 50 us
+		event_add(queue->unpause_event, &tv);
+	}
+
+	RRR_DBG_9_PRINTF("EQ DISP %p pause is %i\n",
+		queue, queue->is_paused);
+}
+
+static void __rrr_event_unpause (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_event_queue *queue = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	__rrr_event_set_pause(queue, 0);
+}
+
 static void __rrr_event_signal_event (
 	evutil_socket_t fd,
 	short flags,
@@ -130,12 +167,10 @@ static void __rrr_event_signal_event (
 	}
 
 	if (queue->is_paused) {
-		RRR_DBG_9_PRINTF("EQ DISP %p paused function %p\n",
-			queue, function->function);
+		__rrr_event_set_pause(queue, 1);
 		goto out;
 	}
 	else {
-		pthread_mutex_lock(&queue->lock);
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
 				// OK, nothing to do
@@ -145,7 +180,6 @@ static void __rrr_event_signal_event (
 				event_base_loopbreak(queue->event_base);
 			}
 		}
-		pthread_mutex_unlock(&queue->lock);
 	}
 
 	if (function->function == NULL) {
@@ -262,8 +296,6 @@ int rrr_event_pass (
 		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
 	}
 
-	pthread_mutex_lock(&queue->lock);
-
 	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
 		queue, function, amount);
 
@@ -278,7 +310,6 @@ int rrr_event_pass (
 	}
 
 	out:
-	pthread_mutex_unlock(&queue->lock);
 	return ret;
 }
 
@@ -296,7 +327,6 @@ void rrr_event_queue_destroy (
 	if (queue->periodic_event != NULL) {
 		event_free(queue->periodic_event);
 	}
-	pthread_mutex_destroy(&queue->lock);
 	event_base_free(queue->event_base);
 	free(queue);
 }
@@ -347,16 +377,10 @@ int rrr_event_queue_new (
 
 	memset(queue, '\0', sizeof(*queue));
 
-	if ((rrr_posix_mutex_init(&queue->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
-		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
-		ret = 1;
-		goto out_free;
-	}
-
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
 		ret = 1;
-		goto out_destroy_lock;
+		goto out_free;
 	}
 
 	if (event_base_priority_init (queue->event_base, RRR_EVENT_PRIORITY_COUNT) != 0) {
@@ -375,6 +399,18 @@ int rrr_event_queue_new (
 		RRR_MSG_0("Failed to create periodic event in rrr_event_queue_new\n");
 		ret = 1;
 		goto out_destroy_event_base;
+	}
+
+	if ((queue->unpause_event = event_new (
+			queue->event_base,
+			-1,
+			EV_TIMEOUT,
+			__rrr_event_unpause,
+			queue
+	)) == NULL) {
+		RRR_MSG_0("Failed to create unpause event in rrr_event_queue_new\n");
+		ret = 1;
+		goto out_destroy_periodic_event;
 	}
 
 	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
@@ -424,12 +460,10 @@ int rrr_event_queue_new (
 				event_free(queue->functions[i].signal_event);
 			}
 		}
-	// out_destroy_periodic_event: (Label currently not used)
+	out_destroy_periodic_event:
 		event_free(queue->periodic_event);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
-	out_destroy_lock:
-		pthread_mutex_destroy(&queue->lock);
 	out_free:
 		free(queue);
 	out:

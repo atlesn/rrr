@@ -41,11 +41,10 @@ struct rrr_event_function {
 struct rrr_event_queue {
 	struct event_base *event_base;
 
-	pthread_mutex_t lock;
-
 	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
 
 	struct event *periodic_event;
+	struct event *unpause_event;
 
 	int is_paused;
 	void (*callback_pause)(int *do_pause, int is_paused, void *callback_arg);
