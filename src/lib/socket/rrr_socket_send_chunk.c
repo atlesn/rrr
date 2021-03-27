@@ -68,6 +68,7 @@ void rrr_socket_send_chunk_collection_clear_with_callback (
 }
 
 static int __rrr_socket_send_chunk_collection_push (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -84,6 +85,8 @@ static int __rrr_socket_send_chunk_collection_push (
 	}
 
 	struct rrr_socket_send_chunk *new_chunk = NULL;
+
+	*send_chunk_count = RRR_LL_COUNT(target);
 
 	if ((new_chunk = malloc(sizeof(*new_chunk))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_send_chunk_collection_push\n");
@@ -109,19 +112,33 @@ static int __rrr_socket_send_chunk_collection_push (
 
 	RRR_LL_APPEND(target, new_chunk);
 
+	*send_chunk_count = RRR_LL_COUNT(target);
+
 	out:
 	return ret;
 }
 
 int rrr_socket_send_chunk_collection_push (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,
 		ssize_t data_size
 ) {
-	return __rrr_socket_send_chunk_collection_push(target, NULL, 0, data, data_size, NULL, NULL, NULL);
+	return __rrr_socket_send_chunk_collection_push (
+			send_chunk_count,
+			target,
+			NULL,
+			0,
+			data,
+			data_size,
+			NULL,
+			NULL,
+			NULL
+	);
 }
 
 int rrr_socket_send_chunk_collection_push_with_private_data (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,
 		ssize_t data_size,
@@ -129,10 +146,21 @@ int rrr_socket_send_chunk_collection_push_with_private_data (
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
-	return __rrr_socket_send_chunk_collection_push(target, NULL, 0, data, data_size, private_data_arg, private_data_new, private_data_destroy);
+	return __rrr_socket_send_chunk_collection_push (
+			send_chunk_count,
+			target,
+			NULL,
+			0,
+			data,
+			data_size,
+			private_data_arg,
+			private_data_new,
+			private_data_destroy
+	);
 }
 
 static int __rrr_socket_send_chunk_collection_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -153,7 +181,17 @@ static int __rrr_socket_send_chunk_collection_push_const (
 
 	memcpy(data_copy, data, data_size);
 
-	ret = __rrr_socket_send_chunk_collection_push (target, addr, addr_len, &data_copy, data_size, private_data_new, private_data_arg, private_data_destroy);
+	ret = __rrr_socket_send_chunk_collection_push (
+			send_chunk_count,
+			target,
+			addr,
+			addr_len,
+			&data_copy,
+			data_size,
+			private_data_new,
+			private_data_arg,
+			private_data_destroy
+	);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(data_copy);
@@ -161,14 +199,26 @@ static int __rrr_socket_send_chunk_collection_push_const (
 }
 
 int rrr_socket_send_chunk_collection_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		const void *data,
 		ssize_t data_size
 ) {
-	return __rrr_socket_send_chunk_collection_push_const(target, NULL, 0, data, data_size, NULL, NULL, NULL);
+	return __rrr_socket_send_chunk_collection_push_const (
+			send_chunk_count,
+			target,
+			NULL,
+			0,
+			data,
+			data_size,
+			NULL,
+			NULL,
+			NULL
+	);
 }
 
 int rrr_socket_send_chunk_collection_push_const_with_private_data (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		const void *data,
 		ssize_t data_size,
@@ -176,10 +226,21 @@ int rrr_socket_send_chunk_collection_push_const_with_private_data (
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
-	return __rrr_socket_send_chunk_collection_push_const(target, NULL, 0, data, data_size, private_data_new, private_data_arg, private_data_destroy);
+	return __rrr_socket_send_chunk_collection_push_const (
+			send_chunk_count,
+			target,
+			NULL,
+			0,
+			data,
+			data_size,
+			private_data_new,
+			private_data_arg,
+			private_data_destroy
+	);
 }
 
 int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -189,7 +250,17 @@ int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
-	return __rrr_socket_send_chunk_collection_push_const(target, addr, addr_len, data, data_size, private_data_new, private_data_arg, private_data_destroy);
+	return __rrr_socket_send_chunk_collection_push_const (
+			send_chunk_count,
+			target,
+			addr,
+			addr_len,
+			data,
+			data_size,
+			private_data_new,
+			private_data_arg,
+			private_data_destroy
+	);
 }
 
 static int __rrr_socket_send_chunk_collection_send (

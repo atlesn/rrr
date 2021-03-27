@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS  3000
 #define RRR_HTTP_SERVER_IDLE_TIMEOUT_MS        RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS * 2
+#define RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT 100000
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
@@ -285,7 +286,8 @@ int main (int argc, const char **argv, const char **env) {
 				events,
 				data.http_port,
 				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
-				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -319,6 +321,7 @@ int main (int argc, const char **argv, const char **env) {
 				data.https_port,
 				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
 				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT,
 				&net_transport_config_tls,
 				flags
 		) != 0) {

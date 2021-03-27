@@ -464,7 +464,14 @@ static int __rrr_stats_send_message (
 			message->path
 	);
 
-	rrr_socket_client_collection_send_push_const_multicast(data->connections, &message_packed, total_size); 
+	int send_chunk_count_dummy = 0;
+	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count_dummy,
+			data->connections,
+			&message_packed,
+			total_size,
+			10 // Send chunk count limit
+	); 
 
 	return 0;
 }

@@ -1008,6 +1008,7 @@ static int __rrr_socket_client_collection_connected_fd_push (
 }
 
 static int __rrr_socket_client_send_push (
+		int *send_chunk_count,
 		struct rrr_socket_client *client,
 		void **data,
 		ssize_t data_size
@@ -1018,7 +1019,12 @@ static int __rrr_socket_client_send_push (
 		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push\n");
 	}
 
-	if ((ret = rrr_socket_send_chunk_collection_push (&client->send_chunks, data, data_size)) != 0) {
+	if ((ret = rrr_socket_send_chunk_collection_push (
+			send_chunk_count,
+			&client->send_chunks,
+			data,
+			data_size
+	)) != 0) {
 		goto out;
 	}
 
@@ -1029,6 +1035,7 @@ static int __rrr_socket_client_send_push (
 }
 
 static int __rrr_socket_client_send_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client *client,
 		const void *data,
 		ssize_t data_size
@@ -1039,7 +1046,12 @@ static int __rrr_socket_client_send_push_const (
 		RRR_BUG("BUG: Attempted to push data to listening socket in __rrr_socket_client_send_push_const\n");
 	}
 
-	if ((ret = rrr_socket_send_chunk_collection_push_const (&client->send_chunks, data, data_size)) != 0) {
+	if ((ret = rrr_socket_send_chunk_collection_push_const (
+			send_chunk_count,
+			&client->send_chunks,
+			data,
+			data_size
+	)) != 0) {
 		goto out;
 	}
 
@@ -1050,6 +1062,7 @@ static int __rrr_socket_client_send_push_const (
 }
 
 static int __rrr_socket_client_send_push_const_with_private_data (
+		int *send_chunk_count,
 		struct rrr_socket_client *client,
 		const void *data,
 		ssize_t data_size,
@@ -1064,6 +1077,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_private_data (
+			send_chunk_count,
 			&client->send_chunks,
 			data,
 			data_size,
@@ -1081,6 +1095,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 }
 
 static int __rrr_socket_client_sendto_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client *client,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -1097,6 +1112,7 @@ static int __rrr_socket_client_sendto_push_const (
 	}
 
 	if ((ret = rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
+			send_chunk_count,
 			&client->send_chunks,
 			addr,
 			addr_len,
@@ -1146,20 +1162,33 @@ void rrr_socket_client_collection_close_outbound_when_send_complete (
 }
 
 void rrr_socket_client_collection_send_push_const_multicast (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const void *data,
-		ssize_t size
+		ssize_t size,
+		int send_chunk_limit
 ) {
+	*send_chunk_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		if (node->create_type == RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN) {
 			RRR_LL_ITERATE_NEXT();
 		}
 
+		int count_tmp = 0;
 		int ret_tmp;
-		if ((ret_tmp = __rrr_socket_client_send_push_const (node, data, size)) != 0) {
+		if ((ret_tmp = __rrr_socket_client_send_push_const (&count_tmp, node, data, size)) != 0) {
 			RRR_DBG_7("Send failed with return value %i during multicast send, destroying client\n", ret_tmp);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
+
+		if (count_tmp > send_chunk_limit) {
+			RRR_MSG_0("Send chunk limit reach for fd %i in client collection multicast send (%i>%i), closing connection.\n",
+					node->connected_fd->fd, count_tmp, send_chunk_limit);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		*send_chunk_count += count_tmp;
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 }
 
@@ -1213,6 +1242,7 @@ static struct rrr_socket_client *__rrr_socket_client_collection_find_by_fd (
 }
 
 int rrr_socket_client_collection_send_push (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		void **data,
@@ -1224,10 +1254,16 @@ int rrr_socket_client_collection_send_push (
 		return RRR_READ_SOFT_ERROR;
 	}
 
-	return __rrr_socket_client_send_push(client, data, data_size);
+	return __rrr_socket_client_send_push (
+			send_chunk_count,
+			client,
+			data,
+			data_size
+	);
 }
 
 int rrr_socket_client_collection_send_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const void *data,
@@ -1239,7 +1275,12 @@ int rrr_socket_client_collection_send_push_const (
 		return RRR_READ_SOFT_ERROR;
 	}
 
-	return __rrr_socket_client_send_push_const(client, data, data_size);
+	return __rrr_socket_client_send_push_const (
+			send_chunk_count,
+			client,
+			data,
+			data_size
+	);
 }
 
 void rrr_socket_client_collection_close_when_send_complete_by_address (
@@ -1325,6 +1366,7 @@ static int __rrr_socket_client_collection_find_by_address_or_connect (
 }
 
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -1344,7 +1386,15 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_send_push_const_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy
+	)) != 0) {
 		goto out;
 	}
 
@@ -1450,6 +1500,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 }
 
 int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const char *addr_string,
 		const void *data,
@@ -1483,7 +1534,15 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_send_push_const_with_private_data (client, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_send_push_const_with_private_data (
+			send_chunk_count,
+			client,
+			data,
+			size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy
+	)) != 0) {
 		goto out;
 	}
 
@@ -1492,6 +1551,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 }
 
 int rrr_socket_client_collection_sendto_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const struct sockaddr *addr,
@@ -1511,7 +1571,17 @@ int rrr_socket_client_collection_sendto_push_const (
 		goto out;
 	}
 
-	if ((ret = __rrr_socket_client_sendto_push_const (client, addr, addr_len, data, size, chunk_private_data_new, chunk_private_data_arg, chunk_private_data_destroy)) != 0) {
+	if ((ret = __rrr_socket_client_sendto_push_const (
+			send_chunk_count,
+			client,
+			addr,
+			addr_len,
+			data,
+			size,
+			chunk_private_data_new,
+			chunk_private_data_arg,
+			chunk_private_data_destroy
+	)) != 0) {
 		goto out;
 	}
 

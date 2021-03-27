@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS      2000
 #define RRR_HTTPSERVER_IDLE_TIMEOUT_MS            30000
+#define RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT     100000
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
@@ -263,7 +264,8 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 				INSTANCE_D_EVENTS(data->thread_data),
 				data->port_plain,
 				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
-				RRR_HTTPSERVER_IDLE_TIMEOUT_MS
+				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT
 		)) != 0) {
 			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
@@ -282,6 +284,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 				data->port_tls,
 				RRR_HTTPSERVER_FIRST_DATA_TIMEOUT_MS,
 				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT,
 				&data->net_transport_config,
 				0
 		)) != 0) {

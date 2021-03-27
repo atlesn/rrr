@@ -67,6 +67,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_DEFAULT_MAX_MESSAGE_SIZE        4096
 #define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     100
 #define IP_DEFAULT_CLOSE_GRACE_MS          5
+#define IP_SEND_CHUNK_COUNT_LIMIT          10000
 
 enum ip_action {
 	IP_ACTION_RETRY,
@@ -958,7 +959,9 @@ static int ip_resolve_push_sendto_callback (
 			buf
 	);
 
+	int send_chunk_count = 0;
 	if ((ret = rrr_socket_client_collection_sendto_push_const (
+			&send_chunk_count,
 			callback_data->ip_data->collection_udp,
 			send_fd,
 			addr,
@@ -975,6 +978,12 @@ static int ip_resolve_push_sendto_callback (
 	else {
 		RRR_MSG_0("Failed to push send data in ip_resolve_sendto_callback of ip instance %s\n",
 				INSTANCE_D_NAME(callback_data->ip_data->thread_data));
+	}
+
+	if (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT) {
+		RRR_MSG_0("Send chunk limit of %i reached (sendto default) in IP instance %s\n",
+				IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(callback_data->ip_data->thread_data));
+		ret = RRR_SOCKET_HARD_ERROR;
 	}
 
 	out:
@@ -1006,7 +1015,9 @@ static int ip_push_raw_default_target (
 			ip_data->target_port
 		};
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+				&send_chunk_count,
 				ip_data->collection_tcp,
 				ip_data->target_host_and_port,
 				send_data,
@@ -1020,7 +1031,14 @@ static int ip_push_raw_default_target (
 				ip_data
 		);
 
-		if (!ip_data->do_multiple_per_connection) {
+		int send_chunk_count_limit_reached = (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT);
+
+		if (send_chunk_count_limit_reached) {
+			RRR_DBG_3("Send chunk limit of %i reached (send) for default target in IP instance %s, closing connection when sending is completed\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+		}
+
+		if (!ip_data->do_multiple_per_connection || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address_string (
 					ip_data->collection_tcp,
 					ip_data->target_host_and_port
@@ -1043,7 +1061,7 @@ static int ip_push_raw_default_target (
 				ip_resolve_push_sendto_callback,
 				&resolve_callback_data
 		)) == RRR_SOCKET_READ_EOF) {
-			// OK, reslt found
+			// OK, result found
 			ret = 0;
 		}
 		else if (ret == 0) {
@@ -1105,7 +1123,9 @@ static int ip_push_raw (
 			RRR_DBG_3("ip instance %s send using address from entry TCP (%s)\n", INSTANCE_D_NAME(thread_data), buf);
 		}
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+				&send_chunk_count,
 				ip_data->collection_tcp,
 				(const struct sockaddr *) &entry_orig->addr,
 				entry_orig->addr_len,
@@ -1118,7 +1138,14 @@ static int ip_push_raw (
 				ip_data
 		);
 
-		if (!ip_data->do_multiple_per_connection) {
+		int send_chunk_count_limit_reached = (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT);
+
+		if (send_chunk_count_limit_reached) {
+			RRR_DBG_3("Send chunk limit of %i reached (send) for target in IP instance %s, closing connection when sending is completed\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+		}
+
+		if (!ip_data->do_multiple_per_connection || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address (
 					ip_data->collection_tcp,
 					(const struct sockaddr *) &entry_orig->addr,
@@ -1146,7 +1173,9 @@ static int ip_push_raw (
 			send_fd = (ip_data->udp_send_fd_ip6 > 0 ? ip_data->udp_send_fd_ip6 : ip_data->udp_send_fd_ip4);
 		}
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_sendto_push_const (
+				&send_chunk_count,
 				ip_data->collection_udp,
 				send_fd,
 				(const struct sockaddr *) &entry_orig->addr,
@@ -1157,6 +1186,12 @@ static int ip_push_raw (
 				entry_orig,
 				ip_msg_holder_decref_void
 		);
+
+		if (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT) {
+			RRR_MSG_0("Send chunk limit of %i reached (sendto address from entry) in IP instance %s\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+			ret = RRR_SOCKET_HARD_ERROR;
+		}
 	}
 
 	if (ret != 0 && ret != RRR_SOCKET_NOT_READY) {

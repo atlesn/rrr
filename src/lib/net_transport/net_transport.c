@@ -922,10 +922,31 @@ int rrr_net_transport_ctx_send_push (
 		const void *data,
 		ssize_t size
 ) {
-	int ret = rrr_socket_send_chunk_collection_push_const (&handle->send_chunks, data, size);
+	int ret = 0;
 
 	EVENT_ADD(handle->event_write);
 
+	int send_chunk_count = 0;
+	if ((ret = rrr_socket_send_chunk_collection_push_const (
+			&send_chunk_count,
+			&handle->send_chunks,
+			data,
+			size
+	)) != 0) {
+		goto out;
+	}
+
+	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
+		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
+				handle->submodule_fd,
+				send_chunk_count,
+				handle->transport->send_chunk_count_limit
+		);
+		ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
@@ -944,7 +965,7 @@ int rrr_net_transport_ctx_send_urgent (
 	);
 
 	if ((ssize_t) written_bytes_u64 != size || ret != 0) {
-		RRR_DBG_7("net transport fd %i not all bytes were sent in urgen send (%" PRIu64 "<%lli) ret was %i\n",
+		RRR_DBG_7("net transport fd %i not all bytes were sent in urgent send (%" PRIu64 "<%lli) ret was %i\n",
 			handle->submodule_fd, written_bytes_u64, (long long int) size, ret);
 
 		// Mask all errors
@@ -961,7 +982,7 @@ static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
 ) {
 	struct rrr_net_transport_handle *handle = arg;
 
-	return rrr_net_transport_ctx_send_push(handle, data, data_len);
+	return rrr_net_transport_ctx_send_push (handle, data, data_len);
 }
 
 int rrr_net_transport_ctx_send_push_nullsafe (
@@ -1371,6 +1392,7 @@ int rrr_net_transport_event_setup (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
+		int send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
@@ -1385,6 +1407,7 @@ int rrr_net_transport_event_setup (
 	transport->first_read_timeout_ms = first_read_timeout_ms;
 	transport->soft_read_timeout_ms = soft_read_timeout_ms;
 	transport->hard_read_timeout_ms = hard_read_timeout_ms;
+	transport->send_chunk_count_limit = send_chunk_count_limit;
 
 	rrr_time_from_usec(&transport->first_read_timeout_tv, first_read_timeout_ms * 1000);
 	rrr_time_from_usec(&transport->soft_read_timeout_tv, soft_read_timeout_ms * 1000);

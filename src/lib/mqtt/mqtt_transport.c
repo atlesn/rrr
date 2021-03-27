@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
+#define RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT 100000
+
 void rrr_mqtt_transport_cleanup (
 		struct rrr_mqtt_transport *transport
 ) {
@@ -162,6 +164,7 @@ int rrr_mqtt_transport_start (
 			2 * 2000,   // First read timeout 2s 
 			1 * 1000,   // Soft timeout 1 s, maintenance interval
 			0xffff * 2, // Hard timeout
+			RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT,
 			__rrr_mqtt_transport_accept_callback,
 			transport,
 			NULL,

@@ -61,6 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_READ_MAX_SIZE                     1 * 1024 * 1024 * 1024 // 1 GB
 #define RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S           5
 #define RRR_HTTPCLIENT_JSON_MAX_LEVELS                   4
+#define RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT            100000
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
 
@@ -1846,6 +1847,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			&data->http_client,
 			INSTANCE_D_EVENTS(thread_data),
 			RRR_HTTPCLIENT_DEFAULT_KEEPALIVE_MAX_S * 1000,
+			RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT,
 			&callbacks
 	) != 0) {
 		goto out_message;

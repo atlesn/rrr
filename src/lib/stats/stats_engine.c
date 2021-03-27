@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
+#define RRR_STATS_ENGINE_SEND_CHUNK_LIMIT 10000
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
@@ -194,10 +195,14 @@ int __rrr_stats_engine_multicast_send_intermediate (
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
+
+	int send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count_dummy,
 			stats->client_collection,
 			data,
-			size
+			size,
+			RRR_STATS_ENGINE_SEND_CHUNK_LIMIT
 	);
 	return 0;
 }

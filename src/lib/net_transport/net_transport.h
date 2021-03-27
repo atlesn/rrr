@@ -79,6 +79,7 @@ struct rrr_event_queue;
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
     uint64_t hard_read_timeout_ms;                                          \
+    int send_chunk_count_limit;                                             \
     struct timeval first_read_timeout_tv;                                   \
     struct timeval soft_read_timeout_tv;                                    \
     struct timeval hard_read_timeout_tv;                                    \
@@ -290,6 +291,7 @@ int rrr_net_transport_event_setup (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
+		int send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
