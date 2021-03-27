@@ -1000,7 +1000,7 @@ static int __rrr_message_broker_poll_intermediate_backstop_handling (
 ) {
 	*backstop = 0;
 
-	if ( callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP &&
+	if ((callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP) &&
 	     entry->source == callback_data->self
 	) {
 		if (RRR_DEBUGLEVEL_2) {
