@@ -1775,9 +1775,9 @@ static void mqttclient_event_callback_pause (
 		*do_pause = 0;
 	}
 
-	if (*do_pause != is_paused) {
-		printf("Pause callback is %i do %i count %i\n", is_paused, *do_pause, RRR_LL_COUNT(&data->input_queue));
-	}
+//	if (*do_pause != is_paused) {
+//		printf("Pause callback is %i do %i count %i\n", is_paused, *do_pause, RRR_LL_COUNT(&data->input_queue));
+//	}
 }
 
 static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
@@ -1813,7 +1813,6 @@ static int mqttclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	mqttclient_update_stats(data);
 
-	printf("Send discourage: %i\n", data->send_disabled);
 	data->send_disabled = 0;
 
 	return 0;

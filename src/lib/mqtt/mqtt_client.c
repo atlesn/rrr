@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
 #define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
-#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT      10000
+#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT       5000
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
