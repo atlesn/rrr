@@ -98,7 +98,7 @@ static void __rrr_event_periodic (
 	(void)(flags);
 
 	if ( queue->callback_periodic != NULL &&
-	    (queue->callback_periodic_ret = queue->callback_periodic(queue->callback_arg)) != 0
+	    (queue->callback_ret = queue->callback_periodic(queue->callback_arg)) != 0
 	) {
 		event_base_loopbreak(queue->event_base);
 	}
@@ -193,7 +193,13 @@ static void __rrr_event_signal_event (
 					? function->function_arg
 					: queue->callback_arg
 		)) != 0) {
-			RRR_DBG_9_PRINTF("EQ DISP %p error %i from callback, ending loop\n", queue, ret);
+			if (ret == RRR_EVENT_EXIT) {
+				RRR_DBG_9_PRINTF("EQ DISP %p exit command from callback, ending loop\n", queue);
+			}
+			else {
+				RRR_DBG_9_PRINTF("EQ DISP %p error %i from callback, ending loop\n", queue, ret);
+			}
+			queue->callback_ret = ret;
 			event_base_loopbreak(queue->event_base);
 			goto out;
 		}
@@ -252,7 +258,7 @@ int rrr_event_dispatch (
 
 	queue->callback_periodic = function_periodic;
 	queue->callback_arg = callback_arg;
-	queue->callback_periodic_ret = 0;
+	queue->callback_ret = 0;
 
 	if ((ret = event_base_dispatch(queue->event_base)) != 0) {
 		RRR_MSG_0("Error from event_base_dispatch in rrr_event_dispatch: %i\n", ret);
@@ -260,8 +266,8 @@ int rrr_event_dispatch (
 		goto out;
 	}
 
-	if (queue->callback_periodic_ret != 0) {
-		ret = queue->callback_periodic_ret & ~(RRR_EVENT_EXIT);
+	if (queue->callback_ret != 0) {
+		ret = queue->callback_ret & ~(RRR_EVENT_EXIT);
 	}
 	else if (event_base_got_break(queue->event_base)) {
 		ret = 1;

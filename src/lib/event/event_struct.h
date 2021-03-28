@@ -52,7 +52,7 @@ struct rrr_event_queue {
 
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
 	void *callback_arg;
-	int callback_periodic_ret;
+	int callback_ret;
 };
 
 #endif /* RRR_EVENT_STRUCT_H */
