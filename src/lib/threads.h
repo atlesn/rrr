@@ -189,7 +189,6 @@ static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_tim
 	thread->watchdog_time = rrr_time_get_64();
 	signal = thread->signal;
 	rrr_thread_unlock(thread);
-	printf ("Check cancel %i\n", signal);
 	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) != 0) ? RRR_THREAD_STOP : 0;
 }
 
