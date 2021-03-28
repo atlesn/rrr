@@ -1015,8 +1015,8 @@ static int __rrr_net_transport_ctx_send_push_const (
 			const void *data,
 			ssize_t data_size
 	) = ( is_urgent
-		? rrr_socket_send_chunk_collection_push_const
-		: rrr_socket_send_chunk_collection_push_const_urgent
+		? rrr_socket_send_chunk_collection_push_const_urgent
+		: rrr_socket_send_chunk_collection_push_const
 	);
 
 	int send_chunk_count = 0;

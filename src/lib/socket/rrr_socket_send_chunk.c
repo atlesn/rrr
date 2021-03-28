@@ -112,7 +112,6 @@ static int __rrr_socket_send_chunk_collection_push (
 	*data = NULL;
 
 	if (do_prepend) {
-		printf("Prepend\n");
 		RRR_LL_UNSHIFT(target, new_chunk);
 	}
 	else {
