@@ -137,6 +137,8 @@ struct mqtt_client_data {
 	struct rrr_mqtt_property_collection connect_properties;
 
 	int send_disabled;
+	int poll_discard_enabled;
+	uint64_t poll_discard_count;
 
 	uint64_t connect_time;
 
@@ -1528,6 +1530,11 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 	return ret;
 }
 
+static int mqttclient_event_discard_complete (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	(void)(arg);
+	return RRR_EVENT_EXIT;
+}
+
 static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_start) {
 	int ret = RRR_MQTT_SOFT_ERROR;
 
@@ -1543,13 +1550,26 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	reconnect:
 
 	if (is_retry != 0 && data->do_discard_on_connect_retry) {
-		int discarded_count = 0;
+		data->send_disabled = 0;
+		data->poll_discard_enabled = 1;
 
-		// TODO : Implement
+		ret = rrr_event_dispatch (
+				INSTANCE_D_EVENTS(data->thread_data),
+				1 * 1000 * 1000, // 1 s
+				mqttclient_event_discard_complete,
+				INSTANCE_D_THREAD(data->thread_data)
+		);
 
-		if (discarded_count > 0) {
+		data->poll_discard_enabled = 0;
+
+		if (ret != 0) {
+			goto out;
+		}
+
+		if (data->poll_discard_count > 0) {
 			RRR_DBG_1("mqttclient instance %s discarded %i messages from senders upon connect retry\n",
-					INSTANCE_D_NAME(data->thread_data), discarded_count);
+					INSTANCE_D_NAME(data->thread_data), data->poll_discard_count);
+			data->poll_discard_count = 0;
 		}
 	}
 
@@ -1663,6 +1683,11 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	if (data->poll_discard_enabled) {
+		data->poll_discard_count++;
+		goto out;
+	}
+
 	if (data->send_disabled) {
 		goto out_writeback;
 	}
@@ -1682,9 +1707,6 @@ static int mqttclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_writeback;
 	}
 
-	if (send_discouraged && !data->send_disabled) {
-		printf("Send disabled\n");
-	}
 	data->send_disabled = send_discouraged;
 
 	goto out;

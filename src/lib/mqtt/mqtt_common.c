@@ -744,12 +744,19 @@ int rrr_mqtt_common_send_from_sessions_callback (
 
 	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
 
-	if (rrr_mqtt_conn_iterator_ctx_send_packet(callback_data->handle, packet) != 0) {
+	int do_stop = 0;
+	if (rrr_mqtt_conn_iterator_ctx_send_packet(&do_stop, callback_data->handle, packet) != 0) {
 		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
+		goto out;
 	}
 
+	if (do_stop) {
+		ret |= RRR_FIFO_SEARCH_STOP;
+	}
+
+	out:
 	return ret;
 }
 
@@ -761,7 +768,7 @@ static int __rrr_mqtt_common_send_now_callback (
 
 	struct rrr_net_transport_handle *handle = arg;
 
-	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, packet)) != 0) {
+	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet)) != 0) {
 		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_now_callback\n");
 	}
 

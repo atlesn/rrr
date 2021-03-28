@@ -43,6 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_time.h"
 #include "../util/posix.h"
 
+#define RRR_MQTT_CONN_SEND_CHUNK_LIMIT_FACTOR 0.9
+
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_OK;
 
@@ -898,6 +900,7 @@ int __rrr_mqtt_connection_create_variable_int (
 }
 
 static int __rrr_mqtt_conn_iterator_ctx_send_packet (
+		int *do_stop,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet,
 		int urgent
@@ -1044,21 +1047,28 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	packet->last_attempt = rrr_time_get_64();
 
+	if (!urgent && rrr_net_transport_ctx_send_waiting_chunk_limit_factor(handle) >= RRR_MQTT_CONN_SEND_CHUNK_LIMIT_FACTOR) {
+		*do_stop = 1;
+	}
+
 	out:
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet (
+		int *do_stop,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 ) {
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (handle, packet, 0);
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (do_stop, handle, packet, 0);
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 ) {
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (handle, packet, 1);
+	int do_stop_dummy = 0;
+
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (&do_stop_dummy, handle, packet, 1);
 }

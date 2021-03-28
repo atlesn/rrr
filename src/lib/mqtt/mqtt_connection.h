@@ -226,6 +226,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 // No reference counting of packet performed, but event handlers might
 // INCREF if they add the packet to a buffer
 int rrr_mqtt_conn_iterator_ctx_send_packet (
+		int *do_stop,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 );

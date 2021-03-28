@@ -2547,7 +2547,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
 ) {
 	int ret = 0;
 
-	ret = __rrr_mqtt_session_ram_packet_transmit(packet_to_transmit, packet_holder, iterate_callback_data->callback, iterate_callback_data->callback_arg);
+	ret = __rrr_mqtt_session_ram_packet_transmit (
+			packet_to_transmit,
+			packet_holder,
+			iterate_callback_data->callback,
+			iterate_callback_data->callback_arg
+	);
 
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Internal error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback_final, return was %i\n", ret);
@@ -2661,7 +2666,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	packet->last_attempt = rrr_time_get_64();
 
 	if (do_delete_now) {
-			ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	}
 
 	out:

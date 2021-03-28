@@ -549,7 +549,7 @@ int rrr_mqtt_client_connect (
 				data->mqtt_data.transport,
 				*transport_handle,
 				(struct rrr_mqtt_p *) connect,
-				rrr_mqtt_conn_iterator_ctx_send_packet
+				rrr_mqtt_conn_iterator_ctx_send_packet_urgent
 		) != 0) {
 			RRR_MSG_0("Could not send CONNECT packet in rrr_mqtt_client_connect");
 			ret = 1;

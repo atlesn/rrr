@@ -917,6 +917,22 @@ int rrr_net_transport_ctx_send_waiting_chunk_count (
 	return RRR_LL_COUNT(&handle->send_chunks);
 }
 
+double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
+		struct rrr_net_transport_handle *handle
+) {
+	double count = RRR_LL_COUNT(&handle->send_chunks);
+	double limit = handle->transport->send_chunk_count_limit;
+
+	if (limit <= 0) {
+		return 0.0;
+	}
+
+	double result = count / limit;
+
+	return (result > 1.0 ? 1.0 : result);
+}
+
+
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
