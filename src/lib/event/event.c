@@ -22,10 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <pthread.h>
 #include <errno.h>
 #include <sys/mman.h>
-#include <event2/thread.h>
 
 #include <poll.h>
 
@@ -33,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event.h"
 #include "event_struct.h"
 #include "event_functions.h"
-#include "../threads.h"
 #include "../rrr_strerror.h"
 #include "../rrr_config.h"
 #include "../rrr_path_max.h"
@@ -42,10 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_eventfd.h"
 #include "../util/gnu.h"
 #include "../util/rrr_time.h"
-
-static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
-static volatile int rrr_event_libevent_initialized = 0;
-
 
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
@@ -345,20 +338,6 @@ int rrr_event_queue_new (
 	int ret = 0;
 
 	struct event_config *cfg = NULL;
-
-	// TODO : use_pthreads might not be needed as the libevent
-	//        structures are only accessed by one thread.
-	pthread_mutex_lock(&init_lock);
-	if (rrr_event_libevent_initialized++ == 0) {
-		ret = evthread_use_pthreads();
-	}
-	pthread_mutex_unlock(&init_lock);
-
-	if (ret != 0) {
-		RRR_MSG_0("evthread_use_pthreads() failed in rrr_event_queue_new\n");
-		ret = 1;
-		goto out;
-	}
 
 	*target = NULL;
 
