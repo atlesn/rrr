@@ -119,7 +119,8 @@ int rrr_socket_eventfd_write (
 	}
 
 #ifdef RRR_HAVE_EVENTFD
-	if (write(eventfd->fd, &count, sizeof(count)) != sizeof(count)) {
+	uint64_t count_64 = count;
+	if (write(eventfd->fd, &count_64, sizeof(count_64)) != sizeof(count_64)) {
 		if (errno == EAGAIN) {
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;
