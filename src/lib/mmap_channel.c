@@ -267,14 +267,13 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
-		if (rrr_event_pass (
+		if ((ret = rrr_event_pass (
 				queue_notify,
 				RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
 				1,
 				check_cancel_callback,
 				check_cancel_callback_arg
-		) != 0) {
-			ret = RRR_MMAP_CHANNEL_ERROR;
+		)) != 0) {
 			goto out_unlock;
 		}
 	}
@@ -346,6 +345,7 @@ int rrr_mmap_channel_read_with_callback (
 	goto attempt_block_lock;
 
 	attempt_read_wait:
+		printf("Read wait\n");
 		// We MUST NOT hold index lock and block lock simultaneously.
 		if (do_unlock_block) {
 			pthread_mutex_unlock(&block->block_lock);
