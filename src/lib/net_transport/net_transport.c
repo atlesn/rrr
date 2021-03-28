@@ -971,9 +971,18 @@ int rrr_net_transport_ctx_send_urgent (
 		const void *data,
 		ssize_t size
 ) {
+	int ret = 0;
+
+	if (!handle->handshake_complete) {
+		RRR_DBG_7("net transport fd %i handshake not complete in urgent send, pushing data to send queue\n",
+				handle->submodule_fd);
+		ret = rrr_net_transport_ctx_send_push(handle, data, size);
+		goto out;
+	}
+
 	uint64_t written_bytes_u64 = 0;
 
-	int ret = __rrr_net_transport_ctx_send_nonblock (
+	ret = __rrr_net_transport_ctx_send_nonblock (
 			&written_bytes_u64,
 			handle,
 			data,
@@ -988,6 +997,7 @@ int rrr_net_transport_ctx_send_urgent (
 		ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
 	}
 
+	out:
 	return ret;
 }
 
