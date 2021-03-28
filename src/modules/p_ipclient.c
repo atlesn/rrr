@@ -473,7 +473,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	int queued_total = 0;
 	int send_total = 0;
 	int delivered_total = 0;
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
 		time_now = rrr_time_get_64();

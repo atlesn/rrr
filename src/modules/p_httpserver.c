@@ -1532,7 +1532,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	{
 		uint64_t startup_time = rrr_time_get_64() + data->startup_delay_us;
-		while (rrr_thread_signal_encourage_stop_check(thread) != 1 && startup_time > rrr_time_get_64()) {
+		while (rrr_thread_signal_encourage_stop_check(thread) == 0 && startup_time > rrr_time_get_64()) {
 			rrr_thread_watchdog_time_update(thread);
 			RRR_DBG_1("httpserver instance %s startup delay configured, waiting...\n",
 				INSTANCE_D_NAME(thread_data));

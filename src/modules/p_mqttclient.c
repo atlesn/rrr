@@ -1465,7 +1465,7 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 	}
 
 	// Subscription loop
-	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) == 0) {
 		// This will also do sending/receiving
 		if ((ret = mqttclient_wait_send_allowed(data)) != 0) {
 			goto out;
@@ -1576,7 +1576,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	data->transport_handle = 0;
 	data->session = NULL;
 
-	for (int i = i_first; i >= 0 && rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) != 1; i--) {
+	for (int i = i_first; i >= 0 && rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) == 0; i--) {
 		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
 		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%" PRIrrrbl "' username '%s' client-ID '%s' attempt %i/%i\n",
@@ -1873,7 +1873,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	// Do this to avoid connection build-up on persistent error conditions
 	rrr_mqtt_client_close_all_connections(data->mqtt_client_data);
 
-	if (rrr_thread_signal_encourage_stop_check(thread) == 1) {
+	if (rrr_thread_signal_encourage_stop_check(thread) != 0) {
 		goto out_destroy_client;
 	}
 

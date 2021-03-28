@@ -150,7 +150,7 @@ int test_do_poll_loop (
 
 	// Poll from output
 	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
-		if (rrr_thread_signal_encourage_stop_check(self->thread) == 1) {
+		if (rrr_thread_signal_encourage_stop_check(self->thread) != 0) {
 			break;
 		}
 

@@ -530,7 +530,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
 		uint16_t amount = 100;
