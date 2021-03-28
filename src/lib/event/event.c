@@ -332,6 +332,9 @@ void rrr_event_queue_destroy (
 	if (queue->periodic_event != NULL) {
 		event_free(queue->periodic_event);
 	}
+	if (queue->unpause_event != NULL) {
+		event_free(queue->unpause_event);
+	}
 	event_base_free(queue->event_base);
 	free(queue);
 }
