@@ -1031,10 +1031,6 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 		memcpy(send_data_pos, payload->payload_start, payload->length);
 	}
 
-	if (urgent) {
-		printf("Urgent packet %s\n", packet->type_properties->name);
-	}
-
 	int (*send_method)(
 			struct rrr_net_transport_handle *handle,
 			void **data,
