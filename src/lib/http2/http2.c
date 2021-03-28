@@ -203,7 +203,7 @@ static ssize_t __rrr_http2_send_callback (
 	// TODO : Maybe event framework can send from nghttp2 directly instead of copying data to net transport first
 
 	int ret = 0;
-	if ((ret = rrr_net_transport_ctx_send_push (session->callback_data.handle, data, length)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (session->callback_data.handle, data, length)) != 0) {
 		RRR_DBG_3("http2 send push failed with error %i\n", ret);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}

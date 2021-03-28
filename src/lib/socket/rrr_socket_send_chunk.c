@@ -74,6 +74,7 @@ static int __rrr_socket_send_chunk_collection_push (
 		socklen_t addr_len,
 		void **data,
 		ssize_t data_size,
+		int do_prepend,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
@@ -110,7 +111,13 @@ static int __rrr_socket_send_chunk_collection_push (
 	new_chunk->data = *data;
 	*data = NULL;
 
-	RRR_LL_APPEND(target, new_chunk);
+	if (do_prepend) {
+		printf("Prepend\n");
+		RRR_LL_UNSHIFT(target, new_chunk);
+	}
+	else {
+		RRR_LL_APPEND(target, new_chunk);
+	}
 
 	*send_chunk_count = RRR_LL_COUNT(target);
 
@@ -131,20 +138,18 @@ int rrr_socket_send_chunk_collection_push (
 			0,
 			data,
 			data_size,
+			0, // Is not urgent, append
 			NULL,
 			NULL,
 			NULL
 	);
 }
 
-int rrr_socket_send_chunk_collection_push_with_private_data (
+int rrr_socket_send_chunk_collection_push_urgent (
 		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,
-		ssize_t data_size,
-		void (*private_data_new)(void **private_data, void *arg),
-		void *private_data_arg,
-		void (*private_data_destroy)(void *private_data)
+		ssize_t data_size
 ) {
 	return __rrr_socket_send_chunk_collection_push (
 			send_chunk_count,
@@ -153,9 +158,10 @@ int rrr_socket_send_chunk_collection_push_with_private_data (
 			0,
 			data,
 			data_size,
-			private_data_arg,
-			private_data_new,
-			private_data_destroy
+			1, // Is urgent, prepend
+			NULL,
+			NULL,
+			NULL
 	);
 }
 
@@ -166,6 +172,7 @@ static int __rrr_socket_send_chunk_collection_push_const (
 		socklen_t addr_len,
 		const void *data,
 		ssize_t data_size,
+		int do_prepend,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
@@ -188,6 +195,7 @@ static int __rrr_socket_send_chunk_collection_push_const (
 			addr_len,
 			&data_copy,
 			data_size,
+			do_prepend,
 			private_data_new,
 			private_data_arg,
 			private_data_destroy
@@ -211,6 +219,27 @@ int rrr_socket_send_chunk_collection_push_const (
 			0,
 			data,
 			data_size,
+			0, // Is not urgent, append
+			NULL,
+			NULL,
+			NULL
+	);
+}
+
+int rrr_socket_send_chunk_collection_push_const_urgent (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+) {
+	return __rrr_socket_send_chunk_collection_push_const (
+			send_chunk_count,
+			target,
+			NULL,
+			0,
+			data,
+			data_size,
+			1, // Is urgent, prepend
 			NULL,
 			NULL,
 			NULL
@@ -233,6 +262,7 @@ int rrr_socket_send_chunk_collection_push_const_with_private_data (
 			0,
 			data,
 			data_size,
+			0,
 			private_data_new,
 			private_data_arg,
 			private_data_destroy
@@ -257,6 +287,7 @@ int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 			addr_len,
 			data,
 			data_size,
+			0,
 			private_data_new,
 			private_data_arg,
 			private_data_destroy
@@ -332,6 +363,7 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 ) {
 	int ret = 0;
 
+	int max = 10;
 	RRR_LL_ITERATE_BEGIN(chunks, struct rrr_socket_send_chunk);
 		RRR_DBG_7("Chunk send with callback pos/size %lld/%lld\n",
 			(long long int) node->data_pos, (long long int) node->data_size);
@@ -355,7 +387,7 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 			RRR_LL_ITERATE_SET_DESTROY(); // Chunk complete
 		}
 
-		if (ret != 0 || written_bytes == 0) {
+		if (ret != 0 || written_bytes == 0 || max-- == 0) {
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(chunks, 0; __rrr_socket_send_chunk_destroy(node));

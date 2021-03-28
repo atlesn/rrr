@@ -162,7 +162,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
 		RRR_DBG_1("Error: Send failed in __rrr_http_application_http1_send_header_field_callback\n");
 		goto out;
 	}
@@ -178,7 +178,7 @@ static int __rrr_http_application_http1_send_callback (
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
-	return rrr_net_transport_ctx_send_push (
+	return rrr_net_transport_ctx_send_push_const (
 			handle,
 			str,
 			len
@@ -206,7 +206,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
 		goto out;
 	}
 
@@ -226,7 +226,7 @@ static int __rrr_http_application_http1_response_send_final (
 
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, "\r\n", 2)) != 0 ) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, "\r\n", 2)) != 0 ) {
 		goto out;
 	}
 
@@ -1425,13 +1425,13 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	int ret = 0;
 
 	if (rrr_string_builder_length(callback_data->header_builder) > 0) {
-		if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
 			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, "\r\n", 2)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, "\r\n", 2)) != 0) {
 		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send_final_callback\n");
 		goto out;
 	}

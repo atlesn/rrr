@@ -932,18 +932,43 @@ double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 	return (result > 1.0 ? 1.0 : result);
 }
 
-
-int rrr_net_transport_ctx_send_push (
+static int __rrr_net_transport_ctx_send_push_postcheck (
 		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
+		int send_chunk_count
+) {
+	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
+		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
+				handle->submodule_fd,
+				send_chunk_count,
+				handle->transport->send_chunk_count_limit
+		);
+		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
+	}
+	return 0;
+}
+
+static int __rrr_net_transport_ctx_send_push (
+		struct rrr_net_transport_handle *handle,
+		void **data,
+		ssize_t size,
+		int is_urgent
 ) {
 	int ret = 0;
 
 	EVENT_ADD(handle->event_write);
 
+	int (*method)(
+			int *send_chunk_count,
+			struct rrr_socket_send_chunk_collection *target,
+			void **data,
+			ssize_t data_size
+	) = ( is_urgent
+		? rrr_socket_send_chunk_collection_push_urgent
+		: rrr_socket_send_chunk_collection_push
+	);
+
 	int send_chunk_count = 0;
-	if ((ret = rrr_socket_send_chunk_collection_push_const (
+	if ((ret = method (
 			&send_chunk_count,
 			&handle->send_chunks,
 			data,
@@ -952,53 +977,78 @@ int rrr_net_transport_ctx_send_push (
 		goto out;
 	}
 
-	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
-		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
-				handle->submodule_fd,
-				send_chunk_count,
-				handle->transport->send_chunk_count_limit
-		);
-		ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
-		goto out;
-	}
+	ret = __rrr_net_transport_ctx_send_push_postcheck (handle, send_chunk_count);
 
 	out:
 	return ret;
 }
 
-int rrr_net_transport_ctx_send_urgent (
+int rrr_net_transport_ctx_send_push (
+		struct rrr_net_transport_handle *handle,
+		void **data,
+		ssize_t size
+) {
+	return __rrr_net_transport_ctx_send_push (handle, data, size, 0 /* Not urgent */);
+}
+
+int rrr_net_transport_ctx_send_push_urgent (
+		struct rrr_net_transport_handle *handle,
+		void **data,
+		ssize_t size
+) {
+	return __rrr_net_transport_ctx_send_push (handle, data, size, 1 /* Urgent */);
+}
+
+static int __rrr_net_transport_ctx_send_push_const (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size,
+		int is_urgent
+) {
+	int ret = 0;
+
+	EVENT_ADD(handle->event_write);
+
+	int (*method)(
+			int *send_chunk_count,
+			struct rrr_socket_send_chunk_collection *target,
+			const void *data,
+			ssize_t data_size
+	) = ( is_urgent
+		? rrr_socket_send_chunk_collection_push_const
+		: rrr_socket_send_chunk_collection_push_const_urgent
+	);
+
+	int send_chunk_count = 0;
+	if ((ret = method (
+			&send_chunk_count,
+			&handle->send_chunks,
+			data,
+			size
+	)) != 0) {
+		goto out;
+	}
+
+	ret = __rrr_net_transport_ctx_send_push_postcheck (handle, send_chunk_count);
+
+	out:
+	return ret;
+}
+
+int rrr_net_transport_ctx_send_push_const (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
 ) {
-	int ret = 0;
+	return __rrr_net_transport_ctx_send_push_const (handle, data, size, 0 /* Not urgent */);
+}
 
-	if (!handle->handshake_complete) {
-		RRR_DBG_7("net transport fd %i handshake not complete in urgent send, pushing data to send queue\n",
-				handle->submodule_fd);
-		ret = rrr_net_transport_ctx_send_push(handle, data, size);
-		goto out;
-	}
-
-	uint64_t written_bytes_u64 = 0;
-
-	ret = __rrr_net_transport_ctx_send_nonblock (
-			&written_bytes_u64,
-			handle,
-			data,
-			size
-	);
-
-	if ((ssize_t) written_bytes_u64 != size || ret != 0) {
-		RRR_DBG_7("net transport fd %i not all bytes were sent in urgent send (%" PRIu64 "<%lli) ret was %i\n",
-			handle->submodule_fd, written_bytes_u64, (long long int) size, ret);
-
-		// Mask all errors
-		ret = RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
-	}
-
-	out:
-	return ret;
+int rrr_net_transport_ctx_send_push_const_urgent (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+) {
+	return __rrr_net_transport_ctx_send_push_const (handle, data, size, 1 /* Urgent */);
 }
 
 static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
@@ -1008,7 +1058,7 @@ static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
 ) {
 	struct rrr_net_transport_handle *handle = arg;
 
-	return rrr_net_transport_ctx_send_push (handle, data, data_len);
+	return rrr_net_transport_ctx_send_push_const (handle, data, data_len);
 }
 
 int rrr_net_transport_ctx_send_push_nullsafe (

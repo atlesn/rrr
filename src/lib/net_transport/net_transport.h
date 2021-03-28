@@ -199,10 +199,20 @@ double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 );
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
+		void **data,
+		ssize_t size
+);
+int rrr_net_transport_ctx_send_push_urgent (
+		struct rrr_net_transport_handle *handle,
+		void **data,
+		ssize_t size
+);
+int rrr_net_transport_ctx_send_push_const (
+		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
 );
-int rrr_net_transport_ctx_send_urgent (
+int rrr_net_transport_ctx_send_push_const_urgent (
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size

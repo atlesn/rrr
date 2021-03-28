@@ -193,13 +193,10 @@ int rrr_mqtt_conn_set_will_data_from_connect (
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_p_connect *connect
 );
-struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);
-		void *callback_arg;
-};
-int rrr_mqtt_conn_housekeeping (
-		struct rrr_mqtt_conn *connection,
-		void *rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data
+int rrr_mqtt_conn_iterator_ctx_housekeeping (
+		struct rrr_net_transport_handle *handle,
+		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *callback_arg
 );
 void rrr_mqtt_conn_accept_and_connect_callback (
 		struct rrr_net_transport_handle *handle,

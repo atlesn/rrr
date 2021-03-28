@@ -2877,18 +2877,10 @@ static int __rrr_mqtt_session_ram_send_packet (
 		// they need to be sent promptly using the send now callback
 		// or by adding to the buffer as solo entry.
 
-		if (send_now_callback) {
-			packet->last_attempt = rrr_time_get_64();
-			if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
-				RRR_MSG_0("Send now callback failed in __rrr_mqtt_session_ram_send_packet\n");
-			}
-			goto out;
-		}
-
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
 		if ((ret = __rrr_mqtt_session_ram_add_subscriptions (
@@ -2899,15 +2891,25 @@ static int __rrr_mqtt_session_ram_send_packet (
 		)) != RRR_MQTT_SESSION_OK) {
 			goto out;
 		}
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE) {
 		// Changes take effect when we receive UNSUBACK
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 
 	RRR_BUG("Unknown packet type %u in __rrr_mqtt_session_ram_send_packet\n",
 			RRR_MQTT_P_GET_TYPE(packet));
+
+	out_write_to_buffer_urgent:
+
+	if (send_now_callback) {
+		packet->last_attempt = rrr_time_get_64();
+		if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
+			RRR_MSG_0("Send now callback failed in __rrr_mqtt_session_ram_send_packet\n");
+		}
+		goto out;
+	}
 
 	out_write_to_buffer:
 
