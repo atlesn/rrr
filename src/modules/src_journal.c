@@ -176,7 +176,7 @@ static int journal_preload (struct rrr_thread *thread) {
 
 // Note : Context here is ANY thread
 static void journal_log_hook (
-		uint16_t *amount_written,
+		uint8_t *amount_written,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,

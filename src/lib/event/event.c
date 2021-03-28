@@ -288,7 +288,9 @@ void rrr_event_dispatch_break (
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint16_t amount
+		uint8_t amount,
+		int (*retry_callback)(void *arg),
+		void *retry_callback_arg
 ) {
 	int ret = 0;
 
@@ -302,6 +304,9 @@ int rrr_event_pass (
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
 		if (ret == RRR_SOCKET_NOT_READY) {
+			if (retry_callback != NULL && (ret = retry_callback(retry_callback_arg) != 0)) {
+				goto out;
+			}
 			goto retry;
 		}
 		RRR_MSG_0("Failed to pass event in rrr_event_pass, return was %i\n", ret);

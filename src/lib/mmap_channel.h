@@ -56,7 +56,9 @@ int rrr_mmap_channel_write_using_callback (
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
@@ -64,7 +66,9 @@ int rrr_mmap_channel_write (
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
-		int retries_max
+		int retries_max,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_mmap_channel_read_with_callback (
 		int *read_count,

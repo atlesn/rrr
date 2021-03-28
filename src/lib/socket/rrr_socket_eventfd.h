@@ -58,7 +58,7 @@ int rrr_socket_eventfd_init (
 );
 int rrr_socket_eventfd_write (
 		struct rrr_socket_eventfd *eventfd,
-		uint64_t count
+		uint8_t count
 );
 int rrr_socket_eventfd_read (
 		uint64_t *count,

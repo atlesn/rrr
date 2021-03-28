@@ -51,7 +51,9 @@ int rrr_cmodule_channel_count (
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = 0;
 
@@ -66,7 +68,9 @@ int rrr_cmodule_channel_send_message_simple (
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
-			&callback_data
+			&callback_data,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -96,7 +100,9 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr
+		const struct rrr_msg_addr *message_addr,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = 0;
 
@@ -116,7 +122,9 @@ int rrr_cmodule_channel_send_message_and_address (
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_callback,
-			&callback_data
+			&callback_data,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			goto out;

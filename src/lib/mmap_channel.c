@@ -192,7 +192,9 @@ int rrr_mmap_channel_write_using_callback (
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 
@@ -265,7 +267,16 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
-		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 1);
+		if (rrr_event_pass (
+				queue_notify,
+				RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+				1,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		) != 0) {
+			ret = RRR_MMAP_CHANNEL_ERROR;
+			goto out_unlock;
+		}
 	}
 
 	out_unlock:
@@ -293,7 +304,9 @@ int rrr_mmap_channel_write (
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
-		int retries_max
+		int retries_max,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	struct rrr_mmap_channel_write_callback_arg callback_data = {
 			data,
@@ -306,7 +319,9 @@ int rrr_mmap_channel_write (
 			full_wait_time_us,
 			retries_max,
 			__rrr_mmap_channel_write_callback,
-			&callback_data
+			&callback_data,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	);
 }
 

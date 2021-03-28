@@ -88,7 +88,7 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
     pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (
-		uint16_t *write_amount,
+		uint8_t *write_amount,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,

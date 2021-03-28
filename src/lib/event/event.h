@@ -108,7 +108,9 @@ void rrr_event_dispatch_break (
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint16_t amount
+		uint8_t amount,
+		int (*retry_callback)(void *arg),
+		void *retry_callback_arg
 );
 
 static inline void rrr_event_activate (

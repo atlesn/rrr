@@ -110,7 +110,7 @@ static int __rrr_socket_eventfd_notify (
 
 int rrr_socket_eventfd_write (
 		struct rrr_socket_eventfd *eventfd,
-		uint64_t count
+		uint8_t count
 ) {
 	int ret = RRR_SOCKET_OK;
 
