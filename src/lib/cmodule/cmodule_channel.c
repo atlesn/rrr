@@ -147,16 +147,12 @@ int rrr_cmodule_channel_receive_messages (
 ) {
 	int ret = 0;
 
-	int retry_sleep_start = 90;
 	int max = 100;
-
 	do {
-		// TODO : Remove sleeping
 		int did_read = 0;
 		ret = rrr_mmap_channel_read_with_callback (
 				&did_read,
 				channel,
-				(--retry_sleep_start > 0 ? 0 : empty_wait_time_us),
 				callback,
 				callback_arg
 		);
