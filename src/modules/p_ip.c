@@ -67,6 +67,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_DEFAULT_MAX_MESSAGE_SIZE        4096
 #define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     100
 #define IP_DEFAULT_CLOSE_GRACE_MS          5
+#define IP_DEFAULT_PERSISTENT_TIMEOUT_MS   5000
 #define IP_SEND_CHUNK_COUNT_LIMIT          10000
 
 enum ip_action {
@@ -102,10 +103,12 @@ struct ip_data {
 	int do_force_target;
 	int do_extract_rrr_messages;
 	int do_preserve_order;
-	int do_persistent_connections;
+
 	int do_multiple_per_connection;
+	int do_persistent_connections_obsolete;
 
 	rrr_setting_uint close_grace_ms;
+	rrr_setting_uint persistent_timeout_ms;
 
 	char *timeout_action_str;
 	enum ip_action timeout_action;
@@ -360,27 +363,27 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_strip_array_separators", do_strip_array_separators, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections_obsolete, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 1); // Default yes
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_persistent_timeout_ms", persistent_timeout_ms, IP_DEFAULT_PERSISTENT_TIMEOUT_MS);
 
-	if (data->do_preserve_order && !data->do_multiple_per_connection) {
-		RRR_DBG_1("Note: ip_preserve_order is set while ip_send_multiple_per_connection is not in ip instance %s, send order may not be guaranteed in all situations.\n",
+	if (RRR_INSTANCE_CONFIG_EXISTS("ip_persistent_connections")) {
+		RRR_MSG_0("Warning: Use of obsolete parameter 'ip_persistent_connections' in ip instance %s, use 'ip_persistent_timeout_ms' instead.\n");
+	}
+
+	if (data->do_preserve_order && data->persistent_timeout_ms == 0) {
+		RRR_DBG_1("Note: ip_preserve_order is set while ip_persistent_timeout_ms is zero in ip instance %s, send order may not be guaranteed in all situations.\n",
+				config->name);
+	}
+
+	if (data->do_preserve_order && data->do_multiple_per_connection == 0) {
+		RRR_DBG_1("Note: ip_preserve_order is set while do_multiple_per_connection is 'no' in ip instance %s, send order may not be guaranteed in all situations.\n",
 				config->name);
 	}
 
 	if (data->do_strip_array_separators && data->definitions == NULL) {
 		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-
-	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
-			data->do_multiple_per_connection == 0 &&
-			data->do_persistent_connections != 0
-	) {
-		RRR_MSG_0("ip_send_multiple_per_connection is explicitly set to 'no' while ip_persistent_connections is set to 'yes' in ip instance %s, this is a configuration error.\n",
 				config->name);
 		ret = 1;
 		goto out;
@@ -1038,7 +1041,7 @@ static int ip_push_raw_default_target (
 					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
 		}
 
-		if (!ip_data->do_multiple_per_connection || send_chunk_count_limit_reached) {
+		if (ip_data->persistent_timeout_ms == 0 || ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address_string (
 					ip_data->collection_tcp,
 					ip_data->target_host_and_port
@@ -1145,7 +1148,7 @@ static int ip_push_raw (
 					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
 		}
 
-		if (!ip_data->do_multiple_per_connection || send_chunk_count_limit_reached) {
+		if (ip_data->persistent_timeout_ms == 0 || ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address (
 					ip_data->collection_tcp,
 					(const struct sockaddr *) &entry_orig->addr,
@@ -1769,7 +1772,7 @@ static void ip_event_send_buffer (
 		EVENT_ADD(ip_data->event_send_buffer_iterate);
 	}
 	else {
-		if (!ip_data->do_persistent_connections) {
+		if (ip_data->persistent_timeout_ms == 0) {
 			rrr_socket_client_collection_close_outbound_when_send_complete(ip_data->collection_tcp);
 		}
 	}
@@ -1923,6 +1926,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to create UDP client collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_message;
 	}
+
+	rrr_socket_client_collection_set_idle_timeout(data->collection_tcp, data->persistent_timeout_ms * 1000);
+	rrr_socket_client_collection_set_idle_timeout(data->collection_udp, data->persistent_timeout_ms * 1000);
 
 	SETUP_ARRAY_TREE(
 		data->collection_tcp,

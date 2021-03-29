@@ -600,7 +600,7 @@ static int __rrr_stats_events_setup (struct rrr_stats_data *data) {
 			&data->events,
 			__rrr_stats_event_keepalive,
 			data,
-			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000 * 1000
+			(RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2) * 1000 * 1000
 	)) != 0) {
 		goto out;
 	}

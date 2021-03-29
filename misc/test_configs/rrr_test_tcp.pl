@@ -34,11 +34,19 @@ sub get_from_tag {
 sub source {
 	my $message = shift;
 
+	if ($global_counter > 10) {
+		return 1;
+	}
 	print "Spawn message with counter $global_counter\n";
+
+	$message->push_tag_str("tag", "$global_counter");
 
 	push_host($message, "counter", $global_counter++);
 
 	$message->{'timestamp'} = rand(10000);
+
+	$message->ip_set("127.0.0.1", "2001");
+	$message->ip_set_protocol("tcp");
 
 	$message->send();
 

@@ -1,4 +1,4 @@
-.Dd 2021-03-20
+.Dd 2021-03-29
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -473,21 +473,26 @@ If set to no or left unset, messages with arrays will have their array packed an
 Attempt to send messages in order according to their timestamp.
 Messages to a particular destination will be sent in order according to their creation timestamp.
 If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
-The parameter
+To ensure order in all situations, the parameter
+.B ip_persistent_timeout_ms
+should not be zero and
 .B ip_send_multiple_per_connection
-should be set to yes to ensure order in all situations.
+should be 'yes'.
 This will impact performance when destinations are unreachable.
 Defaults no no.
 
 .It ip_send_multiple_per_connection={yes|no}
-In one send iteration (a very short timespan), allow multiple messages to be sent on a single connection.
-In low traffic conditions this parameter has no practical effect.
-Defaults to no, which enforces only one message per connection.
+If set to no, TCP connections are forced to be closed after a single message has been sent. Defaults to 'yes'.
 
 .It ip_persistent_connections={yes|no}
-After a packet is sent, don't close the TCP connection but re-use it later for more messages. Implies
+OBSOLETE, has no effect. Use ip_persistent_timeout_ms. 
+
+.It ip_persistent_timeout_ms=MILLISECONDS
+After a packet is sent or data is read on a TCP connection, keep the connection alive for the specifed amout of milliseconds or until more data is sent or received.
+If set to 0, connections are closed promptly. Default value if left unset is 5000.
+This parameter has no effect if
 .B ip_send_multiple_per_connection
-if set to yes. Defaults to no.
+is 'no'.
 
 .It ip_close_grace_ms=MILLISECONDS
 After a TCP connection has been closed, prevent new connections to the same destination for the specified amount of milliseconds.

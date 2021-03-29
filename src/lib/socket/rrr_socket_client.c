@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 
 #define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_CONNECT_TIMEOUT_S 5
+#define RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_IDLE_TIMEOUT_S 0 /* No timeout */
 
 struct rrr_socket_client_collection {
 	RRR_LL_HEAD(struct rrr_socket_client);
@@ -71,6 +72,7 @@ struct rrr_socket_client_collection {
 
 	// Setable values
 	uint64_t connect_timeout_us;
+	uint64_t idle_timeout_us;
 
 	// Common callbacks
 	void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg);
@@ -104,6 +106,7 @@ struct rrr_socket_client_fd {
 	struct rrr_event_collection events;
 	rrr_event_handle event_read;
 	rrr_event_handle event_write;
+	rrr_event_handle event_timeout;
 
 	// Used when identified by raw address
 	struct sockaddr_storage addr;
@@ -277,53 +280,6 @@ static int __rrr_socket_client_destroy (
 	return 0;
 }
 
-static int __rrr_socket_client_fd_event_setup (
-		struct rrr_socket_client_fd *client_fd,
-		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
-		void *event_read_callback_arg,
-		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg),
-		void *event_write_callback_arg
-) {
-	int ret = 0;
-
-	if (event_read_callback != NULL) {
-		if ((ret = rrr_event_collection_push_read (
-				&client_fd->event_read,
-				&client_fd->events,
-				client_fd->fd,
-				event_read_callback,
-				event_read_callback_arg,
-				client_fd->client->collection->connect_timeout_us
-		)) != 0) {
-			RRR_MSG_0("Failed to create read event in __rrr_socket_client_fd_event_setup\n");
-			ret = 1;
-			goto out;
-		}
-
-		EVENT_ADD(client_fd->event_read);
-	}
-
-	if (event_write_callback != NULL) {
-		if ((ret = rrr_event_collection_push_write (
-				&client_fd->event_write,
-				&client_fd->events,
-				client_fd->fd,
-				event_write_callback,
-				event_write_callback_arg,
-				client_fd->client->collection->connect_timeout_us
-		)) != 0) {
-			RRR_MSG_0("Failed to create write event in __rrr_socket_client_fd_event_setup\n");
-			ret = 1;
-			goto out;
-		}
-
-		EVENT_ADD(client_fd->event_write);
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_socket_client_private_data_create_as_needed (
 		struct rrr_socket_client *client
 ) {
@@ -428,12 +384,48 @@ void rrr_socket_client_collection_set_connect_timeout (
 	collection->connect_timeout_us = connect_timeout_us;
 }
 
+void rrr_socket_client_collection_set_idle_timeout (
+		struct rrr_socket_client_collection *collection,
+		uint64_t idle_timeout_us
+) {
+	collection->idle_timeout_us = idle_timeout_us;
+}
+
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 ) {
 	__rrr_socket_client_collection_clear(collection);
 	RRR_FREE_IF_NOT_NULL(collection->creator);
 	free(collection);
+}
+
+static void __rrr_socket_client_collection_find_and_destroy (
+		struct rrr_socket_client_collection *collection,
+		const struct rrr_socket_client *client
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if (node == client) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+}
+
+static void __rrr_socket_client_fd_find_and_destroy (
+		struct rrr_socket_client_collection *collection,
+		struct rrr_socket_client *client,
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
+		if (fd == node->fd) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(client, __rrr_socket_client_fd_destroy(node));
+
+	if (RRR_LL_COUNT(client) == 0) {
+		__rrr_socket_client_collection_find_and_destroy(collection, client);
+	}
 }
 
 static int __rrr_socket_client_collection_new (
@@ -461,6 +453,7 @@ static int __rrr_socket_client_collection_new (
 	collection->queue = queue;
 
 	rrr_socket_client_collection_set_connect_timeout (collection, RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_CONNECT_TIMEOUT_S * 1000 * 1000);
+	rrr_socket_client_collection_set_idle_timeout (collection, RRR_SOCKET_CLIENT_COLLECTION_DEFAULT_IDLE_TIMEOUT_S * 1000 * 1000);
 
 	*target = collection;
 
@@ -495,35 +488,6 @@ void rrr_socket_client_collection_send_chunk_iterate (
 	RRR_LL_ITERATE_END();
 }
 
-static void __rrr_socket_client_collection_find_and_destroy (
-		struct rrr_socket_client_collection *collection,
-		const struct rrr_socket_client *client
-) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		if (node == client) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
-}
-
-static void __rrr_socket_client_fd_find_and_destroy (
-		struct rrr_socket_client_collection *collection,
-		struct rrr_socket_client *client,
-		int fd
-) {
-	RRR_LL_ITERATE_BEGIN(client, struct rrr_socket_client_fd);
-		if (fd == node->fd) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(client, __rrr_socket_client_fd_destroy(node));
-
-	if (RRR_LL_COUNT(client) == 0) {
-		__rrr_socket_client_collection_find_and_destroy(collection, client);
-	}
-}
-
 static int __rrr_socket_client_collection_read_raw_complete_callback (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -538,19 +502,100 @@ static int __rrr_socket_client_collection_read_raw_complete_callback (
 	);
 }
 
+static void __rrr_socket_client_fd_event_timeout (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_socket_client_fd *client_fd = arg;
+
+	(void)(flags);
+	(void)(fd);
+
+	RRR_DBG_7("Disconnecting fd %i in client collection following soft inactivity timeout of %" PRIu64 " ms\n",
+			client_fd->fd, client_fd->client->collection->idle_timeout_us / 1000);
+
+	__rrr_socket_client_collection_find_and_destroy (client_fd->client->collection, client_fd->client);
+}
+
+static int __rrr_socket_client_fd_event_setup (
+		struct rrr_socket_client_fd *client_fd,
+		void (*event_read_callback)(evutil_socket_t fd, short flags, void *arg),
+		void *event_read_callback_arg,
+		void (*event_write_callback)(evutil_socket_t fd, short flags, void *arg),
+		void *event_write_callback_arg
+) {
+	int ret = 0;
+
+	if (event_read_callback != NULL) {
+		if ((ret = rrr_event_collection_push_read (
+				&client_fd->event_read,
+				&client_fd->events,
+				client_fd->fd,
+				event_read_callback,
+				event_read_callback_arg,
+				client_fd->client->collection->connect_timeout_us
+		)) != 0) {
+			RRR_MSG_0("Failed to create read event in __rrr_socket_client_fd_event_setup\n");
+			ret = 1;
+			goto out;
+		}
+
+		EVENT_ADD(client_fd->event_read);
+	}
+
+	if (event_write_callback != NULL) {
+		if ((ret = rrr_event_collection_push_write (
+				&client_fd->event_write,
+				&client_fd->events,
+				client_fd->fd,
+				event_write_callback,
+				event_write_callback_arg,
+				client_fd->client->collection->connect_timeout_us
+		)) != 0) {
+			RRR_MSG_0("Failed to create write event in __rrr_socket_client_fd_event_setup\n");
+			ret = 1;
+			goto out;
+		}
+
+		EVENT_ADD(client_fd->event_write);
+	}
+
+	if ( client_fd->client->collection->idle_timeout_us > 0 &&
+	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN
+	) {
+		if ((ret = rrr_event_collection_push_periodic (
+				&client_fd->event_timeout,
+				&client_fd->events,
+				__rrr_socket_client_fd_event_timeout,
+				client_fd,
+				client_fd->client->collection->idle_timeout_us
+		)) != 0) {
+				RRR_MSG_0("Failed to create timeout event in __rrr_socket_client_fd_event_setup\n");
+				ret = 1;
+				goto out;
+		}
+
+		// Don't add yet, for now only connect timeout applies
+	}
+
+	out:
+	return ret;
+}
+
 static void __rrr_socket_client_return_value_process (
 		struct rrr_socket_client_collection *collection,
 		struct rrr_socket_client *client,
 		int ret
 ) {
-	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000);
+	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_HARD_TIMEOUT_S * 1000 * 1000);
 
 	if (ret == 0) {
 		client->last_seen = rrr_time_get_64();
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
 		if (client->last_seen < timeout) {
-			RRR_DBG_7("Disconnecting fd %i in client collection following inactivity timeout\n", client->connected_fd->fd);
+			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
 		}
 		// OK, mask
@@ -644,6 +689,11 @@ static int __rrr_socket_client_connected_fd_ensure (
 		}                                                                      \
 	}} while(0)
 
+#define TIMEOUT_UPDATE()                                                                       \
+	if (!(flags & EV_TIMEOUT) && EVENT_INITIALIZED(client->connected_fd->event_timeout)) { \
+		EVENT_ADD(client->connected_fd->event_timeout);                                \
+	}
+
 static int __rrr_socket_client_send_tick (
 		struct rrr_socket_client *client
 ) {
@@ -682,6 +732,10 @@ static void __rrr_socket_client_event_write (
 		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
 	}
 
+	if (RRR_LL_COUNT(&client->send_chunks) > 0) {
+		TIMEOUT_UPDATE();
+	}
+
 	int ret_tmp = __rrr_socket_client_send_tick (client);
 
 	if (ret_tmp != 0 && ret_tmp != RRR_SOCKET_WRITE_INCOMPLETE) {
@@ -717,6 +771,7 @@ static void __rrr_socket_client_event_read_message (
 	(void)(flags);
 
 	CONNECTED_FD_ENSURE();
+	TIMEOUT_UPDATE();
 
 	uint64_t bytes_read = 0;
 
@@ -753,6 +808,7 @@ static void __rrr_socket_client_event_read_raw (
 	(void)(flags);
 
 	CONNECTED_FD_ENSURE();
+	TIMEOUT_UPDATE();
 
 	uint64_t bytes_read = 0;
 
@@ -800,6 +856,7 @@ static void __rrr_socket_client_event_read_array_tree (
 	(void)(flags);
 
 	CONNECTED_FD_ENSURE();
+	TIMEOUT_UPDATE();
 
 	uint64_t bytes_read = 0;
 
