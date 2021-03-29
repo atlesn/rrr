@@ -84,7 +84,6 @@ static int __rrr_mqtt_client_send_now_callback (
 				void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
-	printf("Client urgent %s\n", packet->type_properties->name);
 	return rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet);
 }
 
