@@ -431,12 +431,15 @@ static int __rrr_cmodule_helper_read_from_worker (
 	if ((ret = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_parent,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			__rrr_cmodule_helper_read_from_fork_callback,
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
 			ret = 0;
+			goto out;
+		}
+		else if (ret == RRR_EVENT_EXIT) {
+			// Propagate
 			goto out;
 		}
 		else {
@@ -456,29 +459,26 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 ) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-
-	if (rrr_thread_signal_encourage_stop_check(thread)) {
-		return RRR_EVENT_EXIT;
-	}
-
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	int ret = 0;
 
 	// Note : Bias here to read from the first worker
 
 	int worker_i = 0;
-	while (*amount > 0) {
+	while ((ret = rrr_thread_signal_encourage_stop_check(thread)) == 0 && *amount > 0) {
 		struct rrr_cmodule_worker *worker = &cmodule->workers[worker_i];
 
 		struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 		callback_data.thread_data = thread_data;
 
-		if (__rrr_cmodule_helper_read_from_worker (
+		if ((ret = __rrr_cmodule_helper_read_from_worker (
 				amount,
 				worker,
 				__rrr_cmodule_helper_read_callback,
 				&callback_data
-		) != 0) {
-			return 1;
+		)) != 0) {
+			goto out;
 		}
 
 		if (cmodule->config_check_complete_message_printed == 0) {
@@ -503,7 +503,8 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 		}
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int __rrr_cmodule_helper_check_pong (

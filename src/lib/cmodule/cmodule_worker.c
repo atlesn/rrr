@@ -324,7 +324,6 @@ static int __rrr_cmodule_worker_event_mmap_channel_data_available (
 	if ((ret_tmp = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_fork,
-			0,
 			__rrr_cmodule_worker_loop_read_callback,
 			&callback_data->read_callback_data
 	)) != 0) {

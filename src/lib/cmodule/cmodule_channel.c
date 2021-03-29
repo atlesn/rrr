@@ -141,15 +141,15 @@ int rrr_cmodule_channel_send_message_and_address (
 int rrr_cmodule_channel_receive_messages (
 		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
-		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
+	int did_read = 0;
 	int max = 100;
 	do {
-		int did_read = 0;
+		did_read = 0;
 		ret = rrr_mmap_channel_read_with_callback (
 				&did_read,
 				channel,
@@ -159,7 +159,7 @@ int rrr_cmodule_channel_receive_messages (
 		if (did_read) {
 			(*amount)--;
 		}
-	} while (--max >= 0 && *amount > 0 && ret == 0);
+	} while (--max >= 0 && *amount > 0 && ret == 0 && did_read);
 
 	return ret;
 }

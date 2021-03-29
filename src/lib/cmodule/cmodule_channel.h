@@ -53,7 +53,6 @@ int rrr_cmodule_channel_send_message_and_address (
 int rrr_cmodule_channel_receive_messages (
 		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
-		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
