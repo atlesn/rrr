@@ -37,18 +37,22 @@ sub source {
 	if ($global_counter > 10) {
 		return 1;
 	}
-	print "Spawn message with counter $global_counter\n";
 
-	$message->push_tag_str("tag", "$global_counter");
+	for (my $i = 0; $i < 2; $i++) {
+		print "Spawn message with counter $global_counter\n";
 
-	push_host($message, "counter", $global_counter++);
+		$message->clear_tag("tag");
+		$message->push_tag_str("tag", "$global_counter");
 
-	$message->{'timestamp'} = rand(10000);
+		push_host($message, "counter", $global_counter++);
 
-	$message->ip_set("127.0.0.1", "2001");
-	$message->ip_set_protocol("tcp");
+		#$message->{'timestamp'} = rand(10000);
 
-	$message->send();
+		$message->ip_set("127.0.0.1", "2001");
+		$message->ip_set_protocol("tcp");
+
+		$message->send();
+	}
 
 	return 1;
 }

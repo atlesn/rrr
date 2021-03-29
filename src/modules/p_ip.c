@@ -830,6 +830,13 @@ static int ip_connect_raw_callback (
 		goto out;
 	}
 
+	rrr_socket_graylist_push (
+			&ip_data->tcp_graylist,
+			addr,
+			addr_len,
+			ip_data->close_grace_ms * 1000
+	);
+
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 			fd,
 			addr,
@@ -1041,7 +1048,7 @@ static int ip_push_raw_default_target (
 					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
 		}
 
-		if (ip_data->persistent_timeout_ms == 0 || ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
+		if (ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address_string (
 					ip_data->collection_tcp,
 					ip_data->target_host_and_port
@@ -1148,7 +1155,7 @@ static int ip_push_raw (
 					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
 		}
 
-		if (ip_data->persistent_timeout_ms == 0 || ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
+		if (ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address (
 					ip_data->collection_tcp,
 					(const struct sockaddr *) &entry_orig->addr,
