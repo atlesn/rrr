@@ -332,15 +332,6 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 	}
 
-	if (data->definitions != NULL && data->source_udp_port == 0 && data->source_tcp_port == 0) {
-		RRR_MSG_0("ip_input_types was set but ip_tcp_port and/or ip_udp_port was not, this is an invalid configuration in ip instance %s\n", config->name);
-		ret = 1;
-		goto out;
-	}
-	else if (data->definitions == NULL) {
-		// Listening disabled
-	}
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
 
 	if (data->default_topic != NULL) {
