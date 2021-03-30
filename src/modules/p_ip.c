@@ -668,7 +668,7 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Used for timeout checks
 	entry->send_time = rrr_time_get_64();
-	
+
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
 
@@ -1640,6 +1640,21 @@ struct chunk_send_smart_timeout_callback_data {
 	const struct rrr_msg_holder *entry_orig;
 };
 
+static void ip_entry_timeout_update (
+		struct ip_data *ip_data,
+		const struct rrr_msg_holder *entry_orig_locked,
+		struct rrr_msg_holder *entry_update_unlocked
+) {
+	if (entry_orig_locked == entry_update_unlocked) {
+		return;
+	}
+	rrr_msg_holder_lock(entry_update_unlocked);
+	if (ip_data->do_force_target == 1 || rrr_msg_holder_address_matches(entry_orig_locked, entry_update_unlocked)) {
+		entry_update_unlocked->send_time = rrr_time_get_64();
+	}
+	rrr_msg_holder_unlock(entry_update_unlocked);
+}
+
 static void ip_chunk_send_smart_timeout_callback (
 		int *do_remove,
 		const void *data,
@@ -1657,18 +1672,7 @@ static void ip_chunk_send_smart_timeout_callback (
 
 	*do_remove = 0;
 
-	if (entry == callback_data->entry_orig) {
-		return;
-	}
-
-	rrr_msg_holder_lock(entry);
-
-	if ( callback_data->ip_data->do_force_target == 1 ||
-	     rrr_msg_holder_address_matches(entry, callback_data->entry_orig)
-	) {
-		entry->send_time = callback_data->entry_orig->send_time;
-	}
-	rrr_msg_holder_unlock(entry);
+	ip_entry_timeout_update(callback_data->ip_data, callback_data->entry_orig, entry);
 }
 
 static void ip_chunk_send_fail_notify_callback (
@@ -1709,6 +1713,10 @@ static void ip_chunk_send_fail_notify_callback (
 				ip_chunk_send_smart_timeout_callback,
 				&callback_data
 		);
+
+		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			ip_entry_timeout_update(ip_data, entry, node);
+		RRR_LL_ITERATE_END();
 	}
 
 	rrr_msg_holder_unlock(entry);
