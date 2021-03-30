@@ -360,7 +360,8 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_persistent_timeout_ms", persistent_timeout_ms, IP_DEFAULT_PERSISTENT_TIMEOUT_MS);
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("ip_persistent_connections")) {
-		RRR_MSG_0("Warning: Use of obsolete parameter 'ip_persistent_connections' in ip instance %s, use 'ip_persistent_timeout_ms' instead.\n");
+		RRR_MSG_0("Warning: Use of obsolete parameter 'ip_persistent_connections' in ip instance %s, use 'ip_persistent_timeout_ms' instead.\n",
+				config->name);
 	}
 
 	if (data->do_preserve_order && data->persistent_timeout_ms == 0) {
@@ -1848,30 +1849,47 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return ret;
 }
 
-#define SETUP_ARRAY_TREE(collection,socket_flags)              \
-    rrr_socket_client_collection_event_setup_array_tree (      \
-            collection,                                        \
-            ip_private_data_new,                               \
-            ip_private_data_destroy,                           \
-            data,                                              \
-            socket_flags,                                      \
-            data->definitions,                                 \
-            data->do_sync_byte_by_byte,                        \
-            4096,                                              \
-            0, /* No message max size */                       \
-            ip_array_callback,                                 \
-            data                                               \
-    );                                                         \
-    rrr_socket_client_collection_send_notify_setup (           \
-            collection,                                        \
-            ip_chunk_send_fail_notify_callback,                \
-            data                                               \
-    );                                                         \
-    rrr_socket_client_collection_fd_close_notify_setup (       \
-            collection,                                        \
-            ip_fd_close_notify_callback,                       \
-            data                                               \
-    )
+static void ip_event_setup (
+		struct ip_data *data,
+		struct rrr_socket_client_collection *collection,
+		int socket_read_flags
+) {
+	if (data->definitions != NULL) {
+		rrr_socket_client_collection_event_setup_array_tree (
+			collection,
+			ip_private_data_new,
+			ip_private_data_destroy,
+			data,
+			socket_read_flags,
+			data->definitions,
+			data->do_sync_byte_by_byte,
+			4096,
+			0, /* No message max size */
+			ip_array_callback,
+			data
+		);
+	}
+	else {
+		rrr_socket_client_collection_event_setup_ignore (
+			collection,
+			ip_private_data_new,
+			ip_private_data_destroy,
+			data,
+			socket_read_flags
+		);
+	}
+
+	rrr_socket_client_collection_send_notify_setup (
+		collection,
+		ip_chunk_send_fail_notify_callback,
+		data
+	);
+	rrr_socket_client_collection_fd_close_notify_setup (
+		collection,
+		ip_fd_close_notify_callback,
+		data
+	);
+}
 
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -1928,15 +1946,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	rrr_socket_client_collection_set_idle_timeout(data->collection_tcp, data->persistent_timeout_ms * 1000);
 	rrr_socket_client_collection_set_idle_timeout(data->collection_udp, data->persistent_timeout_ms * 1000);
 
-	SETUP_ARRAY_TREE(
-		data->collection_tcp,
-		RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK
-	);
-
-	SETUP_ARRAY_TREE(
-		data->collection_udp,
-		RRR_SOCKET_READ_METHOD_RECVFROM
-	);
+	ip_event_setup (data, data->collection_tcp, RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK);
+	ip_event_setup (data, data->collection_udp, RRR_SOCKET_READ_METHOD_RECVFROM);
 
 	if (ip_start_udp(data) != 0) {
 		goto out_message;

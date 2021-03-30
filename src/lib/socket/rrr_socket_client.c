@@ -885,6 +885,45 @@ static void __rrr_socket_client_event_read_array_tree (
 	rrr_array_clear(&array_tmp);
 }
 
+static void __rrr_socket_client_event_read_ignore (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_socket_client *client = arg;
+	struct rrr_socket_client_collection *collection = client->collection;
+
+	(void)(fd);
+	(void)(flags);
+
+	CONNECTED_FD_ENSURE();
+	TIMEOUT_UPDATE();
+
+	char buf[1024];
+	ssize_t read_bytes = 0;
+	struct sockaddr_storage addr;
+	socklen_t addr_len = sizeof(addr);
+
+	__rrr_socket_client_return_value_process (
+		collection,
+		client,
+		rrr_socket_read (
+			buf,
+			&read_bytes,
+			fd,
+			sizeof(buf),
+			(struct sockaddr *) &addr,
+			&addr_len,
+			collection->read_flags_socket
+		)
+	);
+
+	if (read_bytes > 0) {
+		RRR_DBG_7("fd %i in client collection, ignoring %lli received bytes\n",
+				client->connected_fd->fd, (long long int) read_bytes);
+	}
+}
+
 static int __rrr_socket_client_fd_push (
 		struct rrr_socket_client *client,
 		int fd,
@@ -1857,6 +1896,24 @@ void rrr_socket_client_collection_event_setup_array_tree (
 			read_step_max_size,
 			read_flags_socket,
 			__rrr_socket_client_event_read_array_tree,
+			callback_private_data_new,
+			callback_private_data_destroy,
+			callback_private_data_arg
+	);
+}
+
+void rrr_socket_client_collection_event_setup_ignore (
+		struct rrr_socket_client_collection *collection,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg,
+		int read_flags_socket
+) {
+	__rrr_socket_client_collection_event_setup (
+			collection,
+			0,
+			read_flags_socket,
+			__rrr_socket_client_event_read_ignore,
 			callback_private_data_new,
 			callback_private_data_destroy,
 			callback_private_data_arg
