@@ -396,6 +396,7 @@ static int __rrr_http_server_start (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
+		int send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config,
 		int net_transport_flags
 ) {
@@ -440,16 +441,17 @@ static int __rrr_http_server_start (
 		const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
 
 		if ((ret = rrr_net_transport_event_setup (
-			*result_transport,
-			first_read_timeout_ms,
-			ping_timeout_ms,
-			hard_timeout_ms,
-			__rrr_http_server_accept_callback,
-			http_server,
-			__rrr_http_server_handshake_complete_callback,
-			http_server,
-			__rrr_http_server_read_callback,
-			http_server
+				*result_transport,
+				first_read_timeout_ms,
+				ping_timeout_ms,
+				hard_timeout_ms,
+				send_chunk_count_limit,
+				__rrr_http_server_accept_callback,
+				http_server,
+				__rrr_http_server_handshake_complete_callback,
+				http_server,
+				__rrr_http_server_read_callback,
+				http_server
 		)) != 0) {
 			goto out;
 		}
@@ -474,7 +476,8 @@ int rrr_http_server_start_plain (
 		struct rrr_event_queue *queue,
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
-		uint64_t read_timeout_ms
+		uint64_t read_timeout_ms,
+		int send_chunk_count_limit
 ) {
 	int ret = 0;
 
@@ -494,6 +497,7 @@ int rrr_http_server_start_plain (
 			port,
 			first_read_timeout_ms,
 			read_timeout_ms,
+			send_chunk_count_limit,
 			&net_transport_config_plain,
 			0
 	);
@@ -508,6 +512,7 @@ int rrr_http_server_start_tls (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
+		int send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 ) {
@@ -528,6 +533,7 @@ int rrr_http_server_start_tls (
 			port,
 			first_read_timeout_ms,
 			read_timeout_ms,
+			send_chunk_count_limit,
 			&net_transport_config_tls,
 			net_transport_flags
 	);

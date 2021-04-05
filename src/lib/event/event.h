@@ -90,7 +90,7 @@ void rrr_event_function_set_with_arg (
 );
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, void *callback_arg),
+		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
 		void *callback_arg
 );
 int rrr_event_dispatch_once (
@@ -108,7 +108,9 @@ void rrr_event_dispatch_break (
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint16_t amount
+		uint8_t amount,
+		int (*retry_callback)(void *arg),
+		void *retry_callback_arg
 );
 
 static inline void rrr_event_activate (

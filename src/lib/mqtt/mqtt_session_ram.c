@@ -2415,6 +2415,7 @@ static int __rrr_mqtt_session_ram_packet_identifier_ensure (
 
 static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 		struct rrr_mqtt_p **packet_to_transmit,
+		int *delete_now,
 		struct iterate_send_queue_callback_data *iterate_callback_data,
 		struct rrr_mqtt_p_publish *publish
 ) {
@@ -2475,6 +2476,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 	//        the most recent ACK not acknowledged by remote will be sent.
 
 	if ((RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0 || RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) && publish->is_outbound == 1) {
+		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
+			*delete_now = 1;
+		}
 		*packet_to_transmit = (struct rrr_mqtt_p *) publish;
 	}
 	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2) {
@@ -2543,7 +2547,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback_final (
 ) {
 	int ret = 0;
 
-	ret = __rrr_mqtt_session_ram_packet_transmit(packet_to_transmit, packet_holder, iterate_callback_data->callback, iterate_callback_data->callback_arg);
+	ret = __rrr_mqtt_session_ram_packet_transmit (
+			packet_to_transmit,
+			packet_holder,
+			iterate_callback_data->callback,
+			iterate_callback_data->callback_arg
+	);
 
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_0("Internal error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback_final, return was %i\n", ret);
@@ -2593,6 +2602,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 
 	int ret = RRR_FIFO_OK;
 
+	int do_delete_now = 0;
 	int do_transmit = 0;
 
 	if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_packet_maintain (iterate_callback_data, packet)) != 0) {
@@ -2615,6 +2625,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		if ((ret = __rrr_mqtt_session_ram_iterate_send_queue_callback_process_publish (
 				&packet_to_transmit,
+				&do_delete_now,
 				iterate_callback_data,
 				(struct rrr_mqtt_p_publish *) packet
 		)) != 0) {
@@ -2654,6 +2665,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	// of return value.
 	packet->last_attempt = rrr_time_get_64();
 
+	if (do_delete_now) {
+		ret |= RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+	}
+
 	out:
 	return ret;
 }
@@ -2680,7 +2695,6 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	};
 
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US AND MAINTAIN
-//	printf ("To remote queue %i\n", rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer));
 	ret = rrr_fifo_buffer_search (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
@@ -2863,18 +2877,10 @@ static int __rrr_mqtt_session_ram_send_packet (
 		// they need to be sent promptly using the send now callback
 		// or by adding to the buffer as solo entry.
 
-		if (send_now_callback) {
-			packet->last_attempt = rrr_time_get_64();
-			if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
-				RRR_MSG_0("Send now callback failed in __rrr_mqtt_session_ram_send_packet\n");
-			}
-			goto out;
-		}
-
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
 		if ((ret = __rrr_mqtt_session_ram_add_subscriptions (
@@ -2885,15 +2891,25 @@ static int __rrr_mqtt_session_ram_send_packet (
 		)) != RRR_MQTT_SESSION_OK) {
 			goto out;
 		}
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE) {
 		// Changes take effect when we receive UNSUBACK
-		goto out_write_to_buffer;
+		goto out_write_to_buffer_urgent;
 	}
 
 	RRR_BUG("Unknown packet type %u in __rrr_mqtt_session_ram_send_packet\n",
 			RRR_MQTT_P_GET_TYPE(packet));
+
+	out_write_to_buffer_urgent:
+
+	if (send_now_callback) {
+		packet->last_attempt = rrr_time_get_64();
+		if ((ret = __rrr_mqtt_session_ram_packet_transmit(packet, packet, send_now_callback, send_now_callback_arg)) != 0) {
+			RRR_MSG_0("Send now callback failed in __rrr_mqtt_session_ram_send_packet\n");
+		}
+		goto out;
+	}
 
 	out_write_to_buffer:
 

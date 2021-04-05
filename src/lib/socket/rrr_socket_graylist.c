@@ -70,10 +70,6 @@ static int __rrr_socket_graylist_push (
 		goto out;
 	}
 
-	if (rrr_socket_graylist_exists(target, addr, len)) {
-		goto out;
-	}
-
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_graylist_push\n");
 		ret = 1;

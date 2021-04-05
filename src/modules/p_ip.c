@@ -67,6 +67,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define IP_DEFAULT_MAX_MESSAGE_SIZE        4096
 #define IP_DEFAULT_GRAYLIST_TIMEOUT_MS     100
 #define IP_DEFAULT_CLOSE_GRACE_MS          5
+#define IP_DEFAULT_PERSISTENT_TIMEOUT_MS   5000
+#define IP_SEND_CHUNK_COUNT_LIMIT          10000
 
 enum ip_action {
 	IP_ACTION_RETRY,
@@ -101,10 +103,12 @@ struct ip_data {
 	int do_force_target;
 	int do_extract_rrr_messages;
 	int do_preserve_order;
-	int do_persistent_connections;
+
 	int do_multiple_per_connection;
+	int do_persistent_connections_obsolete;
 
 	rrr_setting_uint close_grace_ms;
+	rrr_setting_uint persistent_timeout_ms;
 
 	char *timeout_action_str;
 	enum ip_action timeout_action;
@@ -328,15 +332,6 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 		}
 	}
 
-	if (data->definitions != NULL && data->source_udp_port == 0 && data->source_tcp_port == 0) {
-		RRR_MSG_0("ip_input_types was set but ip_tcp_port and/or ip_udp_port was not, this is an invalid configuration in ip instance %s\n", config->name);
-		ret = 1;
-		goto out;
-	}
-	else if (data->definitions == NULL) {
-		// Listening disabled
-	}
-
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
 
 	if (data->default_topic != NULL) {
@@ -359,27 +354,28 @@ static int ip_parse_config (struct ip_data *data, struct rrr_instance_config_dat
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_strip_array_separators", do_strip_array_separators, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_preserve_order, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections_obsolete, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_multiple_per_connection", do_multiple_per_connection, 1); // Default yes
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_close_grace_ms", close_grace_ms, IP_DEFAULT_CLOSE_GRACE_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_persistent_timeout_ms", persistent_timeout_ms, IP_DEFAULT_PERSISTENT_TIMEOUT_MS);
 
-	if (data->do_preserve_order && !data->do_multiple_per_connection) {
-		RRR_DBG_1("Note: ip_preserve_order is set while ip_send_multiple_per_connection is not in ip instance %s, send order may not be guaranteed in all situations.\n",
+	if (RRR_INSTANCE_CONFIG_EXISTS("ip_persistent_connections")) {
+		RRR_MSG_0("Warning: Use of obsolete parameter 'ip_persistent_connections' in ip instance %s, use 'ip_persistent_timeout_ms' instead.\n",
+				config->name);
+	}
+
+	if (data->do_preserve_order && data->persistent_timeout_ms == 0) {
+		RRR_DBG_1("Note: ip_preserve_order is set while ip_persistent_timeout_ms is zero in ip instance %s, send order may not be guaranteed in all situations.\n",
+				config->name);
+	}
+
+	if (data->do_preserve_order && data->do_multiple_per_connection == 0) {
+		RRR_DBG_1("Note: ip_preserve_order is set while do_multiple_per_connection is 'no' in ip instance %s, send order may not be guaranteed in all situations.\n",
 				config->name);
 	}
 
 	if (data->do_strip_array_separators && data->definitions == NULL) {
 		RRR_MSG_0("ip_strip_array_separators was 'yes' while no array definition was set in ip_input_types in ip instance %s, this is a configuration error.\n",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-
-	if (	RRR_INSTANCE_CONFIG_EXISTS("ip_send_multiple_per_connection") &&
-			data->do_multiple_per_connection == 0 &&
-			data->do_persistent_connections != 0
-	) {
-		RRR_MSG_0("ip_send_multiple_per_connection is explicitly set to 'no' while ip_persistent_connections is set to 'yes' in ip instance %s, this is a configuration error.\n",
 				config->name);
 		ret = 1;
 		goto out;
@@ -672,7 +668,7 @@ static int ip_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Used for timeout checks
 	entry->send_time = rrr_time_get_64();
-	
+
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&ip_data->send_buffer, entry);
 
@@ -826,6 +822,13 @@ static int ip_connect_raw_callback (
 		goto out;
 	}
 
+	rrr_socket_graylist_push (
+			&ip_data->tcp_graylist,
+			addr,
+			addr_len,
+			ip_data->close_grace_ms * 1000
+	);
+
 	if ((ret = rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 			fd,
 			addr,
@@ -958,7 +961,9 @@ static int ip_resolve_push_sendto_callback (
 			buf
 	);
 
+	int send_chunk_count = 0;
 	if ((ret = rrr_socket_client_collection_sendto_push_const (
+			&send_chunk_count,
 			callback_data->ip_data->collection_udp,
 			send_fd,
 			addr,
@@ -975,6 +980,12 @@ static int ip_resolve_push_sendto_callback (
 	else {
 		RRR_MSG_0("Failed to push send data in ip_resolve_sendto_callback of ip instance %s\n",
 				INSTANCE_D_NAME(callback_data->ip_data->thread_data));
+	}
+
+	if (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT) {
+		RRR_MSG_0("Send chunk limit of %i reached (sendto default) in IP instance %s\n",
+				IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(callback_data->ip_data->thread_data));
+		ret = RRR_SOCKET_HARD_ERROR;
 	}
 
 	out:
@@ -1006,7 +1017,9 @@ static int ip_push_raw_default_target (
 			ip_data->target_port
 		};
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+				&send_chunk_count,
 				ip_data->collection_tcp,
 				ip_data->target_host_and_port,
 				send_data,
@@ -1020,7 +1033,14 @@ static int ip_push_raw_default_target (
 				ip_data
 		);
 
-		if (!ip_data->do_multiple_per_connection) {
+		int send_chunk_count_limit_reached = (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT);
+
+		if (send_chunk_count_limit_reached) {
+			RRR_DBG_3("Send chunk limit of %i reached (send) for default target in IP instance %s, closing connection when sending is completed\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+		}
+
+		if (ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address_string (
 					ip_data->collection_tcp,
 					ip_data->target_host_and_port
@@ -1043,7 +1063,7 @@ static int ip_push_raw_default_target (
 				ip_resolve_push_sendto_callback,
 				&resolve_callback_data
 		)) == RRR_SOCKET_READ_EOF) {
-			// OK, reslt found
+			// OK, result found
 			ret = 0;
 		}
 		else if (ret == 0) {
@@ -1105,7 +1125,9 @@ static int ip_push_raw (
 			RRR_DBG_3("ip instance %s send using address from entry TCP (%s)\n", INSTANCE_D_NAME(thread_data), buf);
 		}
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+				&send_chunk_count,
 				ip_data->collection_tcp,
 				(const struct sockaddr *) &entry_orig->addr,
 				entry_orig->addr_len,
@@ -1118,7 +1140,14 @@ static int ip_push_raw (
 				ip_data
 		);
 
-		if (!ip_data->do_multiple_per_connection) {
+		int send_chunk_count_limit_reached = (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT);
+
+		if (send_chunk_count_limit_reached) {
+			RRR_DBG_3("Send chunk limit of %i reached (send) for target in IP instance %s, closing connection when sending is completed\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+		}
+
+		if (ip_data->do_multiple_per_connection == 0 || send_chunk_count_limit_reached) {
 			rrr_socket_client_collection_close_when_send_complete_by_address (
 					ip_data->collection_tcp,
 					(const struct sockaddr *) &entry_orig->addr,
@@ -1146,7 +1175,9 @@ static int ip_push_raw (
 			send_fd = (ip_data->udp_send_fd_ip6 > 0 ? ip_data->udp_send_fd_ip6 : ip_data->udp_send_fd_ip4);
 		}
 
+		int send_chunk_count = 0;
 		ret = rrr_socket_client_collection_sendto_push_const (
+				&send_chunk_count,
 				ip_data->collection_udp,
 				send_fd,
 				(const struct sockaddr *) &entry_orig->addr,
@@ -1157,6 +1188,12 @@ static int ip_push_raw (
 				entry_orig,
 				ip_msg_holder_decref_void
 		);
+
+		if (send_chunk_count > IP_SEND_CHUNK_COUNT_LIMIT) {
+			RRR_MSG_0("Send chunk limit of %i reached (sendto address from entry) in IP instance %s\n",
+					IP_SEND_CHUNK_COUNT_LIMIT, INSTANCE_D_NAME(ip_data->thread_data));
+			ret = RRR_SOCKET_HARD_ERROR;
+		}
 	}
 
 	if (ret != 0 && ret != RRR_SOCKET_NOT_READY) {
@@ -1603,6 +1640,21 @@ struct chunk_send_smart_timeout_callback_data {
 	const struct rrr_msg_holder *entry_orig;
 };
 
+static void ip_entry_timeout_update (
+		struct ip_data *ip_data,
+		const struct rrr_msg_holder *entry_orig_locked,
+		struct rrr_msg_holder *entry_update_unlocked
+) {
+	if (entry_orig_locked == entry_update_unlocked) {
+		return;
+	}
+	rrr_msg_holder_lock(entry_update_unlocked);
+	if (ip_data->do_force_target == 1 || rrr_msg_holder_address_matches(entry_orig_locked, entry_update_unlocked)) {
+		entry_update_unlocked->send_time = rrr_time_get_64();
+	}
+	rrr_msg_holder_unlock(entry_update_unlocked);
+}
+
 static void ip_chunk_send_smart_timeout_callback (
 		int *do_remove,
 		const void *data,
@@ -1620,18 +1672,7 @@ static void ip_chunk_send_smart_timeout_callback (
 
 	*do_remove = 0;
 
-	if (entry == callback_data->entry_orig) {
-		return;
-	}
-
-	rrr_msg_holder_lock(entry);
-
-	if ( callback_data->ip_data->do_force_target == 1 ||
-	     rrr_msg_holder_address_matches(entry, callback_data->entry_orig)
-	) {
-		entry->send_time = callback_data->entry_orig->send_time;
-	}
-	rrr_msg_holder_unlock(entry);
+	ip_entry_timeout_update(callback_data->ip_data, callback_data->entry_orig, entry);
 }
 
 static void ip_chunk_send_fail_notify_callback (
@@ -1672,6 +1713,10 @@ static void ip_chunk_send_fail_notify_callback (
 				ip_chunk_send_smart_timeout_callback,
 				&callback_data
 		);
+
+		RRR_LL_ITERATE_BEGIN(&ip_data->send_buffer, struct rrr_msg_holder);
+			ip_entry_timeout_update(ip_data, entry, node);
+		RRR_LL_ITERATE_END();
 	}
 
 	rrr_msg_holder_unlock(entry);
@@ -1734,7 +1779,7 @@ static void ip_event_send_buffer (
 		EVENT_ADD(ip_data->event_send_buffer_iterate);
 	}
 	else {
-		if (!ip_data->do_persistent_connections) {
+		if (ip_data->persistent_timeout_ms == 0) {
 			rrr_socket_client_collection_close_outbound_when_send_complete(ip_data->collection_tcp);
 		}
 	}
@@ -1812,30 +1857,47 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	return ret;
 }
 
-#define SETUP_ARRAY_TREE(collection,socket_flags)              \
-    rrr_socket_client_collection_event_setup_array_tree (      \
-            collection,                                        \
-            ip_private_data_new,                               \
-            ip_private_data_destroy,                           \
-            data,                                              \
-            socket_flags,                                      \
-            data->definitions,                                 \
-            data->do_sync_byte_by_byte,                        \
-            4096,                                              \
-            0, /* No message max size */                       \
-            ip_array_callback,                                 \
-            data                                               \
-    );                                                         \
-    rrr_socket_client_collection_send_notify_setup (           \
-            collection,                                        \
-            ip_chunk_send_fail_notify_callback,                \
-            data                                               \
-    );                                                         \
-    rrr_socket_client_collection_fd_close_notify_setup (       \
-            collection,                                        \
-            ip_fd_close_notify_callback,                       \
-            data                                               \
-    )
+static void ip_event_setup (
+		struct ip_data *data,
+		struct rrr_socket_client_collection *collection,
+		int socket_read_flags
+) {
+	if (data->definitions != NULL) {
+		rrr_socket_client_collection_event_setup_array_tree (
+			collection,
+			ip_private_data_new,
+			ip_private_data_destroy,
+			data,
+			socket_read_flags,
+			data->definitions,
+			data->do_sync_byte_by_byte,
+			4096,
+			0, /* No message max size */
+			ip_array_callback,
+			data
+		);
+	}
+	else {
+		rrr_socket_client_collection_event_setup_ignore (
+			collection,
+			ip_private_data_new,
+			ip_private_data_destroy,
+			data,
+			socket_read_flags
+		);
+	}
+
+	rrr_socket_client_collection_send_notify_setup (
+		collection,
+		ip_chunk_send_fail_notify_callback,
+		data
+	);
+	rrr_socket_client_collection_fd_close_notify_setup (
+		collection,
+		ip_fd_close_notify_callback,
+		data
+	);
+}
 
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -1889,15 +1951,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	SETUP_ARRAY_TREE(
-		data->collection_tcp,
-		RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK
-	);
+	rrr_socket_client_collection_set_idle_timeout(data->collection_tcp, data->persistent_timeout_ms * 1000);
+	rrr_socket_client_collection_set_idle_timeout(data->collection_udp, data->persistent_timeout_ms * 1000);
 
-	SETUP_ARRAY_TREE(
-		data->collection_udp,
-		RRR_SOCKET_READ_METHOD_RECVFROM
-	);
+	ip_event_setup (data, data->collection_tcp, RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF | RRR_SOCKET_READ_FIRST_EOF_OK);
+	ip_event_setup (data, data->collection_udp, RRR_SOCKET_READ_METHOD_RECVFROM);
 
 	if (ip_start_udp(data) != 0) {
 		goto out_message;

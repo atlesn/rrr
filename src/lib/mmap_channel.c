@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -192,7 +192,9 @@ int rrr_mmap_channel_write_using_callback (
 		int wait_attempts_max,
 		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 
@@ -265,7 +267,15 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
-		rrr_event_pass(queue_notify, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE, 1);
+		if ((ret = rrr_event_pass (
+				queue_notify,
+				RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+				1,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) != 0) {
+			goto out_unlock;
+		}
 	}
 
 	out_unlock:
@@ -293,7 +303,9 @@ int rrr_mmap_channel_write (
 		const void *data,
 		size_t data_size,
 		unsigned int full_wait_time_us,
-		int retries_max
+		int retries_max,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	struct rrr_mmap_channel_write_callback_arg callback_data = {
 			data,
@@ -306,14 +318,15 @@ int rrr_mmap_channel_write (
 			full_wait_time_us,
 			retries_max,
 			__rrr_mmap_channel_write_callback,
-			&callback_data
+			&callback_data,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	);
 }
 
 int rrr_mmap_channel_read_with_callback (
 		int *read_count,
 		struct rrr_mmap_channel *source,
-		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
@@ -322,49 +335,33 @@ int rrr_mmap_channel_read_with_callback (
 	*read_count = 0;
 
 	int do_rpos_increment = 1;
-
 	int do_unlock_block = 0;
-	int wait_attempts_max = 4;
 
 	struct rrr_mmap_channel_block *block = NULL;
 
-	goto attempt_block_lock;
+	pthread_mutex_lock(&source->index_lock);
 
-	attempt_read_wait:
-		// We MUST NOT hold index lock and block lock simultaneously.
-		if (do_unlock_block) {
-			pthread_mutex_unlock(&block->block_lock);
-			do_unlock_block = 0;
-		}
+	block = &(source->blocks[source->rpos]);
+	int entry_count = source->entry_count;
 
-		if (empty_wait_time_us == 0 || wait_attempts_max-- == 0) {
-			pthread_mutex_lock(&source->index_lock);
-			source->read_starvation_counter++;
-			pthread_mutex_unlock(&source->index_lock);
-			ret = RRR_MMAP_CHANNEL_EMPTY;
-			goto out_unlock;
-		}
+	pthread_mutex_unlock(&source->index_lock);
 
-		rrr_posix_usleep(empty_wait_time_us);
+	if (entry_count == 0) {
+		goto out_unlock;
+	}
 
-	attempt_block_lock:
+	if (pthread_mutex_trylock(&block->block_lock) != 0) {
 		pthread_mutex_lock(&source->index_lock);
-
-		block = &(source->blocks[source->rpos]);
-		int entry_count = source->entry_count;
-
+		source->read_starvation_counter++;
 		pthread_mutex_unlock(&source->index_lock);
+		ret = RRR_MMAP_CHANNEL_EMPTY;
+		goto out_unlock;
+	}
 
-		if (entry_count == 0) {
-			goto out_unlock;
-		}
-		if (pthread_mutex_trylock(&block->block_lock) != 0) {
-			goto attempt_read_wait;
-		}
-		do_unlock_block = 1;
+	do_unlock_block = 1;
 
 	if (block->size_data == 0) {
-		goto attempt_read_wait;
+		goto out_unlock;
 	}
 
 	RRR_MMAP_DBG("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);

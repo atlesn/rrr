@@ -496,8 +496,10 @@ int rrr_message_broker_setup_split_output_buffer (
 }
 
 static int __rrr_message_broker_write_notifications_send (
-	struct rrr_message_broker_costumer *costumer,
-	uint16_t amount
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
 		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
@@ -507,7 +509,9 @@ static int __rrr_message_broker_write_notifications_send (
 		if ((rrr_event_pass (
 				listener->events,
 				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
-				amount
+				amount,
+				check_cancel_callback,
+				check_cancel_callback_arg
 		)) != 0) {
 			return 1;
 		}
@@ -544,7 +548,9 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 		int *write_again,
 		struct rrr_msg_holder *entry,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = 0;
 
@@ -576,7 +582,12 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 	}
 
 	if (!(*write_drop)) {
-		ret = __rrr_message_broker_write_notifications_send (costumer, 1);
+		ret = __rrr_message_broker_write_notifications_send (
+				costumer,
+				1,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		);
 	}
 
 	return ret;
@@ -598,7 +609,9 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 			do_again,
 			entry,
 			callback_data->callback,
-			callback_data->callback_arg
+			callback_data->callback_arg,
+			callback_data->check_cancel_callback,
+			callback_data->check_cancel_callback_arg
 	)) != 0) {
 		ret = 1;
 		goto out;
@@ -649,7 +662,9 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 			&write_again,
 			entry,
 			callback_data->callback,
-			callback_data->callback_arg
+			callback_data->callback_arg,
+			callback_data->check_cancel_callback,
+			callback_data->check_cancel_callback_arg
 	)) != 0) {
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
@@ -868,7 +883,12 @@ int rrr_message_broker_clone_and_write_entry (
 		}
 	}
 
-	ret = __rrr_message_broker_write_notifications_send(costumer, 1);
+	ret = __rrr_message_broker_write_notifications_send (
+			costumer,
+			1,
+			NULL,
+			NULL
+	);
 
 	out:
 	// Cast away const OK
@@ -904,7 +924,12 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 	rrr_msg_holder_unlock(entry);
 
 	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_write_incref(costumer->slot, entry, check_cancel_callback, check_cancel_callback_arg)) != 0) {
+		if ((ret = rrr_msg_holder_slot_write_incref (
+				costumer->slot,
+				entry,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) != 0) {
 			goto out;
 		}
 	}
@@ -920,7 +945,12 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		}
 	}
 
-	ret = __rrr_message_broker_write_notifications_send(costumer, 1);
+	ret = __rrr_message_broker_write_notifications_send (
+			costumer,
+			1,
+			check_cancel_callback,
+			check_cancel_callback_arg
+	);
 
 	out:
 	return ret;
@@ -970,12 +1000,22 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 	}
 
 	while (written_entries > 0) {
-		if (written_entries > 0xffff) {
-			ret = __rrr_message_broker_write_notifications_send(costumer, 0xffff);
-			written_entries -= 0xffff;
+		if (written_entries > 0xff) {
+			ret = __rrr_message_broker_write_notifications_send (
+					costumer,
+					0xff,
+					check_cancel_callback,
+					check_cancel_callback_arg
+			);
+			written_entries -= 0xff;
 		}
 		else {
-			ret = __rrr_message_broker_write_notifications_send(costumer, written_entries);
+			ret = __rrr_message_broker_write_notifications_send (
+					costumer,
+					written_entries,
+					check_cancel_callback,
+					check_cancel_callback_arg
+			);
 			written_entries = 0;
 		}
 	}
@@ -1000,7 +1040,7 @@ static int __rrr_message_broker_poll_intermediate_backstop_handling (
 ) {
 	*backstop = 0;
 
-	if ( callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP &&
+	if ((callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP) &&
 	     entry->source == callback_data->self
 	) {
 		if (RRR_DEBUGLEVEL_2) {

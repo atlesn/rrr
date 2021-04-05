@@ -128,33 +128,51 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	return 0;
 }
 
-static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *worker) {
+static int __rrr_cmodule_helper_send_ping_worker (
+		struct rrr_instance_runtime_data *thread_data,	
+		struct rrr_cmodule_worker *worker
+) {
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
 	// Don't set retry-timer, we have many opportunities to send pings anyway
-	if (rrr_cmodule_channel_send_message_simple (
+	int ret_tmp = 0;
+	if ((ret_tmp = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
-			&msg
-	) != 0) {
+			&msg,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
+	)) != 0) {
+		if (ret_tmp == RRR_THREAD_STOP) {
+			return RRR_THREAD_STOP;
+		}
 		// Don't trigger error here. The reader thread will exit causing restart
 		// if the fork fails (does not send any PONG back)
 	}
+
+	return 0;
 }
 
-static void __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+static int __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+	int ret = 0;
+
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	WORKER_LOOP_BEGIN();
-		__rrr_cmodule_helper_send_ping_worker(worker);
+		if ((ret = __rrr_cmodule_helper_send_ping_worker(thread_data, worker)) != 0) {
+			goto out;
+		}
 	WORKER_LOOP_END();
+
+	out:
+	return ret;
 }
 
 static int __rrr_cmodule_helper_send_message_to_fork (
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_cmodule_worker *worker,
 		struct rrr_msg_holder *node
 ) {
@@ -177,14 +195,17 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	// Insert PING in between to make the child fork send PONGs back
 	// while it processes messages
 	if (worker->ping_counter++ % 8 == 0) {
-		__rrr_cmodule_helper_send_ping_worker(worker);
+		if ((ret = __rrr_cmodule_helper_send_ping_worker(thread_data, worker)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
 			worker->event_queue_worker,
 			message,
-			&addr_msg
+			&addr_msg,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_FULL) {
 			worker->to_fork_write_retry_counter += 1;
@@ -217,7 +238,7 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 		}
  	WORKER_LOOP_END();
 
-	return __rrr_cmodule_helper_send_message_to_fork(preferred, entry_locked);
+	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
 }
 
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -410,12 +431,15 @@ static int __rrr_cmodule_helper_read_from_worker (
 	if ((ret = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_parent,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
 			__rrr_cmodule_helper_read_from_fork_callback,
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
 			ret = 0;
+			goto out;
+		}
+		else if (ret == RRR_EVENT_EXIT) {
+			// Propagate
 			goto out;
 		}
 		else {
@@ -435,29 +459,26 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 ) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-
-	if (rrr_thread_signal_encourage_stop_check(thread)) {
-		return RRR_EVENT_EXIT;
-	}
-
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	int ret = 0;
 
 	// Note : Bias here to read from the first worker
 
 	int worker_i = 0;
-	while (*amount > 0) {
+	while ((ret = rrr_thread_signal_encourage_stop_check(thread)) == 0 && *amount > 0) {
 		struct rrr_cmodule_worker *worker = &cmodule->workers[worker_i];
 
 		struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 		callback_data.thread_data = thread_data;
 
-		if (__rrr_cmodule_helper_read_from_worker (
+		if ((ret = __rrr_cmodule_helper_read_from_worker (
 				amount,
 				worker,
 				__rrr_cmodule_helper_read_callback,
 				&callback_data
-		) != 0) {
-			return 1;
+		)) != 0) {
+			goto out;
 		}
 
 		if (cmodule->config_check_complete_message_printed == 0) {
@@ -482,7 +503,8 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 		}
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int __rrr_cmodule_helper_check_pong (
@@ -514,7 +536,10 @@ static int __rrr_cmodule_helper_event_periodic (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	__rrr_cmodule_helper_send_ping_all_workers(thread_data);
+	int ret_tmp;
+	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
+		return ret_tmp;
+	}
 
 	if (__rrr_cmodule_helper_check_pong(thread_data) != 0) {
 		return 1;

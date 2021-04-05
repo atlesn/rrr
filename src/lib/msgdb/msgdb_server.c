@@ -43,6 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../map.h"
 
+#define RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT 10000
+
 struct rrr_msgdb_server {
 	char *directory;
 	struct rrr_socket_client_collection *clients;
@@ -429,18 +431,35 @@ static int __rrr_msgdb_server_del (
 }
 
 static int __rrr_msgdb_server_send_callback (
-	int fd,
-	void **data,
-	ssize_t data_size,
-	void *arg
+		int fd,
+		void **data,
+		ssize_t data_size,
+		void *arg
 ) {
 	struct rrr_msgdb_server *server = arg;
-	return rrr_socket_client_collection_send_push (
+
+	int ret = 0;
+
+	int send_chunk_count = 0;
+	if ((ret = rrr_socket_client_collection_send_push (
+			&send_chunk_count,
 			server->clients,
 			fd,
 			data,
 			data_size
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	if (send_chunk_count > RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT) {
+		RRR_MSG_0("msgdb fd %i send chunk limit of %i reached, soft error.\n",
+				fd, RRR_MSGDB_SERVER_SEND_CHUNK_COUNT_LIMIT);
+		ret = RRR_MSGDB_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_msgdb_server_send_msg_ack (

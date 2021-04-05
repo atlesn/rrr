@@ -55,6 +55,10 @@ void rrr_socket_client_collection_set_connect_timeout (
 		struct rrr_socket_client_collection *collection,
 		uint64_t connect_timeout_us
 );
+void rrr_socket_client_collection_set_idle_timeout (
+		struct rrr_socket_client_collection *collection,
+		uint64_t idle_timeout_us
+);
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 );
@@ -70,17 +74,21 @@ void rrr_socket_client_collection_close_outbound_when_send_complete (
 		struct rrr_socket_client_collection *collection
 );
 void rrr_socket_client_collection_send_push_const_multicast (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const void *data,
-		ssize_t size
+		ssize_t size,
+		int send_chunk_limit
 );
 int rrr_socket_client_collection_send_push (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		void **data,
 		ssize_t data_size
 );
 int rrr_socket_client_collection_send_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const void *data,
@@ -100,6 +108,7 @@ void rrr_socket_client_collection_close_when_send_complete_by_fd (
 		int fd
 );
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -112,6 +121,7 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		void *connect_callback_data
 );
 int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const char *addr_string,
 		const void *data,
@@ -130,6 +140,7 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		void *connect_callback_data
 );
 int rrr_socket_client_collection_sendto_push_const (
+		int *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const struct sockaddr *addr,
@@ -193,6 +204,13 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		unsigned int message_max_size,
 		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
 		void *array_callback_arg
+);
+void rrr_socket_client_collection_event_setup_ignore (
+		struct rrr_socket_client_collection *collection,
+		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
+		void (*callback_private_data_destroy)(void *private_data),
+		void *callback_private_data_arg,
+		int read_flags_socket
 );
 
 #endif /* RRR_SOCKET_CLIENT_H */

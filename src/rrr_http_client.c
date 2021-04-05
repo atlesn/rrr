@@ -699,7 +699,13 @@ int main (int argc, const char **argv, const char **env) {
 		EVENT_ADD(data.event_stdin);
 	}
 
-	if (rrr_http_client_new(&data.http_client, data.queue, 5000, &callbacks) != 0) {
+	if (rrr_http_client_new (
+			&data.http_client,
+			data.queue,
+			5000,   // 5s idle timeout
+			0,      // No send chunk limit
+			&callbacks
+	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

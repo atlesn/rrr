@@ -121,7 +121,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 
 struct rrr_log_hook {
 	void (*log)(
-			uint16_t *write_amount,
+			uint8_t *write_amount,
 			unsigned short loglevel_translated,
 			unsigned short loglevel_orig,
 			const char *prefix,
@@ -140,7 +140,7 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_amount,
+				uint8_t *write_amount,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
@@ -220,7 +220,7 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
-		uint16_t write_amount = 0;
+		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				&write_amount,
@@ -232,7 +232,13 @@ void rrr_log_hooks_call_raw (
 		);
 
 		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, write_amount);
+			rrr_event_pass (
+					hook->notify_queue,
+					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
+					write_amount,
+					NULL,
+					NULL
+			);
 		}
 	}
 

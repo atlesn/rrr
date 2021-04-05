@@ -248,7 +248,7 @@ void rrr_log_cleanup(void);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_count,
+				uint8_t *write_count,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,

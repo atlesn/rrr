@@ -110,7 +110,7 @@ static int __rrr_socket_eventfd_notify (
 
 int rrr_socket_eventfd_write (
 		struct rrr_socket_eventfd *eventfd,
-		uint64_t count
+		uint8_t count
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -119,7 +119,8 @@ int rrr_socket_eventfd_write (
 	}
 
 #ifdef RRR_HAVE_EVENTFD
-	if (write(eventfd->fd, &count, sizeof(count)) != sizeof(count)) {
+	uint64_t count_64 = count;
+	if (write(eventfd->fd, &count_64, sizeof(count_64)) != sizeof(count_64)) {
 		if (errno == EAGAIN) {
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;

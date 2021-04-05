@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../mmap_channel.h"
 #include "../common.h"
+#include "../read_constants.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_functions.h"
@@ -49,6 +50,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         goto out;                                                            \
     }
 
+static int __rrr_cmodule_worker_check_cancel_callback (
+		void *arg
+) {
+	struct rrr_cmodule_worker *worker = arg;
+	if (worker->received_stop_signal) {
+		RRR_DBG_1("child worker fork named %s pid %ld received stop signal while waiting to write to mmap channel\n",
+				worker->name, (long) getpid());
+		return RRR_EVENT_EXIT;
+	}
+	return 0;
+}
+
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
 		const struct rrr_msg_msg *message,
@@ -64,7 +77,9 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
 			message,
-			message_addr
+			message_addr,
+			__rrr_cmodule_worker_check_cancel_callback,
+			worker
 	);
 
 	if (ret == 0) {
@@ -76,6 +91,8 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 		worker->to_parent_write_retry_counter += 1;
 		goto retry;
 	}
+
+	// Other errors propagate
 
 	return ret;
 }
@@ -117,7 +134,7 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 }
 
 static void __rrr_cmodule_worker_log_hook (
-		uint16_t *amount_written,
+		uint8_t *amount_written,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,
@@ -137,11 +154,11 @@ static void __rrr_cmodule_worker_log_hook (
 	}
 
 	if (rrr_msg_msg_log_new (
-		&message_log,
-		loglevel_translated,
-		loglevel_orig,
-		prefix,
-		message
+			&message_log,
+			loglevel_translated,
+			loglevel_orig,
+			prefix,
+			message
 	) != 0) {
 		goto out;
 	}
@@ -153,11 +170,16 @@ static void __rrr_cmodule_worker_log_hook (
 			message_log,
 			message_log->msg_size,
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
+			__rrr_cmodule_worker_check_cancel_callback,
+			worker
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
 				worker->name);
+		}
+		else if (ret == RRR_EVENT_EXIT) {
+			// OK, wait for some other function to detect exit
 		}
 		else {
 			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
@@ -178,22 +200,33 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 ) {
 	struct rrr_cmodule_worker *worker = arg;
 
+	int ret = 0;
+
 	RRR_DBG_5("cmodule worker %s notification to parent about used setting '%s'\n",
 			worker->name, setting->name);
 
-	if (rrr_mmap_channel_write (
+	if ((ret = rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
 			setting,
 			sizeof(*setting),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES
-	) != 0) {
-		RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
-		return 1;
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
+			__rrr_cmodule_worker_check_cancel_callback,
+			worker
+	)) != 0) {
+		if (ret == RRR_EVENT_EXIT) {
+			// OK, propagate
+		}
+		else {
+			RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
+			ret = 1;
+		}
+		goto out;
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 struct rrr_cmodule_process_callback_data {
@@ -291,7 +324,6 @@ static int __rrr_cmodule_worker_event_mmap_channel_data_available (
 	if ((ret_tmp = rrr_cmodule_channel_receive_messages (
 			amount,
 			worker->channel_to_fork,
-			0,
 			__rrr_cmodule_worker_loop_read_callback,
 			&callback_data->read_callback_data
 	)) != 0) {
@@ -361,13 +393,16 @@ int __rrr_cmodule_worker_send_pong (
 	ret = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
-			&msg
+			&msg,
+			__rrr_cmodule_worker_check_cancel_callback,
+			worker
 	);
 
 	if (ret == 0) {
 		worker->total_msg_mmap_to_parent++;
 	}
-	// Let errors propagate
+
+	// Errors propagate
 
 	return ret;
 }
@@ -427,6 +462,9 @@ static int __rrr_cmodule_worker_event_periodic (
 	if (worker->ping_received) {
 		RRR_DBG_5("cmodule worker %s ping received, sending pong\n", worker->name);
 		if ((ret_tmp = __rrr_cmodule_worker_send_pong(worker)) != 0) {
+			if (ret_tmp == RRR_EVENT_EXIT) {
+				return ret_tmp;
+			}
 			RRR_MSG_0("Warning: Failed to send PONG message in worker fork named %s pid %ld return was %i\n",
 					worker->name, (long) getpid(), ret_tmp);
 		}
@@ -519,10 +557,7 @@ int rrr_cmodule_worker_loop_start (
 			goto out;
 		}
 
-		if (rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker) != 0) {
-			RRR_MSG_0("Error while sending back settings to parent in rrr_cmodule_worker_loop_start of worker %s\n",
-					worker->name);
-			ret = 1;
+		if ((ret = rrr_settings_iterate_packed(worker->settings, __rrr_cmodule_worker_send_setting_to_parent, worker)) != 0) {
 			goto out;
 		}
 
@@ -537,16 +572,21 @@ int rrr_cmodule_worker_loop_start (
 	struct rrr_msg control_msg = {0};
 	rrr_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
 
-	if (rrr_mmap_channel_write(
+	if (rrr_mmap_channel_write (
 			worker->channel_to_parent,
 			worker->event_queue_parent,
 			&control_msg,
 			sizeof(control_msg),
 			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
+			__rrr_cmodule_worker_check_cancel_callback,
+			worker
 	) != 0) {
-		RRR_MSG_0("Error while writing config complete control message to mmap channel in rrr_cmodule_worker_loop_start\n");
-		return 1;
+		if (ret == RRR_EVENT_EXIT) {
+			goto out;
+		}
+		RRR_MSG_0("Error %i while writing config complete control message to mmap channel in rrr_cmodule_worker_loop_start\n", ret);
+		goto out;
 	}
 
 	if ((ret = __rrr_cmodule_worker_loop (

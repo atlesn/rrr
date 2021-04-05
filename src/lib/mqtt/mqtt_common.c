@@ -744,12 +744,19 @@ int rrr_mqtt_common_send_from_sessions_callback (
 
 	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
 
-	if (rrr_mqtt_conn_iterator_ctx_send_packet(callback_data->handle, packet) != 0) {
+	int do_stop = 0;
+	if (rrr_mqtt_conn_iterator_ctx_send_packet(&do_stop, callback_data->handle, packet) != 0) {
 		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
+		goto out;
 	}
 
+	if (do_stop) {
+		ret |= RRR_FIFO_SEARCH_STOP;
+	}
+
+	out:
 	return ret;
 }
 
@@ -761,7 +768,7 @@ static int __rrr_mqtt_common_send_now_callback (
 
 	struct rrr_net_transport_handle *handle = arg;
 
-	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, packet)) != 0) {
+	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet)) != 0) {
 		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_now_callback\n");
 	}
 
@@ -1221,7 +1228,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MQTT_OK;
@@ -1257,12 +1264,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 
 	ret_preserve = ret;
 
-	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data housekeeping_data = {
-		exceeded_keep_alive_callback,
-		callback_arg
-	};
-
-	if ((ret = rrr_mqtt_conn_housekeeping(connection, &housekeeping_data)) != 0) {
+	if ((ret = rrr_mqtt_conn_iterator_ctx_housekeeping(handle, exceeded_keep_alive_callback, callback_arg)) != 0) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while housekeeping\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;

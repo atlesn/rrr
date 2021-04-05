@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
 #define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
-#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT      10000
+#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT       5000
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -79,7 +79,17 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 	return ret;
 }
 
-static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
+static int __rrr_mqtt_client_send_now_callback (
+				struct rrr_mqtt_p *packet,
+				void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+	return rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet);
+}
+
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
 	int ret = RRR_MQTT_OK;
 
 	struct rrr_mqtt_client_data *data = arg;
@@ -102,8 +112,8 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 					&connection->session,
 					(struct rrr_mqtt_p *) pingreq,
 					0,
-					NULL,
-					NULL
+					__rrr_mqtt_client_send_now_callback,
+					handle
 			),
 			goto out,
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
@@ -549,7 +559,7 @@ int rrr_mqtt_client_connect (
 				data->mqtt_data.transport,
 				*transport_handle,
 				(struct rrr_mqtt_p *) connect,
-				rrr_mqtt_conn_iterator_ctx_send_packet
+				rrr_mqtt_conn_iterator_ctx_send_packet_urgent
 		) != 0) {
 			RRR_MSG_0("Could not send CONNECT packet in rrr_mqtt_client_connect");
 			ret = 1;

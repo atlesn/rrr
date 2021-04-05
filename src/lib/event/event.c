@@ -22,10 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <pthread.h>
 #include <errno.h>
 #include <sys/mman.h>
-#include <event2/thread.h>
 
 #include <poll.h>
 
@@ -33,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "event.h"
 #include "event_struct.h"
 #include "event_functions.h"
-#include "../threads.h"
 #include "../rrr_strerror.h"
 #include "../rrr_config.h"
 #include "../rrr_path_max.h"
@@ -42,10 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_eventfd.h"
 #include "../util/gnu.h"
 #include "../util/rrr_time.h"
-
-static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
-static volatile int rrr_event_libevent_initialized = 0;
-
 
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
@@ -105,10 +98,47 @@ static void __rrr_event_periodic (
 	(void)(flags);
 
 	if ( queue->callback_periodic != NULL &&
-	    (queue->callback_periodic_ret = queue->callback_periodic(queue->callback_arg)) != 0
+	    (queue->callback_ret = queue->callback_periodic(queue->callback_arg)) != 0
 	) {
 		event_base_loopbreak(queue->event_base);
 	}
+}
+
+static void __rrr_event_set_pause (
+		struct rrr_event_queue *queue,
+		int do_pause
+) {
+	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		if (queue->functions[i].signal_event) {
+			if (do_pause) {
+				event_del(queue->functions[i].signal_event);
+			}
+			else {
+				event_add(queue->functions[i].signal_event, NULL);
+			}
+		}
+	}
+
+	if ((queue->is_paused = do_pause) != 0) {
+		struct timeval tv = { 0, 50 }; // 50 us
+		event_add(queue->unpause_event, &tv);
+	}
+
+	RRR_DBG_9_PRINTF("EQ DISP %p pause is %i\n",
+		queue, queue->is_paused);
+}
+
+static void __rrr_event_unpause (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_event_queue *queue = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	__rrr_event_set_pause(queue, 0);
 }
 
 static void __rrr_event_signal_event (
@@ -125,19 +155,25 @@ static void __rrr_event_signal_event (
  	int ret = 0;
 	uint64_t count = 0;
 
-	pthread_mutex_lock(&queue->lock);
-
-	if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
-		if (ret == RRR_SOCKET_NOT_READY) {
-			// OK, nothing to do
-		}
-		else {
-			RRR_DBG_9_PRINTF("EQ DISP %p error from eventfd read, ending loop\n", queue);
-			event_base_loopbreak(queue->event_base);
-		}
+	if (queue->callback_pause) {
+		queue->callback_pause(&queue->is_paused, queue->is_paused, queue->callback_pause_arg);
 	}
 
-	pthread_mutex_unlock(&queue->lock);
+	if (queue->is_paused) {
+		__rrr_event_set_pause(queue, 1);
+		goto out;
+	}
+	else {
+		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
+			if (ret == RRR_SOCKET_NOT_READY) {
+				// OK, nothing to do
+			}
+			else {
+				RRR_DBG_9_PRINTF("EQ DISP %p error from eventfd read, ending loop\n", queue);
+				event_base_loopbreak(queue->event_base);
+			}
+		}
+	}
 
 	if (function->function == NULL) {
 		RRR_DBG_9_PRINTF("EQ DISP %p function not registered\n", queue);
@@ -157,7 +193,13 @@ static void __rrr_event_signal_event (
 					? function->function_arg
 					: queue->callback_arg
 		)) != 0) {
-			RRR_DBG_9_PRINTF("EQ DISP %p error %i from callback, ending loop\n", queue, ret);
+			if (ret == RRR_EVENT_EXIT) {
+				RRR_DBG_9_PRINTF("EQ DISP %p exit command from callback, ending loop\n", queue);
+			}
+			else {
+				RRR_DBG_9_PRINTF("EQ DISP %p error %i from callback, ending loop\n", queue, ret);
+			}
+			queue->callback_ret = ret;
 			event_base_loopbreak(queue->event_base);
 			goto out;
 		}
@@ -176,7 +218,7 @@ static void __rrr_event_signal_event (
 
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, void *callback_arg),
+		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
 		void *callback_arg
 ) {
 	queue->callback_pause = callback;
@@ -216,7 +258,7 @@ int rrr_event_dispatch (
 
 	queue->callback_periodic = function_periodic;
 	queue->callback_arg = callback_arg;
-	queue->callback_periodic_ret = 0;
+	queue->callback_ret = 0;
 
 	if ((ret = event_base_dispatch(queue->event_base)) != 0) {
 		RRR_MSG_0("Error from event_base_dispatch in rrr_event_dispatch: %i\n", ret);
@@ -224,8 +266,8 @@ int rrr_event_dispatch (
 		goto out;
 	}
 
-	if (queue->callback_periodic_ret != 0) {
-		ret = queue->callback_periodic_ret & ~(RRR_EVENT_EXIT);
+	if (queue->callback_ret != 0) {
+		ret = queue->callback_ret & ~(RRR_EVENT_EXIT);
 	}
 	else if (event_base_got_break(queue->event_base)) {
 		ret = 1;
@@ -245,7 +287,9 @@ void rrr_event_dispatch_break (
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint16_t amount
+		uint8_t amount,
+		int (*retry_callback)(void *arg),
+		void *retry_callback_arg
 ) {
 	int ret = 0;
 
@@ -253,14 +297,15 @@ int rrr_event_pass (
 		RRR_BUG("BUG: Function out of range in rrr_event_pass\n");
 	}
 
-	pthread_mutex_lock(&queue->lock);
-
 	RRR_DBG_9_PRINTF("EQ PASS %p function %u amount %u\n",
 		queue, function, amount);
 
 	retry:
 	if ((ret = rrr_socket_eventfd_write(&queue->functions[function].eventfd, amount)) != 0) {
 		if (ret == RRR_SOCKET_NOT_READY) {
+			if (retry_callback != NULL && (ret = retry_callback(retry_callback_arg) != 0)) {
+				goto out;
+			}
 			goto retry;
 		}
 		RRR_MSG_0("Failed to pass event in rrr_event_pass, return was %i\n", ret);
@@ -269,7 +314,6 @@ int rrr_event_pass (
 	}
 
 	out:
-	pthread_mutex_unlock(&queue->lock);
 	return ret;
 }
 
@@ -287,7 +331,9 @@ void rrr_event_queue_destroy (
 	if (queue->periodic_event != NULL) {
 		event_free(queue->periodic_event);
 	}
-	pthread_mutex_destroy(&queue->lock);
+	if (queue->unpause_event != NULL) {
+		event_free(queue->unpause_event);
+	}
 	event_base_free(queue->event_base);
 	free(queue);
 }
@@ -298,20 +344,6 @@ int rrr_event_queue_new (
 	int ret = 0;
 
 	struct event_config *cfg = NULL;
-
-	// TODO : use_pthreads might not be needed as the libevent
-	//        structures are only accessed by one thread.
-	pthread_mutex_lock(&init_lock);
-	if (rrr_event_libevent_initialized++ == 0) {
-		ret = evthread_use_pthreads();
-	}
-	pthread_mutex_unlock(&init_lock);
-
-	if (ret != 0) {
-		RRR_MSG_0("evthread_use_pthreads() failed in rrr_event_queue_new\n");
-		ret = 1;
-		goto out;
-	}
 
 	*target = NULL;
 
@@ -338,16 +370,10 @@ int rrr_event_queue_new (
 
 	memset(queue, '\0', sizeof(*queue));
 
-	if ((rrr_posix_mutex_init(&queue->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
-		RRR_MSG_0("Could not initialize mutex B in rrr_event_queue_init\n");
-		ret = 1;
-		goto out_free;
-	}
-
 	if ((queue->event_base = event_base_new_with_config(cfg)) == NULL) {
 		RRR_MSG_0("Could not create event base in rrr_event_queue_init\n");
 		ret = 1;
-		goto out_destroy_lock;
+		goto out_free;
 	}
 
 	if (event_base_priority_init (queue->event_base, RRR_EVENT_PRIORITY_COUNT) != 0) {
@@ -366,6 +392,18 @@ int rrr_event_queue_new (
 		RRR_MSG_0("Failed to create periodic event in rrr_event_queue_new\n");
 		ret = 1;
 		goto out_destroy_event_base;
+	}
+
+	if ((queue->unpause_event = event_new (
+			queue->event_base,
+			-1,
+			EV_TIMEOUT,
+			__rrr_event_unpause,
+			queue
+	)) == NULL) {
+		RRR_MSG_0("Failed to create unpause event in rrr_event_queue_new\n");
+		ret = 1;
+		goto out_destroy_periodic_event;
 	}
 
 	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
@@ -415,12 +453,10 @@ int rrr_event_queue_new (
 				event_free(queue->functions[i].signal_event);
 			}
 		}
-	// out_destroy_periodic_event: (Label currently not used)
+	out_destroy_periodic_event:
 		event_free(queue->periodic_event);
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
-	out_destroy_lock:
-		pthread_mutex_destroy(&queue->lock);
 	out_free:
 		free(queue);
 	out:

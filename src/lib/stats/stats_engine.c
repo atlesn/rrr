@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
+#define RRR_STATS_ENGINE_SEND_CHUNK_LIMIT 10000
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
@@ -79,15 +80,15 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	__rrr_stats_engine_journal_unlock(engine);
 }
 
-#define JOURNAL_LOCK(engine) 												\
-	__rrr_stats_engine_journal_lock(engine);								\
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)		\
+#define JOURNAL_LOCK(engine)                                   \
+    __rrr_stats_engine_journal_lock(engine);                   \
+    pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)
 
-#define JOURNAL_UNLOCK()													\
-	pthread_cleanup_pop(1)
+#define JOURNAL_UNLOCK()                                       \
+    pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (
-		uint16_t *write_amount,
+		uint8_t *write_amount,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,
@@ -194,10 +195,14 @@ int __rrr_stats_engine_multicast_send_intermediate (
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
+
+	int send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count_dummy,
 			stats->client_collection,
 			data,
-			size
+			size,
+			RRR_STATS_ENGINE_SEND_CHUNK_LIMIT
 	);
 	return 0;
 }

@@ -52,6 +52,7 @@ struct rrr_http_client {
 	struct rrr_event_queue *events;
 
 	uint64_t idle_timeout_ms;
+	int send_chunk_count_limit;
 
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
@@ -65,6 +66,7 @@ int rrr_http_client_new (
 		struct rrr_http_client **target,
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
+		int send_chunk_count_limit,
 		const struct rrr_http_client_callbacks *callbacks
 ) {
 	int ret = 0;
@@ -82,6 +84,7 @@ int rrr_http_client_new (
 	client->events = events;
 	client->idle_timeout_ms = idle_timeout_ms;
 	client->callbacks = *callbacks;
+	client->send_chunk_count_limit = send_chunk_count_limit;
 
 	*target = client;
 
@@ -832,6 +835,7 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup
 			0,
 			0,
 			http_client->idle_timeout_ms,
+			http_client->send_chunk_count_limit,
 			NULL,
 			NULL,
 			NULL,
