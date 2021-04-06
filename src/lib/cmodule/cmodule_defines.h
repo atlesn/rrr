@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT             1
 #define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS        1000
 
-// This value may not exceed 256 due to limits in event queue flags
 #define RRR_CMODULE_WORKER_MAX_WORKER_COUNT                 16
 
 #define RRR_CMODULE_CHANNEL_SIZE             (1024*1024*2*RRR_CMODULE_WORKER_MAX_WORKER_COUNT)
