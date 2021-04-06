@@ -81,7 +81,8 @@ struct rrr_cmodule_worker {
 };
 
 struct rrr_cmodule {
-	struct rrr_mmap *mmap;
+	struct rrr_mmap *mmap_;
+	char *name;
 
 	struct rrr_cmodule_config_data config_data;
 
