@@ -110,6 +110,16 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 	worker->pid = 0;
 }
 
+static int __rrr_cmodule_main_mmap_ensure (
+		struct rrr_cmodule *cmodule
+) {
+	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, cmodule->name) != 0) {
+		RRR_MSG_0("Could not allocate mmap in __rrr_cmodule_main_mmap_ensure\n");
+		return 1;
+	}
+	return 0;
+}
+
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
@@ -132,6 +142,11 @@ int rrr_cmodule_main_worker_fork_start (
 		RRR_BUG("BUG: Maximum worker count exceeded in rrr_cmodule_main_worker_fork_start\n");
 	}
 
+	if ((ret = __rrr_cmodule_main_mmap_ensure (cmodule)) != 0) {
+		RRR_MSG_0("Failed to create mmap in rrr_cmodule_main_worker_fork_start\n");
+		goto out_parent;
+	}
+
 	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
 
 	struct rrr_event_queue *worker_queue = NULL;
@@ -147,7 +162,7 @@ int rrr_cmodule_main_worker_fork_start (
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
-			cmodule->mmap,
+			cmodule->mmap_,
 			cmodule->config_data.worker_spawn_interval_us,
 			cmodule->config_data.worker_sleep_time_us,
 			cmodule->config_data.worker_nothing_happened_limit,
@@ -236,11 +251,12 @@ void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_main_workers_stop(cmodule);
-	if (cmodule->mmap != NULL) {
-		rrr_mmap_destroy(cmodule->mmap);
-		cmodule->mmap = NULL;
+	if (cmodule->mmap_ != NULL) {
+		rrr_mmap_destroy(cmodule->mmap_);
+		cmodule->mmap_ = NULL;
 	}
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
+	free(cmodule->name);
 	free(cmodule);
 }
 
@@ -266,8 +282,8 @@ int rrr_cmodule_new (
 
 	memset(cmodule, '\0', sizeof(*cmodule));
 
-	if (rrr_mmap_new(&cmodule->mmap, RRR_CMODULE_CHANNEL_SIZE, name) != 0) {
-		RRR_MSG_0("Could not allocate mmap in rrr_cmodule_init\n");
+	if ((cmodule->name = strdup(name)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for name in rrr_cmodule_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -279,6 +295,8 @@ int rrr_cmodule_new (
 	cmodule->config_data.worker_sleep_time_us = RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS * 1000;
 	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
+
+	// Memory map not allocated until needed
 
 	*result = cmodule;
 
