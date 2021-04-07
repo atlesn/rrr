@@ -230,48 +230,6 @@ void rrr_net_transport_common_cleanup (
 	);
 }
 
-int rrr_net_transport_handle_close_tag_list_push (
-		struct rrr_net_transport *transport,
-		int handle
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_handle_close_tag_node *node = malloc(sizeof(*node));
-	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_net_transport_handle_close_tag_list_push\n");
-		ret = 1;
-		goto out;
-	}
-	memset(node, '\0', sizeof(*node));
-
-	node->transport_handle = handle;
-
-	RRR_LL_APPEND(&transport->handles.close_tags, node);
-
-	out:
-	return ret;
-}
-
-static void __rrr_net_transport_handle_close_tag_node_process_and_destroy (
-		struct rrr_net_transport *transport,
-		struct rrr_net_transport_handle_close_tag_node *node
-) {
-	// Ignore errors
-	rrr_net_transport_handle_close(transport, node->transport_handle);
-	free(node);
-}
-
-static void __rrr_net_transport_handle_close_tag_list_process_and_clear_locked (
-		struct rrr_net_transport *transport
-) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-	RRR_LL_DESTROY(&collection->close_tags, struct rrr_net_transport_handle_close_tag_node, __rrr_net_transport_handle_close_tag_node_process_and_destroy(transport, node));
-}
-
-static void __rrr_net_transport_maintenance (struct rrr_net_transport *transport) {
-	__rrr_net_transport_handle_close_tag_list_process_and_clear_locked(transport);
-}
-
 void rrr_net_transport_stats_get (
 		int *handle_count,
 		struct rrr_net_transport *transport
@@ -349,8 +307,6 @@ int rrr_net_transport_new (
 void rrr_net_transport_destroy (
 		struct rrr_net_transport *transport
 ) {
-	__rrr_net_transport_maintenance(transport);
-
 	rrr_net_transport_common_cleanup(transport);
 
 	rrr_event_collection_clear(&transport->events);
@@ -438,11 +394,7 @@ static int __rrr_net_transport_ctx_send_nonblock (
 
 #define CHECK_READ_WRITE_RETURN()                                                                              \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
-        if (rrr_net_transport_handle_close_tag_list_push (handle->transport, handle->handle)) {                \
-            RRR_MSG_0("Failed to add handle to close tag list in __rrr_net_transport_event_*\n");              \
-            rrr_event_dispatch_break(handle->transport->event_queue);                                          \
-        }                                                                                                      \
-	EVENT_ACTIVATE(handle->transport->event_maintenance);                                                  \
+        rrr_net_transport_handle_close(handle->transport, handle->handle);                                     \
     } else if ( flags != 0 /* Don't double reactivate, client must send more data or writes are needed */ &&   \
         rrr_read_session_collection_has_unprocessed_data(&handle->read_sessions)) {                            \
         EVENT_ACTIVATE(handle->event_read);                                                                    \
@@ -1252,19 +1204,6 @@ int rrr_net_transport_check_handshake_complete (
 	return ret;
 }
 
-static void __rrr_net_transport_event_maintenance (
-		evutil_socket_t fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_net_transport *transport = arg;
-
-	(void)(fd);
-	(void)(flags);
-
-	__rrr_net_transport_maintenance(transport);
-}
-
 static void __rrr_net_transport_event_read_add (
 		evutil_socket_t fd,
 		short flags,
@@ -1498,15 +1437,6 @@ int rrr_net_transport_event_setup (
 
 	transport->read_callback = read_callback;
 	transport->read_callback_arg = read_callback_arg;
-
-	if ((ret = rrr_event_collection_push_oneshot (
-			&transport->event_maintenance,
-			&transport->events,
-			__rrr_net_transport_event_maintenance,
-			transport
-	)) != 0) {
-		goto out;
-	}
 
 	if ((ret = rrr_event_collection_push_periodic (
 			&transport->event_read_add,

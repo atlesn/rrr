@@ -38,11 +38,6 @@ struct rrr_net_transport;
 struct rrr_net_transport_config;
 struct rrr_nullsafe_str;
 
-struct rrr_net_transport_handle_close_tag_node {
-	RRR_LL_NODE(struct rrr_net_transport_handle_close_tag_node);
-	int transport_handle;
-};
-
 #define RRR_NET_TRANSPORT_CONNECT_ARGS                         \
     int *handle,                                               \
     struct sockaddr *addr,                                     \
@@ -197,15 +192,9 @@ struct rrr_net_transport_handle {
 	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
 };
 
-struct rrr_net_transport_handle_close_tag_list {
-	RRR_LL_HEAD(struct rrr_net_transport_handle_close_tag_node);
-};
-
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
 	int next_handle_position;
-
-	struct rrr_net_transport_handle_close_tag_list close_tags;
 };
 
 struct rrr_net_transport {

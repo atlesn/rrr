@@ -74,7 +74,6 @@ struct rrr_event_queue;
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
     struct rrr_event_collection events;                                     \
-    rrr_event_handle event_maintenance;                                     \
     rrr_event_handle event_read_add;                                        \
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
@@ -106,10 +105,6 @@ int rrr_net_transport_handle_allocate_and_add (
 
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
-);
-int rrr_net_transport_handle_close_tag_list_push (
-		struct rrr_net_transport *transport,
-		int handle
 );
 void rrr_net_transport_stats_get (
 		int *handle_count,
