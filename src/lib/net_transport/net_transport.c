@@ -392,6 +392,14 @@ static int __rrr_net_transport_ctx_send_nonblock (
 	return ret;
 }
 
+void __rrr_net_transport_handle_touch (
+		struct rrr_net_transport_handle *handle
+) {
+	if (handle->transport->hard_read_timeout_ms > 0) {
+		EVENT_ADD(handle->event_hard_read_timeout);
+	}
+}
+
 #define CHECK_READ_WRITE_RETURN()                                                                              \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
         rrr_net_transport_handle_close(handle->transport, handle->handle);                                     \
@@ -490,8 +498,8 @@ static void __rrr_net_transport_event_read (
 		return;
 	}
 
-	if ((flags & EV_READ) && handle->transport->hard_read_timeout_ms > 0) {
-		EVENT_ADD(handle->event_hard_read_timeout);
+	if (flags & EV_READ) {
+		__rrr_net_transport_handle_touch (handle);
 	}
 
 	EVENT_REMOVE(handle->event_first_read_timeout);
@@ -731,6 +739,18 @@ int rrr_net_transport_connect (
 		void *callback_arg
 ) {
 	return __rrr_net_transport_connect (transport, port, host, callback, callback_arg, 0);
+}
+
+void rrr_net_transport_handle_touch (
+		struct rrr_net_transport *transport,
+		int handle
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->handle == handle) {
+			__rrr_net_transport_handle_touch(node);
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
 }
 
 int rrr_net_transport_handle_get_by_match (

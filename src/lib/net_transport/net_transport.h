@@ -142,6 +142,10 @@ int rrr_net_transport_connect (
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
 );
+void rrr_net_transport_handle_touch (
+		struct rrr_net_transport *transport,
+		int handle
+);
 int rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
