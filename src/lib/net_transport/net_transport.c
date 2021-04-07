@@ -471,10 +471,11 @@ static void __rrr_net_transport_event_hard_read_timeout (
 ) {
 	struct rrr_net_transport_handle *handle = arg;
 
+	(void)(fd);
 	(void)(flags);
 
 	RRR_DBG_7("net transport fd %i no data received for %" PRIu64 " ms, closing connection\n",
-			fd, handle->transport->hard_read_timeout_ms);
+			handle->submodule_fd, handle->transport->hard_read_timeout_ms);
 
 	int ret_tmp = RRR_READ_EOF;
 	CHECK_READ_WRITE_RETURN();
