@@ -1,4 +1,4 @@
-.Dd 2021-03-30
+.Dd 2021-04-07
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -391,7 +391,15 @@ module:
 .It dummy_no_generation={yes|no}
 No messages are generated, defaults to yes. 
 .It dummy_no_sleeping={yes|no}
-Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
+Don't sleep between creating messages, but create as many messages as the reader can handle, limited by automatic ratelimiting. Defaults to no.
+.It dummy_no_ratelimit={yes|no}
+If set to yes, automatic ratelimiting will be disabled even if
+.B dummy_no_sleeping
+is set to yes. Defaults to no.
+.It dummy_sleep_interval_us=MICROSECONDS
+The interval to sleep between each generated message. Cannot be set to 0 or more than 50000. Defaults to 50000 (50 ms). This parameter is ignored if
+.B dummy_no_sleeping
+is set to yes.
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will never stop.
 .It dummy_random_payload_max_size={BYTES}

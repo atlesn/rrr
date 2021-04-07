@@ -284,6 +284,12 @@ void rrr_event_dispatch_break (
 	event_base_loopbreak(queue->event_base);
 }
 
+void rrr_event_dispatch_restart (
+		struct rrr_event_queue *queue
+) {
+	event_base_loopcontinue(queue->event_base);
+}
+
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
