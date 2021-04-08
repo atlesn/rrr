@@ -397,7 +397,7 @@ If set to yes, automatic ratelimiting will be disabled even if
 .B dummy_no_sleeping
 is set to yes. Defaults to no.
 .It dummy_sleep_interval_us=MICROSECONDS
-The interval to sleep between each generated message. Cannot be set to 0 or more than 50000. Defaults to 50000 (50 ms). This parameter is ignored if
+The interval to sleep between each generated message. Cannot be set to 0, defaults to 50000 (50 ms). The sleep time is an approximate value. This parameter is ignored if
 .B dummy_no_sleeping
 is set to yes.
 .It dummy_max_generated={unsigned number}

@@ -120,8 +120,8 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 		data->topic_len = strlen(data->topic);
 	}
 
-	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && (data->sleep_interval_us == 0 || data->sleep_interval_us > DUMMY_DEFAULT_SLEEP_INTERVAL_US)) {
-		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0 and < %i\n",
+	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
+		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0\n",
 				config->name, DUMMY_DEFAULT_SLEEP_INTERVAL_US);
 		ret = 1;
 		goto out;
@@ -297,18 +297,28 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	}
 
 	if (data->no_generation == 0) {
+		uint64_t sleep_time = DUMMY_DEFAULT_SLEEP_INTERVAL_US;
+
+		if (data->sleep_interval_us > DUMMY_DEFAULT_SLEEP_INTERVAL_US) {
+			// Do sleeping exclusively by event framework
+			sleep_time = data->sleep_interval_us;
+			data->sleep_interval_us = 0;
+		}
+
 		if (rrr_event_collection_push_periodic (
 				&data->event_write_entry,
 				&data->events,
 				dummy_event_write_entry,
 				thread,
-				DUMMY_DEFAULT_SLEEP_INTERVAL_US
+				sleep_time
 		) != 0) {
 			RRR_MSG_0("Failed to create write event in dummy instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_cleanup;
 		}
+
 		EVENT_ADD(data->event_write_entry);
+		EVENT_ACTIVATE(data->event_write_entry);
 	}
 
 	rrr_event_dispatch (
