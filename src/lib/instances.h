@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_friends.h"
 #include "threads.h"
 #include "poll_helper.h"
+#include "event/event.h"
 #include "util/linked_list.h"
 
 #define RRR_INSTANCE_MISC_OPTIONS_DISABLE_BUFFER   (1<<0)
@@ -38,7 +39,6 @@ struct rrr_cmodule;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
-typedef void rrr_message_broker_costumer_handle;
 struct rrr_mqtt_topic_token;
 
 struct rrr_instance {
@@ -70,12 +70,17 @@ struct rrr_instance_collection {
 	struct rrr_instance *first_entry;
 };
 
+struct rrr_instance_event_functions {
+	int (*broker_data_available)(RRR_EVENT_FUNCTION_ARGS);
+};
+
 struct rrr_instance_module_data {
 	const char *instance_name;
 	const char *module_name;
 	unsigned int type;
+	int want_event_dispatch;
 	struct rrr_module_operations operations;
-	void *special_module_operations;
+	struct rrr_instance_event_functions event_functions;
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(void);
@@ -108,12 +113,15 @@ struct rrr_instance_runtime_init_data {
 struct rrr_instance_runtime_data {
 	struct rrr_instance_runtime_init_data init_data;
 
-	rrr_message_broker_costumer_handle *message_broker_handle;
+	struct rrr_message_broker_costumer *message_broker_handle;
 
 	void *private_data;
 	void *preload_data;
 	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
 	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
+
+	// Poll statistics for modules which read from others
+	struct rrr_poll_helper_counters counters;
 
 	// Shorcut which is set by thread itself after starting
 	struct rrr_thread *thread;
@@ -122,22 +130,22 @@ struct rrr_instance_runtime_data {
 	// * Init and cleanup in intermediate thread entry function
 	// * Cleanup in ghost handler
 	struct rrr_cmodule *cmodule;
-	struct rrr_poll_collection poll;
 	struct rrr_stats_instance *stats;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
 #define INSTANCE_D_STATS(thread_data) thread_data->stats
 #define INSTANCE_D_STATS_ENGINE(thread_data) thread_data->init_data.stats
+#define INSTANCE_D_COUNTERS(thread_data) (&thread_data->counters)
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
+#define INSTANCE_D_BROKER_ARGS(thread_data) INSTANCE_D_HANDLE(thread_data)
+#define INSTANCE_D_EVENTS(thread_data) rrr_message_broker_event_queue_get(INSTANCE_D_HANDLE(thread_data))
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
 #define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
 #define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
-#define INSTANCE_D_BROKER_ARGS(thread_data) \
-		thread_data->init_data.message_broker, thread_data->message_broker_handle
 #define INSTANCE_D_CANCEL_CHECK_ARGS(thread_data) \
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void, INSTANCE_D_THREAD(thread_data)
 

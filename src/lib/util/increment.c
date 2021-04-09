@@ -31,19 +31,19 @@ int rrr_increment_verify (
 		const uint64_t position_or_zero
 ) {
 	if (step_or_mod > 0xff) {
-		RRR_MSG_0("step_or_mod was above max value %lu\n", 0xff);
+		RRR_MSG_0("step_or_mod was above max value %lu\n", (long unsigned int) 0xff);
 		return 1;
 	}
 	if (min > 0xffffffff) {
-		RRR_MSG_0("min was above max value %lu\n", 0xffffffff);
+		RRR_MSG_0("min was above max value %lu\n", (long unsigned int) 0xffffffff);
 		return 1;
 	}
 	if (max > 0xffffffff) {
-		RRR_MSG_0("max was above max value %lu\n", 0xffffffff);
+		RRR_MSG_0("max was above max value %lu\n", (long unsigned int) 0xffffffff);
 		return 1;
 	}
 	if (position_or_zero > 0xffffffff) {
-		RRR_MSG_0("position was above max value %lu\n", 0xff);
+		RRR_MSG_0("position was above max value %lu\n", (long unsigned int) 0xff);
 		return 1;
 	}
 	if (min > max) {

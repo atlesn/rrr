@@ -66,11 +66,12 @@ mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
 socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chunk.c \
-         socket/rrr_socket_common.c socket/rrr_socket_client.c 
+         socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_graylist.c \
+	 socket/rrr_socket_eventfd.c 
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
        http/http_common.c http/http_query_builder.c http/http_client_config.c \
-       http/http_server.c http/http_server_worker.c http/http_header_fields.c \
+       http/http_server.c http/http_header_fields.c \
        http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
        http/http_application.c http/http_application_http1.c \
        http/http_redirect.c
@@ -100,6 +101,8 @@ helpers = helpers/nullsafe_str.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
+event = event/event.c event/event_collection.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
@@ -122,7 +125,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} \
-		    ${msgdb}
+		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
@@ -185,4 +188,4 @@ libadd_all =                         \
     ${libadd_rrr_sha1}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm 
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads

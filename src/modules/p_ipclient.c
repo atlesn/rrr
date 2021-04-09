@@ -199,8 +199,7 @@ static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *a
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			entry,
 			INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
 	)) != 0) {
@@ -415,8 +414,7 @@ static int ipclient_udpstream_allocator (
 	};
 
 	if ((ret = rrr_message_broker_with_ctx_and_buffer_lock_do (
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			ipclient_udpstream_allocator_intermediate,
 			&callback_data,
 			NULL
@@ -453,7 +451,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	int no_polling = rrr_poll_collection_count(&thread_data->poll) > 0 ? 0 : 1;
+	int no_polling = rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) > 0 ? 0 : 1;
 
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -475,7 +473,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	int queued_total = 0;
 	int send_total = 0;
 	int delivered_total = 0;
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
 		time_now = rrr_time_get_64();
@@ -485,7 +483,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		        rrr_time_get_64() < poll_timeout &&
 		        no_polling == 0
 		) {
-			if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback, 25) != 0) {
+			uint16_t amount = 100;
+			if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback, 25) != 0) {
 				RRR_MSG_0("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -611,7 +610,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
 }
 
 void unload(void) {

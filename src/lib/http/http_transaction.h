@@ -57,6 +57,9 @@ struct rrr_http_transaction {
 	uint64_t creation_time;
 };
 
+uint64_t rrr_http_transaction_lifetime_get (
+		const struct rrr_http_transaction *transaction
+);
 int rrr_http_transaction_new (
 		struct rrr_http_transaction **target,
 		enum rrr_http_method method,

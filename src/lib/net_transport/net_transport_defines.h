@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_DEFINES_H
 
 #include "../socket/rrr_socket_read.h"
+#include "../read_constants.h"
 
 #define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY	(1<<0)
 #define RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1	(1<<1)
@@ -33,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_READ_SOFT_ERROR		RRR_READ_SOFT_ERROR
 #define RRR_NET_TRANSPORT_READ_INCOMPLETE		RRR_READ_INCOMPLETE
 #define RRR_NET_TRANSPORT_READ_READ_EOF			RRR_READ_EOF
+#define RRR_NET_TRANSPORT_READ_RATELIMIT                RRR_READ_RATELIMIT
 
 #define RRR_NET_TRANSPORT_SEND_OK				RRR_NET_TRANSPORT_READ_OK
 #define RRR_NET_TRANSPORT_SEND_HARD_ERROR		RRR_NET_TRANSPORT_READ_HARD_ERROR

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -47,8 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_read_session;
 
-struct rrr_stats_message {
-	RRR_LL_NODE(struct rrr_stats_message);
+struct rrr_msg_stats {
+	RRR_LL_NODE(struct rrr_msg_stats);
 	uint8_t type;
 	uint32_t flags;
 	uint32_t data_size;
@@ -58,7 +58,7 @@ struct rrr_stats_message {
 };
 
 // msg_value of rrr_msg-struct is used for timestamp
-struct rrr_stats_message_packed {
+struct rrr_msg_stats_packed {
 	RRR_MSG_HEAD;
 	uint8_t type;
 	uint32_t flags;
@@ -69,24 +69,19 @@ struct rrr_stats_message_packed {
 	char path_and_data[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 + RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 } __attribute((packed));
 
-struct rrr_stats_message_unpack_callback_data {
-	int (*callback)(const struct rrr_stats_message *message, void *private_arg);
-	void *private_arg;
-};
-
-int rrr_stats_message_unpack_callback (
-		struct rrr_read_session *read_session,
-		void *private_arg
+int rrr_msg_stats_unpack (
+		struct rrr_msg_stats *target,
+		const struct rrr_msg_stats_packed *source,
+		size_t expected_size
 );
-
-void rrr_stats_message_pack_and_flip (
-		struct rrr_stats_message_packed *target,
+void rrr_msg_stats_pack_and_flip (
+		struct rrr_msg_stats_packed *target,
 		size_t *total_size,
-		const struct rrr_stats_message *source
+		const struct rrr_msg_stats *source
 );
 
-int rrr_stats_message_init (
-		struct rrr_stats_message *message,
+int rrr_msg_stats_init (
+		struct rrr_msg_stats *message,
 		uint8_t type,
 		uint32_t flags,
 		const char *path_postfix,
@@ -94,12 +89,12 @@ int rrr_stats_message_init (
 		uint32_t data_size
 );
 
-int rrr_stats_message_new_empty (
-		struct rrr_stats_message **message
+int rrr_msg_stats_new_empty (
+		struct rrr_msg_stats **message
 );
 
-int rrr_stats_message_new (
-		struct rrr_stats_message **message,
+int rrr_msg_stats_new (
+		struct rrr_msg_stats **message,
 		uint8_t type,
 		uint32_t flags,
 		const char *path_postfix,
@@ -107,18 +102,18 @@ int rrr_stats_message_new (
 		uint32_t data_size
 );
 
-int rrr_stats_message_set_path (
-		struct rrr_stats_message *message,
+int rrr_msg_stats_set_path (
+		struct rrr_msg_stats *message,
 		const char *path
 );
 
-int rrr_stats_message_duplicate (
-		struct rrr_stats_message **target,
-		const struct rrr_stats_message *source
+int rrr_msg_stats_duplicate (
+		struct rrr_msg_stats **target,
+		const struct rrr_msg_stats *source
 );
 
-int rrr_stats_message_destroy (
-		struct rrr_stats_message *message
+int rrr_msg_stats_destroy (
+		struct rrr_msg_stats *message
 );
 
 #endif /* RRR_STATS_MESSAGE_H */

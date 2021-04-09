@@ -630,8 +630,6 @@ static int __rrr_passwd_authenticate_callback (
 	return ret;
 }
 
-// TODO : Move to separate daemon
-
 int rrr_passwd_authenticate (
 		const char *filename,
 		const char *username,
