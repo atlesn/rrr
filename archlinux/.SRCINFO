@@ -14,6 +14,7 @@ pkgbase = rrr
 	depends = mariadb-clients
 	depends = libnghttp2
 	depends = json-c
+	depends = libevent
 	optdepends = systemd: systemd daemon support
 	provides = rrr
 	source = git+https://github.com/atlesn/rrr.git#tag=v1.17-0
