@@ -1,7 +1,7 @@
 1. Run scan-build with PRINTF logging enabled. Fix errors. Disable PRINTF logging.
 
 2. Test builds, fix warnings and errors:
-	- Build on FreeBSD, update branch freevsd
+	- Build on FreeBSD, update branch freebsd
 	- Build on Void Linux, update branch void
 	- Build on Ubuntu 64, update branch ubuntu
 	- Build on Fedora
