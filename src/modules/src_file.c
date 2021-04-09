@@ -903,6 +903,8 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				data->tree,
 				data->do_sync_byte_by_byte,
 				data->max_read_step_size,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				file_read_array_callback,
 				&read_callback_data
@@ -933,6 +935,8 @@ static int file_read (uint64_t *bytes_read, struct file_data *data, struct file 
 				65536,
 				RRR_FILE_MAX_SIZE_MB * 1024 * 1024,
 				socket_flags,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes
 				file_read_all_to_message_get_target_size_callback,
 				NULL,
 				file_read_all_to_message_complete_callback,
@@ -1110,7 +1114,6 @@ void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
-		data->dl_ptr = NULL;
 		data->private_data = NULL;
 }
 

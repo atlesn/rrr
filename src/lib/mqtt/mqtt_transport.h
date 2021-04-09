@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,20 +29,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "../net_transport/net_transport.h"
 
+#define RRR_MQTT_TRANSPORT_MAX 2
+
 struct rrr_net_transport_config;
 struct rrr_mqtt_p;
 
 struct rrr_mqtt_transport {
-//	int invalid;
 	ssize_t max;
 	uint64_t close_wait_time_usec;
 
-	struct rrr_net_transport_collection transports;
+	struct rrr_net_transport *transports[RRR_MQTT_TRANSPORT_MAX];
+	size_t transport_count;
+
+	struct rrr_event_queue *queue;
 
 	int (*event_handler) (RRR_MQTT_EVENT_HANDLER_DEFINITION);
 	void *event_handler_static_arg;
+	void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS);
+	int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS);
+	void *read_callback_arg;
 };
 
+void rrr_mqtt_transport_cleanup (
+		struct rrr_mqtt_transport *transport
+);
 void rrr_mqtt_transport_destroy (
 		struct rrr_mqtt_transport *transport
 );
@@ -50,17 +60,24 @@ int rrr_mqtt_transport_new (
 		struct rrr_mqtt_transport **result,
 		unsigned int max_connections,
 		uint64_t close_wait_time_usec,
+		struct rrr_event_queue *queue,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_arg
+		void *event_handler_arg,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
 );
 static inline struct rrr_net_transport *rrr_mqtt_transport_get_latest (
 		struct rrr_mqtt_transport *transport
 ) {
-	return RRR_LL_LAST(&transport->transports);
+	return (transport->transport_count == 0 ? NULL : transport->transports[transport->transport_count - 1]);
 }
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
 		const struct rrr_net_transport_config *net_transport_config
+);
+int rrr_mqtt_transport_client_count_get (
+		struct rrr_mqtt_transport *transport
 );
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,
@@ -83,6 +100,9 @@ int rrr_mqtt_transport_connect (
 				socklen_t socklen,
 				void *rrr_mqtt_transport_accept_and_connect_callback_data
 		)
+);
+void rrr_mqtt_transport_notify_tick (
+		struct rrr_mqtt_transport *transport
 );
 int rrr_mqtt_transport_iterate (
 		struct rrr_mqtt_transport *transport,

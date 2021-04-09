@@ -66,6 +66,14 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	free(http2);
 }
 
+static uint64_t __rrr_http_application_http2_active_transaction_count_get (
+		struct rrr_http_application *app
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+
+	return rrr_http2_streams_count(http2->http2_session);
+}
+
 struct rrr_http_application_http2_send_prepare_callback_data {
 	struct rrr_http_application_http2 *app;
 	int32_t stream_id;
@@ -594,34 +602,30 @@ static int __rrr_http_application_http2_tick (
 	};
 
 	if (http2->transaction_incomplete_upgrade != NULL) {
-		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) != 0) {
-			ret &= ~(RRR_HTTP_NO_RESULT);
-			goto out;
+		if ((ret = async_response_get_callback(http2->transaction_incomplete_upgrade, async_response_get_callback_arg)) == 0) {
+			ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
+
+			rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
+			http2->transaction_incomplete_upgrade = NULL;
 		}
 
-		ret = rrr_http_application_http2_response_to_upgrade_submit(app, http2->transaction_incomplete_upgrade);
-
-		rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
-		http2->transaction_incomplete_upgrade = NULL;
-
-		if (ret != 0) {
+		if ((ret & ~(RRR_HTTP_NO_RESULT)) != 0) {
 			goto out;
 		}
 	}
-
-	if (async_response_get_callback != NULL) {
-		if ((ret = rrr_http2_transport_ctx_streams_iterate (
-				http2->http2_session,
-				__rrr_http_application_http2_streams_iterate_callback,
-				&callback_data
-		)) != 0) {
-			goto out;
+	else {
+		if (async_response_get_callback != NULL) {
+			if ((ret = rrr_http2_transport_ctx_streams_iterate (
+					http2->http2_session,
+					__rrr_http_application_http2_streams_iterate_callback,
+					&callback_data
+			)) != 0) {
+				goto out;
+			}
 		}
 	}
 
 	if ((ret = rrr_http2_transport_ctx_tick (
-			active_transaction_count,
-			complete_transaction_count,
 			http2->http2_session,
 			handle,
 			__rrr_http_application_http2_data_receive_callback,
@@ -635,6 +639,13 @@ static int __rrr_http_application_http2_tick (
 	return ret;
 }
 
+static int __rrr_http_application_http2_need_tick (
+		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
+) {
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
+	return rrr_http2_need_tick(http2->http2_session) || http2->transaction_incomplete_upgrade;
+}
+
 static void __rrr_http_application_http2_alpn_protos_get (
 		RRR_HTTP_APPLICATION_ALPN_PROTOS_GET_ARGS
 ) {
@@ -646,7 +657,7 @@ void rrr_http_application_http2_alpn_protos_get (
 		const char **target,
 		unsigned int *length
 ) {
-	return __rrr_http_application_http2_alpn_protos_get(target, length);
+	__rrr_http_application_http2_alpn_protos_get(target, length);
 }
 
 static void __rrr_http_application_http2_polite_close (
@@ -659,9 +670,11 @@ static void __rrr_http_application_http2_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http2_constants = {
 	RRR_HTTP_APPLICATION_HTTP2,
 	__rrr_http_application_http2_destroy,
+	__rrr_http_application_http2_active_transaction_count_get,
 	__rrr_http_application_http2_request_send_possible,
 	__rrr_http_application_http2_request_send,
 	__rrr_http_application_http2_tick,
+	__rrr_http_application_http2_need_tick,
 	__rrr_http_application_http2_polite_close
 };
 

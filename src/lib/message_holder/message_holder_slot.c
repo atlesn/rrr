@@ -268,7 +268,10 @@ int rrr_msg_holder_slot_read (
 		goto out;
 	}
 
-	rrr_msg_holder_lock(entry_new);
+	// Use double lock to make sure we can decref immediately when
+	// function exits if a module forwards the entry to antoher thread
+	// which then tries to lock it just after the callback has returned.
+	rrr_msg_holder_lock_double(entry_new);
 
 	int do_keep = 0;
 
@@ -277,7 +280,7 @@ int rrr_msg_holder_slot_read (
 		ret = callback(&do_keep, entry_new, callback_arg);
 
 		if (ret != 0) {
-			goto out;
+			goto out_decref_and_unlock;
 		}
 	}
 
@@ -303,16 +306,15 @@ int rrr_msg_holder_slot_read (
 		if ((ret = pthread_cond_broadcast(&slot->cond)) != 0) {
 			RRR_MSG_0("Failed while signalling condition in rrr_msg_holder_slot_write: %s\n", rrr_strerror(ret));
 			ret = 1;
-			goto out;
+			goto out_decref_and_unlock;
 		}
 	}
-
+	
+	out_decref_and_unlock:
+		rrr_msg_holder_decref_while_locked_and_unlock(entry_new);
 	out:
-	if (entry_new != NULL) {
-		rrr_msg_holder_decref(entry_new);
-	}
-	pthread_mutex_unlock(&slot->lock);
-	return ret;
+		pthread_mutex_unlock(&slot->lock);
+		return ret;
 }
 
 static int __rrr_msg_holder_slot_discard_callback (
@@ -365,12 +367,11 @@ static int __rrr_msg_holder_slot_write_wait (
 				ret = 1;
 				goto out;
 			}
+			ret = 0;
 		}
-		if (check_cancel_callback != NULL && check_cancel_callback(check_cancel_callback_arg)) {
-			ret = 1;
+		if (check_cancel_callback != NULL && (ret = check_cancel_callback(check_cancel_callback_arg)) != 0) {
 			goto out;
 		}
-		ret = 0;
 	}
 
 	out:
@@ -457,7 +458,9 @@ int rrr_msg_holder_slot_write_clone (
 		struct rrr_msg_holder_slot *slot,
 		const struct rrr_msg_holder *source,
 		int (*check_cancel_callback)(void *arg),
-		void *check_cancel_callback_arg
+		void *check_cancel_callback_arg,
+		void (*after_clone_callback)(struct rrr_msg_holder *entry, void *arg),
+		void *after_clone_callback_arg
 ) {
 	int ret = 0;
 
@@ -465,6 +468,10 @@ int rrr_msg_holder_slot_write_clone (
 
 	if ((ret = rrr_msg_holder_util_clone_no_locking(&entry_new, source)) != 0) {
 		goto out_no_unlock;
+	}
+
+	if (after_clone_callback) {
+		after_clone_callback(entry_new, after_clone_callback_arg);
 	}
 
 	LOCK_AND_WAIT();

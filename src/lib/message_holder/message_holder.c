@@ -63,9 +63,21 @@ void rrr_msg_holder_lock (
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
 		pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 		pthread_testcancel();
-		rrr_posix_usleep(10);
+		sched_yield();
 		pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	}
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	entry->lock_recursion_count++;
+#endif
+}
+
+void rrr_msg_holder_lock_double (
+		struct rrr_msg_holder *entry
+) {
+	rrr_msg_holder_lock(entry);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
+	pthread_mutex_lock(&entry->lock);
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 #ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 	entry->lock_recursion_count++;
@@ -251,6 +263,7 @@ int rrr_msg_holder_clone_no_data (
 
 	if (ret == 0) {
 		rrr_msg_holder_lock(*result);
+		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
 		rrr_msg_holder_unlock(*result);
 	}

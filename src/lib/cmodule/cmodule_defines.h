@@ -24,7 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../socket/rrr_socket_constants.h"
 #include "../read_constants.h"
-#include "../util/linked_list.h"
 #include "../settings.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
@@ -37,11 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CMODULE_DEFERRED_QUEUE_MAX   1000
 
-#define RRR_CMODULE_DEFAULT_SLEEP_TIME_MS                   50
-#define RRR_CMODULE_DEFAULT_NOTHING_HAPPENED_LIMIT          250
-
-#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS            RRR_CMODULE_DEFAULT_SLEEP_TIME_MS
-#define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT   RRR_CMODULE_DEFAULT_NOTHING_HAPPENED_LIMIT
+#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS            50
+#define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT   250
 #define RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT             1
 #define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS        1000
 

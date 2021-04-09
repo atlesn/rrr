@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_PLAIN_H
 
 #include "net_transport.h"
+#include "net_transport_struct.h"
 
 #include "../ip/ip.h"
 

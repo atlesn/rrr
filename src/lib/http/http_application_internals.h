@@ -42,10 +42,11 @@ struct rrr_http_transaction;
     enum rrr_http_upgrade_mode upgrade_mode,                   \
     struct rrr_http_transaction *transaction
 
+#define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \
+    struct rrr_http_application *app
+
 #define RRR_HTTP_APPLICATION_TICK_ARGS                                                           \
     ssize_t *received_bytes,                                                                     \
-    uint64_t *active_transaction_count,                                                          \
-    uint64_t *complete_transaction_count,                                                        \
     struct rrr_http_application **upgraded_app,                                                  \
     struct rrr_http_application *app,                                                            \
     struct rrr_net_transport_handle *handle,                                                     \
@@ -77,9 +78,11 @@ struct rrr_http_transaction;
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
 	void (*destroy)(struct rrr_http_application *);
+	uint64_t (*active_transaction_count_get)(struct rrr_http_application *);
 	int (*request_send_possible)(RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);
+	int (*need_tick)(RRR_HTTP_APPLICATION_NEED_TICK_ARGS);
 	void (*polite_close)(RRR_HTTP_APPLICATION_POLITE_CLOSE_ARGS);
 };
 

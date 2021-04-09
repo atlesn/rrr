@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ static int __rrr_net_transport_plain_data_new (struct rrr_net_transport_plain_da
 }
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
-	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
+	if (rrr_socket_close(handle->submodule_fd) != 0) {
 		RRR_MSG_0("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
 	}
 	__rrr_net_transport_plain_data_destroy (handle->submodule_private_ptr);
@@ -89,7 +89,7 @@ static int __rrr_net_transport_plain_handle_allocate_and_add_callback (
 	data->ip_data = *(callback_data->ip_data);
 
 	*submodule_private_ptr = data;
-	*submodule_private_fd = callback_data->ip_data->fd;
+	*submodule_fd = callback_data->ip_data->fd;
 
 	return 0;
 }
@@ -109,7 +109,7 @@ static int __rrr_net_transport_plain_connect (
 		RRR_BUG("BUG: socklen too small in __rrr_net_transport_plain_connect\n");
 	}
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_DBG_1("Could not connect to server '%s' port '%u'\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
@@ -185,11 +185,13 @@ static int __rrr_net_transport_plain_read_message (
 		ret = rrr_socket_read_message_default (
 				&bytes_read_tmp,
 				&handle->read_sessions,
-				handle->submodule_private_fd,
+				handle->submodule_fd,
 				read_step_initial,
 				read_step_max_size,
 				read_max_size,
 				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_CHECK_POLLHUP | RRR_SOCKET_READ_CHECK_EOF,
+				ratelimit_interval_us,
+				ratelimit_max_bytes,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,
@@ -197,7 +199,7 @@ static int __rrr_net_transport_plain_read_message (
 		);
 		*bytes_read += bytes_read_tmp;
 
-		if (ret == RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_OK || ret == RRR_READ_RATELIMIT) {
 			// TODO : Check for persistent connection/more results which might be
 			//		  stored in read session overshoot buffer
 			goto out;
@@ -233,7 +235,7 @@ static int __rrr_net_transport_plain_read (
 	ret = rrr_socket_read (
 			buf,
 			&bytes_read_s,
-			handle->submodule_private_fd,
+			handle->submodule_fd,
 			buf_size,
 			NULL,
 			NULL,
@@ -264,15 +266,10 @@ static int __rrr_net_transport_plain_send (
 
 	ssize_t written_bytes_tmp = 0;
 
-	if ((ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_private_fd, data, size)) != 0) {
-		if (ret != RRR_SOCKET_WRITE_INCOMPLETE) {
-			goto out;
-		}
-	}
+	ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size);
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
 
-	out:
 	return ret;
 }
 
@@ -328,7 +325,7 @@ int __rrr_net_transport_plain_accept (
 
 	struct rrr_ip_data ip_data = {0};
 
-	ip_data.fd = listen_handle->submodule_private_fd;
+	ip_data.fd = listen_handle->submodule_fd;
 
 	if ((ret = rrr_ip_accept(&accept_data, &ip_data, "net_transport_plain", 0)) != 0) {
 		RRR_MSG_0("Error while accepting connection in plain server\n");
@@ -389,7 +386,14 @@ int __rrr_net_transport_plain_accept (
 static int __rrr_net_transport_plain_poll (
 		struct rrr_net_transport_handle *handle
 ) {
-	return rrr_socket_check_alive (handle->submodule_private_fd);
+	return rrr_socket_check_alive (handle->submodule_fd);
+}
+
+static int __rrr_net_transport_plain_handshake (
+		struct rrr_net_transport_handle *handle
+) {
+	(void)(handle);
+	return RRR_NET_TRANSPORT_SEND_OK;
 }
 
 static int __rrr_net_transport_plain_is_tls (void) {
@@ -414,6 +418,7 @@ static const struct rrr_net_transport_methods plain_methods = {
 	__rrr_net_transport_plain_read,
 	__rrr_net_transport_plain_send,
 	__rrr_net_transport_plain_poll,
+	__rrr_net_transport_plain_handshake,
 	__rrr_net_transport_plain_is_tls,
 	__rrr_net_transport_plain_selected_proto_get
 };

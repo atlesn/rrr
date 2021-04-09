@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,6 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
+#include "lib/event/event.h"
+#include "lib/event/event_collection.h"
 #include "lib/messages/msg_msg.h"
 #include "lib/messages/msg_checksum.h"
 #include "lib/socket/rrr_socket.h"
@@ -55,50 +57,55 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
-		{0,							'w',	"websocket-upgrade",	"[-w|--websocket-upgrade]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	't',	"tags-to-send",			"[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
-		{0,							'O',	"no-output",			"[-O|--no-output]"},
-		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
-		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
-		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'q',	"query",				"[-q|--query[=]HTTP QUERY]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "server",               "{-s|--server[=]HTTP SERVER}"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                 "[-p|--port[=]HTTP PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "endpoint",             "[-e|--endpoint[=]HTTP ENDPOINT]"},
+        {0,                            'w',    "websocket-upgrade",    "[-w|--websocket-upgrade]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT |
+         CMD_ARG_FLAG_SPLIT_COMMA,     't',    "tags-to-send",         "[-t|--tags-to-send[=]ARRAY TAG[,ARRAY TAG...]]"},
+        {0,                            'O',    "no-output",            "[-O|--no-output]"},
+        {0,                            'P',    "plain-force",          "[-P|--plain-force]"},
+        {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
+        {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'r',    "run-directory",        "[-r|--run-directory[=]RUN DIRECTORY]"},
+        {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",   "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                 "[-h|--help]"},
+        {0,                            'v',    "version",              "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
 };
 
 struct rrr_http_client_data {
 	struct rrr_http_client_request_data request_data;
+	struct rrr_event_queue *queue;
+	struct rrr_http_client *http_client;
 	enum rrr_http_upgrade_mode upgrade_mode;
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
 	int no_output;
 	struct rrr_net_transport_config net_transport_config;
-	struct rrr_net_transport *net_transport_keepalive_plain;
-	struct rrr_net_transport *net_transport_keepalive_tls;
 	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_stdin;
 };
 
 static void __rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
-	if (data->net_transport_keepalive_plain != NULL) {
-		rrr_net_transport_destroy(data->net_transport_keepalive_plain);
+	if (data->http_client != NULL) {
+		rrr_http_client_destroy(data->http_client);
 	}
-	if (data->net_transport_keepalive_tls != NULL) {
-		rrr_net_transport_destroy(data->net_transport_keepalive_tls);
+	rrr_event_collection_clear(&data->events);
+	if (data->queue != NULL) {
+		rrr_event_queue_destroy(data->queue);
 	}
-
 	rrr_http_client_request_data_cleanup(&data->request_data);
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
@@ -363,6 +370,37 @@ static int __rrr_http_client_unique_id_generator_callback (
 	return 0;
 }
 
+static int __rrr_http_client_request_send_loop (
+	struct rrr_http_client_data *http_client_data
+) {
+	int ret = 0;
+
+	int retries = 5000;
+	while (--retries) {
+		if ((ret = rrr_http_client_request_send (
+				&http_client_data->request_data,
+				http_client_data->http_client,
+				&http_client_data->net_transport_config,
+				5, // Max redirects
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL
+		)) == 0 || ret != RRR_HTTP_BUSY) {
+			goto out;
+		}
+		rrr_event_dispatch_once(http_client_data->queue);
+		rrr_posix_usleep(1000);
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_client_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -376,14 +414,11 @@ static int __rrr_http_client_redirect_callback (
 		goto out;
 	}
 
-	if (rrr_http_client_request_send (
+	if ((ret = rrr_http_client_request_send (
 			&http_client_data->request_data,
-			&http_client_data->net_transport_keepalive_plain,
-			&http_client_data->net_transport_keepalive_tls,
+			http_client_data->http_client,
 			&http_client_data->net_transport_config,
 			5, // Max redirects
-			__rrr_http_client_unique_id_generator_callback,
-			http_client_data,
 			NULL,
 			NULL,
 			NULL,
@@ -392,7 +427,7 @@ static int __rrr_http_client_redirect_callback (
 			NULL,
 			NULL,
 			NULL
-	) != 0) {
+	)) != 0) {
 		goto out;
 	}
 
@@ -425,6 +460,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	struct rrr_http_client_data *http_client_data = arg;
 
 	(void)(unique_id);
+	(void)(application_topic);
 
 	int ret = 0;
 
@@ -449,17 +485,19 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 	uint64_t bytes_read = 0;
 	if ((ret = rrr_socket_common_receive_array_tree (
-		&bytes_read,
-		&http_client_data->read_sessions,
-		STDIN_FILENO,
-		RRR_SOCKET_READ_METHOD_READ_FILE|RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_NO_GETSOCKOPTS|RRR_SOCKET_READ_USE_POLL,
-		&array,
-		http_client_data->tree,
-		1, // Do sync byte by byte
-		65535,
-		1 * 1024 * 1024 * 1024, // 1 GB
-		__rrr_http_client_send_websocket_frame_final_callback,
-		&callback_data
+			&bytes_read,
+			&http_client_data->read_sessions,
+			STDIN_FILENO,
+			RRR_SOCKET_READ_METHOD_READ_FILE|RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_NO_GETSOCKOPTS|RRR_SOCKET_READ_USE_POLL,
+			&array,
+			http_client_data->tree,
+			1, // Do sync byte by byte
+			65535,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
+			1 * 1024 * 1024 * 1024, // 1 GB
+			__rrr_http_client_send_websocket_frame_final_callback,
+			&callback_data
 	)) != 0) {
 		goto out;
 	}
@@ -510,7 +548,8 @@ static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
 		void *arg
 ) {
 	(void)(arg);
-	write (STDOUT_FILENO, str, len);
+	ssize_t bytes = write (STDOUT_FILENO, str, len);
+	RRR_DBG_3("%lli bytes printed\n", (long long int) bytes);
 	return 0;
 }
 
@@ -518,7 +557,9 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	struct rrr_http_client_data *http_client_data = arg;
 
 	(void)(unique_id);
+	(void)(handle);
 	(void)(http_client_data);
+	(void)(application_topic);
 
 	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));
 
@@ -532,9 +573,41 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	return 0;
 }
 
+static void rrr_http_client_event_stdin (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_http_client_data *data = arg;
+
+	rrr_http_client_websocket_response_available_notify(data->http_client);
+}
+
 static int main_running = 1;
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
+}
+
+static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_http_client_data *data = arg;
+
+	if (EVENT_INITIALIZED(data->event_stdin)) {
+		if (rrr_http_client_active_transaction_count_get(data->http_client) > 0) {
+			EVENT_ADD(data->event_stdin);
+		}
+		else {
+			EVENT_REMOVE(data->event_stdin);
+		}
+	}
+
+	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0 || !main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	return 0;
 }
 
 int main (int argc, const char **argv, const char **env) {
@@ -589,66 +662,70 @@ int main (int argc, const char **argv, const char **env) {
 
 	data.net_transport_config.transport_type = RRR_NET_TRANSPORT_BOTH;
 
-	if (rrr_http_client_request_send (
-			&data.request_data,
-			&data.net_transport_keepalive_plain,
-			&data.net_transport_keepalive_tls,
-			&data.net_transport_config,
-			5, // Max redirects
-			__rrr_http_client_unique_id_generator_callback,
+	struct rrr_http_client_callbacks callbacks = {
+			__rrr_http_client_final_callback,
 			&data,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL
+			__rrr_http_client_redirect_callback,
+			&data,
+			__rrr_http_client_send_websocket_frame_callback,
+			&data,
+			__rrr_http_client_receive_websocket_frame_callback,
+			&data,
+			__rrr_http_client_unique_id_generator_callback,
+			&data
+	};
+
+	if (rrr_event_queue_new(&data.queue) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+
+	}
+
+	rrr_event_collection_init(&data.events, data.queue);
+
+	if (data.tree != NULL) {
+		if (rrr_event_collection_push_read (
+				&data.event_stdin,
+				&data.events,
+				STDIN_FILENO,
+				rrr_http_client_event_stdin,
+				&data,
+				0
+		) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		EVENT_ADD(data.event_stdin);
+	}
+
+	if (rrr_http_client_new (
+			&data.http_client,
+			data.queue,
+			5000,   // 5s idle timeout
+			0,      // No send chunk limit
+			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	int targets_plain = 0;
-	int targets_tls = 0;
-	uint64_t prev_bytes_total = 0;
-	do {
-		uint64_t bytes_total = 0;
-		uint64_t active_transaction_count = 0;
+	if (__rrr_http_client_request_send_loop (
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
-		if ((ret = rrr_http_client_tick (
-				&bytes_total,
-				&active_transaction_count,
-				data.net_transport_keepalive_plain,
-				data.net_transport_keepalive_tls,
-				1 * 1024 * 1024 * 1024, // 1 GB
-				5000, // Idle timeout 5 sec
-				__rrr_http_client_final_callback,
-				&data,
-				__rrr_http_client_redirect_callback,
-				&data,
-				__rrr_http_client_send_websocket_frame_callback,
-				&data,
-				__rrr_http_client_receive_websocket_frame_callback,
-				&data
-		)) != 0) {
-			break;
-		}
-
-		if (prev_bytes_total == bytes_total) {
-			rrr_posix_usleep(0); // Schedule
-		}
-
-		prev_bytes_total = bytes_total;
-
-		if (data.net_transport_keepalive_plain) {
-			rrr_net_transport_stats_get(&targets_plain, data.net_transport_keepalive_plain);
-		}
-		if (data.net_transport_keepalive_tls) {
-			rrr_net_transport_stats_get(&targets_tls, data.net_transport_keepalive_tls);
-		}
-	} while (main_running && data.final_callback_count == 0 && targets_plain + targets_tls > 0);
+	if (rrr_event_dispatch (
+			data.queue,
+			100000,
+			rrr_http_client_event_periodic,
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	out:
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
