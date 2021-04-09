@@ -562,7 +562,8 @@ static int __rrr_socket_client_fd_event_setup (
 	}
 
 	if ( client_fd->client->collection->idle_timeout_us > 0 &&
-	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN
+	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN &&
+	     client_fd->client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
 	) {
 		if ((ret = rrr_event_collection_push_periodic (
 				&client_fd->event_timeout,

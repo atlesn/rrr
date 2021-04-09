@@ -1543,7 +1543,7 @@ static int ip_start_udp (struct ip_data *data) {
 	data->udp_send_fd_ip6 = ip_udp_6.fd;
 
 	if (ip_udp_6.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_UNSPECIFIED)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_6.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv6 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -1551,7 +1551,7 @@ static int ip_start_udp (struct ip_data *data) {
 	}
 
 	if (ip_udp_4.fd != 0) {
-		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_UNSPECIFIED)) != 0) {
+		if ((ret = rrr_socket_client_collection_connected_fd_push(data->collection_udp, ip_udp_4.fd, RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT)) != 0) {
 			RRR_MSG_0("Failed to push UDP IPv4 fd to collection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
