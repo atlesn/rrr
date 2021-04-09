@@ -872,11 +872,11 @@ int rrr_message_broker_clone_and_write_entry (
 		}
 	}
 	else {
-		if ((ret = rrr_fifo_buffer_write (
+		if (rrr_fifo_buffer_write (
 				&costumer->main_queue,
 				__rrr_message_broker_clone_and_write_entry_callback,
 				(void *) entry
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
@@ -934,11 +934,11 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		}
 	}
 	else {
-		if ((ret = rrr_fifo_buffer_write (
+		if (rrr_fifo_buffer_write (
 				&costumer->main_queue,
 				__rrr_message_broker_write_entry_unsafe_callback,
 				entry
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_write_entry_unsafe\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;

@@ -304,14 +304,14 @@ int rrr_mqtt_client_unsubscribe (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
+	int ret_tmp = 0;
+	if ((ret_tmp = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
 //		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
 		goto out;
 	}
-	else if (ret < 0) {
+	else if (ret_tmp < 0) {
 		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_unsubscribe\n", ret);
 	}
-	ret = 0;
 
 	if (data->protocol_version == NULL) {
 		RRR_MSG_0("Protocol version not set in rrr_mqtt_client_unsubscribe\n");

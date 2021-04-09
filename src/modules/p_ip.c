@@ -731,7 +731,7 @@ static int ip_resolve_suggestion_callback (
 	}
 
 	{
-		socklen_t *address_lengths_new = realloc(callback_data->address_lengths, sizeof(void *) * (callback_data->address_count + 1));
+		socklen_t *address_lengths_new = realloc(callback_data->address_lengths, sizeof(socklen_t) * (callback_data->address_count + 1));
 		if (address_lengths_new == NULL) {
 			RRR_MSG_0("Failed to allocate memory in ip_resolve_suggestion_callback B\n");
 			ret = 1;
@@ -741,7 +741,7 @@ static int ip_resolve_suggestion_callback (
 		callback_data->address_lengths = address_lengths_new;
 	}
 
-	if ((callback_data->addresses[callback_data->address_count] = (struct sockaddr *) malloc(sizeof(struct sockaddr_storage))) == NULL) {
+	if ((callback_data->addresses[callback_data->address_count] = (void *) malloc(sizeof(struct sockaddr_storage))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in ip_resolve_suggestion_callback C\n");
 		ret = 1;
 		goto out;

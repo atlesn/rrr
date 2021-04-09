@@ -1062,6 +1062,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(send_data);
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
 }

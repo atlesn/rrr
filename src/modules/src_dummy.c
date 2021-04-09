@@ -198,14 +198,10 @@ static void dummy_event_write_entry (
 	}
 
 	if (data->sleep_interval_us > 0 && data->last_write_time > 0 && data->generated_count_total > 0) {
-		uint64_t sleep_time_us = data->sleep_interval_us;
 		uint64_t average_time_us = data->write_duration_total_us / data->generated_count_total;
 
-		if (average_time_us > sleep_time_us) {
-			sleep_time_us -= (average_time_us - sleep_time_us);
-		}
-		else {
-			rrr_posix_usleep(sleep_time_us);
+		if (average_time_us <= data->sleep_interval_us) {
+			rrr_posix_usleep(data->sleep_interval_us);
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;
