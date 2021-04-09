@@ -805,8 +805,6 @@ static int ip_resolve_callback (
 	return ret;
 }
 
-int i = 0;
-
 static int ip_connect_raw_callback (
 		int *fd,
 		const struct sockaddr *addr,
