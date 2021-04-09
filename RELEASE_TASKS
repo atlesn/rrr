@@ -1,0 +1,33 @@
+1. Run scan-build with PRINTF logging enabled. Fix errors. Disable PRINTF logging.
+
+2. Test builds, fix warnings and errors:
+	- Build on FreeBSD, update branch freevsd
+	- Build on Void Linux, update branch void
+	- Build on Ubuntu 64, update branch ubuntu
+	- Build on Fedora
+	- Build on Debian 32
+	- Build on Raspberry Pi
+
+3. Update versions and check for dependencies
+	- configure.ac
+	- RPM
+	- PKGBUILD
+	- Debian changelog
+
+4. Update Debian changelog on branches
+	- ubuntu (suffix ubuntu1)
+	- debian-testing (suffix bullseye1)
+
+5. Build packages Debian
+	- buster 64 (with source), buster 32 (binary), Raspberry Pi (binary)
+	- bullseye 64 (with source)
+	- Ubuntu
+
+6. Test PKGBUILD and installation, update AUR repo
+
+7. Build RPM on Fedora
+
+8. Upload to APT and Yum mirrors
+	- Ubuntu
+	- Debian
+	- Fedora
