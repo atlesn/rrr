@@ -30,11 +30,10 @@ struct rrr_test_function_data {
 	int do_blob_field_divide;
 };
 
-#define RRR_TEST_FUNCTION_ARGS									\
-	const struct rrr_test_function_data *test_function_data,	\
-	struct rrr_instance_collection *instances,					\
-	struct rrr_instance_runtime_data *self_thread_data,			\
-	const char *output_name
+#define RRR_TEST_FUNCTION_ARGS                                 \
+    const struct rrr_test_function_data *test_function_data,   \
+    struct rrr_instance_collection *instances,                 \
+    struct rrr_instance_runtime_data *self_thread_data
 
 int test_averager (
 		RRR_TEST_FUNCTION_ARGS

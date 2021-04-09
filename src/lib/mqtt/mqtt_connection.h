@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_CONN_H
 #define RRR_MQTT_CONN_H
 
-#include <pthread.h>
 #include <inttypes.h>
 #include <netinet/in.h>
 
@@ -59,13 +58,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR								\
-		struct rrr_mqtt_conn *connection = handle->application_private_ptr;				\
+		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
 		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {	\
 			return RRR_MQTT_OK;															\
 		}} while (0)
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
-		struct rrr_mqtt_conn *connection = handle->application_private_ptr;															\
+		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
 		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
 			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)
@@ -194,13 +193,10 @@ int rrr_mqtt_conn_set_will_data_from_connect (
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_p_connect *connect
 );
-struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);
-		void *callback_arg;
-};
-int rrr_mqtt_conn_housekeeping (
-		struct rrr_mqtt_conn *connection,
-		void *rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data
+int rrr_mqtt_conn_iterator_ctx_housekeeping (
+		struct rrr_net_transport_handle *handle,
+		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *callback_arg
 );
 void rrr_mqtt_conn_accept_and_connect_callback (
 		struct rrr_net_transport_handle *handle,
@@ -208,13 +204,10 @@ void rrr_mqtt_conn_accept_and_connect_callback (
 		socklen_t socklen,
 		void *arg
 );
-struct rrr_mqtt_conn_check_alive_callback_data {
-	int alive;
-	int send_allowed;
-};
-int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
-		struct rrr_net_transport_handle *handle,
-		void *rrr_mqtt_conn_check_alive_callback_data
+int rrr_mqtt_conn_iterator_ctx_check_alive (
+		int *alive,
+		int *send_allowed,
+		struct rrr_net_transport_handle *handle
 );
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
@@ -230,6 +223,11 @@ int rrr_mqtt_conn_iterator_ctx_read (
 // No reference counting of packet performed, but event handlers might
 // INCREF if they add the packet to a buffer
 int rrr_mqtt_conn_iterator_ctx_send_packet (
+		int *do_stop,
+		struct rrr_net_transport_handle *handle,
+		struct rrr_mqtt_p *packet
+);
+int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 );

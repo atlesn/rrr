@@ -30,6 +30,9 @@ struct rrr_msg_holder;
 void rrr_msg_holder_lock (
 		struct rrr_msg_holder *entry
 );
+void rrr_msg_holder_lock_double (
+		struct rrr_msg_holder *entry
+);
 void rrr_msg_holder_unlock (
 		struct rrr_msg_holder *entry
 );

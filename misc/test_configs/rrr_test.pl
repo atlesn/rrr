@@ -186,9 +186,9 @@ sub process {
 	# This can be used to duplicate a message if called multiple times
 	$message->send();
 
-	sleep(($$ % 2) / 10);
+#	sleep(($$ % 2) / 10);
 
-	print "Total processed for worker $$: " . (++$total_processed) . "\n";
+#	print "Total processed for worker $$: " . (++$total_processed) . "\n";
 
 	# Return 1 for success and 0 for error
 	return 1;

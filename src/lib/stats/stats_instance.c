@@ -171,14 +171,14 @@ static int __rrr_stats_instance_post_text (
 		const char *text
 ) {
 	int ret = 0;
-	struct rrr_stats_message message;
+	struct rrr_msg_stats message;
 
 	if (instance->stats_handle == 0) {
 		// Not registered with statistics engine
 		goto out;
 	}
 
-	if (rrr_stats_message_init (
+	if (rrr_msg_stats_init (
 			&message,
 			type,
 			(sticky != 0 ? RRR_STATS_MESSAGE_FLAGS_STICKY : 0),
@@ -186,7 +186,7 @@ static int __rrr_stats_instance_post_text (
 			text,
 			strlen(text) + 1
 	) != 0) {
-		RRR_MSG_0("Could not initialize statistics message in rrr_stats_message_post_text\n");
+		RRR_MSG_0("Could not initialize statistics message in rrr_msg_stats_post_text\n");
 		ret = 1;
 		goto out;
 	}
@@ -197,7 +197,7 @@ static int __rrr_stats_instance_post_text (
 			RRR_STATS_INSTANCE_PATH_PREFIX,
 			&message
 	)) != 0) {
-		RRR_MSG_0("Error returned from post function in rrr_stats_message_post_text\n");
+		RRR_MSG_0("Error returned from post function in rrr_msg_stats_post_text\n");
 		ret = 1;
 		goto out;
 	}

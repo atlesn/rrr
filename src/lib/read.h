@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,11 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //struct rrr_socket_client;
 
-#define RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS		\
-		ssize_t *result,										\
-		void *data,												\
-		ssize_t data_size,										\
-		void *arg
+#define RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS    \
+        ssize_t *result,                                       \
+        void *data,                                            \
+        ssize_t data_size,                                     \
+        void *arg
 
 struct rrr_read_session_collection {
 	RRR_LL_HEAD(struct rrr_read_session);
@@ -54,6 +54,11 @@ struct rrr_read_session {
 	int fd;
 //	struct rrr_socket_client *client;
 	uint64_t last_read_time;
+
+	// Ratelimit working values. If more than bytes_max has been read within the interval,
+	// no reading is performed. When interval has passed, the byte counter and time is reset.
+	uint64_t ratelimit_time;
+	ssize_t ratelimit_bytes;
 
 	// This is set if get socket options callback is used
 	int socket_options;
@@ -83,9 +88,15 @@ struct rrr_read_session {
 	// If EOF does not occur during the next read, the flag is reset to zero.
 	int eof_ok_now;
 
+	// Remaining buffer contents are moved to overshoot if bytes read exceed target size.
+	// At the next iteration, no read will be performed and the overshoot is moved to
+	// rx_buf_ptr before get target size is called.
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;
 
+	// Set to 1 before read complete callback and 0 after the callback unless it fails. If the
+	// final callback fails, the read session must be clear or a bugtrap will be triggered the
+	// next read.
 	int read_complete;
 };
 
@@ -96,12 +107,16 @@ void rrr_read_session_collection_clear (
 		struct rrr_read_session_collection *collection
 );
 struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create (
+		int *is_new,
 		struct rrr_read_session_collection *collection,
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 );
 struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot (
 		struct rrr_read_session_collection *collection
+);
+int rrr_read_session_collection_has_unprocessed_data (
+		const struct rrr_read_session_collection *collection
 );
 void rrr_read_session_collection_remove_session (
 		struct rrr_read_session_collection *collection,
@@ -118,34 +133,37 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int									 (*function_get_target_size) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_complete_callback) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_read) (
-													char *buf,
-													ssize_t *read_bytes,
-													ssize_t read_step_max_size,
-													void *private_arg
-	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session				*(*function_get_read_session_with_overshoot) (
-													void *private_arg
-											 ),
-		struct rrr_read_session				*(*function_get_read_session) (
-													void *private_arg
-											 ),
-		void								 (*function_read_session_remove) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_get_socket_options) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
+		struct rrr_read_session *read_session_ratelimit,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
+		int (*function_get_target_size) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_complete_callback) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_read) (
+				char *buf,
+				ssize_t *read_bytes,
+				ssize_t read_step_max_size,
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session) (
+				void *private_arg
+		),
+		void (*function_read_session_remove) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_get_socket_options) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
 		void *functions_callback_arg
 );
 

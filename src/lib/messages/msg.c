@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "msg_addr.h"
 #include "msg_log.h"
 #include "msg_head.h"
+#include "../stats/stats_message.h"
 
 #include "../rrr_types.h"
 #include "../util/crc32.h"
@@ -244,7 +245,7 @@ int rrr_msg_to_host_and_verify_with_callback (
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(*msg)) {
 		if (callback_log_msg == NULL) {
-			RRR_MSG_0("Received an rrr_msg_msg_log in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_log in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
 			ret = RRR_MSG_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -257,6 +258,23 @@ int rrr_msg_to_host_and_verify_with_callback (
 		}
 
 		ret = callback_log_msg(message, callback_arg1, callback_arg2);
+	}
+	else if (RRR_MSG_IS_TREE_DATA(*msg)) {
+		if (callback_stats_msg == NULL) {
+			RRR_MSG_0("Received an rrr_msg_stats in rrr_msg_to_host_and_verify_with_callback but no callback is defined for this type\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		struct rrr_msg_stats tmp;
+
+		if (rrr_msg_stats_unpack(&tmp, (const struct rrr_msg_stats_packed *) (*msg), expected_size) != 0) {
+			RRR_MSG_0("Invalid data in received stats message in rrr_msg_to_host_and_verify_with_callback\n");
+			ret = RRR_MSG_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_stats_msg(&tmp, callback_arg1, callback_arg2);
 	}
 	else {
 		RRR_MSG_0("Received a socket message of unknown type %u in rrr_msg_to_host_and_verify_with_callback\n",

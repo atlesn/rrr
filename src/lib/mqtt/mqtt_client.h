@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_common.h"
 
+struct rrr_event_queue;
 struct rrr_mqtt_session_collection;
 struct rrr_mqtt_p_suback_unsuback;
 struct rrr_net_transport_config;
@@ -46,6 +47,8 @@ struct rrr_mqtt_client_data {
 	void *suback_unsuback_handler_arg;
 	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
 	void *packet_parsed_handler_arg;
+	int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void *receive_publish_callback_arg;
 };
 
 int rrr_mqtt_client_connection_check_alive (
@@ -55,6 +58,7 @@ int rrr_mqtt_client_connection_check_alive (
 		int transport_handle
 );
 int rrr_mqtt_client_publish (
+		int *send_discouraged,
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_session **session,
 		struct rrr_mqtt_p_publish *publish
@@ -100,12 +104,15 @@ static inline void rrr_mqtt_client_notify_pthread_cancel_void (void *client) {
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
+		struct rrr_event_queue *queue,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
-		void *packet_parsed_handler_arg
+		void *packet_parsed_handler_arg,
+		int (*receive_publish_callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *receive_publish_callback_arg
 );
 int rrr_mqtt_client_late_set_client_identifier (
 		struct rrr_mqtt_client_data *client,
@@ -115,11 +122,6 @@ int rrr_mqtt_client_get_session_properties (
 		struct rrr_mqtt_session_properties *target,
 		struct rrr_mqtt_client_data *client,
 		int transport_handle
-);
-int rrr_mqtt_client_synchronized_tick (
-		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
-		int *something_happened,
-		struct rrr_mqtt_client_data *data
 );
 int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,

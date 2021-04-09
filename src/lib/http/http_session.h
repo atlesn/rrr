@@ -112,15 +112,17 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode
 );
-int rrr_http_session_transport_ctx_request_raw_send (
-		struct rrr_net_transport_handle *handle,
-		const char *raw_request_data,
-		size_t raw_request_size
+uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_http_session_transport_ctx_websocket_response_available_notify (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_http_session_transport_ctx_need_tick (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_tick_client (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*websocket_callback)(RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS),
@@ -134,8 +136,6 @@ int rrr_http_session_transport_ctx_tick_client (
 ); 
 int rrr_http_session_transport_ctx_tick_server (
 		ssize_t *received_bytes,
-		uint64_t *active_transaction_count,
-		uint64_t *complete_transactions_total,
 		struct rrr_net_transport_handle *handle,
 		ssize_t read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_SESSION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),

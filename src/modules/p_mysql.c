@@ -500,7 +500,6 @@ int connect_to_mysql(struct mysql_data *data) {
 void stop_mysql(void *arg) {
 	struct mysql_data *data = arg;
 	if (data->mysql_initialized == 1) {
-		// TODO : Maybe do stuff here
 		mysql_thread_end();
 	}
 	mysql_disconnect(data);
@@ -813,8 +812,7 @@ int process_callback (
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
 		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-				INSTANCE_D_BROKER(thread_data),
-				INSTANCE_D_HANDLE(thread_data),
+				INSTANCE_D_BROKER_ARGS(thread_data),
 				entry,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		) != 0) {
@@ -914,10 +912,11 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
+		uint16_t amount = 100;
+		if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 50) != 0) {
 			RRR_MSG_0("Error while polling in mysql instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
@@ -962,8 +961,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
-	data->special_module_operations = NULL;
 }
 
 void unload(void) {

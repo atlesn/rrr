@@ -29,13 +29,13 @@ struct rrr_perl5_ctx;
 typedef struct sv SV;
 
 #define RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS \
-		struct rrr_perl5_ctx *ctx, SV *sv, int idx, const struct rrr_type_definition *def_orig, void *arg
+	struct rrr_perl5_ctx *ctx, SV *sv, int idx, const struct rrr_type_definition *def_orig, void *arg
 
 #define RRR_PERL5_TYPE_TO_SV_ARGS \
-		struct rrr_perl5_ctx *ctx, struct rrr_type_value *value, int (*callback)(RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS), void *callback_arg
+	struct rrr_perl5_ctx *ctx, struct rrr_type_value *value, int (*callback)(RRR_PERL5_TYPE_TO_SV_CALLBACK_ARGS), void *callback_arg
 
 #define RRR_PERL5_TYPE_TO_VALUE_ARGS \
-		struct rrr_type_value **target, struct rrr_perl5_ctx *ctx, const struct rrr_type_definition *def_orig, AV *values
+	struct rrr_type_value **target, struct rrr_perl5_ctx *ctx, const struct rrr_type_definition *def_orig, AV *values
 
 struct rrr_perl5_type_definition {
 	rrr_type type;

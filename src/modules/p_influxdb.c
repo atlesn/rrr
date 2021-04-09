@@ -314,14 +314,10 @@ static void influxdb_send_data_callback (
 	};
 
 	ssize_t received_bytes = 0;
-	uint64_t complete_transactions_count = 0;
-	uint64_t active_transaction_count = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
 				&received_bytes,
-				&active_transaction_count,
-				&complete_transactions_count,
 				handle,
 				0, // No max read size
 				NULL,
@@ -517,6 +513,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			&transport,
 			&influxdb_data->net_transport_config,
 			0,
+			INSTANCE_D_EVENTS(thread_data),
 			NULL,
 			0
 	) != 0) {
@@ -533,10 +530,11 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, influxdb_poll_callback, 50) != 0) {
+		uint16_t amount = 100;
+		if (rrr_poll_do_poll_delete (&amount, thread_data, influxdb_poll_callback, 50) != 0) {
 			RRR_MSG_0("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -602,7 +600,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
 }
 
 void unload(void) {

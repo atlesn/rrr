@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defines.h"
 #include "../settings.h"
 #include "../message_holder/message_holder_collection.h"
-#include "../util/linked_list.h"
 
 #define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S 10
 
@@ -46,42 +45,15 @@ struct rrr_cmodule_worker;
 struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
+struct rrr_event_queue;
 
-struct rrr_cmodule_config_data {
-	rrr_setting_uint worker_spawn_interval_us;
-	rrr_setting_uint worker_sleep_time_us;
-	rrr_setting_uint worker_nothing_happened_limit;
-	rrr_setting_uint worker_count;
-
-	int do_spawning;
-	int do_processing;
-	int do_drop_on_error;
-
-	char *config_function;
-	char *process_function;
-	char *source_function;
-	char *log_prefix;
-};
-
-struct rrr_cmodule {
-	RRR_LL_HEAD(struct rrr_cmodule_worker);
-	struct rrr_mmap *mmap;
-
-	struct rrr_cmodule_config_data config_data;
-
-	// Used when creating forks and cleaning up, not managed
-	struct rrr_fork_handler *fork_handler;
-
-	struct rrr_msg_holder_collection queue_to_forks;
-
-	// Used by message_broker_cmodule poll functions, not managed
-	void *callback_data_tmp;
-};
+struct rrr_cmodule;
 
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
 		struct rrr_instance_settings *settings,
+		struct rrr_event_queue *notify_queue,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
@@ -90,9 +62,6 @@ int rrr_cmodule_main_worker_fork_start (
 		void *process_callback_arg,
 		int (*init_custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *init_custom_tick_callback_arg
-);
-void rrr_cmodule_main_workers_stop (
-		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule

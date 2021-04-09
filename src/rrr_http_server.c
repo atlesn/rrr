@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -38,30 +38,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http/http_server.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
+#include "lib/event/event.h"
 #include "lib/util/macro_utils.h"
 #include "lib/util/rrr_time.h"
+
+#define RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS  3000
+#define RRR_HTTP_SERVER_IDLE_TIMEOUT_MS        RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS * 2
+#define RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT 100000
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'p',    "port",                  "[-p|--port[=]HTTP PORT]"},
 #if defined(RRR_WITH_OPENSSL) || defined(RRR_WITH_LIBRESSL)
-		{0,							'P',	"plain-disable",		"[-P|--plain-disable]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"ssl-port",				"[-s|--ssl-port[=]HTTPS PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
-		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
+        {0,                            'P',    "plain-disable",         "[-P|--plain-disable]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    's',    "ssl-port",              "[-s|--ssl-port[=]HTTPS PORT]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "certificate",           "[-c|--certificate[=]PEM SSL CERTIFICATE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'k',    "key",                   "[-k|--key[=]PEM SSL PRIVATE KEY]"},
+        {0,                            'N',    "no-cert-verify",        "[-N|--no-cert-verify]"},
 #endif
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",      "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",            "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                  "[-h|--help]"},
+        {0,                            'v',    "version",               "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
 };
 
 struct rrr_http_server_data {
@@ -74,18 +78,6 @@ struct rrr_http_server_data {
 	int plain_disable;
 #endif
 };
-
-/*
-struct rrr_http_server_response {
-	int code;
-	char *argument;
-};
-
-static void __rrr_http_server_response_cleanup (struct rrr_http_server_response *response) {
-	RRR_FREE_IF_NOT_NULL(response->argument);
-	response->code = 0;
-}
-*/
 
 static void __rrr_http_server_data_init (struct rrr_http_server_data *data) {
 	memset (data, '\0', sizeof(*data));
@@ -222,6 +214,11 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
+static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	(void)(arg);
+	return (main_running ? 0 : RRR_EVENT_EXIT);
+}
+
 int main (int argc, const char **argv, const char **env) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		fprintf(stderr, "Library build version mismatch.\n");
@@ -235,17 +232,21 @@ int main (int argc, const char **argv, const char **env) {
 	}
 	rrr_strerror_init();
 
-	int count = 0;
 	struct cmd_data cmd;
 	struct rrr_http_server_data data;
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_http_server *http_server = NULL;
-
+	struct rrr_event_queue *events = NULL;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_server_data_init(&data);
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
+
+	if (rrr_event_queue_new(&events) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	if (rrr_main_parse_cmd_arguments_and_env(&cmd, env, CMD_CONFIG_DEFAULTS) != 0) {
 		ret = EXIT_FAILURE;
@@ -262,9 +263,14 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
+	struct rrr_http_server_callbacks callbacks = {
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	};
+
 	if (rrr_http_server_new (
 			&http_server,
-			0 // Don't disable http2
+			0, // Don't disable http2
+			&callbacks
 	) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -277,7 +283,11 @@ int main (int argc, const char **argv, const char **env) {
 #endif
 		if (rrr_http_server_start_plain (
 				http_server,
-				data.http_port
+				events,
+				data.http_port,
+				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -307,7 +317,11 @@ int main (int argc, const char **argv, const char **env) {
 
 		if (rrr_http_server_start_tls (
 				http_server,
+				events,
 				data.https_port,
+				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT,
 				&net_transport_config_tls,
 				flags
 		) != 0) {
@@ -326,38 +340,11 @@ int main (int argc, const char **argv, const char **env) {
 
 	rrr_signal_default_signal_actions_register();
 
-	uint64_t prev_stats_time = rrr_time_get_64();
-	int accept_count_total = 0;
-
-	struct rrr_http_server_callbacks callbacks = {
-			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-	};
-
 	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
-	while (main_running) {
-		// We must do this here, the HTTP server library does not do this
-		// itself as it is also used by RRR modules for which this is performed
-		// by the main process
-		rrr_thread_cleanup_postponed_run(&count);
 
-		int accept_count = 0;
-		if (rrr_http_server_tick(&accept_count, http_server, 5, &callbacks) != 0) {
-			ret = EXIT_FAILURE;
-			break;
-		}
-
-		if (accept_count == 0) {
-			rrr_posix_usleep(10000); // 10 ms
-		}
-		else {
-			accept_count_total += accept_count;
-		}
-
-		if (rrr_time_get_64() > prev_stats_time + 1000000) {
-			RRR_DBG_1("Accepted HTTP connections: %i/s\n", accept_count_total);
-			accept_count_total = 0;
-			prev_stats_time = rrr_time_get_64();
-		}
+	if (rrr_event_dispatch(events, 100000, rrr_http_server_event_periodic, NULL) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	out:
@@ -369,8 +356,9 @@ int main (int argc, const char **argv, const char **env) {
 			http_server = NULL;
 		}
 
-		rrr_thread_cleanup_postponed_run(&count);
-		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
+		if (events != NULL) {
+			rrr_event_queue_destroy(events);
+		}
 
 		rrr_signal_handler_remove(signal_handler);
 

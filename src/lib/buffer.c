@@ -457,7 +457,7 @@ void rrr_fifo_buffer_clear_with_callback (
 	int freed_counter = 0;
 	while (entry != NULL) {
 		struct rrr_fifo_buffer_entry *next = entry->next;
-		RRR_DBG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+		RRR_DBG_4 ("buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		__rrr_fifo_buffer_entry_lock(entry);
 		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
@@ -476,7 +476,7 @@ void rrr_fifo_buffer_clear_with_callback (
 
 	__rrr_fifo_buffer_stats_add_deleted(buffer, freed_counter);
 
-	RRR_DBG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	RRR_DBG_4 ("buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
@@ -527,7 +527,7 @@ int rrr_fifo_buffer_search_return_value_process (
 	}
 
 	if (*do_free == 0 && *do_stop == 0) {
-		RRR_BUG("Unknown return value %i to rrr_fifo_buffer_search_return_value_process\n");
+		RRR_BUG("BUG: Unknown return values to rrr_fifo_buffer_search_return_value_process\n");
 	}
 
 	out:
@@ -564,7 +564,7 @@ int rrr_fifo_buffer_search (
 	struct rrr_fifo_buffer_entry *next;
 	struct rrr_fifo_buffer_entry *prev = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
-		RRR_DBG_4("Buffer %p search loop entry %p next %p prev %p\n", buffer, entry, entry->next, prev);
+		RRR_DBG_4("buffer %p search loop entry %p next %p prev %p\n", buffer, entry, entry->next, prev);
 		next = entry->next;
 
 		int did_something = 0;
@@ -833,7 +833,7 @@ int rrr_fifo_buffer_search_and_replace (
 	struct rrr_fifo_buffer_entry *next;
 	struct rrr_fifo_buffer_entry *prev = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
-		RRR_DBG_4("Buffer %p search_and_replace loop entry %p data %p next %p prev %p\n",
+		RRR_DBG_4("buffer %p search_and_replace loop entry %p data %p next %p prev %p\n",
 				buffer, entry, entry->data, entry->next, prev);
 		next = entry->next;
 
@@ -935,12 +935,7 @@ int rrr_fifo_buffer_search_and_replace (
 	return ret;
 }
 
-/*
- * This reading method holds a write lock for a minimum amount of time by
- * taking control of the start of the queue making it inaccessible to
- * others. The callback function must store the data pointer or free it.
- */
-int rrr_fifo_buffer_read_clear_forward (
+static int __rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
@@ -999,20 +994,26 @@ int rrr_fifo_buffer_read_clear_forward (
 
 		int ret_tmp = 0;
 
-		// Don't access entry pointers outside lock
 		{
+			// Don't access entry pointers outside lock
+			// Also, don't hold read lock while in callback
 			rrr_fifo_read_lock(buffer);
-			pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
-
-			__rrr_fifo_buffer_entry_lock(current);
-			pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, current);
 
 			next = current->next;
 
-			ret_tmp = callback(callback_data, current->data, current->size);
+			unsigned long int size = current->size;
+			char *data = current->data;
 
-			pthread_cleanup_pop(1);
-			pthread_cleanup_pop(1);
+			rrr_fifo_unlock(buffer); 
+
+			{
+				__rrr_fifo_buffer_entry_lock(current);
+				pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, current);
+
+				ret_tmp = callback(callback_data, data, size);
+
+				pthread_cleanup_pop(1);
+			}
 		}
 
 		processed_entries++;
@@ -1094,9 +1095,45 @@ int rrr_fifo_buffer_read_clear_forward (
 
 #ifdef FIFO_DEBUG_COUNTER
 	if (fifo_verify_counter(buffer) != 0) {
-		RRR_BUG("Buffer size mismatch\n");
+		RRR_BUG("BUG: buffer size mismatch\n");
 	}
 #endif /* FIFO_DEBUG_COUNTER */
+
+	return ret;
+}
+
+/*
+ * This reading method holds a write lock for a minimum amount of time by
+ * taking control of the start of the queue making it inaccessible to
+ * others. The callback function must store the data pointer or free it.
+ * Reads at most RRR_FIFO_MAX_READS entries.
+ */
+int rrr_fifo_buffer_read_clear_forward (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
+		unsigned int wait_milliseconds
+) {
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds);
+}
+/*
+ * Same as rrr_fifo_buffer_read_clear_forward(), but reads all entries.
+ */
+int rrr_fifo_buffer_read_clear_forward_all (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
+) {
+	int ret = RRR_FIFO_OK;
+	int entry_count = 0;
+
+	do {
+		ret = __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0);
+		
+		pthread_mutex_lock(&buffer->ratelimit_mutex);
+		entry_count = buffer->entry_count;
+		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+	} while (ret == 0 && entry_count > 0);
 
 	return ret;
 }
@@ -1311,7 +1348,7 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 #ifdef RRR_FIFO_BUFFER_RATELIMIT_DEBUG
 	uint64_t time = rrr_time_get_64() - ratelimit_in;
 	if (time > 0) {
-		printf("Ratelimit %p: %" PRIu64 "\n", buffer, time);
+		printf("Ratelimit %p: %" PRIu64 "\tc: %i\n", buffer, time, buffer->entry_count);
 	}
 #endif
 }
@@ -1360,7 +1397,7 @@ static void __rrr_fifo_buffer_update_ratelimit(struct rrr_fifo_buffer *buffer) {
 
 	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (ratelimit->spins_per_us + 1));
 
-	RRR_DBG_4("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
+	RRR_DBG_4("buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
 			buffer,
 			ratelimit->read_write_balance,
 			ratelimit->sleep_spin_time,
@@ -1424,9 +1461,10 @@ int rrr_fifo_buffer_write (
 		int do_free_entry = 0;
 
 		rrr_fifo_write_lock(buffer);
-		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
+		ret = __rrr_fifo_buffer_entry_new_unlocked(&entry);
+		rrr_fifo_unlock(buffer);
 
-		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
+		if (ret != 0) {
 			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_write\n");
 			ret = 1;
 			goto loop_out_no_entry_free;
@@ -1440,6 +1478,9 @@ int rrr_fifo_buffer_write (
 		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
 		ret = callback(&entry->data, &entry->size, &order, callback_arg);
 		pthread_cleanup_pop(1);
+
+		rrr_fifo_write_lock(buffer);
+		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
 
 		int do_ordered_write = 0;
 		int do_drop = 0;
@@ -1478,11 +1519,10 @@ int rrr_fifo_buffer_write (
 		loop_out_drop:
 			do_free_entry = 1;
 		loop_out_no_drop:
+			pthread_cleanup_pop(1);
 			pthread_cleanup_pop(do_free_entry);
 		loop_out_no_entry_free:
-			pthread_cleanup_pop(1);
-
-		__rrr_fifo_buffer_do_ratelimit(buffer);
+			__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
 
 	if (entry_count_before != 0 || entry_count_after != 0) {

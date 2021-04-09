@@ -22,18 +22,6 @@ sub config {
 	return 1;
 }
 
-sub source {
-	my $message = shift;
-
-	$message->{'timestamp'} = $message->{'timestamp'};
-
-	$message->send();
-
-	sleep(1);
-
-	return 1;
-}
-
 my @persistent_single_value_tags;
 
 sub process {

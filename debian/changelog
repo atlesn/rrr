@@ -1,8 +1,17 @@
-rrr (1.16-0ubuntu1) focal; urgency=medium
+rrr (1.17-0ubuntu1) focal; urgency=medium
 
   * Ubuntu release 
 
- -- Atle Solbakken <atle@goliathdns.no>  Mon, 15 Feb 2021 16:24:41 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 09 Apr 2021 16:15:40 +0200
+
+rrr (1.17-0) buster; urgency=medium
+
+  * Event driven modules for reduced latency and CPU usage
+  * New options to control persistent connections in IP module
+  * HTTP server is no longer threaded, all requests are handled by the same thread
+  * Improved performance in statistics engine
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 09 Apr 2021 16:15:40 +0200
 
 rrr (1.16-0) buster; urgency=medium
 

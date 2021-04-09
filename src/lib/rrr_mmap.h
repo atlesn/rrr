@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mmap {
 	  pthread_mutex_t mutex;
-	  int usercount;
 	  uint64_t heap_size;
 	  char name[64];
 	  void *heap;
@@ -52,9 +51,6 @@ int rrr_mmap_new (
 		struct rrr_mmap **target,
 		uint64_t heap_size,
 		const char *name
-);
-void rrr_mmap_incref (
-		struct rrr_mmap *mmap
 );
 void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
