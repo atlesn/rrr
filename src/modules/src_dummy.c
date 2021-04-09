@@ -122,7 +122,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
 		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0\n",
-				config->name, DUMMY_DEFAULT_SLEEP_INTERVAL_US);
+				config->name);
 		ret = 1;
 		goto out;
 	}

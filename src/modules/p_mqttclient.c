@@ -1569,7 +1569,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 		}
 
 		if (data->poll_discard_count > 0) {
-			RRR_DBG_1("mqttclient instance %s discarded %i messages from senders upon connect retry\n",
+			RRR_DBG_1("mqttclient instance %s discarded %" PRIu64 " messages from senders upon connect retry\n",
 					INSTANCE_D_NAME(data->thread_data), data->poll_discard_count);
 			data->poll_discard_count = 0;
 		}

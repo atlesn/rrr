@@ -226,7 +226,7 @@ int rrr_read_message_using_callbacks (
 				read_session_ratelimit->ratelimit_bytes = 0;
 			}
 			else if (read_session_ratelimit->ratelimit_bytes > ratelimit_max_bytes) {
-				RRR_DBG_7("Read ratelimited %lli > %lli within %llu us\n",
+				RRR_DBG_7("Read ratelimited %lli > %lli within %" PRIu64 " us\n",
 					(long long int) read_session_ratelimit->ratelimit_bytes, (long long int) ratelimit_max_bytes, ratelimit_interval_us);
 				ret = RRR_READ_RATELIMIT;
 				goto out;
