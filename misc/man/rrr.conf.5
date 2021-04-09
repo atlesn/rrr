@@ -1453,9 +1453,6 @@ The header is mainly used by web browsers, look online for documentation on what
 Using the header, in particualar setting it to * (which means to allow all origins), may have
 .B security implications.
 
-.It http_server_worker_threads=UNSIGNED INTEGER
-How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 
-
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
 with one or more of the specified topic filters.

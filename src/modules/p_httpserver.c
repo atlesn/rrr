@@ -63,7 +63,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
-#define RRR_HTTPSERVER_WORKER_THREADS_MAX                     1024
 
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -86,7 +85,6 @@ struct httpserver_data {
 	int do_get_response_from_senders;
 
 	rrr_setting_uint response_timeout_ms;
-	rrr_setting_uint worker_threads;
 
 	struct rrr_http_server *http_server;
 
@@ -205,13 +203,9 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_allow_empty_messages", do_allow_empty_messages, 0);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
-
-	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
-		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
-				data->worker_threads, config->name);
-		ret = 1;
-		goto out;
+	if (RRR_INSTANCE_CONFIG_EXISTS("http_server_worker_threads")) {
+		RRR_MSG_0("Warning: Deprecated option 'http_server_worker_threads' specified in httpserver instance %s, this parameter has no effect and should be removed from the configuration.\n",
+				config->name);
 	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->websocket_topic_filters, config, "http_server_websocket_topic_filters")) != 0) {
