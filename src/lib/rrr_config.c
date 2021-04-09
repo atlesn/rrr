@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "../../config.h"
 #include "cmdlineparser/cmdline.h"
 #include "rrr_config.h"
 
@@ -37,7 +38,8 @@ struct rrr_global_config rrr_config_global = {
 		0,
 		0,
 		0,
-		"main"
+		"main",
+		RRR_RUN_DIR
 };
 
 void rrr_config_set_debuglevel_on_exit(void) {
@@ -60,7 +62,8 @@ void rrr_config_init (
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
 		unsigned int rfc5424_loglevel_output,
-		unsigned int do_journald_output
+		unsigned int do_journald_output,
+		const char *run_directory
 ) {
 	pthread_mutex_lock(&rrr_config_global_mutex);
 	rrr_config_global.debuglevel = debuglevel;
@@ -71,6 +74,7 @@ void rrr_config_init (
 	rrr_config_global.rfc5424_loglevel_output = rfc5424_loglevel_output;
 	rrr_config_global.log_prefix = rrr_default_log_prefix;
 	rrr_config_global.do_journald_output = do_journald_output;
+	rrr_config_global.run_directory = run_directory;
 	pthread_mutex_unlock(&rrr_config_global_mutex);
 }
 

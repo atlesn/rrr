@@ -73,7 +73,9 @@ int rrr_msg_holder_slot_write_clone (
 		struct rrr_msg_holder_slot *slot,
 		const struct rrr_msg_holder *source,
 		int (*check_cancel_callback)(void *arg),
-		void *check_cancel_callback_arg
+		void *check_cancel_callback_arg,
+		void (*after_clone_callback)(struct rrr_msg_holder *entry, void *arg),
+		void *after_clone_callback_arg
 );
 int rrr_msg_holder_slot_write_incref (
 		struct rrr_msg_holder_slot *slot,

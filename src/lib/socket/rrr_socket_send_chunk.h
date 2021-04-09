@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_SEND_CHUNK_H
 
 #include <sys/socket.h>
+#include <stdio.h>
 
 #include "../util/linked_list.h"
 
@@ -35,15 +36,74 @@ struct rrr_socket_send_chunk_collection {
 void rrr_socket_send_chunk_collection_clear (
 		struct rrr_socket_send_chunk_collection *target
 );
+void rrr_socket_send_chunk_collection_clear_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
+);
 int rrr_socket_send_chunk_collection_push (
+		int *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *target,
 		void **data,
 		ssize_t data_size
 );
-int rrr_socket_send_chunk_collection_sendto (
+int rrr_socket_send_chunk_collection_push_urgent (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		void **data,
+		ssize_t data_size
+);
+int rrr_socket_send_chunk_collection_push_const (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+);
+int rrr_socket_send_chunk_collection_push_const_urgent (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size
+);
+int rrr_socket_send_chunk_collection_push_const_with_private_data (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		const void *data,
+		ssize_t data_size,
+		void (*private_data_new)(void **private_data, void *arg),
+		void *private_data_arg,
+		void (*private_data_destroy)(void *private_data)
+);
+int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
+		int *send_chunk_count,
+		struct rrr_socket_send_chunk_collection *target,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		const void *data,
+		ssize_t data_size,
+		void (*private_data_new)(void **private_data, void *arg),
+		void *private_data_arg,
+		void (*private_data_destroy)(void *private_data)
+);
+int rrr_socket_send_chunk_collection_send (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int fd
+);
+int rrr_socket_send_chunk_collection_send_and_notify (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
-		const struct sockaddr *addr,
-		socklen_t addr_len
+		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
 );
+int rrr_socket_send_chunk_collection_send_with_callback (
+		struct rrr_socket_send_chunk_collection *chunks,
+		int (*callback)(ssize_t *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, ssize_t data_size, void *arg),
+		void *callback_arg
+);
+void rrr_socket_send_chunk_collection_iterate (
+		struct rrr_socket_send_chunk_collection *chunks,
+		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void *callback_arg
+);
+
 #endif /* RRR_SOCKET_SEND_CHUNK_H */

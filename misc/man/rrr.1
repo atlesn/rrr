@@ -8,6 +8,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-W|--no-watchdog-timers]
 .Dl [-T|--no-thread-restart]
 .Dl [-s|--stats]
+.Dl [-r|--run-directory[=]RUN DIRECTORY]
 .Dl [-l|--loglevel-translation]
 .Dl [-b|--banner]
 .Dl [-e|--environment-file[=]ENVIRONMENT FILE]
@@ -70,22 +71,26 @@ set a new debuglevel when the main loop exits. If none is set,
 is used.
 The debuglevel is calculated by adding any of the following numbers together:
 .Bl -tag -width -indent
+.It 0
+Severe errors (always printed)
 .It 1
-Info about loading and closing of modules (low rate)
+Info about loading and closing of modules, threads and forks.
 .It 2
-Runtime information in modules, they tell what they do at (high rate)
+Messages between modules, including backstop indication, and requests sent/received by modules.
 .It 4
-Some data debugging is printed (high rate)
+Detailed information about message processing withing modules
 .It 8
-Debug locking, thread states and buffers (very high rate)
+Messages between forks (mmap channels) and buffer searching, ratelimiting and cleanup
 .It 16
-Debug cmodule worker forks (for modules cmodule, perl5 and python3)
+Cmodule processing (for modules cmodule, perl5 and python3)
 .It 32
-Not used
+Hex dumps during endian conversion and validation of messages
 .It 64
-Debug socket closing and opening (high rate at initialization)
+Socket open, close, read, write
 .It 128
-Debug startup and closing of threads (high rate if modules start and stop threads frequently, otherwise low rate)
+Thread handling
+.It 256
+Event queue processing (printed to standard output, not delivered through journal module or systemd logging)
 .El
 .IP -W|--no-watchdog-timers
 Do not monitor threads for becoming unresponsive. If not set and a thread is found to be hung, all threads are terminated and
@@ -99,6 +104,8 @@ Enable the statistics engine which
 can connect to.
 .IP -b|--banner
 Print RRR banner before starting.
+.IP -r|--run-directory[=]RUN DIRECTORY
+Specify an alternative default prefix for runtime sockets.
 .IP -l|--loglevel-translation
 Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
 and other messages DEBUG (loglevels 3 and 7).
@@ -120,6 +127,7 @@ If a variable is specified both in the environment and at the command line, the 
 .It RRR_NO_WATCHDOG_TIMERS
 .It RRR_NO_THREAD_RESTART
 .It RRR_LOGLEVEL_TRANSLATION
+.It RRR_RUN_DIRECTORY
 .El
 
 For on/off variables, "no" or "0" will be interpreted as

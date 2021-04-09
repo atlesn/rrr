@@ -70,7 +70,8 @@ After a module is copied, replace all instances of the old name inside the file 
 All modules must provide an `init()` function which is used to provide information to Read Route Record about which functions
 the module provides, its name and type. This can usually be left alone, just change the static `module_name` value to change
 the informational name of the module. The `type` field, however, provides information about wether we expect a sender to
-be specified or if we only are a source module (see `dummy` module vs `raw`);
+be specified or if we only are a source module (see `dummy` module vs `raw`); If the `event*_functions` pointer is 
+set in the `init()` function, the module is expected to use event based reading from other modules and must do so.
 
 The following module types are available:
 - `RRR_MODULE_TYPE_SOURCE` - The module does not read from others, but it may be read from
@@ -94,11 +95,21 @@ about which types the return:
 		void (*poststop)(...);
 	
 		// Inject any packet into buffer manually (usually for testing)
-		int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+		int (*inject)(...);
 	
 		// Custom cancellation method (if we are hung and main wants to cancel us)
 		int (*cancel_function)(...);
 	};
+
+The `rrr_instance_event_functions` structure holds pointers to default event callbacks, if the module is to use events.
+Currently only one function is supported.
+
+	struct rrr_instance_event_functions {
+		// Called when messages from senders must be read
+		int (*broker_data_available)(..);
+	};
+
+The event structure, if used, is allocated statically and a pointer to it must be set in the `init()` function.
 
 In addition, one must specify the `load()` and `unload()` functions. These are called only once directly after loading the module and once just
 before unloading it. That means they are not called for each instance. If a module is dependent on some external library which needs to
@@ -162,7 +173,7 @@ the output queue:
 	// Allocate new memory and copy to it
 	rrr_message_broker_clone_and_write_entry(...);
 
-### Reading/polling from other modules
+### Reading/polling from other modules (custom loop)
 
 The action of retrieving messages from the output buffers of other instances is called polling. The structures needed for polling are 
 initialized automatically for every instance in the intermediate thread entry functions. It contains information about all the senders
@@ -175,10 +186,8 @@ Here is an example of the minimum structure needed to perform polls in a module.
 	static int my_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		struct rrr_msg_msg *message = entry->message;
 		
-		// Other return values possible depending on wether we use delete or search.
-		// In buffer.c see
-		// - rrr_fifo_buffer_read_clear_forward for poll delete
-		// - rrr_fifo_buffer_search for poll search 
+		// It is allowed to return RRR_FIFO_SEARCH_STOP to signal that
+		// no more messages should be polled this round
 		int ret = RRR_FIFO_OK;
 		
 		... (do stuff with message)
@@ -191,18 +200,20 @@ Here is an example of the minimum structure needed to perform polls in a module.
 	static void *thread_entry_my(struct rrr_thread *thread) {
 		// This line is present in all modules at the top of the thread entry function. It casts the
 		// void * private_data pointer, which the intermediate thread entry function has initialized,
-		// to its actual type.
-		struct rrr_instance_runtime_data *thread_data = thread->private_data;	
+		// to its actual type. The module may choose to use the `private_data` pointer to something
+		// else than just pointing to the pre-allocated memory, like a custom allocation.
+		struct rrr_instance_runtime_data *thread_data = thread->private_data = thread_data->private_memory;
 		
 		...
 		
 		// Main thread loop
 		while (...) {
 			// Do the polling and call the callback if data was polled. When callback returns, the polled
-			// data is deleted. Calling rrr_poll_do_poll_search lets callback choose wether polled data
-			// is deleted or not. The callback will be called multiple but a finite number of times
-			// if there are mulitple elements in the buffer.
-			if (rrr_poll_do_rrr_poll_delete (thread_data, &thread_data->poll, my_poll_callback, 0) != 0) {
+			// data is deleted. The callback will be called multiple but a finite number of times if
+			// there are mulitple elements in the buffer. The `amount` variable defines the maximum number
+			// of messages to poll. It will be decremented for every message returned to the callback.
+			uint16_t amount = 16;
+			if (rrr_poll_do_rrr_poll_delete (&amount, thread_data, &thread_data->poll, my_poll_callback, 0) != 0) {
 				break;
 			}
 		}
@@ -218,6 +229,61 @@ at the same becuse the linked list pointers are inside it, thus it will always e
 Clone functions are available if an entry is to be used in multiple places simultaneously.
 
 Inside the poll callback function, the entry can be directly written to the output buffer using `rrr_message_broker_incref_and_write_entry_unsafe_no_unlock`.
+
+### Reading/polling from other modules (event loop, recommended form)
+
+When the module is using events instead of a costum loop, it may pool from other modules *exclusively* in the provided event callback.
+This is to ensure that the event counter and number of messages to poll are consistent.
+
+The minimal event callback for messages from senders looks like this. Note that the `amount` variable is
+provided by the event framework, this variable *must not* be modified by the module, its pointer is passed
+directly to the poll function. The poll callback function is otherwise identical to that of the non-event example.
+
+	static int my_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+		struct rrr_thread *thread = arg;
+		struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+		return rrr_poll_do_poll_delete (amount, thread_data, my_poll_callback, 0);
+	}
+
+An event module has no while loop, the dispatch function is called instead.
+
+	rrr_event_dispatch (
+		INSTANCE_D_EVENTS(thread_data),
+		1 * 1000 * 1000, // 1 second interval
+		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+		thread
+	);
+
+A custom periodic function may be provided instead of the watchdog update function. If this is done, the periodic
+function must call the watchdog updater and return its return value should it be non-zero (the thread is told to exit).
+
+It is possible to create custom events, these should be organized in a statically allocated `rrr_event_collection` structure.
+The collection must be cleared when the module exits. Look in `event_collection.h` and otherwise in modules using this.
+
+When using events, the module is forced to poll all messages passed to it, and the event callback function will be called
+in a busy loop until all pending messages have been polled. If the module wishes to pause incoming messages, it
+can do this by providing a pause check callback to the event framework. The pause callback is consulted prior to
+every call of the event callback.
+
+	void my_pause_callback (int *do_pause, int is_paused, void *callback_arg) {
+		struct rrr_instance_thread_data *thread_data = callback_arg;
+
+		...
+
+		// Set *do_pause to 1 to activate pausing or to 0 to resume
+	}
+	
+	...
+
+	rrr_event_callback_pause_set(INSTANCE_D_EVENTS(thread_data), my_pause_callback, thread);
+
+The pause callback may be disabled by passing NULL as the function pointer to `rrr_event_callback_pause_set`.
+Custom events are not affected by pausing.
+
+An alternative to pausing is to break out of the dispatch loop by returning `RRR_EVENT_EXIT` in any callback and then do some
+other module-specific processing before calling it again. Note that if this processing is slow, the thread will get cancelled
+by the watchdog unless the watchdog timer is updated. Custom checks for encourage stop signal should also be present in tactical locations.
 
 ### Thread data
 
@@ -307,6 +373,9 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Global state (per fork)
   - Frameworks which need to check for signals may register a handler with the signal framework
   - Exit handlers are used to clean up after 3rd party libraries to easy memory leak debugging
+
+- event.c
+  - Handles event processing
 
 - fork.c
   - Handles forking, shutdown and waiting. Used both by main() and some modules.

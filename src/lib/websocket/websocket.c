@@ -207,7 +207,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 	int ret = 0;
 
 	RRR_DBG_3("Websocket %i send frame opcode %i size %" PRIu64 "\n",
-			handle->handle, frame->header.opcode, frame->header.payload_len);
+			RRR_NET_TRANSPORT_CTX_HANDLE(handle), frame->header.opcode, frame->header.payload_len);
 
 	uint8_t header[32]; // Make sure it's big enough when new stuff is added
 	memset(header, '\0', sizeof(header));
@@ -251,8 +251,8 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			RRR_BUG("BUG: pos exceeds header size in __rrr_websocket_transport_ctx_send_frame\n");
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_blocking(handle, header, pos)) != 0) {
-			RRR_DBG_1("Failed to send websocket header for handle %i\n", handle->handle);
+		if ((ret = rrr_net_transport_ctx_send_push_const(handle, header, pos)) != 0) {
+			RRR_DBG_1("Failed to send websocket header for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
 	}
@@ -262,8 +262,8 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			__rrr_websocket_payload_mask_unmask((uint8_t *) frame->payload, frame->header.payload_len, frame->header.masking_key);
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_blocking(handle, frame->payload, frame->header.payload_len)) != 0) {
-			RRR_DBG_1("Failed to send websocket payload for handle %i\n", handle->handle);
+		if ((ret = rrr_net_transport_ctx_send_push_const(handle, frame->payload, frame->header.payload_len)) != 0) {
+			RRR_DBG_1("Failed to send websocket payload for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
 	}
@@ -555,6 +555,8 @@ int rrr_websocket_transport_ctx_read_frames (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 ) {
@@ -570,6 +572,8 @@ int rrr_websocket_transport_ctx_read_frames (
 			read_step_initial,
 			read_step_max_size,
 			read_max_size,
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			__rrr_websocket_get_target_size,
 			&callback_data,
 			__rrr_websocket_receive_callback_interpret_step,
