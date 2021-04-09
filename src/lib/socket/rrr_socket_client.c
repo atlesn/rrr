@@ -203,7 +203,9 @@ static int __rrr_socket_client_fd_new (
 	rrr_event_collection_init(&client_fd->events, queue);
 
 	client_fd->fd = fd;
-	memcpy (&client_fd->addr, addr, addr_len);
+	if (addr != NULL) {
+		memcpy (&client_fd->addr, addr, addr_len);
+	}
 	client_fd->addr_len = addr_len;
 	client_fd->client = client;
 
@@ -256,7 +258,10 @@ static void __rrr_socket_client_chunk_send_notify_fail_callback (
 	}
 }
 
-static int __rrr_socket_client_destroy (
+/*
+ * Ensure that the client is removed from the collection before using
+ */
+static int __rrr_socket_client_destroy_dangerous (
 		struct rrr_socket_client *client
 ) {
 	struct rrr_socket_client_collection *collection = client->collection;
@@ -343,7 +348,7 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 	return ret;
 }
 
-static int __rrr_socket_client_new (
+static int __rrr_socket_client_new_and_add (
 		struct rrr_socket_client **result,
 		struct rrr_socket_client_collection *collection,
 		enum rrr_socket_client_collection_create_type create_type
@@ -366,6 +371,7 @@ static int __rrr_socket_client_new (
 	client->create_type = create_type;
 
 	*result = client;
+	RRR_LL_UNSHIFT(collection, client);
 
 	out:
 	return ret;
@@ -374,7 +380,7 @@ static int __rrr_socket_client_new (
 static void __rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection
 ) {
-	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(node));
+	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy_dangerous(node));
 }
 
 void rrr_socket_client_collection_set_connect_timeout (
@@ -408,7 +414,7 @@ static void __rrr_socket_client_collection_find_and_destroy (
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
 }
 
 static void __rrr_socket_client_fd_find_and_destroy (
@@ -599,8 +605,10 @@ static void __rrr_socket_client_return_value_process (
 			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
 		}
-		// OK, mask
-		ret = 0;
+		else {
+			// OK, mask
+			ret = 0;
+		}
 	}
 	else if (ret == RRR_READ_EOF) {
 		// OK, propagate
@@ -984,7 +992,7 @@ static int __rrr_socket_client_collection_fd_push (
 
 	struct rrr_socket_client *client_new = NULL;
 
-	if ((ret = __rrr_socket_client_new (
+	if ((ret = __rrr_socket_client_new_and_add (
 			&client_new,
 			collection,
 			create_type
@@ -1008,13 +1016,11 @@ static int __rrr_socket_client_collection_fd_push (
 	RRR_DBG_7("fd %i added to client collection (not yet ready)\n", fd);
 
 	*result = client_new;
-
-	RRR_LL_UNSHIFT(collection, client_new);
 	client_new = NULL;
 
 	out:
 	if (client_new != NULL) {
-		__rrr_socket_client_destroy(client_new);
+		__rrr_socket_client_collection_find_and_destroy(collection, client_new);
 	}
 	return ret;
 }
@@ -1286,7 +1292,7 @@ void rrr_socket_client_collection_send_push_const_multicast (
 		}
 
 		*send_chunk_count += count_tmp;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy_dangerous(node));
 }
 
 #define FIND_LOOP_BEGIN()                                                 \
@@ -1542,7 +1548,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 		RRR_BUG("BUG: address count was zero after resolve callback in __rrr_socket_client_collection_find_by_address_string_or_connect, callback must return error\n");
 	}
 
-	if ((ret = __rrr_socket_client_new (
+	if ((ret = __rrr_socket_client_new_and_add (
 			&client,
 			collection,
 			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_OUTBOUND
@@ -1557,7 +1563,8 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 				RRR_BUG("BUG: FD not set after connect callback in __rrr_socket_client_collection_find_by_address_string_or_connect\n");
 			}
 
-			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i now pending\n", addr_string, i + 1, address_count);
+			RRR_DBG_7("client collection connect to '%s' suggestion %llu/%llu now pending\n",
+					addr_string, (long long unsigned int) i + 1, (long long unsigned int) address_count);
 
 			if ((ret = __rrr_socket_client_not_ready_fd_push (
 					client,
@@ -1572,8 +1579,15 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 			tmp_fd = -1;
 		}
 		else {
-			RRR_DBG_7("client collection connect to '%s' suggestion %i/%i failed\n", addr_string, i + 1, address_count);
+			RRR_DBG_7("client collection connect to '%s' suggestion %llu/%llu failed\n",
+					addr_string, (long long unsigned int) i + 1, (long long unsigned int) address_count);
 		}
+	}
+
+	if (RRR_LL_COUNT(client) == 0) {
+		RRR_DBG_7("client collection connect to '%s' failed, no suggestions succeeded\n", addr_string);
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
 	}
 
 	found:
@@ -1591,7 +1605,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 	RRR_FREE_IF_NOT_NULL(addresses);
 	RRR_FREE_IF_NOT_NULL(address_lengths);
 	if (client != NULL) {
-		__rrr_socket_client_destroy(client);
+		__rrr_socket_client_collection_find_and_destroy(collection, client);
 	}
 	return ret;
 }
