@@ -1329,9 +1329,10 @@ void rrr_mqtt_packet_parse (
 				properties->type_id, properties->name);
 
 		if (properties->has_reserved_flags != 0 && RRR_MQTT_PARSE_GET_TYPE_FLAGS(header) != properties->flags) {
-			RRR_MSG_0("Invalid reserved flags %u received in mqtt packet of type %s\n",
+			RRR_MSG_0("Invalid reserved flags %u received in mqtt packet of type %s (expected %u)\n",
 					RRR_MQTT_PARSE_GET_TYPE_FLAGS(header),
-					properties->name
+					properties->name,
+					properties->flags
 			);
 			RRR_MQTT_PARSE_STATUS_SET_ERR(session);
 			goto out;

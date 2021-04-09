@@ -464,7 +464,9 @@ static int __rrr_stats_send_message (
 			message->path
 	);
 
-	return rrr_socket_client_collection_send_push_const_multicast(data->connections, &message_packed, total_size); 
+	rrr_socket_client_collection_send_push_const_multicast(data->connections, &message_packed, total_size); 
+
+	return 0;
 }
 
 static int __rrr_stats_send_keepalive (

@@ -44,7 +44,6 @@ struct rrr_cmodule_worker {
 
 	// Managed structures
 	char *name;
-	struct rrr_event_queue *event_queue_worker;
 
 	pthread_mutex_t pid_lock;
 
@@ -75,6 +74,10 @@ struct rrr_cmodule_worker {
 	struct rrr_instance_settings *settings;
 	struct rrr_fork_handler *fork_handler;
 	struct rrr_event_queue *event_queue_parent;
+
+	// Both worker and parent destroy this. It is allocated before forking but
+	// the worker also calls destroy to clean up memory for events it created after forking
+	struct rrr_event_queue *event_queue_worker;
 };
 
 struct rrr_cmodule {
