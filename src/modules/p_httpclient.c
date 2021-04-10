@@ -1588,6 +1588,7 @@ static void httpclient_queue_process (
 	const uint64_t loop_begin_time = rrr_time_get_64();
 	int ttl_timeout_count = 0;
 	int send_timeout_count = 0;
+	int send_busy_count = 0;
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
 
@@ -1635,8 +1636,7 @@ static void httpclient_queue_process (
 				no_destination_override
 		)) != RRR_HTTP_OK) {
 			if (ret_tmp == RRR_HTTP_BUSY) {
-				// Try again after ticking more, maybe we need to read
-				RRR_LL_ITERATE_LAST();
+				send_busy_count++;
 			}
 			else {
 				if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
@@ -1669,6 +1669,11 @@ static void httpclient_queue_process (
 	if (send_timeout_count > 0) {
 		RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
 				send_timeout_count,
+				INSTANCE_D_NAME(data->thread_data));
+	}
+	if (send_busy_count > 0) {
+		RRR_DBG_7("Send busy for %i messages in httpclient instance %s\n",
+				send_busy_count,
 				INSTANCE_D_NAME(data->thread_data));
 	}
 }

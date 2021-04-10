@@ -39,6 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/base64.h"
 #include "../util/macro_utils.h"
 
+#define RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX 25
+
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct rrr_http2_session *http2_session;
@@ -145,8 +147,10 @@ static int __rrr_http_application_http2_header_submit_nullsafe (
 static int __rrr_http_application_http2_request_send_possible (
 		RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS
 ) {
-	(void)(application);
-	*is_possible = 1;
+	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
+
+	*is_possible = (rrr_http2_streams_count(http2->http2_session) < RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX);
+
 	return 0;
 }
 
