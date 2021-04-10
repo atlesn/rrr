@@ -139,14 +139,6 @@ void rrr_thread_cleanup_postponed_run (
 	pthread_mutex_unlock(&postponed_cleanup_lock);
 }
 
-static void rrr_thread_unlock_if_locked (
-		struct rrr_thread *thread
-) {
-	if (pthread_mutex_trylock(&thread->mutex) != 0) {
-	}
-	pthread_mutex_unlock(&thread->mutex);
-}
-
 void rrr_thread_signal_set (
 		struct rrr_thread *thread,
 		int signal
@@ -1217,12 +1209,10 @@ static int __rrr_thread_allocate_and_start (
 
 	goto out;
 	out_destroy_watchdog:
-		rrr_thread_unlock_if_locked(thread->watchdog);
 		__rrr_thread_destroy(thread->watchdog);
 	out_destroy_watchdog_data:
 		RRR_FREE_IF_NOT_NULL(watchdog_data);
 	out_destroy_thread:
-		rrr_thread_unlock_if_locked(thread);
 		__rrr_thread_destroy(thread);
 		thread = NULL;
 	out:
