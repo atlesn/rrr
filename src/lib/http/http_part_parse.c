@@ -637,6 +637,34 @@ int rrr_http_part_parse (
 		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
 	}
 
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(part, "connection");
+
+	if (connection != NULL) {
+		if (rrr_nullsafe_str_cmpto_case(connection->value, "close") == 0) {
+			RRR_DBG_3("HTTP 'Connection: close' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "keep-alive") == 0) {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+		else {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(tmp, connection->value);
+			RRR_DBG_3("HTTP unknown value '%s' for 'Connection' header ignored\n", tmp);
+		}
+	}
+
+	if (part->parsed_connection == 0) {
+		if (part->parsed_version == RRR_HTTP_VERSION_10) {
+			RRR_DBG_3("HTTP 'Connection: close' implied by protocol version HTTP/1.0\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' implied by protocol version HTTP/1.1\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+	}
+
 	const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
 	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
 
@@ -644,7 +672,7 @@ int rrr_http_part_parse (
 		part->data_length = content_length->value_unsigned;
 		*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
 
-		RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
+		RRR_DBG_3("HTTP 'Content-Length' found in response: %llu (plus response %li and header %li) target size is %li\n",
 				content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
 
 		ret = RRR_HTTP_PARSE_OK;
@@ -652,6 +680,7 @@ int rrr_http_part_parse (
 		goto out;
 	}
 	else if (transfer_encoding != NULL && rrr_nullsafe_str_cmpto_case(transfer_encoding->value, "chunked") == 0) {
+		RRR_DBG_3("HTTP 'Transfer-Encoding: chunked' found in response\n");
 		goto out_parse_chunked;
 	}
 	else if (	parse_type == RRR_HTTP_PARSE_REQUEST ||

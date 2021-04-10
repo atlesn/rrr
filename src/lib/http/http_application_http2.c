@@ -858,14 +858,14 @@ static int __rrr_http_application_http2_response_submit_response_code_callback (
 }
 
 static int __rrr_http_application_http2_response_submit_final_callback (
-	enum rrr_http_version protocol_version,
-	struct rrr_http_part *response_part,
-	const struct rrr_nullsafe_str *send_data,
-	void *arg
+		struct rrr_http_part *request_part,
+		struct rrr_http_part *response_part,
+		const struct rrr_nullsafe_str *send_data,
+		void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
-	(void)(protocol_version);
+	(void)(request_part);
 	(void)(response_part);
 	(void)(send_data);
 

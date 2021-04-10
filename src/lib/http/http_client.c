@@ -532,6 +532,7 @@ static int __rrr_http_client_read_callback (
 	struct rrr_http_client *http_client = arg;
 
 	int ret = 0;
+	int ret_done = 0;
 
 	ssize_t received_bytes_dummy = 0;
 
@@ -548,7 +549,12 @@ static int __rrr_http_client_read_callback (
 			http_client->callbacks.frame_callback,
 			http_client->callbacks.frame_callback_arg
 	)) != 0) {
-		goto out;
+		if (ret == RRR_HTTP_DONE) {
+			ret_done = RRR_HTTP_DONE;
+		}
+		else {
+			goto out;
+		}
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
@@ -569,7 +575,7 @@ static int __rrr_http_client_read_callback (
 	}
 
 	out:
-	return ret;
+	return ret != 0 ? ret : ret_done;
 }
 
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
@@ -597,7 +603,6 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
 	// protocol version is ignored when HTTP/2 is used.
 	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE && protocol_version == RRR_HTTP_VERSION_10) {
-		printf("Enforce 1.1\n");
 		protocol_version = RRR_HTTP_VERSION_11;
 	}
 

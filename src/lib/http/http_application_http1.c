@@ -218,7 +218,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 }
 
 static int __rrr_http_application_http1_response_send_final (
-	enum rrr_http_version protocol_version,
+	struct rrr_http_part *request_part,
 	struct rrr_http_part *response_part,
 	const struct rrr_nullsafe_str *send_data,
 	void *arg
@@ -244,7 +244,7 @@ static int __rrr_http_application_http1_response_send_final (
 		}
 	}
 
-	if (protocol_version == RRR_HTTP_VERSION_10) {
+	if (request_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
 		rrr_net_transport_ctx_close_when_send_complete_set(callback_data->handle);
 	}
 
@@ -258,6 +258,17 @@ static int __rrr_http_application_http1_response_send (
 		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
+
+	if ((ret = rrr_http_part_header_field_push (
+			transaction->response_part,
+			"connection",
+			transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_KEEPALIVE
+				? "keep-alive"
+				: "close"
+	)) != 0) {
+		RRR_MSG_0("Failed to push connection header in __rrr_http_application_http1_response_send\n");
+		goto out;
+	}
 
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
 			handle
@@ -541,9 +552,10 @@ static int __rrr_http_application_http1_response_receive_callback (
 	out:
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
-	if (ret == RRR_HTTP_OK && transaction->response_part->parsed_version == RRR_HTTP_VERSION_10) {
-		RRR_DBG_3("HTTP response with protocol version HTTP/1.0 complete, closing connection.\n");
-		ret = RRR_HTTP_DONE;
+	if (ret == RRR_HTTP_OK) {
+		if (transaction->response_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
+			ret = RRR_HTTP_DONE;
+		}
 	}
 	return ret;
 }
@@ -1392,6 +1404,17 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 #else
 		RRR_MSG_3("Note: HTTP client attempted to send request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
 #endif /* RRR_WITH_NGHTTP2 */
+	}
+	else {
+		if ((ret = rrr_http_part_header_field_push (
+				request_part,
+				"connection",
+				protocol_version == RRR_HTTP_VERSION_10
+					? "close"
+					: "keep-alive"
+		)) != 0) {
+			goto out;
+		}
 	}
 
 	// Prepend "GET " etc. before endpoint

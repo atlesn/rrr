@@ -471,7 +471,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
 		int (*response_code_callback)(int response_code, enum rrr_http_version protocol_version, void *arg),
-		int (*final_callback)(enum rrr_http_version protocol_version, struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
+		int (*final_callback)(
+				struct rrr_http_part *request_part,
+				struct rrr_http_part *response_part,
+				const struct rrr_nullsafe_str *send_data,
+				void *arg
+		),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -498,7 +503,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = final_callback(transaction->request_part->parsed_version, transaction->response_part, transaction->send_body, callback_arg)) != 0) {
+	if ((ret = final_callback (
+			transaction->request_part,
+			transaction->response_part,
+			transaction->send_body,
+			callback_arg
+	)) != 0) {
 		goto out;
 	}
 

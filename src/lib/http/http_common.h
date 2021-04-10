@@ -105,6 +105,12 @@ enum rrr_http_version {
 	RRR_HTTP_VERSION_11
 };
 
+enum rrr_http_connection {
+	RRR_HTTP_CONNECTION_UNSPECIFIED,
+	RRR_HTTP_CONNECTION_CLOSE,
+	RRR_HTTP_CONNECTION_KEEPALIVE
+};
+
 enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_REQUEST,
 	RRR_HTTP_PARSE_RESPONSE,
