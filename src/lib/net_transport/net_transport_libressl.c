@@ -482,14 +482,16 @@ static int __rrr_net_transport_libressl_read_raw (
 	int ret = RRR_READ_OK;
 
 	ssize_t result = tls_read(tls_data->ctx, buf, read_step_max_size);
-	if (result < 0) {
+	if (result == 0) {
+		ret = RRR_READ_EOF;
+	}
+	else if (result < 0) {
 		if (result == TLS_WANT_POLLIN || result == TLS_WANT_POLLOUT) {
 			goto out;
 		}
 
 		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_raw: %s\n", tls_error(tls_data->ctx));
 		ret = RRR_READ_SOFT_ERROR;
-		goto out;
 	}
 
 	out:
