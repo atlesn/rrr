@@ -284,6 +284,13 @@ void rrr_event_dispatch_break (
 	event_base_loopbreak(queue->event_base);
 }
 
+void rrr_event_dispatch_exit (
+		struct rrr_event_queue *queue
+) {
+	queue->callback_ret = RRR_EVENT_EXIT;
+	event_base_loopbreak(queue->event_base);
+}
+
 void rrr_event_dispatch_restart (
 		struct rrr_event_queue *queue
 ) {

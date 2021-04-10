@@ -411,9 +411,10 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li using protocol %s header length is %li\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
+			RRR_HTTP_VERSION_TO_STR(transaction->response_part->parsed_version),
 			transaction->response_part->header_length
 	);
 
