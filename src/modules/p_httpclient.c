@@ -65,10 +65,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
 
+struct httpclient_transaction_data {
+	RRR_LL_NODE(struct httpclient_transaction_data);
+	char *msg_topic;
+	struct rrr_msg_holder *entry;
+};
+
+struct httpclient_transaction_data_collection {
+	RRR_LL_HEAD(struct httpclient_transaction_data);
+};
+
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection from_senders_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
+
+	struct httpclient_transaction_data_collection redirect_transactions;
 
 	struct rrr_msgdb_client_conn msgdb_conn;
 
@@ -111,6 +123,7 @@ struct httpclient_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_msgdb_poll;
 	rrr_event_handle event_queue_process;
+	rrr_event_handle event_redirect_process;
 
 	struct rrr_poll_helper_counters counters;
 
@@ -128,39 +141,13 @@ struct httpclient_data {
 	struct rrr_http_client_config http_client_config;
 };
 
-static void httpclient_data_cleanup(void *arg) {
-	struct httpclient_data *data = arg;
+static void httpclient_transaction_destroy (struct httpclient_transaction_data *target) {
+	RRR_FREE_IF_NOT_NULL(target->msg_topic);
 
-	rrr_event_collection_clear(&data->events);
-	if (data->http_client) {
-		rrr_http_client_destroy(data->http_client);
-	}
-	rrr_msgdb_client_close(&data->msgdb_conn);
-	rrr_http_client_request_data_cleanup(&data->request_data);
-	rrr_net_transport_config_cleanup(&data->net_transport_config);
-	rrr_http_client_config_cleanup(&data->http_client_config);
-	rrr_msg_holder_collection_clear(&data->from_senders_queue);
-	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
-	RRR_FREE_IF_NOT_NULL(data->method_tag);
-	RRR_FREE_IF_NOT_NULL(data->format_tag);
-	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
-	RRR_FREE_IF_NOT_NULL(data->server_tag);
-	RRR_FREE_IF_NOT_NULL(data->port_tag);
-	RRR_FREE_IF_NOT_NULL(data->body_tag);
-	rrr_map_clear(&data->meta_tags_all);
-	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
-}
+	// Assuming that entry has recursive lock
+	rrr_msg_holder_decref(target->entry);
 
-struct httpclient_transaction_data {
-	char *msg_topic;
-	struct rrr_msg_holder *entry;
-};
-
-static void httpclient_dbl_ptr_free_if_not_null (
-		void *arg
-) {
-	void *ptr = *((void **) arg);
-	RRR_FREE_IF_NOT_NULL(ptr);
+	free(target);
 }
 
 static int httpclient_transaction_data_new (
@@ -201,15 +188,6 @@ static int httpclient_transaction_data_new (
 		free(result);
 	out:
 		return ret;
-}
-
-static void httpclient_transaction_destroy (struct httpclient_transaction_data *target) {
-	RRR_FREE_IF_NOT_NULL(target->msg_topic);
-
-	// Assuming that entry has recursive lock
-	rrr_msg_holder_decref(target->entry);
-
-	free(target);
 }
 
 static void httpclient_transaction_destroy_void (void *target) {
@@ -1263,6 +1241,13 @@ static int httpclient_request_send (
 		return ret;
 }
 
+static void httpclient_dbl_ptr_free_if_not_null (
+		void *arg
+) {
+	void *ptr = *((void **) arg);
+	RRR_FREE_IF_NOT_NULL(ptr);
+}
+
 static int httpclient_redirect_callback (
 		RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS
 ) {
@@ -1751,6 +1736,29 @@ static void httpclient_event_queue_process (
 	httpclient_queue_process(&data->from_senders_queue, data);
 
 	httpclient_check_queues_and_activate_event_as_needed(data);
+}
+
+static void httpclient_data_cleanup(void *arg) {
+	struct httpclient_data *data = arg;
+
+	rrr_event_collection_clear(&data->events);
+	if (data->http_client) {
+		rrr_http_client_destroy(data->http_client);
+	}
+	rrr_msgdb_client_close(&data->msgdb_conn);
+	rrr_http_client_request_data_cleanup(&data->request_data);
+	rrr_net_transport_config_cleanup(&data->net_transport_config);
+	rrr_http_client_config_cleanup(&data->http_client_config);
+	rrr_msg_holder_collection_clear(&data->from_senders_queue);
+	rrr_msg_holder_collection_clear(&data->from_msgdb_queue);
+	RRR_FREE_IF_NOT_NULL(data->method_tag);
+	RRR_FREE_IF_NOT_NULL(data->format_tag);
+	RRR_FREE_IF_NOT_NULL(data->endpoint_tag);
+	RRR_FREE_IF_NOT_NULL(data->server_tag);
+	RRR_FREE_IF_NOT_NULL(data->port_tag);
+	RRR_FREE_IF_NOT_NULL(data->body_tag);
+	rrr_map_clear(&data->meta_tags_all);
+	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 }
 
 static int httpclient_data_init (
