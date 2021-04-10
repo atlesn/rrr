@@ -86,7 +86,7 @@ struct rrr_http2_session {
 	uint64_t closed_stream_count;
 };
 
-void __rrr_http2_stream_destroy (
+int __rrr_http2_stream_destroy (
 		struct rrr_http2_stream *stream
 ) {
 	rrr_http_header_field_collection_clear(&stream->headers);
@@ -96,6 +96,7 @@ void __rrr_http2_stream_destroy (
 	RRR_FREE_IF_NOT_NULL(stream->data);
 	rrr_map_clear(&stream->headers_to_send);
 	free(stream);
+	return 0;
 }
 
 void __rrr_http2_stream_collection_destroy (
@@ -118,16 +119,20 @@ struct rrr_http2_stream *__rrr_http2_stream_maintain_and_find (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
+	struct rrr_http2_stream *result = NULL;
+
 	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
 		if (node->please_delete_me) {
 			session->closed_stream_count++;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (node->stream_id == stream_id) {
-			return node;
+			result = node;
+			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, 0; __rrr_http2_stream_destroy(node));
-	return NULL;
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, __rrr_http2_stream_destroy(node));
+
+	return result;
 }
 
 struct rrr_http2_stream *__rrr_http2_stream_maintain_and_find_or_create (

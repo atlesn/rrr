@@ -536,6 +536,8 @@ static int __rrr_http_client_read_callback (
 
 	ssize_t received_bytes_dummy = 0;
 
+	again:
+
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
 			handle,
@@ -571,7 +573,8 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		rrr_net_transport_ctx_notify_read(handle);
+		// This usually only happens at most one time
+		goto again;
 	}
 
 	out:

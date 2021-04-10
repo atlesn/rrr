@@ -1583,6 +1583,8 @@ static void httpclient_queue_process (
 		return;
 	}
 
+	int loop_max = 50;
+
 	// Check timeouts based on the time the loop starts to be fair
 	// if there are errors and the loop takes a while
 	const uint64_t loop_begin_time = rrr_time_get_64();
@@ -1592,9 +1594,8 @@ static void httpclient_queue_process (
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_msg_holder);
 		int ret_tmp = RRR_HTTP_OK;
 
-		// Max loop time 1 second
-		if (rrr_time_get_64() - loop_begin_time > 1 * 1000 * 1000) {
-			RRR_LL_ITERATE_BREAK();
+		if (loop_max-- == 0) {
+			RRR_LL_ITERATE_LAST();
 		}
 
 		rrr_msg_holder_lock(node);
@@ -1621,11 +1622,13 @@ static void httpclient_queue_process (
 				// Delete any message from message db upon TTL timeout
 				httpclient_msgdb_notify_timeout(data, node);
 				ttl_timeout_count++;
+				loop_max++;
 				RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (data->message_timeout_us != 0 && loop_begin_time > node->send_time + data->message_timeout_us) {
 				// No msgdb notify for normal timeout, let any messages get read back into the queue again
 				send_timeout_count++;
+				loop_max++;
 				RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if ((ret_tmp = httpclient_request_send (

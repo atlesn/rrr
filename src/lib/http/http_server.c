@@ -371,6 +371,8 @@ static int __rrr_http_server_read_callback (
 
 	ssize_t received_bytes = 0;
 
+	again:
+
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes,
 			handle,
@@ -395,6 +397,11 @@ static int __rrr_http_server_read_callback (
 					RRR_NET_TRANSPORT_CTX_FD(handle));
 		}
 		goto out;
+	}
+
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		// This usually only happens at most one time
+		goto again;
 	}
 
 	out:

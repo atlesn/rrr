@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/base64.h"
 #include "../util/macro_utils.h"
 
-#define RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX 25
+#define RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX 100
 
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
