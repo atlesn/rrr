@@ -400,6 +400,14 @@ void __rrr_net_transport_handle_touch (
 	}
 }
 
+static void __rrr_net_transport_handle_event_read_add_if_needed (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_read) && handle->handshake_complete) {
+		EVENT_ADD(handle->event_read);
+	}
+}
+
 #define CHECK_READ_WRITE_RETURN()                                                                              \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
         rrr_net_transport_handle_close(handle->transport, handle->handle);                                     \
@@ -458,8 +466,6 @@ static void __rrr_net_transport_event_handshake (
 
 	if ((ret_tmp = handle->transport->methods->handshake(handle)) != 0) {
 		if (ret_tmp == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			EVENT_ACTIVATE(handle->event_handshake);
-			rrr_event_dispatch_restart(handle->transport->event_queue);
 			return;
 		}
 
@@ -479,6 +485,7 @@ static void __rrr_net_transport_event_handshake (
 
 	handle->handshake_complete = 1;
 	EVENT_REMOVE(handle->event_handshake);
+	__rrr_net_transport_handle_event_read_add_if_needed(handle);
 
 	check_return:
 	CHECK_READ_WRITE_RETURN();
@@ -496,6 +503,7 @@ static void __rrr_net_transport_event_read (
 	int ret_tmp = 0;
 
 	if (!handle->handshake_complete) {
+		EVENT_REMOVE(handle->event_read);
 		return;
 	}
 
@@ -574,14 +582,6 @@ static void __rrr_net_transport_event_write (
 	CHECK_READ_WRITE_RETURN();
 }
 
-static void __rrr_net_transport_handle_event_read_add_if_needed (
-		struct rrr_net_transport_handle *handle
-) {
-	if (!EVENT_PENDING(handle->event_read)) {
-		EVENT_ADD(handle->event_read);
-	}
-}
-
 static int __rrr_net_transport_handle_events_setup_connected (
 	struct rrr_net_transport_handle *handle
 ) {
@@ -600,7 +600,7 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	__rrr_net_transport_handle_event_read_add_if_needed (handle);
+	// Don't add read events, it is done after handshake is complete
 
 	// HANDSHAKE
 
@@ -1258,7 +1258,7 @@ static void __rrr_net_transport_event_read_add (
 	(void)(fd);
 	(void)(flags);
 
-	// Re-add read-events (if they where deleted due to ratelimiting)
+	// Re-add read-events (if they where deleted due to ratelimiting or not yet added)
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		__rrr_net_transport_handle_event_read_add_if_needed(node);
@@ -1284,9 +1284,6 @@ static int __rrr_net_transport_accept_callback_intermediate (
 	handle->connected_addr_len = socklen;
 
 	final_callback(handle, sockaddr, socklen, final_callback_arg);
-
-	// For handshake purposes
-	EVENT_ACTIVATE(handle->event_read);
 
 	out:
 	return ret;
