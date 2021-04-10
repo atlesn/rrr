@@ -533,6 +533,10 @@ static int __rrr_http_application_http1_response_receive_callback (
 	out:
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
+	if (ret == RRR_HTTP_OK && transaction->response_part->parsed_version == RRR_HTTP_VERSION_10) {
+		RRR_DBG_3("HTTP response with protocol version HTTP/1.0 complete, closing connection.\n");
+		ret = RRR_HTTP_DONE;
+	}
 	return ret;
 }
 

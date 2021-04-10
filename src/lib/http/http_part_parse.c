@@ -62,6 +62,7 @@ static int __rrr_http_part_parse_response_code (
 
 	rrr_length tmp_len = 0;
 	if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1") != 0 || start != start_orig) {
+		start = start_orig;
 		if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.0") != 0 || start != start_orig) {
 			RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
