@@ -101,10 +101,6 @@ int rrr_http_transaction_query_field_add (
 void rrr_http_transaction_query_fields_dump (
 		struct rrr_http_transaction *transaction
 );
-int rrr_http_transaction_keepalive_set (
-		struct rrr_http_transaction *transaction,
-		int set
-);
 void rrr_http_transaction_method_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_method method

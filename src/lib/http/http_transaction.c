@@ -200,21 +200,6 @@ void rrr_http_transaction_query_fields_dump (
 	rrr_http_field_collection_dump(&transaction->request_part->fields);
 }
 
-int rrr_http_transaction_keepalive_set (
-		struct rrr_http_transaction *transaction,
-		int set
-) {
-	int ret = 0;
-
-	rrr_http_part_header_field_remove(transaction->request_part, "Connection");
-
-	if (set) {
-		ret = rrr_http_part_header_field_push(transaction->request_part, "Connection", "keep-alive");
-	}
-
-	return ret;
-}
-
 void rrr_http_transaction_method_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_method method

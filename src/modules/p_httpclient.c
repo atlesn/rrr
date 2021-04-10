@@ -1113,15 +1113,6 @@ static int httpclient_session_query_prepare_callback (
 		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_query_prepare_callback\n");
 	}
 
-	if ((ret = rrr_http_transaction_keepalive_set (
-			transaction,
-			1
-	)) != 0) {
-		RRR_MSG_0("Failed to set keep-alive in httpclient_session_query_prepare_callback\n");
-		ret = 1;
-		goto out;
-	}
-
 	if (data->do_meta_tags_ignore) {
 		RRR_MAP_ITERATE_BEGIN(&data->meta_tags_all);
 			rrr_array_clear_by_tag(&array_to_send_tmp, node_tag);
