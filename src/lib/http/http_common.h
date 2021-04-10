@@ -98,6 +98,12 @@ enum rrr_http_application_type {
 	RRR_HTTP_APPLICATION_HTTP2
 };
 
+enum rrr_http_version {
+	RRR_HTTP_VERSION_UNSPECIFIED,
+	RRR_HTTP_VERSION_10,
+	RRR_HTTP_VERSION_11
+};
+
 enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_REQUEST,
 	RRR_HTTP_PARSE_RESPONSE,

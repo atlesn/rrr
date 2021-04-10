@@ -382,7 +382,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = RRR_HTTP_OK;
 
@@ -452,7 +452,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(transaction);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 	(void)(application_topic);
 
 	int ret = 0;

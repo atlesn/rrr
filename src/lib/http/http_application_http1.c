@@ -449,7 +449,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 					transaction,
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
-					transaction->response_part->parsed_protocol_version,
+					transaction->response_part->parsed_application_type,
 					receive_data->websocket_callback_arg
 			))) {
 				goto out;
@@ -520,7 +520,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 				transaction,
 				read_session->rx_buf_ptr,
 				read_session->rx_overshoot_size,
-				transaction->response_part->parsed_protocol_version,
+				transaction->response_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != 0) {
 			goto out;
@@ -624,7 +624,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			transaction,
 			data_to_use,
 			read_session->rx_overshoot_size,
-			transaction->response_part->parsed_protocol_version,
+			transaction->response_part->parsed_application_type,
 			receive_data->websocket_callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
 		goto out;
@@ -941,7 +941,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction,
 				data_to_use,
 				read_session->rx_overshoot_size,
-				transaction->request_part->parsed_protocol_version,
+				transaction->request_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_NO_RESULT) {

@@ -91,7 +91,8 @@ struct rrr_http_part {
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
-	enum rrr_http_application_type parsed_protocol_version;
+	enum rrr_http_application_type parsed_application_type;
+	enum rrr_http_version parsed_version; 
 
 	size_t headroom_length;
 	size_t header_length;

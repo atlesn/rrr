@@ -410,6 +410,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 				transaction->request_part,
 				data_size,
 				RRR_HTTP_APPLICATION_HTTP2,
+				RRR_HTTP_VERSION_UNSPECIFIED,
 				method->value,
 				path->value
 		)) != 0) {

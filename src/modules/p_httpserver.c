@@ -978,7 +978,7 @@ static int httpserver_receive_callback (
 				&response_data->target,
 				transaction->request_part,
 				data_ptr,
-				next_protocol_version
+				next_application_type
 		)) != 0) {
 			goto out;
 		}
@@ -1176,7 +1176,7 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = 0;
 

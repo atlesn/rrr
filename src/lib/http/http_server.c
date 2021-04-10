@@ -204,7 +204,7 @@ static int __rrr_http_server_websocket_handshake_callback (
 			transaction,
 			data_ptr,
 			overshoot_bytes,
-			next_protocol_version,
+			next_application_type,
 			http_server->callbacks.final_callback_arg
 	)) != 0) {
 		goto out;
@@ -258,7 +258,7 @@ static int __rrr_http_server_receive_callback (
 				ip_buf,
 				method_buf,
 				uri_buf,
-				(transaction->request_part->parsed_protocol_version == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
+				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
 		);
 
 		if (overshoot_bytes > 0) {
@@ -278,7 +278,7 @@ static int __rrr_http_server_receive_callback (
 				transaction,
 				data_ptr,
 				overshoot_bytes,
-				next_protocol_version,
+				next_application_type,
 				http_server->callbacks.final_callback_arg
 		)) == RRR_HTTP_NO_RESULT) {
 			// Return value propagates
