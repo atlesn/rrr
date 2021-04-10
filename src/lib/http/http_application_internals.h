@@ -40,6 +40,7 @@ struct rrr_http_transaction;
     const char *user_agent,                                    \
     const char *host,                                          \
     enum rrr_http_upgrade_mode upgrade_mode,                   \
+    enum rrr_http_version protocol_version,                    \
     struct rrr_http_transaction *transaction
 
 #define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \

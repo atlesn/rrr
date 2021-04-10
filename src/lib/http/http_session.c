@@ -196,7 +196,8 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host,
 		struct rrr_http_transaction *transaction,
-		enum rrr_http_upgrade_mode upgrade_mode
+		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
 	return rrr_http_application_transport_ctx_request_send (
@@ -206,6 +207,7 @@ int rrr_http_session_transport_ctx_request_send (
 			session->user_agent,
 			host,
 			upgrade_mode,
+			protocol_version,
 			transaction
 	);
 }

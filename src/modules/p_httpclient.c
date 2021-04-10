@@ -1234,7 +1234,8 @@ static int httpclient_request_send (
 			no_destination_override
 	};
 
-	request_data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_HTTP2;
+	request_data->upgrade_mode = data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2;
+	request_data->protocol_version = data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11;
 
 	// Debug message for sending a request is in query prepare callback
 
@@ -1812,7 +1813,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			http_transport_force,
 			data->http_client_config.method,
 			data->http_client_config.body_format,
-			RRR_HTTP_UPGRADE_MODE_HTTP2,
+			data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2,
+			data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11,
 			data->http_client_config.do_plain_http2,
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {

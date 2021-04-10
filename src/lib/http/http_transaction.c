@@ -508,10 +508,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 int rrr_http_transaction_request_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		const char *user_agent,
 		int (*preliminary_callback)(
 			enum rrr_http_method method,
 			enum rrr_http_upgrade_mode upgrade_mode,
+			enum rrr_http_version protocol_version,
 			struct rrr_http_part *request_part,
 			const struct rrr_nullsafe_str *request,
 			void *arg
@@ -528,7 +530,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = preliminary_callback(transaction->method, upgrade_mode, transaction->request_part, request_nullsafe, callback_arg)) != 0) {
+	if ((ret = preliminary_callback(transaction->method, upgrade_mode, protocol_version, transaction->request_part, request_nullsafe, callback_arg)) != 0) {
 		goto out;
 	}
 

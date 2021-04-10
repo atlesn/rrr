@@ -99,6 +99,7 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *user_agent,
 		const char *host,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_transaction *transaction
 );
 int rrr_http_application_transport_ctx_need_tick (

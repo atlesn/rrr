@@ -1309,6 +1309,7 @@ struct rrr_http_application_http1_request_send_callback_data {
 static int __rrr_http_application_http1_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_part *request_part,
 		const struct rrr_nullsafe_str *request,
 		void *arg
@@ -1388,9 +1389,10 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 	}
 
 	// Append the rest of the header after endpoint
+	// Caller should check that version 1.0 is not used together with upgrades as this might cause connection to close after the first response
 	if ((ret = rrr_nullsafe_str_append_asprintf (
 			request_tmp,
-			" HTTP/1.1\r\n"
+			(protocol_version == RRR_HTTP_VERSION_10 ? " HTTP/1.0\r\n" : " HTTP/1.1\r\n")
 	)) < 0) {
 		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
@@ -1475,8 +1477,10 @@ static int __rrr_http_application_http1_request_send (
 
 	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
 
-	if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
-		goto out;
+	if (protocol_version != RRR_HTTP_VERSION_10) {
+		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
+			goto out;
+		}
 	}
 
 	struct rrr_http_application_http1_request_send_callback_data callback_data = {
@@ -1488,6 +1492,7 @@ static int __rrr_http_application_http1_request_send (
 	if ((ret = rrr_http_transaction_request_prepare_wrapper (
 			transaction,
 			upgrade_mode,
+			protocol_version,
 			user_agent,
 			__rrr_http_application_http1_request_send_preliminary_callback,
 			__rrr_http_application_http1_request_send_make_headers_callback,

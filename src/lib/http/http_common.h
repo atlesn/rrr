@@ -176,6 +176,14 @@ extern const char *rrr_http_application_str_http2;
     (transport == RRR_HTTP_APPLICATION_HTTP2 ? rrr_http_application_str_http2 : ("unknown")                                    \
     ))
 
+extern const char *rrr_http_version_str_10;
+extern const char *rrr_http_version_str_11;
+
+#define RRR_HTTP_VERSION_TO_STR(transport)                                                                                     \
+    (transport == RRR_HTTP_VERSION_10 ? rrr_http_version_str_10 :                                                              \
+    (transport == RRR_HTTP_VERSION_11 ? rrr_http_version_str_11 : ("unspecified")                                              \
+    ))
+
 typedef uint64_t rrr_http_unique_id;
 struct rrr_nullsafe_str;
 

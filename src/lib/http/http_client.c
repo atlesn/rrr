@@ -256,6 +256,7 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_method method,
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		int do_plain_http2,
 		const char *user_agent
 ) {
@@ -268,6 +269,7 @@ int rrr_http_client_request_data_reset (
 	data->method = method;
 	data->body_format = body_format;
 	data->upgrade_mode = upgrade_mode;
+	data->protocol_version = protocol_version;
 	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
 
@@ -584,11 +586,19 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 
 	struct rrr_http_application *upgraded_app = NULL;
 
+	enum rrr_http_version protocol_version = callback_data->data->protocol_version;
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+	}
+
+	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
+	// protocol version is ignored when HTTP/2 is used.
+	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE && protocol_version == RRR_HTTP_VERSION_10) {
+		printf("Enforce 1.1\n");
+		protocol_version = RRR_HTTP_VERSION_11;
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
@@ -692,7 +702,8 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			handle,
 			callback_data->request_header_host,
 			callback_data->transaction,
-			upgrade_mode
+			upgrade_mode,
+			protocol_version
 	)) != 0) {
 		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
 		goto out;
@@ -1055,13 +1066,14 @@ int rrr_http_client_request_send (
 		}
 	}
 
-	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' upgrade mode '%s'\n",
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' version '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(transaction->method),
 			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
 			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
+			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 

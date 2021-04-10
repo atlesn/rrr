@@ -81,6 +81,9 @@ int rrr_http_client_config_parse (
 	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);
 
+	RRR_INSTANCE_CONFIG_STRING_SET("_version_10");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_http_10, 0);
+
 	if (data->concurrent_connections < 1 || data->concurrent_connections > 0xffff) {
 		RRR_MSG_0("Parameter %s was out of range, value must be > 0 and < 65536.\n", config_string);
 		ret = 1;

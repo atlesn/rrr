@@ -87,9 +87,10 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *user_agent,
 		const char *host,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_transaction *transaction
 ) {
-	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, transaction);
+	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, protocol_version, transaction);
 }
 
 int rrr_http_application_transport_ctx_need_tick (

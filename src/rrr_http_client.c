@@ -653,6 +653,7 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
+			RRR_HTTP_VERSION_11,
 			0, // No plain HTTP2
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {

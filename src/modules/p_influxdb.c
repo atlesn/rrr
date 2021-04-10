@@ -299,7 +299,8 @@ static void influxdb_send_data_callback (
 			handle,
 			data->http_client_config.server,
 			transaction,
-			RRR_HTTP_UPGRADE_MODE_NONE
+			RRR_HTTP_UPGRADE_MODE_NONE,
+			RRR_HTTP_VERSION_11
 	)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

@@ -153,12 +153,15 @@ static int __rrr_http_application_http2_request_send_possible (
 static int __rrr_http_application_http2_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_part *request_part,
 		const struct rrr_nullsafe_str *request,
 		void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	(void)(protocol_version);
 
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
@@ -216,6 +219,7 @@ static int __rrr_http_application_http2_request_send (
 					user_agent,
 					host,
 					RRR_HTTP_UPGRADE_MODE_NONE,
+					protocol_version,
 					transaction
 			)) != 0) {
 				RRR_MSG_0("Failed to send HTTP1 request after downgrade from HTTP2, return was %i\n", ret);
@@ -273,6 +277,7 @@ static int __rrr_http_application_http2_request_send (
 	if ((ret = rrr_http_transaction_request_prepare_wrapper (
 			transaction,
 			upgrade_mode,
+			protocol_version,
 			user_agent,
 			__rrr_http_application_http2_request_send_preliminary_callback,
 			__rrr_http_application_http2_header_fields_submit_callback,
