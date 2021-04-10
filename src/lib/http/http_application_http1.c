@@ -553,7 +553,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	if (ret == RRR_HTTP_OK) {
-		if (transaction->response_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
+		if (transaction->response_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
 			ret = RRR_HTTP_DONE;
 		}
 	}

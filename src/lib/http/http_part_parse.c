@@ -648,6 +648,10 @@ int rrr_http_part_parse (
 			RRR_DBG_3("HTTP 'Connection: keep-alive' header found\n");
 			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
 		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "upgrade") == 0) {
+			RRR_DBG_3("HTTP 'Connection: upgrade' header found, implies keep-alive\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
 		else {
 			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(tmp, connection->value);
 			RRR_DBG_3("HTTP unknown value '%s' for 'Connection' header ignored\n", tmp);
