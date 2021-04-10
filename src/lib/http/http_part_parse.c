@@ -177,9 +177,16 @@ static int __rrr_http_part_parse_request (
 
 	rrr_length protocol_length = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
+		start = start_orig;
+		if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.0")) != 0 || start != start_orig) {
+			RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+		result->parsed_version = RRR_HTTP_VERSION_10;
+	}
+	else {
+		result->parsed_version = RRR_HTTP_VERSION_11;
 	}
 
 	if (start_orig + protocol_length != crlf) {

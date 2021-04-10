@@ -258,12 +258,24 @@ static int __rrr_http_server_receive_callback (
 				ip_buf,
 				method_buf,
 				uri_buf,
-				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
+				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2
+					? "HTTP/2"
+					: (transaction->request_part->parsed_version == RRR_HTTP_VERSION_10
+						? "HTTP/1.0"
+						: "HTTP/1.1"
+					)
+				)
 		);
 
 		if (overshoot_bytes > 0) {
-			RRR_MSG_2("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
-					RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			if (transaction->request_part->parsed_version == RRR_HTTP_VERSION_10) {
+				RRR_MSG_0("HTTP server %i %s has %li bytes overshoot while protocol version is HTTP/1.0, data will be lost\n",
+						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			}
+			else {
+				RRR_DBG_3("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
+						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			}
 		}
 	}
 

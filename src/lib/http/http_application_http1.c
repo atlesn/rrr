@@ -187,6 +187,7 @@ static int __rrr_http_application_http1_send_callback (
 
 static int __rrr_http_application_http1_response_send_response_code_callback (
 		int response_code,
+		enum rrr_http_version protocol_version,
 		void *arg
 ) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
@@ -197,7 +198,8 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 
 	if (rrr_asprintf (
 			&response_str_tmp,
-			"HTTP/1.1 %u %s\r\n",
+			"%s %u %s\r\n",
+			(protocol_version == RRR_HTTP_VERSION_10 ? "HTTP/1.0" : "HTTP/1.1"),
 			response_code,
 			rrr_http_util_iana_response_phrase_from_status_code(response_code)
 	) <= 0) {
@@ -216,6 +218,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 }
 
 static int __rrr_http_application_http1_response_send_final (
+	enum rrr_http_version protocol_version,
 	struct rrr_http_part *response_part,
 	const struct rrr_nullsafe_str *send_data,
 	void *arg
@@ -239,6 +242,10 @@ static int __rrr_http_application_http1_response_send_final (
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_response_send_final\n");
 			goto out;
 		}
+	}
+
+	if (protocol_version == RRR_HTTP_VERSION_10) {
+		rrr_net_transport_ctx_close_when_send_complete_set(callback_data->handle);
 	}
 
 	out:
@@ -867,29 +874,31 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-	if ((ret = __rrr_http_application_http1_request_upgrade_try (
-			&upgrade_mode,
-			receive_data,
-			read_session,
-			data_to_use
-	)) != 0) {
-		goto out;
-	}
-
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
-		RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
-		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-		goto out_send_response;
-	}
-
-	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
-		if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-			RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
-			receive_data->http1->upgrade_active = upgrade_mode;
+	if (transaction->request_part->parsed_version != RRR_HTTP_VERSION_10) {
+		if ((ret = __rrr_http_application_http1_request_upgrade_try (
+				&upgrade_mode,
+				receive_data,
+				read_session,
+				data_to_use
+		)) != 0) {
+			goto out;
 		}
-		else {
-			RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
-					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+
+		if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
+			RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
+			transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+			goto out_send_response;
+		}
+
+		if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
+			if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+				RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
+				receive_data->http1->upgrade_active = upgrade_mode;
+			}
+			else {
+				RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+						RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+			}
 		}
 	}
 
@@ -1026,6 +1035,13 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 	struct rrr_http_part *part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
+
+	if (rrr_net_transport_ctx_close_when_send_complete_get(receive_data->handle)) {
+		// Data received after completed parse of HTTP/1.0 request, drop data as
+		// connection is to be closed.
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
 
 	if (receive_data->unique_id_generator_callback == NULL) {
 		// Is client
@@ -1517,7 +1533,6 @@ static int __rrr_http_application_http1_tick (
 	*upgraded_app = NULL;
 
 	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > 0) {
-		printf("Send waiting in __rrr_http_application_http1_tick\n");
 		goto out;
 	}
 

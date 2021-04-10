@@ -564,6 +564,9 @@ static void __rrr_net_transport_event_write (
 	}
 
 	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
+		if (ret_tmp == 0 && handle->close_when_send_complete) {
+			ret_tmp = RRR_SOCKET_READ_EOF;
+		}
 		EVENT_REMOVE(handle->event_write);
 	}
 
@@ -954,6 +957,24 @@ static int __rrr_net_transport_ctx_send_push (
 
 	out:
 	return ret;
+}
+
+void rrr_net_transport_ctx_close_when_send_complete_set (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!handle->close_when_send_complete) {
+		handle->close_when_send_complete = 1;
+		RRR_DBG_7("net transport fd %i close when send complete activated\n",
+				handle->submodule_fd);
+
+		EVENT_ADD(handle->event_write);
+	}
+}
+
+int rrr_net_transport_ctx_close_when_send_complete_get (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->close_when_send_complete;
 }
 
 int rrr_net_transport_ctx_send_push (

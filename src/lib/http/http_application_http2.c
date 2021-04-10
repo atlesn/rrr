@@ -847,19 +847,25 @@ int rrr_http_application_http2_new_from_upgrade (
 
 static int __rrr_http_application_http2_response_submit_response_code_callback (
 	int response_code,
+	enum rrr_http_version protocol_version,
 	void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
+
+	(void)(protocol_version);
+
 	return rrr_http2_header_status_submit(callback_data->app->http2_session, callback_data->stream_id, response_code);
 }
 
 static int __rrr_http_application_http2_response_submit_final_callback (
+	enum rrr_http_version protocol_version,
 	struct rrr_http_part *response_part,
 	const struct rrr_nullsafe_str *send_data,
 	void *arg
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 
+	(void)(protocol_version);
 	(void)(response_part);
 	(void)(send_data);
 
