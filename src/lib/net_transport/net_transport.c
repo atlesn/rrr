@@ -459,6 +459,7 @@ static void __rrr_net_transport_event_handshake (
 	if ((ret_tmp = handle->transport->methods->handshake(handle)) != 0) {
 		if (ret_tmp == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
 			EVENT_ACTIVATE(handle->event_handshake);
+			rrr_event_dispatch_restart(handle->transport->event_queue);
 			return;
 		}
 
