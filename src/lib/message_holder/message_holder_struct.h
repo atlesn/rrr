@@ -49,13 +49,17 @@ struct rrr_msg_holder {
 	// Message broker updates this on writes to buffer
 	uint64_t buffer_time;
 
-	// Avaialbe for modules
+	// Available for modules
 	uint64_t send_time;
 
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;
 	ssize_t bytes_to_send;
 	int endian_indicator;
+
+	// Available for modules
+	void *private_data;
+	void (*private_data_destroy)(void *private_data);
 };
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

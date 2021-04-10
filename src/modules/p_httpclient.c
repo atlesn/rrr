@@ -66,21 +66,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
 
 struct httpclient_transaction_data {
-	RRR_LL_NODE(struct httpclient_transaction_data);
 	char *msg_topic;
 	struct rrr_msg_holder *entry;
 };
 
-struct httpclient_transaction_data_collection {
-	RRR_LL_HEAD(struct httpclient_transaction_data);
+struct httpclient_redirect_data {
+	struct rrr_http_client_request_data request_data;
+	rrr_biglength remaining_redirects;
+	enum rrr_http_version protocol_version;
 };
 
 struct httpclient_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_msg_holder_collection from_senders_queue;
 	struct rrr_msg_holder_collection from_msgdb_queue;
-
-	struct httpclient_transaction_data_collection redirect_transactions;
 
 	struct rrr_msgdb_client_conn msgdb_conn;
 
@@ -123,7 +122,6 @@ struct httpclient_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_msgdb_poll;
 	rrr_event_handle event_queue_process;
-	rrr_event_handle event_redirect_process;
 
 	struct rrr_poll_helper_counters counters;
 
@@ -140,6 +138,19 @@ struct httpclient_data {
 	// Array fields, server name etc.
 	struct rrr_http_client_config http_client_config;
 };
+
+static void httpclient_check_queues_and_activate_event_as_needed (
+	struct httpclient_data *data
+) {
+	if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) {
+		if (!EVENT_PENDING(data->event_queue_process)) {
+			EVENT_ADD(data->event_queue_process);
+		}
+	}
+	else {
+		EVENT_REMOVE(data->event_queue_process);
+	}
+}
 
 static void httpclient_transaction_destroy (struct httpclient_transaction_data *target) {
 	RRR_FREE_IF_NOT_NULL(target->msg_topic);
@@ -194,11 +205,42 @@ static void httpclient_transaction_destroy_void (void *target) {
 	httpclient_transaction_destroy(target);
 }
 
-static void httpclient_transaction_destroy_void_dbl_ptr (void *target) {
-	struct httpclient_transaction_data **transaction_data = target;
-	if (*transaction_data != NULL) {
-		httpclient_transaction_destroy(*transaction_data);
+static int httpclient_redirect_data_new (
+		struct httpclient_redirect_data **target,
+		rrr_biglength remaining_redirects,
+		enum rrr_http_version protocol_version
+) {
+	int ret = 0;
+
+	struct httpclient_redirect_data *redirect_data;
+
+	if ((redirect_data = malloc(sizeof(*redirect_data))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in httpclient_redirect_data_new\n");
+		ret = 1;
+		goto out;
 	}
+
+	memset(redirect_data, '\0', sizeof(*redirect_data));
+
+	redirect_data->remaining_redirects = remaining_redirects;
+	redirect_data->protocol_version = protocol_version;
+
+	*target = redirect_data;
+
+	goto out;
+//	out_free:
+//		free(redirect_data);
+	out:
+		return ret;
+}
+
+static void httpclient_redirect_data_destroy (struct httpclient_redirect_data *redirect_data) {
+	rrr_http_client_request_data_cleanup(&redirect_data->request_data);
+	free(redirect_data);
+}
+
+static void httpclient_redirect_data_destroy_void (void *target) {
+	httpclient_redirect_data_destroy(target);
 }
 
 struct httpclient_create_message_from_response_data_nullsafe_callback_data {
@@ -905,6 +947,10 @@ static int httpclient_connection_prepare_callback (
 	struct httpclient_prepare_callback_data *callback_data = arg;
 	struct httpclient_data *data = callback_data->data;
 
+	if (callback_data->no_destination_override) {
+		return 0;
+	}
+
 	return httpclient_overrides_server_and_port_get_from_message (
 			server_override,
 			port_override,
@@ -1182,8 +1228,6 @@ static int httpclient_request_send (
 	struct rrr_array array_from_msg_tmp = {0};
 	struct httpclient_transaction_data *transaction_data = NULL;
 
-	pthread_cleanup_push(rrr_array_clear_void, &array_from_msg_tmp);
-
 	array_from_msg_tmp.version = RRR_ARRAY_VERSION;
 
 	if ((ret = httpclient_transaction_data_new (
@@ -1192,16 +1236,14 @@ static int httpclient_request_send (
 			MSG_TOPIC_LENGTH(message),
 			entry
 	)) != 0) {
-		goto out_cleanup_array;
+		goto out;
 	}
 
 	rrr_msg_holder_incref_while_locked(entry);
 
-	pthread_cleanup_push(httpclient_transaction_destroy_void_dbl_ptr, &transaction_data);
-
 	if (MSG_IS_ARRAY(message)) {
 		if ((ret = httpclient_message_values_get(&array_from_msg_tmp, message)) != RRR_HTTP_OK) {
-			goto out_cleanup_transaction_data;
+			goto out;
 		}
 	}
 
@@ -1211,9 +1253,6 @@ static int httpclient_request_send (
 			&array_from_msg_tmp,
 			no_destination_override
 	};
-
-	request_data->upgrade_mode = data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2;
-	request_data->protocol_version = data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11;
 
 	// Debug message for sending a request is in query prepare callback
 
@@ -1234,18 +1273,12 @@ static int httpclient_request_send (
 
 	// Do not add anything here, let return value from last function call propagate
 
-	out_cleanup_transaction_data:
-		pthread_cleanup_pop(1);
-	out_cleanup_array:
-		pthread_cleanup_pop(1);
-		return ret;
-}
-
-static void httpclient_dbl_ptr_free_if_not_null (
-		void *arg
-) {
-	void *ptr = *((void **) arg);
-	RRR_FREE_IF_NOT_NULL(ptr);
+	out:
+	if (transaction_data != NULL) {
+		httpclient_transaction_destroy(transaction_data);
+	}
+	rrr_array_clear(&array_from_msg_tmp);
+	return ret;
 }
 
 static int httpclient_redirect_callback (
@@ -1256,17 +1289,24 @@ static int httpclient_redirect_callback (
 
 	int ret = 0;
 
-	struct rrr_http_client_request_data request_data = {0};
 	struct rrr_array array_from_msg_tmp = {0};
 	char *server_override = NULL;
 	uint16_t port_override = 0;
 
 	rrr_msg_holder_lock(transaction_data->entry);
 
-	pthread_cleanup_push(rrr_msg_holder_unlock_void, transaction_data->entry);
-	pthread_cleanup_push(rrr_http_client_request_data_cleanup_void, &request_data);
-	pthread_cleanup_push(rrr_array_clear_void, &array_from_msg_tmp);
-	pthread_cleanup_push(httpclient_dbl_ptr_free_if_not_null, &server_override);
+	struct httpclient_redirect_data *redirect_data = NULL;
+
+	if ((ret = httpclient_redirect_data_new (
+			&redirect_data,
+			transaction->remaining_redirects,
+			transaction->request_part->parsed_version
+	)) != 0) {
+		goto out;
+	}
+
+	// Entry takes ownership of redirect data, no cleanup at function out
+	rrr_msg_holder_private_data_set(transaction_data->entry, redirect_data, httpclient_redirect_data_destroy_void);
 
 	struct rrr_msg_msg *message = transaction_data->entry->message;
 
@@ -1276,7 +1316,7 @@ static int httpclient_redirect_callback (
 		}
 	}
 
-	if ((ret =  httpclient_overrides_server_and_port_get_from_message (
+	if ((ret = httpclient_overrides_server_and_port_get_from_message (
 			&server_override,
 			&port_override,
 			data,
@@ -1286,13 +1326,13 @@ static int httpclient_redirect_callback (
 	}
 
 	// Default from config
-	if ((ret = rrr_http_client_request_data_reset_from_request_data (&request_data, &data->request_data)) != 0) {
+	if ((ret = rrr_http_client_request_data_reset_from_request_data (&redirect_data->request_data, &data->request_data)) != 0) {
 		goto out;
 	}
 
 	// Overrides from message excluding endpoint which is part ov the redirect
 	if ((ret = rrr_http_client_request_data_reset_from_raw (
-			&request_data,
+			&redirect_data->request_data,
 			server_override,
 			port_override
 	)) != 0) {
@@ -1300,34 +1340,23 @@ static int httpclient_redirect_callback (
 	}
 
 	// Overrides from redirect URI which may be multiple parameters
-	if ((ret = rrr_http_client_request_data_reset_from_uri (&request_data, uri)) != 0) {
+	if ((ret = rrr_http_client_request_data_reset_from_uri (&redirect_data->request_data, uri)) != 0) {
 		RRR_MSG_0("Error while updating target from redirect response URI in httpclient instance %s, return was %i\n",
 				INSTANCE_D_NAME(data->thread_data), ret);
 		goto out;
 	}
 
-	// printf("port: %u transport force: %i\n", request_data.http_port, request_data.transport_force);
+	redirect_data->request_data.protocol_version = transaction->response_part->parsed_version;
 
-	// It is safe to call back into net transport ctx as we are not in ctx while handling redirects.
-	// This function will incref the entry as needed.
-	// We assume that http client lib has already decref'd remaining redirects by 1,
-	if ((ret = httpclient_request_send (
-			data,
-			&request_data,
-			transaction_data->entry,
-			transaction->remaining_redirects,
-			1 // No destination override (endpoint, server etc. from message)
-	)) != 0) {
-		RRR_MSG_0("Failed to send HTTP request following redirect response in httpclient instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
-		goto out;
-	}
+	rrr_msg_holder_incref_while_locked(transaction_data->entry);
+	RRR_LL_APPEND(&data->from_senders_queue, transaction_data->entry);
+	httpclient_check_queues_and_activate_event_as_needed(data);
 
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	rrr_msg_holder_unlock(transaction_data->entry);
+	rrr_array_clear(&array_from_msg_tmp);
+	RRR_FREE_IF_NOT_NULL(server_override);
+	// No cleanup of redirect data, ownership taken by enty
 
 	// Don't let soft error propagate (would cause the whole thread to shut down)
 	return (ret & ~(RRR_HTTP_SOFT_ERROR));
@@ -1414,6 +1443,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// Important : Set send_time for correct timeout behavior
 	entry->send_time = rrr_time_get_64();
 
+	rrr_msg_holder_private_data_clear(entry);
 	rrr_msg_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->from_senders_queue, entry);
 
@@ -1578,6 +1608,23 @@ static void httpclient_queue_process (
 		rrr_msg_holder_lock(node);
 		pthread_cleanup_push(rrr_msg_holder_unlock_void, node);
 
+		struct rrr_http_client_request_data *request_data_to_use = &data->request_data;
+		int no_destination_override = 0;
+		rrr_biglength remaining_redirects = data->redirects_max;
+
+		if (node->private_data) {
+			struct httpclient_redirect_data *redirect_data = node->private_data;
+			request_data_to_use = &redirect_data->request_data;
+			remaining_redirects = redirect_data->remaining_redirects;
+			no_destination_override = 1;
+		}
+		else {
+			request_data_to_use->protocol_version = data->http_client_config.do_http_10 ? RRR_HTTP_VERSION_10 : RRR_HTTP_VERSION_11;
+		}
+
+		// Always set this, also upon redirects
+		request_data_to_use->upgrade_mode = data->http_client_config.do_http_10 ? RRR_HTTP_UPGRADE_MODE_NONE : RRR_HTTP_UPGRADE_MODE_HTTP2;
+
 		if (data->message_ttl_us != 0 && loop_begin_time > ((struct rrr_msg_msg *) node->message)->timestamp + data->message_ttl_us) {
 				// Delete any message from message db upon TTL timeout
 				httpclient_msgdb_notify_timeout(data, node);
@@ -1591,10 +1638,10 @@ static void httpclient_queue_process (
 		}
 		else if ((ret_tmp = httpclient_request_send (
 				data,
-				&data->request_data,
+				request_data_to_use,
 				node,
-				data->redirects_max,
-				0 // Destination override performed as needed
+				remaining_redirects,
+				no_destination_override
 		)) != RRR_HTTP_OK) {
 			if (ret_tmp == RRR_HTTP_BUSY) {
 				// Try again after ticking more, maybe we need to read
@@ -1632,19 +1679,6 @@ static void httpclient_queue_process (
 		RRR_MSG_0("Send timeout for %i messages in httpclient instance %s\n",
 				send_timeout_count,
 				INSTANCE_D_NAME(data->thread_data));
-	}
-}
-
-static void httpclient_check_queues_and_activate_event_as_needed (
-	struct httpclient_data *data
-) {
-	if (RRR_LL_COUNT(&data->from_msgdb_queue) > 0 || RRR_LL_COUNT(&data->from_senders_queue) > 0) {
-		if (!EVENT_PENDING(data->event_queue_process)) {
-			EVENT_ADD(data->event_queue_process);
-		}
-	}
-	else {
-		EVENT_REMOVE(data->event_queue_process);
 	}
 }
 
@@ -1887,7 +1921,7 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 			data,
 			5000 // 5 ms
 	) != 0) {
-		RRR_MSG_0("Failed to create event queue processl event in httpclient\n");
+		RRR_MSG_0("Failed to create queue process event in httpclient\n");
 		goto out_message;
 	}
 

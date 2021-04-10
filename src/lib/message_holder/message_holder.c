@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -107,6 +107,28 @@ void rrr_msg_holder_unlock_void (
 	rrr_msg_holder_unlock(entry);
 }
 
+void rrr_msg_holder_private_data_clear (
+		struct rrr_msg_holder *entry
+) {
+	if (entry->private_data && entry->private_data_destroy) {
+		entry->private_data_destroy(entry->private_data);
+	}
+
+	entry->private_data = NULL;
+	entry->private_data_destroy = NULL;
+}
+
+void rrr_msg_holder_private_data_set (
+		struct rrr_msg_holder *entry,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+) {
+	rrr_msg_holder_private_data_clear(entry);
+
+	entry->private_data = private_data;
+	entry->private_data_destroy = private_data_destroy;
+}
+
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {
@@ -118,6 +140,7 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	}
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
+		rrr_msg_holder_private_data_clear(entry);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);

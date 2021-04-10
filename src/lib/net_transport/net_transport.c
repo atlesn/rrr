@@ -403,7 +403,7 @@ void __rrr_net_transport_handle_touch (
 static void __rrr_net_transport_handle_event_read_add_if_needed (
 		struct rrr_net_transport_handle *handle
 ) {
-	if (!EVENT_PENDING(handle->event_read) && handle->handshake_complete) {
+	if (!EVENT_PENDING(handle->event_read)) {
 		EVENT_ADD(handle->event_read);
 	}
 }
@@ -484,8 +484,9 @@ static void __rrr_net_transport_event_handshake (
 	}
 
 	handle->handshake_complete = 1;
+
 	EVENT_REMOVE(handle->event_handshake);
-	__rrr_net_transport_handle_event_read_add_if_needed(handle);
+	EVENT_ADD(handle->event_read);
 
 	check_return:
 	CHECK_READ_WRITE_RETURN();
@@ -587,6 +588,22 @@ static int __rrr_net_transport_handle_events_setup_connected (
 ) {
 	int ret = 0;
 
+	// HANDSHAKE
+
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_handshake,
+			&handle->events,
+			handle->submodule_fd,
+			__rrr_net_transport_event_handshake,
+			handle,
+			1000 // 1 ms
+	)) != 0) {
+		goto out;
+	}
+
+	EVENT_ADD(handle->event_handshake);
+	EVENT_ACTIVATE(handle->event_handshake);
+
 	// READ
 
 	if ((ret = rrr_event_collection_push_read (
@@ -601,20 +618,6 @@ static int __rrr_net_transport_handle_events_setup_connected (
 	}
 
 	// Don't add read events, it is done after handshake is complete
-
-	// HANDSHAKE
-
-	if ((ret = rrr_event_collection_push_periodic (
-			&handle->event_handshake,
-			&handle->events,
-			__rrr_net_transport_event_handshake,
-			handle,
-			1000 // 1 ms
-	)) != 0) {
-		goto out;
-	}
-
-	EVENT_ACTIVATE(handle->event_handshake);
 
 	// WRITE
 

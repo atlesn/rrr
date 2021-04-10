@@ -268,9 +268,7 @@ static int __rrr_http_server_receive_callback (
 		);
 
 		if (overshoot_bytes > 0) {
-			if (	transaction->request_part->is_connection_close ||
-				transaction->response_part->is_connection_close
-			) {
+			if (transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_CLOSE) {
 				RRR_MSG_0("HTTP server %i %s has %li bytes overshoot while protocol version is HTTP/1.0 or 'Connection: close' is set, data will be lost\n",
 						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
 			}

@@ -1057,6 +1057,11 @@ int rrr_http_client_request_send (
 	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
 		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+
+	// Must try HTTP2 first because ALPN upgrade is always sent, downgrade to HTTP/1.1 will occur if negotiation fails
+	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+	}
 #endif /* RRR_WITH_NGHTTP2 */
 
 	if (method_prepare_callback != NULL) {
