@@ -320,7 +320,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = rrr_allocate(bytes > read_step_max_size ? bytes : read_step_max_size);
+			read_session->rx_buf_ptr = rrr_allocate_group(bytes > read_step_max_size ? bytes : read_step_max_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
 				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -342,7 +342,7 @@ int rrr_read_message_using_callbacks (
 		*bytes_read = bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-			char *new_buf = rrr_reallocate(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -392,7 +392,7 @@ int rrr_read_message_using_callbacks (
 
 			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
-			char *new_buf = rrr_allocate(read_session->rx_buf_size);
+			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -433,7 +433,7 @@ int rrr_read_message_using_callbacks (
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
 		read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-		read_session->rx_overshoot = rrr_allocate(read_session->rx_overshoot_size);
+		read_session->rx_overshoot = rrr_allocate_group(read_session->rx_overshoot_size, RRR_ALLOCATOR_GROUP_MSG);
 		if (read_session->rx_overshoot == NULL) {
 			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;

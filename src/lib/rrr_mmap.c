@@ -469,11 +469,10 @@ void rrr_mmap_collection_maintenance (
 	pthread_rwlock_wrlock(index_lock);
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
 		if (__rrr_mmap_is_empty(node)) {
-			printf("Destroy mmap\n");
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_mmap_destroy(node));
-	printf("Maintenance: %i\n", RRR_LL_COUNT(collection));
+	RRR_DBG_1("Maintenance: %i\n", RRR_LL_COUNT(collection));
 	pthread_rwlock_unlock(index_lock);
 }
 
@@ -495,7 +494,6 @@ void *rrr_mmap_collection_allocate (
 		pthread_rwlock_t *index_lock,
 		pthread_mutex_t *custom_lock,
 		const char *name,
-		int group,
 		int is_shared
 ) {
 	void *result = NULL;
@@ -539,7 +537,7 @@ void *rrr_mmap_collection_allocate (
 
 		pthread_rwlock_rdlock(index_lock);
 			RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
-				if (node->group == group && (node->prev_allocation_failure_req_size == 0 || node->prev_allocation_failure_req_size < bytes)) {
+				if ((node->prev_allocation_failure_req_size == 0 || node->prev_allocation_failure_req_size < bytes)) {
 					if ((result = rrr_mmap_allocate(node, bytes)) != NULL) {
 						RRR_LL_ITERATE_LAST();
 					}
@@ -561,11 +559,9 @@ void *rrr_mmap_collection_allocate (
 		goto out;
 	}
 
-	mmap_new->group = group;
-
 	RRR_LL_UNSHIFT(collection, mmap_new);
 
-//	printf("New collection %i\n", RRR_LL_COUNT(collection));
+	//printf("New collection %i group %i\n", RRR_LL_COUNT(collection), group);
 
 	result = rrr_mmap_allocate(mmap_new, bytes);
 	pthread_rwlock_unlock(index_lock);
@@ -574,24 +570,22 @@ void *rrr_mmap_collection_allocate (
 	return result;
 }
 
-void rrr_mmap_collection_free (
+int rrr_mmap_collection_free (
 		struct rrr_mmap_collection *collection,
 		pthread_rwlock_t *index_lock,
 		void *ptr
 ) {
-	int ok = 0;
+	int ret = 1; // Error
 
 	pthread_rwlock_rdlock(index_lock);
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
 		if (__rrr_mmap_has (node, ptr)) {
 			rrr_mmap_free(node, ptr);
-			ok = 1;
+			ret = 0;
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
 	pthread_rwlock_unlock(index_lock);
 
-	if (!ok) {
-		RRR_BUG("BUG: Invalid free of ptr %p in rrr_mmap_collection_free\n", ptr);
-	}
+	return ret;
 }
