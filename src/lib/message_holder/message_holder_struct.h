@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
-#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+//#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 
 struct rrr_msg_holder {
 	RRR_LL_NODE(struct rrr_msg_holder);
