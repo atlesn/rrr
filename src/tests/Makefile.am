@@ -11,7 +11,7 @@ SUBDIRS = modules
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
 
 test_LDFLAGS = ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
-test_LDADD = -ldl -lpthread -lm -L../lib -L../lib/.libs -lrrr 
+test_LDADD = -ldl -lpthread -lm -L../lib/.libs -lrrr
 test_SOURCES = test.c \
 	../main.c \
 	test_usleep.c \
@@ -38,12 +38,12 @@ send_ip_CFLAGS = ${AM_CFLAGS} -DRRR_INTERCEPT_ALLOW_STRERROR -fPIE -DPIE
 
 send_fifo_SOURCES = send_fifo.c
 send_fifo_CFLAGS = ${AM_CFLAGS}
-send_fifo_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
+send_fifo_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
 
 sha1_sha_SOURCES = sha1/sha.c
-sha1_sha_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
+sha1_sha_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
 
 sha1_shatest_SOURCES = sha1/shatest.c
-sha1_shatest_LDFLAGS = -lrrr -L../lib ${PERL5_LDFLAGS} -fPIE -DPIE
+sha1_shatest_LDFLAGS = -L../lib -lrrr ${PERL5_LDFLAGS} -fPIE -DPIE
 
 TESTS = test.sh test_passwd.sh sha1/shatest

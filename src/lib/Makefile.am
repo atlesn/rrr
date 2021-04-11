@@ -121,7 +121,6 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
-		    allocator.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
@@ -130,14 +129,19 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
+libadd_rrr_allocator = librrr_allocator.la
+librrr_allocator_la_SOURCES = allocator.c
+librrr_allocator_la_CFLAGS = ${JEMALLOC_CFLAGS} ${AM_CFLAGS}
+librrr_allocator_la_LDFLAGS = ${JEMALLOC_LDFLAGS}
+
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
-librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${AM_CFLAGS}
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_gnu = librrr_gnu.la
 librrr_gnu_la_SOURCES = util/gnu.c
-librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${AM_CFLAGS}
 librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
@@ -186,7 +190,8 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}               \
+    ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD = ${libadd_all} ${JEMALLOC_LIBADD} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads

@@ -170,6 +170,44 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
+		
+JEMALLOC_CFLAGS=""
+JEMALLOC_LDLAGS=""
+JEMALLOC_LIBADD=""
+
+#AC_CHECK_LIB([jemalloc], [malloc], [
+#	AC_MSG_CHECKING([precense of jemalloc headers])
+#	AC_RUN_IFELSE([
+#		AC_LANG_SOURCE([[
+#			#include <jemalloc/jemalloc.h>
+#
+#			int main (int argc, char *argv[]) {
+#				return 0;
+#			}
+#		]])
+#	], [
+#		
+#		JEMALLOC_VERSION=`jemalloc-config --version 2>/dev/null`
+#		if test "x$?" = "x0"; then
+#			AC_MSG_RESULT([yes, ${JEMALLOC_VERSION}])
+#
+##			JEMALLOC_CFLAGS=`jemalloc-config --cflags`
+##			JEMALLOC_LDLAGS=`jemalloc-config --ldflags`
+#			JEMALLOC_LIBADD="-ljemalloc"
+#
+#			AC_DEFINE([RRR_HAVE_JEMALLOC], [1], [jemalloc is present])
+#		else
+#			AC_MSG_RESULT([header present but not jemalloc-config found])
+#		fi
+#	], [
+#		AC_MSG_RESULT([no, or native jemalloc])
+#	])
+#], [])
+
+
+AC_SUBST([JEMALLOC_CFLAGS])
+AC_SUBST([JEMALLOC_LDLAGS])
+AC_SUBST([JEMALLOC_LIBADD])
 
 AC_MSG_CHECKING([usage of eventfd()])
 AS_IF([test "x$enable_eventfd" != "xno"], [

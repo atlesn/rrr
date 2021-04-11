@@ -114,7 +114,7 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 static int __rrr_cmodule_main_mmap_ensure (
 		struct rrr_cmodule *cmodule
 ) {
-	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, cmodule->name, NULL, 1 /* Is shared */) != 0) {
+	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, 1 /* Is shared */) != 0) {
 		RRR_MSG_0("Could not allocate mmap in __rrr_cmodule_main_mmap_ensure\n");
 		return 1;
 	}

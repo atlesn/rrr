@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stddef.h>
 
-#define RRR_ALLOCATOR_GROUP_DEFAULT	0
+#define RRR_ALLOCATOR_GROUP_MSG_HOLDER	0
 #define RRR_ALLOCATOR_GROUP_MSG		1
 
 #define RRR_ALLOCATOR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)

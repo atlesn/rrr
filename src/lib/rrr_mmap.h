@@ -27,19 +27,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util/linked_list.h"
 
+#define RRR_MMAP_COLLECTION_MAX 128
+
 struct rrr_mmap {
-	RRR_LL_NODE(struct rrr_mmap);
-	  pthread_mutex_t default_lock;
-	  pthread_mutex_t *active_lock;
-	  uint64_t heap_size;
-	  uint64_t prev_allocation_failure_req_size;
-	  char name[64];
-	  void *heap;
-	  int is_shared;
+	pthread_mutex_t lock;
+	uint64_t heap_size;
+	uint64_t prev_allocation_failure_req_size;
+	uint64_t prev_allocation_index_pos;
+	void *heap;
+	int is_shared;
 };
 
 struct rrr_mmap_collection {
-	RRR_LL_HEAD(struct rrr_mmap);
+	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
+	size_t prev_allocation_index;
+	size_t prev_free_index;
 };
 
 void rrr_mmap_free (
@@ -60,8 +62,6 @@ int rrr_mmap_heap_reallocate (
 int rrr_mmap_new (
 		struct rrr_mmap **target,
 		uint64_t heap_size,
-		const char *name,
-		pthread_mutex_t *custom_lock,
 		int is_shared
 );
 void rrr_mmap_destroy (
@@ -80,8 +80,6 @@ void *rrr_mmap_collection_allocate (
 		uint64_t bytes,
 		uint64_t min_mmap_size,
 		pthread_rwlock_t *index_lock,
-		pthread_mutex_t *custom_lock,
-		const char *name,
 		int is_shared
 );
 int rrr_mmap_collection_free (
