@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport.h"
 #include "net_transport_struct.h"
@@ -91,7 +92,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	struct rrr_net_transport_handle *new_handle = NULL;
 
-	if ((new_handle = malloc(sizeof(*new_handle))) == NULL) {
+	if ((new_handle = rrr_allocate(sizeof(*new_handle))) == NULL) {
 		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		ret = 1;
 		goto out;
@@ -119,7 +120,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	goto out;
 	out_free:
-		free(new_handle);
+		rrr_free(new_handle);
 	out:
 		return ret;
 }
@@ -213,7 +214,7 @@ static int __rrr_net_transport_handle_destroy (
 
 	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
-	free(handle);
+	rrr_free(handle);
 	// Always return success because we always free() regardless of callback result
 	return RRR_LL_DID_DESTROY;
 }
@@ -834,7 +835,7 @@ int rrr_net_transport_ctx_handle_match_data_set (
 		uint64_t number
 ) {
 	RRR_FREE_IF_NOT_NULL(handle->match_string);
-	if ((handle->match_string = strdup(string)) == NULL) {
+	if ((handle->match_string = rrr_strdup(string)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
 		return 1;
 	}

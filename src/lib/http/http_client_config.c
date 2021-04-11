@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <strings.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_client_config.h"
 #include "http_util.h"

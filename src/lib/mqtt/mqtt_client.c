@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_client.h"
 #include "mqtt_common.h"
@@ -424,7 +425,7 @@ int rrr_mqtt_client_connect (
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
 
 	if (data->mqtt_data.client_name != NULL && *(data->mqtt_data.client_name) != '\0') {
-		if ((connect->client_identifier = strdup(data->mqtt_data.client_name)) == NULL) {
+		if ((connect->client_identifier = rrr_strdup(data->mqtt_data.client_name)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -442,7 +443,7 @@ int rrr_mqtt_client_connect (
 
 	if (username != NULL) {
 		RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(connect);
-		if ((connect->username = strdup(username)) == NULL) {
+		if ((connect->username = rrr_strdup(username)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -453,7 +454,7 @@ int rrr_mqtt_client_connect (
 			RRR_BUG("BUG: Password given without username in rrr_mqtt_client_connect\n");
 		}
 		RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(connect);
-		if ((connect->password = strdup(password)) == NULL) {
+		if ((connect->password = rrr_strdup(password)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for password in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -852,7 +853,7 @@ static int __rrr_mqtt_client_acl_handler (
 
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	rrr_mqtt_common_data_destroy(&client->mqtt_data);
-	free(client);
+	rrr_free(client);
 }
 
 void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client) {
@@ -919,7 +920,7 @@ int rrr_mqtt_client_new (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_client_data *result = malloc(sizeof(*result));
+	struct rrr_mqtt_client_data *result = rrr_allocate(sizeof(*result));
 
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_new\n");
@@ -962,7 +963,7 @@ int rrr_mqtt_client_new (
 
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -983,7 +984,7 @@ int rrr_mqtt_client_late_set_client_identifier (
 
 	RRR_FREE_IF_NOT_NULL(data->client_name);
 
-	if ((data->client_name = strdup(client_identifier)) == NULL) {
+	if ((data->client_name = rrr_strdup(client_identifier)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_set_client_identifier\n");
 		return 1;
 	}

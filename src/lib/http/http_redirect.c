@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_redirect.h"
 #include "http_transaction.h"
 #include "../helpers/nullsafe_str.h"
@@ -37,7 +38,7 @@ static void __rrr_http_redirect_collection_entry_destroy (
 ) {
 	rrr_http_transaction_decref_if_not_null(entry->transaction);
 	rrr_nullsafe_str_destroy_if_not_null(&entry->uri);
-	free(entry);
+	rrr_free(entry);
 }
 
 static int __rrr_http_redirect_collection_entry_new (
@@ -51,7 +52,7 @@ static int __rrr_http_redirect_collection_entry_new (
 
 	char *endpoint_path_tmp = NULL;
 
-	struct rrr_http_redirect_collection_entry *entry = malloc(sizeof(*entry));
+	struct rrr_http_redirect_collection_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_redirect_collection_entry_new\n");
 		ret = 1;
@@ -72,7 +73,7 @@ static int __rrr_http_redirect_collection_entry_new (
 
 	goto out;
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		RRR_FREE_IF_NOT_NULL(endpoint_path_tmp);
 		return ret;

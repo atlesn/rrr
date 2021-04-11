@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -158,7 +159,7 @@ static void httpclient_transaction_destroy (struct httpclient_transaction_data *
 	// Assuming that entry has recursive lock
 	rrr_msg_holder_decref(target->entry);
 
-	free(target);
+	rrr_free(target);
 }
 
 static int httpclient_transaction_data_new (
@@ -171,7 +172,7 @@ static int httpclient_transaction_data_new (
 
 	*target = NULL;
 
-	struct httpclient_transaction_data *result = malloc(sizeof(*result));
+	struct httpclient_transaction_data *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_httpclient_transaction_data_new\n");
 		ret = 1;
@@ -180,7 +181,7 @@ static int httpclient_transaction_data_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((result->msg_topic = malloc(topic_len + 1)) == NULL) {
+	if ((result->msg_topic = rrr_allocate(topic_len + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for topic in rrr_httpclient_transaction_data_new\n");
 		ret = 1;
 		goto out_free;
@@ -196,7 +197,7 @@ static int httpclient_transaction_data_new (
 
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -214,7 +215,7 @@ static int httpclient_redirect_data_new (
 
 	struct httpclient_redirect_data *redirect_data;
 
-	if ((redirect_data = malloc(sizeof(*redirect_data))) == NULL) {
+	if ((redirect_data = rrr_allocate(sizeof(*redirect_data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in httpclient_redirect_data_new\n");
 		ret = 1;
 		goto out;
@@ -236,7 +237,7 @@ static int httpclient_redirect_data_new (
 
 static void httpclient_redirect_data_destroy (struct httpclient_redirect_data *redirect_data) {
 	rrr_http_client_request_data_cleanup(&redirect_data->request_data);
-	free(redirect_data);
+	rrr_free(redirect_data);
 }
 
 static void httpclient_redirect_data_destroy_void (void *target) {
@@ -820,7 +821,7 @@ static int httpclient_session_query_prepare_callback_process_override (
 	}
 	else if (RRR_TYPE_IS_STR_EXCACT(value->definition->type)) {
 		if (value->total_stored_length > 0) {
-			if ((data_to_free = malloc(value->total_stored_length + 1)) == NULL) {
+			if ((data_to_free = rrr_allocate(value->total_stored_length + 1)) == NULL) {
 				RRR_MSG_0("Warning: Failed to allocate memory for data in httpclient_session_query_prepare_callback_process_override\n");
 				goto out_check_force;
 			}

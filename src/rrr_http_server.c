@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "main.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
@@ -107,7 +108,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 	if (certificate != NULL) {
-		data->certificate_file = strdup(certificate);
+		data->certificate_file = rrr_strdup(certificate);
 		if (data->certificate_file == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -123,7 +124,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 	if (key != NULL) {
-		data->private_key_file = strdup(key);
+		data->private_key_file = rrr_strdup(key);
 		if (data->private_key_file == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -216,6 +217,9 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 
 static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	(void)(arg);
+
+	rrr_allocator_maintenance();
+
 	return (main_running ? 0 : RRR_EVENT_EXIT);
 }
 
@@ -372,5 +376,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_log_cleanup();
 
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../rrr_strerror.h"
 #include "rrr_socket_eventfd.h"
 #include "rrr_socket.h"

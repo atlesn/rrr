@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "message_holder.h"
 #include "message_holder_struct.h"
 #include "../allocator.h"
@@ -215,7 +216,7 @@ int rrr_msg_holder_new (
 
 	*result = NULL;
 
-	struct rrr_msg_holder *entry = rrr_allocate(sizeof(*entry));
+	struct rrr_msg_holder *entry = rrr_allocate_group(sizeof(*entry), RRR_ALLOCATOR_GROUP_MSG);
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
 		ret = 1;

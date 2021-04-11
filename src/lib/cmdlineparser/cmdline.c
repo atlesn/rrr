@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "cmdline.h"
+#include "../allocator.h"
 #include "../../lib/util/macro_utils.h"
 #include "../../lib/log.h"
 
@@ -36,7 +37,7 @@ static const char *cmd_blank_argument = "";
 
 static void __cmd_arg_value_destroy(struct cmd_arg_value *value) {
 	RRR_FREE_IF_NOT_NULL(value->value);
-	free(value);
+	rrr_free(value);
 }
 
 static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value_str) {
@@ -44,7 +45,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 	*target = NULL;
 
-	struct cmd_arg_value *value = malloc(sizeof(*value));
+	struct cmd_arg_value *value = rrr_allocate(sizeof(*value));
 	if (value == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 		ret = 1;
@@ -53,7 +54,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 	memset(value, '\0', sizeof(*value));
 
 	if (value_str != NULL) {
-		if ((value->value = strdup(value_str)) == NULL) {
+		if ((value->value = rrr_strdup(value_str)) == NULL) {
 			RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 			ret = 1;
 			goto out;
@@ -72,7 +73,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 static void __cmd_arg_pair_destroy(struct cmd_arg_pair *pair) {
 	RRR_LL_DESTROY(pair, struct cmd_arg_value, __cmd_arg_value_destroy(node));
-	free(pair);
+	rrr_free(pair);
 }
 
 static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_arg_rule *rule) {
@@ -80,7 +81,7 @@ static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_ar
 
 	*target = NULL;
 
-	struct cmd_arg_pair *pair = malloc(sizeof(*pair));
+	struct cmd_arg_pair *pair = rrr_allocate(sizeof(*pair));
 	if (pair == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_pair_new\n");
 		ret = 1;
@@ -306,7 +307,7 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	const char *pos = value->value;
 	const char *end = pos + strlen(pos);
 
-	buf = malloc(end - pos + 1);
+	buf = rrr_allocate(end - pos + 1);
 	if (buf == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory A in __cmd_pair_split_comma\n");
 		ret = 1;
@@ -341,16 +342,16 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
-	struct cmd_argv_copy *ret = malloc(sizeof(*ret));
+	struct cmd_argv_copy *ret = rrr_allocate(sizeof(*ret));
 
 	*target = NULL;
 
-	ret->argv = malloc(sizeof(char*) * (data->argc + 1));
+	ret->argv = rrr_allocate(sizeof(char*) * (data->argc + 1));
 	ret->argc = data->argc;
 
 	int i;
 	for (i = 0; i < data->argc; i++) {
-		ret->argv[i] = malloc(strlen(data->argv[i]) + 1);
+		ret->argv[i] = rrr_allocate(strlen(data->argv[i]) + 1);
 		strcpy(ret->argv[i], data->argv[i]);
 	}
 	ret->argv[i] = NULL;
@@ -364,10 +365,10 @@ void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
 	}
 	// We always have an extra pointer to hold NULL, hence the <=
 	for (int i = 0; i <= target->argc; i++) {
-		free(target->argv[i]);
+		rrr_free(target->argv[i]);
 	}
-	free(target->argv);
-	free(target);
+	rrr_free(target->argv);
+	rrr_free(target);
 }
 
 static const struct cmd_arg_rule *__cmd_get_rule_noflag (const struct cmd_arg_rule *rules, cmd_arg_count pos) {

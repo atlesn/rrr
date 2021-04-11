@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "rrr_socket_send_chunk.h"
 #include "rrr_socket.h"
 #include "../util/macro_utils.h"
@@ -47,7 +48,7 @@ static void __rrr_socket_send_chunk_destroy (
 		chunk->private_data_destroy(chunk->private_data);
 	}
 	RRR_FREE_IF_NOT_NULL(chunk->data);
-	free(chunk);
+	rrr_free(chunk);
 }
 
 void rrr_socket_send_chunk_collection_clear (
@@ -89,7 +90,7 @@ static int __rrr_socket_send_chunk_collection_push (
 
 	*send_chunk_count = RRR_LL_COUNT(target);
 
-	if ((new_chunk = malloc(sizeof(*new_chunk))) == NULL) {
+	if ((new_chunk = rrr_allocate(sizeof(*new_chunk))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_send_chunk_collection_push\n");
 		ret = 1;
 		goto out;
@@ -178,7 +179,7 @@ static int __rrr_socket_send_chunk_collection_push_const (
 ) {
 	int ret = 0;
 
-	void *data_copy = malloc(data_size);
+	void *data_copy = rrr_allocate(data_size);
 	if (data_copy == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_send_chunk_collection_push_const\n");
 		ret = 1;

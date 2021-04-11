@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
@@ -89,7 +90,7 @@ static int journal_queue_entry_new (struct journal_queue_entry **target) {
 
 	*target = NULL;
 
-	if ((node = malloc(sizeof(*node))) == NULL) {
+	if ((node = rrr_allocate(sizeof(*node))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in journal_queue_entry_new\n");
 		return 1;
 	}
@@ -103,7 +104,7 @@ static int journal_queue_entry_new (struct journal_queue_entry **target) {
 
 static void journal_queue_entry_destroy (struct journal_queue_entry *node) {
 	rrr_array_clear(&node->array);
-	free(node);
+	rrr_free(node);
 }
 
 static int journal_data_init(struct journal_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -144,7 +145,7 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 		}
 
 		RRR_FREE_IF_NOT_NULL(data->hostname);
-		if ((data->hostname = strdup(hostname)) == NULL) {
+		if ((data->hostname = rrr_strdup(hostname)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for hostname in journal_parse_config\n");
 			ret = 1;
 			goto out;

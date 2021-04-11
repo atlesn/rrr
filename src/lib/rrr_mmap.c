@@ -354,8 +354,8 @@ static int __rrr_mmap_is_empty (
 	return ret;
 }
 
-static void *__rrr_mmap (size_t size) {
-    void *ptr = rrr_posix_mmap(size);
+static void *__rrr_mmap (size_t size, int is_shared) {
+    void *ptr = rrr_posix_mmap(size, is_shared);
 
     if (ptr != NULL) {
     	memset(ptr, '\0', size);
@@ -378,7 +378,7 @@ int rrr_mmap_heap_reallocate (
 		RRR_BUG("BUG: Attempted to decrease heap size in rrr_mmap_new_heap_size\n");
 	}
 
-	void *new_heap = __rrr_mmap(heap_size_padded);
+	void *new_heap = __rrr_mmap(heap_size_padded, mmap->is_shared);
 	if (new_heap == NULL) {
 		RRR_MSG_0("Could not re-allocate in rrr_mmap_new_heap_size\n");
 		ret = 1;
@@ -399,7 +399,8 @@ int rrr_mmap_new (
 		struct rrr_mmap **target,
 		uint64_t heap_size,
 		const char *name,
-		pthread_mutex_t *custom_lock
+		pthread_mutex_t *custom_lock,
+		int is_shared
 ) {
 	int ret = 0;
 
@@ -407,7 +408,7 @@ int rrr_mmap_new (
 
 	struct rrr_mmap *result = NULL;
 
-	if ((result = __rrr_mmap(sizeof(*result))) == NULL) {
+	if ((result = __rrr_mmap(sizeof(*result), is_shared)) == NULL) {
 		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
@@ -417,13 +418,14 @@ int rrr_mmap_new (
 
 	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
 
-	if ((result->heap = __rrr_mmap(heap_size_padded)) == NULL) {
+	if ((result->heap = __rrr_mmap(heap_size_padded, is_shared)) == NULL) {
 		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_munmap_main;
 
 	}
 
+	result->is_shared = is_shared;
 	result->heap_size = heap_size_padded;
 
 //	printf ("mmap new heap size %" PRIu64 "\n", heap_size_padded);
@@ -460,18 +462,12 @@ void rrr_mmap_destroy (
 	munmap(mmap, sizeof(*mmap));
 }
 
-void rrr_mmap_collection_clear (
-		struct rrr_mmap_collection *collection
-) {
-	RRR_LL_DESTROY(collection, struct rrr_mmap, rrr_mmap_destroy(node));
-}
-
 void rrr_mmap_collection_maintenance (
 		struct rrr_mmap_collection *collection,
 		pthread_rwlock_t *index_lock
 ) {
 	pthread_rwlock_wrlock(index_lock);
-	RRR_LL_ITERATE_BEGIN_REVERSE(collection, struct rrr_mmap);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
 		if (__rrr_mmap_is_empty(node)) {
 			printf("Destroy mmap\n");
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -481,38 +477,95 @@ void rrr_mmap_collection_maintenance (
 	pthread_rwlock_unlock(index_lock);
 }
 
+void rrr_mmap_collection_clear (
+		struct rrr_mmap_collection *collection,
+		pthread_rwlock_t *index_lock
+) {
+	rrr_mmap_collection_maintenance(collection, index_lock);
+	pthread_rwlock_wrlock(index_lock);
+	RRR_DBG_1("MMAPs left upon cleanup: %i\n", RRR_LL_COUNT(collection));
+	RRR_LL_DESTROY(collection, struct rrr_mmap, rrr_mmap_destroy(node));
+	pthread_rwlock_unlock(index_lock);
+}
+
 void *rrr_mmap_collection_allocate (
 		struct rrr_mmap_collection *collection,
 		uint64_t bytes,
 		uint64_t min_mmap_size,
 		pthread_rwlock_t *index_lock,
 		pthread_mutex_t *custom_lock,
-		const char *name
+		const char *name,
+		int group,
+		int is_shared
 ) {
 	void *result = NULL;
+/*
+	{
+		// 1st attempt
 
-	pthread_rwlock_rdlock(index_lock);
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
-		if ((result = rrr_mmap_allocate(node, bytes)) != NULL) {
-			RRR_LL_ITERATE_LAST();
+		struct rrr_mmap *mmap_to_use = NULL;
+
+		pthread_rwlock_wrlock(index_lock);
+			RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
+				if (node->group == group && (node->prev_allocation_failure_req_size == 0 || node->prev_allocation_failure_req_size < bytes)) {
+					mmap_to_use = node;
+					RRR_LL_ITERATE_SET_DESTROY();
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0);
+
+			if (mmap_to_use != NULL) {
+				result = rrr_mmap_allocate(mmap_to_use, bytes);
+
+				if (result == NULL) {
+					RRR_LL_APPEND(collection, mmap_to_use);
+				}
+				else {
+					RRR_LL_UNSHIFT(collection, mmap_to_use);
+				}
+			}
+
+		pthread_rwlock_unlock(index_lock);
+
+		if (result) {
+//			printf("1st ok\n");
+			goto out;
 		}
-	RRR_LL_ITERATE_END();
-	pthread_rwlock_unlock(index_lock);
+	}
 
-	if (result) {
-		goto out;
+*/
+	{
+		// 2nd attempt
+
+		pthread_rwlock_rdlock(index_lock);
+			RRR_LL_ITERATE_BEGIN(collection, struct rrr_mmap);
+				if (node->group == group && (node->prev_allocation_failure_req_size == 0 || node->prev_allocation_failure_req_size < bytes)) {
+					if ((result = rrr_mmap_allocate(node, bytes)) != NULL) {
+						RRR_LL_ITERATE_LAST();
+					}
+				}
+			RRR_LL_ITERATE_END();
+		pthread_rwlock_unlock(index_lock);
+
+		if (result) {
+//			printf("2nd ok\n");
+			goto out;
+		}
 	}
 
 	struct rrr_mmap *mmap_new;
 
 	pthread_rwlock_wrlock(index_lock);
-	if (rrr_mmap_new (&mmap_new, bytes > min_mmap_size ? bytes : min_mmap_size, name, custom_lock) != 0) {
+	if (rrr_mmap_new (&mmap_new, bytes > min_mmap_size ? bytes : min_mmap_size, name, custom_lock, is_shared) != 0) {
 		pthread_rwlock_unlock(index_lock);
 		goto out;
 	}
+
+	mmap_new->group = group;
+
 	RRR_LL_UNSHIFT(collection, mmap_new);
 
-	printf("New collection %i\n", RRR_LL_COUNT(collection));
+//	printf("New collection %i\n", RRR_LL_COUNT(collection));
 
 	result = rrr_mmap_allocate(mmap_new, bytes);
 	pthread_rwlock_unlock(index_lock);

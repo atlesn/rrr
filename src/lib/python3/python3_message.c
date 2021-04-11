@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../array.h"
 #include "../fixed_point.h"
 #include "../ip/ip_util.h"
@@ -87,7 +88,7 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 	memcpy(MSG_TOPIC_PTR(new_message), topic_str, topic_length);
 	memcpy(MSG_DATA_PTR(new_message), data_str, data_length);
 
-	free(data->message_dynamic);
+	rrr_free(data->message_dynamic);
 	data->message_dynamic = new_message;
 
 	memcpy(&data->message_static, data->message_dynamic, sizeof(data->message_static));
@@ -165,7 +166,7 @@ static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *ar
 
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 
-	data->message_dynamic = malloc(sizeof(*(data->message_dynamic)) - 1);
+	data->message_dynamic = rrr_allocate(sizeof(*(data->message_dynamic)) - 1);
 	if (data->message_dynamic == NULL) {
 		RRR_MSG_0("Could not allocate memory for message in rrr_python3_rrr_message_f_new\n");
 		return NULL;
@@ -388,7 +389,7 @@ static int __rrr_python3_rrr_message_f_set_ip_extract_ip (char **target, PyObjec
 	const Py_ssize_t final_size = ip_str_size + 1;
 
 	char *result;
-	if ((result = malloc(final_size)) == NULL) {
+	if ((result = rrr_allocate(final_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for string in __rrr_python3_rrr_message_f_set_ip_extract_ip\n");
 		ret = 1;
 		goto out;
@@ -1458,7 +1459,7 @@ struct rrr_msg_msg *rrr_python3_rrr_message_get_message (struct rrr_msg_addr *me
 			goto out_err;
 		}
 
-		free(ret);
+		rrr_free(ret);
 		ret = new_msg;
 		data->message_dynamic = new_msg;
 		new_msg = NULL;
@@ -1521,7 +1522,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 
-	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
+	ret->message_dynamic = rrr_allocate(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;

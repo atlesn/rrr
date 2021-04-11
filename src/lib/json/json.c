@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "json.h"
 #include "../array.h"
 #include "../fixed_point.h"
@@ -375,7 +376,7 @@ static int __rrr_json_from_array_callback (
 	char *tag_tmp = NULL;
 	json_object *object_new = NULL;
 
-	if ((tag_tmp = malloc(node_orig->tag_length + 1)) == NULL) {
+	if ((tag_tmp = rrr_allocate(node_orig->tag_length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_json_from_array_callback\n");
 		ret = 1;
 		goto out;
@@ -459,7 +460,7 @@ int rrr_json_from_array (
 
 	const char *json_str = json_object_to_json_string_ext(base, JSON_C_TO_STRING_PLAIN);
 
-	if ((*target = strdup(json_str)) == NULL) {
+	if ((*target = rrr_strdup(json_str)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_json_from_array\n");
 		ret = 1;
 		goto out;

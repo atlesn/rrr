@@ -85,7 +85,7 @@ int rrr_fork_handler_new (
 
 	*result = NULL;
 
-	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
+	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE, 1 /* Is shared */)) == MAP_FAILED) {
 		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new\n");
 		ret = 1;
 		goto out;

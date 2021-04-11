@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <perl.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "perl5.h"
 #include "perl5_types.h"
 #include "perl5_xsub.h"

@@ -31,15 +31,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../../config.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "gnu.h"
 #include "macro_utils.h"
 
 int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	int ret = 0;
 
-#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
+/*#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
 	ret = vasprintf(resultp, format, args);
-#else
+#else*/
 	ssize_t size = strlen(format) * 2;
 	char *buf = NULL;
 
@@ -47,7 +48,7 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 
 	retry:
 	RRR_FREE_IF_NOT_NULL(buf);
-	if ((buf = malloc(size)) == NULL) {
+	if ((buf = rrr_allocate(size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_vasprintf\n");
 		ret = -1;
 		goto out;
@@ -82,7 +83,7 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf);
-#endif
+//#endif
 	return ret;
 }
 

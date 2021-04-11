@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "event.h"
 #include "event_struct.h"
 #include "event_functions.h"
@@ -357,7 +358,7 @@ void rrr_event_queue_destroy (
 		event_free(queue->unpause_event);
 	}
 	event_base_free(queue->event_base);
-	free(queue);
+	rrr_free(queue);
 }
 
 int rrr_event_queue_new (
@@ -384,7 +385,7 @@ int rrr_event_queue_new (
 		goto out;
 	}
 
-	if ((queue = malloc(sizeof(*queue))) == NULL) {
+	if ((queue = rrr_allocate(sizeof(*queue))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
 		ret = 1;
 		goto out;
@@ -480,7 +481,7 @@ int rrr_event_queue_new (
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
 	out_free:
-		free(queue);
+		rrr_free(queue);
 	out:
 		if (cfg != NULL) {
 		        event_config_free(cfg);

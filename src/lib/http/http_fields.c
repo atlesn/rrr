@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Needed by http_fields
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_fields.h"
 #include "http_util.h"
@@ -44,7 +45,7 @@ void rrr_http_field_destroy(struct rrr_http_field *field) {
 	if (field->value_orig != NULL) {
 		rrr_type_value_destroy(field->value_orig);
 	}
-	free(field);
+	rrr_free(field);
 }
 
 int rrr_http_field_new_no_value_raw (
@@ -56,7 +57,7 @@ int rrr_http_field_new_no_value_raw (
 
 	*target = NULL;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
@@ -228,7 +229,7 @@ int rrr_http_field_collection_add (
 ) {
 	int ret = 0;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;

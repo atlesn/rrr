@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "parse.h"
+#include "allocator.h"
 #include "util/macro_utils.h"
 
 void rrr_parse_pos_init (
@@ -314,7 +315,7 @@ int rrr_parse_str_extract (
 		RRR_BUG("BUG: length was 0 in __rrr_config_extract_string\n");
 	}
 
-	char *bytes = malloc(length + 1);
+	char *bytes = rrr_allocate(length + 1);
 
 	if (bytes == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_config_extract_string\n");
@@ -352,7 +353,7 @@ int rrr_parse_str_split (
 		goto do_callback;
 	}
 
-	if ((tmp = strdup(str)) == NULL) {
+	if ((tmp = rrr_strdup(str)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_parse_str_split\n");
 		ret = 1;
 		goto out;
@@ -409,7 +410,7 @@ int rrr_parse_str_extract_until (
 
 	size_t length = end - pos;
 
-	char *match = malloc(length + 1);
+	char *match = rrr_allocate(length + 1);
 	if (match == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_parse_extract_until\n");
 		return 1;

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <limits.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http2.h"
 #include "../rrr_inttypes.h"
 #include "../net_transport/net_transport.h"
@@ -95,7 +96,7 @@ int __rrr_http2_stream_destroy (
 	}
 	RRR_FREE_IF_NOT_NULL(stream->data);
 	rrr_map_clear(&stream->headers_to_send);
-	free(stream);
+	rrr_free(stream);
 	return 0;
 }
 
@@ -148,7 +149,7 @@ struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
 		return old_stream;
 	}
 
-	struct rrr_http2_stream *new_stream = malloc(sizeof(*new_stream));
+	struct rrr_http2_stream *new_stream = rrr_allocate(sizeof(*new_stream));
 	if (new_stream == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http2_stream_maintain_and_find_or_create\n");
 		return NULL;
@@ -175,7 +176,7 @@ int __rrr_http2_stream_data_push (
 
 	if (target->data_wpos + data_size > target->data_size) {
 		size_t new_size = target->data_size + data_size + 65536;
-		void *data_new = realloc(target->data, new_size);
+		void *data_new = rrr_reallocate(target->data, target->data_size, new_size);
 		if (data_new == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in __rrr_http2_stream_collection_data_push\n");
 			ret = RRR_HTTP2_HARD_ERROR;
@@ -609,7 +610,7 @@ int rrr_http2_session_new_or_reset (
 	}
 
 	if (result == NULL) {
-		if ((result = malloc(sizeof(*result))) == NULL) {
+		if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_http2_session_new_or_reset\n");
 			goto out;
 		}
@@ -650,7 +651,7 @@ int rrr_http2_session_new_or_reset (
 //	out_destroy_session:
 //		nghttp2_session_del(result->session);
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		if (callbacks != NULL) {
 			nghttp2_session_callbacks_del(callbacks);
@@ -669,7 +670,7 @@ void rrr_http2_session_destroy_if_not_null (
 	}
 	__rrr_http2_stream_collection_destroy(&(*target)->streams);
 	RRR_FREE_IF_NOT_NULL((*target)->initial_receive_data);
-	free(*target);
+	rrr_free(*target);
 	*target = NULL;
 }
 
@@ -750,7 +751,7 @@ static int __rrr_http2_session_stream_headers_submit (
 		goto out;
 	}
 
-	if ((headers = malloc(header_count * sizeof(*headers))) == NULL) {
+	if ((headers = rrr_allocate(header_count * sizeof(*headers))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for headers in __rrr_http2_session_stream_headers_submit\n");
 		ret = 1;
 		goto out;

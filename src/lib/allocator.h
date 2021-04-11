@@ -24,8 +24,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stddef.h>
 
+#define RRR_ALLOCATOR_GROUP_DEFAULT	0
+#define RRR_ALLOCATOR_GROUP_MSG		1
+
+#define RRR_ALLOCATOR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)
+
 void *rrr_allocate (size_t bytes);
+void *rrr_allocate_group (size_t bytes, int group);
 void rrr_free (void *ptr);
+void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new);
+void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group);
+char *rrr_strdup (const char *str);
 void rrr_allocator_cleanup (void);
 void rrr_allocator_maintenance (void);
 

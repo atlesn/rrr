@@ -24,13 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_payload_buf.h"
 #include "../util/macro_utils.h"
 
 int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));
-	session->buf = malloc(RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
+	session->buf = rrr_allocate(RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
 	if (session->buf == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
@@ -83,7 +84,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 		new_size = size_diff + session->buf_size;
 	}
 
-	char *tmp = realloc(session->buf, new_size);
+	char *tmp = rrr_reallocate(session->buf, session->buf_size, new_size);
 	if (tmp == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;

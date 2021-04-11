@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_common.h"
 #include "http_transaction.h"
 #include "http_part.h"
@@ -52,7 +53,7 @@ int rrr_http_transaction_new (
 
 	struct rrr_http_transaction *result = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for transaction in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out;
@@ -68,7 +69,7 @@ int rrr_http_transaction_new (
 		goto out_free_request;
 	}
 
-	if ((result->endpoint_str = strdup("/")) == NULL) {
+	if ((result->endpoint_str = rrr_strdup("/")) == NULL) {
 		RRR_MSG_0("Could not allocate memory for URI in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out_free_response;
@@ -100,7 +101,7 @@ int rrr_http_transaction_new (
 	out_free_request:
 		rrr_http_part_destroy(result->request_part);
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -155,7 +156,7 @@ void rrr_http_transaction_decref_if_not_null (
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
 	}
-	free(transaction);
+	rrr_free(transaction);
 }
 
 void rrr_http_transaction_decref_if_not_null_void (
@@ -214,10 +215,10 @@ int rrr_http_transaction_endpoint_set (
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 
 	if (endpoint != NULL && *endpoint != '\0') {
-		transaction->endpoint_str = strdup(endpoint);
+		transaction->endpoint_str = rrr_strdup(endpoint);
 	}
 	else {
-		transaction->endpoint_str = strdup("/");
+		transaction->endpoint_str = rrr_strdup("/");
 	}
 
 	if (transaction->endpoint_str == NULL) {
@@ -243,7 +244,7 @@ int rrr_http_transaction_endpoint_path_get (
 
 	*result = NULL;
 
-	char *tmp = strdup(transaction->endpoint_str);
+	char *tmp = rrr_strdup(transaction->endpoint_str);
 	if (tmp == NULL) {
 		RRR_MSG_0("Could not allocate memory in  rrr_http_transaction_endpoint_path_get\n");
 		ret = 1;

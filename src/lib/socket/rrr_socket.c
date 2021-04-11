@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_send_chunk.h"
@@ -103,7 +104,7 @@ void __rrr_socket_private_data_destroy (
 		struct rrr_socket_private_data *node
 ) {
 	RRR_FREE_IF_NOT_NULL(node->data);
-	free(node);
+	rrr_free(node);
 }
 
 void __rrr_socket_private_data_collection_clear (
@@ -119,7 +120,7 @@ int __rrr_socket_private_data_collection_allocate_and_push (
 ) {
 	int ret = 0;
 
-	struct rrr_socket_private_data *new_node = malloc(sizeof(*new_node));
+	struct rrr_socket_private_data *new_node = rrr_allocate(sizeof(*new_node));
 	if (new_node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
 		ret = 1;
@@ -128,7 +129,7 @@ int __rrr_socket_private_data_collection_allocate_and_push (
 
 	memset(new_node, '\0', sizeof(*new_node));
 
-	void *new_data = malloc(size);
+	void *new_data = rrr_allocate(size);
 	if (new_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_private_data_collection_allocate_and_push\n");
 		ret = 1;
@@ -143,7 +144,7 @@ int __rrr_socket_private_data_collection_allocate_and_push (
 
 	goto out;
 	out_free_node:
-		free(new_node);
+		rrr_free(new_node);
 	out:
 		return ret;
 }
@@ -169,7 +170,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 	RRR_FREE_IF_NOT_NULL(holder->filename_no_unlink);
 	RRR_FREE_IF_NOT_NULL(holder->creator);
 	rrr_socket_send_chunk_collection_clear(&holder->send_chunks);
-	free(holder);
+	rrr_free(holder);
 
 	// Must always return 0 or linked list won' remove the node
 	return 0;
@@ -189,7 +190,7 @@ int __rrr_socket_holder_new (
 
 	*holder = NULL;
 
-	struct rrr_socket_holder *result = malloc(sizeof(*result));
+	struct rrr_socket_holder *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_holder_new\n");
 		ret = 1;
@@ -202,10 +203,10 @@ int __rrr_socket_holder_new (
 		RRR_BUG("Creator was NULL in __rrr_socket_holder_new\n");
 	}
 
-	result->creator = strdup(creator);
+	result->creator = rrr_strdup(creator);
 
 	if (filename != NULL) {
-		char *filename_tmp = strdup(filename);
+		char *filename_tmp = rrr_strdup(filename);
 		if (filename_tmp == NULL) {
 			RRR_MSG_0("Could not allocate memory for filename in __rrr_socket_holder_new\n");
 			ret = 1;
@@ -265,7 +266,7 @@ int rrr_socket_get_filename_from_fd (
 		if (node->options.fd == fd) {
 			const char *filename = (node->filename_unlink ? node->filename_unlink : node->filename_no_unlink);
 			if (filename != NULL && *(filename) != '\0') {
-				char *filename_new = strdup(filename);
+				char *filename_new = rrr_strdup(filename);
 				if (filename_new == NULL) {
 					RRR_MSG_0("Could not allocate memory in rrr_socket_get_filename_from_fd\n");
 					ret = 1;
@@ -572,7 +573,7 @@ int rrr_socket_open_and_read_file (
 		goto out;
 	}
 
-	if ((contents_tmp = malloc(bytes + 1)) == NULL) {
+	if ((contents_tmp = rrr_allocate(bytes + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_file\n");
 		ret = 1;
 		goto out;

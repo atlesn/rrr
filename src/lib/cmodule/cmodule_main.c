@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
@@ -113,7 +114,7 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 static int __rrr_cmodule_main_mmap_ensure (
 		struct rrr_cmodule *cmodule
 ) {
-	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, cmodule->name, NULL) != 0) {
+	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, cmodule->name, NULL, 1 /* Is shared */) != 0) {
 		RRR_MSG_0("Could not allocate mmap in __rrr_cmodule_main_mmap_ensure\n");
 		return 1;
 	}
@@ -256,8 +257,8 @@ void rrr_cmodule_destroy (
 		cmodule->mmap_ = NULL;
 	}
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
-	free(cmodule->name);
-	free(cmodule);
+	rrr_free(cmodule->name);
+	rrr_free(cmodule);
 }
 
 void rrr_cmodule_destroy_void (
@@ -273,7 +274,7 @@ int rrr_cmodule_new (
 ) {
 	int ret = 0;
 
-	struct rrr_cmodule *cmodule = malloc(sizeof(*cmodule));
+	struct rrr_cmodule *cmodule = rrr_allocate(sizeof(*cmodule));
 	if (cmodule == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_cmodule_new\n");
 		ret = 1;
@@ -282,7 +283,7 @@ int rrr_cmodule_new (
 
 	memset(cmodule, '\0', sizeof(*cmodule));
 
-	if ((cmodule->name = strdup(name)) == NULL) {
+	if ((cmodule->name = rrr_strdup(name)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for name in rrr_cmodule_new\n");
 		ret = 1;
 		goto out_free;
@@ -302,7 +303,7 @@ int rrr_cmodule_new (
 
 	goto out;
 	out_free:
-		free(cmodule);
+		rrr_free(cmodule);
 	out:
 		return ret;
 }

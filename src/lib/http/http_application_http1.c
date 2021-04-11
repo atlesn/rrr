@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_application.h"
 #include "http_application_http1.h"
@@ -74,7 +75,7 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	RRR_FREE_IF_NOT_NULL(http1->application_websocket_topic);
 	rrr_websocket_state_clear_all(&http1->ws_state);
 	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
-	free(http1);
+	rrr_free(http1);
 }
 
 static uint64_t __rrr_http_application_http1_active_transaction_count_get (
@@ -1664,7 +1665,7 @@ int rrr_http_application_http1_new (
 
 	struct rrr_http_application_http1 *result = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_application_http1_new\n");
 		ret = 1;
 		goto out;

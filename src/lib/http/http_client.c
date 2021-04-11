@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../../config.h"
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_client.h"
 #include "http_common.h"
@@ -71,7 +72,7 @@ int rrr_http_client_new (
 ) {
 	int ret = 0;
 
-	struct rrr_http_client *client = malloc(sizeof(*client));
+	struct rrr_http_client *client = rrr_allocate(sizeof(*client));
 
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_client_new\n");
@@ -105,7 +106,7 @@ void rrr_http_client_destroy (
 		rrr_net_transport_destroy(client->transport_keepalive_tls);
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
-	free(client);
+	rrr_free(client);
 }
 
 static int __rrr_http_client_active_transaction_count_get_callback (
@@ -200,7 +201,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (server != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->server);
-		if ((data->server = strdup(server)) == NULL) {
+		if ((data->server = rrr_strdup(server)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for server in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -209,7 +210,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (endpoint != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
-		if ((data->endpoint = strdup(endpoint)) == NULL) {
+		if ((data->endpoint = rrr_strdup(endpoint)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -218,7 +219,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (user_agent != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->user_agent);
-		if ((data->user_agent = strdup(user_agent)) == NULL) {
+		if ((data->user_agent = rrr_strdup(user_agent)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for user_agent in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -662,7 +663,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 		else {
 			RRR_FREE_IF_NOT_NULL(endpoint_to_free);
-			if ((endpoint_to_free = strdup("/")) == NULL) {
+			if ((endpoint_to_free = rrr_strdup("/")) == NULL) {
 				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_send_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
@@ -688,7 +689,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 	}
 	else {
-		if ((endpoint_and_query_to_free = strdup(endpoint_to_use)) == NULL) {
+		if ((endpoint_and_query_to_free = rrr_strdup(endpoint_to_use)) == NULL) {
 			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_request_send_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;

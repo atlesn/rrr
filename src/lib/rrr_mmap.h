@@ -35,7 +35,8 @@ struct rrr_mmap {
 	  uint64_t prev_allocation_failure_req_size;
 	  char name[64];
 	  void *heap;
-	  int collection_busy;
+	  int group;
+	  int is_shared;
 };
 
 struct rrr_mmap_collection {
@@ -61,15 +62,17 @@ int rrr_mmap_new (
 		struct rrr_mmap **target,
 		uint64_t heap_size,
 		const char *name,
-		pthread_mutex_t *custom_lock
+		pthread_mutex_t *custom_lock,
+		int is_shared
 );
 void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
 );
-void rrr_mmap_collection_clear (
-		struct rrr_mmap_collection *collection
-);
 void rrr_mmap_collection_maintenance (
+		struct rrr_mmap_collection *collection,
+		pthread_rwlock_t *index_lock
+);
+void rrr_mmap_collection_clear (
 		struct rrr_mmap_collection *collection,
 		pthread_rwlock_t *index_lock
 );
@@ -79,7 +82,9 @@ void *rrr_mmap_collection_allocate (
 		uint64_t min_mmap_size,
 		pthread_rwlock_t *index_lock,
 		pthread_mutex_t *custom_lock,
-		const char *name
+		const char *name,
+		int group,
+		int is_shared
 );
 void rrr_mmap_collection_free (
 		struct rrr_mmap_collection *collection,

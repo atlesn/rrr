@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "lib/rrr_config.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
@@ -422,7 +423,6 @@ static int main_loop (
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:
-		rrr_allocator_cleanup();
 		return ret;
 }
 
@@ -729,5 +729,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out:
+		rrr_allocator_cleanup();
 		return ret;
 }

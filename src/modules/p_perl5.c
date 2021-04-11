@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#undef __USE_GNU
+#include <stdio.h>
+
 // Allow u_int which being used when including Perl.h
 #undef __BSD_VISIBLE
 #define __BSD_VISIBLE 1
@@ -32,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"

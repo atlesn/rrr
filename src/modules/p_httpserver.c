@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
@@ -666,7 +667,7 @@ static int httpserver_response_data_new (
 
 	*target = NULL;
 
-	struct httpserver_response_data *result = malloc(sizeof(*result));
+	struct httpserver_response_data *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in httpserver_response_data_new\n");
 		ret = 1;
@@ -687,7 +688,7 @@ static int httpserver_response_data_new (
 	*target = result;
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -697,7 +698,7 @@ static void httpserver_response_data_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(data->request_topic);
 	rrr_array_clear(&data->target);
-	free(data);
+	rrr_free(data);
 }
 
 static void httpserver_response_data_destroy_void (
@@ -1060,7 +1061,7 @@ static int httpserver_receive_raw_broker_callback (
 	struct rrr_msg *msg_to_free = NULL;
 
 	if (write_callback_data->is_full_rrr_msg) {
-		if ((msg_to_free = malloc(rrr_nullsafe_str_len(write_callback_data->data))) == NULL) {
+		if ((msg_to_free = rrr_allocate(rrr_nullsafe_str_len(write_callback_data->data))) == NULL) {
 			RRR_MSG_0("Could not allocate memory for RRR message in httpserver_receive_raw_broker_callback\n");
 			ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
 			goto out;
@@ -1231,7 +1232,7 @@ static int httpserver_websocket_handshake_callback (
 		goto out_not_found;
 	}
 
-	if ((application_topic_new = strdup(topic_begin)) == NULL) {
+	if ((application_topic_new = rrr_strdup(topic_begin)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
 		ret = 1;
 		goto out;
@@ -1278,14 +1279,14 @@ static int httpserver_websocket_get_response_callback_extract_data (
 		goto out_unlock;
 	}
 	else if (MSG_DATA_LENGTH(msg) == 0) {
-		if ((response_data = strdup("")) == NULL) {
+		if ((response_data = rrr_strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;
 			goto out_unlock;
 		}
 	}
 	else {
-		if ((response_data = malloc(MSG_DATA_LENGTH(msg))) == NULL) {
+		if ((response_data = rrr_allocate(MSG_DATA_LENGTH(msg))) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;
 			goto out_unlock;

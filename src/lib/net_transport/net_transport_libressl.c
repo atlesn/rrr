@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport_libressl.h"
 #include "net_transport_tls_common.h"
@@ -73,7 +74,7 @@ static void __rrr_net_transport_libressl_data_destroy (
 
 	RRR_FREE_IF_NOT_NULL(data->alpn_selected_proto);
 
-	free(data);
+	rrr_free(data);
 }
 
 static int __rrr_net_transport_libressl_data_new (
@@ -83,7 +84,7 @@ static int __rrr_net_transport_libressl_data_new (
 
 	*result = NULL;
 
-	struct rrr_net_transport_tls_data *data = malloc(sizeof(*data));
+	struct rrr_net_transport_tls_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_net_transport_libressl_data_new\n");
 		ret = 1;

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_application.h"
 #include "http_application_http1.h"
 #include "http_application_http2.h"
@@ -65,7 +66,7 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
 	rrr_http_transaction_decref_if_not_null(http2->transaction_incomplete_upgrade);
-	free(http2);
+	rrr_free(http2);
 }
 
 static uint64_t __rrr_http_application_http2_active_transaction_count_get_and_maintain (
@@ -698,7 +699,7 @@ static int __rrr_http_application_http2_new (
 
 	int ret = 0;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_application_http2_new\n");
 		ret = 1;
 		goto out;

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_common.h"
 #include "http_server.h"
@@ -46,7 +47,7 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 	}
 #endif
 
-	free(server);
+	rrr_free(server);
 }
 
 void rrr_http_server_destroy_void (void *server) {
@@ -70,7 +71,7 @@ int rrr_http_server_new (
 
 	*target = NULL;
 
-	struct rrr_http_server *server = malloc(sizeof(*server));
+	struct rrr_http_server *server = rrr_allocate(sizeof(*server));
 	if (server == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_server_new\n");
 		ret = 1;

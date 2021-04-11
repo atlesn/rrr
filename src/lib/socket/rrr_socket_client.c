@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_common.h"
@@ -164,7 +165,7 @@ static int __rrr_socket_client_fd_destroy (
 		rrr_socket_close(client_fd->fd);
 	}
 	RRR_FREE_IF_NOT_NULL(client_fd->addr_string);
-	free(client_fd);
+	rrr_free(client_fd);
 	return 0;
 }
 
@@ -179,7 +180,7 @@ static int __rrr_socket_client_fd_new (
 ) {
 	int ret = 0;
 
-	struct rrr_socket_client_fd *client_fd = malloc(sizeof(*client_fd));
+	struct rrr_socket_client_fd *client_fd = rrr_allocate(sizeof(*client_fd));
 	if (client_fd == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_fd_new\n");
 		ret = 1;
@@ -187,7 +188,7 @@ static int __rrr_socket_client_fd_new (
 	}
 
 	if (addr_string != NULL) {
-		if ((client_fd->addr_string = strdup(addr_string)) == NULL) {
+		if ((client_fd->addr_string = rrr_strdup(addr_string)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for address string in __rrr_socket_client_fd_new\n");
 			ret = 1;
 			goto out_free;
@@ -213,7 +214,7 @@ static int __rrr_socket_client_fd_new (
 
 	goto out;
 	out_free:
-		free(client_fd);
+		rrr_free(client_fd);
 	out:
 		return ret;
 }
@@ -281,7 +282,7 @@ static int __rrr_socket_client_destroy_dangerous (
 		rrr_socket_send_chunk_collection_clear(&client->send_chunks);
 	}
 	rrr_read_session_collection_clear(&client->read_sessions);
-	free(client);
+	rrr_free(client);
 	return 0;
 }
 
@@ -357,7 +358,7 @@ static int __rrr_socket_client_new_and_add (
 
 	*result = NULL;
 
-	struct rrr_socket_client *client = malloc (sizeof(*client));
+	struct rrr_socket_client *client = rrr_allocate (sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_new\n");
 		ret = 1;
@@ -402,7 +403,7 @@ void rrr_socket_client_collection_destroy (
 ) {
 	__rrr_socket_client_collection_clear(collection);
 	RRR_FREE_IF_NOT_NULL(collection->creator);
-	free(collection);
+	rrr_free(collection);
 }
 
 static void __rrr_socket_client_collection_find_and_destroy (
@@ -445,14 +446,14 @@ static int __rrr_socket_client_collection_new (
 
 	struct rrr_socket_client_collection *collection = NULL;
 
-	if ((collection = malloc(sizeof(*collection))) == NULL) {
+	if ((collection = rrr_allocate(sizeof(*collection))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	memset(collection, '\0', sizeof(*collection));
-	if ((collection->creator = strdup(creator)) == NULL) {
+	if ((collection->creator = rrr_strdup(creator)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for creator in rrr_socket_client_collection_init\n");
 		goto out_free;
 	}
@@ -465,7 +466,7 @@ static int __rrr_socket_client_collection_new (
 
 	goto out;
 	out_free:
-		free(collection);
+		rrr_free(collection);
 	out:
 		return ret;
 }
@@ -1600,7 +1601,7 @@ static int __rrr_socket_client_collection_find_by_address_string_or_connect (
 		rrr_socket_close(tmp_fd);
 	}
 	for (size_t i = 0; i < address_count; i++) {
-		free(addresses[i]);
+		rrr_free(addresses[i]);
 	}
 	RRR_FREE_IF_NOT_NULL(addresses);
 	RRR_FREE_IF_NOT_NULL(address_lengths);

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "modules.h"
 #include "message_broker.h"
+#include "allocator.h"
 #include "event/event.h"
 #include "event/event_functions.h"
 #include "ip/ip.h"
@@ -92,7 +93,7 @@ static void __rrr_message_broker_split_buffer_node_destroy (
 			stats.total_entries_written
 	);
 	rrr_fifo_buffer_destroy(&node->queue);
-	free(node);
+	rrr_free(node);
 }
 
 static void __rrr_message_broker_costumer_incref_unlocked (
@@ -158,7 +159,7 @@ static void __rrr_message_broker_costumer_destroy (
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
-	free(costumer);
+	rrr_free(costumer);
 }
 
 static void __rrr_message_broker_costumer_decref (
@@ -202,7 +203,7 @@ static int __rrr_message_broker_costumer_new (
 
 	*result = NULL;
 
-	struct rrr_message_broker_costumer *costumer = malloc(sizeof(*costumer));
+	struct rrr_message_broker_costumer *costumer = rrr_allocate(sizeof(*costumer));
 	if (costumer == NULL) {
 		RRR_MSG_0("Could not allocate memory for costumer in __rrr_message_broker_costumer_new\n");
 		ret = 1;
@@ -211,7 +212,7 @@ static int __rrr_message_broker_costumer_new (
 
 	memset(costumer, '\0', sizeof(*costumer));
 
-	if ((costumer->name = strdup(name_unique)) == NULL) {
+	if ((costumer->name = rrr_strdup(name_unique)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for name in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_free;
@@ -253,9 +254,9 @@ static int __rrr_message_broker_costumer_new (
 	out_destroy_fifo:
 		rrr_fifo_buffer_destroy(&costumer->main_queue);
 	out_free_name:
-		free(costumer->name);
+		rrr_free(costumer->name);
 	out_free:
-		free(costumer);
+		rrr_free(costumer);
 	out:
 		return ret;
 }
@@ -314,7 +315,7 @@ void rrr_message_broker_destroy (
 ) {
 	rrr_message_broker_unregister_all(broker);
 	pthread_mutex_destroy(&broker->lock);
-	free(broker);
+	rrr_free(broker);
 }
 
 int rrr_message_broker_new (
@@ -326,7 +327,7 @@ int rrr_message_broker_new (
 
 	struct rrr_message_broker *broker = NULL;
 
-	if ((broker = malloc(sizeof(*broker))) == NULL) {
+	if ((broker = rrr_allocate(sizeof(*broker))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_message_broker_new\n");
 		ret = 1;
 		goto out;
@@ -350,7 +351,7 @@ int rrr_message_broker_new (
 //	out_destroy_mutex:
 //		pthread_mutex_destroy(&broker->lock);
 	out_free:
-		free(broker);
+		rrr_free(broker);
 	out:
 		return ret;
 }
@@ -438,7 +439,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 ) {
 	int ret = 0;
 
-	struct rrr_message_broker_split_buffer_node *node = malloc(sizeof(*node));
+	struct rrr_message_broker_split_buffer_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_message_broker_split_output_buffer_new\n");
 		ret = 1;
@@ -458,7 +459,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 
 	goto out;
 	out_free:
-		free(node);
+		rrr_free(node);
 	out:
 		return ret;
 }

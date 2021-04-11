@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport.h"
 #include "net_transport_struct.h"
@@ -66,7 +67,7 @@ static void __rrr_net_transport_openssl_ssl_data_destroy (struct rrr_net_transpo
 			rrr_ip_close(&ssl_data->ip_data);
 		}
 		RRR_FREE_IF_NOT_NULL(ssl_data->alpn_selected_proto);
-		free(ssl_data);
+		rrr_free(ssl_data);
 	}
 }
 
@@ -113,7 +114,7 @@ static int __rrr_net_transport_openssl_verify_always_ok (X509_STORE_CTX *x509, v
 struct rrr_net_transport_tls_data *__rrr_net_transport_openssl_ssl_data_new (void) {
 	struct rrr_net_transport_tls_data *ssl_data = NULL;
 
-	if ((ssl_data = malloc(sizeof(*ssl_data))) == NULL) {
+	if ((ssl_data = rrr_allocate(sizeof(*ssl_data))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for SSL data in __rrr_net_transport_ssl_data_new \n");
 		return NULL;
 	}
@@ -395,7 +396,7 @@ static int __rrr_net_transport_openssl_alpn_selected_proto_save (
 
 	if (alpn_proto != NULL && alpn_proto_length > 0) {
 		unsigned int str_size = alpn_proto_length + 1;
-		if ((ssl_data->alpn_selected_proto = malloc(str_size)) == NULL) {
+		if ((ssl_data->alpn_selected_proto = rrr_allocate(str_size)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for ALPN protocol name in __rrr_net_transport_openssl_alpn_selected_proto_save\n");
 			ret = 1;
 			goto out;

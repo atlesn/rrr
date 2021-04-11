@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_application.h"
 #include "http_application_internals.h"
 #ifdef RRR_WITH_NGHTTP2

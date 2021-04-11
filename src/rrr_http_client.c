@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/common.h"
 #include "lib/rrr_config.h"
 #include "lib/version.h"
@@ -178,7 +179,7 @@ static int __rrr_http_client_parse_config (
 			ret = 1;
 			goto out;
 		}
-		array_tree_tmp = malloc(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
+		array_tree_tmp = rrr_allocate(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
 		if (array_tree_tmp == NULL) {
 			RRR_MSG_0("Could not allocate temporary arry tree string in parse_config\n");
 			ret = 1;
@@ -209,7 +210,7 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	request_data->server= strdup(server);
+	request_data->server= rrr_strdup(server);
 	if (request_data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -227,7 +228,7 @@ static int __rrr_http_client_parse_config (
 		endpoint = "/";
 	}
 
-	request_data->endpoint = strdup(endpoint);
+	request_data->endpoint = rrr_strdup(endpoint);
 	if (request_data->endpoint == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -768,5 +769,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }
