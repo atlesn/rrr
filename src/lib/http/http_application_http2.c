@@ -57,7 +57,7 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
 	if (http2->http2_session != NULL) {
-		int streams = rrr_http2_streams_count(http2->http2_session);
+		int streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
 		if (streams > 0) {
 			RRR_DBG_2("HTTP2 destroys application with %i active transactions\n", streams);
 		}
@@ -73,7 +73,7 @@ static uint64_t __rrr_http_application_http2_active_transaction_count_get (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
-	return rrr_http2_streams_count(http2->http2_session);
+	return rrr_http2_streams_count_and_maintain(http2->http2_session);
 }
 
 struct rrr_http_application_http2_send_prepare_callback_data {
@@ -149,7 +149,7 @@ static int __rrr_http_application_http2_request_send_possible (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
-	*is_possible = (rrr_http2_streams_count(http2->http2_session) < RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX);
+	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX);
 
 	return 0;
 }

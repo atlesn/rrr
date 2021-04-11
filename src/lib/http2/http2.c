@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../http/http_header_fields.h"
 #include "../map.h"
 
-// The actual ping interval will depend on how often the tick function is called
-#define RRR_HTTP2_PING_INTERVAL_S 1
+// The actual ping and maintenance interval will depend on how often the tick function is called
+#define RRR_HTTP2_PING_MAINTENANCE_INTERVAL_S 1
 
 struct rrr_http2_stream {
 	RRR_LL_NODE(struct rrr_http2_stream);
@@ -115,31 +115,35 @@ void __rrr_http2_stream_collection_destroy (
 	RRR_LL_DESTROY(collection, struct rrr_http2_stream, __rrr_http2_stream_destroy(node));
 }
 
-struct rrr_http2_stream *__rrr_http2_stream_maintain_and_find (
-		struct rrr_http2_session *session,
-		int32_t stream_id
+void __rrr_http2_streams_maintain (
+		struct rrr_http2_session *session
 ) {
-	struct rrr_http2_stream *result = NULL;
-
 	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
 		if (node->please_delete_me) {
 			session->closed_stream_count++;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else if (node->stream_id == stream_id) {
-			result = node;
-			RRR_LL_ITERATE_LAST();
-		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, __rrr_http2_stream_destroy(node));
-
-	return result;
 }
 
-struct rrr_http2_stream *__rrr_http2_stream_maintain_and_find_or_create (
+struct rrr_http2_stream *__rrr_http2_stream_find (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
-	struct rrr_http2_stream *old_stream = __rrr_http2_stream_maintain_and_find (session, stream_id);
+	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
+		if (node->stream_id == stream_id) {
+			return node;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, __rrr_http2_stream_destroy(node));
+
+	return NULL;
+}
+
+struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
+		struct rrr_http2_session *session,
+		int32_t stream_id
+) {
+	struct rrr_http2_stream *old_stream = __rrr_http2_stream_find (session, stream_id);
 	if (old_stream != NULL) {
 		return old_stream;
 	}
@@ -274,7 +278,7 @@ static int __rrr_http2_on_data_chunk_recv_callback (
 
 	RRR_DBG_7 ("http2 recv chunk stream %" PRIi32 " size %llu\n", stream_id, (unsigned long long) len);
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, stream_id);
 	if (stream == NULL) {
 		RRR_DBG_7("http2 unknown stream %u in data frame\n", stream_id);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -303,11 +307,13 @@ static int __rrr_http2_on_stream_close_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+	int ret = 0;
+
 	(void)(nghttp2_session);
 
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, stream_id);
 	stream->please_delete_me = 1;
 
 	if (session->callback_data.callback != NULL) {
@@ -323,11 +329,13 @@ static int __rrr_http2_on_stream_close_callback (
 				stream->application_data,
 				session->callback_data.callback_arg
 		) != 0) {
-			return NGHTTP2_ERR_CALLBACK_FAILURE;
+			ret = NGHTTP2_ERR_CALLBACK_FAILURE;
+			goto out;
 		}
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int __rrr_http2_on_frame_send_callback (
@@ -364,7 +372,7 @@ static int __rrr_http2_on_frame_recv_callback (
 		return 0;
 	}
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find(session, frame->hd.stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
 	if (stream == NULL) {
 		RRR_DBG_7("http2 unknown stream %u in frame\n", frame->hd.stream_id);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -423,7 +431,7 @@ static int __rrr_http2_on_header_callback (
 	(void)(namelen);
 	(void)(flags);
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, frame->hd.stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, frame->hd.stream_id);
 	if (stream == NULL) {
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
@@ -550,7 +558,7 @@ static int __rrr_http2_before_frame_send_callback (
 		goto out;
 	}
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find(session, frame->hd.stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, frame->hd.stream_id);
 	if (stream == NULL) {
 		RRR_DBG_7("http2 unknown stream %u in before_frame_send_callback\n", frame->hd.stream_id);
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -671,7 +679,7 @@ int rrr_http2_session_stream_application_data_set (
 		void *application_data,
 		void (*application_data_destroy_function)(void *)
 ) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
 		return RRR_HTTP2_HARD_ERROR;
 	}
@@ -690,7 +698,7 @@ void *rrr_http2_session_stream_application_data_get (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
 		return NULL;
 	}
@@ -704,7 +712,7 @@ static int __rrr_http2_session_stream_header_push (
 		const char *name,
 		const char *value
 ) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
 		RRR_MSG_0("Could not create stream id %u in __rrr_http2_session_stream_header_push\n", stream_id);
 		return 1;
@@ -725,7 +733,7 @@ static int __rrr_http2_session_stream_headers_submit (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 
 	if (stream == NULL) {
 		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_headers_submit\n");
@@ -939,7 +947,7 @@ int rrr_http2_data_submission_request_set (
 ) {
 	int ret = 0;
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_maintain_and_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 
 	stream->data_submission_requested = 1;
 
@@ -963,9 +971,11 @@ int rrr_http2_transport_ctx_streams_iterate (
 	return ret;
 }
 
-int rrr_http2_streams_count (
+int rrr_http2_streams_count_and_maintain (
 		struct rrr_http2_session *session
 ) {
+	 __rrr_http2_streams_maintain (session);
+
 	return RRR_LL_COUNT(&session->streams);
 }
 
@@ -986,7 +996,7 @@ int rrr_http2_transport_ctx_tick (
 	int ret = RRR_HTTP2_DONE;
 
 	// Just to clean up any streams needing deletion
-	__rrr_http2_stream_maintain_and_find(session, 0);
+	__rrr_http2_stream_find(session, 0);
 
 	// *closed_stream_count = session->closed_stream_count;
 
@@ -1025,8 +1035,11 @@ int rrr_http2_transport_ctx_tick (
 
 	// Send PINGs to get feedbacks should the socket break down
 	// while we have nothing else to send
-	if (rrr_time_get_64() - session->last_ping_send_time > RRR_HTTP2_PING_INTERVAL_S * 1000 * 1000) {
+	if (rrr_time_get_64() - session->last_ping_send_time > RRR_HTTP2_PING_MAINTENANCE_INTERVAL_S * 1000 * 1000) {
 		session->last_ping_send_time = rrr_time_get_64();
+
+		 __rrr_http2_streams_maintain (session);
+
 		if ((ret = nghttp2_submit_ping(session->session, NGHTTP2_FLAG_NONE, NULL)) != 0) {
 			RRR_MSG_0("Error from nghttp2_submit_ping in rrr_http2_tick: %s\n", nghttp2_strerror(ret));
 			ret = RRR_HTTP2_SOFT_ERROR;
