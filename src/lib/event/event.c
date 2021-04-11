@@ -187,6 +187,8 @@ static void __rrr_event_signal_event (
 		uint16_t amount = (count > 0xffff ? 0xffff : count);
 		count -= amount;
 
+		const uint16_t amount_orig = amount;
+
 		if ((ret = function->function (
 				&amount,
 				function->function_arg != NULL
@@ -202,6 +204,13 @@ static void __rrr_event_signal_event (
 			queue->callback_ret = ret;
 			event_base_loopbreak(queue->event_base);
 			goto out;
+		}
+
+		if (amount_orig == amount) {
+			// This can happen if the sender incorrectly PASSes prior to data being written to the buffer
+			// in question. In case of bad performance, also verify that the reader is able to handle all
+			// received messages or that it activates the pausing if it's not able to.
+			sched_yield();
 		}
 
 		if (amount > 0) {

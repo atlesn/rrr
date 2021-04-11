@@ -524,6 +524,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	const struct sockaddr *addr;
 	socklen_t socklen;
 	int protocol;
+	uint16_t entries_written;
 	int (*callback)(struct rrr_msg_holder *new_entry, void *arg);
 	void *callback_arg;
 	int (*check_cancel_callback)(void *arg);
@@ -543,14 +544,11 @@ static void __rrr_message_broker_free_message_holder_double_pointer (void *arg) 
 }
 
 static int __rrr_message_broker_write_entry_callback_intermediate (
-		struct rrr_message_broker_costumer *costumer,
 		int *write_drop,
 		int *write_again,
 		struct rrr_msg_holder *entry,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
-		void *callback_arg,
-		int (*check_cancel_callback)(void *arg),
-		void *check_cancel_callback_arg
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -581,15 +579,6 @@ static int __rrr_message_broker_write_entry_callback_intermediate (
 		}
 	}
 
-	if (!(*write_drop)) {
-		ret = __rrr_message_broker_write_notifications_send (
-				costumer,
-				1,
-				check_cancel_callback,
-				check_cancel_callback_arg
-		);
-	}
-
 	return ret;
 }
 
@@ -604,17 +593,22 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 	int ret = 0;
 
 	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
-			callback_data->costumer,
 			do_drop,
 			do_again,
 			entry,
 			callback_data->callback,
-			callback_data->callback_arg,
-			callback_data->check_cancel_callback,
-			callback_data->check_cancel_callback_arg
+			callback_data->callback_arg
 	)) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	if (!(*do_drop)) {
+		callback_data->entries_written++;
+	}
+
+	if (callback_data->entries_written == 0xffff) {
+		*do_again = 0;
 	}
 
 	out:
@@ -657,14 +651,11 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	int write_again = 0;
 
 	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
-			callback_data->costumer,
 			&write_drop,
 			&write_again,
 			entry,
 			callback_data->callback,
-			callback_data->callback_arg,
-			callback_data->check_cancel_callback,
-			callback_data->check_cancel_callback_arg
+			callback_data->callback_arg
 	)) != 0) {
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
@@ -679,6 +670,10 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	if (write_drop) {
 		ret |= RRR_FIFO_WRITE_DROP;
 		goto out;
+	}
+
+	if ((++callback_data->entries_written) == 0xffff) {
+		ret &= ~(RRR_FIFO_WRITE_AGAIN);
 	}
 
 	{
@@ -775,6 +770,7 @@ int rrr_message_broker_write_entry (
 			addr,
 			socklen,
 			protocol,
+			0,
 			callback,
 			callback_arg,
 			check_cancel_callback,
@@ -807,6 +803,15 @@ int rrr_message_broker_write_entry (
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
+	}
+
+	if (callback_data.entries_written > 0) {
+		ret = __rrr_message_broker_write_notifications_send (
+				costumer,
+				callback_data.entries_written,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		);
 	}
 
 	out:
