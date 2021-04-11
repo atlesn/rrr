@@ -1583,7 +1583,7 @@ static void httpclient_queue_process (
 		return;
 	}
 
-	int loop_max = 50;
+	int loop_max = 250;
 
 	// Check timeouts based on the time the loop starts to be fair
 	// if there are errors and the loop takes a while
