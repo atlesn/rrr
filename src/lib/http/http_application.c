@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,10 +48,10 @@ void rrr_http_application_destroy_if_not_null_void (
 	rrr_http_application_destroy_if_not_null((struct rrr_http_application **) app_double_ptr);
 }
 
-uint64_t rrr_http_application_active_transaction_count_get (
+uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 		struct rrr_http_application *app
 ) {
-	return app->constants->active_transaction_count_get(app);
+	return app->constants->active_transaction_count_get_and_maintain(app);
 }
 
 int rrr_http_application_new (

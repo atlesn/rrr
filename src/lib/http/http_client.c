@@ -115,7 +115,7 @@ static int __rrr_http_client_active_transaction_count_get_callback (
 	uint64_t *result_accumulator = arg;
 
 	if (RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) != NULL) {
-		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
 	}
 
 	return 0;

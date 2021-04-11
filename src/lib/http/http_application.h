@@ -80,7 +80,7 @@ void rrr_http_application_destroy_if_not_null (
 void rrr_http_application_destroy_if_not_null_void (
 		void *app_double_ptr
 );
-uint64_t rrr_http_application_active_transaction_count_get (
+uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 		struct rrr_http_application *app
 );
 int rrr_http_application_new (

@@ -404,6 +404,9 @@ static int __rrr_http_server_read_callback (
 		goto again;
 	}
 
+	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
+	rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
+
 	out:
 	return ret;
 }
