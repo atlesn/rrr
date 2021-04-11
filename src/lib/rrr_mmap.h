@@ -25,11 +25,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <inttypes.h>
 
+#include "util/linked_list.h"
+
 struct rrr_mmap {
-	  pthread_mutex_t mutex;
+	RRR_LL_NODE(struct rrr_mmap);
+	  pthread_mutex_t default_lock;
+	  pthread_mutex_t *active_lock;
 	  uint64_t heap_size;
+	  uint64_t prev_allocation_failure_req_size;
 	  char name[64];
 	  void *heap;
+	  int collection_busy;
+};
+
+struct rrr_mmap_collection {
+	RRR_LL_HEAD(struct rrr_mmap);
 };
 
 void rrr_mmap_free (
@@ -50,10 +60,31 @@ int rrr_mmap_heap_reallocate (
 int rrr_mmap_new (
 		struct rrr_mmap **target,
 		uint64_t heap_size,
-		const char *name
+		const char *name,
+		pthread_mutex_t *custom_lock
 );
 void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
+);
+void rrr_mmap_collection_clear (
+		struct rrr_mmap_collection *collection
+);
+void rrr_mmap_collection_maintenance (
+		struct rrr_mmap_collection *collection,
+		pthread_rwlock_t *index_lock
+);
+void *rrr_mmap_collection_allocate (
+		struct rrr_mmap_collection *collection,
+		uint64_t bytes,
+		uint64_t min_mmap_size,
+		pthread_rwlock_t *index_lock,
+		pthread_mutex_t *custom_lock,
+		const char *name
+);
+void rrr_mmap_collection_free (
+		struct rrr_mmap_collection *collection,
+		pthread_rwlock_t *index_lock,
+		void *ptr
 );
 
 #endif /* RRR_MMAP_H */

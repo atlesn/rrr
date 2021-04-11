@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "message_holder.h"
 #include "message_holder_struct.h"
+#include "../allocator.h"
 #include "../mqtt/mqtt_topic.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
@@ -145,7 +146,7 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
-		free(entry);
+		rrr_free(entry);
 	}
 	else {
 		rrr_msg_holder_unlock(entry);
@@ -214,7 +215,7 @@ int rrr_msg_holder_new (
 
 	*result = NULL;
 
-	struct rrr_msg_holder *entry = malloc(sizeof(*entry));
+	struct rrr_msg_holder *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
 		ret = 1;
@@ -266,7 +267,7 @@ int rrr_msg_holder_new (
 	*result = entry;
 	goto out;
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }

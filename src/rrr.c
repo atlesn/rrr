@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/map.h"
 #include "lib/fork.h"
 #include "lib/rrr_umask.h"
+#include "lib/allocator.h"
 #include "lib/util/rrr_readdir.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
@@ -302,6 +303,8 @@ static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, callback_data->config_file);
 	}
 
+	rrr_allocator_maintenance();
+
 	return 0;
 }
 
@@ -419,6 +422,7 @@ static int main_loop (
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:
+		rrr_allocator_cleanup();
 		return ret;
 }
 

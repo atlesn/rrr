@@ -121,6 +121,7 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
                     serial/serial.c \
+		    allocator.c \
                     ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
