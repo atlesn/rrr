@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
-
-#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
 #include <sys/mman.h>
 #include <stdio.h>
@@ -57,6 +55,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * In the future, housekeeping functions may be made available to deal with holes in the heap.
  *
  */
+
+#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
 //#define RRR_MMAP_SENTINEL_DEBUG
 
@@ -133,7 +133,6 @@ static void __rrr_mmap_free (
 				if (++to_free_list_sorted_pos == to_free_list_sorted_count) {
 					goto out;
 				}
-//				printf ("mmap free block at %" PRIu64 " used mask %" PRIu64 "\n", block_pos, index->block_used_map);
 			}
 
 			block_pos += index->block_sizes[j];
@@ -152,8 +151,6 @@ static void __rrr_mmap_free (
 
 	mmap->prev_allocation_failure_req_size = 0;
 	mmap->to_free_list_count = 0;
-
-//	printf("Free blocks/iterations: %i %i\n", blocks, iterations);
 }
 
 void rrr_mmap_free (
@@ -172,21 +169,6 @@ void rrr_mmap_free (
 
 	mmap->prev_allocation_failure_req_size = 0;
 }
-
-/*static int __rrr_mmap_has (
-		struct rrr_mmap *mmap,
-		void *ptr
-) {
-	int ret = 0;
-
-	// Non-mutable values only checked, protected by index lock
-
-	if (ptr >= mmap->heap && ptr < mmap->heap + mmap->heap_size) {
-		ret = 1;
-	}
-
-	return ret;
-}*/
 
 void rrr_mmap_dump_indexes (
 		struct rrr_mmap *mmap
@@ -255,8 +237,6 @@ void *rrr_mmap_allocate (
 	uint64_t req_size_padded = req_size - (req_size % RRR_MMAP_HEAP_CHUNK_MIN_SIZE) +
 			RRR_MMAP_HEAP_CHUNK_MIN_SIZE;
 
-//	printf ("mmap allocate request %" PRIu64 "\n", req_size);
-
 	void *result = NULL;
 
 	pthread_mutex_lock(&mmap->lock);
@@ -310,11 +290,9 @@ void *rrr_mmap_allocate (
 				index->block_sizes[j] = req_size_padded;
 				index->block_used_map |= used_mask;
 				result = mmap->heap + block_pos;
-//				printf("new ptr: %p\n", result);
 #ifdef RRR_MMAP_SENTINEL_DEBUG
 				*((uint64_t*)(mmap->heap + block_pos + req_size_padded - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
 #endif
-//				printf ("mmap allocate new block at %" PRIu64 " size %" PRIu64 " used mask %" PRIu64 "\n", block_pos, req_size_padded, index->block_used_map);
 				goto out_unlock;
 			}
 			else {
@@ -323,8 +301,6 @@ void *rrr_mmap_allocate (
 					RRR_BUG("Sentinel overwritten at end of block at position %" PRIu64 "\n", block_pos);
 				}
 #endif
-
-//				printf ("block size %" PRIu64 " - %" PRIu64 "\n", j, index->block_sizes[j]);
 
 				if ((index->block_used_map & used_mask) != used_mask) {
 					if (consecutive_unused_count == 0) {
@@ -338,8 +314,6 @@ void *rrr_mmap_allocate (
 						// Re-use previously allocated and freed block
 						index->block_used_map |= used_mask;
 						result = mmap->heap + block_pos;
-//						printf("re-use ptr: %p\n", result);
-	//					printf ("mmap allocate old block at %" PRIu64 " size %" PRIu64 " used mask %" PRIu64 "\n", block_pos, req_size_padded, index->block_used_map);
 						goto out_unlock;
 					}
 					else if (consecutive_unused_size >= req_size_padded) {
@@ -350,8 +324,6 @@ void *rrr_mmap_allocate (
 						}
 						index->block_sizes[merge_j] = consecutive_unused_size;
 						result = mmap->heap + merge_block_pos;
-
-//						printf("merge ptr: %p\n", result);
 
 						goto out_unlock;
 					}
@@ -379,7 +351,6 @@ void *rrr_mmap_allocate (
 
 	if (result == NULL) {
 		mmap->prev_allocation_failure_req_size = req_size;
-//		rrr_mmap_dump_indexes(mmap);
 	}
 
 	return result;
@@ -403,11 +374,9 @@ static int __rrr_mmap_is_empty (
 		}
 
 		if (index->block_used_map != 0) {
-//			printf("Dirty block %lu\n", block_pos);
 			for (uint64_t j = 0; j < 64; j++) {
 				uint64_t used_mask = (uint64_t) 1 << j;
 				if ((index->block_used_map & used_mask) && index->block_sizes[j] != 0) {
-//					printf("Dirty bit %lu:%lu\n", block_pos, j);
 					ret = 0;
 					goto out_unlock;
 				}
@@ -430,13 +399,13 @@ static int __rrr_mmap_is_empty (
 }
 
 static void *__rrr_mmap (size_t size, int is_shared) {
-    void *ptr = rrr_posix_mmap(size, is_shared);
+	void *ptr = rrr_posix_mmap(size, is_shared);
 
-    if (ptr != NULL) {
-    	memset(ptr, '\0', size);
-    }
+	if (ptr != NULL) {
+		memset(ptr, '\0', size);
+	}
 
-    return ptr;
+	return ptr;
 }
 
 int rrr_mmap_heap_reallocate (
@@ -584,7 +553,6 @@ static int __rrr_mmap_collection_minmax_search (
 ) {
 	for (size_t j = 0; j < collection->mmap_count; j++) {
 		if (ptr >= collection->minmax[j].heap_min && ptr < collection->minmax[j].heap_max) {
-//			printf("cmp %lu >= %lu && %lu < %lu\n", ptr, collection->minmax[j].heap_min, ptr, collection->minmax[j].heap_max);
 			*pos = collection->minmax[j].mmap_idx;
 			return 1;
 		}
