@@ -46,27 +46,15 @@ The RRR Experimental and Very Slow Allocator (RRRVSA)
 
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
-struct rrr_allocator_group {
-	pthread_rwlock_t index_lock;
-};
-
-#define RRR_ALLOCATOR_GROUP_INIT {  \
-	PTHREAD_RWLOCK_INITIALIZER, \
-	}                           \
-
-static struct rrr_allocator_group rrr_allocator_groups[2] = {
-	RRR_ALLOCATOR_GROUP_INIT,
-	RRR_ALLOCATOR_GROUP_INIT
-};
-
-static struct rrr_mmap_collection rrr_allocator_collections[2] = {0};
+static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
+static struct rrr_mmap_collection rrr_allocator_collections[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
 
 static void *__rrr_allocate (size_t bytes, int group_num) {
 	void *ptr = rrr_mmap_collection_allocate (
 			&rrr_allocator_collections[group_num],
 			bytes,
 			RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-			&rrr_allocator_groups[group_num].index_lock,
+			&index_lock,
 			0 // Not shared
 	);
 
@@ -85,30 +73,16 @@ void *rrr_allocate_group (size_t bytes, int group) {
 }
 
 void rrr_free (void *ptr) {
-//	printf("Free %p\n", ptr);
-
-	int ret = 0;
-
-	ret = rrr_mmap_collection_free (
-			&rrr_allocator_collections[0],
-			&rrr_allocator_groups[0].index_lock,
+	if (rrr_mmap_collections_free (
+			rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&index_lock,
 			ptr
-	);
-
-	if (ret == 0) {
+	) == 0) {
 		return;
 	}
 
-	ret = rrr_mmap_collection_free (
-			&rrr_allocator_collections[1],
-			&rrr_allocator_groups[1].index_lock,
-			ptr
-	);
-
-	if (ret == 0) {
-		return; //RRR_BUG("BUG: Invalid free of %p in rrr_free\n", ptr);
-	}
-
+	// Not part of any mmap, use libc free
 	free(ptr);
 }
 
@@ -120,7 +94,7 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 				&rrr_allocator_collections[group_num],
 				bytes_new,
 				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-				&rrr_allocator_groups[group_num].index_lock,
+				&index_lock,
 				0 // Not shared
 		);
 
@@ -162,13 +136,15 @@ char *rrr_strdup (const char *str) {
 }
 
 void rrr_allocator_cleanup (void) {
-	rrr_mmap_collection_clear(&rrr_allocator_collections[0], &rrr_allocator_groups[0].index_lock);
-	rrr_mmap_collection_clear(&rrr_allocator_collections[1], &rrr_allocator_groups[1].index_lock);
+	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
+		rrr_mmap_collection_clear(&rrr_allocator_collections[i], &index_lock);
+	}
 }
 
 void rrr_allocator_maintenance (void) {
-	rrr_mmap_collection_maintenance(&rrr_allocator_collections[0], &rrr_allocator_groups[0].index_lock);
-	rrr_mmap_collection_maintenance(&rrr_allocator_collections[1], &rrr_allocator_groups[1].index_lock);
+	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
+		rrr_mmap_collection_maintenance(&rrr_allocator_collections[i], &index_lock);
+	}
 }
 
 #else

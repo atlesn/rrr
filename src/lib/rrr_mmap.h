@@ -94,8 +94,9 @@ void *rrr_mmap_collection_allocate (
 		pthread_rwlock_t *index_lock,
 		int is_shared
 );
-int rrr_mmap_collection_free (
-		struct rrr_mmap_collection *collection,
+int rrr_mmap_collections_free (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock,
 		void *ptr
 );

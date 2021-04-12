@@ -688,8 +688,9 @@ void *rrr_mmap_collection_allocate (
 	return result;
 }
 
-int rrr_mmap_collection_free (
-		struct rrr_mmap_collection *collection,
+int rrr_mmap_collections_free (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock,
 		void *ptr
 ) {
@@ -697,28 +698,20 @@ int rrr_mmap_collection_free (
 
 	pthread_rwlock_rdlock(index_lock);
 
-	size_t pos = 0;
-	if (__rrr_mmap_collection_minmax_search (
-			&pos,
-			collection,
-			(uintptr_t) ptr
-	) == 1) {
-		rrr_mmap_free(&collection->mmaps[pos], ptr);
-		ret = 0;
-/*		size_t mmap_count = 0;
+	for (size_t j = 0; j < collection_count; j++) {
+		if (collections[j].mmap_count == 0) {
+			continue;
+		}
 
-		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL) {
-				if (__rrr_mmap_has (node, ptr)) {
-					rrr_mmap_free(node, ptr);
-					ret = 0;
-					break;
-				}
-				if (collection->mmap_count == ++mmap_count) {
-					break;
-				}
-			}
-		RRR_MMAP_ITERATE_END();*/
+		size_t pos = 0;
+		if (__rrr_mmap_collection_minmax_search (
+				&pos,
+				&collections[j],
+				(uintptr_t) ptr
+		) == 1) {
+			rrr_mmap_free(&collections[j].mmaps[pos], ptr);
+			ret = 0;
+		}
 	}
 
 	pthread_rwlock_unlock(index_lock);

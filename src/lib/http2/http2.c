@@ -149,11 +149,12 @@ struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
 		return old_stream;
 	}
 
-	struct rrr_http2_stream *new_stream = rrr_allocate(sizeof(*new_stream));
+	struct rrr_http2_stream *new_stream = rrr_allocate_group(sizeof(*new_stream), RRR_ALLOCATOR_GROUP_HTTP2);
 	if (new_stream == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http2_stream_maintain_and_find_or_create\n");
 		return NULL;
 	}
+
 	memset(new_stream, '\0', sizeof(*new_stream));
 	new_stream->stream_id = stream_id;
 	new_stream->creation_time = rrr_time_get_64();
