@@ -43,9 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http2_stream {
 	RRR_LL_NODE(struct rrr_http2_stream);
-	int please_delete_me;
 	struct rrr_http_header_field_collection headers;
-	int32_t stream_id;
 	void *data;
 	size_t data_size;
 	size_t data_wpos;
@@ -57,12 +55,15 @@ struct rrr_http2_stream {
 	void (*application_data_destroy_function)(void *);
 	struct rrr_map headers_to_send;
 
-	// Used for debugging purposes
 	uint64_t creation_time;
 };
 
 struct rrr_http2_stream_collection {
-	RRR_LL_HEAD(struct rrr_http2_stream);
+	struct rrr_http2_stream streams[RRR_HTTP2_STREAMS_MAX];
+	int32_t stream_ids[RRR_HTTP2_STREAMS_MAX];
+	uint64_t active_flags;
+	uint64_t delete_me_flags;
+	int stream_count;
 };
 
 struct rrr_http2_session;
@@ -87,18 +88,44 @@ struct rrr_http2_session {
 	uint64_t closed_stream_count;
 };
 
-int __rrr_http2_stream_destroy (
-		struct rrr_http2_stream *stream
+int __rrr_http2_stream_reset (
+		struct rrr_http2_stream_collection *collection,
+		uint64_t index
 ) {
+	struct rrr_http2_stream *stream = &collection->streams[index];
 	rrr_http_header_field_collection_clear(&stream->headers);
 	if (stream->application_data != NULL) {
 		stream->application_data_destroy_function(stream->application_data);
 	}
 	RRR_FREE_IF_NOT_NULL(stream->data);
 	rrr_map_clear(&stream->headers_to_send);
-	rrr_free(stream);
+	memset(stream, '\0', sizeof(*stream));
+
+	collection->active_flags &= ~((uint64_t) 1 << index);
+	collection->delete_me_flags &= ~((uint64_t) 1 << index);
+	collection->stream_ids[index] = 0;
+	collection->stream_count--;
+
 	return 0;
 }
+
+#define RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN()                               \
+	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
+		if ((collection->delete_me_flags & ((uint64_t) 1 << i)) != 0) {   \
+			struct rrr_http2_stream *node = &collection->streams[i]
+
+#define RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN()                                  \
+	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
+		if ((collection->active_flags & ((uint64_t) 1 << i)) != 0) {      \
+			struct rrr_http2_stream *node = &collection->streams[i]
+
+#define RRR_HTTP2_STREAMS_ITERATE_INACTIVE_BEGIN()                                \
+	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
+		if ((collection->active_flags & ((uint64_t) 1 << i)) == 0) {      \
+			struct rrr_http2_stream *node = &collection->streams[i]
+
+#define RRR_HTTP2_STREAMS_ITERATE_END() \
+	}}} while(0)
 
 void __rrr_http2_stream_collection_destroy (
 		struct rrr_http2_stream_collection *collection
@@ -107,35 +134,53 @@ void __rrr_http2_stream_collection_destroy (
 		// This is useful to detect usage of invalid stream IDs. There
 		// is no checks when for instance header fields are pushed if a
 		// stream ID is correct and will actually be sent.
-		RRR_LL_ITERATE_BEGIN(collection, struct rrr_http2_stream);
+		RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
 			uint64_t age_ms = (rrr_time_get_64() - node->creation_time) / 1000;
 			RRR_DBG_3("http2 stream id %i late destroy (upon collection destruction), age is %" PRIu64 "ms\n",
-					node->stream_id, age_ms);
-		RRR_LL_ITERATE_END();
+					collection->stream_ids[i], age_ms);
+		RRR_HTTP2_STREAMS_ITERATE_END();
 	}
-	RRR_LL_DESTROY(collection, struct rrr_http2_stream, __rrr_http2_stream_destroy(node));
+	RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
+		__rrr_http2_stream_reset(collection, i);
+	RRR_HTTP2_STREAMS_ITERATE_END();
 }
 
 void __rrr_http2_streams_maintain (
 		struct rrr_http2_session *session
 ) {
-	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
-		if (node->please_delete_me) {
-			session->closed_stream_count++;
-			RRR_LL_ITERATE_SET_DESTROY();
+	struct rrr_http2_stream_collection *collection = &session->streams;
+
+	RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN();
+		session->closed_stream_count++;
+		__rrr_http2_stream_reset(collection, i);
+	RRR_HTTP2_STREAMS_ITERATE_END();
+}
+
+void __rrr_http2_stream_delete_me_set (
+		struct rrr_http2_session *session,
+		int32_t stream_id
+) {
+	struct rrr_http2_stream_collection *collection = &session->streams;
+
+	RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
+		if (session->streams.stream_ids[i] == stream_id) {
+			session->streams.delete_me_flags |= ((uint64_t) 1 << i);
+			break;
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, __rrr_http2_stream_destroy(node));
+	RRR_HTTP2_STREAMS_ITERATE_END();
 }
 
 struct rrr_http2_stream *__rrr_http2_stream_find (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
-	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
-		if (node->stream_id == stream_id) {
-			return node;
+	struct rrr_http2_stream_collection *collection = &session->streams;
+
+	RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
+		if (session->streams.stream_ids[i] == stream_id) {
+			return &session->streams.streams[i];
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->streams, __rrr_http2_stream_destroy(node));
+	RRR_HTTP2_STREAMS_ITERATE_END();
 
 	return NULL;
 }
@@ -144,24 +189,29 @@ struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
 		struct rrr_http2_session *session,
 		int32_t stream_id
 ) {
+	struct rrr_http2_stream_collection *collection = &session->streams;
 	struct rrr_http2_stream *old_stream = __rrr_http2_stream_find (session, stream_id);
 	if (old_stream != NULL) {
 		return old_stream;
 	}
 
-	struct rrr_http2_stream *new_stream = rrr_allocate_group(sizeof(*new_stream), RRR_ALLOCATOR_GROUP_HTTP2);
-	if (new_stream == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_http2_stream_maintain_and_find_or_create\n");
+	if (session->streams.active_flags == UINT64_MAX) {
 		return NULL;
 	}
 
-	memset(new_stream, '\0', sizeof(*new_stream));
-	new_stream->stream_id = stream_id;
-	new_stream->creation_time = rrr_time_get_64();
+	RRR_HTTP2_STREAMS_ITERATE_INACTIVE_BEGIN();
+		node->creation_time = rrr_time_get_64();
 
-	RRR_LL_PUSH(&session->streams, new_stream);
+		collection->active_flags |= ((uint64_t) 1 << i);
+		collection->stream_ids[i] = stream_id;
+		collection->stream_count++;
 
-	return new_stream;
+		return node;
+	RRR_HTTP2_STREAMS_ITERATE_END();
+
+	RRR_BUG("BUG: Flag error in __rrr_http2_stream_find_or_create\n");
+
+	return NULL;;
 }
 
 int __rrr_http2_stream_data_push (
@@ -316,13 +366,13 @@ static int __rrr_http2_on_stream_close_callback (
 	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
 
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, stream_id);
-	stream->please_delete_me = 1;
+	__rrr_http2_stream_delete_me_set(session, stream_id);
 
 	if (session->callback_data.callback != NULL) {
 		if (session->callback_data.callback (
 				session,
 				&stream->headers,
-				stream->stream_id,
+				stream_id,
 				0,
 				0,
 				1, // Is stream close
@@ -521,7 +571,8 @@ static ssize_t __rrr_http2_data_source_read_callback (
 
 static int __rrr_http2_data_submit_if_needed (
 		struct rrr_http2_session *session,
-		struct rrr_http2_stream *stream
+		struct rrr_http2_stream *stream,
+		uint32_t stream_id
 ) {
 	int ret = 0;
 
@@ -537,7 +588,7 @@ static int __rrr_http2_data_submit_if_needed (
 
 	// Note that the final source read callback is set in the tick() function
 
-	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream->stream_id, &data_provider)) != 0) {
+	if ((ret = nghttp2_submit_data(session->session, NGHTTP2_FLAG_END_STREAM, stream_id, &data_provider)) != 0) {
 		RRR_MSG_0 ("HTTP2 data submission failed: %s\n", nghttp2_strerror(ret));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
@@ -566,7 +617,7 @@ static int __rrr_http2_before_frame_send_callback (
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	if ((ret = __rrr_http2_data_submit_if_needed(session, stream)) != 0) {
+	if ((ret = __rrr_http2_data_submit_if_needed(session, stream, frame->hd.stream_id)) != 0) {
 		ret = NGHTTP2_ERR_CALLBACK_FAILURE;
 		goto out;
 	}
@@ -683,7 +734,7 @@ int rrr_http2_session_stream_application_data_set (
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
-		return RRR_HTTP2_HARD_ERROR;
+		return RRR_HTTP2_SOFT_ERROR;
 	}
 
 	if (stream->application_data != NULL) {
@@ -716,9 +767,11 @@ static int __rrr_http2_session_stream_header_push (
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
-		RRR_MSG_0("Could not create stream id %u in __rrr_http2_session_stream_header_push\n", stream_id);
-		return 1;
+//		printf("Busy, stream count %i\n", session->streams.stream_count);
+		// Max number of streams reached
+		return RRR_HTTP2_BUSY;
 	}
+//	printf("Not busy, stream count %i\n", session->streams.stream_count);
 	return rrr_map_item_add_new(&stream->headers_to_send, name, value);
 }
 
@@ -736,7 +789,6 @@ static int __rrr_http2_session_stream_headers_submit (
 		int32_t stream_id
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
-
 	if (stream == NULL) {
 		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_headers_submit\n");
 	}
@@ -819,7 +871,7 @@ int rrr_http2_session_settings_submit (
 	int ret = 0;
 
 	nghttp2_settings_entry vector[] = {
-			{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}
+			{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, RRR_HTTP2_STREAMS_MAX}
 	};
 
 	/* client 24 bytes magic string will be sent by nghttp2 library if we are a client */
@@ -950,6 +1002,9 @@ int rrr_http2_data_submission_request_set (
 	int ret = 0;
 
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
+	if (stream == NULL) {
+		return RRR_HTTP2_SOFT_ERROR;
+	}
 
 	stream->data_submission_requested = 1;
 
@@ -963,11 +1018,13 @@ int rrr_http2_transport_ctx_streams_iterate (
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(&session->streams, struct rrr_http2_stream);
-		if ((ret = callback(node->stream_id, node->application_data, callback_arg)) != 0) {
+	struct rrr_http2_stream_collection *collection = &session->streams;
+
+	RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN();
+		if ((ret = callback(collection->stream_ids[i], node->application_data, callback_arg)) != 0) {
 			goto out;
 		}
-	RRR_LL_ITERATE_END();
+	RRR_HTTP2_STREAMS_ITERATE_END();
 
 	out:
 	return ret;
@@ -978,7 +1035,7 @@ int rrr_http2_streams_count_and_maintain (
 ) {
 	 __rrr_http2_streams_maintain (session);
 
-	return RRR_LL_COUNT(&session->streams);
+	return session->streams.stream_count;
 }
 
 int rrr_http2_need_tick (

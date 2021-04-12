@@ -27,10 +27,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
+#define RRR_HTTP2_STREAMS_MAX 64 // Must be number of bits in uint64_t
+
 #define RRR_HTTP2_OK            RRR_READ_OK
 #define RRR_HTTP2_SOFT_ERROR    RRR_READ_SOFT_ERROR
 #define RRR_HTTP2_HARD_ERROR    RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE          RRR_READ_EOF
+#define RRR_HTTP2_BUSY          RRR_READ_INCOMPLETE
 
 #define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
     struct rrr_http2_session *session,                         \

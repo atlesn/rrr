@@ -186,6 +186,12 @@ int rrr_http_session_transport_ctx_request_send_possible (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);
+
+	if (session == NULL) {
+		// OK, no application created yet (hence it can't be busy)
+		return 0;
+	}
+
 	return rrr_http_application_transport_ctx_request_send_possible (
 			is_possible,
 			session->application

@@ -40,8 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/base64.h"
 #include "../util/macro_utils.h"
 
-#define RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX 100
-
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
 	struct rrr_http2_session *http2_session;
@@ -150,7 +148,7 @@ static int __rrr_http_application_http2_request_send_possible (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
-	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP_APPLICATION_HTTP2_STREAMS_MAX);
+	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP2_STREAMS_MAX);
 
 	return 0;
 }
@@ -255,7 +253,11 @@ static int __rrr_http_application_http2_request_send (
 		goto out;
 	}
 
-	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method));
+	if ((ret = rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":method", RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method))) != 0) {
+		// Probably busy, return value propagates
+		goto out;
+	}
+
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":scheme", (rrr_net_transport_ctx_is_tls(handle) ? "https" : "http"));
 	ret |= rrr_http2_header_submit(http2->http2_session, stream_id_preliminary, ":authority", host);
 
