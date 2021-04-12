@@ -423,6 +423,7 @@ static int main_loop (
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:
+		rrr_allocator_cleanup();
 		return ret;
 }
 
