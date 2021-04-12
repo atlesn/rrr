@@ -148,7 +148,7 @@ static int __rrr_http_application_http2_request_send_possible (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) application;
 
-	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP2_STREAMS_MAX);
+	*is_possible = (rrr_http2_streams_count_and_maintain(http2->http2_session) < RRR_HTTP2_STREAM_MAX);
 
 	return 0;
 }

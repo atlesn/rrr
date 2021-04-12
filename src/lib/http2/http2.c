@@ -59,10 +59,10 @@ struct rrr_http2_stream {
 };
 
 struct rrr_http2_stream_collection {
-	struct rrr_http2_stream streams[RRR_HTTP2_STREAMS_MAX];
-	int32_t stream_ids[RRR_HTTP2_STREAMS_MAX];
-	uint64_t active_flags;
-	uint64_t delete_me_flags;
+	struct rrr_http2_stream streams[RRR_HTTP2_STREAM_BLOCKS * 64];
+	int32_t stream_ids[RRR_HTTP2_STREAM_BLOCKS * 64];
+	uint64_t active_flags[RRR_HTTP2_STREAM_BLOCKS];
+	uint64_t delete_me_flags[RRR_HTTP2_STREAM_BLOCKS];
 	int stream_count;
 };
 
@@ -88,6 +88,12 @@ struct rrr_http2_session {
 	uint64_t closed_stream_count;
 };
 
+#define RRR_HTTP2_STREAM_GROUP(idx) \
+	((idx & 0xffffffffffffffc0) >> 6)
+
+#define RRR_HTTP2_STREAM_MASK(idx) \
+	((uint64_t) 1 << idx)
+
 int __rrr_http2_stream_reset (
 		struct rrr_http2_stream_collection *collection,
 		uint64_t index
@@ -101,28 +107,31 @@ int __rrr_http2_stream_reset (
 	rrr_map_clear(&stream->headers_to_send);
 	memset(stream, '\0', sizeof(*stream));
 
-	collection->active_flags &= ~((uint64_t) 1 << index);
-	collection->delete_me_flags &= ~((uint64_t) 1 << index);
+	collection->active_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
+	collection->delete_me_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
 	collection->stream_ids[index] = 0;
 	collection->stream_count--;
 
 	return 0;
 }
 
+#define RRR_HTTP2_STREAMS_ITERATE_BEGIN()                                         \
+	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAM_BLOCKS * 64; i++) {        \
+		uint64_t group = RRR_HTTP2_STREAM_GROUP(i);                       \
+		uint64_t mask = RRR_HTTP2_STREAM_MASK(i);                         \
+		struct rrr_http2_stream *node = &collection->streams[i]           \
+
 #define RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN()                               \
-	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
-		if ((collection->delete_me_flags & ((uint64_t) 1 << i)) != 0) {   \
-			struct rrr_http2_stream *node = &collection->streams[i]
+	RRR_HTTP2_STREAMS_ITERATE_BEGIN();                                        \
+		if ((collection->delete_me_flags[group] & mask) != 0) {           \
 
 #define RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN()                                  \
-	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
-		if ((collection->active_flags & ((uint64_t) 1 << i)) != 0) {      \
-			struct rrr_http2_stream *node = &collection->streams[i]
+	RRR_HTTP2_STREAMS_ITERATE_BEGIN();                                        \
+		if ((collection->active_flags[group] & mask) != 0) {              \
 
 #define RRR_HTTP2_STREAMS_ITERATE_INACTIVE_BEGIN()                                \
-	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAMS_MAX; i++) {               \
-		if ((collection->active_flags & ((uint64_t) 1 << i)) == 0) {      \
-			struct rrr_http2_stream *node = &collection->streams[i]
+	RRR_HTTP2_STREAMS_ITERATE_BEGIN();                                        \
+		if ((collection->active_flags[group] & mask) == 0) {              \
 
 #define RRR_HTTP2_STREAMS_ITERATE_END() \
 	}}} while(0)
@@ -164,7 +173,7 @@ void __rrr_http2_stream_delete_me_set (
 
 	RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
 		if (session->streams.stream_ids[i] == stream_id) {
-			session->streams.delete_me_flags |= ((uint64_t) 1 << i);
+			session->streams.delete_me_flags[RRR_HTTP2_STREAM_GROUP(i)] |= RRR_HTTP2_STREAM_MASK(i);
 			break;
 		}
 	RRR_HTTP2_STREAMS_ITERATE_END();
@@ -195,16 +204,26 @@ struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
 		return old_stream;
 	}
 
-	if (session->streams.active_flags == UINT64_MAX) {
+	int all_set = 1;
+	for (uint64_t i = 0; i < RRR_HTTP2_STREAM_BLOCKS; i++) {
+		if (session->streams.active_flags[i] != UINT64_MAX) {
+			all_set = 0;
+			break;
+		}
+	}
+
+	if (all_set) {
 		return NULL;
 	}
 
 	RRR_HTTP2_STREAMS_ITERATE_INACTIVE_BEGIN();
 		node->creation_time = rrr_time_get_64();
 
-		collection->active_flags |= ((uint64_t) 1 << i);
+		collection->active_flags[group] |= mask;
 		collection->stream_ids[i] = stream_id;
 		collection->stream_count++;
+
+//		printf("Stream count %i\n", collection->stream_count);
 
 		return node;
 	RRR_HTTP2_STREAMS_ITERATE_END();
@@ -881,7 +900,7 @@ int rrr_http2_session_settings_submit (
 	int ret = 0;
 
 	nghttp2_settings_entry vector[] = {
-			{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, RRR_HTTP2_STREAMS_MAX}
+			{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, RRR_HTTP2_STREAM_BLOCKS * 64}
 	};
 
 	/* client 24 bytes magic string will be sent by nghttp2 library if we are a client */
