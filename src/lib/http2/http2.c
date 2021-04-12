@@ -63,7 +63,7 @@ struct rrr_http2_stream_collection {
 	int32_t stream_ids[RRR_HTTP2_STREAM_BLOCKS * 64];
 	uint64_t active_flags[RRR_HTTP2_STREAM_BLOCKS];
 	uint64_t delete_me_flags[RRR_HTTP2_STREAM_BLOCKS];
-	int stream_count;
+	uint32_t stream_count;
 };
 
 struct rrr_http2_session;
@@ -787,11 +787,31 @@ static int __rrr_http2_session_stream_header_push (
 		const char *name,
 		const char *value
 ) {
-	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
+	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, stream_id);
+
 	if (stream == NULL) {
-		// Max number of streams reached
-		return RRR_HTTP2_BUSY;
+		int ret_tmp = 0;
+		int retries = 1;
+		do {
+			if (session->streams.stream_count < nghttp2_session_get_remote_settings(session->session, NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS)) {
+				ret_tmp = 0;
+				break;
+			}
+			// Max number of streams (by remote) reached
+			ret_tmp = RRR_HTTP2_BUSY;
+			__rrr_http2_streams_maintain(session);
+		} while (retries--);
+
+		if (ret_tmp != 0) {
+			return ret_tmp;
+		}
+
+		if ((stream = __rrr_http2_stream_find_or_create(session, stream_id)) == NULL) {
+			// Max number of streams (local) reached
+			return RRR_HTTP2_BUSY;
+		}
 	}
+
 	return rrr_map_item_add_new(&stream->headers_to_send, name, value);
 }
 
