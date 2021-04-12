@@ -76,7 +76,7 @@ static void __rrr_mmap_free (
 	int iterations = 0;
 
 	if (mmap->to_free_list_count == 0) {
-		goto out;
+		return;
 	}
 
 	size_t to_free_list_sorted_count = 0;
@@ -143,12 +143,11 @@ static void __rrr_mmap_free (
 		}
 	}
 
-	RRR_BUG("BUG: Invalid free rrr_mmap_free, loop ended with not frees\n");
-
 	out:
 
 	if (to_free_list_sorted_pos != to_free_list_sorted_count) {
-		RRR_BUG("BUG: Invalid free of in rrr_mmap_free, one or more positions not found\n");
+		RRR_BUG("BUG: Invalid free of in rrr_mmap_free, one or more positions not found %lu<>%lu\n",
+				to_free_list_sorted_pos, to_free_list_sorted_count);
 	}
 
 	mmap->prev_allocation_failure_req_size = 0;
@@ -174,7 +173,7 @@ void rrr_mmap_free (
 	mmap->prev_allocation_failure_req_size = 0;
 }
 
-static int __rrr_mmap_has (
+/*static int __rrr_mmap_has (
 		struct rrr_mmap *mmap,
 		void *ptr
 ) {
@@ -187,7 +186,7 @@ static int __rrr_mmap_has (
 	}
 
 	return ret;
-}
+}*/
 
 void rrr_mmap_dump_indexes (
 		struct rrr_mmap *mmap
@@ -561,6 +560,38 @@ void rrr_mmap_destroy (
 #define RRR_MMAP_ITERATE_END() \
 	}} while(0)
 
+static void __rrr_mmap_collection_minmax_update (
+		struct rrr_mmap_collection *collection
+) {
+	size_t pos = 0;
+	RRR_MMAP_ITERATE_BEGIN();
+		if (node->heap != NULL) {
+			collection->minmax[pos].heap_min = (uintptr_t) node->heap;
+			collection->minmax[pos].heap_max = (uintptr_t) node->heap + node->heap_size;
+			collection->minmax[pos].mmap_idx = i;
+			pos++;
+		}
+		if (pos == collection->mmap_count) {
+			break;
+		}
+	RRR_MMAP_ITERATE_END();
+}
+
+static int __rrr_mmap_collection_minmax_search (
+		size_t *pos,
+		struct rrr_mmap_collection *collection,
+		uintptr_t ptr
+) {
+	for (size_t j = 0; j < collection->mmap_count; j++) {
+		if (ptr >= collection->minmax[j].heap_min && ptr < collection->minmax[j].heap_max) {
+//			printf("cmp %lu >= %lu && %lu < %lu\n", ptr, collection->minmax[j].heap_min, ptr, collection->minmax[j].heap_max);
+			*pos = collection->minmax[j].mmap_idx;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 void rrr_mmap_collection_maintenance (
 		struct rrr_mmap_collection *collection,
 		pthread_rwlock_t *index_lock
@@ -582,7 +613,8 @@ void rrr_mmap_collection_maintenance (
 		if (node->heap != NULL && __rrr_mmap_is_empty(node)) {
 			 if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
 				 __rrr_mmap_cleanup (node);
-				 collection->mmap_count--;
+				collection->mmap_count--;
+				__rrr_mmap_collection_minmax_update(collection);
 			 }
 		}
 		else if (node->heap != NULL) {
@@ -645,6 +677,7 @@ void *rrr_mmap_collection_allocate (
 				break;
 			}
 			collection->mmap_count++;
+			__rrr_mmap_collection_minmax_update(collection);
 			result = rrr_mmap_allocate(node, bytes);
 			break;
 		}
@@ -664,22 +697,32 @@ int rrr_mmap_collection_free (
 
 	pthread_rwlock_rdlock(index_lock);
 
-	size_t mmap_count = 0;
+	size_t pos = 0;
+	if (__rrr_mmap_collection_minmax_search (
+			&pos,
+			collection,
+			(uintptr_t) ptr
+	) == 1) {
+		rrr_mmap_free(&collection->mmaps[pos], ptr);
+		ret = 0;
+/*		size_t mmap_count = 0;
 
-	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL) {
-			if (__rrr_mmap_has (node, ptr)) {
-				rrr_mmap_free(node, ptr);
-				ret = 0;
-				break;
+		RRR_MMAP_ITERATE_BEGIN();
+			if (node->heap != NULL) {
+				if (__rrr_mmap_has (node, ptr)) {
+					rrr_mmap_free(node, ptr);
+					ret = 0;
+					break;
+				}
+				if (collection->mmap_count == ++mmap_count) {
+					break;
+				}
 			}
-			if (collection->mmap_count == ++mmap_count) {
-				break;
-			}
-		}
-	RRR_MMAP_ITERATE_END();
+		RRR_MMAP_ITERATE_END();*/
+	}
 
 	pthread_rwlock_unlock(index_lock);
 
 	return ret;
+
 }

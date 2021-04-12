@@ -43,9 +43,16 @@ struct rrr_mmap {
 	int maintenance_cleanup_strikes;
 };
 
+struct rrr_mmap_heap_index {
+	uintptr_t heap_min;
+	uintptr_t heap_max;
+	size_t mmap_idx;
+};
+
 struct rrr_mmap_collection {
 	size_t mmap_count;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
+	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
 //	size_t prev_free_index;
 };
 
