@@ -28,13 +28,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /*
 
-The RRR Experimental and Very Slow Allocator (RRRVSA)
+The RRR Allocator (RRRA)
 
-   The goal is to separate message
-   message allocations from other allocations, increasing the chance of
-   having pages only containing messages thus allowing pages to be returned
-   to the OS as messages are done
- 
+   The goal is to separate message allocations from other allocations,
+   increasing the chance of having pages containing only messages thus
+   allowing them to be returned to the OS as messages are done.
+
+   The allocator may be disabled by commenting out the #define above. This
+   may increase program speed, but memory usage may grow over time.
+
+   For messages, different allocation groups exist for different allocation
+   types. Allocations are not put into different groups according to size.
+
+   The function rrr_free() is used for all frees, regardless of how memory
+   was allocated. The correct method of freeing will be detected.
+
+   A limited amount of memory is available for message. The program will
+   restart if this limit is reached.
  */
 
 #include <stdio.h>
@@ -44,6 +54,7 @@ The RRR Experimental and Very Slow Allocator (RRRVSA)
 #include "log.h"
 #include "rrr_mmap.h"
 
+/* Size for new MMAPs. A collection contains multiple MMAPs. */
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
 static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
@@ -53,19 +64,18 @@ static void *__rrr_allocate (size_t bytes, int group_num) {
 	void *ptr = rrr_mmap_collection_allocate (
 			&rrr_allocator_collections[group_num],
 			bytes,
-			RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
+			bytes > RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
+				? bytes
+				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
 			&index_lock,
 			0 // Not shared
 	);
-
-//	printf("Allocate %p\n", ptr);
 
 	return ptr;
 }
 
 void *rrr_allocate (size_t bytes) {
 	return malloc(bytes);
-//	return __rrr_allocate(bytes, RRR_ALLOCATOR_GROUP_DEFAULT);
 }
 
 void *rrr_allocate_group (size_t bytes, int group) {
@@ -114,7 +124,6 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
 	(void)(bytes_old);
 	return realloc(ptr_old, bytes_new);
-	//return __rrr_reallocate(ptr_old, bytes_old, bytes_new, RRR_ALLOCATOR_GROUP_DEFAULT);
 }
 
 void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {

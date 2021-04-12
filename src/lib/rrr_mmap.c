@@ -448,6 +448,11 @@ static int __rrr_mmap_init (
 
 	memset(result, '\0', sizeof(*result));
 
+	heap_size += sizeof(struct rrr_mmap_heap_block_index);
+#ifdef RRR_MMAP_SENTINEL_DEBUG
+	heap_size += sizeof(rrr_mmap_sentinel_template);
+#endif
+
 	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
 
 	if ((ret = rrr_posix_mutex_init(&result->lock, (is_shared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))) != 0) {
