@@ -352,8 +352,13 @@ static int __rrr_mmap_is_empty (
 		}
 
 		if (index->block_used_map != 0) {
-			ret = 0;
-			break;
+			for (uint64_t j = 0; j < 64; j++) {
+				uint64_t used_mask = (uint64_t) 1 << j;
+				if ((index->block_used_map & used_mask) && index->block_sizes[j] != 0) {
+					ret = 0;
+					break;
+				}
+			}
 		}
 
 		for (uint64_t j = 0; j < 64; j++) {
