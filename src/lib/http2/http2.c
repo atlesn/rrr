@@ -483,7 +483,17 @@ static int __rrr_http2_on_header_callback (
 	(void)(namelen);
 	(void)(flags);
 
-	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, frame->hd.stream_id);
+	struct rrr_http2_stream *stream;
+
+	int retries = 1;
+	do {
+		stream = __rrr_http2_stream_find_or_create(session, frame->hd.stream_id);
+		if (stream != NULL) {
+			break;
+		}
+		__rrr_http2_streams_maintain(session);
+	} while (retries--);
+
 	if (stream == NULL) {
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
