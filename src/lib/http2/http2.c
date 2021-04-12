@@ -94,27 +94,6 @@ struct rrr_http2_session {
 #define RRR_HTTP2_STREAM_MASK(idx) \
 	((uint64_t) 1 << idx)
 
-int __rrr_http2_stream_reset (
-		struct rrr_http2_stream_collection *collection,
-		uint64_t index
-) {
-	struct rrr_http2_stream *stream = &collection->streams[index];
-	rrr_http_header_field_collection_clear(&stream->headers);
-	if (stream->application_data != NULL) {
-		stream->application_data_destroy_function(stream->application_data);
-	}
-	RRR_FREE_IF_NOT_NULL(stream->data);
-	rrr_map_clear(&stream->headers_to_send);
-	memset(stream, '\0', sizeof(*stream));
-
-	collection->active_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
-	collection->delete_me_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
-	collection->stream_ids[index] = 0;
-	collection->stream_count--;
-
-	return 0;
-}
-
 #define RRR_HTTP2_STREAMS_ITERATE_BEGIN()                                         \
 	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAM_BLOCKS * 64; i++) {        \
 		uint64_t group = RRR_HTTP2_STREAM_GROUP(i);                       \
@@ -135,6 +114,27 @@ int __rrr_http2_stream_reset (
 
 #define RRR_HTTP2_STREAMS_ITERATE_END() \
 	}}} while(0)
+
+int __rrr_http2_stream_reset (
+		struct rrr_http2_stream_collection *collection,
+		uint64_t index
+) {
+	struct rrr_http2_stream *stream = &collection->streams[index];
+	rrr_http_header_field_collection_clear(&stream->headers);
+	if (stream->application_data != NULL) {
+		stream->application_data_destroy_function(stream->application_data);
+	}
+	RRR_FREE_IF_NOT_NULL(stream->data);
+	rrr_map_clear(&stream->headers_to_send);
+	memset(stream, '\0', sizeof(*stream));
+
+	collection->active_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
+	collection->delete_me_flags[RRR_HTTP2_STREAM_GROUP(index)] &= ~RRR_HTTP2_STREAM_MASK(index);
+	collection->stream_ids[index] = 0;
+	collection->stream_count--;
+
+	return 0;
+}
 
 void __rrr_http2_stream_collection_destroy (
 		struct rrr_http2_stream_collection *collection
