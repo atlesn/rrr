@@ -223,8 +223,6 @@ struct rrr_http2_stream *__rrr_http2_stream_find_or_create (
 		collection->stream_ids[i] = stream_id;
 		collection->stream_count++;
 
-//		printf("Stream count %i\n", collection->stream_count);
-
 		return node;
 	RRR_HTTP2_STREAMS_ITERATE_END();
 
@@ -302,11 +300,6 @@ static ssize_t __rrr_http2_recv_callback (
 
 	(void)(nghttp2_session);
 	(void)(flags);
-
-//	This does not handle situations where the server stops replying and we have nothing to send
-//	if (rrr_net_transport_ctx_check_alive(session->callback_data.handle) != RRR_NET_TRANSPORT_READ_OK) {
-//		return NGHTTP2_ERR_EOF;
-//	}
 
 	if (length > SSIZE_MAX) {
 		// Truncate to fit in function return value
@@ -796,21 +789,19 @@ static int __rrr_http2_session_stream_header_push (
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
-//		printf("Busy, stream count %i\n", session->streams.stream_count);
 		// Max number of streams reached
 		return RRR_HTTP2_BUSY;
 	}
-//	printf("Not busy, stream count %i\n", session->streams.stream_count);
 	return rrr_map_item_add_new(&stream->headers_to_send, name, value);
 }
 
-#define MAKE_NV(name, value)			\
-{										\
-    (uint8_t *) name,					\
-	(uint8_t *) value,					\
-	strlen(name),						\
-	strlen(value),						\
-    NGHTTP2_NV_FLAG_NONE                \
+#define MAKE_NV(name, value)                                   \
+{                                                              \
+    (uint8_t *) name,                                          \
+    (uint8_t *) value,                                         \
+    strlen(name),                                              \
+    strlen(value),                                             \
+    NGHTTP2_NV_FLAG_NONE                                       \
 }
 
 static int __rrr_http2_session_stream_headers_submit (
@@ -1085,8 +1076,6 @@ int rrr_http2_transport_ctx_tick (
 
 	// Just to clean up any streams needing deletion
 	__rrr_http2_stream_find(session, 0);
-
-	// *closed_stream_count = session->closed_stream_count;
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function
