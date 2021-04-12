@@ -623,8 +623,6 @@ void rrr_mmap_collection_maintenance (
 		}
 	RRR_MMAP_ITERATE_END();
 	pthread_rwlock_unlock(index_lock);
-
-	printf("Maintenance: %i\n", count);
 }
 
 void rrr_mmap_collection_clear (
@@ -645,7 +643,7 @@ void rrr_mmap_collection_clear (
 	RRR_MMAP_ITERATE_END();
 	pthread_rwlock_unlock(index_lock);
 
-	printf("MMAPs left upon cleanup: %i\n", count);
+//	printf("MMAPs left upon cleanup: %i\n", count);
 }
 
 void *rrr_mmap_collection_allocate (
@@ -672,7 +670,6 @@ void *rrr_mmap_collection_allocate (
 	pthread_rwlock_wrlock(index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
 		if (node->heap == NULL) {
-			printf("New collection at %lu\n", i);
 			if (__rrr_mmap_init (node, bytes > min_mmap_size ? bytes : min_mmap_size, is_shared) != 0) {
 				break;
 			}
