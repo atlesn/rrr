@@ -74,14 +74,17 @@ static void *__rrr_allocate (size_t bytes, int group_num) {
 	return ptr;
 }
 
+/* Allocate memory from OS allocator */
 void *rrr_allocate (size_t bytes) {
 	return malloc(bytes);
 }
 
+/* Allocate memory from group allocator */
 void *rrr_allocate_group (size_t bytes, int group) {
 	return __rrr_allocate(bytes, group);
 }
 
+/* Frees both allocations done by OS allocator and group allocator */
 void rrr_free (void *ptr) {
 	if (rrr_mmap_collections_free (
 			rrr_allocator_collections,
@@ -121,15 +124,18 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 	return ptr_new;
 }
 
+/* Caller must ensure that old allocation is done by OS allocator */
 void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
 	(void)(bytes_old);
 	return realloc(ptr_old, bytes_new);
 }
 
+/* Caller must ensure that old allocation is done by group allocator */
 void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {
 	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, group);
 }
 
+/* Duplicate string using OS allocator */
 char *rrr_strdup (const char *str) {
 	size_t size = strlen(str) + 1;
 
@@ -144,12 +150,14 @@ char *rrr_strdup (const char *str) {
 	return result;
 }
 
+/* Free all mmaps, caller must ensure that users are no longer active */
 void rrr_allocator_cleanup (void) {
 	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
 		rrr_mmap_collection_clear(&rrr_allocator_collections[i], &index_lock);
 	}
 }
 
+/* Free unused mmaps */
 void rrr_allocator_maintenance (void) {
 	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
 		rrr_mmap_collection_maintenance(&rrr_allocator_collections[i], &index_lock);
@@ -158,12 +166,7 @@ void rrr_allocator_maintenance (void) {
 
 #else
 
-#ifdef RRR_HAVE_JEMALLOC
-#	include <jemalloc/jemalloc.h>
-#else
-#	include <stdlib.h>
-#endif
-
+#include <stdlib.h>
 #include <string.h>
 
 void *rrr_allocate (size_t bytes) {
