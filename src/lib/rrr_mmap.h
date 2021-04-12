@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 
 #define RRR_MMAP_COLLECTION_MAX 128
+#define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
+#define RRR_MMAP_TO_FREE_LIST_MAX 16
 
 struct rrr_mmap {
 	pthread_mutex_t lock;
@@ -35,13 +37,16 @@ struct rrr_mmap {
 	uint64_t prev_allocation_failure_req_size;
 	uint64_t prev_allocation_index_pos;
 	void *heap;
+	size_t to_free_list_count;
+	uintptr_t to_free_list[RRR_MMAP_TO_FREE_LIST_MAX];
 	int is_shared;
+	int maintenance_cleanup_strikes;
 };
 
 struct rrr_mmap_collection {
+	size_t mmap_count;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
-	size_t prev_allocation_index;
-	size_t prev_free_index;
+//	size_t prev_free_index;
 };
 
 void rrr_mmap_free (

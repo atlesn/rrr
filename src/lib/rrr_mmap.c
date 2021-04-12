@@ -69,15 +69,38 @@ struct rrr_mmap_heap_block_index {
 	uint64_t block_sizes[64];
 };
 
-void rrr_mmap_free (
-		struct rrr_mmap *mmap,
-		void *ptr
+static void __rrr_mmap_free (
+		struct rrr_mmap *mmap
 ) {
-	pthread_mutex_lock(&mmap->lock);
+	int blocks = 0;
+	int iterations = 0;
 
-	uint64_t pos = ptr - mmap->heap;
+	if (mmap->to_free_list_count == 0) {
+		goto out;
+	}
 
+	size_t to_free_list_sorted_count = 0;
+	uintptr_t last_value = 0;
+	uintptr_t to_free_list_sorted[RRR_MMAP_TO_FREE_LIST_MAX];
+	for (size_t i = 0; i < mmap->to_free_list_count; i++) {
+		uintptr_t min_value = 0;
+		for (size_t i = 0; i < mmap->to_free_list_count; i++) {
+			if (mmap->to_free_list[i] > last_value && (min_value == 0 || mmap->to_free_list[i] < min_value)) {
+				min_value = mmap->to_free_list[i];
+			}
+		}
+		last_value = min_value;
+		to_free_list_sorted[i] = min_value;
+		to_free_list_sorted_count++;
+	}
+
+	if (to_free_list_sorted_count != mmap->to_free_list_count) {
+		RRR_BUG("BUG: Pointer sorting error in __rrr_mmap_free, possibly duplicate pointers in free list\n");
+	}
+
+	size_t to_free_list_sorted_pos = 0;
 	uint64_t block_pos = 0;
+
 	while (block_pos < mmap->heap_size) {
 		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
 
@@ -86,21 +109,31 @@ void rrr_mmap_free (
 			break;
 		}
 
+		blocks++;
+
 		for (uint64_t j = 0; j < 64; j++) {
 			uint64_t used_mask = (uint64_t) 1 << j;
+
+			iterations++;
 
 			if (index->block_sizes[j] == 0 && (index->block_used_map & used_mask) == used_mask) {
 				// Unusable merged chunk
 				continue;
 			}
 
-			if (block_pos == pos) {
+			const uintptr_t ptr = (uintptr_t) mmap->heap + block_pos;
+
+			if (to_free_list_sorted[to_free_list_sorted_pos] == ptr) {
 				if ((index->block_used_map & used_mask) == 0) {
-					RRR_BUG("BUG: Double free of %" PRIu64 " in rrr_mmap_free\n", pos);
+					RRR_BUG("BUG: Double free of %p in rrr_mmap_free\n", ptr);
 				}
+
 				index->block_used_map &= ~(used_mask);
+
+				if (++to_free_list_sorted_pos == to_free_list_sorted_count) {
+					goto out;
+				}
 //				printf ("mmap free block at %" PRIu64 " used mask %" PRIu64 "\n", block_pos, index->block_used_map);
-				goto out_unlock;
 			}
 
 			block_pos += index->block_sizes[j];
@@ -110,14 +143,35 @@ void rrr_mmap_free (
 		}
 	}
 
-	RRR_BUG("BUG: Invalid data position %" PRIu64 " in rrr_mmap_free\n", pos);
+	RRR_BUG("BUG: Invalid free rrr_mmap_free, loop ended with not frees\n");
 
-	out_unlock:
+	out:
+
+	if (to_free_list_sorted_pos != to_free_list_sorted_count) {
+		RRR_BUG("BUG: Invalid free of in rrr_mmap_free, one or more positions not found\n");
+	}
 
 	mmap->prev_allocation_failure_req_size = 0;
+	mmap->to_free_list_count = 0;
 
-//	printf("free ptr: %p\n", ptr);
+//	printf("Free blocks/iterations: %i %i\n", blocks, iterations);
+}
+
+void rrr_mmap_free (
+		struct rrr_mmap *mmap,
+		void *ptr
+) {
+	pthread_mutex_lock(&mmap->lock);
+
+	mmap->to_free_list[mmap->to_free_list_count++] = (uintptr_t) ptr;
+
+	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
+		__rrr_mmap_free(mmap);
+	}
+
 	pthread_mutex_unlock(&mmap->lock);
+
+	mmap->prev_allocation_failure_req_size = 0;
 }
 
 static int __rrr_mmap_has (
@@ -126,13 +180,11 @@ static int __rrr_mmap_has (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&mmap->lock);
+	// Non-mutable values only checked, protected by index lock
 
 	if (ptr >= mmap->heap && ptr < mmap->heap + mmap->heap_size) {
 		ret = 1;
 	}
-
-	pthread_mutex_unlock(&mmap->lock);
 
 	return ret;
 }
@@ -352,11 +404,13 @@ static int __rrr_mmap_is_empty (
 		}
 
 		if (index->block_used_map != 0) {
+//			printf("Dirty block %lu\n", block_pos);
 			for (uint64_t j = 0; j < 64; j++) {
 				uint64_t used_mask = (uint64_t) 1 << j;
 				if ((index->block_used_map & used_mask) && index->block_sizes[j] != 0) {
+//					printf("Dirty bit %lu:%lu\n", block_pos, j);
 					ret = 0;
-					break;
+					goto out_unlock;
 				}
 			}
 		}
@@ -364,10 +418,12 @@ static int __rrr_mmap_is_empty (
 		for (uint64_t j = 0; j < 64; j++) {
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in rrr_mmap_is_empty\n");
+				RRR_BUG("BUG: Heap index corruption in rrr_mmap_is_empty block size %lu\n", index->block_sizes[j]);
 			}
 		}
 	}
+
+	out_unlock:
 
 	pthread_mutex_unlock(&mmap->lock);
 
@@ -485,6 +541,7 @@ int rrr_mmap_new (
 void __rrr_mmap_cleanup (
 		struct rrr_mmap *mmap
 ) {
+	pthread_mutex_destroy(&mmap->lock);
 	munmap(mmap->heap, mmap->heap_size);
 	memset(mmap, '\0', sizeof(*mmap));
 }
@@ -510,12 +567,26 @@ void rrr_mmap_collection_maintenance (
 ) {
 	int count = 0;
 
+	pthread_rwlock_rdlock(index_lock);
+	RRR_MMAP_ITERATE_BEGIN();
+		if (node->heap != NULL) {
+			pthread_mutex_lock(&node->lock);
+			__rrr_mmap_free(node);
+			pthread_mutex_unlock(&node->lock);
+		}
+	RRR_MMAP_ITERATE_END();
+	pthread_rwlock_unlock(index_lock);
+
 	pthread_rwlock_wrlock(index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
 		if (node->heap != NULL && __rrr_mmap_is_empty(node)) {
-			__rrr_mmap_cleanup (node);
+			 if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
+				 __rrr_mmap_cleanup (node);
+				 collection->mmap_count--;
+			 }
 		}
 		else if (node->heap != NULL) {
+			node->maintenance_cleanup_strikes = 0;
 			count++;
 		}
 	RRR_MMAP_ITERATE_END();
@@ -536,6 +607,7 @@ void rrr_mmap_collection_clear (
 	RRR_MMAP_ITERATE_BEGIN();
 		if (node->heap != NULL) {
 			__rrr_mmap_cleanup (node);
+			collection->mmap_count--;
 			count++;
 		}
 	RRR_MMAP_ITERATE_END();
@@ -553,24 +625,12 @@ void *rrr_mmap_collection_allocate (
 ) {
 	void *result = NULL;
 
-	uint64_t prev_allocation_index_new = 0;
-//			uint64_t time_start = rrr_time_get_64();
-
 	pthread_rwlock_rdlock(index_lock);
-	struct rrr_mmap *node = &collection->mmaps[collection->prev_allocation_index];
-
-	if (node->heap != NULL && (result = rrr_mmap_allocate(node, bytes)) == NULL) {
-		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL && (result = rrr_mmap_allocate(node, bytes)) != NULL) {
-				prev_allocation_index_new = i;
-				break;
-			}
-		RRR_MMAP_ITERATE_END();
-	}
-	else {
-		// OK, fast allocation using last index succeded
-	}
-
+	RRR_MMAP_ITERATE_BEGIN();
+		if (node->heap != NULL && (result = rrr_mmap_allocate(node, bytes)) != NULL) {
+			break;
+		}
+	RRR_MMAP_ITERATE_END();
 	pthread_rwlock_unlock(index_lock);
 
 	if (result) {
@@ -584,7 +644,7 @@ void *rrr_mmap_collection_allocate (
 			if (__rrr_mmap_init (node, bytes > min_mmap_size ? bytes : min_mmap_size, is_shared) != 0) {
 				break;
 			}
-			prev_allocation_index_new = i;
+			collection->mmap_count++;
 			result = rrr_mmap_allocate(node, bytes);
 			break;
 		}
@@ -592,10 +652,6 @@ void *rrr_mmap_collection_allocate (
 	pthread_rwlock_unlock(index_lock);
 
 	out:
-	pthread_rwlock_wrlock(index_lock);
-	collection->prev_allocation_index = prev_allocation_index_new;
-	pthread_rwlock_unlock(index_lock);
-//			printf("Alloc time: %lu\n", rrr_time_get_64() - time_start);
 	return result;
 }
 
@@ -606,30 +662,23 @@ int rrr_mmap_collection_free (
 ) {
 	int ret = 1; // Error
 
-	uint64_t prev_free_index_new = 0;
-
 	pthread_rwlock_rdlock(index_lock);
 
-	struct rrr_mmap *node = &collection->mmaps[collection->prev_free_index];
-	if (node->heap != NULL && __rrr_mmap_has (node, ptr)) {
-		ret = 0;
-		rrr_mmap_free(node, ptr);
-	}
-	else {
-		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL && __rrr_mmap_has (node, ptr)) {
-				prev_free_index_new = i;
+	size_t mmap_count = 0;
+
+	RRR_MMAP_ITERATE_BEGIN();
+		if (node->heap != NULL) {
+			if (__rrr_mmap_has (node, ptr)) {
 				rrr_mmap_free(node, ptr);
 				ret = 0;
 				break;
 			}
-		RRR_MMAP_ITERATE_END();
-	}
+			if (collection->mmap_count == ++mmap_count) {
+				break;
+			}
+		}
+	RRR_MMAP_ITERATE_END();
 
-	pthread_rwlock_unlock(index_lock);
-
-	pthread_rwlock_wrlock(index_lock);
-	collection->prev_free_index = prev_free_index_new;
 	pthread_rwlock_unlock(index_lock);
 
 	return ret;

@@ -116,7 +116,7 @@ librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
-                    read.c rrr_mmap.c mmap_channel.c \
+                    read.c mmap_channel.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
@@ -130,9 +130,8 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
 libadd_rrr_allocator = librrr_allocator.la
-librrr_allocator_la_SOURCES = allocator.c
-librrr_allocator_la_CFLAGS = ${JEMALLOC_CFLAGS} ${AM_CFLAGS}
-librrr_allocator_la_LDFLAGS = ${JEMALLOC_LDFLAGS}
+librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
+librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
 
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
