@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "rrr_mmap.h"
+#include "rrr_mmap_stats.h"
 #include "rrr_strerror.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
@@ -566,11 +567,12 @@ static int __rrr_mmap_collection_minmax_search (
 }
 
 void rrr_mmap_collections_maintenance (
+		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collections,
 		size_t collection_count,
 		pthread_rwlock_t *index_lock
 ) {
-	int count = 0;
+	memset(stats, '\0', sizeof(*stats));
 
 	pthread_rwlock_rdlock(index_lock);
 	for (size_t i = 0; i < collection_count; i++) {
@@ -589,17 +591,25 @@ void rrr_mmap_collections_maintenance (
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
 		RRR_MMAP_ITERATE_BEGIN();
-			if (node->heap != NULL && __rrr_mmap_is_empty(node)) {
-				 if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
+			if (node->heap == NULL) {
+				continue;
+			}
+
+			if ( __rrr_mmap_is_empty(node)) {
+				if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
 					 __rrr_mmap_cleanup (node);
 					collection->mmap_count--;
 					__rrr_mmap_collection_minmax_update(collection);
-				 }
+					continue;
+				}
+				stats->mmap_total_empty_count++;
 			}
-			else if (node->heap != NULL) {
+			else {
 				node->maintenance_cleanup_strikes = 0;
-				count++;
 			}
+
+			stats->mmap_total_heap_size += node->heap_size;
+			stats->mmap_total_count++;
 		RRR_MMAP_ITERATE_END();
 	}
 	pthread_rwlock_unlock(index_lock);
@@ -612,7 +622,8 @@ void rrr_mmap_collections_clear (
 ) {
 	int count = 0;
 
-	rrr_mmap_collections_maintenance(collections, collection_count, index_lock);
+	struct rrr_mmap_stats stats_dummy;
+	rrr_mmap_collections_maintenance(&stats_dummy, collections, collection_count, index_lock);
 
 	pthread_rwlock_wrlock(index_lock);
 	for (size_t i = 0; i < collection_count; i++) {

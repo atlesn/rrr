@@ -53,6 +53,7 @@ The RRR Allocator (RRRA)
 
 #include "log.h"
 #include "rrr_mmap.h"
+#include "rrr_mmap_stats.h"
 
 /* Size for new MMAPs. A collection contains multiple MMAPs. */
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
@@ -160,8 +161,9 @@ void rrr_allocator_cleanup (void) {
 }
 
 /* Free unused mmaps */
-void rrr_allocator_maintenance (void) {
+void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 	rrr_mmap_collections_maintenance (
+			stats,
 			rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
 			&index_lock

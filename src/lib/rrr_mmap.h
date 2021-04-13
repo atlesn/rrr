@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
 #define RRR_MMAP_TO_FREE_LIST_MAX 16
 
+struct rrr_mmap_stats;
+
 struct rrr_mmap {
 	pthread_mutex_t lock;
 	uint64_t heap_size;
@@ -53,7 +55,6 @@ struct rrr_mmap_collection {
 	size_t mmap_count;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
 	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
-//	size_t prev_free_index;
 };
 
 void rrr_mmap_free (
@@ -80,6 +81,7 @@ void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
 );
 void rrr_mmap_collections_maintenance (
+		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collections,
 		size_t collection_count,
 		pthread_rwlock_t *index_lock

@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
+#include "lib/rrr_mmap_stats.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
@@ -218,7 +219,8 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	(void)(arg);
 
-	rrr_allocator_maintenance();
+	struct rrr_mmap_stats stats_dummy;
+	rrr_allocator_maintenance(&stats_dummy);
 
 	return (main_running ? 0 : RRR_EVENT_EXIT);
 }
