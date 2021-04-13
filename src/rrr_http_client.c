@@ -618,6 +618,8 @@ static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_EXIT;
 	}
 
+	rrr_allocator_maintenance_nostats();
+
 	return 0;
 }
 

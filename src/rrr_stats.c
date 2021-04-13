@@ -44,7 +44,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
-#include "lib/rrr_mmap_stats.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
 #include "lib/rrr_strerror.h"
@@ -635,8 +634,7 @@ static int __rrr_stats_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return 1;
 	}
 
-	struct rrr_mmap_stats stats_dummy;
-	rrr_allocator_maintenance(&stats_dummy);
+	rrr_allocator_maintenance_nostats();
 
 	return 0;
 }

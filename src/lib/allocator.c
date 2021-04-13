@@ -170,6 +170,11 @@ void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 	);
 }
 
+void rrr_allocator_maintenance_nostats (void) {
+	struct rrr_mmap_stats stats_dummy;
+	rrr_allocator_maintenance(&stats_dummy);
+}
+
 #else
 
 #include <stdlib.h>
@@ -206,7 +211,12 @@ void rrr_allocator_cleanup (void) {
 	// Nothing to do
 }
 
-void rrr_allocator_maintenance (void) {
+void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
+	(void)(stats);
+	// Nothing to do
+}
+
+void rrr_allocator_maintenance_nostats (void) {
 	// Nothing to do
 }
 

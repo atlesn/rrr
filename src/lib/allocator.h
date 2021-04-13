@@ -40,5 +40,6 @@ void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, i
 char *rrr_strdup (const char *str);
 void rrr_allocator_cleanup (void);
 void rrr_allocator_maintenance (struct rrr_mmap_stats *stats);
+void rrr_allocator_maintenance_nostats (void);
 
 #endif /* RRR_ALLOCATOR_H */
