@@ -348,21 +348,28 @@ void *rrr_mmap_allocate (
 	}
 
 	out_unlock:
-	pthread_mutex_unlock(&mmap->lock);
 
 	if (result == NULL) {
 		mmap->prev_allocation_failure_req_size = req_size;
 	}
+	else {
+		mmap->allocation_count++;
+	}
+
+	pthread_mutex_unlock(&mmap->lock);
 
 	return result;
 }
 
 static int __rrr_mmap_is_empty (
+		uint64_t *allocation_count,
 		struct rrr_mmap *mmap
 ) {
 	int ret = 1;
 
 	pthread_mutex_lock(&mmap->lock);
+
+	*allocation_count = mmap->allocation_count;
 
 	uint64_t block_pos = 0;
 	while (block_pos < mmap->heap_size) {
@@ -387,7 +394,7 @@ static int __rrr_mmap_is_empty (
 		for (uint64_t j = 0; j < 64; j++) {
 			block_pos += index->block_sizes[j];
 			if (block_pos > mmap->heap_size) {
-				RRR_BUG("BUG: Heap index corruption in rrr_mmap_is_empty block size %lu\n", index->block_sizes[j]);
+				RRR_BUG("BUG: Heap index corruption in __rrr_mmap_is_empty block size %lu\n", index->block_sizes[j]);
 			}
 		}
 	}
@@ -595,8 +602,12 @@ void rrr_mmap_collections_maintenance (
 				continue;
 			}
 
-			if ( __rrr_mmap_is_empty(node)) {
-				if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
+			stats->mmap_total_heap_size += node->heap_size;
+			stats->mmap_total_count++;
+
+			uint64_t allocation_count;
+			if (__rrr_mmap_is_empty(&allocation_count, node)) {
+				if (++node->maintenance_cleanup_strikes >= RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
 					 __rrr_mmap_cleanup (node);
 					collection->mmap_count--;
 					__rrr_mmap_collection_minmax_update(collection);
@@ -605,11 +616,15 @@ void rrr_mmap_collections_maintenance (
 				stats->mmap_total_empty_count++;
 			}
 			else {
-				node->maintenance_cleanup_strikes = 0;
+				if (allocation_count > RRR_MMAP_COLLECTION_ALLOCATION_MAX) {
+					stats->mmap_total_bad_count++;
+					node->flags |= RRR_MMAP_COLLECTION_FLAG_BAD;
+					node->maintenance_cleanup_strikes = RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES;
+				}
+				else {
+					node->maintenance_cleanup_strikes = 0;
+				}
 			}
-
-			stats->mmap_total_heap_size += node->heap_size;
-			stats->mmap_total_count++;
 		RRR_MMAP_ITERATE_END();
 	}
 	pthread_rwlock_unlock(index_lock);
@@ -652,7 +667,10 @@ void *rrr_mmap_collection_allocate (
 
 	pthread_rwlock_rdlock(index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL && (result = rrr_mmap_allocate(node, bytes)) != NULL) {
+		if (  node->heap != NULL &&
+		     (node->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0 &&
+		     (result = rrr_mmap_allocate(node, bytes)) != NULL
+		) {
 			break;
 		}
 	RRR_MMAP_ITERATE_END();

@@ -296,6 +296,7 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 	if (stats_data != NULL && stats_data->handle != 0) {
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/count", mmap_stats.mmap_total_count, 0);
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/empty_count", mmap_stats.mmap_total_empty_count, 0);
+		ret |= main_stats_post_unsigned_message (stats_data, "mmap/bad_count", mmap_stats.mmap_total_bad_count, 0);
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/heap_size", mmap_stats.mmap_total_heap_size, 0);
 	}
 

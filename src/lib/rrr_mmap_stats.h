@@ -27,7 +27,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_stats {
 	uint64_t mmap_total_count;
 	uint64_t mmap_total_empty_count;
+	uint64_t mmap_total_bad_count;
 	uint64_t mmap_total_heap_size;
+	uint64_t mmap_total_allocation;
+	uint64_t mmap_total_free;
 };
 
 #endif /* RRR_MMAP_STATS_H */

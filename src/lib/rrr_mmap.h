@@ -29,20 +29,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_COLLECTION_MAX 128
 #define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
+#define RRR_MMAP_COLLECTION_ALLOCATION_MAX 32768
 #define RRR_MMAP_TO_FREE_LIST_MAX 16
+
+// Flag set after a certain number of allocations to prevent more
+// usage. This allows new memory to be allocated in series in new
+// and clean mmaps.
+#define RRR_MMAP_COLLECTION_FLAG_BAD (1<<0)
 
 struct rrr_mmap_stats;
 
 struct rrr_mmap {
+	void *heap;
+	int maintenance_cleanup_strikes;
+	uint64_t allocation_count;
+	uint8_t flags;
 	pthread_mutex_t lock;
 	uint64_t heap_size;
 	uint64_t prev_allocation_failure_req_size;
 	uint64_t prev_allocation_index_pos;
-	void *heap;
 	size_t to_free_list_count;
 	uintptr_t to_free_list[RRR_MMAP_TO_FREE_LIST_MAX];
 	int is_shared;
-	int maintenance_cleanup_strikes;
 };
 
 struct rrr_mmap_heap_index {
