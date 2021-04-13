@@ -79,12 +79,14 @@ int rrr_mmap_new (
 void rrr_mmap_destroy (
 		struct rrr_mmap *mmap
 );
-void rrr_mmap_collection_maintenance (
-		struct rrr_mmap_collection *collection,
+void rrr_mmap_collections_maintenance (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock
 );
-void rrr_mmap_collection_clear (
-		struct rrr_mmap_collection *collection,
+void rrr_mmap_collections_clear (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock
 );
 void *rrr_mmap_collection_allocate (

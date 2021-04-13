@@ -152,16 +152,20 @@ char *rrr_strdup (const char *str) {
 
 /* Free all mmaps, caller must ensure that users are no longer active */
 void rrr_allocator_cleanup (void) {
-	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
-		rrr_mmap_collection_clear(&rrr_allocator_collections[i], &index_lock);
-	}
+	rrr_mmap_collections_clear (
+			rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&index_lock
+	);
 }
 
 /* Free unused mmaps */
 void rrr_allocator_maintenance (void) {
-	for (int i = 0; i <= RRR_ALLOCATOR_GROUP_MAX; i++) {
-		rrr_mmap_collection_maintenance(&rrr_allocator_collections[i], &index_lock);
-	}
+	rrr_mmap_collections_maintenance (
+			rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&index_lock
+	);
 }
 
 #else

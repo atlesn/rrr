@@ -565,55 +565,66 @@ static int __rrr_mmap_collection_minmax_search (
 	return 0;
 }
 
-void rrr_mmap_collection_maintenance (
-		struct rrr_mmap_collection *collection,
+void rrr_mmap_collections_maintenance (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock
 ) {
 	int count = 0;
 
 	pthread_rwlock_rdlock(index_lock);
-	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL) {
-			pthread_mutex_lock(&node->lock);
-			__rrr_mmap_free(node);
-			pthread_mutex_unlock(&node->lock);
-		}
-	RRR_MMAP_ITERATE_END();
+	for (size_t i = 0; i < collection_count; i++) {
+		struct rrr_mmap_collection *collection = &collections[i];
+		RRR_MMAP_ITERATE_BEGIN();
+			if (node->heap != NULL) {
+				pthread_mutex_lock(&node->lock);
+				__rrr_mmap_free(node);
+				pthread_mutex_unlock(&node->lock);
+			}
+		RRR_MMAP_ITERATE_END();
+	}
 	pthread_rwlock_unlock(index_lock);
 
 	pthread_rwlock_wrlock(index_lock);
-	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL && __rrr_mmap_is_empty(node)) {
-			 if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
-				 __rrr_mmap_cleanup (node);
-				collection->mmap_count--;
-				__rrr_mmap_collection_minmax_update(collection);
-			 }
-		}
-		else if (node->heap != NULL) {
-			node->maintenance_cleanup_strikes = 0;
-			count++;
-		}
-	RRR_MMAP_ITERATE_END();
+	for (size_t i = 0; i < collection_count; i++) {
+		struct rrr_mmap_collection *collection = &collections[i];
+		RRR_MMAP_ITERATE_BEGIN();
+			if (node->heap != NULL && __rrr_mmap_is_empty(node)) {
+				 if (++node->maintenance_cleanup_strikes == RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
+					 __rrr_mmap_cleanup (node);
+					collection->mmap_count--;
+					__rrr_mmap_collection_minmax_update(collection);
+				 }
+			}
+			else if (node->heap != NULL) {
+				node->maintenance_cleanup_strikes = 0;
+				count++;
+			}
+		RRR_MMAP_ITERATE_END();
+	}
 	pthread_rwlock_unlock(index_lock);
 }
 
-void rrr_mmap_collection_clear (
-		struct rrr_mmap_collection *collection,
+void rrr_mmap_collections_clear (
+		struct rrr_mmap_collection *collections,
+		size_t collection_count,
 		pthread_rwlock_t *index_lock
 ) {
 	int count = 0;
 
-	rrr_mmap_collection_maintenance(collection, index_lock);
+	rrr_mmap_collections_maintenance(collections, collection_count, index_lock);
 
 	pthread_rwlock_wrlock(index_lock);
-	RRR_MMAP_ITERATE_BEGIN();
-		if (node->heap != NULL) {
-			__rrr_mmap_cleanup (node);
-			collection->mmap_count--;
-			count++;
-		}
-	RRR_MMAP_ITERATE_END();
+	for (size_t i = 0; i < collection_count; i++) {
+		struct rrr_mmap_collection *collection = &collections[i];
+		RRR_MMAP_ITERATE_BEGIN();
+			if (node->heap != NULL) {
+				__rrr_mmap_cleanup (node);
+				collection->mmap_count--;
+				count++;
+			}
+		RRR_MMAP_ITERATE_END();
+	}
 	pthread_rwlock_unlock(index_lock);
 
 //	printf("MMAPs left upon cleanup: %i\n", count);
