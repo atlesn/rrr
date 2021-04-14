@@ -70,7 +70,7 @@ int rrr_net_transport_config_parse (
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
 	) {
-		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s",
+		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s\n",
 				prefix, prefix, config->name);
 		ret = 1;
 		goto out;
