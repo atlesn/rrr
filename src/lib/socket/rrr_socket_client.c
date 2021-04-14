@@ -342,7 +342,7 @@ static int __rrr_socket_client_connected_fd_finalize_and_create_private_data (
 
 	ret = __rrr_socket_client_private_data_create_as_needed(client);
 
-	if (RRR_LL_COUNT(&client->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) > 0) {
 		__rrr_socket_client_send_push_notify(client);
 	}
 
@@ -742,7 +742,7 @@ static void __rrr_socket_client_event_write (
 		RRR_BUG("BUG: FD mismatch in __rrr_socket_client_event_write\n");
 	}
 
-	if (RRR_LL_COUNT(&client->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) > 0) {
 		TIMEOUT_UPDATE();
 	}
 
@@ -753,7 +753,7 @@ static void __rrr_socket_client_event_write (
 		goto destroy;
 	}
 
-	if (RRR_LL_COUNT(&client->send_chunks) == 0) {
+	if (rrr_socket_send_chunk_collection_count(&client->send_chunks) == 0) {
 		EVENT_REMOVE(client->connected_fd->event_write);
 		if (client->close_when_send_complete) {
 			RRR_DBG_7("Disconnecting fd %i in client collection as close when send complete is set and send buffer is empty\n",
@@ -1127,7 +1127,8 @@ static int __rrr_socket_client_send_push (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
-			data_size
+			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1154,7 +1155,8 @@ static int __rrr_socket_client_send_push_const (
 			send_chunk_count,
 			&client->send_chunks,
 			data,
-			data_size
+			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1185,6 +1187,7 @@ static int __rrr_socket_client_send_push_const_with_private_data (
 			&client->send_chunks,
 			data,
 			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
 			chunk_private_data_new,
 			chunk_private_data_arg,
 			chunk_private_data_destroy
@@ -1222,6 +1225,7 @@ static int __rrr_socket_client_sendto_push_const (
 			addr_len,
 			data,
 			data_size,
+			RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL,
 			chunk_private_data_new,
 			chunk_private_data_arg,
 			chunk_private_data_destroy

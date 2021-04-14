@@ -1073,7 +1073,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 ) {
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (do_stop, handle, packet, 0);
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (do_stop, handle, packet, 0 /* Not urgent */);
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
@@ -1082,5 +1082,5 @@ int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 ) {
 	int do_stop_dummy = 0;
 
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (&do_stop_dummy, handle, packet, 1);
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (&do_stop_dummy, handle, packet, 1 /* Urgent */);
 }

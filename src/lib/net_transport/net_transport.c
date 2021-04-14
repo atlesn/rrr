@@ -566,7 +566,7 @@ static void __rrr_net_transport_event_write (
 
 	int ret_tmp = 0;
 
-	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) > 0) {
 		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
 				&handle->send_chunks,
 				__rrr_net_transport_event_write_send_chunk_callback,
@@ -574,7 +574,7 @@ static void __rrr_net_transport_event_write (
 		);
 	}
 
-	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
+	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) == 0) {
 		if (ret_tmp == 0 && handle->close_when_send_complete) {
 			ret_tmp = RRR_SOCKET_READ_EOF;
 		}
@@ -895,13 +895,13 @@ int rrr_net_transport_ctx_read_message (
 int rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 ) {
-	return RRR_LL_COUNT(&handle->send_chunks);
+	return rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 }
 
 double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 ) {
-	double count = RRR_LL_COUNT(&handle->send_chunks);
+	double count = rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 	double limit = handle->transport->send_chunk_count_limit;
 
 	if (limit <= 0) {
@@ -938,22 +938,14 @@ static int __rrr_net_transport_ctx_send_push (
 
 	EVENT_ADD(handle->event_write);
 
-	int (*method)(
-			int *send_chunk_count,
-			struct rrr_socket_send_chunk_collection *target,
-			void **data,
-			ssize_t data_size
-	) = ( is_urgent
-		? rrr_socket_send_chunk_collection_push_urgent
-		: rrr_socket_send_chunk_collection_push
-	);
-
 	int send_chunk_count = 0;
-	if ((ret = method (
+	if ((ret = rrr_socket_send_chunk_collection_push (
 			&send_chunk_count,
 			&handle->send_chunks,
 			data,
-			size
+			size,
+			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
+			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1008,22 +1000,14 @@ static int __rrr_net_transport_ctx_send_push_const (
 
 	EVENT_ADD(handle->event_write);
 
-	int (*method)(
-			int *send_chunk_count,
-			struct rrr_socket_send_chunk_collection *target,
-			const void *data,
-			ssize_t data_size
-	) = ( is_urgent
-		? rrr_socket_send_chunk_collection_push_const_urgent
-		: rrr_socket_send_chunk_collection_push_const
-	);
-
 	int send_chunk_count = 0;
-	if ((ret = method (
+	if ((ret = rrr_socket_send_chunk_collection_push_const (
 			&send_chunk_count,
 			&handle->send_chunks,
 			data,
-			size
+			size,
+			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
+			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
