@@ -182,7 +182,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
 
-	if ((rrr_net_transport_config_parse (
+	if ((ret = rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"mqtt_broker",
