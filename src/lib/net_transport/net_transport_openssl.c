@@ -816,14 +816,16 @@ static int __rrr_net_transport_openssl_read_raw (
 	int ret = RRR_READ_OK;
 
 	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
-	if (result < 0) {
+	if (result <= 0) {
 		if (BIO_should_retry(ssl_data->web) == 0) {
 //			int reason = BIO_get_retry_reason(ssl_data->web);
-			RRR_SSL_DBG_3("Error while reading from TLS connection");
+			RRR_SSL_DBG_3("Error while reading from TLS connection, possible close of connection");
 			// Possible close of connection
 			ret = RRR_READ_EOF;
 			goto out;
 		}
+		ret = rrr_socket_check_alive(BIO_get_fd(ssl_data->web, NULL));
+		goto out;
 	}
 	else if (ERR_peek_error() != 0) {
 		RRR_SSL_ERR("Error while reading in __rrr_net_transport_openssl_read_raw");
@@ -887,7 +889,11 @@ static int __rrr_net_transport_openssl_read_message (
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 			continue;
 		}
-		else if (ret == RRR_NET_TRANSPORT_READ_OK || ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
+		else if ( ret == RRR_NET_TRANSPORT_READ_OK ||
+		          ret == RRR_NET_TRANSPORT_READ_RATELIMIT ||
+			  ret == RRR_NET_TRANSPORT_READ_READ_EOF ||
+			  ret == RRR_NET_TRANSPORT_READ_SOFT_ERROR
+		) {
 			break;
 		}
 		else {
