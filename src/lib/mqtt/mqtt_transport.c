@@ -142,9 +142,11 @@ int rrr_mqtt_transport_start (
 		}
 	}
 	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_PLAIN) {
+		struct rrr_net_transport_config net_transport_config_plain;
+		rrr_net_transport_config_copy_mask_tls(&net_transport_config_plain, net_transport_config);
 		if ((ret = rrr_net_transport_new (
 				&tmp,
-				net_transport_config,
+				&net_transport_config_plain,
 				0,
 				transport->queue,
 				NULL,
