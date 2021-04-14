@@ -347,8 +347,10 @@ static int socket_start (
 
 static void socket_stop (void *arg) {
 	struct socket_data *data = arg;
-	rrr_socket_client_collection_destroy(data->clients);
-	data->clients = NULL;
+	if (data->clients != NULL) {
+		rrr_socket_client_collection_destroy(data->clients);
+		data->clients = NULL;
+	}
 }
 
 static void *thread_entry_socket (struct rrr_thread *thread) {
