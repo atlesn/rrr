@@ -917,6 +917,10 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	ssize_t network_size = 0;
 	void *send_data = NULL;
 
+	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection) && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		RRR_BUG("BUG: Tried to send PUBLISH while not allowed in __rrr_mqtt_conn_iterator_ctx_send_packet\n");
+	}
+
 	// Packets which originate from other hosts might have different protocol
 	// version.
 	if (connection->protocol_version != NULL &&

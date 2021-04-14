@@ -1201,8 +1201,7 @@ static int __rrr_mqtt_common_send (
 
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
-	if (connection->session == NULL) {
-		// No CONNECT yet
+	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
 		goto out;
 	}
 
