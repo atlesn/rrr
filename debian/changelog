@@ -1,3 +1,10 @@
+rrr (1.18-0) buster; urgency=medium
+
+  * Fix. misc build issues with optional libraries
+  * Create standalone build director for cmodules
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 15 Apr 2021 11:02:18 +0200
+
 rrr (1.17-0) buster; urgency=medium
 
   * Event driven modules for reduced latency and CPU usage
