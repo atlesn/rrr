@@ -111,8 +111,17 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",    "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
 		{0,                            'h',    "help",                  "[-h|--help]"},
 		{0,                            'v',    "version",               "[-v|--version]"},
+		{0,                            'i',    "install-directories",   "[-i|--install-directories]"},
 		{0,                            '\0',    NULL,                   NULL}
 };
+
+#define DUMP_INSTALL_DIRECTORY(name,value) \
+	printf("%s:%s\n", name, value)
+
+void dump_install_directories (void) {
+	DUMP_INSTALL_DIRECTORY("module-dir", RRR_MODULE_PATH);
+	DUMP_INSTALL_DIRECTORY("cmodule-dir", RRR_CMODULE_PATH);
+}
 
 struct stats_data {
 	unsigned int handle;
@@ -663,6 +672,10 @@ int main (int argc, const char *argv[], const char *env[]) {
 	}
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 2) != 0) {
+		goto out_cleanup_signal;
+	}
+	else if (cmd_exists(&cmd, "install-directories", 0)) {
+		dump_install_directories();
 		goto out_cleanup_signal;
 	}
 

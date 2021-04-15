@@ -1,7 +1,9 @@
+ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS = @AM_CFLAGS@ -Wextra
-libdir=${exec_prefix}/lib/rrr/cmodules
-cmodule_ldflags=-module -avoid-version -shared -L../lib/.libs -lrrr
-cmodule_cflags=@AM_CFLAGS@ -I../lib
+libdir=@CMODULE_DIR@
+cmodule_ldflags=-module -avoid-version -shared -lrrr
+cmodule_cflags=@AM_CFLAGS@ 
+
 
 dummy_la_CFLAGS = ${cmodule_cflags} 
 dummy_la_LDFLAGS = ${cmodule_ldflags} 

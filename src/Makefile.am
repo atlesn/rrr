@@ -72,4 +72,4 @@ endif
 # rrr_msgdb is currently a non-installed binary
 install-exec-local:
 	chmod +x ./make-paths.sh && ./make-paths.sh paths.c ${DESTDIR}${datadir} && \
-	make rrr_msgdb 
+	make rrr_msgdb

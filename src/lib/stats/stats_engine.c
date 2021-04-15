@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "stats_engine.h"
 #include "stats_message.h"
-#include "../../../config.h"
 #include "../rrr_config.h"
 #include "../read.h"
 #include "../random.h"

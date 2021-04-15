@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
-#include "../../../config.h"
 #include "../log.h"
 #include "../allocator.h"
 

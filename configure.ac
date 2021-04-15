@@ -811,3 +811,6 @@ echo "rrr: disabling libtool depedency_libs variable"
 sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
 mv libtool.new libtool
 chmod +x libtool
+
+# Copy config.h file for installation together with other headers
+cp -f config.h src/lib/rrr-build-config.h

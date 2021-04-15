@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../../config.h"
 #include "allocator.h"
 
 #define RRR_WITH_MMAP_ALLOCATOR

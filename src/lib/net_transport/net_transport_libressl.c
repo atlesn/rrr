@@ -19,8 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../../../config.h"
-
 #include <tls.h>
 #include <poll.h>
 #include <string.h>
