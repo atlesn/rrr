@@ -79,7 +79,7 @@ struct rrr_http2_callback_data {
 struct rrr_http2_session {
 	nghttp2_session *session;
 	void *initial_receive_data;
-	size_t initial_receive_data_len;
+	ssize_t initial_receive_data_len;
 	struct rrr_http2_stream_collection streams;
 	// Must be updated on every tick
 	struct rrr_http2_callback_data callback_data;
@@ -98,7 +98,8 @@ struct rrr_http2_session {
 	do { for (uint64_t i = 0; i < RRR_HTTP2_STREAM_BLOCKS * 64; i++) {        \
 		uint64_t group = RRR_HTTP2_STREAM_GROUP(i);                       \
 		uint64_t mask = RRR_HTTP2_STREAM_MASK(i);                         \
-		struct rrr_http2_stream *node = &collection->streams[i]           \
+		struct rrr_http2_stream *node = &collection->streams[i];          \
+		(void)(group); (void)(mask); (void)(node)
 
 #define RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN()                               \
 	RRR_HTTP2_STREAMS_ITERATE_BEGIN();                                        \
@@ -324,7 +325,7 @@ static ssize_t __rrr_http2_recv_callback (
 		RRR_BUG("BUG: Bytes written exceeds SSIZE_MAX in __rrr_http2_recv_callback, this should not be possible\n");
 	}
 
-	return (bytes_read > 0 ? bytes_read : NGHTTP2_ERR_WOULDBLOCK);
+	return (bytes_read > 0 ? (ssize_t) bytes_read : NGHTTP2_ERR_WOULDBLOCK);
 }
 
 static int __rrr_http2_on_data_chunk_recv_callback (
@@ -410,6 +411,7 @@ static int __rrr_http2_on_frame_send_callback (
 	struct rrr_http2_session *session = user_data;
 
 	(void)(session);
+	(void)(nghttp2_session);
 
 	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
 
@@ -522,16 +524,16 @@ static int __rrr_http2_on_header_callback (
 	return 0;
 }
 
-static int __rrr_http2_on_begin_headers_callback(
+static int __rrr_http2_on_begin_headers_callback (
 		nghttp2_session *nghttp2_session,
 		const nghttp2_frame *frame,
 		void *user_data
 ) {
 	struct rrr_http2_session *session = user_data;
 
-	(void)(session);
+	(void)(nghttp2_session);
 	(void)(frame);
-	(void)(user_data);
+	(void)(session);
 
 	RRR_DBG_7("nghttp2 begin headers\n");
 
@@ -627,6 +629,8 @@ static int __rrr_http2_before_frame_send_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+	(void)(nghttp2_session);
+
 	int ret = 0;
 
 	if (frame->hd.type != NGHTTP2_HEADERS) {
@@ -712,6 +716,12 @@ int rrr_http2_session_new_or_reset (
 	}
 
 	if (initial_receive_data != NULL && *initial_receive_data != NULL) {
+		if (initial_receive_data_len > SSIZE_MAX) {
+			RRR_MSG_0("Initial receive data exceeds maximum in rrr_http2_session_new_or_reset\n");
+			ret = 1;
+			goto out_free;
+		}
+
 		result->initial_receive_data = *initial_receive_data;
 		result->initial_receive_data_len = initial_receive_data_len;
 		*initial_receive_data = NULL;
@@ -862,7 +872,7 @@ static int __rrr_http2_session_stream_headers_submit (
 	if ((ret = nghttp2_submit_headers (
 			session->session,
 			0,
-			(stream_id == nghttp2_session_get_next_stream_id(session->session) ? -1 : stream_id), // Not allocated yet if equal to next stream ID
+			(stream_id == (int32_t) nghttp2_session_get_next_stream_id(session->session) ? -1 : stream_id), // Not allocated yet if equal to next stream ID
 			NULL,
 			headers,
 			header_count,
@@ -941,7 +951,7 @@ int rrr_http2_request_start (
 
 	// Note that stream ID will not be incremented in the library until we send headers
 	uint32_t stream_id_tmp = nghttp2_session_get_next_stream_id(session->session);
-	if (stream_id_tmp >= 1 << 31) {
+	if (stream_id_tmp >= (uint32_t) 1 << 31) {
 		RRR_MSG_0 ("HTTP2 request submission failed, IDs exhausted: %s", nghttp2_strerror(stream_id_tmp));
 		ret = RRR_HTTP2_SOFT_ERROR;
 		goto out;
@@ -967,7 +977,7 @@ int rrr_http2_header_submit (
 			"transfer-encoding"
 	};
 
-	for (int i = 0; i < sizeof(disallowed_names) / sizeof(*disallowed_names); i++) {
+	for (size_t i = 0; i < sizeof(disallowed_names) / sizeof(*disallowed_names); i++) {
 		if (strcmp(disallowed_names[i], name) == 0) {
 			RRR_DBG_3("Submit HTTP2 header: '%s'='%s' is prohibited in HTTP2, ignoring\n", name, value);
 			goto out;
@@ -1109,7 +1119,7 @@ int rrr_http2_transport_ctx_tick (
 
 	// Parse any overshoot data from HTTP/1.1 parsing
 	if (session->initial_receive_data != NULL) {
-		size_t send_bytes = session->initial_receive_data_len;
+		ssize_t send_bytes = session->initial_receive_data_len;
 		const void *send_pos = session->initial_receive_data;
 		while (send_bytes) {
 			ssize_t bytes = nghttp2_session_mem_recv(session->session, send_pos, send_bytes);
@@ -1182,6 +1192,7 @@ void rrr_http2_transport_ctx_terminate (
 ) {
 	struct rrr_http2_callback_data callback_data = {
 			handle,
+			NULL,
 			NULL,
 			NULL
 	};

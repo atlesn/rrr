@@ -164,7 +164,10 @@ static int __rrr_http_application_http2_request_send_preliminary_callback (
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
 
+	(void)(method);
+	(void)(upgrade_mode);
 	(void)(protocol_version);
+	(void)(request_part);
 
 	return __rrr_http_application_http2_header_submit_nullsafe(http2, callback_data->stream_id, ":path", request);
 }
@@ -176,6 +179,9 @@ static int __rrr_http_application_http2_request_send_final_callback (
 ) {
 	struct rrr_http_application_http2_send_prepare_callback_data *callback_data = arg;
 	struct rrr_http_application_http2 *http2 = callback_data->app;
+
+	(void)(request_part);
+	(void)(send_body);
 
 	int ret = 0;
 
@@ -314,6 +320,9 @@ static int __rrr_http_application_http2_data_receive_callback (
 		RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
+
+	(void)(session);
+	(void)(is_header_end);
 
 	int ret = 0;
 
@@ -600,8 +609,17 @@ static int __rrr_http_application_http2_tick (
 
 	int ret = 0;
 
+	(void)(received_bytes);
+	(void)(upgraded_app);
+	(void)(read_max_size);
 	(void)(upgrade_verify_callback);
 	(void)(upgrade_verify_callback_arg);
+	(void)(websocket_callback);
+	(void)(websocket_callback_arg);
+	(void)(get_response_callback);
+	(void)(get_response_callback_arg);
+	(void)(frame_callback);
+	(void)(frame_callback_arg);
 
 	struct rrr_http_application_http2_callback_data callback_data = {
 			http2,
