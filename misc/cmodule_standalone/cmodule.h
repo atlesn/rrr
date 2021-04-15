@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef RRR_CMODULE_NATIVE_CTX
 #	include <stdlib.h>
-#	include <rrr/rrr-config.h>
+#	include <rrr/rrr-build-config.h>
 #	include <rrr/intercept.h>
 #	include <rrr/log.h>
 #	include <rrr/allocator.h>
