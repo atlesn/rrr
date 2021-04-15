@@ -637,6 +637,7 @@ int rrr_http_part_post_x_www_form_body_make (
 	return ret;
 }
 
+#ifdef RRR_WITH_JSONC
 int rrr_http_part_json_make (
 		struct rrr_http_part *part,
 		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
@@ -664,6 +665,7 @@ int rrr_http_part_json_make (
 	pthread_cleanup_pop(1);
 	return ret;
 }
+#endif
 
 static void __rrr_http_part_header_field_dump (
 		struct rrr_http_header_field *field

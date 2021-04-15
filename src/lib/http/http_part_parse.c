@@ -464,9 +464,11 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/x-www-form-urlencoded") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_URLENCODED;
 		}
+#ifdef RRR_WITH_JSONC
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/json") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_JSON;
 		}
+#endif
 	}
 
 	out:

@@ -356,9 +356,13 @@ int rrr_http_transaction_form_data_generate_if_needed (
 		}
 	}
 	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_JSON) {
+#ifdef RRR_WITH_JSONC
 		if ((ret = rrr_http_part_json_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
+#else
+		RRR_BUG("BUG: JSON format requested in rrr_http_transaction_form_data_generate_if_needed but JSON suppurt is not compiled, caller must check for this.\n");
+#endif
 	}
 	else {
 		RRR_MSG_0("Unknown HTTP request body format %s for request with fields set\n", RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format));

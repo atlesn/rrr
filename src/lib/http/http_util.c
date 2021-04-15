@@ -1161,7 +1161,11 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
 	}
 	else if (strcasecmp(format_str, "json") == 0) {
+#ifdef RRR_WITH_JSONC
 		format = RRR_HTTP_BODY_FORMAT_JSON;
+#else
+		RRR_MSG_0("Warning: Value 'json' set for HTTP format in rrr_http_util_format_str_to_enum, but RRR is not compiled with JSON support. Defaulting to URLENCODED\n", format_str);
+#endif
 	}
 	else if (strcasecmp(format_str, "raw") == 0) {
 		format = RRR_HTTP_BODY_FORMAT_RAW;

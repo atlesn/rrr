@@ -8,6 +8,10 @@ SUBDIRS = modules
 #python = isolated_python
 #endif
 
+#if RRR_WITH_JSONC
+	test_jsonc=test_json.c
+#endif
+
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
 
 test_LDFLAGS = ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
@@ -18,7 +22,7 @@ test_SOURCES = test.c \
 	test_fixp.c \
 	test_inet.c \
 	test_condition.c \
-	test_json.c \
+	$test_jsonc \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \

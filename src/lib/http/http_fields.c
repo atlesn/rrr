@@ -33,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../array.h"
 #include "../type.h"
-#include "../json/json.h"
+#ifdef RRR_WITH_JSONC
+#	include "../json/json.h"
+#endif
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
@@ -509,6 +511,7 @@ int rrr_http_field_collection_to_raw_form_data (
 	return __rrr_http_field_collection_to_form_data(target, fields, 1);
 }
 
+#ifdef RRR_WITH_JSONC
 struct rrr_http_field_collection_to_json_value_callback_data {
 	struct rrr_array *target;
 	const struct rrr_nullsafe_str *value;
@@ -568,3 +571,4 @@ int rrr_http_field_collection_to_json (
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
+#endif
