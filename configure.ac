@@ -782,10 +782,16 @@ AS_IF([test "x$enable_openrc" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+MODULE_DIR="\${exec_prefix}/lib/rrr"
+AC_MSG_CHECKING([module installation directory])
+AC_MSG_RESULT([${MODULE_DIR}])
+
 CMODULE_DIR="\${exec_prefix}/lib/rrr/cmodules"
-AC_SUBST([CMODULE_DIR])
 AC_MSG_CHECKING([cmodule installation directory])
 AC_MSG_RESULT([${CMODULE_DIR}])
+
+AC_SUBST([MODULE_DIR])
+AC_SUBST([CMODULE_DIR])
 
 # Clear all automatically added libs. Library users must specify
 # libraries locally in Makefile.am

@@ -16,7 +16,7 @@ endif
 # resolved at run-time in the executables.
 
 rrr_SOURCES = rrr.c main.c
-rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fPIE -DPIE
+rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"@MODULE_DIR@\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fPIE -DPIE
 rrr_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 
 rrr_post_SOURCES = rrr_post.c main.c
