@@ -44,7 +44,7 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AC_CHECK_HEADERS([rrr/rrr-config.h])
+AC_CHECK_HEADERS([rrr/rrr-build-config.h])
 
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
 AM_LDFLAGS=""
