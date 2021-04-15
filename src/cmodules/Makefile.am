@@ -1,5 +1,5 @@
 AM_CFLAGS = @AM_CFLAGS@ -Wextra
-libdir=${exec_prefix}/lib/rrr/cmodules
+libdir=@CMODULE_DIR@
 cmodule_ldflags=-module -avoid-version -shared -L../lib/.libs -lrrr
 cmodule_cflags=@AM_CFLAGS@ -I../lib
 

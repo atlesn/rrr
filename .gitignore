@@ -17,6 +17,7 @@
 /src/test.sh.log
 /src/test-suite.log
 /src/make-paths.sh
+/src/paths.c
 /build_timestamp.h
 /build_directory.h
 input_data
