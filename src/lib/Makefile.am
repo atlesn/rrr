@@ -45,7 +45,7 @@ endif
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
-librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${AM_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
@@ -53,7 +53,7 @@ endif
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
-librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS}
+librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
