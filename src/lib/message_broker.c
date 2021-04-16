@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "message_broker.h"
 #include "allocator.h"
+#include "random.h"
 #include "event/event.h"
 #include "event/event_functions.h"
 #include "ip/ip.h"
@@ -64,6 +65,7 @@ struct rrr_message_broker_costumer {
 	char *name;
 	int usercount;
 	int flags;
+	int split_buffers_active;
 	uint64_t unique_counter;
 	struct rrr_event_queue *events;
 	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
@@ -492,8 +494,82 @@ int rrr_message_broker_setup_split_output_buffer (
 		}
 	}
 
+	costumer->split_buffers_active = 1;
+
 	out:
 	return ret;
+}
+
+static int __rrr_message_broker_write_notifications_send_final (
+		struct rrr_message_broker_costumer *listener,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	return rrr_event_pass (
+			listener->events,
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			amount,
+			check_cancel_callback,
+			check_cancel_callback_arg
+	);
+}
+
+static int __rrr_message_broker_write_notifications_send_all (
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	int ret = 0;
+
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
+		if (listener == NULL) {
+			goto out;
+		}
+
+		if ((ret = __rrr_message_broker_write_notifications_send_final (
+				listener,
+				amount,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_message_broker_write_notifications_send_random (
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	rrr_biglength max = 0;
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		if (costumer->write_notify_listeners[i] == NULL) {
+			break;
+		}
+		max++;
+	}
+
+	if (max > 0) {
+		rrr_biglength target = rrr_rand();
+		target = target % max;
+		printf("Target: %lu\n", target);
+		return __rrr_message_broker_write_notifications_send_final (
+				costumer->write_notify_listeners[target],
+				amount,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		);
+	}
+
+	return 0;
 }
 
 static int __rrr_message_broker_write_notifications_send (
@@ -502,22 +578,10 @@ static int __rrr_message_broker_write_notifications_send (
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
-	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
-		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
-		if (listener == NULL) {
-			return 0;
-		}
-		if ((rrr_event_pass (
-				listener->events,
-				RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
-				amount,
-				check_cancel_callback,
-				check_cancel_callback_arg
-		)) != 0) {
-			return 1;
-		}
-	}
-	return 0;
+	return costumer->split_buffers_active
+		? __rrr_message_broker_write_notifications_send_all(costumer, amount, check_cancel_callback, check_cancel_callback_arg)
+		: __rrr_message_broker_write_notifications_send_random(costumer, amount, check_cancel_callback, check_cancel_callback_arg)
+	;
 }
 
 struct rrr_message_broker_write_entry_intermediate_callback_data {
