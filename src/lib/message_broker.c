@@ -560,7 +560,6 @@ static int __rrr_message_broker_write_notifications_send_random (
 	if (max > 0) {
 		rrr_biglength target = rrr_rand();
 		target = target % max;
-		printf("Target: %lu\n", target);
 		return __rrr_message_broker_write_notifications_send_final (
 				costumer->write_notify_listeners[target],
 				amount,
