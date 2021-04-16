@@ -338,7 +338,9 @@ static int __rrr_json_object_add (
 		RRR_DBG_3("Note: Overwrote already existing value '%s' in JSON object\n", key);
 	}
 
+#ifndef RRR_HAVE_JSONC_OBJECT_ADD_VOID
 	out:
+#endif
 	return ret;
 }
 
