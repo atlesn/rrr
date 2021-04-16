@@ -8,9 +8,9 @@ SUBDIRS = modules
 #python = isolated_python
 #endif
 
-#if RRR_WITH_JSONC
+if RRR_WITH_JSONC
 test_jsonc = test_json.c
-#endif
+endif
 
 noinst_PROGRAMS = test make_test_data send_ip send_fifo sha1/sha sha1/shatest ${python}
 
