@@ -37,7 +37,7 @@ fail () {
 }
 
 do_websocket_send() {
-	sleep 2
+	sleep 1
 	echo \$ $SEND_WEBSOCKET $SEND_WEBSOCKET_ARGS \< $TEST_DATA_FILE
 	$SEND_WEBSOCKET $SEND_WEBSOCKET_ARGS < $TEST_DATA_FILE
 }

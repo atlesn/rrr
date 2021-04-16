@@ -331,11 +331,15 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
-
 	http_client_data->final_callback_count++;
 
-	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+	if (transaction->response_part->response_code == 101 &&
+		EVENT_INITIALIZED(http_client_data->event_stdin) &&
+		rrr_http_client_active_transaction_count_get(http_client_data->http_client) > 0
+	) {
+		EVENT_ADD(http_client_data->event_stdin);
+	}
+	else if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("Error response from server: %i %s\n",
 				transaction->response_part->response_code,
 				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
@@ -345,6 +349,8 @@ static int __rrr_http_client_final_callback (
 	if (http_client_data->no_output) {
 		goto out;
 	}
+
+	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
@@ -469,6 +475,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	*is_binary = 0;
 
 	if (http_client_data->tree == NULL) {
+		ret = RRR_HTTP_DONE;
 		goto out;
 	}
 
@@ -535,6 +542,9 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(raw_tmp);
 	rrr_array_clear(&array);
+	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE) {
+		EVENT_REMOVE(http_client_data->event_stdin);
+	}
 	return ret;
 }
 
@@ -556,8 +566,6 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	(void)(handle);
 	(void)(http_client_data);
 	(void)(application_topic);
-
-	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));
 
 	if (is_binary) {
 		printf ("- (binary data) -\n");
@@ -605,17 +613,14 @@ int rrr_signal_handler(int s, void *arg) {
 static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
-	if (EVENT_INITIALIZED(data->event_stdin)) {
-		if (rrr_http_client_active_transaction_count_get(data->http_client) > 0) {
-			EVENT_ADD(data->event_stdin);
-		}
-		else {
-			EVENT_REMOVE(data->event_stdin);
-		}
+	if (!main_running) {
+		return RRR_EVENT_EXIT;
 	}
 
-	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0 || !main_running) {
-		return RRR_EVENT_EXIT;
+	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
+		if (!EVENT_PENDING(data->event_stdin)) {
+			return RRR_EVENT_EXIT;
+		}
 	}
 
 	rrr_allocator_maintenance_nostats();
