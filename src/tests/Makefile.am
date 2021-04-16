@@ -31,7 +31,6 @@ test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE -DPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
-	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
 
 make_test_data_SOURCES = make_test_data.c ../lib/messages/msg_checksum.c ../lib/util/crc32.c ../lib/util/rrr_endian.c
