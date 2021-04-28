@@ -126,7 +126,7 @@ static void __rrr_mmap_free (
 
 			if (to_free_list_sorted[to_free_list_sorted_pos] == ptr) {
 				if ((index->block_used_map & used_mask) == 0) {
-					RRR_BUG("BUG: Double free of %p in rrr_mmap_free\n", ptr);
+					RRR_BUG("BUG: Double free of %p in rrr_mmap_free\n", (void *) ptr);
 				}
 
 				index->block_used_map &= ~(used_mask);

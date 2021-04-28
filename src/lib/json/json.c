@@ -122,7 +122,7 @@ static int __rrr_json_to_array_recurse_object (
 			}
 		}
 		else if (type == json_type_null) {
-			RRR_DBG_3("        => NULL\n", cur_level, max_levels);
+			RRR_DBG_3("        => NULL\n");
 
 			if ((ret = rrr_array_push_value_vain_with_tag(&array_tmp, key)) != 0) {
 				goto out;
