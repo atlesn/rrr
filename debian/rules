@@ -24,7 +24,7 @@ export RRR_DAEMON_USERNAME=rrr
 #export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
 %:
-	dh $@ --with autoreconf,systemd
+	dh $@ --with autoreconf
 
 override_dh_missing:
 	dh_missing --list-missing
