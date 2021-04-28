@@ -840,7 +840,7 @@ static int __rrr_http2_session_stream_headers_submit (
 ) {
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find_or_create(session, stream_id);
 	if (stream == NULL) {
-		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_headers_submit\n");
+		RRR_BUG("BUG: Could not find stream id %u in __rrr_http2_session_stream_headers_submit\n", stream_id);
 	}
 
 	// Must hold stream ID

@@ -569,7 +569,7 @@ static int __rrr_http_application_http2_data_source_callback (
 
 	// Saves an extra call to this function
 	if (transaction->send_body_pos >= rrr_nullsafe_str_len(transaction->send_body)) {
-		RRR_DBG_3("http2 source complete\n", bytes_to_send);
+		RRR_DBG_3("http2 source complete\n");
 		*done = 1;
 	}
 

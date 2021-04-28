@@ -110,13 +110,9 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 				&index_lock,
 				0 // Not shared
 		);
-
-		if (ptr_new == NULL) {
-			return NULL;
-		}
 	}
 
-	if (ptr_old != NULL) {
+	if (ptr_old != NULL && ptr_new != NULL) {
 		memcpy(ptr_new, ptr_old, bytes_old);
 		rrr_free(ptr_old);
 	}

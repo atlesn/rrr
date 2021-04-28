@@ -309,7 +309,7 @@ static int main_mmap_periodic (struct stats_data *stats_data) {
 		ret |= main_stats_post_unsigned_message (stats_data, "mmap/heap_size", mmap_stats.mmap_total_heap_size, 0);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int main_loop_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
