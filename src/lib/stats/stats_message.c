@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "stats_message.h"
 
@@ -166,7 +167,7 @@ int rrr_msg_stats_new_empty (
 	int ret = 0;
 	*message = NULL;
 
-	struct rrr_msg_stats *new_message = malloc(sizeof(*new_message));
+	struct rrr_msg_stats *new_message = rrr_allocate(sizeof(*new_message));
 	if (new_message == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_stats_new_empty");
 		ret = 1;
@@ -207,7 +208,7 @@ int rrr_msg_stats_new (
 	goto out;
 
 	out_free:
-		free(new_message);
+		rrr_free(new_message);
 	out:
 		return ret;
 }
@@ -249,7 +250,7 @@ int rrr_msg_stats_duplicate (
 int rrr_msg_stats_destroy (
 		struct rrr_msg_stats *message
 ) {
-	free(message);
+	rrr_free(message);
 	return 0;
 }
 

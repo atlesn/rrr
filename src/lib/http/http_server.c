@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_common.h"
 #include "http_server.h"
@@ -46,7 +47,7 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 	}
 #endif
 
-	free(server);
+	rrr_free(server);
 }
 
 void rrr_http_server_destroy_void (void *server) {
@@ -70,7 +71,7 @@ int rrr_http_server_new (
 
 	*target = NULL;
 
-	struct rrr_http_server *server = malloc(sizeof(*server));
+	struct rrr_http_server *server = rrr_allocate(sizeof(*server));
 	if (server == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_server_new\n");
 		ret = 1;
@@ -204,7 +205,7 @@ static int __rrr_http_server_websocket_handshake_callback (
 			transaction,
 			data_ptr,
 			overshoot_bytes,
-			next_protocol_version,
+			next_application_type,
 			http_server->callbacks.final_callback_arg
 	)) != 0) {
 		goto out;
@@ -258,12 +259,24 @@ static int __rrr_http_server_receive_callback (
 				ip_buf,
 				method_buf,
 				uri_buf,
-				(transaction->request_part->parsed_protocol_version == RRR_HTTP_APPLICATION_HTTP2 ? "HTTP/2" : "HTTP/1.1")
+				(transaction->request_part->parsed_application_type == RRR_HTTP_APPLICATION_HTTP2
+					? "HTTP/2"
+					: (transaction->request_part->parsed_version == RRR_HTTP_VERSION_10
+						? "HTTP/1.0"
+						: "HTTP/1.1"
+					)
+				)
 		);
 
 		if (overshoot_bytes > 0) {
-			RRR_MSG_2("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
-					RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			if (transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_CLOSE) {
+				RRR_MSG_0("HTTP server %i %s has %li bytes overshoot while protocol version is HTTP/1.0 or 'Connection: close' is set, data will be lost\n",
+						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			}
+			else {
+				RRR_DBG_3("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
+						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
+			}
 		}
 	}
 
@@ -278,7 +291,7 @@ static int __rrr_http_server_receive_callback (
 				transaction,
 				data_ptr,
 				overshoot_bytes,
-				next_protocol_version,
+				next_application_type,
 				http_server->callbacks.final_callback_arg
 		)) == RRR_HTTP_NO_RESULT) {
 			// Return value propagates
@@ -359,6 +372,8 @@ static int __rrr_http_server_read_callback (
 
 	ssize_t received_bytes = 0;
 
+	again:
+
 	if ((ret = rrr_http_session_transport_ctx_tick_server (
 			&received_bytes,
 			handle,
@@ -384,6 +399,14 @@ static int __rrr_http_server_read_callback (
 		}
 		goto out;
 	}
+
+	if (rrr_http_session_transport_ctx_need_tick(handle)) {
+		// This usually only happens at most one time
+		goto again;
+	}
+
+	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
+	rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
 
 	out:
 	return ret;

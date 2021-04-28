@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
@@ -122,7 +123,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config_data *conf
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
 		RRR_MSG_0("Parameter dummy_sleep_interval_us was out of range in dummy instance %s, must be > 0\n",
-				config->name, DUMMY_DEFAULT_SLEEP_INTERVAL_US);
+				config->name);
 		ret = 1;
 		goto out;
 	}
@@ -198,14 +199,10 @@ static void dummy_event_write_entry (
 	}
 
 	if (data->sleep_interval_us > 0 && data->last_write_time > 0 && data->generated_count_total > 0) {
-		uint64_t sleep_time_us = data->sleep_interval_us;
 		uint64_t average_time_us = data->write_duration_total_us / data->generated_count_total;
 
-		if (average_time_us > sleep_time_us) {
-			sleep_time_us -= (average_time_us - sleep_time_us);
-		}
-		else {
-			rrr_posix_usleep(sleep_time_us);
+		if (average_time_us <= data->sleep_interval_us) {
+			rrr_posix_usleep(data->sleep_interval_us);
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;

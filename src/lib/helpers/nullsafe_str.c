@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdarg.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/gnu.h"
@@ -45,7 +46,7 @@ void rrr_nullsafe_str_destroy_if_not_null (
 		return;
 	}
 	RRR_FREE_IF_NOT_NULL((*str)->str);
-	free(*str);
+	rrr_free(*str);
 	*str = NULL;
 }
 
@@ -78,7 +79,7 @@ int rrr_nullsafe_str_new_or_replace_raw (
 
 	struct rrr_nullsafe_str *new_str = *result;
 	if (new_str == NULL) {
-		if ((new_str = malloc(sizeof(*new_str))) == NULL) {
+		if ((new_str = rrr_allocate(sizeof(*new_str))) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_nullsafe_str_new\n");
 			ret = 1;
 			goto out;
@@ -91,7 +92,7 @@ int rrr_nullsafe_str_new_or_replace_raw (
 	memset(new_str, '\0', sizeof(*new_str));
 
 	if (len != 0) {
-		if ((new_str->str = malloc(len)) == NULL) {
+		if ((new_str->str = rrr_allocate(len)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_nullsafe_str_new\n");
 			ret = 1;
 			goto out_free;
@@ -104,7 +105,7 @@ int rrr_nullsafe_str_new_or_replace_raw (
 
 	goto out;
 	out_free:
-		free(new_str);
+		rrr_free(new_str);
 	out:
 		return ret;
 }
@@ -151,7 +152,9 @@ int rrr_nullsafe_str_append_raw (
 ) {
 	VERIFY_NEW_LENGTH("appending");
 
-	void *new_str = realloc(nullsafe->str, nullsafe->len + len);
+	// +1, always allocate at least 1 byte event when other numbers are zero
+
+	void *new_str = rrr_reallocate(nullsafe->str, nullsafe->len, nullsafe->len + len + 1);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append\n");
 		return 1;
@@ -242,7 +245,7 @@ int rrr_nullsafe_str_prepend_raw (
 ) {
 	VERIFY_NEW_LENGTH("prepending");
 
-	void *new_str = malloc(nullsafe->len + len);
+	void *new_str = rrr_allocate(nullsafe->len + len);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_prepend\n");
 		return 1;
@@ -252,7 +255,7 @@ int rrr_nullsafe_str_prepend_raw (
 
 	if (nullsafe->str != NULL) {
 		memcpy(new_str + len, nullsafe->str, nullsafe->len);
-		free(nullsafe->str);
+		rrr_free(nullsafe->str);
 	}
 
 	nullsafe->str = new_str;
@@ -313,7 +316,7 @@ int rrr_nullsafe_str_set (
 	nullsafe->len = len;
 
 	if (len > 0) {
-		if ((nullsafe->str = malloc(len)) == NULL) {
+		if ((nullsafe->str = rrr_allocate(len)) == NULL) {
 			return 1;
 		}
 		memcpy(nullsafe->str, src, len);
@@ -691,7 +694,7 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 		goto out;
 	}
 
-	if ((tmp = malloc(nullsafe->len + 1)) == NULL) {
+	if ((tmp = rrr_allocate(nullsafe->len + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_with_null_terminated_do\n");
 		ret = 1;
 		goto out;

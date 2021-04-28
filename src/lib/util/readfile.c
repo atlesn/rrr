@@ -24,7 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 
-#include "log.h"
+#include "../log.h"
+#include "../allocator.h"
 #include "readfile.h"
 #include "../rrr_types.h"
 #include "../rrr_strerror.h"
@@ -85,7 +86,7 @@ int rrr_readfile_read (
 		goto out_close;
 	}
 
-	file_data = malloc(size);
+	file_data = rrr_allocate(size);
 	if (file_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_readfile_read\n");
 		ret = 1;
@@ -105,7 +106,7 @@ int rrr_readfile_read (
 
 	goto out_close;
 	out_free:
-		free(file_data);
+		rrr_free(file_data);
 	out_close:
 		fclose(file);
 	out:

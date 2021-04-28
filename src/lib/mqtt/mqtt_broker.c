@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_common.h"
 #include "mqtt_broker.h"
@@ -993,7 +994,7 @@ static int __rrr_mqtt_broker_acl_handler (
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
-	free(broker);
+	rrr_free(broker);
 }
 
 void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker) {
@@ -1073,7 +1074,7 @@ int rrr_mqtt_broker_new (
 
 	struct rrr_mqtt_broker_data *res = NULL;
 
-	res = malloc(sizeof(*res));
+	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_broker_new\n");
 		ret = 1;

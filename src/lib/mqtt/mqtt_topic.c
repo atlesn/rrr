@@ -21,12 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdlib.h>
-#include <util/utf8.h>
 
+#include "../allocator.h"
 #include "../log.h"
 
 #include "mqtt_topic.h"
 
+#include "../util/utf8.h"
 #include "../util/macro_utils.h"
 
 struct topic_name_seq {
@@ -270,7 +271,7 @@ void rrr_mqtt_topic_token_destroy (
 	// The data field is not a separate pointer, don't free
 
 //	printf ("free token %p (destroy)\n", first_token);
-	free(first_token);
+	rrr_free(first_token);
 }
 
 int rrr_mqtt_topic_tokens_clone (
@@ -285,7 +286,7 @@ int rrr_mqtt_topic_tokens_clone (
 		goto out;
 	}
 
-	struct rrr_mqtt_topic_token *result = malloc(strlen(first_token->data) + sizeof(*result));
+	struct rrr_mqtt_topic_token *result = rrr_allocate(strlen(first_token->data) + sizeof(*result));
 //	printf ("allocate token %p (clone)\n", result);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
@@ -306,7 +307,7 @@ int rrr_mqtt_topic_tokens_clone (
 	goto out;
 	out_free:
 //		printf ("free token %p (clone)\n", result);
-		free(result);
+		rrr_free(result);
 		result = NULL;
 	out:
 		return ret;
@@ -345,7 +346,7 @@ int rrr_mqtt_topic_tokenize_with_end (
 		}
 
 		ssize_t len = token_end - pos;
-		token = malloc(sizeof(*token) + len + 1);
+		token = rrr_allocate(sizeof(*token) + len + 1);
 //		printf ("allocate token %p\n", token);
 		if (token == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_subscription_topic_tokenize\n");

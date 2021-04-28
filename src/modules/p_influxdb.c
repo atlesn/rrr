@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
@@ -125,7 +126,7 @@ static int influxdb_receive_http_response (
 	(void)(handle);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = 0;
 
@@ -299,7 +300,8 @@ static void influxdb_send_data_callback (
 			handle,
 			data->http_client_config.server,
 			transaction,
-			RRR_HTTP_UPGRADE_MODE_NONE
+			RRR_HTTP_UPGRADE_MODE_NONE,
+			RRR_HTTP_VERSION_11
 	)) != 0) {
 		RRR_MSG_0("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;

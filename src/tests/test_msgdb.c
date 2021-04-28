@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/wait.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"

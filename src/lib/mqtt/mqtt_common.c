@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
@@ -238,7 +239,7 @@ int rrr_mqtt_common_data_init (
 	memset (data, '\0', sizeof(*data));
 
 	if (init_data->client_name != NULL && *(init_data->client_name) != '\0') {
-		if ((data->client_name = strdup(init_data->client_name)) == NULL) {
+		if ((data->client_name = rrr_strdup(init_data->client_name)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
 			ret = 1;
 			goto out;
@@ -1200,8 +1201,7 @@ static int __rrr_mqtt_common_send (
 
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
-	if (connection->session == NULL) {
-		// No CONNECT yet
+	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
 		goto out;
 	}
 

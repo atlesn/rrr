@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "log.h"
+#include "allocator.h"
 #include "util/posix.h"
 #include "util/slow_noop.h"
 #include "util/rrr_time.h"
@@ -172,7 +173,7 @@ static void __rrr_fifo_buffer_entry_destroy_unlocked (
 	}
 	__rrr_fifo_buffer_entry_unlock(entry);
 	pthread_mutex_destroy(&entry->lock);
-	free(entry);
+	rrr_free(entry);
 }
 
 static void __rrr_fifo_buffer_entry_destroy_simple_void (
@@ -180,7 +181,7 @@ static void __rrr_fifo_buffer_entry_destroy_simple_void (
 ) {
 	struct rrr_fifo_buffer_entry *entry = ptr;
 	pthread_mutex_destroy(&entry->lock);
-	free(entry);
+	rrr_free(entry);
 }
 
 static void __rrr_fifo_buffer_entry_destroy_data_unlocked (
@@ -210,7 +211,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (
 
 	*result = NULL;
 
-	struct rrr_fifo_buffer_entry *entry = malloc(sizeof(*entry));
+	struct rrr_fifo_buffer_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
 		ret = 1;
@@ -230,7 +231,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (
 	goto out;
 
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }
@@ -294,7 +295,7 @@ void rrr_fifo_buffer_destroy (
 static void __rrr_fifo_default_free (
 		void *ptr
 ) {
-	free(ptr);
+	rrr_free(ptr);
 }
 
 int rrr_fifo_buffer_init (

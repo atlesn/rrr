@@ -4,6 +4,28 @@ rrr (1.17-0ubuntu1) focal; urgency=medium
 
  -- Atle Solbakken <atle@goliathdns.no>  Fri, 09 Apr 2021 16:15:40 +0200
 
+rrr (1.17-1) buster; urgency=medium
+
+  * HTTP fixes
+    * Support HTTP/1.0
+    * Respect Connection: close/keep-alive header
+    * Improve redirection functionallity
+    * Improve HTTP/2 performance by having a stream limit
+    * Improve performance by changing misc. maintenance intervals
+  * Memory allocator
+    * Implement custom memory allocator for messages
+    * Long lived programs with message bursts no longer suffer from
+      fragmentation and increased memory usage
+  * Create standalone build directory for cmodules
+  * Fix TLS connection handshake CPU spin
+  * Fix problems with TCP connections not being closed
+  * Fix issue with incorrect event amount counts
+  * Fix problems in test suite causing tests to fail
+  * Fix broken build when JSON-C was disabled
+  * Fix. misc build issues with optional libraries
+ 
+   -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 19:57:17 +0200
+
 rrr (1.17-0) buster; urgency=medium
 
   * Event driven modules for reduced latency and CPU usage
