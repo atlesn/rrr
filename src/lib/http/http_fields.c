@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Needed by http_fields
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_fields.h"
 #include "http_util.h"
@@ -32,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../array.h"
 #include "../type.h"
-#include "../json/json.h"
+#ifdef RRR_WITH_JSONC
+#	include "../json/json.h"
+#endif
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 #include "../helpers/nullsafe_str.h"
@@ -44,7 +47,7 @@ void rrr_http_field_destroy(struct rrr_http_field *field) {
 	if (field->value_orig != NULL) {
 		rrr_type_value_destroy(field->value_orig);
 	}
-	free(field);
+	rrr_free(field);
 }
 
 int rrr_http_field_new_no_value_raw (
@@ -56,7 +59,7 @@ int rrr_http_field_new_no_value_raw (
 
 	*target = NULL;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
@@ -228,7 +231,7 @@ int rrr_http_field_collection_add (
 ) {
 	int ret = 0;
 
-	struct rrr_http_field *field = malloc(sizeof(*field));
+	struct rrr_http_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;
@@ -508,6 +511,7 @@ int rrr_http_field_collection_to_raw_form_data (
 	return __rrr_http_field_collection_to_form_data(target, fields, 1);
 }
 
+#ifdef RRR_WITH_JSONC
 struct rrr_http_field_collection_to_json_value_callback_data {
 	struct rrr_array *target;
 	const struct rrr_nullsafe_str *value;
@@ -567,3 +571,4 @@ int rrr_http_field_collection_to_json (
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
+#endif

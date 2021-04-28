@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "ip.h"
 #include "ip_accept_data.h"
 #include "ip_util.h"
@@ -217,7 +218,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		goto out;
 	}
 
-	struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
+	struct rrr_ip_accept_data *accept_result = rrr_allocate(sizeof(*accept_result));
 	if (accept_result == NULL) {
 		RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		ret = RRR_SOCKET_HARD_ERROR;
@@ -257,7 +258,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 	goto out;
 
 	out_error_free_accept:
-		free(accept_result);
+		rrr_free(accept_result);
 	out_error_close_socket:
 		rrr_socket_close(fd);
 	out:
@@ -433,7 +434,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		goto out;
 	}
 
-	struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
+	struct rrr_ip_accept_data *accept_result = rrr_allocate(sizeof(*accept_result));
 	if (accept_result == NULL) {
 		RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		goto out_error_close_socket;
@@ -453,7 +454,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 
 	goto out;
 	out_error_free_accept:
-		free(accept_result);
+		rrr_free(accept_result);
 	out_error_close_socket:
 		rrr_socket_close(fd);
 	out:
@@ -577,7 +578,7 @@ int rrr_ip_accept (
 		goto out_close_socket;
 	}
 
-	res = malloc(sizeof(*res));
+	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in ip_accept\n");
 		ret = 1;

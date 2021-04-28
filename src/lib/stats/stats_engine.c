@@ -28,10 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "stats_engine.h"
 #include "stats_message.h"
-#include "../../../config.h"
 #include "../rrr_config.h"
 #include "../read.h"
 #include "../random.h"
@@ -214,7 +214,7 @@ static int __rrr_stats_client_new (
 ) {
 	(void)(fd);
 
-	struct rrr_stats_client *client = malloc(sizeof(*client));
+	struct rrr_stats_client *client = rrr_allocate(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
 		return 1;
@@ -232,7 +232,7 @@ static int __rrr_stats_client_new (
 static void __rrr_stats_client_destroy (
 		struct rrr_stats_client *client
 ) {
-	free(client);
+	rrr_free(client);
 }
 
 static int __rrr_stats_client_new_void (void **target, int fd, void *private_data) {
@@ -247,7 +247,7 @@ static int __rrr_stats_named_message_list_destroy (
 		struct rrr_stats_named_message_list *list
 ) {
 	RRR_LL_DESTROY(list, struct rrr_msg_stats, rrr_msg_stats_destroy(node));
-	free(list);
+	rrr_free(list);
 	return 0;
 }
 
@@ -637,7 +637,7 @@ static int __rrr_stats_engine_handle_register_nolock (
 ) {
 	int ret = 0;
 
-	struct rrr_stats_named_message_list *entry = malloc(sizeof(*entry));
+	struct rrr_stats_named_message_list *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in _rrr_stats_engine_register_handle_nolock\n");
 		ret = 1;

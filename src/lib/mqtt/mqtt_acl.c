@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_acl.h"
 #include "mqtt_topic.h"
@@ -46,7 +47,7 @@ static void __rrr_mqtt_acl_user_entry_destroy (
 		struct rrr_mqtt_acl_user_entry *entry
 ) {
 	RRR_FREE_IF_NOT_NULL(entry->username);
-	free(entry);
+	rrr_free(entry);
 }
 
 static int __rrr_mqtt_acl_user_entry_new_and_append (
@@ -56,7 +57,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_acl_user_entry *user_entry = malloc(sizeof(*user_entry));
+	struct rrr_mqtt_acl_user_entry *user_entry = rrr_allocate(sizeof(*user_entry));
 
 	if (user_entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_acl_user_entry_new_and_append\n");
@@ -66,7 +67,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 
 	memset(user_entry, '\0', sizeof(*user_entry));
 
-	if ((user_entry->username = strdup(username)) == NULL) {
+	if ((user_entry->username = rrr_strdup(username)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for username in __rrr_mqtt_acl_user_entry_new_and_append\n");
 		ret = 1;
 		goto out_free;
@@ -79,7 +80,7 @@ static int __rrr_mqtt_acl_user_entry_new_and_append (
 
 	goto out;
 	out_free:
-		free(user_entry);
+		rrr_free(user_entry);
 	out:
 		return ret;
 }
@@ -90,7 +91,7 @@ static void __rrr_mqtt_acl_entry_destroy (
 	RRR_LL_DESTROY(entry, struct rrr_mqtt_acl_user_entry, __rrr_mqtt_acl_user_entry_destroy(node));
 	rrr_mqtt_topic_token_destroy(entry->first_token); // Checks for NULL
 	RRR_FREE_IF_NOT_NULL(entry->topic_orig);
-	free(entry);
+	rrr_free(entry);
 }
 
 void rrr_mqtt_acl_entry_collection_clear (
@@ -106,7 +107,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_acl_entry *entry = malloc(sizeof(*entry));
+	struct rrr_mqtt_acl_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate entry in rrr_mqtt_acl_entry_collection_push_new\n");
 		ret = 1;
@@ -121,7 +122,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 		goto out_free;
 	}
 
-	if ((entry->topic_orig = strdup(topic_orig)) == NULL) {
+	if ((entry->topic_orig = rrr_strdup(topic_orig)) == NULL) {
 		RRR_MSG_0("Could not duplicate topic string in rrr_mqtt_acl_entry_collection_push_new\n");
 		ret = 1;
 		goto out_free_topic_tokens;
@@ -136,7 +137,7 @@ static int __rrr_mqtt_acl_entry_collection_push_new (
 	out_free_topic_tokens:
 		rrr_mqtt_topic_token_destroy(entry->first_token);
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }

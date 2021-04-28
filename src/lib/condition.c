@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "parse.h"
 #include "string_builder.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 #include "util/posix.h"
@@ -112,7 +113,7 @@ int __rrr_condition_shunting_yard_carrier_allocate (
 ) {
 	*target = NULL;
 
-	struct rrr_condition_shunting_yard_carrier *result = malloc(sizeof(*result));
+	struct rrr_condition_shunting_yard_carrier *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_condition_shunting_yard_carrier_allocate\n");
 		return RRR_CONDITION_HARD_ERROR;
@@ -156,7 +157,7 @@ int __rrr_condition_shunting_yard_carrier_new (
 
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -168,7 +169,7 @@ void __rrr_condition_shunting_yard_carrier_free_if_not_null (
 		return;
 	}
 
-	free(carrier);
+	rrr_free(carrier);
 }
 
 static void __rrr_condition_shunting_yard_clear (

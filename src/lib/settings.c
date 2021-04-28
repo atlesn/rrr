@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
+#include "allocator.h"
 
 #include "socket/rrr_socket.h"
 #include "settings.h"
@@ -35,12 +36,12 @@ static void __rrr_settings_list_destroy (
 		struct rrr_settings_list *list
 ) {
 	if (list->data != NULL) {
-		free(list->data);
+		rrr_free(list->data);
 	}
 	if (list->list != NULL) {
-		free(list->list);
+		rrr_free(list->list);
 	}
-	free(list);
+	rrr_free(list);
 }
 
 static int __rrr_settings_init (
@@ -51,7 +52,7 @@ static int __rrr_settings_init (
 
 	memset(target, '\0', sizeof(*target));
 
-	target->settings = malloc(sizeof(*(target->settings)) * count);
+	target->settings = rrr_allocate(sizeof(*(target->settings)) * count);
 	if (target->settings == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_settings_init\n");
 		ret = 1;
@@ -70,7 +71,7 @@ static int __rrr_settings_init (
 
 	goto out;
 	out_free:
-		free(target->settings);
+		rrr_free(target->settings);
 	out:
 		return ret;
 }
@@ -78,7 +79,7 @@ static int __rrr_settings_init (
 struct rrr_instance_settings *rrr_settings_new (
 		const int count
 ) {
-	struct rrr_instance_settings *ret = malloc(sizeof(*ret));
+	struct rrr_instance_settings *ret = rrr_allocate(sizeof(*ret));
 
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory for module settings structure");
@@ -86,7 +87,7 @@ struct rrr_instance_settings *rrr_settings_new (
 	}
 
 	if (__rrr_settings_init(ret, count) != 0) {
-		free(ret);
+		rrr_free(ret);
 		return NULL;
 	}
 
@@ -96,7 +97,7 @@ struct rrr_instance_settings *rrr_settings_new (
 static void __rrr_settings_destroy_setting (
 		struct rrr_setting *setting
 ) {
-	free(setting->data);
+	rrr_free(setting->data);
 }
 
 void rrr_settings_destroy (
@@ -119,8 +120,8 @@ void rrr_settings_destroy (
 	pthread_mutex_unlock(&target->mutex);
 	pthread_mutex_destroy(&target->mutex);
 
-	free(target->settings);
-	free(target);
+	rrr_free(target->settings);
+	rrr_free(target);
 }
 
 static void __rrr_settings_lock (
@@ -215,7 +216,7 @@ static int __rrr_settings_add_raw (
 ) {
 	int ret = 0;
 
-	void *new_data = malloc(size);
+	void *new_data = rrr_allocate(size);
 
 	if (new_data == NULL) {
 		RRR_MSG_0("Could not allocate memory for setting struct\n");
@@ -293,7 +294,7 @@ static int __rrr_settings_get_string_noconvert (
 		RRR_BUG("BUG: Data string type was not null terminated in rrr_settings_get_string_noconvert\n");
 	}
 
-	char *string = malloc(setting->data_size);
+	char *string = rrr_allocate(setting->data_size);
 	if (string == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_get_string_noconvert\n");
 		ret = 1;
@@ -383,7 +384,7 @@ static int __rrr_settings_traverse_split_commas (
 
 	out:
 	if (value != NULL) {
-		free(value);
+		rrr_free(value);
 	}
 	return ret;
 }
@@ -414,7 +415,7 @@ int rrr_settings_split_commas_to_array (
 
 	*target_ptr = NULL;
 
-	struct rrr_settings_list *target = malloc(sizeof(*target));
+	struct rrr_settings_list *target = rrr_allocate(sizeof(*target));
 	if (target == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
@@ -436,7 +437,7 @@ int rrr_settings_split_commas_to_array (
 
 	int length = strlen(value);
 
-	target->data = malloc(length + 1);
+	target->data = rrr_allocate(length + 1);
 	if (target->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
@@ -450,7 +451,7 @@ int rrr_settings_split_commas_to_array (
 		}
 	}
 
-	target->list = malloc(elements * sizeof(char*));
+	target->list = rrr_allocate(elements * sizeof(char*));
 	if (target->list == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_settings_split_commas_to_array\n");
 		ret = 1;
@@ -476,7 +477,7 @@ int rrr_settings_split_commas_to_array (
 
 	out:
 	if (value != NULL) {
-		free(value);
+		rrr_free(value);
 	}
 
 	if (ret != 0 && target != NULL) {
@@ -542,13 +543,13 @@ int rrr_settings_setting_to_string_nolock (
 
 	char *value;
 	if (setting->type == RRR_SETTINGS_TYPE_STRING) {
-		if ((value = malloc(setting->data_size)) == NULL) {
+		if ((value = rrr_allocate(setting->data_size)) == NULL) {
 			goto out_malloc_err;
 		}
 		sprintf(value, "%s", (char*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_UINT) {
-		if ((value = malloc(RRR_SETTINGS_UINT_AS_TEXT_MAX)) == NULL) {
+		if ((value = rrr_allocate(RRR_SETTINGS_UINT_AS_TEXT_MAX)) == NULL) {
 			goto out_malloc_err;
 		}
 		sprintf(value, "%llu", *((unsigned long long *) setting->data));
@@ -614,7 +615,7 @@ int rrr_settings_setting_to_uint_nolock (
 
 	out:
 	if (tmp_string != NULL) {
-		free(tmp_string);
+		rrr_free(tmp_string);
 	}
 
 	return ret;
@@ -695,7 +696,7 @@ int rrr_settings_check_yesno (
 
 	out:
 	if (string != NULL) {
-		free(string);
+		rrr_free(string);
 	}
 
 	return ret;
@@ -840,7 +841,7 @@ static int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_set
 		goto out;
 	}
 
-	result = malloc(sizeof(*result));
+	result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in  __rrr_setting_pack\n");
 		ret = 1;
@@ -892,7 +893,7 @@ int rrr_settings_iterate_packed (
 
 		ret = callback(setting_packed, callback_arg);
 
-		free(setting_packed);
+		rrr_free(setting_packed);
 
 		if (ret != 0) {
 			break;

@@ -91,7 +91,10 @@ struct rrr_http_part {
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
-	enum rrr_http_application_type parsed_protocol_version;
+
+	enum rrr_http_application_type parsed_application_type;
+	enum rrr_http_version parsed_version; 
+	enum rrr_http_connection parsed_connection;
 
 	size_t headroom_length;
 	size_t header_length;
@@ -185,11 +188,13 @@ int rrr_http_part_post_x_www_form_body_make (
 		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
 		void *chunk_callback_arg
 );
+#ifdef RRR_WITH_JSONC
 int rrr_http_part_json_make (
 		struct rrr_http_part *part,
 		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
 		void *chunk_callback_arg
 );
+#endif
 void rrr_http_part_header_dump (
 		struct rrr_http_part *part
 );

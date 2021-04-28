@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 
 #include "log.h"
+#include "allocator.h"
 #include "type.h"
 #include "fixed_point.h"
 #include "socket/rrr_socket.h"
@@ -175,7 +176,7 @@ static int __rrr_type_import_int (
 	CHECK_END_AND_RETURN(total_size);
 
 	node->total_stored_length = node->element_count * (rrr_length) sizeof(uint64_t);
-	node->data = malloc(node->total_stored_length);
+	node->data = rrr_allocate(node->total_stored_length);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_int\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
@@ -226,7 +227,7 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 	CHECK_END_AND_RETURN(total_size);
 
 	node->total_stored_length = total_size;
-	node->data = malloc(total_size);
+	node->data = rrr_allocate(total_size);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_blob\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
@@ -360,7 +361,7 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	// Keep on separate line to suppress warning from static code analysis
 	size_t allocation_size = sizeof(rrr_type_ustr);
 
-	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
+	if ((node->data = (char *) rrr_allocate(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_ustr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
@@ -394,7 +395,7 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	// Keep on separate line to suppress warning from static code analysis
 	size_t allocation_size = sizeof(rrr_type_istr);
 
-	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
+	if ((node->data = (char *) rrr_allocate(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_istr\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
@@ -445,7 +446,7 @@ static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	node->data = malloc((size_t) found);
+	node->data = rrr_allocate((size_t) found);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in import_sep_stx\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
@@ -622,7 +623,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 		goto out;
 	}
 
-	node->data = malloc((rrr_length) target_size_total);
+	node->data = rrr_allocate((rrr_length) target_size_total);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_msg\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
@@ -903,7 +904,7 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	// Keep on separate line to suppress warning from static code analysis
 	size_t allocation_size = sizeof(fixp);
 
-	if ((node->data = (char *) malloc(allocation_size)) == NULL) {
+	if ((node->data = (char *) rrr_allocate(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_fixp\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
@@ -1120,7 +1121,7 @@ static int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	rrr_length output_size = node->total_stored_length * 4;
 
-	char *result = malloc(output_size);
+	char *result = rrr_allocate(output_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in__rrr_type_h_to_str\n");
 		return 1;
@@ -1173,7 +1174,7 @@ static int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 }
 
 static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
-	char *result = malloc(node->total_stored_length + 1);
+	char *result = rrr_allocate(node->total_stored_length + 1);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_str_to_str\n");
 		return 1;
@@ -1190,7 +1191,7 @@ static int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 static int __rrr_type_vain_to_str (RRR_TYPE_TO_STR_ARGS) {
 	(void)(node);
 
-	char *tmp = malloc(1);
+	char *tmp = rrr_allocate(1);
 	if (tmp == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_vain_to_str\n");
 		return 1;
@@ -1338,7 +1339,7 @@ void rrr_type_value_destroy (
 	RRR_FREE_IF_NOT_NULL(template->element_count_ref);
 	RRR_FREE_IF_NOT_NULL(template->tag);
 	RRR_FREE_IF_NOT_NULL(template->data);
-	free(template);
+	rrr_free(template);
 }
 
 int rrr_type_value_set_tag (
@@ -1348,7 +1349,7 @@ int rrr_type_value_set_tag (
 ) {
 	RRR_FREE_IF_NOT_NULL(value->tag);
 	if (tag_length > 0) {
-		value->tag = malloc(tag_length + 1);
+		value->tag = rrr_allocate(tag_length + 1);
 		if (value->tag == NULL) {
 			RRR_MSG_0("Could not allocate tag in rrr_type_value_set_tag\n");
 			return 1;
@@ -1388,7 +1389,7 @@ int rrr_type_value_new (
 ) {
 	int ret = 0;
 
-	struct rrr_type_value *value = malloc(sizeof(*value));
+	struct rrr_type_value *value = rrr_allocate(sizeof(*value));
 	if (value == NULL) {
 		RRR_MSG_0("Could not allocate template in rrr_type_value_new\n");
 		ret = 1;
@@ -1405,7 +1406,7 @@ int rrr_type_value_new (
 	value->definition = type;
 
 	if (import_length_ref != NULL && *import_length_ref != '\0') {
-		if ((value->import_length_ref = strdup(import_length_ref)) == NULL) {
+		if ((value->import_length_ref = rrr_strdup(import_length_ref)) == NULL) {
 			RRR_MSG_0("Could not allocate data for import length ref in rrr_type_value_new\n");
 			ret = 1;
 			goto out;
@@ -1413,7 +1414,7 @@ int rrr_type_value_new (
 	}
 
 	if (element_count_ref != NULL && *element_count_ref != '\0') {
-		if ((value->element_count_ref = strdup(element_count_ref)) == NULL) {
+		if ((value->element_count_ref = rrr_strdup(element_count_ref)) == NULL) {
 			RRR_MSG_0("Could not allocate data for element count ref in rrr_type_value_new\n");
 			ret = 1;
 			goto out;
@@ -1421,7 +1422,7 @@ int rrr_type_value_new (
 	}
 
 	if (stored_length > 0) {
-		value->data = malloc(stored_length);
+		value->data = rrr_allocate(stored_length);
 		if (value->data == NULL) {
 			RRR_MSG_0("Could not allocate data for template in rrr_type_value_new\n");
 			ret = 1;
@@ -1526,7 +1527,7 @@ int rrr_type_value_clone (
 	*target = NULL;
 
 	struct rrr_type_value *new_value;
-	if ((new_value = malloc(sizeof(*new_value))) == NULL) {
+	if ((new_value = rrr_allocate(sizeof(*new_value))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_type_value_clone\n");
 		ret = 1;
 		goto out;
@@ -1541,20 +1542,20 @@ int rrr_type_value_clone (
 	new_value->tag = NULL;
 	new_value->data = NULL;
 
-	if (source->import_length_ref != NULL && (new_value->import_length_ref = strdup(source->import_length_ref)) == NULL) {
+	if (source->import_length_ref != NULL && (new_value->import_length_ref = rrr_strdup(source->import_length_ref)) == NULL) {
 		RRR_MSG_0("Could not duplicate string in rrr_type_value_clone\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (source->element_count_ref != NULL && (new_value->element_count_ref = strdup(source->element_count_ref)) == NULL) {
+	if (source->element_count_ref != NULL && (new_value->element_count_ref = rrr_strdup(source->element_count_ref)) == NULL) {
 		RRR_MSG_0("Could not duplicate string in rrr_type_value_clone\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (do_clone_data && source->data != NULL) {
-		if ((new_value->data = malloc(source->total_stored_length)) == NULL) {
+		if ((new_value->data = rrr_allocate(source->total_stored_length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in rrr_type_value_clone\n");
 			ret = 1;
 			goto out;
@@ -1568,7 +1569,7 @@ int rrr_type_value_clone (
 
 	if (source->tag_length > 0) {
 		// Do not use strdup, no \0 at the end
-		if ((new_value->tag = malloc(source->tag_length + 1)) == NULL) {
+		if ((new_value->tag = rrr_allocate(source->tag_length + 1)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for tag in rrr_type_value_clone\n");
 			ret = 1;
 			goto out;
@@ -1619,7 +1620,7 @@ int rrr_type_value_allocate_and_export (
 	char *buf_tmp = NULL;
 	rrr_length buf_size = rrr_type_value_get_export_length(node);
 
-	if ((buf_tmp = malloc(buf_size)) == NULL) {
+	if ((buf_tmp = rrr_allocate(buf_size)) == NULL) {
 		RRR_MSG_0("Error while allocating memory before exporting in rrr_type_value_allocate_and_export \n");
 		ret = 1;
 		goto out;
@@ -1727,7 +1728,7 @@ int rrr_type_value_raw_with_tmp_do (
 	char *tag_tmp = NULL;
 
 	if (tag_length > 0) {
-		if ((tag_tmp = malloc(tag_length + 1)) == NULL) {
+		if ((tag_tmp = rrr_allocate(tag_length + 1)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for temporary tag in rrr_type_value_raw_with_tmp_do\n");
 			ret = 1;
 			goto out;

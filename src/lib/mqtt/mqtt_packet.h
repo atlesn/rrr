@@ -137,7 +137,7 @@ struct rrr_mqtt_p_type_properties {
 	int (*assemble)(char **target, ssize_t *size, struct rrr_mqtt_p *packet);
 
 	// DO NOT use the free-functions directly, ALWAYS use the RRR_MQTT_P_DECREF-macro
-	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
+	void (*destroy)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
 };
 
 struct rrr_mqtt_p_reason {
@@ -231,7 +231,7 @@ struct rrr_mqtt_p {
 #define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->is_ack != 0)
 #define RRR_MQTT_P_IS_V5(p)					((p)->protocol_version->id == 5)
 
-#define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->free(p))
+#define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->destroy(p))
 
 #define RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER(p,id,release_func,arg1,arg2)		\
 	do {																		\
