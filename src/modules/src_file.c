@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
@@ -142,7 +143,7 @@ static void file_destroy(struct file *file) {
 
 	RRR_FREE_IF_NOT_NULL(file->orig_path);
 	RRR_FREE_IF_NOT_NULL(file->real_path);
-	free(file);
+	rrr_free(file);
 }
 
 static int file_collection_has (const struct file_collection *files, const char *orig_path) {
@@ -171,7 +172,7 @@ static int file_collection_push (
 
 	struct file *file = NULL;
 
-	if ((file = malloc(sizeof(*file))) == NULL) {
+	if ((file = rrr_allocate(sizeof(*file))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in file_collection_push\n");
 		ret = 1;
 		goto out;
@@ -179,13 +180,13 @@ static int file_collection_push (
 
 	memset(file, '\0', sizeof(*file));
 
-	if ((file->orig_path = strdup(orig_path)) == NULL) {
+	if ((file->orig_path = rrr_strdup(orig_path)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for path in file_collection_push");
 		ret = 1;
 		goto out;
 	}
 
-	if ((file->real_path = strdup(real_path)) == NULL) {
+	if ((file->real_path = rrr_strdup(real_path)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for path in file_collection_push");
 		ret = 1;
 		goto out;

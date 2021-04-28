@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "msg_addr.h"
 #include "msg.h"
 #include "../ip/ip_util.h"
@@ -53,7 +54,7 @@ void rrr_msg_addr_init (struct rrr_msg_addr *target) {
 int rrr_msg_addr_new (struct rrr_msg_addr **target) {
 	*target = NULL;
 
-	struct rrr_msg_addr *result = malloc(sizeof(*result));
+	struct rrr_msg_addr *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memorty in rrr_msg_addr_new");
 		return 1;

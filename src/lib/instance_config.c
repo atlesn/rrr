@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "array_tree.h"
 #include "parse.h"
+#include "allocator.h"
 #include "util/gnu.h"
 #include "util/linked_list.h"
 
@@ -51,8 +52,8 @@ void rrr_instance_config_destroy (
 		struct rrr_instance_config_data *config
 ) {
 	rrr_settings_destroy(config->settings);
-	free(config->name);
-	free(config);
+	rrr_free(config->name);
+	rrr_free(config);
 }
 
 struct rrr_instance_config_data *rrr_instance_config_new (
@@ -63,13 +64,13 @@ struct rrr_instance_config_data *rrr_instance_config_new (
 ) {
 	struct rrr_instance_config_data *ret = NULL;
 
-	char *name = malloc(name_length + 1);
+	char *name = rrr_allocate(name_length + 1);
 	if (name == NULL) {
 		RRR_MSG_0("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out;
 	}
 
-	ret = malloc(sizeof(*ret));
+	ret = rrr_allocate(sizeof(*ret));
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out_free_name;
@@ -89,11 +90,11 @@ struct rrr_instance_config_data *rrr_instance_config_new (
 	goto out;
 
 	out_free_config:
-	free(ret);
+	rrr_free(ret);
 	ret = NULL;
 
 	out_free_name:
-	free(name);
+	rrr_free(name);
 
 	out:
 	return ret;
@@ -318,7 +319,7 @@ int rrr_instance_config_parse_optional_utf8 (
 
 	if ((ret = rrr_settings_get_string_noconvert_silent(target, config->settings, string)) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
-			if (def != NULL && (*target = strdup(def)) == NULL) {
+			if (def != NULL && (*target = rrr_strdup(def)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
 					string, config->name);
 				ret = 1;

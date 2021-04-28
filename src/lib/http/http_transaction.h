@@ -101,10 +101,6 @@ int rrr_http_transaction_query_field_add (
 void rrr_http_transaction_query_fields_dump (
 		struct rrr_http_transaction *transaction
 );
-int rrr_http_transaction_keepalive_set (
-		struct rrr_http_transaction *transaction,
-		int set
-);
 void rrr_http_transaction_method_set (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_method method
@@ -142,17 +138,24 @@ int rrr_http_transaction_send_body_set_allocated (
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(int response_code, void *arg),
-		int (*final_callback)(struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
+		int (*response_code_callback)(int response_code, enum rrr_http_version protocol_version, void *arg),
+		int (*final_callback)(
+				struct rrr_http_part *request_part,
+				struct rrr_http_part *response_part,
+				const struct rrr_nullsafe_str *send_data,
+				void *arg
+		),
 		void *callback_arg
 );
 int rrr_http_transaction_request_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		const char *user_agent,
 		int (*preliminary_callback)(
 			enum rrr_http_method method,
 			enum rrr_http_upgrade_mode upgrade_mode,
+			enum rrr_http_version protocol_version,
 			struct rrr_http_part *request_part,
 			const struct rrr_nullsafe_str *request,
 			void *arg

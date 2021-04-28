@@ -1544,6 +1544,16 @@ If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
 
+.It http_version_10={yes|no}
+If set to yes, protocol version HTTP/1.0 is used when sending requests and upgrade to HTTP/2 will not be requested, also not using TLS ALPN.
+If set to no or left unspecified, HTTP/1.1 will be used and upgrade to HTTP/2 will be requested to the server with all queries.
+
+In case of an upgrade request, the server will either allow upgrade to HTTP/2 and continue using that or simply respond with HTTP/1.1 or HTTP/1.0.
+
+Some HTTP servers always respond with either version HTTP/1.1 or HTTP/1.0 regardless of which version the client used in the request.
+If the server responds with HTTP/1.0, the connection will be closed just after a response have been received.
+If the server responds with HTTP/1.1, the connection will be kept alive for a few seconds before being closed if no other requests are to be sent
+
 .It http_method={get|put|post|head|delete|options}
 Which method to use when sending data to the server. Defaults to
 .B get.
@@ -1745,6 +1755,9 @@ If the original message which caused the query had a topic set, this topic will 
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
+This parameter is ignored if
+.B http_version_10
+is set to yes.
 
 .It http_concurrent_connections=UNSIGNED INTEGER
 Maximum number of concurrent connections to open for each host/port combination. Defaults to 10, minimum value is 1 and maximum value is 65535.

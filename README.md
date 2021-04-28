@@ -167,6 +167,20 @@ on the Ubuntu branch (`git checkout ubuntu`).
 Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
 built from the `debian-testing` branch.
 
+#### Pre-compiled development packages for Debian Buster using APT
+
+	$ su -
+	# apt install curl gnupg
+	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
+	# curl -s https://apt.goliathdns.no/debian-dev/buster.list > /etc/apt/sources.list.d/goliathdns-dev.list
+	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# apt update
+	# apt install rrr
+
+The development version contains the latest functionallity. Packages are built when new functionallity is considered OK to use.
+
+Not all platforms are guaranteed to be built every time. The commands above will also add the default mirror which ensures updates when a new full release is made.
+
 ### COMPILE
 
 Compiling the source requires some basic knowledge on how to build a program using Autotools. Usually,

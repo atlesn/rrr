@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_transport.h"
 #include "mqtt_common.h"
@@ -55,7 +56,7 @@ void rrr_mqtt_transport_destroy (
 		rrr_net_transport_destroy(transport->transports[i]);
 	}
 
-	free(transport);
+	rrr_free(transport);
 }
 
 int rrr_mqtt_transport_new (
@@ -73,7 +74,7 @@ int rrr_mqtt_transport_new (
 
 	*result = NULL;
 
-	struct rrr_mqtt_transport *transport = malloc(sizeof(*transport));
+	struct rrr_mqtt_transport *transport = rrr_allocate(sizeof(*transport));
 
 	if (transport == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_transport_new\n");
@@ -141,9 +142,11 @@ int rrr_mqtt_transport_start (
 		}
 	}
 	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_PLAIN) {
+		struct rrr_net_transport_config net_transport_config_plain;
+		rrr_net_transport_config_copy_mask_tls(&net_transport_config_plain, net_transport_config);
 		if ((ret = rrr_net_transport_new (
 				&tmp,
-				net_transport_config,
+				&net_transport_config_plain,
 				0,
 				transport->queue,
 				NULL,

@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/msgdb/msgdb_server.h"
 #include "../lib/instance_config.h"

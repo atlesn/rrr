@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/condition.h"
 #include "../lib/array_tree.h"
 #include "../lib/parse.h"

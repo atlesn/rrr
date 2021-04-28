@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "msgdb_common.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../rrr_strerror.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
@@ -41,7 +42,7 @@ int rrr_msgdb_common_ctrl_msg_send (
 
 	RRR_DBG_3("msgdb fd %i send CTRL flags %i\n", fd, flags);
 
-	if ((msg_tmp = malloc(sizeof(*msg_tmp)))== NULL) {
+	if ((msg_tmp = rrr_allocate(sizeof(*msg_tmp)))== NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_ctrl_msg_send\n");
 		ret = 1;
 		goto out;
@@ -69,7 +70,7 @@ int rrr_msgdb_common_msg_send (
 
 	RRR_DBG_3("msgdb fd %i send MSG size %" PRIrrrl "\n", fd, MSG_TOTAL_SIZE(msg));
 
-	if ((msg_tmp = malloc(MSG_TOTAL_SIZE(msg))) == NULL) {
+	if ((msg_tmp = rrr_allocate(MSG_TOTAL_SIZE(msg))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_common_msg_send\n");
 		ret = 1;
 		goto out;

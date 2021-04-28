@@ -45,7 +45,7 @@ endif
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
-librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${AM_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
@@ -53,7 +53,7 @@ endif
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
-librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS}
+librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
@@ -116,7 +116,7 @@ librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
-                    read.c rrr_mmap.c mmap_channel.c \
+                    read.c mmap_channel.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
@@ -129,14 +129,18 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
+libadd_rrr_allocator = librrr_allocator.la
+librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
+librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
+
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
-librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${AM_CFLAGS}
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_gnu = librrr_gnu.la
 librrr_gnu_la_SOURCES = util/gnu.c
-librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${AM_CFLAGS}
 librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
@@ -185,7 +189,8 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}               \
+    ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads

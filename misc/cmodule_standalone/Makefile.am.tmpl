@@ -1,0 +1,6 @@
+ACLOCAL_AMFLAGS = -I m4
+AM_CFLAGS = @AM_CFLAGS@ -Wextra
+libdir=@CMODULE_DIR@
+cmodule_ldflags=-module -avoid-version -shared -lrrr
+cmodule_cflags=@AM_CFLAGS@ 
+
