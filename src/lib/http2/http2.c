@@ -332,6 +332,8 @@ static int __rrr_http2_on_frame_send_callback (
 ) {
 	struct rrr_http2_session *session = user_data;
 
+	(void)(session);
+
 	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
 
 	return 0;
@@ -499,7 +501,6 @@ static ssize_t __rrr_http2_data_source_read_callback (
 		*data_flags = NGHTTP2_DATA_FLAG_EOF;
 	}
 
-	out:
 	return bytes_written;
 }
 
@@ -633,8 +634,8 @@ int rrr_http2_session_new_or_reset (
 	*target = result;
 
 	goto out;
-	out_destroy_session:
-		nghttp2_session_del(result->session);
+//	out_destroy_session:
+//		nghttp2_session_del(result->session);
 	out_free:
 		free(result);
 	out:
@@ -937,7 +938,6 @@ int rrr_http2_data_submission_request_set (
 
 	stream->data_submission_requested = 1;
 
-	out:
 	return ret;
 }
 

@@ -902,6 +902,8 @@ int rrr_http_application_http2_response_to_upgrade_submit (
 ) {
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
+	(void)(http2);
+
 	int ret = 0;
 
 	if ((ret = rrr_http_application_http2_response_submit (
