@@ -17,6 +17,7 @@
 /src/test.sh.log
 /src/test-suite.log
 /src/make-paths.sh
+/src/paths.c
 /build_timestamp.h
 /build_directory.h
 input_data
@@ -70,6 +71,8 @@ src/vlogger
 *.lai
 .dirstamp
 variables.sh
+/src/lib/rrr-build-config.h
+/src/lib/rrr-build-config.h.in
 
 # code coverage
 *.gcov
@@ -107,25 +110,26 @@ src/lib/perl5_xsi.c
 
 # http://www.gnu.org/software/autoconf
 
-/autom4te.cache
-/autoscan.log
-/autoscan-*.log
-/aclocal.m4
-/compile
-/config.guess
-/config.h.in~
-/config.h.in
-/config.sub
-/configure
-/configure.scan
-/depcomp
-/install-sh
-/missing
-/stamp-h1
-/config.log
-/config.h
-/config.status
-/libtool
+autom4te.cache
+autoscan.log
+autoscan-*.log
+aclocal.m4
+compile
+config.guess
+config.h.in~
+config.h.in
+config.sub
+configure
+configure.scan
+depcomp
+install-sh
+missing
+config.log
+config.h
+config.status
+libtool
+stamp-h1
+stamp-h2
 
 # https://www.gnu.org/software/libtool/
 

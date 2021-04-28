@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "event.h"
 #include "event_struct.h"
 #include "event_collection.h"

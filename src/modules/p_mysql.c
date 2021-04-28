@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -105,12 +106,12 @@ static int allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t e
 
 	bind_cleanup(data);
 
-	if ((data->bind = malloc(sizeof(*(data->bind)) * elements)) == NULL) {
+	if ((data->bind = rrr_allocate(sizeof(*(data->bind)) * elements)) == NULL) {
 		RRR_MSG_0("Could not allocate mysql bind structure in bind_allocate_if_needed\n");
 		return 1;
 	}
 
-	if ((data->bind_string_lengths = malloc(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
+	if ((data->bind_string_lengths = rrr_allocate(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
 		RRR_MSG_0("Could not allocate mysql bind string lengths in bind_allocate_if_needed\n");
 		return 1;
 	}
@@ -538,7 +539,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 
 	int yesno = 0;
 
-	char *mysql_colplan = strdup("array");
+	char *mysql_colplan = rrr_strdup("array");
 
 	// BLOB WRITE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");

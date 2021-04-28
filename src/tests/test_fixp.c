@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "test.h"
 #include "test_fixp.h"

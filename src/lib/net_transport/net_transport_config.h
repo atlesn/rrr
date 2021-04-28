@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,7 +39,10 @@ struct rrr_net_transport_config {
 void rrr_net_transport_config_cleanup (
 		struct rrr_net_transport_config *data
 );
-
+void rrr_net_transport_config_copy_mask_tls (
+		struct rrr_net_transport_config *target,
+		const struct rrr_net_transport_config *source
+);
 int rrr_net_transport_config_parse (
 		struct rrr_net_transport_config *data,
 		struct rrr_instance_config_data *config,

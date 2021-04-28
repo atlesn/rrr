@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "websocket.h"
 #include "../net_transport/net_transport.h"
 #include "../util/rrr_endian.h"
@@ -41,7 +42,7 @@ static void __rrr_websocket_frame_destroy (
 		struct rrr_websocket_frame *frame
 ) {
 	RRR_FREE_IF_NOT_NULL(frame->payload);
-	free(frame);
+	rrr_free(frame);
 }
 
 void rrr_websocket_state_set_client_mode (
@@ -110,7 +111,7 @@ int rrr_websocket_frame_enqueue (
 
 	struct rrr_websocket_frame *frame;
 
-	if ((frame = malloc(sizeof(*frame))) == NULL) {
+	if ((frame = rrr_allocate(sizeof(*frame))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_websocket_frame_enqueue\n");
 		ret = 1;
 		goto out;

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "fixed_point.h"
 #include "rrr_types.h"
+#include "allocator.h"
 #include "util/rrr_endian.h"
 #include "util/gnu.h"
 

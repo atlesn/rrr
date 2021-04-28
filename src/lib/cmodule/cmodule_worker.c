@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
@@ -764,7 +765,7 @@ int rrr_cmodule_worker_init (
 		goto out_destroy_channel_to_fork;
 	}
 
-	if ((worker->name = strdup(name)) == NULL) {
+	if ((worker->name = rrr_strdup(name)) == NULL) {
 		RRR_MSG_0("Could not allocate name in __rrr_cmodule_worker_new\n");
 		ret = 1;
 		goto out_destroy_channel_to_parent;
@@ -808,13 +809,13 @@ int rrr_cmodule_worker_init (
 //	out_destroy_pid_lock:
 //		pthread_mutex_destroy(&worker->pid_lock);
 	out_free_name:
-		free(worker->name);
+		rrr_free(worker->name);
 	out_destroy_channel_to_parent:
 		rrr_mmap_channel_destroy(worker->channel_to_parent);
 	out_destroy_channel_to_fork:
 		rrr_mmap_channel_destroy(worker->channel_to_fork);
 	out_free:
-		free(worker);
+		rrr_free(worker);
 	out:
 		RRR_FREE_IF_NOT_NULL(to_fork_name);
 		RRR_FREE_IF_NOT_NULL(to_parent_name);

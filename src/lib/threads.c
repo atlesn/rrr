@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/macro_utils.h"
 #include "util/slow_noop.h"
 #include "util/gnu.h"
+#include "allocator.h"
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
 #include "rrr_strerror.h"
@@ -92,7 +93,7 @@ static int __rrr_thread_destroy (
 ) {
 	pthread_cond_destroy(&thread->signal_cond);
 	pthread_mutex_destroy(&thread->mutex);
-	free(thread);
+	rrr_free(thread);
 	return 0;
 }
 
@@ -113,7 +114,7 @@ static pthread_mutex_t postponed_cleanup_lock = PTHREAD_MUTEX_INITIALIZER;
 static void __rrr_thread_cleanup_postponed_push (
 		struct rrr_thread *thread
 ) {
-	struct rrr_thread_postponed_cleanup_node *node = malloc(sizeof(*node));
+	struct rrr_thread_postponed_cleanup_node *node = rrr_allocate(sizeof(*node));
 	memset(node, '\0', sizeof(*node));
 
 	node->thread = thread;
@@ -135,16 +136,8 @@ void rrr_thread_cleanup_postponed_run (
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
 		(*count)++;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&postponed_cleanup_collection, __rrr_thread_destroy(node->thread); free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&postponed_cleanup_collection, __rrr_thread_destroy(node->thread); rrr_free(node));
 	pthread_mutex_unlock(&postponed_cleanup_lock);
-}
-
-static void rrr_thread_unlock_if_locked (
-		struct rrr_thread *thread
-) {
-	if (pthread_mutex_trylock(&thread->mutex) != 0) {
-	}
-	pthread_mutex_unlock(&thread->mutex);
 }
 
 void rrr_thread_signal_set (
@@ -342,7 +335,7 @@ static int __rrr_thread_new (
 	goto out;
 #endif
 
-	struct rrr_thread *thread = malloc(sizeof(*thread));
+	struct rrr_thread *thread = rrr_allocate(sizeof(*thread));
 	if (thread == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_thread_allocate_thread\n");
 		ret = 1;
@@ -373,7 +366,7 @@ static int __rrr_thread_new (
 	out_destroy_mutex:
 		pthread_mutex_destroy(&thread->mutex);
 	out_free:
-		free(thread);
+		rrr_free(thread);
 	out:
 		return ret;
 }
@@ -397,7 +390,7 @@ int rrr_thread_collection_new (
 
 	*target = NULL;
 
-	struct rrr_thread_collection *collection = malloc(sizeof(*collection));
+	struct rrr_thread_collection *collection = rrr_allocate(sizeof(*collection));
 	if (collection == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_thread_new_collection\n");
 		ret = 1;
@@ -416,7 +409,7 @@ int rrr_thread_collection_new (
 
 	goto out;
 	out_free:
-		free(collection);
+		rrr_free(collection);
 	out:
 		return ret;
 }
@@ -507,7 +500,7 @@ void rrr_thread_collection_destroy (
 	pthread_mutex_unlock(&collection->threads_mutex);
 	pthread_mutex_destroy(&collection->threads_mutex);
 
-	free(collection);
+	rrr_free(collection);
 }
 
 static int __rrr_thread_wait_for_state_initialized (
@@ -821,7 +814,7 @@ static void *__rrr_thread_watchdog_entry (
 ) {
 	// Copy the data and free it immediately
 	struct watchdog_data data = *((struct watchdog_data *)arg);
-	free(arg);
+	rrr_free(arg);
 
 	uint64_t freeze_limit = 0;
 
@@ -1118,7 +1111,7 @@ int rrr_thread_with_lock_do (
 static int __rrr_thread_allocate_watchdog_data (
 		struct watchdog_data **result
 ) {
-	*result = malloc(sizeof(**result));
+	*result = rrr_allocate(sizeof(**result));
 	if (*result == NULL) {
 		RRR_MSG_0("Could not allocate memory for watchdog in __rrr_thread_start\n");
 		return 1;
@@ -1217,12 +1210,10 @@ static int __rrr_thread_allocate_and_start (
 
 	goto out;
 	out_destroy_watchdog:
-		rrr_thread_unlock_if_locked(thread->watchdog);
 		__rrr_thread_destroy(thread->watchdog);
 	out_destroy_watchdog_data:
 		RRR_FREE_IF_NOT_NULL(watchdog_data);
 	out_destroy_thread:
-		rrr_thread_unlock_if_locked(thread);
 		__rrr_thread_destroy(thread);
 		thread = NULL;
 	out:

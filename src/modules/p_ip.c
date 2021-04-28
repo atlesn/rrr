@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/settings.h"
 #include "../lib/array.h"
@@ -179,7 +180,7 @@ static int ip_private_data_new (void **result, int fd, void *arg) {
 
 	*result = NULL;
 
-	struct ip_private_data *private_data = malloc(sizeof(*private_data));
+	struct ip_private_data *private_data = rrr_allocate(sizeof(*private_data));
 	if (private_data == NULL) {
 		RRR_MSG_0("Failed to allocate memory in ip_private_data_new\n");
 		return 1;
@@ -195,7 +196,7 @@ static int ip_private_data_new (void **result, int fd, void *arg) {
 }
 
 static void ip_private_data_destroy (void *private_data) {
-	free(private_data);
+	rrr_free(private_data);
 }
 
 static int ip_config_parse_port (struct ip_data *data, struct rrr_instance_config_data *config) {
@@ -484,7 +485,7 @@ static int ip_read_receive_message (
 	out:
 	rrr_msg_holder_decref_while_locked_and_unlock(new_entry);
 	if (message != NULL) {
-		free(message);
+		rrr_free(message);
 	}
 	return ret;
 }
@@ -721,7 +722,7 @@ static int ip_resolve_suggestion_callback (
 	}
 
 	{
-		struct sockaddr **addresses_new = realloc(callback_data->addresses, sizeof(void *) * (callback_data->address_count + 1));
+		struct sockaddr **addresses_new = rrr_reallocate(callback_data->addresses, sizeof(void *) * callback_data->address_count, sizeof(void *) * (callback_data->address_count + 1));
 		if (addresses_new == NULL) {
 			RRR_MSG_0("Failed to allocate memory in ip_resolve_suggestion_callback A\n");
 			ret = 1;
@@ -731,7 +732,7 @@ static int ip_resolve_suggestion_callback (
 	}
 
 	{
-		socklen_t *address_lengths_new = realloc(callback_data->address_lengths, sizeof(socklen_t) * (callback_data->address_count + 1));
+		socklen_t *address_lengths_new = rrr_reallocate(callback_data->address_lengths, sizeof(socklen_t) * callback_data->address_count, sizeof(socklen_t) * (callback_data->address_count + 1));
 		if (address_lengths_new == NULL) {
 			RRR_MSG_0("Failed to allocate memory in ip_resolve_suggestion_callback B\n");
 			ret = 1;
@@ -741,7 +742,7 @@ static int ip_resolve_suggestion_callback (
 		callback_data->address_lengths = address_lengths_new;
 	}
 
-	if ((callback_data->addresses[callback_data->address_count] = (void *) malloc(sizeof(struct sockaddr_storage))) == NULL) {
+	if ((callback_data->addresses[callback_data->address_count] = (void *) rrr_allocate(sizeof(struct sockaddr_storage))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in ip_resolve_suggestion_callback C\n");
 		ret = 1;
 		goto out;
@@ -798,7 +799,7 @@ static int ip_resolve_callback (
 
 	out:
 	for (size_t i = 0; i < suggestion_callback_data.address_count; i++) {
-		free(suggestion_callback_data.addresses[i]);
+		rrr_free(suggestion_callback_data.addresses[i]);
 	}
 	RRR_FREE_IF_NOT_NULL(suggestion_callback_data.addresses);
 	RRR_FREE_IF_NOT_NULL(suggestion_callback_data.address_lengths);

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
+#include "allocator.h"
 #include "rrr_strerror.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
@@ -49,7 +50,7 @@ static int __rrr_strerror_node_destroy (
 		struct rrr_strerror_node *node
 ) {
 	RRR_FREE_IF_NOT_NULL(node->str);
-	free(node);
+	rrr_free(node);
 	return 0;
 }
 
@@ -91,14 +92,14 @@ static const char *__rrr_strerror_find_error_or_register (int find_num) {
 	}
 
 	const char *tmp = strerror(find_num);
-	new_node = malloc(sizeof(*new_node));
+	new_node = rrr_allocate(sizeof(*new_node));
 	if (new_node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_strerror_find_error_or_register\n");
 		return NULL;
 	}
 
 	new_node->num = find_num;
-	new_node->str = strdup(tmp);
+	new_node->str = rrr_strdup(tmp);
 
 	if (new_node->str == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_strerror_find_error_or_register\n");

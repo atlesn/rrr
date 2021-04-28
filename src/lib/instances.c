@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "allocator.h"
 #include "event/event_functions.h"
 #include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
@@ -108,8 +109,8 @@ static void __rrr_instance_destroy (
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 	rrr_mqtt_topic_token_destroy(target->topic_first_token);
 
-	free(target->module_data);
-	free(target);
+	rrr_free(target->module_data);
+	rrr_free(target);
 }
 
 static int __rrr_instance_new (
@@ -117,7 +118,7 @@ static int __rrr_instance_new (
 ) {
 	int ret = 0;
 
-	struct rrr_instance *instance = malloc(sizeof(*instance));
+	struct rrr_instance *instance = rrr_allocate(sizeof(*instance));
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not allocate memory for instance_metadata\n");
@@ -187,7 +188,7 @@ static struct rrr_instance *__rrr_instance_load_module_new_and_save (
 		goto out;
 	}
 
-	struct rrr_instance_module_data *module_data = malloc(sizeof(*module_data));
+	struct rrr_instance_module_data *module_data = rrr_allocate(sizeof(*module_data));
 	memset(module_data, '\0', sizeof(*module_data));
 
 	module_init_data.init(module_data);
@@ -468,7 +469,7 @@ void rrr_instance_runtime_data_destroy_hard (
 		struct rrr_instance_runtime_data *data
 ) {
 	rrr_message_broker_costumer_unregister(INSTANCE_D_BROKER(data), INSTANCE_D_HANDLE(data));
-	free(data);
+	rrr_free(data);
 }
 
 static int __rrr_instace_runtime_data_destroy_callback (
@@ -496,7 +497,7 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 ) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
-	struct rrr_instance_runtime_data *data = malloc(sizeof(*data));
+	struct rrr_instance_runtime_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_init_thread\n");
 		return NULL;
@@ -522,7 +523,7 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 
 	goto out;
 	out_free:
-		free(data);
+		rrr_free(data);
 		data = NULL;
 	out:
 		return data;

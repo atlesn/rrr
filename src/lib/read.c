@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
+#include "allocator.h"
 #include "messages/msg_msg.h"
 #include "messages/msg_addr.h"
 #include "messages/msg_log.h"
@@ -41,7 +42,7 @@ struct rrr_read_session *rrr_read_session_new (
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
-	struct rrr_read_session *read_session = malloc(sizeof(*read_session));
+	struct rrr_read_session *read_session = rrr_allocate(sizeof(*read_session));
 	if (read_session == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
@@ -62,8 +63,8 @@ struct rrr_read_session *rrr_read_session_new (
 int rrr_read_session_cleanup (
 		struct rrr_read_session *read_session
 ) {
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
-	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
 	return 0;
 }
 
@@ -71,7 +72,7 @@ int rrr_read_session_destroy (
 		struct rrr_read_session *read_session
 ) {
 	rrr_read_session_cleanup(read_session);
-	free(read_session);
+	rrr_free(read_session);
 	return 0;
 }
 
@@ -319,7 +320,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
+			read_session->rx_buf_ptr = rrr_allocate_group(bytes > read_step_max_size ? bytes : read_step_max_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
 				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -341,7 +342,7 @@ int rrr_read_message_using_callbacks (
 		*bytes_read = bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -391,7 +392,7 @@ int rrr_read_message_using_callbacks (
 
 			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
-			char *new_buf = malloc(read_session->rx_buf_size);
+			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -404,7 +405,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot = new_buf;
 			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
-			free(read_session->rx_buf_ptr);
+			rrr_free(read_session->rx_buf_ptr);
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
@@ -432,7 +433,7 @@ int rrr_read_message_using_callbacks (
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
 		read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
+		read_session->rx_overshoot = rrr_allocate_group(read_session->rx_overshoot_size, RRR_ALLOCATOR_GROUP_MSG);
 		if (read_session->rx_overshoot == NULL) {
 			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;
@@ -451,7 +452,7 @@ int rrr_read_message_using_callbacks (
 				goto out;
 			}
 
-			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+			RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 			read_session->target_size = 0;
 			read_session->read_complete_method = 0;

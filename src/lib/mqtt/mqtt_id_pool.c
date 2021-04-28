@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 
+#include "../allocator.h"
 #include "../log.h"
 
 #include "mqtt_id_pool.h"
@@ -38,7 +39,7 @@ int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 }
 
 void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool) {
-	free(pool->pool);
+	rrr_free(pool->pool);
 	pool->pool = NULL;
 	pool->allocated_majors = 0;
 	pool->last_allocated_id = 0;
@@ -57,7 +58,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssiz
 //	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
 	ssize_t new_size = new_majors * sizeof(*(pool->pool));
 
-	uint32_t *new_pool = realloc(pool->pool, new_size);
+	uint32_t *new_pool = rrr_reallocate(pool->pool, pool->allocated_majors * sizeof(*(pool->pool)), new_size);
 	if (new_pool == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
 		return 1;

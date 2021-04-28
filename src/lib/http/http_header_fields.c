@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_header_fields.h"
 #include "http_common.h"
 #include "http_util.h"
@@ -361,7 +362,7 @@ void rrr_http_header_field_destroy (
 	rrr_nullsafe_str_destroy_if_not_null(&field->name);
 	rrr_nullsafe_str_destroy_if_not_null(&field->binary_value_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&field->value);
-	free (field);
+	rrr_free (field);
 }
 
 void rrr_http_header_field_collection_clear (
@@ -379,7 +380,7 @@ int rrr_http_header_field_new_raw (
 
 	*result = NULL;
 
-	struct rrr_http_header_field *field = malloc(sizeof(*field));
+	struct rrr_http_header_field *field = rrr_allocate(sizeof(*field));
 	if (field == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_header_field_new\n");
 		ret = 1;

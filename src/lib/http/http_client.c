@@ -23,8 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
-#include "../../../config.h"
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_client.h"
 #include "http_common.h"
@@ -71,7 +71,7 @@ int rrr_http_client_new (
 ) {
 	int ret = 0;
 
-	struct rrr_http_client *client = malloc(sizeof(*client));
+	struct rrr_http_client *client = rrr_allocate(sizeof(*client));
 
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_client_new\n");
@@ -105,7 +105,7 @@ void rrr_http_client_destroy (
 		rrr_net_transport_destroy(client->transport_keepalive_tls);
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
-	free(client);
+	rrr_free(client);
 }
 
 static int __rrr_http_client_active_transaction_count_get_callback (
@@ -115,7 +115,7 @@ static int __rrr_http_client_active_transaction_count_get_callback (
 	uint64_t *result_accumulator = arg;
 
 	if (RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) != NULL) {
-		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
 	}
 
 	return 0;
@@ -200,7 +200,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (server != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->server);
-		if ((data->server = strdup(server)) == NULL) {
+		if ((data->server = rrr_strdup(server)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for server in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -209,7 +209,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (endpoint != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
-		if ((data->endpoint = strdup(endpoint)) == NULL) {
+		if ((data->endpoint = rrr_strdup(endpoint)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -218,7 +218,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (user_agent != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->user_agent);
-		if ((data->user_agent = strdup(user_agent)) == NULL) {
+		if ((data->user_agent = rrr_strdup(user_agent)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for user_agent in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -256,6 +256,7 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_method method,
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		int do_plain_http2,
 		const char *user_agent
 ) {
@@ -268,6 +269,7 @@ int rrr_http_client_request_data_reset (
 	data->method = method;
 	data->body_format = body_format;
 	data->upgrade_mode = upgrade_mode;
+	data->protocol_version = protocol_version;
 	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
 
@@ -382,7 +384,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = RRR_HTTP_OK;
 
@@ -452,7 +454,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(transaction);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 	(void)(application_topic);
 
 	int ret = 0;
@@ -530,8 +532,11 @@ static int __rrr_http_client_read_callback (
 	struct rrr_http_client *http_client = arg;
 
 	int ret = 0;
+	int ret_done = 0;
 
 	ssize_t received_bytes_dummy = 0;
+
+	again:
 
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
@@ -546,7 +551,12 @@ static int __rrr_http_client_read_callback (
 			http_client->callbacks.frame_callback,
 			http_client->callbacks.frame_callback_arg
 	)) != 0) {
-		goto out;
+		if (ret == RRR_HTTP_DONE) {
+			ret_done = RRR_HTTP_DONE;
+		}
+		else {
+			goto out;
+		}
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
@@ -563,11 +573,12 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
-		rrr_net_transport_ctx_notify_read(handle);
+		// This usually only happens at most one time
+		goto again;
 	}
 
 	out:
-	return ret;
+	return ret != 0 ? ret : ret_done;
 }
 
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
@@ -584,11 +595,18 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 
 	struct rrr_http_application *upgraded_app = NULL;
 
+	enum rrr_http_version protocol_version = callback_data->data->protocol_version;
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+	}
+
+	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
+	// protocol version is ignored when HTTP/2 is used.
+	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE && protocol_version == RRR_HTTP_VERSION_10) {
+		protocol_version = RRR_HTTP_VERSION_11;
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
@@ -644,7 +662,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 		else {
 			RRR_FREE_IF_NOT_NULL(endpoint_to_free);
-			if ((endpoint_to_free = strdup("/")) == NULL) {
+			if ((endpoint_to_free = rrr_strdup("/")) == NULL) {
 				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_send_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
@@ -670,7 +688,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 	}
 	else {
-		if ((endpoint_and_query_to_free = strdup(endpoint_to_use)) == NULL) {
+		if ((endpoint_and_query_to_free = rrr_strdup(endpoint_to_use)) == NULL) {
 			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_request_send_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
@@ -692,7 +710,8 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			handle,
 			callback_data->request_header_host,
 			callback_data->transaction,
-			upgrade_mode
+			upgrade_mode,
+			protocol_version
 	)) != 0) {
 		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
 		goto out;
@@ -1041,6 +1060,11 @@ int rrr_http_client_request_send (
 	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
 		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+
+	// Must try HTTP2 first because ALPN upgrade is always sent, downgrade to HTTP/1.1 will occur if negotiation fails
+	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+	}
 #endif /* RRR_WITH_NGHTTP2 */
 
 	if (method_prepare_callback != NULL) {
@@ -1055,13 +1079,14 @@ int rrr_http_client_request_send (
 		}
 	}
 
-	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' upgrade mode '%s'\n",
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' version '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(transaction->method),
 			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
 			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
+			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 

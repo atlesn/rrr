@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 
-#include "log.h"
+#include "../log.h"
 #include "../rrr_strerror.h"
 #include "posix.h"
 
@@ -52,12 +52,12 @@ int rrr_posix_usleep(int useconds) {
 	return nanosleep(&req, &rem);
 }
 
-void *rrr_posix_mmap (size_t size) {
-    return mmap (
-    		NULL,
+void *rrr_posix_mmap (size_t size, int is_shared) {
+	return mmap (
+			NULL,
 			size,
 			PROT_READ | PROT_WRITE,
-			MAP_SHARED | MAP_ANONYMOUS,
+			(is_shared ? MAP_SHARED : MAP_PRIVATE) | MAP_ANONYMOUS,
 			-1,
 			0
 	);

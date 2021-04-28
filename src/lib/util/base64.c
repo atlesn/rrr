@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "base64.h"
+#include "../allocator.h"
 
 static const unsigned char base64_table[65] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -46,7 +47,7 @@ unsigned char * rrr_base64_encode(const unsigned char *src, size_t len,
 	olen++; /* nul termination */
 	if (olen < len)
 		return NULL; /* integer overflow */
-	out = malloc(olen);
+	out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -123,7 +124,7 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 		return NULL;
 
 	olen = count / 4 * 3;
-	pos = out = malloc(olen);
+	pos = out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -149,7 +150,7 @@ unsigned char * rrr_base64_decode(const unsigned char *src, size_t len,
 					pos -= 2;
 				else {
 					/* Invalid padding */
-					free(out);
+					rrr_free(out);
 					return NULL;
 				}
 				break;
@@ -179,7 +180,7 @@ unsigned char *rrr_base64url_encode(const unsigned char *src, size_t len,
 	olen++; /* nul termination */
 	if (olen < len)
 		return NULL; /* integer overflow */
-	out = malloc(olen);
+	out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 
@@ -231,7 +232,7 @@ unsigned char *rrr_base64url_decode(const unsigned char *src, size_t len,
 		return NULL;
 
 	olen = count / 4 * 3;
-	pos = out = malloc(olen);
+	pos = out = rrr_allocate(olen);
 	if (out == NULL)
 		return NULL;
 

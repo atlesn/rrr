@@ -196,6 +196,12 @@ int rrr_net_transport_ctx_send_waiting_chunk_count (
 double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 );
+void rrr_net_transport_ctx_close_when_send_complete_set (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_close_when_send_complete_get (
+		struct rrr_net_transport_handle *handle
+);
 int rrr_net_transport_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
