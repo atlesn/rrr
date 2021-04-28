@@ -5,7 +5,6 @@ Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>=11~),
                dh-autoreconf,
                dh-python,
-               dh-systemd (>= 1.5),
                libmysqlclient-dev,
                libperl-dev (>= 5.26),
                libssl-dev,
