@@ -110,9 +110,10 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host,
 		struct rrr_http_transaction *transaction,
-		enum rrr_http_upgrade_mode upgrade_mode
+		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version
 );
-uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
+uint64_t rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain (
 		struct rrr_net_transport_handle *handle
 );
 void rrr_http_session_transport_ctx_websocket_response_available_notify (

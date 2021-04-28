@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport.h"
 #include "net_transport_struct.h"
@@ -91,7 +92,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	struct rrr_net_transport_handle *new_handle = NULL;
 
-	if ((new_handle = malloc(sizeof(*new_handle))) == NULL) {
+	if ((new_handle = rrr_allocate(sizeof(*new_handle))) == NULL) {
 		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
 		ret = 1;
 		goto out;
@@ -119,7 +120,7 @@ static int __rrr_net_transport_handle_create_and_push (
 
 	goto out;
 	out_free:
-		free(new_handle);
+		rrr_free(new_handle);
 	out:
 		return ret;
 }
@@ -213,7 +214,7 @@ static int __rrr_net_transport_handle_destroy (
 
 	rrr_socket_send_chunk_collection_clear(&handle->send_chunks);
 
-	free(handle);
+	rrr_free(handle);
 	// Always return success because we always free() regardless of callback result
 	return RRR_LL_DID_DESTROY;
 }
@@ -400,6 +401,14 @@ void __rrr_net_transport_handle_touch (
 	}
 }
 
+static void __rrr_net_transport_handle_event_read_add_if_needed (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!EVENT_PENDING(handle->event_read)) {
+		EVENT_ADD(handle->event_read);
+	}
+}
+
 #define CHECK_READ_WRITE_RETURN()                                                                              \
     do {if ((ret_tmp & ~(RRR_READ_INCOMPLETE)) != 0) {                                                         \
         rrr_net_transport_handle_close(handle->transport, handle->handle);                                     \
@@ -458,7 +467,6 @@ static void __rrr_net_transport_event_handshake (
 
 	if ((ret_tmp = handle->transport->methods->handshake(handle)) != 0) {
 		if (ret_tmp == RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			EVENT_ACTIVATE(handle->event_handshake);
 			return;
 		}
 
@@ -477,7 +485,9 @@ static void __rrr_net_transport_event_handshake (
 	}
 
 	handle->handshake_complete = 1;
+
 	EVENT_REMOVE(handle->event_handshake);
+	EVENT_ADD(handle->event_read);
 
 	check_return:
 	CHECK_READ_WRITE_RETURN();
@@ -495,6 +505,7 @@ static void __rrr_net_transport_event_read (
 	int ret_tmp = 0;
 
 	if (!handle->handshake_complete) {
+		EVENT_REMOVE(handle->event_read);
 		return;
 	}
 
@@ -555,7 +566,7 @@ static void __rrr_net_transport_event_write (
 
 	int ret_tmp = 0;
 
-	if (RRR_LL_COUNT(&handle->send_chunks) > 0) {
+	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) > 0) {
 		ret_tmp = rrr_socket_send_chunk_collection_send_with_callback (
 				&handle->send_chunks,
 				__rrr_net_transport_event_write_send_chunk_callback,
@@ -563,25 +574,36 @@ static void __rrr_net_transport_event_write (
 		);
 	}
 
-	if (RRR_LL_COUNT(&handle->send_chunks) == 0) {
+	if (rrr_socket_send_chunk_collection_count(&handle->send_chunks) == 0) {
+		if (ret_tmp == 0 && handle->close_when_send_complete) {
+			ret_tmp = RRR_SOCKET_READ_EOF;
+		}
 		EVENT_REMOVE(handle->event_write);
 	}
 
 	CHECK_READ_WRITE_RETURN();
 }
 
-static void __rrr_net_transport_handle_event_read_add_if_needed (
-		struct rrr_net_transport_handle *handle
-) {
-	if (!EVENT_PENDING(handle->event_read)) {
-		EVENT_ADD(handle->event_read);
-	}
-}
-
 static int __rrr_net_transport_handle_events_setup_connected (
 	struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
+
+	// HANDSHAKE
+
+	if ((ret = rrr_event_collection_push_read (
+			&handle->event_handshake,
+			&handle->events,
+			handle->submodule_fd,
+			__rrr_net_transport_event_handshake,
+			handle,
+			1000 // 1 ms
+	)) != 0) {
+		goto out;
+	}
+
+	EVENT_ADD(handle->event_handshake);
+	EVENT_ACTIVATE(handle->event_handshake);
 
 	// READ
 
@@ -596,21 +618,7 @@ static int __rrr_net_transport_handle_events_setup_connected (
 		goto out;
 	}
 
-	__rrr_net_transport_handle_event_read_add_if_needed (handle);
-
-	// HANDSHAKE
-
-	if ((ret = rrr_event_collection_push_periodic (
-			&handle->event_handshake,
-			&handle->events,
-			__rrr_net_transport_event_handshake,
-			handle,
-			1000 // 1 ms
-	)) != 0) {
-		goto out;
-	}
-
-	EVENT_ACTIVATE(handle->event_handshake);
+	// Don't add read events, it is done after handshake is complete
 
 	// WRITE
 
@@ -827,7 +835,7 @@ int rrr_net_transport_ctx_handle_match_data_set (
 		uint64_t number
 ) {
 	RRR_FREE_IF_NOT_NULL(handle->match_string);
-	if ((handle->match_string = strdup(string)) == NULL) {
+	if ((handle->match_string = rrr_strdup(string)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
 		return 1;
 	}
@@ -887,13 +895,13 @@ int rrr_net_transport_ctx_read_message (
 int rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 ) {
-	return RRR_LL_COUNT(&handle->send_chunks);
+	return rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 }
 
 double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 ) {
-	double count = RRR_LL_COUNT(&handle->send_chunks);
+	double count = rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 	double limit = handle->transport->send_chunk_count_limit;
 
 	if (limit <= 0) {
@@ -930,22 +938,14 @@ static int __rrr_net_transport_ctx_send_push (
 
 	EVENT_ADD(handle->event_write);
 
-	int (*method)(
-			int *send_chunk_count,
-			struct rrr_socket_send_chunk_collection *target,
-			void **data,
-			ssize_t data_size
-	) = ( is_urgent
-		? rrr_socket_send_chunk_collection_push_urgent
-		: rrr_socket_send_chunk_collection_push
-	);
-
 	int send_chunk_count = 0;
-	if ((ret = method (
+	if ((ret = rrr_socket_send_chunk_collection_push (
 			&send_chunk_count,
 			&handle->send_chunks,
 			data,
-			size
+			size,
+			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
+			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -954,6 +954,24 @@ static int __rrr_net_transport_ctx_send_push (
 
 	out:
 	return ret;
+}
+
+void rrr_net_transport_ctx_close_when_send_complete_set (
+		struct rrr_net_transport_handle *handle
+) {
+	if (!handle->close_when_send_complete) {
+		handle->close_when_send_complete = 1;
+		RRR_DBG_7("net transport fd %i close when send complete activated\n",
+				handle->submodule_fd);
+
+		EVENT_ADD(handle->event_write);
+	}
+}
+
+int rrr_net_transport_ctx_close_when_send_complete_get (
+		struct rrr_net_transport_handle *handle
+) {
+	return handle->close_when_send_complete;
 }
 
 int rrr_net_transport_ctx_send_push (
@@ -982,22 +1000,14 @@ static int __rrr_net_transport_ctx_send_push_const (
 
 	EVENT_ADD(handle->event_write);
 
-	int (*method)(
-			int *send_chunk_count,
-			struct rrr_socket_send_chunk_collection *target,
-			const void *data,
-			ssize_t data_size
-	) = ( is_urgent
-		? rrr_socket_send_chunk_collection_push_const_urgent
-		: rrr_socket_send_chunk_collection_push_const
-	);
-
 	int send_chunk_count = 0;
-	if ((ret = method (
+	if ((ret = rrr_socket_send_chunk_collection_push_const (
 			&send_chunk_count,
 			&handle->send_chunks,
 			data,
-			size
+			size,
+			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
+			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
 	)) != 0) {
 		goto out;
 	}
@@ -1236,7 +1246,7 @@ static void __rrr_net_transport_event_read_add (
 	(void)(fd);
 	(void)(flags);
 
-	// Re-add read-events (if they where deleted due to ratelimiting)
+	// Re-add read-events (if they where deleted due to ratelimiting or not yet added)
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		__rrr_net_transport_handle_event_read_add_if_needed(node);
@@ -1262,9 +1272,6 @@ static int __rrr_net_transport_accept_callback_intermediate (
 	handle->connected_addr_len = socklen;
 
 	final_callback(handle, sockaddr, socklen, final_callback_arg);
-
-	// For handshake purposes
-	EVENT_ACTIVATE(handle->event_read);
 
 	out:
 	return ret;

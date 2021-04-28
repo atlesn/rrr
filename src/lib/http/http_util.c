@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdarg.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_util.h"
 #include "http_common.h"
@@ -309,7 +310,7 @@ int rrr_http_util_uri_encode (
 
 	int ret = 0;
 
-	char *result = malloc(result_max_length + 1); // Allocate extra byte for 0 from sprintf
+	char *result = rrr_allocate(result_max_length + 1); // Allocate extra byte for 0 from sprintf
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_encode_uri\n");
 		ret = 1;
@@ -426,7 +427,7 @@ char *rrr_http_util_header_value_quote (
 	rrr_biglength result_size = length * 2 + 2 + 1;
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(length, "rrr_http_util_quote_header_value B");
 
-	char *result = malloc(result_size);
+	char *result = rrr_allocate(result_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_quote_header_value\n");
 		err = 1;
@@ -751,7 +752,7 @@ void rrr_http_util_uri_destroy (
 	RRR_FREE_IF_NOT_NULL(uri->endpoint);
 	RRR_FREE_IF_NOT_NULL(uri->host);
 	RRR_FREE_IF_NOT_NULL(uri->protocol);
-	free(uri);
+	rrr_free(uri);
 }
 
 static int __rrr_http_util_uri_validate_characters_foreach_byte_callback (
@@ -821,7 +822,7 @@ int rrr_http_util_uri_endpoint_prepend (
 	char *endpoint_new = NULL;
 
 	if (uri->endpoint == NULL) {
-		if ((endpoint_new = strdup(prefix)) == NULL) {
+		if ((endpoint_new = rrr_strdup(prefix)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend A\n");
 			ret = 1;
 			goto out;
@@ -829,7 +830,7 @@ int rrr_http_util_uri_endpoint_prepend (
 	}
 	else {
 		// Allocate for extra / and the usual \0
-		if ((endpoint_new = malloc(strlen(prefix) + strlen(uri->endpoint) + 1 + 1)) == NULL) {
+		if ((endpoint_new = rrr_allocate(strlen(prefix) + strlen(uri->endpoint) + 1 + 1)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_http_util_uri_endpoint_prepend B\n");
 			ret = 1;
 			goto out;
@@ -884,16 +885,16 @@ static int __rrr_http_util_uri_parse_callback (
 		else if (rrr_http_util_strcasestr(&new_pos, &result_len_tmp, pos, end, "://") == 0) {
 			ssize_t protocol_name_length = new_pos - pos;
 			if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "https", 5) == 0) {
-				uri_new->protocol = strdup("https");
+				uri_new->protocol = rrr_strdup("https");
 			}
 			else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "http", 4) == 0) {
-				uri_new->protocol = strdup("http");
+				uri_new->protocol = rrr_strdup("http");
 			}
 			else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "ws", 4) == 0) {
-				uri_new->protocol = strdup("ws");
+				uri_new->protocol = rrr_strdup("ws");
 			}
 			else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "wss", 4) == 0) {
-				uri_new->protocol = strdup("wss");
+				uri_new->protocol = rrr_strdup("wss");
 			}
 			else {
 				RRR_HTTP_UTIL_SET_TMP_NAME_FROM_STR_AND_LENGTH(name,str,len);
@@ -949,7 +950,7 @@ static int __rrr_http_util_uri_parse_callback (
 		}
 
 		if (result_len_tmp > 0) {
-			if ((uri_new->host = malloc(result_len_tmp + 1)) == NULL) {
+			if ((uri_new->host = rrr_allocate(result_len_tmp + 1)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_util_uri_parse_callback\n");
 				ret = 1;
 				goto out;
@@ -1002,14 +1003,14 @@ static int __rrr_http_util_uri_parse_callback (
 		}
 
 		if (result_len_tmp == 0) {
-			if ((uri_new->endpoint = strdup("")) == 0) {
+			if ((uri_new->endpoint = rrr_strdup("")) == 0) {
 				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
-			if ((uri_new->endpoint = malloc(result_len_tmp + 1)) == 0) {
+			if ((uri_new->endpoint = rrr_allocate(result_len_tmp + 1)) == 0) {
 				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_util_uri_parse_callback\n");
 				ret = 1;
 				goto out;
@@ -1045,7 +1046,7 @@ int rrr_http_util_uri_parse (
 		goto out;
 	}
 
-	if ((uri_new = malloc(sizeof(*uri_new))) == NULL) {
+	if ((uri_new = rrr_allocate(sizeof(*uri_new))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_uri_parse\n");
 		ret = 1;
 		goto out;
@@ -1058,10 +1059,10 @@ int rrr_http_util_uri_parse (
 	}
 
 	if (uri_new->port == 0 && uri_new->protocol != NULL) {
-		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "wss")) {
+		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "wss") == 0) {
 			uri_new->port = 443;
 		}
-		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "ws")) {
+		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0 || rrr_posix_strcasecmp(uri_new->protocol, "ws") == 0) {
 			uri_new->port = 80;
 		}
 	}
@@ -1160,7 +1161,11 @@ enum rrr_http_body_format rrr_http_util_format_str_to_enum (
 		format = RRR_HTTP_BODY_FORMAT_MULTIPART_FORM_DATA;
 	}
 	else if (strcasecmp(format_str, "json") == 0) {
+#ifdef RRR_WITH_JSONC
 		format = RRR_HTTP_BODY_FORMAT_JSON;
+#else
+		RRR_MSG_0("Warning: Value 'json' set for HTTP format in rrr_http_util_format_str_to_enum, but RRR is not compiled with JSON support. Defaulting to URLENCODED\n", format_str);
+#endif
 	}
 	else if (strcasecmp(format_str, "raw") == 0) {
 		format = RRR_HTTP_BODY_FORMAT_RAW;

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <termios.h>
 
 #include "lib/log.h"
+#include "lib/allocator.h"
 
 #include "main.h"
 #include "../build_timestamp.h"
@@ -78,7 +79,7 @@ static int __rrr_auth_parse_config (struct rrr_auth_data *data, struct cmd_data 
 
 	const char *file = cmd_get_value(cmd, "file", 0);
 	if (file != NULL && *file != '\0') {
-		data->filename = strdup(file);
+		data->filename = rrr_strdup(file);
 		if (data->filename == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_auth_parse_config\n");
 			ret = 1;
@@ -88,7 +89,7 @@ static int __rrr_auth_parse_config (struct rrr_auth_data *data, struct cmd_data 
 
 	const char *username = cmd_get_value(cmd, "username", 0);
 	if (username != NULL && *username != '\0') {
-		data->username = strdup(username);
+		data->username = rrr_strdup(username);
 		if (data->username == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_auth_parse_config\n");
 			ret = 1;
@@ -104,7 +105,7 @@ static int __rrr_auth_parse_config (struct rrr_auth_data *data, struct cmd_data 
 
 	const char *permission = cmd_get_value(cmd, "permission", 0);
 	if (permission != NULL && *permission != '\0') {
-		data->permission = strdup(permission);
+		data->permission = rrr_strdup(permission);
 		if (data->permission == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_auth_parse_config\n");
 			ret = 1;
@@ -201,5 +202,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }

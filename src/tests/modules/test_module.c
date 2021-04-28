@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../../lib/log.h"
+#include "../../lib/allocator.h"
 
 #include "type_array.h"
 #include "../test.h"

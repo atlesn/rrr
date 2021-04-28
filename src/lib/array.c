@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "array.h"
+#include "allocator.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
@@ -751,7 +752,7 @@ int rrr_array_selected_tags_export (
 	*target = NULL;
 	*target_size = 0;
 
-	char *result = malloc(total_data_length);
+	char *result = rrr_allocate(total_data_length);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
 		ret = 1;
@@ -831,7 +832,7 @@ int rrr_array_new_message_from_collection (
 	message = NULL;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 

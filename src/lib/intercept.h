@@ -67,5 +67,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INTERCEPT_ALLOW_GETTID
 #	define gettid(void)		RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_GETTID
 #endif
+/*
+#define malloc(a)      RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_MALLOC
+#define strdup(a)      RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_STRDUP
+#define calloc(a,b)    RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_CALLOC
+#define realloc(a,b)   RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_REALLOC
+#define free(a)        RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_FREE
+*/
+#define asprintf(...)  rrr_asprintf(__VA_ARGS__)
 
 #endif /* RRR_INTERCEPT_H */

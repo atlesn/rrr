@@ -24,8 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#include "../../../config.h"
-
 struct rrr_socket_eventfd {
 #ifdef RRR_HAVE_EVENTFD
 	int fd;

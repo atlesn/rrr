@@ -17,15 +17,18 @@ A C-module script or program basically has three functions defined, `config`, `s
 * `source` is called repeatedly to spawn new messages
 * `process` is called every time a message comes in from another module
 
-If you wish to write a simple `C-module`, please check out the man page for `rrr.conf` which describes this in more detail. It's
-basically so simple that it's no point coverering any technical details here.
+If you wish to write a simple `C-module`, please check out the man page for `rrr.conf` which describes this in more detail.
+It is easy to create custom Perl or Python scripts.
+
+Custom C-modules written in C are built after RRR is installed using the build system in `misc/cmodule_standalone`. Readme
+for this is found in `README` in the same directory.
 
 ### Confusion
 
 To create confusion, there are two things called cmodule:
 
 * The RRR-module `cmodule` which allows developers to write simple `C-modules`. It basically only one has file
-  `src/modules/p_cmodule.c`. Custom C-modules are run from this module and are expected to be found in `src/cmodules/`.
+  `src/modules/p_cmodule.c`. Custom C-modules are run from this module and are expected to be found in `lib/rrr/cmodules`.
 * The internal `cmodule` framework in the RRR library which takes care of messages, loops, forks etc., this is divided into
   multiple files in `src/lib/cmodule/`
 

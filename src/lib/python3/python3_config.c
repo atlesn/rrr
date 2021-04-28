@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_module_common.h"
 #include "python3_config.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../settings.h"
 
 struct rrr_python3_config_data {

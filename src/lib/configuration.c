@@ -30,12 +30,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "configuration.h"
 #include "rrr_strerror.h"
 #include "array_tree.h"
+#include "allocator.h"
 #include "socket/rrr_socket.h"
 
 #include "instance_config.h"
 
 static struct rrr_config *__rrr_config_new (void) {
-	struct rrr_config *ret = malloc(sizeof(*ret));
+	struct rrr_config *ret = rrr_allocate(sizeof(*ret));
 
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory for rrr_config struct\n");
@@ -54,7 +55,7 @@ static int __rrr_config_expand (
 	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
 	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
 
-	struct rrr_instance_config_data **configs_new = realloc(target->configs, new_size);
+	struct rrr_instance_config_data **configs_new = rrr_reallocate(target->configs, old_size, new_size);
 
 	if (configs_new == NULL) {
 		RRR_MSG_0("Could not reallocate memory for rrr_instance_config struct\n");
@@ -220,10 +221,10 @@ static int __rrr_config_parse_setting (
 
 	out:
 	if (value != NULL) {
-		free(value);
+		rrr_free(value);
 	}
 	if (name != NULL) {
-		free(name);
+		rrr_free(name);
 	}
 
 	return ret;
@@ -370,7 +371,7 @@ static int __rrr_config_interpret_array_tree (
 	pos->pos++;
 
 	size_t name_length = end - start + 1;
-	if ((name_tmp = malloc(name_length + 1)) == NULL) {
+	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
 		goto out_failed_alloc;
 	}
 
@@ -492,8 +493,8 @@ void rrr_config_destroy (
 		rrr_instance_config_destroy(target->configs[i]);
 	}
 	rrr_array_tree_list_clear(&target->array_trees);
-	free(target->configs);
-	free(target);
+	rrr_free(target->configs);
+	rrr_free(target);
 }
 
 int rrr_config_parse_file (

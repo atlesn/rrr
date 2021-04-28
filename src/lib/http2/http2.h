@@ -27,10 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
+// Blocks of 64, maximum number of concurrent streams
+#define RRR_HTTP2_STREAM_BLOCKS 3
+#define RRR_HTTP2_STREAM_MAX (RRR_HTTP2_STREAM_BLOCKS * 64)
+
 #define RRR_HTTP2_OK            RRR_READ_OK
 #define RRR_HTTP2_SOFT_ERROR    RRR_READ_SOFT_ERROR
 #define RRR_HTTP2_HARD_ERROR    RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE          RRR_READ_EOF
+#define RRR_HTTP2_BUSY          RRR_READ_INCOMPLETE
 
 #define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
     struct rrr_http2_session *session,                         \
@@ -117,7 +122,7 @@ int rrr_http2_transport_ctx_streams_iterate (
 		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
 		void *callback_arg
 );
-int rrr_http2_streams_count (
+int rrr_http2_streams_count_and_maintain (
 		struct rrr_http2_session *session
 );
 int rrr_http2_need_tick (

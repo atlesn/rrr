@@ -37,6 +37,7 @@ struct rrr_http_client_config {
 	char *method_str;
 	enum rrr_http_method method;
 	int do_plain_http2;
+	int do_http_10;
 
 	char *body_format_str;
 	enum rrr_http_body_format body_format;

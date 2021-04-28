@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <strings.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport_config.h"
 
@@ -38,6 +39,15 @@ void rrr_net_transport_config_cleanup (
 	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
 	RRR_FREE_IF_NOT_NULL(data->transport_type_str);
+	memset(data, '\0', sizeof(*data));
+}
+
+void rrr_net_transport_config_copy_mask_tls (
+		struct rrr_net_transport_config *target,
+		const struct rrr_net_transport_config *source
+) {
+	memset(target, '\0', sizeof(*target));
+	target->transport_type = source->transport_type;
 }
 
 int rrr_net_transport_config_parse (
@@ -69,7 +79,7 @@ int rrr_net_transport_config_parse (
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
 	) {
-		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s",
+		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s\n",
 				prefix, prefix, config->name);
 		ret = 1;
 		goto out;

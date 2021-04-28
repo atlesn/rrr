@@ -27,13 +27,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <lib/read.h>
 #include <signal.h>
 
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/rrr_config.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array.h"
@@ -133,7 +133,7 @@ static void __rrr_post_destroy_data (struct rrr_post_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->filename);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->topic);
-	RRR_LL_DESTROY(&data->readings, struct rrr_post_reading, free(node));
+	RRR_LL_DESTROY(&data->readings, struct rrr_post_reading, rrr_free(node));
 	if (data->tree != NULL) {
 		rrr_array_tree_destroy(data->tree);
 	}
@@ -151,7 +151,7 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 						RRR_MSG_0("Error in reading '%s', not an unsigned integer\n", reading);
 						return 1;
 					}
-					struct rrr_post_reading *reading_new = malloc(sizeof(*reading_new));
+					struct rrr_post_reading *reading_new = rrr_allocate(sizeof(*reading_new));
 					if (reading_new == NULL) {
 						RRR_MSG_0("Could not allocate memory in __rrr_post_add_readings\n");
 						return 1;
@@ -184,7 +184,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 
-	data->socket_path = strdup(socket);
+	data->socket_path = rrr_strdup(socket);
 	if (data->socket_path == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -223,7 +223,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 	if (filename != NULL) {
-		data->filename = strdup(filename);
+		data->filename = rrr_strdup(filename);
 		if (data->filename == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -238,7 +238,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 	if (topic != NULL) {
-		data->topic = strdup(topic);
+		data->topic = rrr_strdup(topic);
 		if (data->topic == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -273,7 +273,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		array_definition = RRR_POST_DEFAULT_ARRAY_DEFINITION;
 	}
 
-	array_tree_tmp = malloc(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
+	array_tree_tmp = rrr_allocate(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
 	if (array_tree_tmp == NULL) {
 		RRR_MSG_0("Could not allocate temporary arry tree string in parse_config\n");
 		ret = 1;
@@ -614,5 +614,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }

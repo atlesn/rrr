@@ -27,60 +27,64 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
-struct rrr_socket_send_chunk;
+enum rrr_socket_send_chunk_priority {
+	RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH,
+	RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
+};
 
-struct rrr_socket_send_chunk_collection {
+#define RRR_SOCKET_SEND_CHUNK_PRIORITY_COUNT 2
+
+struct rrr_socket_send_chunk_collection_list {
 	RRR_LL_HEAD(struct rrr_socket_send_chunk);
 };
 
+struct rrr_socket_send_chunk_collection {
+	struct rrr_socket_send_chunk_collection_list chunk_lists[RRR_SOCKET_SEND_CHUNK_PRIORITY_COUNT];
+};
+
 void rrr_socket_send_chunk_collection_clear (
-		struct rrr_socket_send_chunk_collection *target
+		struct rrr_socket_send_chunk_collection *chunks
 );
 void rrr_socket_send_chunk_collection_clear_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,
 		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 );
+size_t rrr_socket_send_chunk_collection_count (
+		struct rrr_socket_send_chunk_collection *chunks
+);
 int rrr_socket_send_chunk_collection_push (
 		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
+		struct rrr_socket_send_chunk_collection *chunks,
 		void **data,
-		ssize_t data_size
-);
-int rrr_socket_send_chunk_collection_push_urgent (
-		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
-		void **data,
-		ssize_t data_size
+		ssize_t data_size,
+		enum rrr_socket_send_chunk_priority priority
 );
 int rrr_socket_send_chunk_collection_push_const (
 		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
+		struct rrr_socket_send_chunk_collection *chunks,
 		const void *data,
-		ssize_t data_size
-);
-int rrr_socket_send_chunk_collection_push_const_urgent (
-		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
-		const void *data,
-		ssize_t data_size
+		ssize_t data_size,
+		enum rrr_socket_send_chunk_priority priority
 );
 int rrr_socket_send_chunk_collection_push_const_with_private_data (
 		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
+		struct rrr_socket_send_chunk_collection *chunks,
 		const void *data,
 		ssize_t data_size,
+		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 );
 int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 		int *send_chunk_count,
-		struct rrr_socket_send_chunk_collection *target,
+		struct rrr_socket_send_chunk_collection *chunks,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
 		ssize_t data_size,
+		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
