@@ -40,6 +40,7 @@ struct rrr_http_transaction;
     const char *user_agent,                                    \
     const char *host,                                          \
     enum rrr_http_upgrade_mode upgrade_mode,                   \
+    enum rrr_http_version protocol_version,                    \
     struct rrr_http_transaction *transaction
 
 #define RRR_HTTP_APPLICATION_NEED_TICK_ARGS                    \
@@ -78,7 +79,7 @@ struct rrr_http_transaction;
 struct rrr_http_application_constants {
 	enum rrr_http_application_type type;
 	void (*destroy)(struct rrr_http_application *);
-	uint64_t (*active_transaction_count_get)(struct rrr_http_application *);
+	uint64_t (*active_transaction_count_get_and_maintain)(struct rrr_http_application *);
 	int (*request_send_possible)(RRR_HTTP_APPLICATION_REQUEST_SEND_POSSIBLE_ARGS);
 	int (*request_send)(RRR_HTTP_APPLICATION_REQUEST_SEND_ARGS);
 	int (*tick)(RRR_HTTP_APPLICATION_TICK_ARGS);

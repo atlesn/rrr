@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/mqtt/mqtt_client.h"
@@ -180,7 +181,7 @@ static int mqttclient_message_data_to_payload (
 	*result = NULL;
 	*result_size = 0;
 
-	char *payload = malloc(MSG_DATA_LENGTH(reading));
+	char *payload = rrr_allocate(MSG_DATA_LENGTH(reading));
 
 	if (payload == NULL) {
 		RRR_MSG_0 ("could not allocate memory for PUBLISH payload in message_data_to_payload \n");
@@ -248,24 +249,24 @@ static int mqttclient_publish (
 		}
 
 		// NOTE : Locally freed variable. Memory error is printed further down if we fail.
-		char *topic_tmp = malloc (MSG_TOPIC_LENGTH(reading) + 1);
+		char *topic_tmp = rrr_allocate (MSG_TOPIC_LENGTH(reading) + 1);
 		if (topic_tmp != NULL) {
 			memcpy (topic_tmp, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
 			*(topic_tmp + MSG_TOPIC_LENGTH(reading)) = '\0';
 			rrr_asprintf(&publish->topic, "%s%s", data->publish_topic, topic_tmp);
-			free(topic_tmp);
+			rrr_free(topic_tmp);
 		}
 	}
 	else {
 		if (MSG_TOPIC_LENGTH(reading) > 0 && data->do_force_publish_topic == 0) {
-			publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
+			publish->topic = rrr_allocate (MSG_TOPIC_LENGTH(reading) + 1);
 			if (publish->topic != NULL) {
 				memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
 				*(publish->topic + MSG_TOPIC_LENGTH(reading)) = '\0';
 			}
 		}
 		else if (data->publish_topic != NULL) {
-			publish->topic = strdup(data->publish_topic);
+			publish->topic = rrr_strdup(data->publish_topic);
 		}
 		else {
 			if (data->do_force_publish_topic != 0) {
@@ -465,7 +466,7 @@ static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {
 
 	int ret = 0;
 
-	struct rrr_map_item *node = malloc(sizeof(*node));
+	struct rrr_map_item *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in mqttclient_parse_publish_value_tag\n");
 		ret = 1;
@@ -473,7 +474,7 @@ static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {
 	}
 	memset(node, '\0', sizeof(*node));
 
-	node->tag = strdup(value);
+	node->tag = rrr_strdup(value);
 	if (node->tag == NULL) {
 		RRR_MSG_0("Could not allocate memory for data in mqttclient_parse_publish_value_tag\n");
 		ret = 1;
@@ -541,7 +542,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			goto out;
 		}
 
-		data->server = strdup("localhost");
+		data->server = rrr_strdup("localhost");
 		if (data->server == NULL) {
 			RRR_MSG_0("Could not allocate memory for mqtt_server in MQTT client\n");
 			ret = 1;
@@ -660,7 +661,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			goto out;
 		}
 
-		data->connect_error_action = strdup(RRR_MQTT_CONNECT_ERROR_DO_RESTART);
+		data->connect_error_action = rrr_strdup(RRR_MQTT_CONNECT_ERROR_DO_RESTART);
 		if (data->connect_error_action == NULL) {
 			RRR_MSG_0("Could not allocate memory for connect_error_action in MQTT client\n");
 			ret = 1;
@@ -982,7 +983,7 @@ static int mqttclient_try_get_rrr_msg_msg_from_publish (
 		goto out;
 	}
 
-	*result = malloc(message_actual_length);
+	*result = rrr_allocate(message_actual_length);
 	if (*result == NULL) {
 		RRR_MSG_0("Could not allocate memory in mqttclient_try_get_rrr_msg_msg_from_publish\n");
 		ret = 1;
@@ -1101,7 +1102,7 @@ static int mqttclient_receive_publish_create_entry_callback (struct rrr_msg_hold
 
 	size_t msg_size = MSG_TOTAL_SIZE(data->message);
 
-	if ((entry->message = malloc(msg_size)) == NULL) {
+	if ((entry->message = rrr_allocate(msg_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in mqttclient_receive_publish_create_entry_callback\n");
 		ret = 1;
 		goto out;

@@ -35,11 +35,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#include "log.h"
+#include "../log.h"
+#include "../allocator.h"
+
 #include "rrr_readdir.h"
-#include "rrr_strerror.h"
-#include "rrr_path_max.h"
-#include "util/linked_list.h"
+
+#include "../rrr_strerror.h"
+#include "../rrr_path_max.h"
+#include "../util/linked_list.h"
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -206,20 +209,20 @@ static void __rrr_readdir_entry_destroy (
 	if (entry->collection != NULL) {
 		__rrr_readdir_entry_collection_destroy(entry->collection);
 	}
-	free(entry);
+	rrr_free(entry);
 }
 
 static void __rrr_readdir_entry_collection_destroy (
 	struct rrr_readdir_entry_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_readdir_entry, __rrr_readdir_entry_destroy(node));
-	free(collection);
+	rrr_free(collection);
 }
 
 static int __rrr_readdir_entry_collection_new (
 	struct rrr_readdir_entry_collection **target
 ) {
-	if ((*target = malloc(sizeof(**target))) == NULL) {
+	if ((*target = rrr_allocate(sizeof(**target))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_readdir_entry_collection_new\n");
 		return 1;
 	}
@@ -270,7 +273,7 @@ static int __rrr_readdir_foreach_recursive_descend_callback (
 
 	struct rrr_readdir_entry *new_entry = NULL;
 
-	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+	if ((new_entry = rrr_allocate(sizeof(*new_entry))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_readdir_foreach_recursive_callback\n");
 		ret = 1;
 		goto out;

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "event.h"
 #include "event_struct.h"
 #include "event_functions.h"
@@ -187,6 +188,8 @@ static void __rrr_event_signal_event (
 		uint16_t amount = (count > 0xffff ? 0xffff : count);
 		count -= amount;
 
+		const uint16_t amount_orig = amount;
+
 		if ((ret = function->function (
 				&amount,
 				function->function_arg != NULL
@@ -202,6 +205,13 @@ static void __rrr_event_signal_event (
 			queue->callback_ret = ret;
 			event_base_loopbreak(queue->event_base);
 			goto out;
+		}
+
+		if (amount_orig == amount) {
+			// This can happen if the sender incorrectly PASSes prior to data being written to the buffer
+			// in question. In case of bad performance, also verify that the reader is able to handle all
+			// received messages or that it activates the pausing if it's not able to.
+			sched_yield();
 		}
 
 		if (amount > 0) {
@@ -284,6 +294,13 @@ void rrr_event_dispatch_break (
 	event_base_loopbreak(queue->event_base);
 }
 
+void rrr_event_dispatch_exit (
+		struct rrr_event_queue *queue
+) {
+	queue->callback_ret = RRR_EVENT_EXIT;
+	event_base_loopbreak(queue->event_base);
+}
+
 void rrr_event_dispatch_restart (
 		struct rrr_event_queue *queue
 ) {
@@ -341,7 +358,7 @@ void rrr_event_queue_destroy (
 		event_free(queue->unpause_event);
 	}
 	event_base_free(queue->event_base);
-	free(queue);
+	rrr_free(queue);
 }
 
 int rrr_event_queue_new (
@@ -368,7 +385,7 @@ int rrr_event_queue_new (
 		goto out;
 	}
 
-	if ((queue = malloc(sizeof(*queue))) == NULL) {
+	if ((queue = rrr_allocate(sizeof(*queue))) == NULL) {
 		RRR_MSG_0("Failed to allocate memory in rrr_event_queue_new\n");
 		ret = 1;
 		goto out;
@@ -464,7 +481,7 @@ int rrr_event_queue_new (
 	out_destroy_event_base:
 		event_base_free(queue->event_base);
 	out_free:
-		free(queue);
+		rrr_free(queue);
 	out:
 		if (cfg != NULL) {
 		        event_config_free(cfg);

@@ -105,6 +105,9 @@ int rrr_event_dispatch (
 void rrr_event_dispatch_break (
 		struct rrr_event_queue *queue
 );
+void rrr_event_dispatch_exit (
+		struct rrr_event_queue *queue
+);
 void rrr_event_dispatch_restart (
 		struct rrr_event_queue *queue
 );

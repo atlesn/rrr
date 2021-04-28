@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "common.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 
 struct rrr_exit_cleanup_method {
@@ -42,7 +43,7 @@ void rrr_exit_cleanup_method_push (
 		void (*method)(void *arg),
 		void *arg
 ) {
-	struct rrr_exit_cleanup_method *new_method = malloc(sizeof(*new_method));
+	struct rrr_exit_cleanup_method *new_method = rrr_allocate(sizeof(*new_method));
 
 	pthread_mutex_lock(&exit_cleanup_lock);
 	new_method->method = method;
@@ -59,7 +60,7 @@ void rrr_exit_cleanup_methods_run_and_free(void) {
 	while (cur) {
 		struct rrr_exit_cleanup_method *next = cur->next;
 		cur->method(cur->arg);
-		free(cur);
+		rrr_free(cur);
 		cur = next;
 	}
 	first_exit_cleanup_method = NULL;
@@ -95,7 +96,7 @@ struct rrr_signal_handler *rrr_signal_handler_push(
 		int (*handler)(int signal, void *private_arg),
 		void *private_arg
 ) {
-	struct rrr_signal_handler *h = malloc(sizeof(*h));
+	struct rrr_signal_handler *h = rrr_allocate(sizeof(*h));
 	h->handler = handler;
 	h->private_arg = private_arg;
 
@@ -116,7 +117,7 @@ void rrr_signal_handler_remove (
 	if (signal_handlers_active == 1) {
 		RRR_BUG("Signals were not disabled while being in rrr_signal_handler_remove\n");
 	}
-	RRR_LL_REMOVE_NODE_IF_EXISTS(&signal_handlers, struct rrr_signal_handler, handler, free(node));
+	RRR_LL_REMOVE_NODE_IF_EXISTS(&signal_handlers, struct rrr_signal_handler, handler, rrr_free(node));
 	pthread_mutex_unlock(&signal_lock);
 }
 
@@ -137,7 +138,7 @@ void rrr_signal_handler_remove_all_except (
 		else {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&signal_handlers, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&signal_handlers, 0; rrr_free(node));
 	pthread_mutex_unlock(&signal_lock);
 }
 

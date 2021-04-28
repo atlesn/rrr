@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "msgdb_common.h"
 #include "msgdb_server.h"
 #include "../messages/msg_msg.h"
@@ -73,7 +74,7 @@ static int __rrr_msgdb_server_client_new (
 
 	*target = NULL;
 
-	struct rrr_msgdb_server_client *client = malloc(sizeof(*client));
+	struct rrr_msgdb_server_client *client = rrr_allocate(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_msgdb_server_client_new\n");
 		return 1;
@@ -100,7 +101,7 @@ static void __rrr_msgdb_server_client_destroy (
 		struct rrr_msgdb_server_client *client
 ) {
 	RRR_FREE_IF_NOT_NULL(client->send_data);
-	free(client);
+	rrr_free(client);
 }
 
 static void __rrr_msgdb_server_client_destroy_void (
@@ -267,7 +268,7 @@ static int __rrr_msgdb_server_put_path_split_callback (
 		}
 		RRR_DBG_3("msgdb write to '%s' size %llu\n", str, (long long unsigned) MSG_TOTAL_SIZE(callback_data->msg));
 
-		if ((msg_tmp = malloc(MSG_TOTAL_SIZE(callback_data->msg))) == NULL) {
+		if ((msg_tmp = rrr_allocate(MSG_TOTAL_SIZE(callback_data->msg))) == NULL) {
 			RRR_MSG_0("Could not allocate memory for temporary message in __rrr_msgdb_server_put_path_split_callback\n");
 			ret = 1;
 			goto out;
@@ -899,7 +900,7 @@ int rrr_msgdb_server_new (
 		goto out;
 	}
 
-	if ((server = malloc(sizeof(*server))) == NULL) {
+	if ((server = rrr_allocate(sizeof(*server))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for server in rrr_msgdb_server_new\n");
 		ret = 1;
 		goto out_close;
@@ -907,7 +908,7 @@ int rrr_msgdb_server_new (
 
 	memset(server, '\0', sizeof(*server));
 
-	if ((server->directory = strdup(directory)) == NULL) {
+	if ((server->directory = rrr_strdup(directory)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for directory in rrr_msgdb_server_new\n");
 		ret = 1;
 		goto out_free;
@@ -943,9 +944,9 @@ int rrr_msgdb_server_new (
 	out_destroy_client_collection:
 		rrr_socket_client_collection_destroy(server->clients);
 	out_free_directory:
-		free(server->directory);
+		rrr_free(server->directory);
 	out_free:
-		free(server);
+		rrr_free(server);
 	out_close:
 		rrr_socket_close(fd);
 	out:
@@ -957,5 +958,5 @@ void rrr_msgdb_server_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(server->directory);
 	rrr_socket_client_collection_destroy(server->clients);
-	free(server);
+	rrr_free(server);
 }

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../type.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
@@ -244,7 +245,7 @@ static int __rrr_perl5_type_to_value_64_common_save_intermediate_result (
 
 	int ret = 0;
 
-	struct type_to_value_h_intermediate_result *result = malloc(sizeof(*result));
+	struct type_to_value_h_intermediate_result *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
 		ret = 1;
@@ -402,7 +403,7 @@ static int __rrr_perl5_type_to_value_64_common (
 	if (result != NULL) {
 		rrr_type_value_destroy(result);
 	}
-	RRR_LL_DESTROY(&intermediate_values, struct type_to_value_h_intermediate_result, free(node));
+	RRR_LL_DESTROY(&intermediate_values, struct type_to_value_h_intermediate_result, rrr_free(node));
 	return ret;
 }
 
@@ -426,7 +427,7 @@ struct type_to_value_blob_intermediate_result {
 
 void __rrr_perl5_type_to_value_blob_intermediate_result_destroy (struct type_to_value_blob_intermediate_result *result) {
 	RRR_FREE_IF_NOT_NULL(result->data);
-	free(result);
+	rrr_free(result);
 }
 
 struct type_to_value_blob_intermediate_result_collection {
@@ -446,7 +447,7 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 
 	SV *sv_to_free = NULL;
 
-	struct type_to_value_blob_intermediate_result *result = malloc(sizeof(*result));
+	struct type_to_value_blob_intermediate_result *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
 		ret = 1;
@@ -477,7 +478,7 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 		goto out;
 	}
 
-	if ((result->data = malloc(str_len + 1)) == NULL) {
+	if ((result->data = rrr_allocate(str_len + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for data in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
 		ret = 1;
 		goto out;

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "msgdb_client.h"
 #include "msgdb_common.h"
 #include "../messages/msg.h"
