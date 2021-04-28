@@ -28,6 +28,9 @@ const char *rrr_http_upgrade_mode_str_http2 = "HTTP2";
 const char *rrr_http_application_str_http1 = "HTTP1";
 const char *rrr_http_application_str_http2 = "HTTP2";
 
+const char *rrr_http_version_str_10 = "HTTP/1.0";
+const char *rrr_http_version_str_11 = "HTTP/1.1";
+
 const char *rrr_http_transport_str_any = "ANY";
 const char *rrr_http_transport_str_http = "HTTP";
 const char *rrr_http_transport_str_https = "HTTPS";

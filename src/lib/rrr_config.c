@@ -24,7 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "../../config.h"
 #include "cmdlineparser/cmdline.h"
 #include "rrr_config.h"
 

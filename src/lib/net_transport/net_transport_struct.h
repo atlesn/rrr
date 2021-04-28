@@ -168,6 +168,7 @@ struct rrr_net_transport_handle {
 	uint64_t bytes_written_total;
 
 	struct rrr_socket_send_chunk_collection send_chunks;
+	int close_when_send_complete;
 
 	struct sockaddr_storage connected_addr;
 	socklen_t connected_addr_len;

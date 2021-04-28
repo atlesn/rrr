@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_session_ram.h"
 #include "mqtt_session.h"
@@ -479,7 +480,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session (
 
 	*target = NULL;
 
-	result = malloc(sizeof(*result));
+	result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session A\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -506,7 +507,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session (
 	}
 
 	if (client_id != NULL && *client_id != '\0') {
-		if ((result->client_id_ = strdup(client_id)) == NULL) {
+		if ((result->client_id_ = rrr_strdup(client_id)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session B\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out_destroy_publish_grace_queue;
@@ -664,7 +665,7 @@ static int __rrr_mqtt_session_ram_decref (
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(session->will_publish);
 	session->will_publish = NULL;
 
-	free(session);
+	rrr_free(session);
 
 	return 0;
 }
@@ -1185,7 +1186,7 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 
 	rrr_mqtt_session_collection_destroy(sessions);
 
-	free(sessions);
+	rrr_free(sessions);
 }
 
 struct preserve_publish_list {
@@ -3168,7 +3169,7 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		RRR_BUG("arg was not NULL in rrr_mqtt_session_collection_ram_new\n");
 	}
 
-	struct rrr_mqtt_session_collection_ram_data *ram_data = malloc(sizeof(*ram_data));
+	struct rrr_mqtt_session_collection_ram_data *ram_data = rrr_allocate(sizeof(*ram_data));
 	if (ram_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;
@@ -3225,7 +3226,7 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 	out_destroy_collection:
 		rrr_mqtt_session_collection_destroy((struct rrr_mqtt_session_collection *)ram_data);
 	out_destroy_ram_data:
-		free(ram_data);
+		rrr_free(ram_data);
 
 	out:
 	return ret;

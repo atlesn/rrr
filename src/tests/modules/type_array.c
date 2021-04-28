@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../../lib/log.h"
+#include "../../lib/allocator.h"
 
 #include "type_array.h"
 #include "../test.h"
@@ -535,7 +536,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	final_data_raw = malloc(sizeof(*final_data_raw));
+	final_data_raw = rrr_allocate(sizeof(*final_data_raw));
 
 	memset(final_data_raw, '\0', sizeof(*final_data_raw));
 

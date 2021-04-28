@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "udpstream_asd.h"
 #include "../buffer.h"
 #include "../read.h"
@@ -61,7 +62,7 @@ static int __rrr_udpstream_asd_queue_entry_destroy (
 	if (entry->message != NULL) {
 		rrr_msg_holder_decref(entry->message);
 	}
-	free(entry);
+	rrr_free(entry);
 	return 0;
 }
 
@@ -170,7 +171,7 @@ static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 		goto out;
 	}
 
-	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+	if ((new_entry = rrr_allocate(sizeof(*new_entry))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_insert_entry_or_free\n");
 		ret = 1;
 		goto out;
@@ -195,7 +196,7 @@ static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **target, uint32_t connect_handle) {
 	*target = NULL;
 
-	struct rrr_udpstream_asd_queue_new *queue = malloc(sizeof(*queue));
+	struct rrr_udpstream_asd_queue_new *queue = rrr_allocate(sizeof(*queue));
 
 	if (queue == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_new\n");
@@ -249,7 +250,7 @@ void __rrr_udpstream_asd_queue_clear(struct rrr_udpstream_asd_queue_new *queue) 
 
 void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue_new *queue) {
 	__rrr_udpstream_asd_queue_clear(queue);
-	free(queue);
+	rrr_free(queue);
 }
 
 void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_collection *collection) {
@@ -257,7 +258,7 @@ void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_c
 }
 
 void __rrr_udpstream_asd_control_queue_clear(struct rrr_udpstream_asd_control_queue *queue) {
-	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_control_queue_entry, free(node));
+	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_control_queue_entry, rrr_free(node));
 }
 
 void rrr_udpstream_asd_destroy (
@@ -273,7 +274,7 @@ void rrr_udpstream_asd_destroy (
 	rrr_udpstream_clear(&session->udpstream);
 	RRR_FREE_IF_NOT_NULL(session->remote_host);
 	RRR_FREE_IF_NOT_NULL(session->remote_port);
-	free(session);
+	rrr_free(session);
 }
 
 int rrr_udpstream_asd_new (
@@ -290,7 +291,7 @@ int rrr_udpstream_asd_new (
 
 	*target = NULL;
 
-	struct rrr_udpstream_asd *session = malloc(sizeof(*session));
+	struct rrr_udpstream_asd *session = rrr_allocate(sizeof(*session));
 	if (session == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_udpstream_asd_new\n");
 		ret = 1;
@@ -299,7 +300,7 @@ int rrr_udpstream_asd_new (
 	memset(session, '\0', sizeof(*session));
 
 	if (remote_host != NULL && *remote_host != '\0') {
-		if ((session->remote_host = strdup(remote_host)) == NULL) {
+		if ((session->remote_host = rrr_strdup(remote_host)) == NULL) {
 			RRR_MSG_0("Could not allocate remote host string in rrr_udpstream_asd_new\n");
 			ret = 1;
 			goto out_free;
@@ -307,7 +308,7 @@ int rrr_udpstream_asd_new (
 	}
 
 	if (remote_port != NULL && *remote_port != '\0') {
-		if ((session->remote_port = strdup(remote_port)) == NULL) {
+		if ((session->remote_port = rrr_strdup(remote_port)) == NULL) {
 			RRR_MSG_0("Could not allocate remote port string in rrr_udpstream_asd_new\n");
 			ret = 1;
 			goto out_free_remote_host;
@@ -373,11 +374,11 @@ int rrr_udpstream_asd_new (
 	out_clear_udpstream:
 		rrr_udpstream_clear(&session->udpstream);
 	out_free_remote_port:
-		free(session->remote_port);
+		rrr_free(session->remote_port);
 	out_free_remote_host:
-		free(session->remote_host);
+		rrr_free(session->remote_host);
 	out_free:
-		free(session);
+		rrr_free(session);
 	out:
 		return ret;
 }
@@ -390,7 +391,7 @@ static int __rrr_udpstream_asd_queue_control_frame (
 ) {
 	int ret = 0;
 
-	struct rrr_udpstream_asd_control_queue_entry *entry = malloc(sizeof(*entry));
+	struct rrr_udpstream_asd_control_queue_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
 		ret = 1;
@@ -757,7 +758,7 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 			goto out;
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->control_send_queue, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->control_send_queue, 0; rrr_free(node));
 
 	int buffer_was_full = 0;
 

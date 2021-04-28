@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "allocator.h"
 #include "event/event.h"
 #include "event/event_functions.h"
 #include "util/gnu.h"

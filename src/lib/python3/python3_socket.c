@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_message.h"
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../settings.h"
 #include "../read.h"
 #include "../socket/rrr_socket.h"
@@ -238,6 +239,6 @@ int rrr_python3_socket_send (
 	}
 
 	pthread_mutex_unlock(&socket_data->send_lock);
-	free(message);
+	rrr_free(message);
 	return ret;
 }

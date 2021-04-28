@@ -106,6 +106,7 @@ struct rrr_http_client_request_data {
 	enum rrr_http_method method;
 	enum rrr_http_body_format body_format;
 	enum rrr_http_upgrade_mode upgrade_mode;
+	enum rrr_http_version protocol_version;
 	int do_plain_http2;
 
 	int ssl_no_cert_verify;
@@ -153,6 +154,7 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_method method,
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		int do_plain_http2,
 		const char *user_agent
 );

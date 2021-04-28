@@ -97,9 +97,11 @@ int rrr_http_field_collection_to_raw_form_data (
 		struct rrr_nullsafe_str **target,
 		struct rrr_http_field_collection *fields
 );
+#ifdef RRR_WITH_JSONC
 int rrr_http_field_collection_to_json (
 		struct rrr_nullsafe_str **target,
 		const struct rrr_http_field_collection *fields
 );
+#endif
 
 #endif /* RRR_HTTP_FIELDS_H */

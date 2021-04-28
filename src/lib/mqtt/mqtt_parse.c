@@ -22,9 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#include <util/utf8.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_topic.h"
 #include "mqtt_common.h"
 
+#include "../util/utf8.h"
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 
@@ -401,7 +402,7 @@ static int __rrr_mqtt_parse_blob (
 	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
 	*blob_length = rrr_be16toh(*((uint16_t *) start));
 
-	*target = malloc((*blob_length) + 1);
+	*target = rrr_allocate((*blob_length) + 1);
 	if (*target == NULL){
 		RRR_MSG_0("Could not allocate memory for UTF8 in __rrr_mqtt_parse_utf8\n");
 		return RRR_MQTT_INTERNAL_ERROR;

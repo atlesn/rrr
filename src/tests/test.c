@@ -44,7 +44,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
-#include "test_json.h"
+#ifdef RRR_WITH_JSONC
+#	include "test_json.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
@@ -142,11 +144,13 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+#ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
+#endif
 
 	TEST_BEGIN("type conversion") {
 		ret_tmp = rrr_test_conversion();

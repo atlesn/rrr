@@ -46,6 +46,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #endif
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
@@ -391,10 +392,10 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data 
 	out:
 
 	if (vm_calibration != NULL) {
-		free(vm_calibration);
+		rrr_free(vm_calibration);
 	}
 	if (vm_channel!= NULL) {
-		free(vm_channel);
+		rrr_free(vm_channel);
 	}
 
 	return ret;

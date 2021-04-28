@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "../log.h"
+#include "../allocator.h"
 #include "linux.h"
 #include "../socket/rrr_socket_read.h"
 #include "../rrr_strerror.h"

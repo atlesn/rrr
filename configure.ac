@@ -1,3 +1,4 @@
+# Even minor version = development, odd minor version = stable
 AC_INIT([Read Route Record],[1.17-1])
 AC_DEFINE([RRR_CONFIG_VERSION], "1.17-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
@@ -170,7 +171,7 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
-
+		
 AC_MSG_CHECKING([usage of eventfd()])
 AS_IF([test "x$enable_eventfd" != "xno"], [
 	AC_MSG_RESULT([yes])
@@ -781,6 +782,17 @@ AS_IF([test "x$enable_openrc" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+MODULE_DIR="\${exec_prefix}/lib/rrr"
+AC_MSG_CHECKING([module installation directory])
+AC_MSG_RESULT([${MODULE_DIR}])
+
+CMODULE_DIR="\${exec_prefix}/lib/rrr/cmodules"
+AC_MSG_CHECKING([cmodule installation directory])
+AC_MSG_RESULT([${CMODULE_DIR}])
+
+AC_SUBST([MODULE_DIR])
+AC_SUBST([CMODULE_DIR])
+
 # Clear all automatically added libs. Library users must specify
 # libraries locally in Makefile.am
 LIBS=""
@@ -811,3 +823,6 @@ echo "rrr: disabling libtool depedency_libs variable"
 sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
 mv libtool.new libtool
 chmod +x libtool
+
+# Copy config.h file for installation together with other headers
+cp -f config.h src/lib/rrr-build-config.h

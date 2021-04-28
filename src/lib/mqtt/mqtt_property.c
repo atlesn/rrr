@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_property.h"
 
@@ -81,7 +82,7 @@ void rrr_mqtt_property_destroy (
 	}
 
 	RRR_FREE_IF_NOT_NULL(property->data);
-	free(property);
+	rrr_free(property);
 }
 
 int rrr_mqtt_property_new (
@@ -92,7 +93,7 @@ int rrr_mqtt_property_new (
 
 	*target = NULL;
 
-	struct rrr_mqtt_property *res = malloc(sizeof(*res));
+	struct rrr_mqtt_property *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_new\n");
 		ret = 1;
@@ -125,7 +126,7 @@ int rrr_mqtt_property_clone (
 		goto out_final;
 	}
 
-	result = malloc(sizeof(*result));
+	result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone A\n");
 		ret = 1;
@@ -142,7 +143,7 @@ int rrr_mqtt_property_clone (
 		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
 	}
 
-	if ((result->data = malloc(result->length)) == NULL) {
+	if ((result->data = rrr_allocate(result->length)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone B\n");
 		ret = 1;
 		goto out_free;
@@ -180,7 +181,7 @@ int rrr_mqtt_property_save_blob (
 		size_padded++;
 	}
 
-	target->data = malloc(size_padded);
+	target->data = rrr_allocate(size_padded);
 	if (target->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
@@ -201,7 +202,7 @@ int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t va
 	// Keep on separate line to suppress warning from static code analysis
 	size_t allocation_size = sizeof(value);
 
-	if ((target->data = (char *) malloc(allocation_size)) == NULL) {
+	if ((target->data = (char *) rrr_allocate(allocation_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
@@ -252,7 +253,7 @@ int rrr_mqtt_property_get_blob_as_str (
 	ssize_t length;
 	const char *data = rrr_mqtt_property_get_blob(property, &length);
 
-	if ((tmp = malloc(length + 1)) == NULL) {
+	if ((tmp = rrr_allocate(length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_propert_get_blob_as_str\n");
 		ret = 1;
 		goto out;
@@ -296,7 +297,7 @@ static int __rrr_mqtt_property_clone (
 
 	if (source->length > 0) {
 		result->length = source->length;
-		if ((result->data = malloc(result->length)) == NULL) {
+		if ((result->data = rrr_allocate(result->length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
 			ret = 1;
 			goto out_destroy;
@@ -495,7 +496,7 @@ static void __rrr_mqtt_property_dump (
 	printf("%s: ", property->definition->name);
 	switch (property->internal_data_type) {
 		case RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB:
-			tmp = malloc(property->length + 1);
+			tmp = rrr_allocate(property->length + 1);
 			memcpy(tmp, property->data, property->length);
 			tmp[property->length] = '\0';
 			printf("%s", tmp);
