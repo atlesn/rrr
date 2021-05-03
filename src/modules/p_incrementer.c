@@ -140,6 +140,7 @@ static int incrementer_get_id_from_msgdb (
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
 			incrementer_get_id_from_msgdb_callback,
 			&callback_data
 	)) != 0) {
@@ -262,6 +263,7 @@ static int incrementer_update_id_callback (
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
 			&callback_data->data->msgdb_conn,
 			callback_data->data->msgdb_socket,
+			INSTANCE_D_EVENTS(callback_data->data->thread_data),
 			incrementer_update_id_msgdb_callback,
 			msg_tmp
 	)) != 0) {
