@@ -30,18 +30,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INTERCEPT_ALLOW_READDIR
 	// Not guaranteed thread-safety in current POSIX specification, rrr wrapper with
 	// locking must be used
-#	define readdir(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_READDIR
+#	define readdir(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_READDIR(x)
 #endif
 
 #ifndef RRR_INTERCEPT_ALLOW_STRERROR
-#	define strerror(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_STRERROR
+#	define strerror(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_STRERROR(x)
 #endif
 
 // Only main() is allowed to do this, others through access functions
 #ifndef RRR_INTERCEPT_ALLOW_FORK
-#	define waitpid(x,y,z)	RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAITPID
-#	define wait(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAIT
-#	define fork(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_FORK
+#	define waitpid(x,y,z)	RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAITPID(x,y,z)
+#	define wait(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAIT(x)
+#	define fork(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_FORK(x)
 #endif
 
 // All logging must be done through wrappers
@@ -51,21 +51,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // to prevent bugs, all mutex initialization must use helper functions
 #ifndef RRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
-#	define pthread_mutex_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT
-#	define pthread_mutexattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT
-#	define pthread_rwlock_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCK_INIT
-#	define pthread_rwlockattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCKATTR_INIT
-#	define pthread_condattr_init(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_CONDATTR_INIT
-#	define pthread_cond_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_COND_INIT
+#	define pthread_mutex_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT(xmy)
+#	define pthread_mutexattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT(x)
+#	define pthread_rwlock_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCK_INIT(x,y)
+#	define pthread_rwlockattr_init(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCKATTR_INIT(x)
+#	define pthread_condattr_init(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_CONDATTR_INIT(x)
+#	define pthread_cond_init(x,y)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_COND_INIT(x,y)
 #endif
 
 // umask calls must be wrapped in global umask lock
 #ifndef RRR_INTERCEPT_ALLOW_UMASK
-#	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
+#	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK(x)
 #endif
 
 #ifndef RRR_INTERCEPT_ALLOW_GETTID
-#	define gettid(void)		RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_GETTID
+#	define gettid(void)		RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_GETTID()
 #endif
 /*
 #define malloc(a)      RRR_INTERCEPT_H_UNSAFE_LIBRARY_FUNCTION_MALLOC
