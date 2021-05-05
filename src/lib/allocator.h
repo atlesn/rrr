@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_stats;
 
 void *rrr_allocate (size_t bytes);
+void *rrr_allocate_zero (size_t bytes);
 void *rrr_allocate_group (size_t bytes, int group);
 void rrr_free (void *ptr);
 void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new);

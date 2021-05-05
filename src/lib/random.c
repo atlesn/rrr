@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <stdlib.h>
 
+#include "log.h"
 #include "random.h"
 #include "util/rrr_time.h"
 
@@ -43,4 +44,22 @@ int rrr_rand(void) {
 	pthread_mutex_unlock(&rrr_rand_lock);
 
 	return result;
+}
+
+void rrr_random_string(char *target, size_t target_size) {
+	if (target_size == 0) {
+		RRR_BUG("BUG: Size was 0 in rrr_random_string\n");
+	}
+
+	size_t pos = 0;
+	while (pos < target_size) {
+		unsigned char rand = rrr_rand() % 0xff;
+		if ( (rand >= 'A' && rand <= 'Z') ||
+		     (rand >= 'a' && rand <= 'z') ||
+		     (rand >= '0' && rand <= '9')
+		) {
+			target[pos++] = rand;
+		}
+	}
+	target[target_size - 1] = '\0';
 }

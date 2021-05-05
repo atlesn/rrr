@@ -79,6 +79,15 @@ void *rrr_allocate (size_t bytes) {
 	return malloc(bytes);
 }
 
+/* Allocate zeroed memory from OS allocator */
+void *rrr_allocate_zero (size_t bytes) {
+	void *ret = malloc(bytes);
+	if (ret) {
+		memset(ret, '\0', sizeof(*ret));
+	}
+	return ret;
+}
+
 /* Allocate memory from group allocator */
 void *rrr_allocate_group (size_t bytes, int group) {
 	return __rrr_allocate(bytes, group);
