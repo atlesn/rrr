@@ -416,37 +416,6 @@ static void *__rrr_mmap (size_t size, int is_shared) {
 	return ptr;
 }
 
-int rrr_mmap_heap_reallocate (
-		struct rrr_mmap *mmap,
-		uint64_t heap_size
-) {
-	int ret = 0;
-
-	pthread_mutex_lock(&mmap->lock);
-
-	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
-
-	if (heap_size_padded < mmap->heap_size) {
-		RRR_BUG("BUG: Attempted to decrease heap size in rrr_mmap_new_heap_size\n");
-	}
-
-	void *new_heap = __rrr_mmap(heap_size_padded, mmap->is_shared);
-	if (new_heap == NULL) {
-		RRR_MSG_0("Could not re-allocate in rrr_mmap_new_heap_size\n");
-		ret = 1;
-		goto out_unlock;
-	}
-
-	memcpy(new_heap, mmap->heap, mmap->heap_size);
-	munmap(mmap->heap, mmap->heap_size);
-	mmap->heap = new_heap;
-	mmap->heap_size = heap_size_padded;
-
-	out_unlock:
-	pthread_mutex_unlock(&mmap->lock);
-	return ret;
-}
-
 static int __rrr_mmap_init (
 		struct rrr_mmap *result,
 		uint64_t heap_size,
