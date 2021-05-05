@@ -29,7 +29,7 @@ SEND_FIFO=./send_fifo
 SEND_FIFO_FILENAME=/tmp/rrr_test_fifo.sock
 
 SEND_WEBSOCKET="../rrr_http_client"
-SEND_WEBSOCKET_ARGS="-a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /x -w"
+SEND_WEBSOCKET_ARGS="-r /tmp -a $TEST_DATA_ARRAY_DEFINITION -s localhost -p 8880 -e /x -w"
 
 fail () {
 	echo "Test $1 failed" 1>&2

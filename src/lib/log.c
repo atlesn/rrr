@@ -32,6 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "allocator.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "util/gnu.h"
 #include "util/posix.h"
 #include "util/macro_utils.h"
@@ -74,8 +77,6 @@ void rrr_log_cleanup(void) {
 	pthread_mutex_destroy(&rrr_log_lock);
 }
 
-// TODO : Locking does not work across forks
-
 // This must be separately locked to detect recursion (log functions called from inside hooks)
 static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -89,38 +90,39 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 	pthread_mutex_unlock (&rrr_log_hook_lock);
 }
 
-#define LOCK_BEGIN													\
-		pthread_mutex_lock (&rrr_log_lock);							\
-		pthread_cleanup_push(__rrr_log_printf_unlock_void, NULL)
+#define LOCK_BEGIN                                                                                                             \
+        pthread_mutex_lock (&rrr_log_lock);                                                                                    \
+        pthread_cleanup_push(__rrr_log_printf_unlock_void, NULL)
 
-#define LOCK_END													\
-		pthread_cleanup_pop(1)
+#define LOCK_END                                                                                                               \
+        pthread_cleanup_pop(1)
 
-#define LOCK_HOOK_BEGIN												\
-		if (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) {		\
-			goto lock_hook_out;										\
-		}															\
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
+#define LOCK_HOOK_BEGIN                                                                                                        \
+        if (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) {                                                                 \
+            goto lock_hook_out;                                                                                                \
+        }                                                                                                                      \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
-#define LOCK_HOOK_END												\
-		pthread_cleanup_pop(1);										\
-		lock_hook_out:
+#define LOCK_HOOK_END                                                                                                          \
+        pthread_cleanup_pop(1);                                                                                                \
+        lock_hook_out:
 
-#define LOCK_HOOK_UNCHECKED_BEGIN									\
-		pthread_mutex_lock (&rrr_log_hook_lock);					\
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+#define LOCK_HOOK_UNCHECKED_BEGIN                                                                                              \
+        pthread_mutex_lock (&rrr_log_hook_lock);                                                                               \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
 // Register and unregister functions should spin to keep the thread alive
 // thus obtaining the lock faster when there's a lot of messages being generated.
-#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN								\
-		while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { } \
-		pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)		\
+#define LOCK_HOOK_UNCHECKED_BEGIN_SPIN                                                                                         \
+        while (pthread_mutex_trylock (&rrr_log_hook_lock) != 0) { }                                                            \
+        pthread_cleanup_push(__rrr_log_hook_unlock_void, NULL)
 
-#define LOCK_HOOK_UNCHECKED_END										\
-		pthread_cleanup_pop(1)
+#define LOCK_HOOK_UNCHECKED_END                                                                                                \
+        pthread_cleanup_pop(1)
 
 struct rrr_log_hook {
 	void (*log)(
+			uint8_t *write_amount,
 			unsigned short loglevel_translated,
 			unsigned short loglevel_orig,
 			const char *prefix,
@@ -128,6 +130,7 @@ struct rrr_log_hook {
 			void *private_arg
 	);
 	void *private_arg;
+	struct rrr_event_queue *notify_queue;
 	int handle;
 };
 
@@ -138,13 +141,15 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
+				uint8_t *write_amount,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
-		void *private_arg
+		void *private_arg,
+		struct rrr_event_queue *notify_queue
 ) {
 	*handle = 0;
 
@@ -158,6 +163,7 @@ void rrr_log_hook_register (
 	struct rrr_log_hook hook = {
 		 log,
 		 private_arg,
+		 notify_queue,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -215,14 +221,26 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
+		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
+				&write_amount,
 				loglevel_translated,
 				loglevel_orig,
 				prefix,
 				message,
 				hook->private_arg
 		);
+
+		if (hook->notify_queue && write_amount > 0) {
+			rrr_event_pass (
+					hook->notify_queue,
+					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
+					write_amount,
+					NULL,
+					NULL
+			);
+		}
 	}
 
 	LOCK_HOOK_END;

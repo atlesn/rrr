@@ -21,10 +21,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <stdint.h>
-#include <pthread.h>
 #include <string.h>
 #include <inttypes.h>
 
+#include "../allocator.h"
 #include "../log.h"
 
 #include "mqtt_id_pool.h"
@@ -35,28 +35,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));
 
-	if (rrr_posix_mutex_init(&pool->lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize lock in rrr_mqtt_id_pool_init\n");
-		return 1;
-	}
-
 	return 0;
 }
 
 void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool) {
-	pthread_mutex_lock(&pool->lock);
-
-	free(pool->pool);
+	rrr_free(pool->pool);
 	pool->pool = NULL;
 	pool->allocated_majors = 0;
 	pool->last_allocated_id = 0;
-
-	pthread_mutex_unlock(&pool->lock);
 }
 
 void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool) {
 	RRR_FREE_IF_NOT_NULL(pool->pool);
-	pthread_mutex_destroy(&pool->lock);
 }
 
 static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssize_t steps) {
@@ -68,7 +58,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssiz
 //	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
 	ssize_t new_size = new_majors * sizeof(*(pool->pool));
 
-	uint32_t *new_pool = realloc(pool->pool, new_size);
+	uint32_t *new_pool = rrr_reallocate(pool->pool, pool->allocated_majors * sizeof(*(pool->pool)), new_size);
 	if (new_pool == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
 		return 1;
@@ -110,8 +100,6 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	uint16_t ret = 0; // = no id available
-
-	pthread_mutex_lock(&pool->lock);
 
 	ret = ++(pool->last_allocated_id);
 	if (ret == 0) {
@@ -155,14 +143,11 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 
 	out:
 	pool->last_allocated_id = ret;
-	pthread_mutex_unlock(&pool->lock);
 	return ret;
 }
 
 void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 	MIN_MAJ_MASK(id);
-
-	pthread_mutex_lock(&pool->lock);
 
 	RRR_DBG_3("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
 			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
@@ -176,6 +161,4 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 	}
 
 	pool->pool[maj] &= ~mask;
-
-	pthread_mutex_unlock(&pool->lock);
 }

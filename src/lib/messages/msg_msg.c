@@ -26,9 +26,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "msg.h"
 #include "msg_msg.h"
+#include "../allocator.h"
 #include "../rrr_types.h"
 #include "../string_builder.h"
 #include "../util/utf8.h"
@@ -69,7 +71,7 @@ int rrr_msg_msg_new_empty (
 ) {
 	ssize_t total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
 	// -1 because the char which points to the data holds 1 byte
-	struct rrr_msg_msg *result = malloc(total_size);
+	struct rrr_msg_msg *result = rrr_allocate_group(total_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
 		return 1;
@@ -179,11 +181,11 @@ int rrr_msg_msg_new_with_data_nullsafe (
 
 int rrr_msg_msg_to_string (
 	char **final_target,
-	struct rrr_msg_msg *message
+	const struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
-	char *target = malloc(128);
+	char *target = rrr_allocate(128);
 	if (target == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_to_string\n");
 		ret = 1;
@@ -315,7 +317,7 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
 ) {
 	ssize_t new_total_size = (sizeof (struct rrr_msg_msg) - 1 + topic_length + data_length);
 
-	struct rrr_msg_msg *ret = malloc(new_total_size);
+	struct rrr_msg_msg *ret = rrr_allocate_group(new_total_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -333,7 +335,7 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
 struct rrr_msg_msg *rrr_msg_msg_duplicate (
 		const struct rrr_msg_msg *message
 ) {
-	struct rrr_msg_msg *ret = malloc(MSG_TOTAL_SIZE(message));
+	struct rrr_msg_msg *ret = rrr_allocate_group(MSG_TOTAL_SIZE(message), RRR_ALLOCATOR_GROUP_MSG);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -346,7 +348,7 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
 		struct rrr_msg_msg *message
 ) {
 	ssize_t new_size = sizeof(struct rrr_msg_msg) - 1 + MSG_TOPIC_LENGTH(message);
-	struct rrr_msg_msg *ret = malloc(new_size);
+	struct rrr_msg_msg *ret = rrr_allocate_group(new_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -370,7 +372,7 @@ int rrr_msg_msg_topic_set (
 	memcpy(MSG_TOPIC_PTR(ret), topic, topic_len);
 	memcpy(MSG_DATA_PTR(ret), MSG_DATA_PTR(*message), MSG_DATA_LENGTH(*message));
 
-	free(*message);
+	rrr_free(*message);
 	*message = ret;
 
 	return 0;
@@ -380,7 +382,7 @@ int rrr_msg_msg_topic_get (
 		char **result,
 		const struct rrr_msg_msg *message
 ) {
-	if ((*result = malloc(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
+	if ((*result = rrr_allocate(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_topic_get\n");
 		return 1;
 	}
@@ -430,7 +432,7 @@ int rrr_msg_msg_topic_match (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
 	) != 0) {
-		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic\n");
+		RRR_MSG_0("Warning: Invalid syntax found in message while matching topic of length %u\n", MSG_TOPIC_LENGTH(message));
 		ret = 0;
 		goto out;
 	}

@@ -1,4 +1,4 @@
-.Dd 2021-02-14
+.Dd 2021-04-07
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -391,7 +391,15 @@ module:
 .It dummy_no_generation={yes|no}
 No messages are generated, defaults to yes. 
 .It dummy_no_sleeping={yes|no}
-Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
+Don't sleep between creating messages, but create as many messages as the reader can handle, limited by automatic ratelimiting. Defaults to no.
+.It dummy_no_ratelimit={yes|no}
+If set to yes, automatic ratelimiting will be disabled even if
+.B dummy_no_sleeping
+is set to yes. Defaults to no.
+.It dummy_sleep_interval_us=MICROSECONDS
+The interval to sleep between each generated message. Cannot be set to 0, defaults to 50000 (50 ms). The sleep time is an approximate value. This parameter is ignored if
+.B dummy_no_sleeping
+is set to yes.
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will never stop.
 .It dummy_random_payload_max_size={BYTES}
@@ -434,13 +442,15 @@ If left unspecified, no listening takes place.
 .It ip_input_types=ARRAY DEFINITION
 Specification of expected data to receive from remote. See
 .Xr rrr_post(1)
-for the syntax. No listening takes places unless this is specified.
-To receive RRR messages, simply set the definition to
+for the syntax. 
+To receive RRR messages, set the definition to
 .B msg
 and set
 .B ip_extract_rrr_messages
 to
 .B yes.
+Array data will be read from all open connections, both for accepted connections (on the listening port) and for outgoing connections.
+Array data on UDP will only be read if an UDP listening port is set.
 
 .It ip_strip_array_separators={yes|no}
 If set to yes, any array fields of the
@@ -473,18 +483,26 @@ If set to no or left unset, messages with arrays will have their array packed an
 Attempt to send messages in order according to their timestamp.
 Messages to a particular destination will be sent in order according to their creation timestamp.
 If messages time out before they are sent, order is guaranteed for the remaining messages in the queue although some are missing.
+To ensure order in all situations, the parameter
+.B ip_persistent_timeout_ms
+should not be zero and
+.B ip_send_multiple_per_connection
+should be 'yes'.
 This will impact performance when destinations are unreachable.
 Defaults no no.
 
 .It ip_send_multiple_per_connection={yes|no}
-In one send iteration (a very short timespan), allow multiple messages to be sent on a single connection.
-In low traffic conditions this parameter has no practical effect.
-Defaults to no, which enforces only one message per connection.
+If set to no, TCP connections are forced to be closed after a single message has been sent. Defaults to 'yes'.
 
 .It ip_persistent_connections={yes|no}
-After a packet is sent, don't close the TCP connection but re-use it later for more messages. Implies
+OBSOLETE, has no effect. Use ip_persistent_timeout_ms. 
+
+.It ip_persistent_timeout_ms=MILLISECONDS
+After a packet is sent or data is read on a TCP connection, keep the connection alive for the specifed amout of milliseconds or until more data is sent or received.
+If set to 0, connections are closed promptly. Default value if left unset is 5000.
+This parameter has no effect if
 .B ip_send_multiple_per_connection
-if set to yes. Defaults to no.
+is 'no'.
 
 .It ip_close_grace_ms=MILLISECONDS
 After a TCP connection has been closed, prevent new connections to the same destination for the specified amount of milliseconds.
@@ -495,7 +513,7 @@ May be set to zero, defaults to 5 milliseconds.
 .It ip_send_timeout=SECONDS
 If messages are not successfully sent within this time, perform the action specified in
 .B ip_timeout_action.
-Default is not timeout (same as 0).
+Default is no timeout (same as 0).
 
 .It ip_smart_timeout={yes|no}
 If set to yes and a message is successfully sent, reset the timeout counter for all other unsent messages destined for the same host, port and protocol currently in the queue.
@@ -518,7 +536,10 @@ must be set to zero or left undefined.
 
 .It ip_graylist_timeout_ms=MILLISECONDS
 If a TCP destination is unreachable, add it to the graylist and retry only after the specified  number of milliseconds has passed.
-Defaults to 2000 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+Defaults to 100 ms. A value of zero disables graylisting, and causes a high rate of connection attempts to unreachable destinations.
+If graylisting is used in while
+.B ip_preserve_order
+is also enabled, messages waiting to be sent to a graylisted host may temporarily prevent messages to other hosts from being sent.
 
 .It ip_ttl_seconds=SECONDS
 Check the creation timestamp of messages and drop them if they are or become older than the specified amount of seconds.
@@ -1432,9 +1453,6 @@ The header is mainly used by web browsers, look online for documentation on what
 Using the header, in particualar setting it to * (which means to allow all origins), may have
 .B security implications.
 
-.It http_server_worker_threads=UNSIGNED INTEGER
-How many worker threads to start, this limits how many connections which can be open simultaneously. Defaults to 5, must be at least 1 and not more than 1024. 
-
 .It http_server_websocket_topic_filters=MQTT TOPIC FILTER[,MQTT TOPIC FILTER,...]
 If specified, connection upgrades websocket version 13 will be supported if the endpoint of the URL received from the client matches
 with one or more of the specified topic filters.
@@ -1526,6 +1544,16 @@ If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
 which means that redirects fro the server to a different transport type than the chosen one will be rejected.
 Use 'both' or leave unspecified for automatic transport type.
 
+.It http_version_10={yes|no}
+If set to yes, protocol version HTTP/1.0 is used when sending requests and upgrade to HTTP/2 will not be requested, also not using TLS ALPN.
+If set to no or left unspecified, HTTP/1.1 will be used and upgrade to HTTP/2 will be requested to the server with all queries.
+
+In case of an upgrade request, the server will either allow upgrade to HTTP/2 and continue using that or simply respond with HTTP/1.1 or HTTP/1.0.
+
+Some HTTP servers always respond with either version HTTP/1.1 or HTTP/1.0 regardless of which version the client used in the request.
+If the server responds with HTTP/1.0, the connection will be closed just after a response have been received.
+If the server responds with HTTP/1.1, the connection will be kept alive for a few seconds before being closed if no other requests are to be sent
+
 .It http_method={get|put|post|head|delete|options}
 Which method to use when sending data to the server. Defaults to
 .B get.
@@ -1603,6 +1631,11 @@ resectively, and the same values may be used in the messages.
 
 Any value specified for HTTP format in a message is ignored if a HTTP body is also present (precence of body implies 'raw' format).
 
+.It http_meta_tags_ignore={yes|no}
+Ignore the above defined tags when array values to the HTTP query (controlled by)
+.B http_tags.
+If set to no, the meta fields may be added to query string or form data body as any other field. Defaults to yes. 
+
 .It http_endpoint_from_topic={yes|no}
 .It http_endpoint_from_topic_force={yes|no}
 If
@@ -1639,19 +1672,25 @@ section for more details.
 .It http_msgdb_poll_interval_s=SECONDS
 Number of seconds between each index request to the message db server, defaults to 30.
 
+.It http_fields=HTTP FIELD NAME[=VALUE][,...]
 .It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
-A comma separated list of array tags to find in RRR messages from other modules.
-If left unspecified, all array values found will be sent to the HTTP server.
+.B http_tags
+is a comma separated list of array tags to find in RRR messages from other modules.
+If left unspecified, all array values found will be sent to the HTTP server in default configurations.
 If a tag is postfixed with a
 .B HTTP FIELD NAME,
 this name instead of the array tag name when sending data to the HTTP server.
-If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced.
- 
-.It http_fields=HTTP FIELD NAME[=VALUE][,...]
-A set of fixed fields to send to the HTTP server, optionally with values. Values from
+If tags are specified and an RRR message from a sender is missing one or more of the specified tags, an error is produced.
+
 .B http_fields
-are always sent regardless of
+is a set of fixed fields to send to the HTTP server, optionally with values. Values from
+.B http_fields
+are sent regardless of the configuration of
 .B http_tags.
+
+If a message is to have it's raw body sent in a PUT or POST request, controlled by
+.B http_body_tag,
+fields from these parameters will not added to the query.
 
 .It http_rrr_msg_to_array={yes|no}
 Convert fields in RRR messages from other modules to array values. The fields used are
@@ -1716,6 +1755,9 @@ If the original message which caused the query had a topic set, this topic will 
 
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
+This parameter is ignored if
+.B http_version_10
+is set to yes.
 
 .It http_concurrent_connections=UNSIGNED INTEGER
 Maximum number of concurrent connections to open for each host/port combination. Defaults to 10, minimum value is 1 and maximum value is 65535.

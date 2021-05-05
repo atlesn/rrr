@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/wait.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
@@ -412,7 +413,7 @@ static int __rrr_test_msgdb(void) {
 
 	struct rrr_msgdb_client_conn conn = {0};
 
-	if ((ret = rrr_msgdb_client_open(&conn, MSGDB_SOCKET)) != 0) {
+	if ((ret = rrr_msgdb_client_open_simple(&conn, MSGDB_SOCKET)) != 0) {
 		goto out;
 	}
 

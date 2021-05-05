@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/posix.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "perl5.h"
 #include "perl5_types.h"
 #include "perl5_hv_macros.h"
@@ -218,7 +219,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 	}
 	__rrr_perl5_destruct(ctx->interpreter);
 	__rrr_perl5_remove_ctx(ctx);
-	free(ctx);
+	rrr_free(ctx);
 }
 
 int rrr_perl5_new_ctx (
@@ -231,7 +232,7 @@ int rrr_perl5_new_ctx (
 	int ret = 0;
 	struct rrr_perl5_ctx *ctx = NULL;
 
-	ctx = malloc(sizeof(*ctx));
+	ctx = rrr_allocate(sizeof(*ctx));
 	if (ctx == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_perl5_new_ctx\n");
 		ret = 1;
@@ -419,7 +420,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 		}} while (0)
 
 struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
-    struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
+    struct rrr_perl5_message_hv *message_hv = rrr_allocate(sizeof(*message_hv));
     if (message_hv == NULL) {
     	RRR_MSG_0("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
     	return NULL;
@@ -436,7 +437,7 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
     HV *hv = NULL;
 
-    struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
+    struct rrr_perl5_message_hv *message_hv = rrr_allocate(sizeof(*message_hv));
     if (message_hv == NULL) {
     	RRR_MSG_0("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
     	goto out;
@@ -524,7 +525,7 @@ void rrr_perl5_destruct_settings_hv (
 	source->allocated_entries = 0;
 	source->used_entries = 0;
 
-	free(source);
+	rrr_free(source);
 }
 
 int rrr_perl5_settings_to_hv (
@@ -537,7 +538,7 @@ int rrr_perl5_settings_to_hv (
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
-	struct rrr_perl5_settings_hv *settings_hv = malloc(sizeof(*settings_hv));
+	struct rrr_perl5_settings_hv *settings_hv = rrr_allocate(sizeof(*settings_hv));
 	if (settings_hv == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_perl5_config_to_hv\n");
 		ret = 1;
@@ -546,18 +547,6 @@ int rrr_perl5_settings_to_hv (
 	memset (settings_hv, '\0', sizeof(*settings_hv));
 
 	settings_hv->hv = newHV();
-
-/* TODO:	We don't actually fill up the HV but instead force the user to utilize the
- * 			get()-method so that we can update was_used-parameter, maybe delete the following
-
-	struct rrr_perl5_settings_to_hv_callback_args callback_args = {
-			ctx, settings_hv
-	};
-	ret = rrr_settings_iterate(source, __rrr_perl5_settings_to_hv_callback, &callback_args);
-	if (ret != 0) {
-		RRR_MSG_0("Error while converting instance settings to hv in perl5\n");
-		goto out;
-	}*/
 
 	*target = settings_hv;
 
@@ -581,7 +570,7 @@ void rrr_perl5_destruct_message_hv (
 
 	SV_DEC_UNLESS_NULL(source->hv);
 
-	free(source);
+	rrr_free(source);
 }
 
 static int __rrr_perl5_hv_to_message_process_array (
@@ -632,13 +621,13 @@ static int __rrr_perl5_hv_to_message_process_array (
 
 	message_tmp->timestamp = (*target)->timestamp;
 
-	free (*target);
+	rrr_free (*target);
 	*target = message_tmp;
 	message_tmp = NULL;
 
 	out:
 	if (message_tmp != NULL) {
-		free(message_tmp);
+		rrr_free(message_tmp);
 	}
 	rrr_array_clear(&array_tmp);
 	return ret;
@@ -750,7 +739,7 @@ int rrr_perl5_hv_to_message (
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
-		struct rrr_msg_msg *new_message = realloc(target, MSG_TOTAL_SIZE(target));
+		struct rrr_msg_msg *new_message = rrr_reallocate_group(target, old_total_len, MSG_TOTAL_SIZE(target), RRR_ALLOCATOR_GROUP_MSG);
 		if (new_message == NULL) {
 			RRR_MSG_0("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
 			ret = 1;
@@ -826,7 +815,10 @@ static int __rrr_perl5_message_to_hv (
 	RRR_PERL5_DEFINE_AND_FETCH_FROM_HV(rrr_array_ptr, hv);
 
 	SvFLAGS(rrr_array_ptr) &= ~(SVf_PROTECT|SVf_READONLY);
-	sv_setiv(rrr_array_ptr, (IV) array);
+	sv_setiv(rrr_array_ptr, (intptr_t) array);
+	if (SvIV(rrr_array_ptr) != (intptr_t) array) {
+		RRR_BUG("BUG: RRR array pointer storage failure in __rrr_perl5_message_to_hv, possibly a problem on this particular architecture\n");
+	}
 	SvFLAGS(rrr_array_ptr) |= SVf_PROTECT|SVf_READONLY;
 
     SvUTF8_off(ip_addr);

@@ -23,11 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "cmodule_helper.h"
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
 #include "cmodule_channel.h"
+#include "cmodule_struct.h"
 
 #include "../buffer.h"
 #include "../modules.h"
@@ -40,14 +42,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
+#include "../event/event.h"
+#include "../event/event_functions.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"
 #include "../util/macro_utils.h"
 
 #define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
+#define WORKER_LOOP_BEGIN()                                               \
+	do { for (int _i = 0; _i < cmodule->worker_count; _i++) {         \
+		struct rrr_cmodule_worker *worker = &cmodule->workers[_i]
+
+#define WORKER_LOOP_END()                                                 \
+	}} while(0)
+
+const struct rrr_cmodule_config_data *rrr_cmodule_helper_config_data_get (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	return &(INSTANCE_D_CMODULE(thread_data)->config_data);
+}
+
 struct rrr_cmodule_helper_read_callback_data {
-	struct rrr_instance_runtime_data *parent_thread_data;
+	struct rrr_instance_runtime_data *thread_data;
 	const struct rrr_msg_msg *message;
 	int count;
 	struct rrr_msg_addr addr_message;
@@ -61,12 +78,10 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
 		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
-				INSTANCE_D_NAME(callback_data->parent_thread_data));
+				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = 1;
 		goto out;
 	}
-
-	//printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message));
 
 	rrr_msg_holder_set_unlocked (
 			entry,
@@ -93,51 +108,72 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
 
-	RRR_DBG_3("Received a message with timestamp %" PRIu64 " from worker fork in instance %s reader thread\n",
-			msg->timestamp, INSTANCE_D_NAME(callback_data->parent_thread_data));
+	RRR_DBG_3("Received a message with timestamp %" PRIu64 " from worker fork in instance %s\n",
+			msg->timestamp, INSTANCE_D_NAME(callback_data->thread_data));
 
 	if (rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER_ARGS(callback_data->parent_thread_data),
+			INSTANCE_D_BROKER_ARGS(callback_data->thread_data),
 			NULL,
 			0,
 			0,
 			__rrr_cmodule_helper_read_final_callback,
 			callback_data,
 			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
-			INSTANCE_D_THREAD(callback_data->parent_thread_data)
+			INSTANCE_D_THREAD(callback_data->thread_data)
 	) != 0) {
-		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s reader thread ID %lli\n",
-				INSTANCE_D_NAME(callback_data->parent_thread_data), (long long int) pthread_self());
+		RRR_MSG_0("Could not write to output buffer in __rrr_cmodule_helper_read_callback in instance %s\n",
+				INSTANCE_D_NAME(callback_data->thread_data));
 		return 1;
 	}
 
 	return 0;
 }
 
-static void __rrr_cmodule_helper_send_ping_worker (struct rrr_cmodule_worker *worker) {
+static int __rrr_cmodule_helper_send_ping_worker (
+		struct rrr_instance_runtime_data *thread_data,	
+		struct rrr_cmodule_worker *worker
+) {
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
 	// Don't set retry-timer, we have many opportunities to send pings anyway
-	if (rrr_cmodule_channel_send_message_simple (
+	int ret_tmp = 0;
+	if ((ret_tmp = rrr_cmodule_channel_send_message_simple (
 			worker->channel_to_fork,
-			&msg
-	) != 0) {
+			worker->event_queue_worker,
+			&msg,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
+	)) != 0) {
+		if (ret_tmp == RRR_THREAD_STOP) {
+			return RRR_THREAD_STOP;
+		}
 		// Don't trigger error here. The reader thread will exit causing restart
 		// if the fork fails (does not send any PONG back)
 	}
+
+	return 0;
 }
 
-static void __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+static int __rrr_cmodule_helper_send_ping_all_workers (struct rrr_instance_runtime_data *thread_data) {
+	int ret = 0;
+
 	struct rrr_msg msg = {0};
 	rrr_msg_populate_control_msg(&msg, RRR_MSG_CTRL_F_PING, 0);
 
-	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(thread_data), struct rrr_cmodule_worker);
-		__rrr_cmodule_helper_send_ping_worker(node);
-	RRR_LL_ITERATE_END();
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	WORKER_LOOP_BEGIN();
+		if ((ret = __rrr_cmodule_helper_send_ping_worker(thread_data, worker)) != 0) {
+			goto out;
+		}
+	WORKER_LOOP_END();
+
+	out:
+	return ret;
 }
 
 static int __rrr_cmodule_helper_send_message_to_fork (
+		struct rrr_instance_runtime_data *thread_data,
 		struct rrr_cmodule_worker *worker,
 		struct rrr_msg_holder *node
 ) {
@@ -160,19 +196,23 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	// Insert PING in between to make the child fork send PONGs back
 	// while it processes messages
 	if (worker->ping_counter++ % 8 == 0) {
-		__rrr_cmodule_helper_send_ping_worker(worker);
+		if ((ret = __rrr_cmodule_helper_send_ping_worker(thread_data, worker)) != 0) {
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_cmodule_channel_send_message_and_address (
 			worker->channel_to_fork,
+			worker->event_queue_worker,
 			message,
-			&addr_msg
+			&addr_msg,
+			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_FULL) {
 			worker->to_fork_write_retry_counter += 1;
 		}
 		else {
-			RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
+			RRR_MSG_0("Error while sending message in __rrr_cmodule_helper_send_message_to_fork\n");
 		}
 		goto out;
 	}
@@ -181,112 +221,70 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	return ret;
 }
 
-static int __rrr_cmodule_helper_send_messages_to_forks (
-		struct rrr_cmodule *cmodule
+static int __rrr_cmodule_helper_send_message_to_forks (
+		struct rrr_instance_runtime_data *thread_data,
+		struct rrr_msg_holder *entry_locked
 ) {
-	int ret = 0;
-
 	// Balanced algorithm
 
-	RRR_LL_ITERATE_BEGIN(&cmodule->queue_to_forks, struct rrr_msg_holder);
-		rrr_msg_holder_lock(node);
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+	struct rrr_cmodule_worker *preferred = &cmodule->workers[0];
+	int preferred_count = rrr_cmodule_channel_count(preferred->channel_to_fork);
 
-		struct rrr_cmodule_worker *preferred = RRR_LL_FIRST(cmodule);
-		int preferred_count = rrr_cmodule_channel_count(preferred->channel_to_fork);
-
-		RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-			int count = rrr_cmodule_channel_count(node->channel_to_fork);
-			if (count < preferred_count) {
-				preferred = node;
-				preferred_count = count;
-			}
-		RRR_LL_ITERATE_END();
-
-		ret = __rrr_cmodule_helper_send_message_to_fork(preferred, node);
-
-		if (ret == 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
+ 	WORKER_LOOP_BEGIN();
+		int count = rrr_cmodule_channel_count(worker->channel_to_fork);
+		if (count < preferred_count) {
+			preferred = worker;
+			preferred_count = count;
 		}
-		else {
-			rrr_msg_holder_unlock(node);
-			RRR_LL_ITERATE_LAST();
-			if (ret == RRR_CMODULE_CHANNEL_FULL) {
-				ret = 0;
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&cmodule->queue_to_forks, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
+ 	WORKER_LOOP_END();
 
-	// Let return value from last send attempt propagate
-
-	return ret;
+	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
 }
 
-struct rrr_cmodule_helper_poll_callback_data {
-	int count;
-	int max_count;
-};
-
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+
 	int ret = 0;
 
-	struct rrr_instance_runtime_data *thread_data = arg;
-	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
+	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", transmitting to worker fork\n",
+			INSTANCE_D_NAME(thread_data), ((struct rrr_msg_msg *) entry->message)->timestamp);
 
-	struct rrr_msg_msg *msg = entry->message;
-
-	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", queing for transmission to worker fork\n",
-			INSTANCE_D_NAME(thread_data), msg->timestamp);
-
-	rrr_msg_holder_incref_while_locked(entry);
-	RRR_LL_APPEND(&thread_data->cmodule->queue_to_forks, entry);
-
-	if (++(callback_data->count) > callback_data->max_count) {
-		ret = RRR_FIFO_SEARCH_STOP;
+	retry:
+	if ((ret = __rrr_cmodule_helper_send_message_to_forks(thread_data, entry)) != 0) {
+		if (ret == RRR_CMODULE_CHANNEL_FULL) {
+			rrr_posix_usleep(1000);
+			goto retry;
+		}
 	}
 
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
-static int __rrr_cmodule_helper_poll_delete (
-		int *count,
-		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_poll_collection *poll,
-		int wait_ms,
-		int max_count
+static int __rrr_cmodule_helper_event_message_broker_data_available (
+		RRR_EVENT_FUNCTION_ARGS
 ) {
-	int ret = 0;
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	*count = 0;
-
-	struct rrr_cmodule_helper_poll_callback_data callback_data = {
-		0,
-		max_count
-	};
-
-	thread_data->cmodule->callback_data_tmp = &callback_data;
-
-	if (rrr_poll_do_poll_delete (thread_data, poll, __rrr_cmodule_helper_poll_callback, wait_ms) != 0) {
-		RRR_MSG_0("Error while polling in instance %s\n",
-			INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
+	if (rrr_thread_signal_encourage_stop_check(thread)) {
+		return RRR_EVENT_EXIT;
 	}
 
-	out:
-	*count = callback_data.count;
-	return ret;
+	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
+
+	return rrr_poll_do_poll_delete (
+			amount,
+			thread_data,
+			__rrr_cmodule_helper_poll_callback,
+			0
+	);
 }
 
-struct rrr_cmodule_helper_reader_thread_data {
-	struct rrr_thread_collection *thread_collection;
-
-	struct rrr_instance_runtime_data *parent_thread_data;
-	struct rrr_stats_instance *stats;
-
-	uint64_t long_sleep_time_us;
+struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {
+	__rrr_cmodule_helper_event_message_broker_data_available
 };
-
 
 struct rrr_cmodule_read_from_fork_callback_data {
 		struct rrr_cmodule_worker *worker;
@@ -320,8 +318,6 @@ int __rrr_cmodule_helper_from_fork_log_callback (
 	if (!RRR_MSG_LOG_SIZE_OK(msg_log) || data_size != msg_log->msg_size) {
 		RRR_BUG("BUG: Size error of message in __rrr_cmodule_read_from_fork_log_callback\n");
 	}
-
-//	printf("worker %s in log msg read - %s\n", callback_data->worker->name, RRR_MSG_LOG_MSG_POS(msg_log));
 
 	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
 	// only (includes statistics engine)
@@ -412,459 +408,225 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 	return 0;
 }
 
-static int __rrr_cmodule_helper_read_from_forks (
-		int *config_complete,
-		struct rrr_cmodule *cmodule,
-		int read_max,
+static int __rrr_cmodule_helper_read_from_worker (
+		uint16_t *amount,
+		struct rrr_cmodule_worker *worker,
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 ) {
 	int ret = 0;
 
-	// Set to 1 first, and if any worker has config_complete set to zero, set it to zero
-	*config_complete = 1;
+	if (worker->pid == 0) {
+		RRR_MSG_0("A worker fork '%s' had exited while attempting to read in __rrr_cmodule_helper_read_from_forks \n",
+				worker->name);
+		ret = 1;
+		goto out;
+	}
 
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		int read_max_tmp = read_max;
+	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
+			worker,
+			final_callback,
+			final_callback_arg
+	};
 
-		if (node->config_complete == 0) {
-			*config_complete = 0;
+	if ((ret = rrr_cmodule_channel_receive_messages (
+			amount,
+			worker->channel_to_parent,
+			__rrr_cmodule_helper_read_from_fork_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
+			ret = 0;
+			goto out;
 		}
-
-		if (node->pid == 0) {
-			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in __rrr_cmodule_helper_read_from_forks \n",
-					node->name);
+		else if (ret == RRR_EVENT_EXIT) {
+			// Propagate
+			goto out;
+		}
+		else {
+			RRR_MSG_0("Error %i while reading from worker fork %s\n",
+					ret, worker->name);
 			ret = 1;
 			goto out;
 		}
-
-		struct rrr_cmodule_read_from_fork_callback_data callback_data = {
-				node,
-				final_callback,
-				final_callback_arg
-		};
-
-		read_again:
-		if ((ret = rrr_cmodule_channel_receive_messages (
-				node->channel_to_parent,
-				RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-				__rrr_cmodule_helper_read_from_fork_callback,
-				&callback_data
-		)) != 0) {
-			if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
-				ret = 0;
-				break;
-			}
-			else {
-				RRR_MSG_0("Error %i while reading from worker fork %s\n",
-						ret, node->name);
-				ret = 1;
-				goto out;
-			}
-		}
-		else {
-			if (--read_max_tmp > 0) {
-				goto read_again;
-			}
-		}
-	RRR_LL_ITERATE_END();
+	}
 
 	out:
 	return ret;
 }
 
-static int __rrr_cmodule_helper_read_thread_read_from_forks (
-		int *read_count,
-		int *config_complete,
-		struct rrr_instance_runtime_data *parent_thread_data,
-		int read_max
+static int __rrr_cmodule_helper_event_mmap_channel_data_available (
+		RRR_EVENT_FUNCTION_ARGS
 ) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
 	int ret = 0;
 
-	*read_count = 0;
+	// Note : Bias here to read from the first worker
 
-	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
+	int worker_i = 0;
+	while ((ret = rrr_thread_signal_encourage_stop_check(thread)) == 0 && *amount > 0) {
+		struct rrr_cmodule_worker *worker = &cmodule->workers[worker_i];
 
-	callback_data.parent_thread_data = parent_thread_data;
+		struct rrr_cmodule_helper_read_callback_data callback_data = {0};
+		callback_data.thread_data = thread_data;
 
-	ret = __rrr_cmodule_helper_read_from_forks (
-			config_complete,
-			INSTANCE_D_CMODULE(parent_thread_data),
-			read_max,
-			__rrr_cmodule_helper_read_callback,
-			&callback_data
-	);
+		if ((ret = __rrr_cmodule_helper_read_from_worker (
+				amount,
+				worker,
+				__rrr_cmodule_helper_read_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
 
-	*read_count = callback_data.count;
+		if (cmodule->config_check_complete_message_printed == 0) {
+			int complete_count = 0;
 
+			WORKER_LOOP_BEGIN();
+				if (worker->config_complete) {
+					complete_count++;
+				}
+			WORKER_LOOP_END();
+
+			if (complete_count == cmodule->worker_count) {
+				RRR_DBG_1("Instance %s child config function (if any) complete for all %u workers, checking for unused values\n",
+						INSTANCE_D_NAME(thread_data), cmodule->worker_count);
+				rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(thread_data));
+				cmodule->config_check_complete_message_printed = 1;
+				cmodule->config_check_complete = 1;
+			}
+		}
+		if (++worker_i == cmodule->worker_count) {
+			worker_i = 0;
+		}
+	}
+
+	out:
 	return ret;
 }
 
-static int __rrr_cmodule_helper_reader_thread_check_pong (
-		struct rrr_cmodule_helper_reader_thread_data *data
+static int __rrr_cmodule_helper_check_pong (
+		struct rrr_instance_runtime_data *thread_data
 ) {
 	int ret = 0;
 
 	uint64_t min_time = rrr_time_get_64() - (RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S * 1000 * 1000);
 
-	RRR_LL_ITERATE_BEGIN(INSTANCE_D_CMODULE(data->parent_thread_data), struct rrr_cmodule_worker);
-		if (node->pong_receive_time == 0) {
-			node->pong_receive_time = rrr_time_get_64();
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	WORKER_LOOP_BEGIN();
+		if (worker->pong_receive_time == 0) {
+			worker->pong_receive_time = rrr_time_get_64();
 		}
-		else if (node->pong_receive_time < min_time) {
+		else if (worker->pong_receive_time < min_time) {
 			RRR_MSG_0("PONG timeout after %ld seconds for worker fork %s pid %ld, possible hangup\n",
-					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, node->name, (long) node->pid);
+					(long) RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S, worker->name, (long) worker->pid);
 			ret = 1;
 		}
-	RRR_LL_ITERATE_END();
+	WORKER_LOOP_END();
 
 	return ret;
 }
 
-static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread) {
-	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
-
-	rrr_thread_start_condition_helper_nofork(thread);
-
-	int config_check_complete = 0;
-	int config_check_complete_message_printed = 0;
-
-	int read_count = 0;
-	int usleep_count_short = 0;
-	int usleep_count_long = 0;
-
-	// Let it overflow, DO NOT use signed
-	unsigned int consecutive_nothing_happened = 0;
-
-	uint64_t start_time = rrr_time_get_64();
-	int tick = 0;
-	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
-		rrr_thread_watchdog_time_update(thread);
-
-		int read_count_tmp = 0;
-		int config_complete_tmp = 0;
-
-		if (__rrr_cmodule_helper_read_thread_read_from_forks (
-				&read_count_tmp,
-				&config_complete_tmp,
-				data->parent_thread_data,
-				50
-		) != 0) {
-			break;
-		}
-
-		read_count += read_count_tmp;
-
-//		printf ("reader tick %i - %i\n", tick, read_count_tmp);
-
-		if (config_complete_tmp == 1 && config_check_complete_message_printed == 0) {
-			RRR_DBG_1("Instance %s child config function (if any) complete, checking for unused values\n",
-					INSTANCE_D_NAME(data->parent_thread_data));
-			rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(data->parent_thread_data));
-			config_check_complete_message_printed = 1;
-			config_check_complete = 1;
-		}
-
-		if (read_count_tmp == 0) {
-			consecutive_nothing_happened++;
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-//		printf("Tick: %i, read_count: %i\n", tick, read_count);
-
-		if (consecutive_nothing_happened > 250) {
-			usleep_count_long += 1;
-			rrr_posix_usleep(data->long_sleep_time_us);
-		}
-		else if (consecutive_nothing_happened > 100) {
-			usleep_count_short++;
-			rrr_posix_usleep(100); // 100 us
-		}
-
-		uint64_t now_time = rrr_time_get_64();
-		if (now_time - start_time > 1000000) {
-			if ((__rrr_cmodule_helper_reader_thread_check_pong(data))) {
-				break;
-			}
-
-			RRR_DBG_1("Instance %s read thread '%s' messages per second: %i\n",
-					INSTANCE_D_NAME(data->parent_thread_data), thread->name, read_count);
-
-			// When adding more stats parameters, check rate counter numbers with main thread to
-			// avoid collisions
-			rrr_stats_instance_update_rate(data->stats, 15, "from_fork_read_counter", read_count);
-			rrr_stats_instance_update_rate(data->stats, 16, "from_fork_ticks", tick);
-			rrr_stats_instance_update_rate(data->stats, 17, "from_fork_usleeps_short", usleep_count_short);
-			rrr_stats_instance_update_rate(data->stats, 18, "from_fork_usleeps_long", usleep_count_long);
-
-			usleep_count_short = 0;
-			usleep_count_long = 0;
-			read_count = 0;
-			tick = 0;
-
-			start_time = rrr_time_get_64();
-		}
-
-		tick++;
-	}
-
-	if (config_check_complete == 0) {
-		RRR_MSG_0("Warning: Instance %s never completed configuration function\n",
-				INSTANCE_D_NAME(data->parent_thread_data));
-	}
-
-	pthread_exit(0);
-}
-
-// Memory in input variables must be available throughout the lifetime of the thread
-static int __rrr_cmodule_helper_threads_start (
-		struct rrr_cmodule_helper_reader_thread_data *data,
-		struct rrr_instance_runtime_data *parent_thread_data,
-		struct rrr_stats_instance *stats,
-		uint64_t long_sleep_time_us
+static int __rrr_cmodule_helper_event_periodic (
+		RRR_EVENT_FUNCTION_PERIODIC_ARGS
 ) {
-	int ret = 0;
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	char name[128];
-	const char *name_template = "%s reader thread";
-
-	struct rrr_thread_collection *thread_collection = NULL;
-	struct rrr_thread *thread = NULL;
-
-	memset(data, '\0', sizeof(*data));
-
-	if (strlen(INSTANCE_D_NAME(parent_thread_data)) > sizeof(name) - strlen(name_template)) {
-		RRR_BUG("thread name was too long in  __rrr_cmodule_helper_threads_start\n");
+	int ret_tmp;
+	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
+		return ret_tmp;
 	}
 
-	sprintf(name, name_template, INSTANCE_D_NAME(parent_thread_data));
-
-	if ((ret = rrr_thread_collection_new(&thread_collection)) != 0) {
-		RRR_MSG_0("Could not create thread collection in __rrr_cmodule_helper_threads_start in instance %s\n",
-				INSTANCE_D_NAME(parent_thread_data));
-		goto out;
+	if (__rrr_cmodule_helper_check_pong(thread_data) != 0) {
+		return 1;
 	}
 
-	// Data members must be set now for the new thread to use
-	data->thread_collection = thread_collection;
-	data->parent_thread_data = parent_thread_data;
-	data->stats = stats;
-	data->long_sleep_time_us = long_sleep_time_us;
+	int output_buffer_count = 0;
+	int output_buffer_ratelimit_active = 0;
 
-	if ((thread = rrr_thread_collection_thread_new (
-			thread_collection,
-			__rrr_cmodule_helper_reader_thread_entry,
-			NULL,
-			NULL,
-			NULL,
-			name,
-			RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS * 1000,
-			data
-	)) == NULL) {
-		RRR_MSG_0("Could not preload thread '%s' in  instance %s\n",
-				name, INSTANCE_D_NAME(parent_thread_data));
-		ret = 1;
-		goto out_destroy_collection;
+	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+			&output_buffer_count,
+			&output_buffer_ratelimit_active,
+			thread_data
+	) != 0) {
+		RRR_MSG_0("Error while setting ratelimit in instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		return 1;
 	}
 
-	if ((ret = rrr_thread_collection_start_all(data->thread_collection, NULL, NULL)) != 0) {
-		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
-				INSTANCE_D_NAME(parent_thread_data));
-		ret = 1;
-		goto out_destroy_collection;
+	{
+		unsigned long long int read_starvation_counter = 0;
+		unsigned long long int write_full_counter = 0;
+		unsigned long long int write_retry_counter = 0;
+
+		rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
+				&read_starvation_counter,
+				&write_full_counter,
+				&write_retry_counter,
+				INSTANCE_D_CMODULE(thread_data)
+		);
+
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "mmap_to_child_full_events", write_full_counter);
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "mmap_to_child_starvation_events", read_starvation_counter);
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "mmap_to_child_write_retry_events", write_retry_counter);
+	}
+	{
+		unsigned long long int read_starvation_counter = 0;
+		unsigned long long int write_full_counter = 0;
+		unsigned long long int write_retry_counter = 0;
+
+		rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+				&read_starvation_counter,
+				&write_full_counter,
+				&write_retry_counter,
+				INSTANCE_D_CMODULE(thread_data)
+		);
+
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 5, "mmap_to_parent_full_events", write_full_counter);
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 6, "mmap_to_parent_starvation_events", read_starvation_counter);
+		rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 7, "mmap_to_parent_write_retry_events", write_retry_counter);
 	}
 
-	goto out;
-	out_destroy_collection:
-		rrr_thread_collection_destroy(thread_collection);
-		// Set everything to zero to avoid confusing cleanup functions
-		memset(data, '\0', sizeof(*data));
+	// TODO : Fix rate counter
+	// rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 11, "input_counter", INSTANCE_D_COUNTERS(thread_data)->total_message_count);
+	rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "output_buffer_count", 0, output_buffer_count);
 
-	out:
-		return ret;
-}
-
-static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
-	struct rrr_cmodule_helper_reader_thread_data *data = arg;
-
-	if (data->thread_collection != NULL) {
-		rrr_thread_collection_destroy(data->thread_collection);
-		data->thread_collection = NULL;
+	struct rrr_fifo_buffer_stats fifo_stats;
+	if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
+		RRR_MSG_0("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+		return 1;
 	}
 
-	if (data->parent_thread_data != NULL && rrr_thread_ghost_check(INSTANCE_D_THREAD(data->parent_thread_data))) {
-		RRR_BUG("Could not stop reader threads in cmodule instance %s. Can't continue.",
-				INSTANCE_D_NAME(data->parent_thread_data));
-	}
+	rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "output_buffer_total", 0, fifo_stats.total_entries_written);
+
+	rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(INSTANCE_D_THREAD(thread_data));
 }
 
 void rrr_cmodule_helper_loop (
 		struct rrr_instance_runtime_data *thread_data,
-		struct rrr_stats_instance *stats,
-		struct rrr_poll_collection *poll
+		unsigned int periodic_interval_us
 ) {
-	int no_polling = 0;
-
-	if (rrr_poll_collection_count(poll) == 0) {
+	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 			return;
 		}
-		no_polling = 1;
 	}
 
-	struct rrr_cmodule_helper_reader_thread_data reader_thread_data = {0};
-
-	// Reader threads MUST be stopped before we clean up other data
-	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
-
-	// Use at maximum the sleep interval set for the worker, but a minimum of 1 ms
-	uint64_t long_sleep_time_us = RRR_CMODULE_DEFAULT_SLEEP_TIME_MS * 1000;
-	if (long_sleep_time_us > INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us) {
-		long_sleep_time_us = INSTANCE_D_CMODULE(thread_data)->config_data.worker_sleep_time_us;
-	}
-	if (long_sleep_time_us < 1000) {
-		long_sleep_time_us = 1000;
-	}
-
-	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats, long_sleep_time_us) != 0) {
-		goto cleanup;
-	}
-
-	int from_senders_counter = 0;
-
-	int tick = 0;
-
-	// Let it overflow, DO NOT use signed
-	unsigned int consecutive_nothing_happened = 0;
-
-	uint64_t next_stats_time = 0;
-	while (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 1) {
-		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
-
-//		printf ("main tick %i\n", tick);
-
-		if (rrr_thread_collection_check_any_stopped(reader_thread_data.thread_collection)) {
-			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		int from_senders_count_tmp = 0;
-		int send_queue_total = 0;
-
-		if ((send_queue_total = RRR_LL_COUNT(&(INSTANCE_D_CMODULE(thread_data)->queue_to_forks))) < 250 && no_polling == 0) {
-			if (__rrr_cmodule_helper_poll_delete (
-					&from_senders_count_tmp,
-					thread_data,
-					poll,
-					0,
-					250
-			) != 0) {
-				goto cleanup;
-			}
-		}
-
-		if (__rrr_cmodule_helper_send_messages_to_forks(INSTANCE_D_CMODULE(thread_data)) != 0) {
-			goto cleanup;
-		}
-
-		from_senders_counter += from_senders_count_tmp;
-
-		if (from_senders_count_tmp == 0 && send_queue_total == 0) {
-			consecutive_nothing_happened++;
-		}
-		else {
-			consecutive_nothing_happened = 0;
-		}
-
-		if (consecutive_nothing_happened > RRR_CMODULE_DEFAULT_NOTHING_HAPPENED_LIMIT) {
-			rrr_posix_usleep(long_sleep_time_us);
-		}
-		else if (consecutive_nothing_happened > 100) {
-			rrr_posix_usleep(100); // 100 us
-		}
-
-		uint64_t time_now = rrr_time_get_64();
-
-		if (time_now > next_stats_time) {
-			__rrr_cmodule_helper_send_ping_all_workers(thread_data);
-
-			int output_buffer_count = 0;
-			int output_buffer_ratelimit_active = 0;
-
-			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-					&output_buffer_count,
-					&output_buffer_ratelimit_active,
-					thread_data
-			) != 0) {
-				RRR_MSG_0("Error while setting ratelimit in instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-				break;
-			}
-
-			{
-				unsigned long long int read_starvation_counter = 0;
-				unsigned long long int write_full_counter = 0;
-				unsigned long long int write_retry_counter = 0;
-
-				rrr_cmodule_helper_get_mmap_channel_to_forks_stats (
-						&read_starvation_counter,
-						&write_full_counter,
-						&write_retry_counter,
-						INSTANCE_D_CMODULE(thread_data)
-				);
-
-				rrr_stats_instance_update_rate(stats, 1, "mmap_to_child_full_events", write_full_counter);
-				rrr_stats_instance_update_rate(stats, 2, "mmap_to_child_starvation_events", read_starvation_counter);
-				rrr_stats_instance_update_rate(stats, 3, "mmap_to_child_write_retry_events", write_retry_counter);
-				rrr_stats_instance_post_base10_text(stats, "mmap_to_child_send_queue_entries", 0, send_queue_total);
-			}
-			{
-				unsigned long long int read_starvation_counter = 0;
-				unsigned long long int write_full_counter = 0;
-				unsigned long long int write_retry_counter = 0;
-
-				rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
-						&read_starvation_counter,
-						&write_full_counter,
-						&write_retry_counter,
-						INSTANCE_D_CMODULE(thread_data)
-				);
-
-				rrr_stats_instance_update_rate(stats, 5, "mmap_to_parent_full_events", write_full_counter);
-				rrr_stats_instance_update_rate(stats, 6, "mmap_to_parent_starvation_events", read_starvation_counter);
-				rrr_stats_instance_update_rate(stats, 7, "mmap_to_parent_write_retry_events", write_retry_counter);
-			}
-
-//			rrr_stats_instance_post_base10_text(stats, "current_poll_timeout", 0, current_poll_wait_ms);
-			rrr_stats_instance_update_rate(stats, 10, "ticks", tick);
-			rrr_stats_instance_update_rate(stats, 11, "input_counter", from_senders_counter);
-			// Rate counter number 7 is used by read fork
-			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, output_buffer_count);
-
-			struct rrr_fifo_buffer_stats fifo_stats;
-			if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
-				RRR_MSG_0("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
-				break;
-			}
-
-			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_total", 0, fifo_stats.total_entries_written);
-
-			tick = from_senders_counter = 0;
-
-			next_stats_time = time_now + 1000000;
-
-			rrr_cmodule_main_maintain(INSTANCE_D_CMODULE(thread_data));
-		}
-
-		tick++;
-	}
-
-	cleanup:
-	pthread_cleanup_pop(1);
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			periodic_interval_us,
+			__rrr_cmodule_helper_event_periodic,
+			INSTANCE_D_THREAD(thread_data)
+	);
 }
 
 int rrr_cmodule_helper_parse_config (
@@ -943,6 +705,40 @@ int rrr_cmodule_helper_parse_config (
 	return ret;
 }
 
+static int __rrr_cmodule_main_worker_fork_start_intermediate (
+		struct rrr_instance_runtime_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg,
+		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
+		void *custom_tick_callback_arg
+) {
+	rrr_event_function_set (
+			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+			__rrr_cmodule_helper_event_mmap_channel_data_available,
+			"mmap channel data available (helper)"
+	);
+
+	return rrr_cmodule_main_worker_fork_start (
+			INSTANCE_D_CMODULE(thread_data),
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_SETTINGS(thread_data),
+			INSTANCE_D_EVENTS(thread_data),
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg,
+			custom_tick_callback,
+			custom_tick_callback_arg
+	);
+}
+
 int rrr_cmodule_helper_worker_forks_start (
 		struct rrr_instance_runtime_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -952,11 +748,10 @@ int rrr_cmodule_helper_worker_forks_start (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
+
 	for (rrr_setting_uint i = 0; i < INSTANCE_D_CMODULE(thread_data)->config_data.worker_count; i++) {
-		if (rrr_cmodule_main_worker_fork_start (
-					INSTANCE_D_CMODULE(thread_data),
-					INSTANCE_D_NAME(thread_data),
-					INSTANCE_D_SETTINGS(thread_data),
+		if (__rrr_cmodule_main_worker_fork_start_intermediate (
+					thread_data,
 					init_wrapper_callback,
 					init_wrapper_callback_arg,
 					configuration_callback,
@@ -974,15 +769,16 @@ int rrr_cmodule_helper_worker_forks_start (
 
 int rrr_cmodule_helper_worker_custom_fork_start (
 		struct rrr_instance_runtime_data *thread_data,
+		unsigned int tick_interval_us,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_callback_arg,
 		int (*custom_tick_callback)(RRR_CMODULE_CUSTOM_TICK_CALLBACK_ARGS),
 		void *custom_tick_callback_arg
 ) {
-	return rrr_cmodule_main_worker_fork_start (
-			INSTANCE_D_CMODULE(thread_data),
-			INSTANCE_D_NAME(thread_data),
-			INSTANCE_D_SETTINGS(thread_data),
+	INSTANCE_D_CMODULE(thread_data)->config_data.worker_spawn_interval_us = tick_interval_us;
+
+	return __rrr_cmodule_main_worker_fork_start_intermediate (
+			thread_data,
 			init_wrapper_callback,
 			init_wrapper_callback_arg,
 			NULL,
@@ -1005,7 +801,7 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 	*write_full_counter = 0;
 	*write_retry_counter = 0;
 
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+	for (int i = 0; i < cmodule->worker_count; i++) {
 		unsigned long long int tmp_read_starvation_counter = 0;
 		unsigned long long int tmp_write_full_counter = 0;
 		unsigned long long int tmp_write_retry_counter = 0;
@@ -1014,14 +810,14 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 			rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
-					node
+					&cmodule->workers[i]
 			);
 		}
 		else {
 			rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
 					&tmp_read_starvation_counter,
 					&tmp_write_full_counter,
-					node
+					&cmodule->workers[i]
 			);
 		}
 
@@ -1029,8 +825,8 @@ static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 		*write_full_counter += tmp_write_full_counter;
 		*write_retry_counter += tmp_write_retry_counter;
 
-		node->to_fork_write_retry_counter = 0;
-	RRR_LL_ITERATE_END();
+		cmodule->workers[i].to_fork_write_retry_counter = 0;
+	}
 }
 
 void rrr_cmodule_helper_get_mmap_channel_to_forks_stats (

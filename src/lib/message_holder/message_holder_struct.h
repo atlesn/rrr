@@ -30,10 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 
 //#define RRR_MESSAGE_HOLDER_DEBUG_REFCOUNT
-#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
-
-// TODO : Make this smaller
-// TODO : Change data_length to unsigned
+//#define RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 
 struct rrr_msg_holder {
 	RRR_LL_NODE(struct rrr_msg_holder);
@@ -46,14 +43,23 @@ struct rrr_msg_holder {
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	int protocol;
-	uint64_t send_time;
 	const void *source;
 	void *message;
+
+	// Message broker updates this on writes to buffer
+	uint64_t buffer_time;
+
+	// Available for modules
+	uint64_t send_time;
 
 	// Used by higher levels to control partial sends
 	ssize_t bytes_sent;
 	ssize_t bytes_to_send;
 	int endian_indicator;
+
+	// Available for modules
+	void *private_data;
+	void (*private_data_destroy)(void *private_data);
 };
 
 #endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

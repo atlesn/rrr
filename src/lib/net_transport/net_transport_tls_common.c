@@ -25,8 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../util/macro_utils.h"
 #include "net_transport.h"
+#include "net_transport_struct.h"
 #include "net_transport_tls_common.h"
 
 #define CHECK_FLAG(flag)				\
@@ -65,7 +67,7 @@ int rrr_net_transport_tls_common_new (
 		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
 	}
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_tls_new\n");
 		ret = 1;
 		goto out;
@@ -74,7 +76,7 @@ int rrr_net_transport_tls_common_new (
 	memset(result, '\0', sizeof(*result));
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
-		if ((result->certificate_file = strdup(certificate_file)) == NULL) {
+		if ((result->certificate_file = rrr_strdup(certificate_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for certificate file in rrr_net_transport_tls_new\n");
 			ret = 1;
 			goto out_free;
@@ -82,7 +84,7 @@ int rrr_net_transport_tls_common_new (
 	}
 
 	if (private_key_file != NULL && *private_key_file != '\0') {
-		if ((result->private_key_file = strdup(private_key_file)) == NULL) {
+		if ((result->private_key_file = rrr_strdup(private_key_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for private key file in rrr_net_transport_tls_new\n");
 			ret = 1;
 			goto out_free;
@@ -90,7 +92,7 @@ int rrr_net_transport_tls_common_new (
 	}
 
 	if (ca_file != NULL && *ca_file != '\0') {
-		if ((result->ca_file = strdup(ca_file)) == NULL) {
+		if ((result->ca_file = rrr_strdup(ca_file)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA file file in rrr_net_transport_tls_new\n");
 			ret = 1;
 			goto out_free;
@@ -98,7 +100,7 @@ int rrr_net_transport_tls_common_new (
 	}
 
 	if (ca_path != NULL && *ca_path != '\0') {
-		if ((result->ca_path = strdup(ca_path)) == NULL) {
+		if ((result->ca_path = rrr_strdup(ca_path)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA path file in rrr_net_transport_tls_new\n");
 			ret = 1;
 			goto out_free;
@@ -106,7 +108,7 @@ int rrr_net_transport_tls_common_new (
 	}
 
 	if (alpn_protos != NULL && *alpn_protos != '\0') {
-		if ((result->alpn.protos = malloc(alpn_protos_length)) == NULL) {
+		if ((result->alpn.protos = rrr_allocate(alpn_protos_length)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for ALPN protos in rrr_net_transport_tls_new\n");
 			ret = 1;
 			goto out_free;
@@ -126,7 +128,7 @@ int rrr_net_transport_tls_common_new (
 		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);
 		RRR_FREE_IF_NOT_NULL(result->private_key_file);
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -140,7 +142,7 @@ int rrr_net_transport_tls_common_destroy (
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
 
-	free(tls);
+	rrr_free(tls);
 
 	return 0;
 }
@@ -149,7 +151,10 @@ struct rrr_read_session *rrr_net_transport_tls_common_read_get_read_session(void
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	struct rrr_net_transport_tls_data *ssl_data = callback_data->handle->submodule_private_ptr;
 
+	int is_new_dummy = 0;
+
 	return rrr_read_session_collection_maintain_and_find_or_create (
+			&is_new_dummy,
 			&callback_data->handle->read_sessions,
 			(struct sockaddr *) &ssl_data->sockaddr,
 			ssl_data->socklen

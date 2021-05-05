@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_ID_POOL_H
 
 #include <stdint.h>
-#include <pthread.h>
 #include <stdio.h>
 
 // Set small number for stress testing
@@ -33,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MQTT_ID_POOL_SIZE_IN_32 2
 
 // Number of 32-uints we allocate each time we need more IDs
-#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 16
+#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 512
 //#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 1
 
 // for debugging, use smaller size
@@ -41,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_id_pool {
 	uint32_t *pool;
-	pthread_mutex_t lock;
 	ssize_t allocated_majors;
 	uint16_t last_allocated_id;
 };

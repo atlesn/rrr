@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "string_builder.h"
 #include "type.h"
+#include "allocator.h"
 #include "util/gnu.h"
 #include "util/macro_utils.h"
 
@@ -95,7 +96,7 @@ int rrr_string_builder_new (
 ) {
 	*result = NULL;
 
-	struct rrr_string_builder *string_builder = malloc(sizeof(*string_builder));
+	struct rrr_string_builder *string_builder = rrr_allocate(sizeof(*string_builder));
 
 	if (string_builder == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_string_builder_new\n");
@@ -113,23 +114,23 @@ void rrr_string_builder_destroy (
 		struct rrr_string_builder *string_builder
 ) {
 	rrr_string_builder_clear (string_builder);
-	free(string_builder);
+	rrr_free(string_builder);
 }
 
 void rrr_string_builder_destroy_void (
 		void *ptr
 ) {
 	rrr_string_builder_clear (ptr);
-	free(ptr);
+	rrr_free(ptr);
 }
 
 int rrr_string_builder_reserve (
 		struct rrr_string_builder *string_builder,
 		rrr_biglength bytes
 ) {
-	if (string_builder->wpos + bytes + 1 > string_builder->size) {
+	if (string_builder->wpos + bytes + 1 > string_builder->size || string_builder->buf == NULL) {
 		rrr_biglength new_size = bytes + 1 + string_builder->size + 1024;
-		char *new_buf = realloc(string_builder->buf, new_size);
+		char *new_buf = rrr_reallocate(string_builder->buf, string_builder->size, new_size);
 		if (new_buf == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_string_builder_reserve\n");
 			return 1;

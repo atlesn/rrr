@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../socket/rrr_socket.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
@@ -192,7 +193,7 @@ static int __rrr_py_get_rrr_objects (
 //			"from rrr_helper import *\n"
 	;
 
-	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
+	rrr_py_import_final = rrr_allocate(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
 	sprintf(rrr_py_import_final, rrr_py_import_template, extra_module_paths_concat);
 
 	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);

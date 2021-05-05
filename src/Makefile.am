@@ -16,7 +16,7 @@ endif
 # resolved at run-time in the executables.
 
 rrr_SOURCES = rrr.c main.c
-rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\"" -DRRR_CMODULE_PATH="\"${libdir}/rrr/cmodules/\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fPIE -DPIE
+rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"@MODULE_DIR@\"" -DRRR_CMODULE_PATH="\"@CMODULE_DIR@\"" -DRRR_INTERCEPT_ALLOW_WAITPID -fPIE -DPIE
 rrr_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 
 rrr_post_SOURCES = rrr_post.c main.c
@@ -34,6 +34,7 @@ rrr_auth_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 rrr_http_client_SOURCES = rrr_http_client.c main.c
 rrr_http_client_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
 rrr_http_client_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
+rrr_http_client_LDADD = -levent
 
 rrr_http_server_SOURCES = rrr_http_server.c main.c
 rrr_http_server_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
@@ -42,6 +43,7 @@ rrr_http_server_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 rrr_stats_SOURCES = rrr_stats.c main.c
 rrr_stats_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
 rrr_stats_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
+rrr_stats_LDADD = -levent
 
 rrr_msgdb_SOURCES = rrr_msgdb.c main.c paths.c
 rrr_msgdb_CFLAGS = ${AM_CFLAGS} -fPIE -DPIE
@@ -70,4 +72,4 @@ endif
 # rrr_msgdb is currently a non-installed binary
 install-exec-local:
 	chmod +x ./make-paths.sh && ./make-paths.sh paths.c ${DESTDIR}${datadir} && \
-	make rrr_msgdb 
+	make rrr_msgdb

@@ -46,6 +46,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #endif
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
@@ -391,10 +392,10 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config_data 
 	out:
 
 	if (vm_calibration != NULL) {
-		free(vm_calibration);
+		rrr_free(vm_calibration);
 	}
 	if (vm_channel!= NULL) {
-		free(vm_channel);
+		rrr_free(vm_channel);
 	}
 
 	return ret;
@@ -467,8 +468,7 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 	};
 
 	if ((ret = rrr_message_broker_write_entry(
-			INSTANCE_D_BROKER(data->thread_data),
-			INSTANCE_D_HANDLE(data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,
@@ -617,7 +617,6 @@ void init(struct rrr_instance_module_data *data) {
 		data->module_name = module_name;
 		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
-		data->dl_ptr = NULL;
 		data->private_data = NULL;
 }
 

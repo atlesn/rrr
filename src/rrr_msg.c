@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "main.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/version.h"
 #include "lib/common.h"
 #include "lib/rrr_config.h"
@@ -149,7 +150,7 @@ static int __rrr_msg_msg_callback (
 	}
 	else if (MSG_CLASS(msg) == MSG_CLASS_DATA) {
 		RRR_MSG_1("Class: data\n");
-		RRR_MSG_1("Data size: %" PRIrrrl "\n",  MSG_DATA_LENGTH(msg));
+		RRR_MSG_1("Data size: %llu\n", (unsigned long long int) MSG_DATA_LENGTH(msg));
 		if (RRR_DEBUGLEVEL_6) {
 			struct rrr_string_builder str_tmp = {0};
 			const unsigned char *buf = (const unsigned char *) MSG_DATA_PTR(msg);
@@ -270,6 +271,7 @@ static int __rrr_msg_to_host_and_dump (
 			__rrr_msg_addr_callback,
 			__rrr_msg_log_callback,
 			__rrr_msg_ctrl_callback,
+			NULL,
 			data,
 			NULL
 	)) != 0) {
@@ -304,7 +306,11 @@ static int __rrr_msg_read (
 
 	RRR_MSG_1("== Size: %lli\n", (long long signed) file_size);
 
-	if (file_size < (ssize_t) sizeof(struct rrr_msg) || file_size > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if (file_size < (ssize_t) sizeof(struct rrr_msg) || file_size > (rrr_slength) RRR_LENGTH_MAX) {
+#else
+	if (file_size < (ssize_t) sizeof(struct rrr_msg)) {
+#endif
 		RRR_MSG_0("File size of file '%s' was out of range while reading (must have %llu <= size <= %llu, got %lli)\n",
 			file,
 			(long long unsigned) sizeof(struct rrr_msg),
@@ -508,5 +514,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }

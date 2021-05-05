@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_application.h"
 #include "http_application_http1.h"
@@ -55,6 +56,7 @@ struct rrr_http_application_http1 {
 
 	enum rrr_http_upgrade_mode upgrade_active;
 	struct rrr_websocket_state ws_state;
+	char *application_websocket_topic;
 
 	uint64_t complete_transaction_count;
 
@@ -70,9 +72,18 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 		RRR_DBG_2("HTTP1 destroys application with 1 active transaction\n");
 	}
 
+	RRR_FREE_IF_NOT_NULL(http1->application_websocket_topic);
 	rrr_websocket_state_clear_all(&http1->ws_state);
 	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
-	free(http1);
+	rrr_free(http1);
+}
+
+static uint64_t __rrr_http_application_http1_active_transaction_count_get (
+		struct rrr_http_application *app
+) {
+	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
+
+	return (http1->active_transaction != NULL ? 1 : 0);
 }
 
 static void __rrr_http_application_http1_transaction_clear (
@@ -152,7 +163,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
 		RRR_DBG_1("Error: Send failed in __rrr_http_application_http1_send_header_field_callback\n");
 		goto out;
 	}
@@ -162,13 +173,13 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 	return ret;
 }
 
-static int __rrr_http_application_http1_blocking_send_callback (
+static int __rrr_http_application_http1_send_callback (
 		const void *str,
 		rrr_length len,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
-	return rrr_net_transport_ctx_send_blocking (
+	return rrr_net_transport_ctx_send_push_const (
 			handle,
 			str,
 			len
@@ -177,6 +188,7 @@ static int __rrr_http_application_http1_blocking_send_callback (
 
 static int __rrr_http_application_http1_response_send_response_code_callback (
 		int response_code,
+		enum rrr_http_version protocol_version,
 		void *arg
 ) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
@@ -187,7 +199,8 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 
 	if (rrr_asprintf (
 			&response_str_tmp,
-			"HTTP/1.1 %u %s\r\n",
+			"%s %u %s\r\n",
+			(protocol_version == RRR_HTTP_VERSION_10 ? "HTTP/1.0" : "HTTP/1.1"),
 			response_code,
 			rrr_http_util_iana_response_phrase_from_status_code(response_code)
 	) <= 0) {
@@ -196,7 +209,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
 		goto out;
 	}
 
@@ -206,6 +219,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 }
 
 static int __rrr_http_application_http1_response_send_final (
+	struct rrr_http_part *request_part,
 	struct rrr_http_part *response_part,
 	const struct rrr_nullsafe_str *send_data,
 	void *arg
@@ -216,19 +230,23 @@ static int __rrr_http_application_http1_response_send_final (
 
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, "\r\n", 2)) != 0 ) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, "\r\n", 2)) != 0 ) {
 		goto out;
 	}
 
 	if (rrr_nullsafe_str_len(send_data)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
 				send_data,
-				__rrr_http_application_http1_blocking_send_callback,
+				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_response_send_final\n");
 			goto out;
 		}
+	}
+
+	if (request_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
+		rrr_net_transport_ctx_close_when_send_complete_set(callback_data->handle);
 	}
 
 	out:
@@ -241,6 +259,17 @@ static int __rrr_http_application_http1_response_send (
 		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
+
+	if ((ret = rrr_http_part_header_field_push (
+			transaction->response_part,
+			"connection",
+			transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_KEEPALIVE
+				? "keep-alive"
+				: "close"
+	)) != 0) {
+		RRR_MSG_0("Failed to push connection header in __rrr_http_application_http1_response_send\n");
+		goto out;
+	}
 
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
 			handle
@@ -394,9 +423,10 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li using protocol %s header length is %li\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
+			RRR_HTTP_VERSION_TO_STR(transaction->response_part->parsed_version),
 			transaction->response_part->header_length
 	);
 
@@ -429,14 +459,17 @@ static int __rrr_http_application_http1_response_receive_callback (
 				goto out;
 			}
 
+			RRR_FREE_IF_NOT_NULL(receive_data->http1->application_websocket_topic);
+
 			int do_websocket = 0;
 			if ((ret = receive_data->websocket_callback (
 					&do_websocket,
+					&receive_data->http1->application_websocket_topic,
 					receive_data->handle,
 					transaction,
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
-					transaction->response_part->parsed_protocol_version,
+					transaction->response_part->parsed_application_type,
 					receive_data->websocket_callback_arg
 			))) {
 				goto out;
@@ -507,7 +540,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 				transaction,
 				read_session->rx_buf_ptr,
 				read_session->rx_overshoot_size,
-				transaction->response_part->parsed_protocol_version,
+				transaction->response_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != 0) {
 			goto out;
@@ -520,6 +553,11 @@ static int __rrr_http_application_http1_response_receive_callback (
 	out:
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
+	if (ret == RRR_HTTP_OK) {
+		if (transaction->response_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
+			ret = RRR_HTTP_DONE;
+		}
+	}
 	return ret;
 }
 
@@ -602,13 +640,16 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 		goto out_bad_request;
 	}
 
+	RRR_FREE_IF_NOT_NULL(receive_data->http1->application_websocket_topic);
+
 	if ((ret = receive_data->websocket_callback (
 			do_websocket,
+			&receive_data->http1->application_websocket_topic,
 			receive_data->handle,
 			transaction,
 			data_to_use,
 			read_session->rx_overshoot_size,
-			transaction->response_part->parsed_protocol_version,
+			transaction->response_part->parsed_application_type,
 			receive_data->websocket_callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
 		goto out;
@@ -847,29 +888,31 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-	if ((ret = __rrr_http_application_http1_request_upgrade_try (
-			&upgrade_mode,
-			receive_data,
-			read_session,
-			data_to_use
-	)) != 0) {
-		goto out;
-	}
-
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
-		RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
-		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-		goto out_send_response;
-	}
-
-	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
-		if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-			RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
-			receive_data->http1->upgrade_active = upgrade_mode;
+	if (transaction->request_part->parsed_version != RRR_HTTP_VERSION_10) {
+		if ((ret = __rrr_http_application_http1_request_upgrade_try (
+				&upgrade_mode,
+				receive_data,
+				read_session,
+				data_to_use
+		)) != 0) {
+			goto out;
 		}
-		else {
-			RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
-					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+
+		if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
+			RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
+			transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+			goto out_send_response;
+		}
+
+		if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
+			if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+				RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
+				receive_data->http1->upgrade_active = upgrade_mode;
+			}
+			else {
+				RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+						RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+			}
 		}
 	}
 
@@ -925,7 +968,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction,
 				data_to_use,
 				read_session->rx_overshoot_size,
-				transaction->request_part->parsed_protocol_version,
+				transaction->request_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_NO_RESULT) {
@@ -1006,6 +1049,13 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 	struct rrr_http_part *part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
+
+	if (rrr_net_transport_ctx_close_when_send_complete_get(receive_data->handle)) {
+		// Data received after completed parse of HTTP/1.0 request, drop data as
+		// connection is to be closed.
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
 
 	if (receive_data->unique_id_generator_callback == NULL) {
 		// Is client
@@ -1139,7 +1189,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 }
 
 struct rrr_http_application_http1_frame_callback_data {
-	rrr_http_unique_id unique_id;
+	struct rrr_http_application_http1 *http1;
+	struct rrr_net_transport_handle *handle;
 	int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -1151,9 +1202,11 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 
 	if (opcode == RRR_WEBSOCKET_OPCODE_BINARY || opcode == RRR_WEBSOCKET_OPCODE_TEXT) {
 		return callback_data->callback (
+				callback_data->http1->application_websocket_topic,
+				callback_data->handle,
 				payload,
 				(opcode == RRR_WEBSOCKET_OPCODE_BINARY ? 1 : 0),
-				callback_data->unique_id,
+				callback_data->http1->last_unique_id,
 				callback_data->callback_arg
 		);
 	}
@@ -1162,6 +1215,7 @@ static int __rrr_http_application_http1_websocket_frame_callback (
 }
 
 static int __rrr_http_application_http1_websocket_responses_get (
+		struct rrr_http_application_http1 *http1,
 		struct rrr_websocket_state *ws_state,
 		rrr_http_unique_id unique_id,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
@@ -1176,6 +1230,7 @@ static int __rrr_http_application_http1_websocket_responses_get (
 	do {
 		RRR_FREE_IF_NOT_NULL(response_data);
 		if ((ret = callback (
+				http1->application_websocket_topic,
 				&response_data,
 				&response_data_len,
 				&response_is_binary,
@@ -1215,7 +1270,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	int ret = 0;
 
 	struct rrr_http_application_http1_frame_callback_data callback_data = {
-			http1->last_unique_id,
+			http1,
+			handle,
 			frame_callback,
 			frame_callback_arg
 	};
@@ -1231,6 +1287,7 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 	}
 
 	if ((ret = __rrr_http_application_http1_websocket_responses_get (
+			http1,
 			&http1->ws_state,
 			http1->last_unique_id,
 			callback,
@@ -1253,6 +1310,8 @@ static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 			4096,
 			65535,
 			read_max_size,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			__rrr_http_application_http1_websocket_frame_callback,
 			&callback_data
 	)) & ~(RRR_NET_TRANSPORT_READ_INCOMPLETE)) != 0) {
@@ -1280,6 +1339,7 @@ struct rrr_http_application_http1_request_send_callback_data {
 static int __rrr_http_application_http1_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_part *request_part,
 		const struct rrr_nullsafe_str *request,
 		void *arg
@@ -1346,6 +1406,17 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 		RRR_MSG_3("Note: HTTP client attempted to send request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
 #endif /* RRR_WITH_NGHTTP2 */
 	}
+	else {
+		if ((ret = rrr_http_part_header_field_push (
+				request_part,
+				"connection",
+				protocol_version == RRR_HTTP_VERSION_10
+					? "close"
+					: "keep-alive"
+		)) != 0) {
+			goto out;
+		}
+	}
 
 	// Prepend "GET " etc. before endpoint
 	if ((ret = rrr_nullsafe_str_prepend_asprintf (
@@ -1359,16 +1430,17 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 	}
 
 	// Append the rest of the header after endpoint
+	// Caller should check that version 1.0 is not used together with upgrades as this might cause connection to close after the first response
 	if ((ret = rrr_nullsafe_str_append_asprintf (
 			request_tmp,
-			" HTTP/1.1\r\n"
+			(protocol_version == RRR_HTTP_VERSION_10 ? " HTTP/1.0\r\n" : " HTTP/1.1\r\n")
 	)) < 0) {
 		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking_nullsafe (callback_data->handle, request_tmp)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_nullsafe (callback_data->handle, request_tmp)) != 0) {
 		RRR_MSG_0("Could not send first part of HTTP request header in __rrr_http_application_http1_request_send\n");
 		goto out;
 	}
@@ -1400,13 +1472,13 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	int ret = 0;
 
 	if (rrr_string_builder_length(callback_data->header_builder) > 0) {
-		if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
 			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_blocking (callback_data->handle, "\r\n", 2)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, "\r\n", 2)) != 0) {
 		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send_final_callback\n");
 		goto out;
 	}
@@ -1414,7 +1486,7 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	if (rrr_nullsafe_str_len(send_body)) {
 		if ((ret = rrr_nullsafe_str_with_raw_do_const (
 				send_body,
-				__rrr_http_application_http1_blocking_send_callback,
+				__rrr_http_application_http1_send_callback,
 				callback_data->handle
 		)) != 0) {
 			RRR_MSG_0("Could not send HTTP request body in __rrr_http_application_http1_request_send_final_callback\n");
@@ -1446,8 +1518,10 @@ static int __rrr_http_application_http1_request_send (
 
 	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
 
-	if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
-		goto out;
+	if (protocol_version != RRR_HTTP_VERSION_10) {
+		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
+			goto out;
+		}
 	}
 
 	struct rrr_http_application_http1_request_send_callback_data callback_data = {
@@ -1459,6 +1533,7 @@ static int __rrr_http_application_http1_request_send (
 	if ((ret = rrr_http_transaction_request_prepare_wrapper (
 			transaction,
 			upgrade_mode,
+			protocol_version,
 			user_agent,
 			__rrr_http_application_http1_request_send_preliminary_callback,
 			__rrr_http_application_http1_request_send_make_headers_callback,
@@ -1480,10 +1555,11 @@ static int __rrr_http_application_http1_tick (
 
 	int ret = RRR_HTTP_OK;
 
-	*active_transaction_count = (http1->active_transaction != NULL ? 1 : 0);
-	*complete_transaction_count = (http1->complete_transaction_count);
-
 	*upgraded_app = NULL;
+
+	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > 0) {
+		goto out;
+	}
 
 	if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_WEBSOCKET) {
 		ret = __rrr_http_application_http1_transport_ctx_tick_websocket (
@@ -1500,13 +1576,15 @@ static int __rrr_http_application_http1_tick (
 	}
 	else if (http1->upgrade_active == RRR_HTTP_UPGRADE_MODE_NONE) {
 		if (http1->active_transaction != NULL && http1->active_transaction->need_response) {
-			if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
-				ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
+			if ((ret = rrr_net_transport_ctx_check_alive(handle)) == 0) {
+				if ((ret = async_response_get_callback(http1->active_transaction, async_response_get_callback_arg)) == RRR_HTTP_OK) {
+					ret = __rrr_http_application_http1_response_send(app, handle, http1->active_transaction);
 
-				__rrr_http_application_http1_transaction_clear(http1);
+					__rrr_http_application_http1_transaction_clear(http1);
+				}
+
+				ret &= ~(RRR_HTTP_NO_RESULT);
 			}
-
-			ret &= ~(RRR_HTTP_NO_RESULT);
 		}
 		else {
 			struct rrr_http_application_http1_receive_data callback_data = {
@@ -1526,10 +1604,12 @@ static int __rrr_http_application_http1_tick (
 
 			ret = rrr_net_transport_ctx_read_message (
 						handle,
-						100,
+						1,
 						4096,
 						65535,
 						read_max_size,
+						0, // No ratelimit interval
+						0, // No ratelimit max bytes
 						__rrr_http_application_http1_receive_get_target_size,
 						&callback_data,
 						unique_id_generator_callback == NULL // No generator indicates client
@@ -1545,7 +1625,18 @@ static int __rrr_http_application_http1_tick (
 		RRR_BUG("__rrr_http_application_http1_tick called while active upgrade was not NONE or WEBSOCKET but %i, maybe caller forgot to switch to HTTP2?\n", http1->upgrade_active);
 	}
 
+	out:
 	return ret;
+}
+
+static int __rrr_http_application_http1_need_tick (
+		RRR_HTTP_APPLICATION_NEED_TICK_ARGS
+) {
+	(void)(app);
+
+	/* No need for extra ticking in HTTP1 */
+
+	return 0;
 }
 
 static void __rrr_http_application_http1_polite_close (
@@ -1559,9 +1650,11 @@ static void __rrr_http_application_http1_polite_close (
 static const struct rrr_http_application_constants rrr_http_application_http1_constants = {
 	RRR_HTTP_APPLICATION_HTTP1,
 	__rrr_http_application_http1_destroy,
+	__rrr_http_application_http1_active_transaction_count_get,
 	__rrr_http_application_http1_request_send_possible,
 	__rrr_http_application_http1_request_send,
 	__rrr_http_application_http1_tick,
+	__rrr_http_application_http1_need_tick,
 	__rrr_http_application_http1_polite_close
 };
 
@@ -1572,7 +1665,7 @@ int rrr_http_application_http1_new (
 
 	struct rrr_http_application_http1 *result = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_application_http1_new\n");
 		ret = 1;
 		goto out;

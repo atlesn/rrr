@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -172,7 +173,6 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
 	)) != 0) {
 		RRR_MSG_0("Failed to create array message in mangler_poll_callback\n");
-		ret = 1;
 		goto out_drop;
 	}
 
@@ -194,6 +194,13 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
+static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	return rrr_poll_do_poll_delete (amount, thread_data, mangler_poll_callback, 0);
+}
+
 static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -207,7 +214,6 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 					config->name);
 			goto out;
 		}
-		ret = 0;
 	}
 
 	if ((ret = rrr_type_conversion_collection_new_from_map(&data->conversions, &data->conversions_map)) != 0) {
@@ -241,15 +247,12 @@ static void *thread_entry_mangler (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mangler instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, mangler_poll_callback, 50) != 0) {
-			RRR_MSG_0("Error while polling in mangler instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-	}
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
 
 	out_message:
 	pthread_cleanup_pop(1);
@@ -266,6 +269,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	mangler_event_broker_data_available
+};
+
 static const char *module_name = "mangler";
 
 __attribute__((constructor)) void load(void) {
@@ -276,7 +283,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

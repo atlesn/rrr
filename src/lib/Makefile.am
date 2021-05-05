@@ -45,7 +45,7 @@ endif
 if RRR_WITH_NGHTTP2
 libadd_nghttp2 = librrrnghttp2.la
 librrrnghttp2_la_SOURCES = http2/http2.c http/http_application_http2.c
-librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS}
+librrrnghttp2_la_CFLAGS = ${NGHTTP2_CFLAGS} ${AM_CFLAGS}
 librrrnghttp2_la_LDFLAGS = ${NGHTTP2_LDFLAGS}
 nghttp2_extra_ld = ${NGHTTP2_LDFLAGS}
 endif
@@ -53,7 +53,7 @@ endif
 if RRR_WITH_JSONC
 libadd_jsonc = librrrjsonc.la
 librrrjsonc_la_SOURCES = json/json.c
-librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS}
+librrrjsonc_la_CFLAGS = ${JSONC_CFLAGS} ${AM_CFLAGS}
 librrrjsonc_la_LDFLAGS = ${JSONC_LDFLAGS}
 librrrjsonc_la_LIBS = ${JSONC_LIBS}
 jsonc_extra_ld = ${JSONC_LDFLAGS} ${JSONC_LIBS}
@@ -66,11 +66,12 @@ mqtt = mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
 socket = socket/rrr_socket.c socket/rrr_socket_read.c socket/rrr_socket_send_chunk.c \
-         socket/rrr_socket_common.c socket/rrr_socket_client.c 
+         socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_graylist.c \
+	 socket/rrr_socket_eventfd.c 
 
 http = http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
        http/http_common.c http/http_query_builder.c http/http_client_config.c \
-       http/http_server.c http/http_server_worker.c http/http_header_fields.c \
+       http/http_server.c http/http_header_fields.c \
        http/http_part_parse.c http/http_part_multipart.c http/http_transaction.c \
        http/http_application.c http/http_application_http1.c \
        http/http_redirect.c
@@ -100,6 +101,8 @@ helpers = helpers/nullsafe_str.c
 
 msgdb = msgdb/msgdb_client.c msgdb/msgdb_server.c msgdb/msgdb_common.c
 
+event = event/event.c event/event_collection.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_openssl.c net_transport/net_transport_tls_common.c
 endif
@@ -113,7 +116,7 @@ librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2
 librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
-                    read.c rrr_mmap.c mmap_channel.c \
+                    read.c mmap_channel.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
@@ -122,18 +125,22 @@ librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     ${net_transport} ${net_transport_tls} ${net_transport_libressl} \
                     ${util} ${ip} ${message_holder} ${messages} \
                     ${input} ${input_system} ${helpers} ${websocket} \
-		    ${msgdb}
+		    ${msgdb} ${event}
 
 lib_LTLIBRARIES = librrr.la ${lib_mysql}
 
+libadd_rrr_allocator = librrr_allocator.la
+librrr_allocator_la_SOURCES = allocator.c rrr_mmap.c
+librrr_allocator_la_CFLAGS = ${AM_CFLAGS} -O5
+
 libadd_rrr_posix = librrr_posix.la
 librrr_posix_la_SOURCES = util/posix.c
-librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
+librrr_posix_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT ${AM_CFLAGS}
 librrr_posix_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_gnu = librrr_gnu.la
 librrr_gnu_la_SOURCES = util/gnu.c
-librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID
+librrr_gnu_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_GETTID ${AM_CFLAGS}
 librrr_gnu_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
@@ -182,7 +189,8 @@ libadd_all =                         \
     ${libadd_rrr_conversion_warning} \
     ${libadd_rrr_posix}              \
     ${libadd_rrr_gnu}                \
-    ${libadd_rrr_sha1}
+    ${libadd_rrr_sha1}               \
+    ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm 
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads

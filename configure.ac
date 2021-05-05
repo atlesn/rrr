@@ -1,8 +1,9 @@
-AC_INIT([Read Route Record],[1.16-0])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.16-0", [Full version])
+# Even minor version = development, odd minor version = stable
+AC_INIT([Read Route Record],[1.18-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.18-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 18, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -46,6 +47,7 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
+AC_ARG_WITH([eventfd],[AS_HELP_STRING([--without-eventfd],[build without the eventfd bindings event when available])],[enable_eventfd=no],[enable_eventfd=yes])
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
@@ -169,6 +171,37 @@ AC_RUN_IFELSE([
 ], [
 	AC_MSG_RESULT([no])
 ])
+		
+AC_MSG_CHECKING([usage of eventfd()])
+AS_IF([test "x$enable_eventfd" != "xno"], [
+	AC_MSG_RESULT([yes])
+	AC_MSG_CHECKING([precense of eventfd()])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <sys/eventfd.h>
+
+			int main (int argc, char *argv[]) {
+				int fd = eventfd(0, 0);
+				return 0;
+			}
+		]])
+	], [
+		AC_MSG_RESULT([yes])
+		AC_DEFINE([RRR_HAVE_EVENTFD], [1], [Linux-specific eventfd() is present])
+	], [
+		AC_MSG_RESULT([no])
+	])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
+AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
+AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])
+
+AC_SUBST([TLS_CFLAGS])
+AC_SUBST([TLS_LDFLAGS])
+AC_SUBST([TLS_LIBADD])
 
 TLS_CFLAGS=
 TLS_LDFLAGS=
@@ -278,6 +311,9 @@ AM_CONDITIONAL([RRR_WITH_OPENSSL_CRYPT], [test "x$enable_encryption" != xno])
 AM_CONDITIONAL([RRR_WITH_LIBRESSL], [test "x$enable_libressl" != xno])
 AM_CONDITIONAL([RRR_WITH_AUTO_SSL], [test "x$enable_auto_ssl" != xno])
 
+# Make sure Perl-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -368,6 +404,9 @@ AS_IF([test "x$enable_perl5" = xno], [
 
 	AC_SUBST([PERL5_INTERPRETER])
 ])
+
+# Make sure Python-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
@@ -502,6 +541,9 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
+# Make sure json-c-test does not include any libraries
+LIBS=""
+
 AC_MSG_CHECKING([json-c bindings])
 AS_IF([test "x$enable_jsonc" = xno], [
 	AC_MSG_RESULT([Not compiling with json-c bindings])
@@ -561,6 +603,9 @@ AS_IF([test "x$enable_nghttp2" = xno], [
 	AC_SUBST([NGHTTP2_LDFLAGS])
 	AC_SUBST([NGHTTP2_LIBS])
 ])
+
+# Make sure MySQL-test does not include any libraries
+LIBS=""
 
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [
@@ -737,6 +782,17 @@ AS_IF([test "x$enable_openrc" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+MODULE_DIR="\${exec_prefix}/lib/rrr"
+AC_MSG_CHECKING([module installation directory])
+AC_MSG_RESULT([${MODULE_DIR}])
+
+CMODULE_DIR="\${exec_prefix}/lib/rrr/cmodules"
+AC_MSG_CHECKING([cmodule installation directory])
+AC_MSG_RESULT([${CMODULE_DIR}])
+
+AC_SUBST([MODULE_DIR])
+AC_SUBST([CMODULE_DIR])
+
 # Clear all automatically added libs. Library users must specify
 # libraries locally in Makefile.am
 LIBS=""
@@ -767,3 +823,6 @@ echo "rrr: disabling libtool depedency_libs variable"
 sed "s/^dependency_libs=.*/dependency_libs=''/" < libtool > libtool.new
 mv libtool.new libtool
 chmod +x libtool
+
+# Copy config.h file for installation together with other headers
+cp -f config.h src/lib/rrr-build-config.h

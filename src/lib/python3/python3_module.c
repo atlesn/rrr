@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_module.h"
 #include "python3_module_common.h"
 #include "../log.h"
+#include "../allocator.h"
 
 static PyMethodDef module_methods[] = {
 		{ NULL, NULL, 0, NULL }

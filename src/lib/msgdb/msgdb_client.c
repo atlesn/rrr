@@ -23,72 +23,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
+#include "../event/event.h"
+#include "../event/event_collection.h"
 #include "msgdb_client.h"
 #include "msgdb_common.h"
 #include "../messages/msg.h"
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket_client.h"
 #include "../socket/rrr_socket_read.h"
+#include "../socket/rrr_socket_constants.h"
 #include "../util/rrr_time.h"
 #include "../array.h"
 
-int rrr_msgdb_client_open (
-		struct rrr_msgdb_client_conn *conn,
-		const char *path
-) {
-	int ret = 0;
-
-	if (conn->fd != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 0)) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_3("msgdb open '%s' fd is %i\n", path, conn->fd);
-
-	out:
-	return ret;
-}
-
-void rrr_msgdb_client_close (
-		struct rrr_msgdb_client_conn *conn
-) {
-	if (conn->fd > 0) {
-		rrr_socket_close_no_unlink(conn->fd);
-		conn->fd = 0;
-	}
-	rrr_read_session_collection_clear(&conn->read_sessions);
-}
-
-void rrr_msgdb_client_close_void (
-		void *conn
-) {
-	rrr_msgdb_client_close(conn);
-}
-
-int rrr_msgdb_client_conn_ensure_with_callback (
-		struct rrr_msgdb_client_conn *conn,
-		const char *socket,
-		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	int retries = 1;
-	do {
-		if ((ret = rrr_msgdb_client_open (conn, socket)) != 0) {
-			RRR_MSG_0("Connection to msgdb on socket '%s' failed\n",
-				socket);
-		}
-		else if ((ret = callback(conn, callback_arg)) != 0) {
-			rrr_msgdb_client_close(conn);
-		}
-	} while (ret != 0 && retries--);
-
-	return ret;
-}
+#define RRR_MSGDB_CLIENT_PING_INTERVAL_S (RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2)
 
 static int __rrr_msgdb_client_await_ack_callback_silent (
 		const struct rrr_msg *message,
@@ -117,6 +65,9 @@ static int __rrr_msgdb_client_await_ack_callback (
 	else if (RRR_MSG_CTRL_FLAGS(message) & RRR_MSGDB_CTRL_F_NACK) {
 		RRR_DBG_3("msgdb fd %i recv NACK\n", conn->fd);
 	}
+	else if (RRR_MSG_CTRL_FLAGS(message) & RRR_MSGDB_CTRL_F_PONG) {
+		RRR_DBG_3("msgdb fd %i recv PONG\n", conn->fd);
+	}
 	else {
 		RRR_MSG_0("message database client received unexpected control packet of type %u\n",
 			RRR_MSG_CTRL_FLAGS(message));
@@ -142,10 +93,13 @@ int rrr_msgdb_client_await_ack (
 			&conn->read_sessions,
 			conn->fd,
 			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			NULL,
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback,
+			NULL,
 			conn,
 			positive_ack
 	)) != 0) {
@@ -192,10 +146,13 @@ int rrr_msgdb_client_await_msg (
 			&conn->read_sessions,
 			conn->fd,
 			RRR_SOCKET_READ_METHOD_RECV|RRR_SOCKET_READ_CHECK_POLLHUP,
+			0, // No ratelimit interval
+			0, // No ratelimit max bytes
 			__rrr_msgdb_client_await_msg_callback,
 			NULL,
 			NULL,
 			__rrr_msgdb_client_await_ack_callback_silent,
+			NULL,
 			conn,
 			result_msg
 	)) != 0) {
@@ -234,8 +191,8 @@ int rrr_msgdb_client_send (
 
 	if (RRR_DEBUGLEVEL_2) {
 		if (rrr_msg_msg_topic_get(&topic_tmp, msg) == 0) {
-			RRR_DBG_3("msgdb fd %i %s size %li topic '%s'\n",
-				conn->fd, MSG_TYPE_NAME(msg), MSG_TOTAL_SIZE(msg), topic_tmp);
+			RRR_DBG_3("msgdb fd %i %s size %llu topic '%s'\n",
+				conn->fd, MSG_TYPE_NAME(msg), (long long unsigned int) MSG_TOTAL_SIZE(msg), topic_tmp);
 		}
 		else {
 			RRR_MSG_0("Warning: Failed to allocate memory for debug message in rrr_msgdb_client_send\n");
@@ -359,5 +316,132 @@ int rrr_msgdb_client_cmd_del (
 	ret = positive_ack ? 0 : 1;
 
 	out:
+	return ret;
+}
+
+static void __rrr_msgdb_client_event_periodic (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_msgdb_client_conn *conn = arg;
+
+	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
+
+	if (rrr_msgdb_common_ctrl_msg_send (
+			conn->fd,
+			RRR_MSG_CTRL_F_PING,
+			__rrr_msgdb_client_send_callback,
+			NULL
+	) != 0) {
+		RRR_DBG_3("msgdb fd %i ping failed\n", conn->fd);
+		goto out_error;
+	}
+
+	int positive_ack_dummy;
+	if (rrr_msgdb_client_await_ack (&positive_ack_dummy, conn) != 0) {
+		goto out_error;
+	}
+
+	return;
+
+	out_error:
+	/* Application must reconnect */
+	rrr_msgdb_client_close(conn);
+}
+
+int rrr_msgdb_client_open (
+		struct rrr_msgdb_client_conn *conn,
+		const char *path,
+		struct rrr_event_queue *queue
+) {
+	int ret = 0;
+
+	if (conn->fd != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 0)) != 0) {
+		goto out;
+	}
+
+	/* Always clear regardless of queue argument */
+	rrr_event_collection_clear(&conn->events);
+
+	if (queue != NULL) {
+		rrr_event_collection_init(&conn->events, queue);
+
+		struct rrr_event_handle event = {0};
+		if ((ret = rrr_event_collection_push_periodic (
+				&event,
+				&conn->events,
+				__rrr_msgdb_client_event_periodic,
+				conn,
+				RRR_MSGDB_CLIENT_PING_INTERVAL_S * 1000 * 1000
+		)) != 0) {
+			RRR_MSG_0("Failed to create periodic event in rrr_msgdb_client_open\n");
+			goto out_close;
+		}
+
+		EVENT_ADD(event);
+	}
+
+	RRR_DBG_3("msgdb open '%s' fd is %i\n", path, conn->fd);
+
+	goto out;
+	out_close:
+		rrr_socket_close(conn->fd);
+		conn->fd = 0;
+	out:
+		return ret;
+}
+
+int rrr_msgdb_client_open_simple (
+		struct rrr_msgdb_client_conn *conn,
+		const char *path
+) {
+	return rrr_msgdb_client_open (conn, path, NULL);
+}
+
+void rrr_msgdb_client_close (
+		struct rrr_msgdb_client_conn *conn
+) {
+	rrr_event_collection_clear(&conn->events);
+	if (conn->fd > 0) {
+		rrr_socket_close_no_unlink(conn->fd);
+		conn->fd = 0;
+	}
+	rrr_read_session_collection_clear(&conn->read_sessions);
+}
+
+void rrr_msgdb_client_close_void (
+		void *conn
+) {
+	rrr_msgdb_client_close(conn);
+}
+
+int rrr_msgdb_client_conn_ensure_with_callback (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_event_queue *queue,
+		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	int retries = 1;
+	do {
+		if ((ret = rrr_msgdb_client_open (conn, socket, queue)) != 0) {
+			RRR_MSG_0("Connection to msgdb on socket '%s' failed\n",
+				socket);
+		}
+		else if ((ret = callback(conn, callback_arg)) != 0) {
+			rrr_msgdb_client_close(conn);
+		}
+	} while (ret != 0 && retries--);
+
 	return ret;
 }

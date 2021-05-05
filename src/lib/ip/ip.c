@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,116 +39,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <arpa/inet.h>
 
-#include "read.h"
-#include "log.h"
-#include "array.h"
-#include "rrr_strerror.h"
-#include "read_constants.h"
-
-/*
-#include "messages/msg_msg.h"
-#include "messages/msg.h"
-#include "message_holder/message_holder.h"
-#include "message_holder/message_holder_struct.h"
-*/
-#include "ip/ip.h"
-#include "ip/ip_accept_data.h"
-#include "ip/ip_util.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_common.h"
-#include "socket/rrr_socket_read.h"
-#include "socket/rrr_socket_constants.h"
-#include "util/rrr_time.h"
-#include "util/posix.h"
-#include "util/crc32.h"
+#include "../log.h"
+#include "../allocator.h"
+#include "ip.h"
+#include "ip_accept_data.h"
+#include "ip_util.h"
+#include "../read.h"
+#include "../array.h"
+#include "../rrr_strerror.h"
+#include "../read_constants.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_common.h"
+#include "../socket/rrr_socket_read.h"
+#include "../socket/rrr_socket_constants.h"
+#include "../util/rrr_time.h"
+#include "../util/posix.h"
+#include "../util/crc32.h"
 
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
-
-static int __rrr_ip_graylist_exists (
-		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
-) {
-	uint64_t time_now = rrr_time_get_64();
-	RRR_LL_ITERATE_BEGIN(list, struct rrr_ip_graylist_entry);
-		if (time_now > node->expire_time) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-		else if (node->addr_len == len) {
-			if (memcmp(&node->addr, addr, len) == 0) {
-				return 1;
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; free(node));
-	return 0;
-}
-
-static int __rrr_ip_graylist_push (
-		struct rrr_ip_graylist *target,
-		const struct sockaddr *addr,
-		socklen_t len
-) {
-	int ret = 0;
-
-	struct rrr_ip_graylist_entry *new_entry = NULL;
-
-	if (target->graylist_period_us == 0) {
-		goto out;
-	}
-
-	if (__rrr_ip_graylist_exists(target, addr, len)) {
-		goto out;
-	}
-
-	char ip_str[256];
-	rrr_ip_to_str(ip_str, 256, addr, len);
-	RRR_DBG_3("Host '%s' graylisting for %llu ms following connection error\n",
-			ip_str,
-			target->graylist_period_us / 1000LLU
-	);
-
-	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_ip_graylist_push\n");
-		ret = 1;
-		goto out;
-	}
-
-	memset(new_entry, '\0', sizeof(*new_entry));
-
-	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push %u > %lu\n",
-			len, sizeof(new_entry->addr));
-	}
-
-	memcpy (&new_entry->addr, addr, len);
-	new_entry->addr_len = len;
-	new_entry->expire_time = rrr_time_get_64() + target->graylist_period_us;
-
-	RRR_LL_APPEND(target, new_entry);
-	new_entry = NULL;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(new_entry);
-	return ret;
-}
-
-void rrr_ip_graylist_clear (
-		struct rrr_ip_graylist *target
-) {
-	RRR_LL_DESTROY(target, struct rrr_ip_graylist_entry, free(node));
-}
-
-void rrr_ip_graylist_clear_void (
-		void *target
-) {
-	return rrr_ip_graylist_clear(target);
-}
-
-void rrr_ip_graylist_init (
-		struct rrr_ip_graylist *target,
-		uint64_t graylist_period_us
-) {
-	memset(target, '\0', sizeof(*target));
-	target->graylist_period_us = graylist_period_us;
-}
 
 void rrr_ip_network_cleanup (
 		void *arg
@@ -169,7 +77,8 @@ int rrr_ip_network_start_udp_nobind (
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
 			"ip_network_start_udp_nobind",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
@@ -190,7 +99,8 @@ int rrr_ip_network_start_udp (
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
 			"ip_network_start_udp_ipv4",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
@@ -283,63 +193,39 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	return ret;
 }
 
-static int __rrr_ip_network_connect_tcp_check_graylist (
-		struct rrr_ip_graylist *graylist,
-		const struct sockaddr *addr,
-		socklen_t addr_len
-) {
-	int ret = RRR_SOCKET_OK;
-
-	if (graylist == NULL) {
-		goto out;
-	}
-
-	if (__rrr_ip_graylist_exists(graylist, addr, addr_len)) {
-		ret = RRR_SOCKET_SOFT_ERROR;
-		return ret;
-	}
-
-	out:
-	return ret;
-}
-
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		struct rrr_ip_accept_data **accept_data,
 		struct sockaddr *addr,
-		socklen_t addr_len,
-		struct rrr_ip_graylist *graylist
+		socklen_t addr_len
 ) {
 	int ret = RRR_SOCKET_OK;
 
 	int fd = 0;
 
-    if ((ret = __rrr_ip_network_connect_tcp_check_graylist (graylist, addr, addr_len)) != 0) {
-    	goto out;
-    }
-
 	*accept_data = NULL;
 
 	fd = rrr_socket (
-			AF_INET,
+			addr->sa_family,
 			SOCK_STREAM|SOCK_NONBLOCK,
 			0,
 			"ip_network_connect_tcp_ipv4_or_ipv6_raw",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
-		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while creating socket (raw): %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
 
-    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
-    if (accept_result == NULL) {
-    	RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+	struct rrr_ip_accept_data *accept_result = rrr_allocate(sizeof(*accept_result));
+	if (accept_result == NULL) {
+		RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		ret = RRR_SOCKET_HARD_ERROR;
-    	goto out_error_close_socket;
-    }
+		goto out_error_close_socket;
+	}
 
-    memset(accept_result, '\0', sizeof(*accept_result));
+	memset(accept_result, '\0', sizeof(*accept_result));
 
 	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
 		RRR_DBG_3("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
@@ -355,28 +241,66 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		goto out_error_free_accept;
 	}
 
-    accept_result->ip_data.fd = fd;
-    accept_result->len = addr_len;
-    memcpy (&accept_result->addr, addr, addr_len);
+	accept_result->ip_data.fd = fd;
+	accept_result->len = addr_len;
+	memcpy (&accept_result->addr, addr, addr_len);
 
-    struct sockaddr_in *sockaddr_in = (struct sockaddr_in *) &addr;
-    accept_result->ip_data.port = ntohs(sockaddr_in->sin_port);
+	struct sockaddr_in *sockaddr_in = (struct sockaddr_in *) &addr;
+	accept_result->ip_data.port = ntohs(sockaddr_in->sin_port);
 
-/*    if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
-    	RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
+/*	if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
+		RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
 		goto out_free_accept;
-    }*/
+	}*/
 
-    *accept_data = accept_result;
+	*accept_data = accept_result;
 
-    goto out;
+	goto out;
 
 	out_error_free_accept:
-	 	if (graylist != NULL) {
-	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len);
-	 	}
-		free(accept_result);
+		rrr_free(accept_result);
 	out_error_close_socket:
+		rrr_socket_close(fd);
+	out:
+		return ret;
+}
+
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
+		int *result_fd,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = RRR_SOCKET_OK;
+
+	int fd = 0;
+
+	*result_fd = -1;
+
+	fd = rrr_socket (
+			addr->sa_family,
+			SOCK_STREAM|SOCK_NONBLOCK,
+			IPPROTO_TCP,
+			"ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock",
+			NULL,
+			0
+	);
+	if (fd == -1) {
+		RRR_MSG_0("Error while creating socket (raw nonblock): %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	if (rrr_socket_connect_nonblock(fd, addr, addr_len) != 0) {
+		RRR_DBG_3("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out_close;
+	}
+
+	*result_fd = fd;
+
+	goto out;
+
+	out_close:
 		rrr_socket_close(fd);
 	out:
 		return ret;
@@ -389,11 +313,59 @@ static void __rrr_ip_freeaddrinfo_void_dbl_ptr (void *arg) {
 	}
 }
 
+int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
+		unsigned int port,
+		const char *host,
+		int (*callback)(const char *host, unsigned int port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	if (port < 1 || port > 65535) {
+		RRR_BUG ("rrr_ip_network_resolve_ipv4_or_ipv6_with_callback: port was not in the range 1-65535 (got '%d')\n", port);
+	}
+
+	char port_str[16];
+	sprintf(port_str, "%u", port);
+
+	struct addrinfo hints;
+	struct addrinfo *addrinfo_result = NULL;
+
+	pthread_cleanup_push(__rrr_ip_freeaddrinfo_void_dbl_ptr, &addrinfo_result);
+
+	memset (&hints, '\0', sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
+	if (s != 0) {
+		RRR_DBG_7("IP failed to get address of '%s': %s\n", host, gai_strerror(s));
+		ret = 1;
+		goto out;
+	}
+
+	int i = 1;
+	struct addrinfo *rp;
+	for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
+		RRR_DBG_7("IP resolve address suggestion #%i to %s:%u address family %u\n",
+				i, host, port, rp->ai_addr->sa_family);
+
+		if ((ret = callback(host, port, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, callback_arg)) != 0) {
+			goto out;
+		}
+
+		i++;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
 		unsigned int port,
-		const char *host,
-		struct rrr_ip_graylist *graylist
+		const char *host
 ) {
 	int ret = 0;
 
@@ -408,92 +380,81 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 	char port_str[16];
 	sprintf(port_str, "%u", port);
 
-    struct addrinfo hints;
-    struct addrinfo *addrinfo_result = NULL;
+	struct addrinfo hints;
+	struct addrinfo *addrinfo_result = NULL;
 
-    pthread_cleanup_push(__rrr_ip_freeaddrinfo_void_dbl_ptr, &addrinfo_result);
+	pthread_cleanup_push(__rrr_ip_freeaddrinfo_void_dbl_ptr, &addrinfo_result);
 
-    memset (&hints, '\0', sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
+	memset (&hints, '\0', sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
 
-    int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
-    if (s != 0) {
-    	RRR_MSG_0("Failed to get address of '%s': %s\n", host, gai_strerror(s));
-    	ret = 1;
-    	goto out;
-    }
+	int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
+	if (s != 0) {
+		RRR_MSG_0("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+		ret = 1;
+		goto out;
+	}
 
-    int i = 1;
-    struct addrinfo *rp;
-    for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
-    	fd = rrr_socket (
-    			rp->ai_family,
+	int i = 1;
+	struct addrinfo *rp;
+	for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
+		fd = rrr_socket (
+				rp->ai_family,
 				rp->ai_socktype|SOCK_NONBLOCK,
 				rp->ai_protocol,
 				"ip_network_connect_tcp_ipv4_or_ipv6",
-				NULL
+				NULL,
+				0
 		);
-    	if (fd == -1) {
-    		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
-    		continue;
-    	}
-
-        if (__rrr_ip_network_connect_tcp_check_graylist (graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) != 0) {
-        	RRR_DBG_3("Not attempting to connect with address suggestion #%i to %s:%u address family %u, suggestion is graylisted\n",
-        			i, host, port, rp->ai_addr->sa_family);
-        	goto graylist_next;
-        }
-        else {
-        	RRR_DBG_3("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
-        			i, host, port, rp->ai_addr->sa_family);
-
-			if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
-				uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
-				if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
-					break;
-				}
-			}
-        }
-
-    	// This means connection refused or some other error, skip to next address suggestion
-
-		if (graylist != NULL) {
-			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen);
+		if (fd == -1) {
+			RRR_MSG_0("Error while creating socket (resolve loop): %s\n", rrr_strerror(errno));
+			continue;
 		}
 
-		graylist_next:
-    	rrr_socket_close(fd);
-    	i++;
-    }
+	    	RRR_DBG_3("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
+	    			i, host, port, rp->ai_addr->sa_family);
 
-    if (fd <= 0 || rp == NULL) {
+		if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
+			uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS * 1000;
+			if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
+				break;
+			}
+		}
+
+		// This means connection refused or some other error, skip to next address suggestion
+
+		rrr_socket_close(fd);
+		i++;
+	}
+
+	if (fd <= 0 || rp == NULL) {
 		RRR_DBG_3 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		ret = 1;
 		goto out;
-    }
+	}
 
-    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
-    if (accept_result == NULL) {
-    	RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
-    	goto out_error_close_socket;
-    }
+	struct rrr_ip_accept_data *accept_result = rrr_allocate(sizeof(*accept_result));
+	if (accept_result == NULL) {
+		RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		goto out_error_close_socket;
+	}
 
-    memset(accept_result, '\0', sizeof(*accept_result));
+	memset(accept_result, '\0', sizeof(*accept_result));
 
-    accept_result->ip_data.fd = fd;
-    accept_result->ip_data.port = port;
-    accept_result->len = sizeof(accept_result->addr);
-    if (getsockname(fd, (struct sockaddr *) &accept_result->addr, &accept_result->len) != 0) {
-    	RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
-    	goto out_error_free_accept;
-    }
+	accept_result->ip_data.fd = fd;
+	accept_result->ip_data.port = port;
+	accept_result->len = sizeof(accept_result->addr);
+	if (getsockname(fd, (struct sockaddr *) &accept_result->addr, &accept_result->len) != 0) {
+		RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
+		goto out_error_free_accept;
+	}
 
-    *accept_data = accept_result;
+	*accept_data = accept_result;
 
-    goto out;
+	goto out;
 	out_error_free_accept:
-		free(accept_result);
+		rrr_free(accept_result);
 	out_error_close_socket:
 		rrr_socket_close(fd);
 	out:
@@ -511,7 +472,8 @@ int rrr_ip_network_start_tcp (
 			SOCK_NONBLOCK|SOCK_STREAM,
 			0,
 			"ip_network_start",
-			NULL
+			NULL,
+			0
 	);
 	if (fd == -1) {
 		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
@@ -616,7 +578,7 @@ int rrr_ip_accept (
 		goto out_close_socket;
 	}
 
-	res = malloc(sizeof(*res));
+	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in ip_accept\n");
 		ret = 1;
@@ -638,7 +600,7 @@ int rrr_ip_accept (
 		struct sockaddr_in client_tmp;
 		socklen_t len_tmp = sizeof(client_tmp);
 		getpeername(res->ip_data.fd, (struct sockaddr *) &client_tmp, &len_tmp);
-	    res->ip_data.port = ntohs (client_tmp.sin_port);
+		res->ip_data.port = ntohs (client_tmp.sin_port);
 	}
 
 	*accept_data = res;

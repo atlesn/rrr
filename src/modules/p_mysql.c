@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -105,12 +106,12 @@ static int allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t e
 
 	bind_cleanup(data);
 
-	if ((data->bind = malloc(sizeof(*(data->bind)) * elements)) == NULL) {
+	if ((data->bind = rrr_allocate(sizeof(*(data->bind)) * elements)) == NULL) {
 		RRR_MSG_0("Could not allocate mysql bind structure in bind_allocate_if_needed\n");
 		return 1;
 	}
 
-	if ((data->bind_string_lengths = malloc(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
+	if ((data->bind_string_lengths = rrr_allocate(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
 		RRR_MSG_0("Could not allocate mysql bind string lengths in bind_allocate_if_needed\n");
 		return 1;
 	}
@@ -500,7 +501,6 @@ int connect_to_mysql(struct mysql_data *data) {
 void stop_mysql(void *arg) {
 	struct mysql_data *data = arg;
 	if (data->mysql_initialized == 1) {
-		// TODO : Maybe do stuff here
 		mysql_thread_end();
 	}
 	mysql_disconnect(data);
@@ -539,7 +539,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 
 	int yesno = 0;
 
-	char *mysql_colplan = strdup("array");
+	char *mysql_colplan = rrr_strdup("array");
 
 	// BLOB WRITE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
@@ -813,8 +813,7 @@ int process_callback (
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
 		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-				INSTANCE_D_BROKER(thread_data),
-				INSTANCE_D_HANDLE(thread_data),
+				INSTANCE_D_BROKER_ARGS(thread_data),
 				entry,
 				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 		) != 0) {
@@ -914,10 +913,11 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
+	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
 		rrr_thread_watchdog_time_update(thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, poll_callback_ip, 50) != 0) {
+		uint16_t amount = 100;
+		if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 50) != 0) {
 			RRR_MSG_0("Error while polling in mysql instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
@@ -962,8 +962,6 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
-	data->special_module_operations = NULL;
 }
 
 void unload(void) {

@@ -27,12 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/event/event.h"
 #include "../lib/array.h"
 #include "../lib/string_builder.h"
 #include "../lib/messages/msg_msg.h"
@@ -138,6 +140,7 @@ static int incrementer_get_id_from_msgdb (
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
 			incrementer_get_id_from_msgdb_callback,
 			&callback_data
 	)) != 0) {
@@ -260,6 +263,7 @@ static int incrementer_update_id_callback (
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
 			&callback_data->data->msgdb_conn,
 			callback_data->data->msgdb_socket,
+			INSTANCE_D_EVENTS(callback_data->data->thread_data),
 			incrementer_update_id_msgdb_callback,
 			msg_tmp
 	)) != 0) {
@@ -305,6 +309,8 @@ static int incrementer_process_subject (
 	// Do not cache message pointer from entry, it gets updated
 
 	int ret = 0;
+
+	uint64_t time_start = rrr_time_get_64();
 
 	char *topic_tmp = NULL;
 	struct rrr_string_builder topic_new = {0};
@@ -353,8 +359,13 @@ static int incrementer_process_subject (
 		goto out;
 	}
 
-	RRR_DBG_2("incrementer instance %s translate topic of message with timestamp %" PRIu64 " from %s to %s\n",
-		INSTANCE_D_NAME(data->thread_data), ((struct rrr_msg_msg *) entry->message)->timestamp, topic_tmp, rrr_string_builder_buf(&topic_new));
+	RRR_DBG_2("incrementer instance %s translate topic of message with timestamp %" PRIu64 " from %s to %s duration was %" PRIu64 "ms\n",
+			INSTANCE_D_NAME(data->thread_data),
+			((struct rrr_msg_msg *) entry->message)->timestamp,
+			topic_tmp,
+			rrr_string_builder_buf(&topic_new),
+			(rrr_time_get_64() - time_start) / 1000
+	);
 
 	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER_ARGS(data->thread_data), 
@@ -472,6 +483,22 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
+static int incrementer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	return rrr_poll_do_poll_delete (amount, thread_data, incrementer_poll_callback, 0);
+}
+
+static int incrementer_event_periodic (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	(void)(thread_data);
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
+}
+
 static int incrementer_parse_config (struct incrementer_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
@@ -489,7 +516,6 @@ static int incrementer_parse_config (struct incrementer_data *data, struct rrr_i
 	if ((ret = rrr_mqtt_topic_tokenize (&data->subject_topic_filter_token, data->subject_topic_filter)) != 0) {
 		RRR_MSG_0("Failed to parse parameter 'incrementer_subject_topic_filter' in incrementer instance %s\n",
 			config->name);
-		ret = 1;
 		goto out;
 		
 	}
@@ -530,15 +556,12 @@ static void *thread_entry_incrementer (struct rrr_thread *thread) {
 	RRR_DBG_1 ("incrementer instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
-
-		if (rrr_poll_do_poll_delete (thread_data, &thread_data->poll, incrementer_poll_callback, 50) != 0) {
-			RRR_MSG_0("Error while polling in incrementer instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-	}
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000, // 1 s
+			incrementer_event_periodic,
+			thread
+	);
 
 	out_message:
 	pthread_cleanup_pop(1);
@@ -560,12 +583,16 @@ static const char *module_name = "incrementer";
 __attribute__((constructor)) void load(void) {
 }
 
+static struct rrr_instance_event_functions event_functions = {
+	incrementer_event_broker_data_available
+};
+
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

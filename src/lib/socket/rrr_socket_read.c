@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <poll.h>
-#include <read.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../read.h"
 #include "../messages/msg.h"
+#include "../stats/stats_message.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
@@ -73,7 +74,7 @@ static int __rrr_socket_read_poll (
 	items = poll(&pollfd, 1, 0);
 	// Noisy message, disabled by default
 /*	if (items > 0) {
-		RRR_DBG_7("Socket %i poll result was %i items\n", callback_data->fd, items);
+		RRR_DBG_7("fd %i poll result was %i items\n", callback_data->fd, items);
 	}*/
 
 	// Don't do else if's, check everything
@@ -85,19 +86,19 @@ static int __rrr_socket_read_poll (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_DBG_7("Socket %i poll error: %s\n", fd, rrr_strerror(errno));
+		RRR_DBG_7("fd %i poll error: %s\n", fd, rrr_strerror(errno));
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_DBG_7("Socket %i poll: Got POLLERR or POLLNVAL\n", fd);
+		RRR_DBG_7("fd %i poll: Got POLLERR or POLLNVAL\n", fd);
 
 		*got_pollhup_pollerr = 1;
 		ret = RRR_SOCKET_SOFT_ERROR;
 	}
 	if ((pollfd.revents & POLLHUP) != 0) {
-		RRR_DBG_7("Socket %i POLLHUP, read EOF imminent\n", fd);
+		RRR_DBG_7("fd %i POLLHUP, read EOF imminent\n", fd);
 
 		// Don't set error, caller chooses what to do
 		*got_pollhup_pollerr = 1;
@@ -114,11 +115,21 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 
 static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	return rrr_read_session_collection_maintain_and_find_or_create (
+
+	int is_new = 0;
+
+	struct rrr_read_session *session = rrr_read_session_collection_maintain_and_find_or_create (
+		&is_new,
 		callback_data->read_sessions,
 		(struct sockaddr *) &callback_data->src_addr,
 		callback_data->src_addr_len
 	);
+
+	if (session != NULL && is_new && (callback_data->socket_read_flags & RRR_SOCKET_READ_FIRST_EOF_OK)) {
+		session->eof_ok_now = 1;
+	}
+
+	return session;
 }
 
 static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read_session *read_session, void *private_arg) {
@@ -145,11 +156,11 @@ static void __rrr_socket_read_message_default_remove_read_session(struct rrr_rea
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 
 	if (read_session->rx_buf_ptr != NULL && read_session->rx_buf_wpos > 0) {
-		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed bytes left in read buffer\n",
+		RRR_DBG_7("Removing read session for fd %i with %li unprocessed bytes left in read buffer\n",
 				callback_data->fd, read_session->rx_buf_wpos);
 	}
 	if (read_session->rx_overshoot != NULL && read_session->rx_overshoot_size > 0) {
-		RRR_DBG_1("Note: Removing read session for fd %i with %li unprocessed overshoot bytes left in read buffer\n",
+		RRR_DBG_7("Removing read session for fd %i with %li unprocessed overshoot bytes left in read buffer\n",
 				callback_data->fd, read_session->rx_overshoot_size);
 	}
 
@@ -187,12 +198,12 @@ int rrr_socket_read (
 		pollfd.fd = fd;
 
 		int frames = poll(&pollfd, 1, 0);
-		RRR_DBG_7("Socket %i poll result: %i\n", fd, frames);
+		RRR_DBG_7("fd %i poll result: %i\n", fd, frames);
 		if (frames < 0) {
 			if (errno == EAGAIN || errno == EINTR || errno == EWOULDBLOCK) {
 				goto out;
 			}
-			RRR_DBG_7("Note: Error from poll in rrr_socket_read: %s\n", rrr_strerror(errno));
+			RRR_DBG_7("fd %i error from poll in rrr_socket_read: %s\n", fd, rrr_strerror(errno));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -235,7 +246,7 @@ int rrr_socket_read (
 	}
 
 	if (bytes > 0) {
-		RRR_DBG_7("Socket %i recvfrom/recv/read %li bytes time %" PRIu64 "\n", fd, bytes, rrr_time_get_64());
+		RRR_DBG_7("fd %i recvfrom/recv/read %li bytes time %" PRIu64 "\n", fd, bytes, rrr_time_get_64());
 	}
 
 	if (bytes == -1) {
@@ -249,12 +260,12 @@ int rrr_socket_read (
 			goto out;
 		}
 		if (errno == ECONNRESET) {
-			RRR_DBG_7("Socket %i recvfrom/recv/read connection reset by remote\n", fd);
+			RRR_DBG_7("fd %i recvfrom/recv/read connection reset by remote\n", fd);
 			if (flags & (RRR_SOCKET_READ_CHECK_EOF|RRR_SOCKET_READ_CHECK_POLLHUP)) {
 				goto out_emit_eof;
 			}
 		}
-		RRR_DBG_7("Note: Error from read in rrr_socket_read: %s\n", rrr_strerror(errno));
+		RRR_DBG_7("fd %i error from read in rrr_socket_read: %s\n", fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -267,7 +278,7 @@ int rrr_socket_read (
 		}
 
 // Noisy message, not enabled by default
-//		RRR_DBG_7("Socket %i return from poll was %i\n", fd, ret);
+//		RRR_DBG_7("fd %i return from poll was %i\n", fd, ret);
 
 		if ( (flags & RRR_SOCKET_READ_CHECK_EOF) ||
 			((flags & RRR_SOCKET_READ_CHECK_POLLHUP) && got_pollhup_pollerr)
@@ -283,7 +294,7 @@ int rrr_socket_read (
 
 	goto out;
 	out_emit_eof:
-		RRR_DBG_7("Socket %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
+		RRR_DBG_7("fd %i recvfrom/recv/read emit EOF as instructed per flag\n", fd);
 		ret = RRR_READ_EOF;
 	out:
 		return ret;
@@ -353,6 +364,8 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_max_size,
 		ssize_t read_max,
 		int socket_read_flags,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -374,6 +387,9 @@ int rrr_socket_read_message_default (
 			read_step_initial,
 			read_step_max_size,
 			read_max,
+			RRR_LL_FIRST(read_session_collection),
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			__rrr_socket_read_message_default_get_target_size,
 			__rrr_socket_read_message_default_complete_callback,
 			(socket_read_flags & RRR_SOCKET_READ_INPUT_DEVICE
@@ -401,32 +417,29 @@ static int __rrr_socket_read_message_split_callbacks_complete_callback (
 	struct rrr_read_session *read_session,
 	void *arg
 ) {
-	int ret = 0;
-
 	struct rrr_socket_read_message_split_callbacks_complete_callback_data *callback_data = arg;
 
-	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+#if SSIZE_MAX > RRR_LENGTH_MAX
+	if ((rrr_slength) read_session->rx_buf_wpos > (rrr_slength) RRR_LENGTH_MAX) {
 		RRR_MSG_0("Message was too long in __rrr_socket_read_message_split_callbacks_complete_callback\n");
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
+		return RRR_READ_SOFT_ERROR;
 	}
+#endif
 
 	// Callbacks are allowed to set the pointer to NULL if they wish to take control of memory,
 	// make sure no pointers to local variables are used but only the pointer to rx_buf_ptr
 
-	ret = rrr_msg_to_host_and_verify_with_callback (
+	return rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) &read_session->rx_buf_ptr,
 			(rrr_length) read_session->rx_buf_wpos,
 			callback_data->callback_msg,
 			callback_data->callback_addr_msg,
 			callback_data->callback_log_msg,
 			callback_data->callback_ctrl_msg,
+			callback_data->callback_stats_msg,
 			callback_data->callback_arg1,
 			callback_data->callback_arg2
 	);
-
-	out:
-	return ret;
 }
 
 int rrr_socket_read_message_split_callbacks (
@@ -434,6 +447,8 @@ int rrr_socket_read_message_split_callbacks (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags_socket,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg1,
 		void *callback_arg2
@@ -443,6 +458,7 @@ int rrr_socket_read_message_split_callbacks (
 			callback_addr_msg,
 			callback_log_msg,
 			callback_ctrl_msg,
+			callback_stats_msg,
 			callback_arg1,
 			callback_arg2
 	};
@@ -455,6 +471,8 @@ int rrr_socket_read_message_split_callbacks (
 			4096,
 			0, // No max size
 			read_flags_socket,
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_read_message_split_callbacks_complete_callback,

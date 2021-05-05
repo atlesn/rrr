@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "udpstream.h"
 #include "../read.h"
 #include "../random.h"
@@ -43,7 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
 	RRR_FREE_IF_NOT_NULL(frame->source_addr);
-	free(frame);
+	rrr_free(frame);
 	return 0;
 }
 
@@ -56,7 +57,7 @@ static int __rrr_udpstream_frame_new_from_data (
 
 	*target = NULL;
 
-	struct rrr_udpstream_frame *res = malloc(sizeof(*res));
+	struct rrr_udpstream_frame *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_frame_new_from_data A\n");
 		ret = 1;
@@ -69,7 +70,7 @@ static int __rrr_udpstream_frame_new_from_data (
 	}
 
 	if (data_size > 0) {
-		res->data = malloc(data_size);
+		res->data = rrr_allocate(data_size);
 		if (res->data == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_udpstream_frame_new_from_data B\n");
 			ret = 1;
@@ -106,7 +107,7 @@ static int __rrr_udpstream_frame_new_from_packed (
 	}
 
 	if (addr_len > 0) {
-		if ((result->source_addr = malloc(addr_len)) == NULL) {
+		if ((result->source_addr = rrr_allocate(addr_len)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for address in __rrr_udpstream_frame_new_from_packed\n");
 			ret = 1;
 			goto out;
@@ -150,14 +151,14 @@ static int __rrr_udpstream_stream_destroy(struct rrr_udpstream_stream *stream) {
 	__rrr_udpstream_frame_buffer_clear(&stream->receive_buffer);
 	__rrr_udpstream_frame_buffer_clear(&stream->send_buffer);
 	RRR_FREE_IF_NOT_NULL(stream->remote_addr);
-	free(stream);
+	rrr_free(stream);
 	return 0;
 }
 
 static int __rrr_udpstream_stream_new(struct rrr_udpstream_stream **target) {
 	*target = NULL;
 
-	struct rrr_udpstream_stream *res = malloc(sizeof(*res));
+	struct rrr_udpstream_stream *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_stream_new\n");
 		return 1;
@@ -238,7 +239,7 @@ static void __rrr_udpstream_frame_packed_dump (
 	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
 	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
-	RRR_DBG ("Total size   : %u\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Total size   : %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Data size    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame));
 	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
 	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
@@ -271,9 +272,8 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 ) {
 	int ret = 0;
 
-	// TODO : Move allocation to init function
 	if (udpstream_data->send_buffer == NULL) {
-		udpstream_data->send_buffer = malloc(RRR_UDPSTREAM_MESSAGE_SIZE_MAX);
+		udpstream_data->send_buffer = rrr_allocate(RRR_UDPSTREAM_MESSAGE_SIZE_MAX);
 		if (udpstream_data->send_buffer == NULL) {
 			RRR_MSG_0("Could not allocate send buffer in __rrr_udpstream_checksum_and_send_packed_frame\n");
 			ret = 1;
@@ -319,12 +319,12 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		frame_new->data[0] = '\0';
 	}
 
-	RRR_DBG_3("UDP-stream TX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+	RRR_DBG_3("UDP-stream TX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %llu F/T: %u CH/ID/WS: %u\n",
 			rrr_be16toh(frame_new->stream_id),
 			rrr_be32toh(frame_new->frame_id),
 			rrr_be32toh(frame_new->header_crc32),
 			rrr_be32toh(frame_new->data_crc32),
-			rrr_be16toh(frame_new->data_size) + sizeof(*frame) - 1,
+			(unsigned long long int) rrr_be16toh(frame_new->data_size) + sizeof(*frame) - 1,
 			frame_new->flags_and_type,
 			rrr_be32toh(frame_new->connect_handle)
 	);
@@ -371,7 +371,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_create_and_add_stream (
 	}
 
 	new_stream->remote_addr_len = addr_len;
-	new_stream->remote_addr = malloc(new_stream->remote_addr_len);
+	new_stream->remote_addr = rrr_allocate(new_stream->remote_addr_len);
 	if (new_stream->remote_addr == NULL) {
 		RRR_MSG_0("Could not allocate memory for address in __rrr_udpstream_send_connect\n");
 		__rrr_udpstream_stream_destroy(new_stream);
@@ -665,7 +665,7 @@ static int __rrr_udpstream_update_stream_remote (
 	if (stream->remote_addr == NULL || stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, addr, addr_len) != 0) {
 		if (stream->remote_addr_len != addr_len || stream->remote_addr == NULL) {
 			RRR_FREE_IF_NOT_NULL(stream->remote_addr);
-			if ((stream->remote_addr = malloc(sizeof(*(stream->remote_addr)))) == NULL) {
+			if ((stream->remote_addr = rrr_allocate(sizeof(*(stream->remote_addr)))) == NULL) {
 				RRR_MSG_0("Could not allocate memory in __rrr_udpstream_update_stream_remote\n");
 				ret = 1;
 				goto out;
@@ -1059,12 +1059,12 @@ static int __rrr_udpstream_read_callback (
 
 	callback_data->receive_count++;
 
-	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %u F/T: %u CH/ID/WS: %u\n",
+	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %llu F/T: %u CH/ID/WS: %u\n",
 			rrr_be16toh(frame->stream_id),
 			rrr_be32toh(frame->frame_id),
 			rrr_be32toh(frame->header_crc32),
 			rrr_be32toh(frame->data_crc32),
-			rrr_be16toh(frame->data_size) + sizeof(*frame) - 1,
+			(unsigned long long int) rrr_be16toh(frame->data_size) + sizeof(*frame) - 1,
 			frame->flags_and_type,
 			rrr_be32toh(frame->connect_handle)
 	);
@@ -1104,7 +1104,7 @@ static int __rrr_udpstream_read_callback (
 	}
 
 	out:
-	free(read_session->rx_buf_ptr);
+	rrr_free(read_session->rx_buf_ptr);
 	read_session->rx_buf_ptr = NULL;
 	return ret;
 }
@@ -1328,7 +1328,7 @@ static int __rrr_udpstream_process_receive_buffer (
 
 		goto no_add_ack;
 		add_ack:
-			ack_node = malloc(sizeof(*ack_node));
+			ack_node = rrr_allocate(sizeof(*ack_node));
 			if (ack_node == NULL) {
 				RRR_MSG_0("Could not allocate ACK node in __rrr_udpstream_process_receive_buffer\n");
 				ret = 1;
@@ -1459,7 +1459,7 @@ static int __rrr_udpstream_process_receive_buffer (
 	goto deliver_again;
 
 	out:
-	RRR_LL_DESTROY(&ack_list, struct ack_list_node, free(node));
+	RRR_LL_DESTROY(&ack_list, struct ack_list_node, rrr_free(node));
 	return ret;
 }
 
@@ -1561,6 +1561,8 @@ int rrr_udpstream_do_read_tasks (
 				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
 				0, // No maximum size
 				RRR_SOCKET_READ_METHOD_RECVFROM,
+				0, // No ratelimit interval
+				0, // No ratelimit max bytes	
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,
@@ -2051,7 +2053,7 @@ int rrr_udpstream_connect (
 			RRR_MSG_1("UDP-stream connection attempt to %s\n", buf);
 		}
 		if ((ret = rrr_udpstream_connect_raw(connect_handle, data, result->ai_addr, result->ai_addrlen)) != 0) {
-			RRR_DBG_1("UDP-stream failed to send connect packet to %s, return was %i\n", ret);
+			RRR_DBG_1("UDP-stream failed to send connect packet, return was %i\n", ret);
 		}
 		else {
 			break;

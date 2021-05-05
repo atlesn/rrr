@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "stats_engine.h"
 #include "stats_instance.h"
@@ -45,7 +46,7 @@ static int __rrr_stats_instance_rate_counter_new (
 
 	*target = NULL;
 
-	struct rrr_stats_instance_rate_counter *result = malloc(sizeof(*result));
+	struct rrr_stats_instance_rate_counter *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_instance_rate_counter_new A\n");
 		ret = 1;
@@ -54,7 +55,7 @@ static int __rrr_stats_instance_rate_counter_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((result->name = strdup(name)) == NULL) {
+	if ((result->name = rrr_strdup(name)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_instance_rate_counter_new B\n");
 		ret = 1;
 		goto out_free;
@@ -68,7 +69,7 @@ static int __rrr_stats_instance_rate_counter_new (
 	goto out;
 
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -77,7 +78,7 @@ static int __rrr_stats_instance_rate_counter_destroy (
 		struct rrr_stats_instance_rate_counter *counter
 ) {
 	RRR_FREE_IF_NOT_NULL(counter->name);
-	free(counter);
+	rrr_free(counter);
 	return 0;
 }
 
@@ -101,7 +102,7 @@ int rrr_stats_instance_new (
 	int ret = 0;
 	*result = NULL;
 
-	struct rrr_stats_instance *instance = malloc(sizeof(*instance));
+	struct rrr_stats_instance *instance = rrr_allocate(sizeof(*instance));
 	if (instance == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_stats_instance_new\n");
 		ret = 1;
@@ -116,7 +117,7 @@ int rrr_stats_instance_new (
 		goto out_free;
 	}
 
-	if ((instance->name = strdup(name)) == NULL) {
+	if ((instance->name = rrr_strdup(name)) == NULL) {
 		RRR_MSG_0("Could not save instance name in rrr_stats_instance_new\n");
 		ret = 1;
 		goto out_destroy_mutex;
@@ -156,7 +157,7 @@ void rrr_stats_instance_destroy (
 	RRR_LL_DESTROY(&instance->rate_counters, struct rrr_stats_instance_rate_counter, __rrr_stats_instance_rate_counter_destroy(node));
 	RRR_FREE_IF_NOT_NULL(instance->name);
 	pthread_mutex_destroy(&instance->lock);
-	free(instance);
+	rrr_free(instance);
 }
 
 void rrr_stats_instance_destroy_void (
@@ -171,14 +172,14 @@ static int __rrr_stats_instance_post_text (
 		const char *text
 ) {
 	int ret = 0;
-	struct rrr_stats_message message;
+	struct rrr_msg_stats message;
 
 	if (instance->stats_handle == 0) {
 		// Not registered with statistics engine
 		goto out;
 	}
 
-	if (rrr_stats_message_init (
+	if (rrr_msg_stats_init (
 			&message,
 			type,
 			(sticky != 0 ? RRR_STATS_MESSAGE_FLAGS_STICKY : 0),
@@ -186,7 +187,7 @@ static int __rrr_stats_instance_post_text (
 			text,
 			strlen(text) + 1
 	) != 0) {
-		RRR_MSG_0("Could not initialize statistics message in rrr_stats_message_post_text\n");
+		RRR_MSG_0("Could not initialize statistics message in rrr_msg_stats_post_text\n");
 		ret = 1;
 		goto out;
 	}
@@ -197,7 +198,7 @@ static int __rrr_stats_instance_post_text (
 			RRR_STATS_INSTANCE_PATH_PREFIX,
 			&message
 	)) != 0) {
-		RRR_MSG_0("Error returned from post function in rrr_stats_message_post_text\n");
+		RRR_MSG_0("Error returned from post function in rrr_msg_stats_post_text\n");
 		ret = 1;
 		goto out;
 	}

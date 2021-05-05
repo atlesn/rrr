@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_subscription.h"
 #include "mqtt_packet.h"
@@ -65,7 +66,7 @@ int rrr_mqtt_subscription_new (
 		RRR_BUG("BUG: Invalid topic filter passed to rrr_mqtt_subscription_new. Caller should check for this.\n");
 	}
 
-	struct rrr_mqtt_subscription *sub = malloc(sizeof(*sub));
+	struct rrr_mqtt_subscription *sub = rrr_allocate(sizeof(*sub));
 	if (sub == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
 		ret = 1;
@@ -81,7 +82,7 @@ int rrr_mqtt_subscription_new (
 
 
 	else {
-		sub->topic_filter = malloc(strlen(topic_filter) + 1);
+		sub->topic_filter = rrr_allocate(strlen(topic_filter) + 1);
 		if (sub == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscriptionB\n");
 			ret = 1;
@@ -108,9 +109,9 @@ int rrr_mqtt_subscription_new (
 	goto out;
 
 	out_free_topic_filter:
-		free(sub->topic_filter);
+		rrr_free(sub->topic_filter);
 	out_free_subscription:
-		free(sub);
+		rrr_free(sub);
 	out:
 		return ret;
 }
@@ -270,12 +271,12 @@ void rrr_mqtt_subscription_collection_dump (
 		const struct rrr_mqtt_subscription_collection *subscriptions
 ) {
 	int i = 0;
-	RRR_MSG_1("=== DUMPING SUBSCRIPTIONS IN COLLECTION %p ===\n", subscriptions);
+	RRR_MSG_2("=== DUMPING SUBSCRIPTIONS IN COLLECTION %p ===\n", subscriptions);
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		i++;
-		RRR_MSG_1("%i: %s\n", i, node->topic_filter);
+		RRR_MSG_2("%i: %s\n", i, node->topic_filter);
 	RRR_LL_ITERATE_END();
-	RRR_MSG_1("===\n");
+	RRR_MSG_2("===\n");
 }
 
 void rrr_mqtt_subscription_collection_clear (
@@ -291,7 +292,7 @@ void rrr_mqtt_subscription_collection_destroy (
 		return;
 	}
 	rrr_mqtt_subscription_collection_clear(target);
-	free(target);
+	rrr_free(target);
 }
 
 int rrr_mqtt_subscription_collection_new (
@@ -301,7 +302,7 @@ int rrr_mqtt_subscription_collection_new (
 
 	*target = NULL;
 
-	struct rrr_mqtt_subscription_collection *res = malloc(sizeof(*res));
+	struct rrr_mqtt_subscription_collection *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate subscription in rrr_mqtt_subscription_collection_new\n");
 		return RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,8 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "message_holder.h"
 #include "message_holder_struct.h"
+#include "../allocator.h"
 #include "../mqtt/mqtt_topic.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
@@ -63,9 +65,21 @@ void rrr_msg_holder_lock (
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
 		pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 		pthread_testcancel();
-		rrr_posix_usleep(10);
+		sched_yield();
 		pthread_mutex_lock(&rrr_msg_holder_master_lock);
 	}
+	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
+#ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
+	entry->lock_recursion_count++;
+#endif
+}
+
+void rrr_msg_holder_lock_double (
+		struct rrr_msg_holder *entry
+) {
+	rrr_msg_holder_lock(entry);
+	pthread_mutex_lock(&rrr_msg_holder_master_lock);
+	pthread_mutex_lock(&entry->lock);
 	pthread_mutex_unlock(&rrr_msg_holder_master_lock);
 #ifdef RRR_MESSAGE_HOLDER_DEBUG_LOCK_RECURSION
 	entry->lock_recursion_count++;
@@ -95,6 +109,28 @@ void rrr_msg_holder_unlock_void (
 	rrr_msg_holder_unlock(entry);
 }
 
+void rrr_msg_holder_private_data_clear (
+		struct rrr_msg_holder *entry
+) {
+	if (entry->private_data && entry->private_data_destroy) {
+		entry->private_data_destroy(entry->private_data);
+	}
+
+	entry->private_data = NULL;
+	entry->private_data_destroy = NULL;
+}
+
+void rrr_msg_holder_private_data_set (
+		struct rrr_msg_holder *entry,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+) {
+	rrr_msg_holder_private_data_clear(entry);
+
+	entry->private_data = private_data;
+	entry->private_data_destroy = private_data_destroy;
+}
+
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {
@@ -106,11 +142,12 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	}
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
+		rrr_msg_holder_private_data_clear(entry);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
-		free(entry);
+		rrr_free(entry);
 	}
 	else {
 		rrr_msg_holder_unlock(entry);
@@ -179,7 +216,7 @@ int rrr_msg_holder_new (
 
 	*result = NULL;
 
-	struct rrr_msg_holder *entry = malloc(sizeof(*entry));
+	struct rrr_msg_holder *entry = rrr_allocate_group(sizeof(*entry), RRR_ALLOCATOR_GROUP_MSG_HOLDER);
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
 		ret = 1;
@@ -231,7 +268,7 @@ int rrr_msg_holder_new (
 	*result = entry;
 	goto out;
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }
@@ -251,6 +288,7 @@ int rrr_msg_holder_clone_no_data (
 
 	if (ret == 0) {
 		rrr_msg_holder_lock(*result);
+		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
 		rrr_msg_holder_unlock(*result);
 	}

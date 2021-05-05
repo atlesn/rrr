@@ -14,6 +14,9 @@ they pass through.
 As part of an application, RRR will handle tasks like networking, daemonizing, logging and buffering,
 allowing developers to focus on more specialized tasks.
 
+The different RRR modules share a common message format which enables excange of messages between any modules.
+Modules may serialize data into other protocol formats to send messages externally, or deserialize input data into RRR messages.
+
 The use of RRR assists in creating
 **[message-passing](https://en.wikipedia.org/wiki/Message_passing)** and
 **[event-driven](https://en.wikipedia.org/wiki/Event-driven_programming)**
@@ -47,7 +50,7 @@ also possible to generate these messages externally based on the header files.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
-the source, for instance when the data source is a device on a computer.
+the source, for instance when the data source is a device on a computer. HTTP and MQTT can also be used to send data to RRR.
 
 Message processing in RRR is designed to work with as little state as possible. By default, messages are passed through
 without the need for any complex data structures in memory or persistently open TCP connections.
@@ -59,6 +62,17 @@ Before starting up and configuring RRR to use networking, read the **SECURITY** 
 
 The directory `/examples/` in the source tree or on github.com/atlesn/rrr contains larger application examples.
 The `.md` files contain the examples, and the source scripts and configuration files used in the examples are found alongside these.  
+
+## NEWS
+
+### v1.16
+- Support for **HTTP/2** in both the RRR HTTP server and client.
+- Improved and simplified backend handling of HTTP requests
+- JSON handling in HTTP modules
+- Option to disable output buffers, will reduce latency when high througput is not needed
+- Option to enable output duplication in all modules
+- Backstop option to stop message loops, allows bus operation
+- New modules **mangler**, **exploder**, **incrementer**
 
 ## SUPPORTED SYSTEMS
 
@@ -152,6 +166,20 @@ on the Ubuntu branch (`git checkout ubuntu`).
 
 Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
 built from the `debian-testing` branch.
+
+#### Pre-compiled development packages for Debian Buster using APT
+
+	$ su -
+	# apt install curl gnupg
+	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
+	# curl -s https://apt.goliathdns.no/debian-dev/buster.list > /etc/apt/sources.list.d/goliathdns-dev.list
+	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# apt update
+	# apt install rrr
+
+The development version contains the latest functionallity. Packages are built when new functionallity is considered OK to use.
+
+Not all platforms are guaranteed to be built every time. The commands above will also add the default mirror which ensures updates when a new full release is made.
 
 ### COMPILE
 
@@ -503,6 +531,18 @@ below on how to specifiy different data types.
 	
 Please note that RRR does not provide a stand-alone MQTT client.
 
+### httpclient (send messages to a HTTP server and parse responses into RRR messages)
+The HTTP client can send requests using HTTP or HTTPS, using both HTTP/1.1 and HTTP/2.
+Messages it receives are converted into HTTP requests.
+The server and endpoint to use can either be configured statically or configured in each message.
+Connections are made to HTTP servers automatically.
+
+### httpserver (receive HTTP requests)
+The HTTP server converts HTTP requests into RRR messages.
+It can both generate empty responses for any received request, or a backend Perl or Python program can process requests and make responses.
+More complex structures are also possible, for instance to forward requests on to **mqttclient** and have some external device generate any responses.
+The server can be configured to work with HTTP push and Websocket.
+
 ### ipclient (send messages between RRR instances over UDP)
 This module is useful when messages need to be transferred over lossy connections where TCP doesn't work very well.
 
@@ -512,47 +552,6 @@ The module may function both as a server which accepts connections and a client 
 
 An RRR native protocol is used to transfer messages which means that an RRR program only can communicate with other RRR
 programs using this module.
-
-### mysql (store messages to database)
-Reads messages from other modules and stores them in a MySQL database.
-
-### influxdb (store messages to database)
-Reads messages from other modules and stores them in a an InfluxDB database.
-
-### socket (read data records from a UNIX socket)
-The socket module listens on a socket and parses data records it receives before forwarding them
-as RRR messages to other modules. It expects to receive records with data types defined in an `array definition`. This
-is useful when it's practical to pass over data to RRR locally using scripts.
-
-A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in its
-arguments, and an RRR array message for every record is created and sent into RRR over the socket.
-
-Below follows an example configuration where a data record is created locally and then sent to RRR using `rrr_post`
-to be saved in an InfluxDB database.
-
-	[my_socket]
-	module=socket
-	socket_path=/tmp/my_rrr_socket.sock
-	socket_receive_rrr_message=yes
-
-	[my_influxdb]
-	module=influxdb
-
-	# Read messages from the socket module
-	senders=my_socket
-
-	# Parameters used when writing to the InfluxDB server
-	influxdb_server=localhost
-	influxdb_database=mydb
-	influxdb_table=stats
-
-	# Tags and fields to retrieve from the received RRR messages and write to InfluxDB
-	influxdb_tags=hostname
-	influxdb_fields=uptime,loadavg->load
-
-Use `rrr_post` to parse the input data record, which in this case is provided on standard input.
-
-	echo "3.141592,12345678,\"myserver.local\"" | rrr_post /tmp/my_rrr_socket.sock -a fixp#loadavg,sep1,ustr#uptime,sep1,str#hostname -f - -c 1
 
 ### python3 (generate and/or modify messages by a custom python program)
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
@@ -608,8 +607,6 @@ A custom python program might look like this, check out `man rrr.conf` on how to
             time.sleep(1)
 
             return True
-
-
 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
@@ -685,11 +682,55 @@ RRR framework handles these semantics.
 Custom C-modules are usually compiled inside the RRR source tree. Read `/src/cmodules/README` for information on how to do this, usually
 only a single C-file is needed to create a module.
 
+### file (read data from files, sockets, FIFO devices, character devices, serial ports etc.)
+The file module reads and parses data from filesystem entries into RRR array messages.
+
+### socket (read data records from a UNIX socket)
+The socket module listens on a socket and parses data records it receives before forwarding them
+as RRR messages to other modules. It expects to receive records with data types defined in an `array definition`. This
+is useful when it's practical to pass over data to RRR locally using scripts.
+
 ### raw (drain output from other modules)
 Read output from any module and delete it. Can also print out some information for each message it receives.
 
 ### dummy (generate dummy measurements)
 Create dummy messages with current timestamp as value at some interval. 
+
+### mysql (store messages to database)
+Reads messages from other modules and stores them in a MySQL database.
+
+### influxdb (store messages to database)
+Reads messages from other modules and stores them in a an InfluxDB database.
+
+A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in its
+arguments, and an RRR array message for every record is created and sent into RRR over the socket.
+
+Below follows an example configuration where a data record is created locally and then sent to RRR using `rrr_post`
+to be saved in an InfluxDB database.
+
+	[my_socket]
+	module=socket
+	socket_path=/tmp/my_rrr_socket.sock
+	socket_receive_rrr_message=yes
+
+	[my_influxdb]
+	module=influxdb
+
+	# Read messages from the socket module
+	senders=my_socket
+
+	# Parameters used when writing to the InfluxDB server
+	influxdb_server=localhost
+	influxdb_database=mydb
+	influxdb_table=stats
+
+	# Tags and fields to retrieve from the received RRR messages and write to InfluxDB
+	influxdb_tags=hostname
+	influxdb_fields=uptime,loadavg->load
+
+Use `rrr_post` to parse the input data record, which in this case is provided on standard input.
+
+	echo "3.141592,12345678,\"myserver.local\"" | rrr_post /tmp/my_rrr_socket.sock -a fixp#loadavg,sep1,ustr#uptime,sep1,str#hostname -f - -c 1
 
 ## RRR-MESSAGES
 

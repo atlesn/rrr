@@ -28,6 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "modules.h"
 #include "message_broker.h"
+#include "allocator.h"
+#include "random.h"
+#include "event/event.h"
+#include "event/event_functions.h"
 #include "ip/ip.h"
 #include "message_holder/message_holder.h"
 #include "message_holder/message_holder_slot.h"
@@ -42,53 +46,122 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Uncomment to disable buffers for test reasons 
 //#define RRR_MESSAGE_BROKER_NO_BUFFER_DEBUG 1
 
+struct rrr_message_broker_split_buffer_node {
+	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
+	struct rrr_fifo_buffer queue;
+	struct rrr_message_broker_costumer *owner;
+};
+
+struct rrr_message_broker_split_buffer_collection {
+	RRR_LL_HEAD(struct rrr_message_broker_split_buffer_node);
+	pthread_mutex_t lock;
+};
+
+struct rrr_message_broker_costumer {
+	RRR_LL_NODE(struct rrr_message_broker_costumer);
+	struct rrr_fifo_buffer main_queue;
+	struct rrr_message_broker_split_buffer_collection split_buffers;
+	struct rrr_msg_holder_slot *slot;
+	char *name;
+	int usercount;
+	int flags;
+	int split_buffers_active;
+	uint64_t unique_counter;
+	struct rrr_event_queue *events;
+	struct rrr_message_broker_costumer *write_notify_listeners[RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX];
+	struct rrr_message_broker_costumer *senders[RRR_MESSAGE_BROKER_SENDERS_MAX];
+};
+
+struct rrr_message_broker {
+	RRR_LL_HEAD(struct rrr_message_broker_costumer);
+	pthread_mutex_t lock;
+	pthread_t creator;
+};
+
+struct rrr_event_queue *rrr_message_broker_event_queue_get (
+		struct rrr_message_broker_costumer *costumer
+) {
+	return costumer->events;
+}
+
 static void __rrr_message_broker_split_buffer_node_destroy (
 		struct rrr_message_broker_split_buffer_node *node
 ) {
 	struct rrr_fifo_buffer_stats stats;
 	rrr_fifo_buffer_get_stats(&stats, &node->queue);
-	RRR_DBG_1("\t- Split buffer stats: %" PRIu64 "/%" PRIu64 "\n",
-			stats.total_entries_deleted, stats.total_entries_written);
+	RRR_DBG_1("\t- Split buffer stats for %s: %" PRIu64 "/%" PRIu64 "\n",
+			(node->owner != NULL ? node->owner->name : "(not yet populated)"),
+			stats.total_entries_deleted,
+			stats.total_entries_written
+	);
 	rrr_fifo_buffer_destroy(&node->queue);
-	free(node);
+	rrr_free(node);
 }
 
-static void __rrr_message_broker_costumer_incref (
+static void __rrr_message_broker_costumer_incref_unlocked (
 		struct rrr_message_broker_costumer *costumer
 ) {
 	costumer->usercount++;
 }
 
+static void __rrr_message_broker_costumer_decref (
+		int *did_destroy,
+		struct rrr_message_broker_costumer *costumer
+);
+
+static int __rrr_message_broker_friend_add (
+		struct rrr_message_broker_costumer **target,
+		size_t target_size,
+		struct rrr_message_broker_costumer *listener_costumer
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	for (size_t i = 0; i < target_size; i++) {
+		if (target[i] == NULL) {
+			__rrr_message_broker_costumer_incref_unlocked(listener_costumer);
+			target[i] = listener_costumer;
+			listener_costumer = NULL;
+			break;
+		}
+	}
+
+	if (listener_costumer != NULL) {
+		RRR_MSG_0("Friend list was full in __rrr_message_broker_friend_add\n");
+		ret = 1;
+	}
+
+	return ret;
+}
+
+static void __rrr_message_broker_friends_clear (
+		struct rrr_message_broker_costumer **target,
+		size_t target_size
+) {
+	for (size_t i = 0; i < target_size; i++) {
+		if (target[i] == NULL) {
+			break;
+		}
+		int did_destroy_dummy = 0;
+		__rrr_message_broker_costumer_decref(&did_destroy_dummy, target[i]);
+		target[i] = NULL;
+	}
+}
+
 static void __rrr_message_broker_costumer_destroy (
 		struct rrr_message_broker_costumer *costumer
 ) {
-	struct rrr_fifo_buffer_stats stats;
+	RRR_DBG_1 ("Message broker destroy costumer '%s'\n", costumer->name);
 
 	if (costumer->slot != NULL) {
-		uint64_t entries_deleted = 0;
-		uint64_t entries_written = 0;
-		rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
-		rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
-
 		rrr_msg_holder_slot_destroy(costumer->slot);
 	}
-	else {
-		rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
-	}
 
-	RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
-			costumer->name, stats.total_entries_deleted, stats.total_entries_written);
-
-	RRR_LL_DESTROY (
-			&costumer->split_buffers,
-			struct rrr_message_broker_split_buffer_node,
-			__rrr_message_broker_split_buffer_node_destroy(node)
-	);
+	rrr_event_queue_destroy(costumer->events);
 	rrr_fifo_buffer_destroy(&costumer->main_queue);
 	pthread_mutex_destroy(&costumer->split_buffers.lock);
 	// Do this at the end in case we need to read the name in a debugger
 	RRR_FREE_IF_NOT_NULL(costumer->name);
-	free(costumer);
+	rrr_free(costumer);
 }
 
 static void __rrr_message_broker_costumer_decref (
@@ -106,36 +179,17 @@ static void __rrr_message_broker_costumer_decref (
 	*did_destroy = 1;
 }
 
-// Only to be called by the thread which initially registered the handle
+// Same as decref just with debug message
 void rrr_message_broker_costumer_unregister (
-		rrr_message_broker_costumer_handle *handle
-) {
-	struct rrr_message_broker_costumer *costumer = handle;
-
-	RRR_DBG_8("Message broker unregistering costumer %s\n", costumer->name);
-
-	int did_destroy;
-	__rrr_message_broker_costumer_decref (&did_destroy, costumer);
-}
-
-static void __rrr_message_broker_costumer_lock_and_decref (
 		struct rrr_message_broker *broker,
 		struct rrr_message_broker_costumer *costumer
 ) {
+	RRR_DBG_8("Message broker unregistering costumer %s\n", costumer->name);
+
 	pthread_mutex_lock(&broker->lock);
-	int did_destroy = 0;
-	__rrr_message_broker_costumer_decref(&did_destroy, costumer);
+	int did_destroy;
+	__rrr_message_broker_costumer_decref (&did_destroy, costumer);
 	pthread_mutex_unlock(&broker->lock);
-}
-
-struct rrr_message_broker_costumer_lock_and_decref_void_data {
-	struct rrr_message_broker *broker;
-	struct rrr_message_broker_costumer *costumer;
-};
-
-static void __rrr_message_broker_costumer_lock_and_decref_void (void *arg) {
-	struct rrr_message_broker_costumer_lock_and_decref_void_data *data = arg;
-	__rrr_message_broker_costumer_lock_and_decref(data->broker, data->costumer);
 }
 
 static int __rrr_message_broker_costumer_new (
@@ -151,7 +205,7 @@ static int __rrr_message_broker_costumer_new (
 
 	*result = NULL;
 
-	struct rrr_message_broker_costumer *costumer = malloc(sizeof(*costumer));
+	struct rrr_message_broker_costumer *costumer = rrr_allocate(sizeof(*costumer));
 	if (costumer == NULL) {
 		RRR_MSG_0("Could not allocate memory for costumer in __rrr_message_broker_costumer_new\n");
 		ret = 1;
@@ -160,7 +214,7 @@ static int __rrr_message_broker_costumer_new (
 
 	memset(costumer, '\0', sizeof(*costumer));
 
-	if ((costumer->name = strdup(name_unique)) == NULL) {
+	if ((costumer->name = rrr_strdup(name_unique)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for name in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_free;
@@ -173,14 +227,20 @@ static int __rrr_message_broker_costumer_new (
 	}
 
 	if ((rrr_posix_mutex_init(&costumer->split_buffers.lock, 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
+		RRR_MSG_0("Could not initialize mutex A in __rrr_message_broker_costumer_new\n");
 		ret = 1;
 		goto out_destroy_fifo;
 	}
 
+	if ((ret = rrr_event_queue_new(&costumer->events)) != 0){
+		RRR_MSG_0("Could not create event queue in __rrr_message_broker_costumer_new\n");
+		ret = 1;
+		goto out_destroy_split_buffer_lock;
+	}
+
 	if (no_buffer) {
 		if ((ret = rrr_msg_holder_slot_new(&costumer->slot)) != 0) {
-			goto out_destroy_split_buffer_lock;
+			goto out_cleanup_events;
 		}
 	}
 
@@ -189,14 +249,16 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
+	out_cleanup_events:
+		rrr_event_queue_destroy(costumer->events);
 	out_destroy_split_buffer_lock:
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
 	out_destroy_fifo:
 		rrr_fifo_buffer_destroy(&costumer->main_queue);
 	out_free_name:
-		free(costumer->name);
+		rrr_free(costumer->name);
 	out_free:
-		free(costumer);
+		rrr_free(costumer);
 	out:
 		return ret;
 }
@@ -205,6 +267,35 @@ void rrr_message_broker_unregister_all (
 		struct rrr_message_broker *broker
 ) {
 	pthread_mutex_lock(&broker->lock);
+
+	// There is a certain risk that ghost threads may crash when we do this
+	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
+		struct rrr_message_broker_costumer *costumer = node;
+
+		__rrr_message_broker_friends_clear(costumer->write_notify_listeners, RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX);
+		__rrr_message_broker_friends_clear(costumer->senders, RRR_MESSAGE_BROKER_SENDERS_MAX);
+
+		struct rrr_fifo_buffer_stats stats;
+
+		if (costumer->slot != NULL) { 
+			uint64_t entries_deleted = 0;
+			uint64_t entries_written = 0;
+			rrr_msg_holder_slot_get_stats(&entries_deleted, &entries_written, costumer->slot);
+			rrr_fifo_buffer_get_stats_populate(&stats, entries_written, entries_deleted);
+		}
+		else {
+			rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
+		}
+
+		RRR_DBG_1 ("Message broker unregister costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
+				costumer->name, stats.total_entries_deleted, stats.total_entries_written
+		);
+		RRR_LL_DESTROY (
+				&costumer->split_buffers,
+				struct rrr_message_broker_split_buffer_node,
+				__rrr_message_broker_split_buffer_node_destroy(node)
+		);
+	RRR_LL_ITERATE_END();
 
 	if (RRR_DEBUGLEVEL_1) {
 		RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
@@ -221,38 +312,53 @@ void rrr_message_broker_unregister_all (
 	pthread_mutex_unlock(&broker->lock);
 }
 
-void rrr_message_broker_cleanup (
+void rrr_message_broker_destroy (
 		struct rrr_message_broker *broker
 ) {
 	rrr_message_broker_unregister_all(broker);
 	pthread_mutex_destroy(&broker->lock);
+	rrr_free(broker);
 }
 
-int rrr_message_broker_init (
-		struct rrr_message_broker *broker
+int rrr_message_broker_new (
+		struct rrr_message_broker **target
 ) {
 	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_message_broker *broker = NULL;
+
+	if ((broker = rrr_allocate(sizeof(*broker))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_message_broker_new\n");
+		ret = 1;
+		goto out;
+	}
 
 	memset(broker, '\0', sizeof (*broker));
 
 	if (rrr_posix_mutex_init(&broker->lock, 0) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_message_broker_init\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 
 	pthread_mutex_lock(&broker->lock);
 	broker->creator = pthread_self();
 	pthread_mutex_unlock(&broker->lock);
 
+	*target = broker;
+
 	goto out;
 //	out_destroy_mutex:
 //		pthread_mutex_destroy(&broker->lock);
+	out_free:
+		rrr_free(broker);
 	out:
 		return ret;
 }
 
-static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by_name_unlocked (
+static struct rrr_message_broker_costumer *__rrr_message_broker_costumer_find_by_name_unlocked (
 		struct rrr_message_broker *broker,
 		const char *name
 ) {
@@ -264,11 +370,11 @@ static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by
 	return NULL;
 }
 
-rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
+struct rrr_message_broker_costumer *rrr_message_broker_costumer_find_by_name (
 		struct rrr_message_broker *broker,
 		const char *name
 ) {
-	rrr_message_broker_costumer_handle *ret = NULL;
+	struct rrr_message_broker_costumer *ret = NULL;
 
 	pthread_mutex_lock(&broker->lock);
 	ret = __rrr_message_broker_costumer_find_by_name_unlocked(broker, name);
@@ -277,58 +383,22 @@ rrr_message_broker_costumer_handle *rrr_message_broker_costumer_find_by_name (
 	return ret;
 }
 
-static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by_handle_unlocked (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
-) {
-	RRR_LL_ITERATE_BEGIN(broker, struct rrr_message_broker_costumer);
-		if (node == handle) {
-			return node;
-		}
-	RRR_LL_ITERATE_END();
-	return NULL;
-}
-
-static rrr_message_broker_costumer_handle *__rrr_message_broker_costumer_find_by_handle_and_incref (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
-) {
-	static rrr_message_broker_costumer_handle *result = NULL;
-
-	pthread_mutex_lock(&broker->lock);
-	result = __rrr_message_broker_costumer_find_by_handle_unlocked(broker, handle);
-	if (result != NULL) {
-		__rrr_message_broker_costumer_incref(result);
-	}
-	pthread_mutex_unlock(&broker->lock);
-
-	return result;
-}
-	
 void __rrr_message_broker_costumer_get_name (
 		char *buf,
 		size_t buf_size,
 		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		struct rrr_message_broker_costumer *costumer
 ) {
 
 	pthread_mutex_lock(&broker->lock);
-
-	struct rrr_message_broker_costumer *costumer = __rrr_message_broker_costumer_find_by_handle_unlocked(broker, handle);
-	if (costumer != NULL) {
-		strncpy(buf, costumer->name, buf_size);
-	}
-	else {
-		*buf = '\0';
-	}
-
+	strncpy(buf, costumer->name, buf_size);
 	pthread_mutex_unlock(&broker->lock);
 
 	buf[buf_size - 1]  = '\0';
 }
 
 int rrr_message_broker_costumer_register (
-		rrr_message_broker_costumer_handle **result,
+		struct rrr_message_broker_costumer **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique,
 		int no_buffer
@@ -351,7 +421,7 @@ int rrr_message_broker_costumer_register (
 	}
 
 	RRR_LL_APPEND(broker, costumer);
-	__rrr_message_broker_costumer_incref(costumer);
+	__rrr_message_broker_costumer_incref_unlocked(costumer);
 
 	// Usercount is now 2
 	// - 1 count owned by message broker linked list
@@ -366,26 +436,12 @@ int rrr_message_broker_costumer_register (
 	return ret;
 }
 
-#define RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE(err_src)                                                          \
-    do { if (__rrr_message_broker_costumer_find_by_handle_and_incref(broker, handle) == NULL) {                                \
-        RRR_MSG_0("Could not find costumer handle %p in %s\n", handle, err_src);                                               \
-        ret = RRR_MESSAGE_BROKER_ERR;                                                                                          \
-        break;                                                                                                                 \
-    } struct rrr_message_broker_costumer *costumer = handle;                                                                   \
-    struct rrr_message_broker_costumer_lock_and_decref_void_data costumer_decref_data =                                        \
-        { broker, costumer };                                                                                                  \
-    pthread_cleanup_push(__rrr_message_broker_costumer_lock_and_decref_void, &costumer_decref_data)
-
-#define RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK()            \
-    pthread_cleanup_pop(1);                                    \
-    } while(0)
-
 static int __rrr_message_broker_split_output_buffer_new_and_add (
 		struct rrr_message_broker_split_buffer_collection *target
 ) {
 	int ret = 0;
 
-	struct rrr_message_broker_split_buffer_node *node = malloc(sizeof(*node));
+	struct rrr_message_broker_split_buffer_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_message_broker_split_output_buffer_new\n");
 		ret = 1;
@@ -405,55 +461,126 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 
 	goto out;
 	out_free:
-		free(node);
+		rrr_free(node);
 	out:
 		return ret;
 }
 
-// Call in preload stage only from main thread. Number of slots
+// Call in preload stage only from main thread.
+// No locking, call prior to starting threads. Number of slots
 // have to match or exceed the number of different reader threads which
 // will read from us, if not we will give a BUG()
 int rrr_message_broker_setup_split_output_buffer (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		int slots
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_setup_split_output_buffer");
-
-	pthread_mutex_lock(&broker->lock);
-
-	if (broker->creator != pthread_self()) {
-		RRR_BUG("BUG: rrr_message_broker_setup_split_output_buffer called from other thread than creator\n");
-	}
-
 	if (costumer->slot != NULL) {
 		// This function is safe to call multiple times
 		if ((ret = rrr_msg_holder_slot_reader_count_set(costumer->slot, slots)) != 0) {
-			goto out_unlock;
+			goto out;
 		}
 	}
 	else {
-		// We can't create extra slots as they would fill up with messages
-		// Make this a bug trap after configuration option in buffer module has been removed
 		if (RRR_LL_COUNT(&costumer->split_buffers) > 0) {
-			RRR_MSG_0("Warning: rrr_message_broker_setup_split_output_buffer called more than once, ignoring successive calls\n");
-			goto out_unlock;
+			RRR_BUG("BUG: rrr_message_broker_setup_split_output_buffer called more than once\n");
 		}
 
 		while (slots--) {
 			if ((ret = __rrr_message_broker_split_output_buffer_new_and_add(&costumer->split_buffers)) != 0) {
-				goto out_unlock;
+				goto out;
 			}
 		}
 	}
 
-	out_unlock:
-	pthread_mutex_unlock(&broker->lock);
+	costumer->split_buffers_active = 1;
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	out:
 	return ret;
+}
+
+static int __rrr_message_broker_write_notifications_send_final (
+		struct rrr_message_broker_costumer *listener,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	return rrr_event_pass (
+			listener->events,
+			RRR_EVENT_FUNCTION_MESSAGE_BROKER_DATA_AVAILABLE,
+			amount,
+			check_cancel_callback,
+			check_cancel_callback_arg
+	);
+}
+
+static int __rrr_message_broker_write_notifications_send_all (
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	int ret = 0;
+
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		struct rrr_message_broker_costumer *listener = costumer->write_notify_listeners[i];
+		if (listener == NULL) {
+			goto out;
+		}
+
+		if ((ret = __rrr_message_broker_write_notifications_send_final (
+				listener,
+				amount,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_message_broker_write_notifications_send_random (
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	rrr_biglength max = 0;
+	for (int i = 0; i < RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX; i++) {
+		if (costumer->write_notify_listeners[i] == NULL) {
+			break;
+		}
+		max++;
+	}
+
+	if (max > 0) {
+		rrr_biglength target = rrr_rand();
+		target = target % max;
+		return __rrr_message_broker_write_notifications_send_final (
+				costumer->write_notify_listeners[target],
+				amount,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		);
+	}
+
+	return 0;
+}
+
+static int __rrr_message_broker_write_notifications_send (
+		struct rrr_message_broker_costumer *costumer,
+		uint8_t amount,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
+) {
+	return costumer->split_buffers_active
+		? __rrr_message_broker_write_notifications_send_all(costumer, amount, check_cancel_callback, check_cancel_callback_arg)
+		: __rrr_message_broker_write_notifications_send_random(costumer, amount, check_cancel_callback, check_cancel_callback_arg)
+	;
 }
 
 struct rrr_message_broker_write_entry_intermediate_callback_data {
@@ -461,8 +588,11 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	const struct sockaddr *addr;
 	socklen_t socklen;
 	int protocol;
+	uint16_t entries_written;
 	int (*callback)(struct rrr_msg_holder *new_entry, void *arg);
 	void *callback_arg;
+	int (*check_cancel_callback)(void *arg);
+	void *check_cancel_callback_arg;
 };
 
 struct rrr_message_broker_message_holder_double_pointer {
@@ -477,7 +607,7 @@ static void __rrr_message_broker_free_message_holder_double_pointer (void *arg) 
 	rrr_msg_holder_decref(*(ptr->entry));
 }
 
-static int __rrr_message_broker_write_entry_callback_handling (
+static int __rrr_message_broker_write_entry_callback_intermediate (
 		int *write_drop,
 		int *write_again,
 		struct rrr_msg_holder *entry,
@@ -488,6 +618,8 @@ static int __rrr_message_broker_write_entry_callback_handling (
 
 	*write_drop = 0;
 	*write_again = 0;
+
+	entry->buffer_time = rrr_time_get_64();
 
 	if ((ret = callback(entry, callback_arg)) != 0) {
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
@@ -524,7 +656,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 
 	int ret = 0;
 
-	if ((ret = __rrr_message_broker_write_entry_callback_handling (
+	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
 			do_drop,
 			do_again,
 			entry,
@@ -533,6 +665,14 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 	)) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	if (!(*do_drop)) {
+		callback_data->entries_written++;
+	}
+
+	if (callback_data->entries_written == 0xffff) {
+		*do_again = 0;
 	}
 
 	out:
@@ -574,7 +714,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	int write_drop = 0;
 	int write_again = 0;
 
-	if ((ret = __rrr_message_broker_write_entry_callback_handling (
+	if ((ret = __rrr_message_broker_write_entry_callback_intermediate (
 			&write_drop,
 			&write_again,
 			entry,
@@ -585,13 +725,19 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 		goto out;
 	}
 
-	if (write_again) {
-		ret |= RRR_FIFO_WRITE_AGAIN;
+	if (callback_data->check_cancel_callback(callback_data->check_cancel_callback_arg) == 0) {
+		if (write_again) {
+			ret |= RRR_FIFO_WRITE_AGAIN;
+		}
 	}
 
 	if (write_drop) {
 		ret |= RRR_FIFO_WRITE_DROP;
 		goto out;
+	}
+
+	if ((++callback_data->entries_written) == 0xffff) {
+		ret &= ~(RRR_FIFO_WRITE_AGAIN);
 	}
 
 	{
@@ -636,14 +782,11 @@ int __rrr_message_broker_get_next_unique_id_callback (
 
 int rrr_message_broker_get_next_unique_id (
 		uint64_t *result,
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		struct rrr_message_broker_costumer *costumer
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	*result = 0;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_get_next_unique_id");
 
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_with_lock_do (
@@ -669,14 +812,12 @@ int rrr_message_broker_get_next_unique_id (
 	*result = costumer->unique_counter;
 
 	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 // Callback must return the entry in unlocked state to us with refcount being excactly 1
 int rrr_message_broker_write_entry (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
@@ -688,15 +829,16 @@ int rrr_message_broker_write_entry (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry");
-
 	struct rrr_message_broker_write_entry_intermediate_callback_data callback_data = {
 			costumer,
 			addr,
 			socklen,
 			protocol,
+			0,
 			callback,
-			callback_arg
+			callback_arg,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	};
 
 	if (costumer->slot != NULL) {
@@ -727,8 +869,16 @@ int rrr_message_broker_write_entry (
 		}
 	}
 
+	if (callback_data.entries_written > 0) {
+		ret = __rrr_message_broker_write_notifications_send (
+				costumer,
+				callback_data.entries_written,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		);
+	}
+
 	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
@@ -745,6 +895,10 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 		goto out;
 	}
 
+	rrr_msg_holder_lock(target);
+	target->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(target);
+
 	*data = (char *) target;
 	*size = sizeof(*target);
 	*order = 0;
@@ -754,45 +908,60 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 	out:
 	return ret;
 }
+				
+static void __rrr_message_broker_clone_and_write_entry_slot_callback (
+		struct rrr_msg_holder *entry,
+		void *arg
+) {
+	(void)(arg);
+	rrr_msg_holder_lock(entry);
+	entry->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(entry);
+}
 
 // Note : Used by inject functions. entry is not properly const
 //        as we will call unlock() on function out. entry
 //        must be handed to us in locked state
 int rrr_message_broker_clone_and_write_entry (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		const struct rrr_msg_holder *entry
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_clone_and_write_entry");
 
 	if (costumer->slot != NULL) {
 		if ((ret = rrr_msg_holder_slot_write_clone (
 				costumer->slot,
 				entry,
 				NULL,
+				NULL,
+				__rrr_message_broker_clone_and_write_entry_slot_callback,
 				NULL
 		)) != 0) {
 			goto out;
 		}
 	}
 	else {
-		if ((ret = rrr_fifo_buffer_write (
+		if (rrr_fifo_buffer_write (
 				&costumer->main_queue,
 				__rrr_message_broker_clone_and_write_entry_callback,
 				(void *) entry
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_clone_and_write_entry\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
 	}
 
+	ret = __rrr_message_broker_write_notifications_send (
+			costumer,
+			1,
+			NULL,
+			NULL
+	);
+
 	out:
 	// Cast away const OK
 	rrr_msg_holder_unlock((struct rrr_msg_holder *) entry);
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
@@ -812,35 +981,47 @@ static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_WRITE_CALLB
 // entry we passed in is guaranteed to have been allocated and modified
 // exclusively in message broker context. Entry must be locked before calling.
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder *entry,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_unsafe");
+	rrr_msg_holder_lock(entry);
+	entry->buffer_time = rrr_time_get_64();
+	rrr_msg_holder_unlock(entry);
 
 	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_write_incref(costumer->slot, entry, check_cancel_callback, check_cancel_callback_arg)) != 0) {
+		if ((ret = rrr_msg_holder_slot_write_incref (
+				costumer->slot,
+				entry,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) != 0) {
 			goto out;
 		}
 	}
 	else {
-		if ((ret = rrr_fifo_buffer_write (
+		if (rrr_fifo_buffer_write (
 				&costumer->main_queue,
 				__rrr_message_broker_write_entry_unsafe_callback,
 				entry
-		)) != 0) {
+		) != 0) {
 			RRR_MSG_0("Error while writing to buffer in rrr_message_broker_write_entry_unsafe\n");
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
 	}
 
+	ret = __rrr_message_broker_write_notifications_send (
+			costumer,
+			1,
+			check_cancel_callback,
+			check_cancel_callback_arg
+	);
+
 	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
@@ -861,8 +1042,7 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_
 // fails, entries might still reside inside the collection which have not yet been added to the
 // buffer. The caller owns these. Read about 'unsafe' above.
 int rrr_message_broker_write_entries_from_collection_unsafe (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		struct rrr_msg_holder_collection *collection,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
@@ -873,7 +1053,13 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		goto out_final;
 	}
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entries_from_collection");
+	int written_entries = RRR_LL_COUNT(collection);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+		node->buffer_time = rrr_time_get_64();
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END();
 
 	if (costumer->slot != NULL) {
 		ret = rrr_msg_holder_slot_write_from_collection(costumer->slot, collection, check_cancel_callback, check_cancel_callback_arg);
@@ -882,15 +1068,35 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		ret = rrr_fifo_buffer_write(&costumer->main_queue, __rrr_message_broker_write_entries_from_collection_callback, collection);
 	}
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	while (written_entries > 0) {
+		if (written_entries > 0xff) {
+			ret = __rrr_message_broker_write_notifications_send (
+					costumer,
+					0xff,
+					check_cancel_callback,
+					check_cancel_callback_arg
+			);
+			written_entries -= 0xff;
+		}
+		else {
+			ret = __rrr_message_broker_write_notifications_send (
+					costumer,
+					written_entries,
+					check_cancel_callback,
+					check_cancel_callback_arg
+			);
+			written_entries = 0;
+		}
+	}
+
 	out_final:
 	return ret;
 }
 
 struct rrr_message_broker_read_entry_intermediate_callback_data {
-	struct rrr_message_broker *broker;
+	uint16_t *amount;
 	struct rrr_message_broker_costumer *source;
-	rrr_message_broker_costumer_handle *self;
+	struct rrr_message_broker_costumer *self;
 	int broker_poll_flags;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
 	void *callback_arg;
@@ -903,14 +1109,12 @@ static int __rrr_message_broker_poll_intermediate_backstop_handling (
 ) {
 	*backstop = 0;
 
-	if ( callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP &&
+	if ((callback_data->broker_poll_flags & RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP) &&
 	     entry->source == callback_data->self
 	) {
 		if (RRR_DEBUGLEVEL_2) {
-			char name[128];
-			 __rrr_message_broker_costumer_get_name (name, sizeof(name), callback_data->broker, callback_data->self);
 			RRR_DBG_2("Message broker backstop in %s: Message read from %s originates from self\n",
-					name, callback_data->source->name);
+					callback_data->self->name, callback_data->source->name);
 		}
 		*backstop = 1;
 		rrr_msg_holder_unlock(entry);
@@ -945,90 +1149,10 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 	// Callback must unlock
 	rrr_msg_holder_decref(entry);
 
-	return ret;
-}
-
-static int __rrr_message_broker_poll_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data = arg;
-	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
-
-	(void)(size);
-
-	int ret = RRR_FIFO_SEARCH_KEEP;
-
-	rrr_msg_holder_incref(entry);
-	rrr_msg_holder_lock(entry);
-
-	int backstop = 0;
-	ret = __rrr_message_broker_poll_intermediate_backstop_handling (
-			&backstop,
-			entry,
-			callback_data
-	);
-
-	if (backstop) {
-		ret |= RRR_FIFO_SEARCH_FREE;
-		ret |= RRR_FIFO_SEARCH_GIVE;
+	if (--(*callback_data->amount) == 0) {
+		ret |= RRR_FIFO_SEARCH_STOP;
 	}
 
-	// Callback must unlock
-	rrr_msg_holder_decref(entry);
-
-	return ret;
-}
-
-static int __rrr_message_broker_poll_slot_intermediate (
-		int *do_keep,
-		struct rrr_msg_holder *entry,
-		void *arg
-) {
-	struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	*do_keep = 0;
-
-	int backstop = 0;
-	int actions = __rrr_message_broker_poll_intermediate_backstop_handling (
-			&backstop,
-			entry,
-			callback_data
-	);
-
-	unsigned char do_keep_tmp = 0;
-	unsigned char do_give_tmp = 0;
-	unsigned char do_free_tmp = 0;
-	unsigned char do_stop_tmp = 0;
-
-	if (backstop) {
-		do_give_tmp = 1;
-		do_free_tmp = 1;
-	}
-	else {
-		if ((ret = rrr_fifo_buffer_search_return_value_process (
-				&do_keep_tmp,
-				&do_give_tmp,
-				&do_free_tmp,
-				&do_stop_tmp,
-				actions
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	if (do_keep_tmp) {
-		*do_keep = 1;
-	}
-	else if (do_give_tmp) {
-		rrr_msg_holder_incref(entry);
-		if (do_free_tmp) {
-			rrr_msg_holder_decref(entry);
-		}
-	}
-
-	// do_stop_tmp need not be checked, we may only return one result anyway (hence we always stop)
-
-	out:
 	return ret;
 }
 
@@ -1052,14 +1176,17 @@ static int __rrr_message_broker_poll_delete_slot_intermediate (
 			callback_data
 	);
 
-	return ret;
+	--(*callback_data->amount);
+
+	// We always stop, the slot only has at most one element.
+	return ret & ~(RRR_FIFO_SEARCH_STOP);
 }
 
 static void __rrr_message_broker_get_source_buffer (
 		int *source_buffer_is_main,
 		struct rrr_fifo_buffer **use_buffer,
 		struct rrr_message_broker_costumer *costumer,
-		rrr_message_broker_costumer_handle *self
+		struct rrr_message_broker_costumer *self
 ) {
 	pthread_mutex_lock(&costumer->split_buffers.lock);
 
@@ -1074,6 +1201,7 @@ static void __rrr_message_broker_get_source_buffer (
 
 	struct rrr_fifo_buffer *found_buffer = NULL;
 
+	int pos = 0;
 	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
 		if (node->owner == self) {
 			found_buffer = &node->queue;
@@ -1081,14 +1209,17 @@ static void __rrr_message_broker_get_source_buffer (
 		}
 		else if (node->owner == NULL) {
 			// Allocate
+			RRR_DBG_1("Message broker costumer %s add split buffer reader %s at position %i\n",
+				costumer->name, self->name, pos);
 			node->owner = self;
 			found_buffer = &node->queue;
 			RRR_LL_ITERATE_LAST();
 		}
+		pos++;
 	RRR_LL_ITERATE_END();
 
 	if (found_buffer == NULL) {
-		RRR_BUG("Not enough slots in __rrr_message_broker_split_buffers_handle\n");
+		RRR_BUG("Not enough slots in __rrr_message_broker_get_source_buffer\n");
 	}
 
 	*use_buffer = found_buffer;
@@ -1163,61 +1294,32 @@ static int __rrr_message_broker_split_buffers_fill (
     	    (ret = __rrr_message_broker_split_buffers_fill(costumer)     \
         ) != 0) { goto out; }} while(0)
 
-struct rrr_message_broker_poll_discard_callback_data {
-	int count;
-};
+#define FRIENDS_ITERATE_BEGIN(list,max)                                  \
+    do {for (size_t i = 0; i < max; i++) {                               \
+        if (self->list[i] == NULL) {                                     \
+            break;                                                       \
+        }                                                                \
+        struct rrr_message_broker_costumer *costumer = self->list[i]
 
-static int __rrr_message_broker_poll_discard_callback (
-		void *arg,
-		char *data,
-		unsigned long int size
+#define FRIENDS_ITERATE_END()                                            \
+    }} while(0)
+
+size_t rrr_message_broker_senders_count (
+		struct rrr_message_broker_costumer *self
 ) {
-	struct rrr_message_broker_poll_discard_callback_data *callback_data = arg;
+	size_t ret = 0;
 
-	(void)(data);
-	(void)(size);
+	FRIENDS_ITERATE_BEGIN(senders,RRR_MESSAGE_BROKER_SENDERS_MAX);
+		(void)(costumer);
+		ret++;
+	FRIENDS_ITERATE_END();
 
-	callback_data->count++;
-
-	return 0;
-}
-
-int rrr_message_broker_poll_discard (
-		int *discarded_count,
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		rrr_message_broker_costumer_handle *self
-) {
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	*discarded_count = 0;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_discard");
-
-	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_discard (discarded_count, costumer->slot, self)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
-
-		struct rrr_message_broker_poll_discard_callback_data callback_data = { 0 };
-
-		rrr_fifo_buffer_clear_with_callback(source_buffer, __rrr_message_broker_poll_discard_callback, &callback_data);
-
-		*discarded_count = callback_data.count;
-	}
-
-	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 int rrr_message_broker_poll_delete (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		rrr_message_broker_costumer_handle *self,
+		uint16_t *amount,
+		struct rrr_message_broker_costumer *self,
 		int broker_poll_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
@@ -1225,105 +1327,56 @@ int rrr_message_broker_poll_delete (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete");
-
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
-			broker,
-			costumer,
+			amount,
+			NULL,
 			self,
 			broker_poll_flags,
 			callback,
 			callback_arg
 	};
 
-	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_read (
-				costumer->slot,
-				self,
-				__rrr_message_broker_poll_delete_slot_intermediate,
-				&callback_data,
-				wait_milliseconds
-		)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+	FRIENDS_ITERATE_BEGIN(senders,RRR_MESSAGE_BROKER_SENDERS_MAX);
+		callback_data.source = costumer;
 
-		if ((ret = rrr_fifo_buffer_read_clear_forward (
-				source_buffer,
-				__rrr_message_broker_poll_delete_intermediate,
-				&callback_data,
-				wait_milliseconds
-		)) != 0) {
-			goto out;
+		if (costumer->slot != NULL) {
+			if ((ret = rrr_msg_holder_slot_read (
+					costumer->slot,
+					self,
+					__rrr_message_broker_poll_delete_slot_intermediate,
+					&callback_data,
+					wait_milliseconds
+			)) != 0) {
+				goto out;
+			}
 		}
-	}
+		else {
+			RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+
+			if ((ret = rrr_fifo_buffer_read_clear_forward (
+					source_buffer,
+					__rrr_message_broker_poll_delete_intermediate,
+					&callback_data,
+					wait_milliseconds
+			)) != 0) {
+				goto out;
+			}
+		}
+
+		if (*amount == 0) {
+			break;
+		}
+	FRIENDS_ITERATE_END();
 
 	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
-	return ret;
-}
-
-int rrr_message_broker_poll (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		rrr_message_broker_costumer_handle *self,
-		int broker_poll_flags,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
-) {
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll");
-
-	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
-			broker,
-			handle,
-			self,
-			broker_poll_flags,
-			callback,
-			callback_arg
-	};
-
-	if (costumer->slot != NULL) {
-		if ((ret = rrr_msg_holder_slot_read (
-				costumer->slot,
-				self,
-				__rrr_message_broker_poll_slot_intermediate,
-				&callback_data,
-				wait_milliseconds
-		)) != 0) {
-			goto out;
-		}
-	}
-	else {
-		RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
-
-		if ((ret = rrr_fifo_buffer_search (
-				source_buffer,
-				__rrr_message_broker_poll_intermediate,
-				&callback_data,
-				wait_milliseconds
-		)) != 0) {
-			goto out;
-		}
-	}
-
-	out:
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 int rrr_message_broker_set_ratelimit (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		int set
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
 
 	rrr_fifo_buffer_set_do_ratelimit(&costumer->main_queue, set);
 
@@ -1331,22 +1384,18 @@ int rrr_message_broker_set_ratelimit (
 		rrr_fifo_buffer_set_do_ratelimit(&node->queue, set);
 	RRR_LL_ITERATE_END();
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 int rrr_message_broker_get_entry_count_and_ratelimit (
 		int *entry_count,
 		int *ratelimit_active,
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		struct rrr_message_broker_costumer *costumer
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
 	*entry_count = 0;
 	*ratelimit_active = 0;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
 
 	if (costumer->slot != NULL) {
 		*ratelimit_active = 0;
@@ -1362,19 +1411,15 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 		RRR_LL_ITERATE_END();
 	}
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 // Note that stats from any split queues are not retrieved
 int rrr_message_broker_get_fifo_stats (
 		struct rrr_fifo_buffer_stats *target,
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle
+		struct rrr_message_broker_costumer *costumer
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_get_fifo_stats");
 
 	if (costumer->slot != NULL) {
 		uint64_t entries_deleted = 0;
@@ -1386,38 +1431,16 @@ int rrr_message_broker_get_fifo_stats (
 		rrr_fifo_buffer_get_stats(target, &costumer->main_queue);
 	}
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
-
-	return ret;
-}
-
-int rrr_message_broker_with_ctx_do (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
-		int (*callback)(void *callback_arg_1, void *callback_arg_2),
-		void *callback_arg_1,
-		void *callback_arg_2
-) {
-	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_with_ctx_do");
-
-	ret = callback(callback_arg_1, callback_arg_2);
-
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
 
 int rrr_message_broker_with_ctx_and_buffer_lock_do (
-		struct rrr_message_broker *broker,
-		rrr_message_broker_costumer_handle *handle,
+		struct rrr_message_broker_costumer *costumer,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),
 		void *callback_arg_1,
 		void *callback_arg_2
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
-
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_with_ctx_do");
 
 	if (costumer->slot != NULL) {
 		ret = rrr_msg_holder_slot_with_lock_do(costumer->slot, callback, callback_arg_1, callback_arg_2);
@@ -1426,8 +1449,45 @@ int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		ret = rrr_fifo_buffer_with_write_lock_do(&costumer->main_queue, callback, callback_arg_1, callback_arg_2);
 	}
 
-	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+static int __rrr_message_broker_write_listener_add (
+		struct rrr_message_broker_costumer *costumer,
+		struct rrr_message_broker_costumer *listener_costumer
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	if ((ret = __rrr_message_broker_friend_add(
+			costumer->write_notify_listeners,
+			RRR_MESSAGE_BROKER_WRITE_NOTIFY_LISTENER_MAX,
+			listener_costumer
+	)) != 0) {
+		RRR_MSG_0("Failed to add write notification listener to costumer %s, too many listeners\n", costumer->name);
+	}
 
 	return ret;
 }
 
+// No locking, call prior to starting threads
+int rrr_message_broker_sender_add (
+		struct rrr_message_broker_costumer *costumer,
+		struct rrr_message_broker_costumer *listener_costumer
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	if ((ret = __rrr_message_broker_friend_add (
+			costumer->senders,
+			RRR_MESSAGE_BROKER_SENDERS_MAX,
+			listener_costumer
+	)) != 0) {
+		RRR_MSG_0("Failed to add sender to costumer %s, too many senders\n", costumer->name);
+		goto out;
+	}
+
+	// Reverse arguments
+	ret = __rrr_message_broker_write_listener_add(listener_costumer, costumer);
+
+	out:
+	return ret;
+}

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "rrr_types.h"
 #include "map.h"
+#include "allocator.h"
 #include "util/macro_utils.h"
 #include "util/hex.h"
 
@@ -142,13 +143,13 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 			goto out;
 		}
 
-		if ((buf = malloc(new_size)) == NULL) {
+		if ((buf = rrr_allocate((size_t) new_size)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_type_convert_h2str\n");
 			ret = RRR_TYPE_CONVERSION_HARD_ERROR;
 			goto out;
 		}
 
-		memset (buf, ' ', new_size); // Set whole buffer to spaces
+		memset (buf, ' ', (size_t) new_size); // Set whole buffer to spaces
 
 		for (size_t i = 0; i < source->element_count; i++) {
 			const rrr_biglength rpos = i * sizeof(uint64_t);
@@ -171,9 +172,9 @@ static int __rrr_type_convert_h2str (RRR_TYPE_CONVERT_ARGS) {
 			}
 
 			// Write right justified in the slot
-			const size_t wpos_with_offset = wpos + max_out_length - (unsigned int) number_length;
+			const rrr_biglength wpos_with_offset = wpos + max_out_length - (rrr_biglength) number_length;
 
-			memcpy(buf + wpos_with_offset, tmp, (unsigned int) number_length);
+			memcpy(buf + wpos_with_offset, tmp, (size_t) number_length);
 		}
 	}
 
@@ -316,7 +317,14 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	}
 
 	const rrr_biglength size_new = source->element_count * sizeof(uint64_t);
-	if ((data_new = malloc(size_new)) == NULL) {
+
+	if (size_new > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Size exceeds maximum in __rrr_type_convert_str2h\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((data_new = rrr_allocate((size_t) size_new)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_convert_str2h\n");
 		ret = 1;
 		goto out;
@@ -339,7 +347,7 @@ static int __rrr_type_convert_str2h (RRR_TYPE_CONVERT_ARGS) {
 	const char *end = source->data + source->total_stored_length;
 	for (const char *rpos = source->data; rpos < end; rpos += source_element_size) {
 		char tmp_buf[source_element_size_max + 1];
-		memcpy(tmp_buf, rpos, source_element_size);
+		memcpy(tmp_buf, rpos, (size_t) source_element_size);
 		tmp_buf[source_element_size] = '\0';
 
 		union {
@@ -610,7 +618,7 @@ int rrr_type_convert_using_list (
 void rrr_type_conversion_collection_destroy (
 		struct rrr_type_conversion_collection *target
 ) {
-	free(target);
+	rrr_free(target);
 }
 
 int rrr_type_conversion_collection_new_from_map (
@@ -626,7 +634,7 @@ int rrr_type_conversion_collection_new_from_map (
 	const size_t elements = (size_t) RRR_MAP_COUNT(map);
 	const size_t new_size = sizeof(*result) + (sizeof(result->items) * (elements - 1));
 
-	if ((result = malloc(new_size)) == NULL) {
+	if ((result = rrr_allocate(new_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_type_conversion_collection_new_from_map\n");
 		ret = 1;
 		goto out;

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "parse.h"
 #include "log.h"
 #include "passwd.h"
+#include "allocator.h"
 #include "socket/rrr_socket.h"
 #include "rrr_strerror.h"
 #include "util/macro_utils.h"
@@ -52,7 +53,7 @@ static void __rrr_passwd_permission_destroy (
 		struct rrr_passwd_permission *permission
 ) {
 	RRR_FREE_IF_NOT_NULL(permission->permission);
-	free(permission);
+	rrr_free(permission);
 }
 
 void rrr_passwd_permission_collection_clear (
@@ -69,7 +70,7 @@ static int __rrr_passwd_permission_new (
 
 	*target = NULL;
 
-	struct rrr_passwd_permission *permission = malloc(sizeof(*permission));
+	struct rrr_passwd_permission *permission = rrr_allocate(sizeof(*permission));
 
 	if (permission == NULL) {
 		RRR_MSG_0("Could not allocate memory for permission in __rrr_passwd_permission_new\n");
@@ -79,7 +80,7 @@ static int __rrr_passwd_permission_new (
 
 	memset(permission, '\0', sizeof(*permission));
 
-	if ((permission->permission = strdup(permission_str)) == NULL) {
+	if ((permission->permission = rrr_strdup(permission_str)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for permission string in  __rrr_passwd_permission_new\n");
 		ret = 1;
 		goto out_free;
@@ -90,7 +91,7 @@ static int __rrr_passwd_permission_new (
 
 	goto out;
 	out_free:
-		free(permission);
+		rrr_free(permission);
 	out:
 	return ret;
 }
@@ -362,7 +363,7 @@ int rrr_passwd_encrypt (
 	*result = NULL;
 
 	// Must be more than 256 to hold OpenSSL error strings
-	char *final = malloc(RRR_PASSWD_HASH_MAX_LENGTH + 1);
+	char *final = rrr_allocate(RRR_PASSWD_HASH_MAX_LENGTH + 1);
 	if (final == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_passwd_encrypt\n");
 		ret = 1;
@@ -630,8 +631,6 @@ static int __rrr_passwd_authenticate_callback (
 	return ret;
 }
 
-// TODO : Move to separate daemon
-
 int rrr_passwd_authenticate (
 		const char *filename,
 		const char *username,
@@ -809,7 +808,7 @@ int rrr_passwd_read_password_from_terminal (
 		}
 	}
 
-	*result = strdup(buf);
+	*result = rrr_strdup(buf);
 	if (*result == NULL) {
 		RRR_MSG_0("Could not allocate memory in read_password_stdin\n");
 		ret = 1;
@@ -851,7 +850,7 @@ int rrr_passwd_read_password_from_stdin (
 
 	buf[bytes] = '\0';
 
-	*result = strdup(buf);
+	*result = rrr_strdup(buf);
 	if (*result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_passwd_read_password_from_stdin\n");
 		ret = 1;

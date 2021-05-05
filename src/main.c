@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,7 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 
 #include "main.h"
+#include "../config.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/common.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/instances.h"
@@ -119,6 +121,11 @@ static int __rrr_main_check_do_journald_logging (const char **env) {
 		}																			\
 	}} while(0)
 
+#define GETENV_STR(name, target)                         \
+    do { char *env; if ((env = getenv(name)) != NULL) {  \
+        target = env;                                    \
+    }} while(0)
+
 int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env, cmd_conf config) {
 	int ret = EXIT_SUCCESS;
 
@@ -129,6 +136,9 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	unsigned int no_watchdog_timers = 0;
 	unsigned int no_thread_restart = 0;
 	unsigned int rfc5424_loglevel_output = 0;
+	const char *run_directory = NULL;
+
+	const char *tmp;
 
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
@@ -153,6 +163,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	GETENV_YESNO(RRR_ENV_NO_WATCHDOG_TIMERS, no_watchdog_timers);
 	GETENV_YESNO(RRR_ENV_NO_THREAD_RESTART, no_thread_restart);
 	GETENV_YESNO(RRR_ENV_LOGLEVEL_TRANSLATION, rfc5424_loglevel_output);
+	GETENV_STR(RRR_ENV_RUN_DIRECTORY, run_directory);
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
@@ -212,11 +223,20 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 		rfc5424_loglevel_output = 1;
 	}
 
+	if ((tmp = cmd_get_value(cmd, "run-directory", 0)) != NULL) {
+		run_directory = tmp;
+	}
+
+	if (run_directory == NULL) {
+		run_directory = RRR_RUN_DIR;
+	}
+
 	SETENV(RRR_ENV_DEBUGLEVEL,				"%u",	debuglevel);
 	SETENV(RRR_ENV_DEBUGLEVEL_ON_EXIT,		"%u",	debuglevel_on_exit);
 	SETENV(RRR_ENV_NO_WATCHDOG_TIMERS,		"%u",	no_watchdog_timers);
 	SETENV(RRR_ENV_NO_THREAD_RESTART,		"%u",	no_thread_restart);
 	SETENV(RRR_ENV_LOGLEVEL_TRANSLATION,	"%u",	rfc5424_loglevel_output);
+	SETENV_STR(RRR_ENV_RUN_DIRECTORY,	run_directory);
 
 #ifdef HAVE_JOURNALD
 	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
@@ -231,7 +251,8 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output,
-			do_journald_output
+			do_journald_output,
+			run_directory
 	);
 
 	// DBG-macros must be used after global debuglevel has been set

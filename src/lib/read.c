@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
+#include "allocator.h"
 #include "messages/msg_msg.h"
 #include "messages/msg_addr.h"
 #include "messages/msg_log.h"
@@ -41,7 +42,7 @@ struct rrr_read_session *rrr_read_session_new (
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
-	struct rrr_read_session *read_session = malloc(sizeof(*read_session));
+	struct rrr_read_session *read_session = rrr_allocate(sizeof(*read_session));
 	if (read_session == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
@@ -62,8 +63,8 @@ struct rrr_read_session *rrr_read_session_new (
 int rrr_read_session_cleanup (
 		struct rrr_read_session *read_session
 ) {
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
-	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
 	return 0;
 }
 
@@ -71,7 +72,7 @@ int rrr_read_session_destroy (
 		struct rrr_read_session *read_session
 ) {
 	rrr_read_session_cleanup(read_session);
-	free(read_session);
+	rrr_free(read_session);
 	return 0;
 }
 
@@ -90,7 +91,6 @@ void rrr_read_session_collection_clear (
 struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot (
 		struct rrr_read_session_collection *collection
 ) {
-
 	RRR_LL_ITERATE_BEGIN(collection,struct rrr_read_session);
 		if (node->rx_overshoot != NULL) {
 			return node;
@@ -99,12 +99,26 @@ struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot 
 	return NULL;
 }
 
+int rrr_read_session_collection_has_unprocessed_data (
+		const struct rrr_read_session_collection *collection
+) {
+	RRR_LL_ITERATE_BEGIN(collection,struct rrr_read_session);
+		if (node->rx_overshoot != NULL || (node->rx_buf_wpos > 0 && node->rx_buf_ptr != NULL)) {
+			return 1;
+		}
+	RRR_LL_ITERATE_END();
+	return 0;
+}
+
 struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create (
+		int *is_new,
 		struct rrr_read_session_collection *collection,
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
 	struct rrr_read_session *res = NULL;
+
+	*is_new = 0;
 
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t time_limit = time_now - RRR_READ_COLLECTION_CLIENT_TIMEOUT_S * 1000 * 1000;
@@ -131,6 +145,8 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 		}
 
 		RRR_LL_UNSHIFT(collection,res);
+
+		*is_new = 1;
 	}
 
 	out:
@@ -154,37 +170,41 @@ int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		ssize_t read_max_size,
-		int									 (*function_get_target_size) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_complete_callback) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_read) (
-													char *buf,
-													ssize_t *read_bytes,
-													ssize_t read_step_max_size,
-													void *private_arg
-	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session				*(*function_get_read_session_with_overshoot) (
-													void *private_arg
-											 ),
-		struct rrr_read_session				*(*function_get_read_session) (
-													void *private_arg
-											 ),
-		void								 (*function_read_session_remove) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-										 	 ),
-		int									 (*function_get_socket_options) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
+		struct rrr_read_session *read_session_ratelimit,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
+		int (*function_get_target_size) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_complete_callback) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_read) (
+				char *buf,
+				ssize_t *read_bytes,
+				ssize_t read_step_max_size,
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
+				void *private_arg
+		),
+		struct rrr_read_session*(*function_get_read_session) (
+				void *private_arg
+		),
+		void (*function_read_session_remove) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
+		int (*function_get_socket_options) (
+				struct rrr_read_session *read_session,
+				void *private_arg
+		),
 		void *functions_callback_arg
 ) {
 	int ret = RRR_READ_OK;
+	int ret_from_read = RRR_READ_OK;
 
 	*bytes_read = 0;
 
@@ -197,8 +217,30 @@ int rrr_read_message_using_callbacks (
 		goto process_overshoot;
 	}
 
+	/* Check ratelimit. It is not possible to distinguish different read sessions when ratelimiting e.g.
+	 * when there are multiple read sessions for an UDP socket. */
+	if (read_session_ratelimit != NULL) {
+		if (ratelimit_max_bytes > 0) {
+			const uint64_t time_now = rrr_time_get_64();
+			if (time_now - read_session_ratelimit->ratelimit_time > ratelimit_interval_us) {
+				read_session_ratelimit->ratelimit_time = time_now;
+				read_session_ratelimit->ratelimit_bytes = 0;
+			}
+			else if (read_session_ratelimit->ratelimit_bytes > ratelimit_max_bytes) {
+				RRR_DBG_7("Read ratelimited %lli > %lli within %" PRIu64 " us\n",
+					(long long int) read_session_ratelimit->ratelimit_bytes, (long long int) ratelimit_max_bytes, ratelimit_interval_us);
+				ret = RRR_READ_RATELIMIT;
+				goto out;
+			}
+		}
+		else {
+			read_session_ratelimit->ratelimit_bytes = 0;
+			read_session_ratelimit->ratelimit_time = 0;
+		}
+	}
+
 	/* Read */
-	int ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
+	ret_from_read = ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);
 
 	// We don't quit on soft error yet, downstream must be able to retrieve the correct read session to
 	// handle errors, which might include to remove the read_session from the collection
@@ -263,9 +305,11 @@ int rrr_read_message_using_callbacks (
 		}
 	}
 
+	read_session->ratelimit_bytes += bytes;
 	read_session->eof_ok_now = 0;
 
 	process_overshoot:
+
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
 			read_session->rx_buf_ptr = read_session->rx_overshoot;
@@ -276,7 +320,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
+			read_session->rx_buf_ptr = rrr_allocate_group(bytes > read_step_max_size ? bytes : read_step_max_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
 				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -298,7 +342,7 @@ int rrr_read_message_using_callbacks (
 		*bytes_read = bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -348,7 +392,7 @@ int rrr_read_message_using_callbacks (
 
 			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
-			char *new_buf = malloc(read_session->rx_buf_size);
+			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -361,7 +405,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot = new_buf;
 			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->rx_buf_skip;
 
-			free(read_session->rx_buf_ptr);
+			rrr_free(read_session->rx_buf_ptr);
 			read_session->rx_buf_ptr = NULL;
 			read_session->rx_buf_skip = 0;
 
@@ -389,7 +433,7 @@ int rrr_read_message_using_callbacks (
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
 		read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
+		read_session->rx_overshoot = rrr_allocate_group(read_session->rx_overshoot_size, RRR_ALLOCATOR_GROUP_MSG);
 		if (read_session->rx_overshoot == NULL) {
 			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;
@@ -408,7 +452,7 @@ int rrr_read_message_using_callbacks (
 				goto out;
 			}
 
-			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
+			RRR_ALLOCATOR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 			read_session->target_size = 0;
 			read_session->read_complete_method = 0;

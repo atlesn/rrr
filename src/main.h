@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ENV_NO_WATCHDOG_TIMERS		"RRR_NO_WATCHDOG_TIMERS"
 #define RRR_ENV_NO_THREAD_RESTART		"RRR_NO_THREAD_RESTART"
 #define RRR_ENV_LOGLEVEL_TRANSLATION	"RRR_LOGLEVEL_TRANSLATION"
+#define RRR_ENV_RUN_DIRECTORY	"RRR_RUN_DIRECTORY"
 
 #include "lib/cmdlineparser/cmdline_defines.h"
 

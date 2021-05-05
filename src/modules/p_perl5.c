@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#undef __USE_GNU
+#include <stdio.h>
+
 // Allow u_int which being used when including Perl.h
 #undef __BSD_VISIBLE
 #define __BSD_VISIBLE 1
@@ -32,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -53,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_worker.h"
 #include "../lib/cmodule/cmodule_ext.h"
+#include "../lib/cmodule/cmodule_config_data.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/util/gnu.h"
@@ -111,7 +116,7 @@ static int xsub_send_message (
 
 static char *xsub_get_setting(const char *key, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_instance_settings *settings = perl5_child_data->worker->settings;
+	struct rrr_instance_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
 
 	char *value = NULL;
 	if (rrr_settings_get_string_noconvert_silent(&value, settings, key)) {
@@ -125,7 +130,7 @@ static char *xsub_get_setting(const char *key, void *private_data) {
 
 static int xsub_set_setting(const char *key, const char *value, void *private_data) {
 	struct perl5_child_data *perl5_child_data = private_data;
-	struct rrr_instance_settings *settings = perl5_child_data->worker->settings;
+	struct rrr_instance_settings *settings = rrr_cmodule_worker_get_settings(perl5_child_data->worker);
 
 	int ret = rrr_settings_replace_string(settings, key, value);
 	if (ret != 0) {
@@ -296,7 +301,7 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 
 	struct perl5_child_data *child_data = private_arg;
 	struct perl5_data *data = child_data->parent_data;
-	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
 	struct rrr_perl5_settings_hv *settings_hv = NULL;
@@ -343,7 +348,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct perl5_child_data *child_data = private_arg;
 	struct perl5_data *data = child_data->parent_data;
 	struct rrr_perl5_ctx *ctx = child_data->ctx;
-	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+	const struct rrr_cmodule_config_data *cmodule_config_data = rrr_cmodule_helper_config_data_get(data->thread_data);
 
 	struct rrr_perl5_message_hv *hv_message = NULL;
 	struct rrr_msg_addr addr_msg_tmp = *message_addr;
@@ -444,8 +449,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			INSTANCE_D_STATS(thread_data),
-			&thread_data->poll
+			1 * 1000 * 1000 // 1 s
 	);
 
 	out_message:
@@ -474,7 +478,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
-	data->dl_ptr = NULL;
+	data->event_functions = rrr_cmodule_helper_event_functions;
 }
 
 void unload(void) {

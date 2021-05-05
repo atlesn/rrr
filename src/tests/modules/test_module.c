@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../../lib/log.h"
+#include "../../lib/allocator.h"
 
 #include "type_array.h"
 #include "../test.h"
@@ -49,7 +50,6 @@ struct test_module_data {
 	int dummy;
 
 	char *test_method;
-	char *test_output_instance;
 
 	struct rrr_test_function_data test_function_data;
 };
@@ -64,7 +64,6 @@ void data_cleanup(void *_data) {
 	struct test_module_data *data = _data;
 	data->dummy = 0;
 	RRR_FREE_IF_NOT_NULL(data->test_method);
-	RRR_FREE_IF_NOT_NULL(data->test_output_instance);
 }
 
 int parse_config (struct test_module_data *data, struct rrr_instance_config_data *config) {
@@ -72,12 +71,6 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
-		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
-		ret = 1;
-	}
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
-	if (data->test_output_instance == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
@@ -90,7 +83,6 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config_data
 	out:
 	if (ret != 0) {
 		RRR_FREE_IF_NOT_NULL(data->test_method);
-		RRR_FREE_IF_NOT_NULL(data->test_output_instance);
 	}
 	return ret;
 }
@@ -115,7 +107,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	// Uncomment to make test module halt before it runs
-/*	while (rrr_thread_signal_encourage_stop_check(thread_data->thread) != 1) {
+/*	while (rrr_thread_signal_encourage_stop_check(thread_data->thread) == 0) {
 		rrr_thread_watchdog_time_update(thread_data->thread);
 		rrr_posix_usleep (20000); // 20 ms
 	}*/
@@ -130,8 +122,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = test_array (
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
-				thread_data,
-				data->test_output_instance
+				thread_data
 		);
 		TEST_MSG("Result from array test: %i\n", ret);
 	}
@@ -139,8 +130,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = test_averager (
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
-				thread_data,
-				data->test_output_instance
+				thread_data
 		);
 		TEST_MSG("Result from averager test: %i\n", ret);
 	}
@@ -148,8 +138,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = test_anything (
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
-				thread_data,
-				data->test_output_instance
+				thread_data
 		);
 		TEST_MSG("Result from anything test: %i\n", ret);
 	}
@@ -158,8 +147,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = test_type_array_mysql (
 				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
-				thread_data,
-				data->test_output_instance
+				thread_data
 		);
 		TEST_MSG("Result from MySQL test: %i\n", ret);
 #else
@@ -202,10 +190,9 @@ __attribute__((constructor)) void load(void) {
 void init(struct rrr_instance_module_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = RRR_MODULE_TYPE_SOURCE;
+	data->type = RRR_MODULE_TYPE_DEADEND;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->special_module_operations = NULL;
 }
 
 void unload(void) {

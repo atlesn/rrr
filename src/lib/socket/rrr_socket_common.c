@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_common.h"
@@ -61,7 +62,9 @@ int rrr_socket_common_receive_array_tree (
 		struct rrr_array *array_final,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
-		unsigned int read_step_max_size,
+		ssize_t read_step_max_size,
+		uint64_t ratelimit_interval_us,
+		ssize_t ratelimit_max_bytes,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
@@ -88,6 +91,8 @@ int rrr_socket_common_receive_array_tree (
 			read_step_max_size,
 			0, // No max size
 			socket_read_flags,
+			ratelimit_interval_us,
+			ratelimit_max_bytes,
 			rrr_read_common_get_session_target_length_from_array_tree,
 			&callback_data_array,
 			__rrr_socket_common_receive_array_tree_callback,
