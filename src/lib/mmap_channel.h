@@ -42,9 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_DEBUGLEVEL   __RRR_LOG_PREFIX_4
 #define RRR_MMAP_DBG(...)    RRR_DBG_4(__VA_ARGS__)
 
-struct rrr_mmap;
 struct rrr_mmap_channel;
 struct rrr_event_queue;
+struct rrr_shm_collection_master;
 
 int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
@@ -80,7 +80,10 @@ void rrr_mmap_channel_bubblesort_pointers (
 		struct rrr_mmap_channel *target,
 		int *was_sorted
 );
-void rrr_mmap_channel_destroy (
+void rrr_mmap_channel_destroy_by_reader (
+		struct rrr_mmap_channel *target
+);
+void rrr_mmap_channel_destroy_by_writer (
 		struct rrr_mmap_channel *target
 );
 void rrr_mmap_channel_writer_free_blocks (
@@ -88,7 +91,7 @@ void rrr_mmap_channel_writer_free_blocks (
 );
 int rrr_mmap_channel_new (
 		struct rrr_mmap_channel **target,
-		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_master *shm_master,
 		const char *name
 );
 void rrr_mmap_channel_get_counters_and_reset (

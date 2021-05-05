@@ -39,6 +39,10 @@ void rrr_shm_collection_slave_destroy (
 void rrr_shm_collection_master_destroy (
 		struct rrr_shm_collection_master *collection
 );
+void rrr_shm_collection_master_free (
+		struct rrr_shm_collection_master *collection,
+		rrr_shm_handle handle
+);
 int rrr_shm_collection_master_allocate (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_master *collection,
@@ -49,6 +53,15 @@ int rrr_shm_access (
 		rrr_shm_handle handle,
 		int (*callback)(void *ptr, void *arg),
 		void *callback_arg
+);
+void *rrr_shm_resolve (
+		struct rrr_shm_collection_slave *slave,
+		rrr_shm_handle handle
+);
+int rrr_shm_resolve_reverse (
+		rrr_shm_handle *handle,
+		struct rrr_shm_collection_slave *slave,
+		const void *ptr
 );
 
 #endif /* RRR_SHM_H */

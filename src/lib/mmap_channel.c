@@ -27,10 +27,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/mman.h>
 
 #include "rrr_strerror.h"
 #include "log.h"
 #include "mmap_channel.h"
+#include "rrr_shm.h"
 #include "rrr_mmap.h"
 #include "random.h"
 #include "event/event.h"
@@ -44,15 +46,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mmap_channel_block {
 	pthread_mutex_t block_lock;
+
 	size_t size_capacity;
 	size_t size_data; // If set to 0, block is free
+
 	int shmid;
-	void *ptr_shm_or_mmap;
+	void *ptr_shm_or_mmap_writer;
+
+	rrr_shm_handle shm_handle;
+	rrr_mmap_handle mmap_handle;
+};
+
+struct rrr_mmap_channel_process_data {
+	struct rrr_mmap_collection_minmax minmax;
+	struct rrr_shm_collection_slave *shm_slave;
 };
 
 struct rrr_mmap_channel {
-	struct rrr_mmap *mmap;
-	pthread_mutex_t index_lock;
+	struct rrr_mmap_collection collection;
+
+	pthread_rwlock_t index_lock;
+
+	struct rrr_shm_collection_master *shm_master;
+
+	struct rrr_mmap_collection mmaps;
+	struct rrr_mmap_channel_process_data reader_data;
+	struct rrr_mmap_channel_process_data writer_data;
+
 	int entry_count;
 	int wpos;
 	int rpos;
@@ -67,9 +87,9 @@ int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
 ) {
 	int count;
-	pthread_mutex_lock(&target->index_lock);
+	pthread_rwlock_wrlock(&target->index_lock);
 	count = target->entry_count;
-	pthread_mutex_unlock(&target->index_lock);
+	pthread_rwlock_unlock(&target->index_lock);
 	return count;
 }
 
@@ -78,7 +98,7 @@ static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel_block *block
 ) {
 	if (block->shmid != 0) {
-		if (block->ptr_shm_or_mmap == NULL) {
+		if (block->ptr_shm_or_mmap_writer == NULL) {
 			// Attempt to recover from previously failed allocation
 			struct shmid_ds ds;
 			if (shmctl(block->shmid, IPC_STAT, &ds) != block->shmid) {
@@ -95,12 +115,12 @@ static int __rrr_mmap_channel_block_free (
 				}
 			}
 		}
-		else if (shmdt(block->ptr_shm_or_mmap) != 0) {
+		else if (shmdt(block->ptr_shm_or_mmap_writer) != 0) {
 			RRR_MSG_0("shmdt failed in rrr_mmap_channel_write_using_callback: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 	}
-	else if (block->ptr_shm_or_mmap != NULL) {
+	else if (block->ptr_shm_or_mmap_writer != NULL) {
 		rrr_mmap_free(target->mmap, block->ptr_shm_or_mmap);
 	}
 
@@ -121,7 +141,7 @@ static int __rrr_mmap_channel_allocate (
 
 	// To reduce the chance of hitting the operating system limit on the total number of
 	// shared memory blocks, free the allocation if shm is not needed for this write.
-	if (block->shmid != 0 && block->ptr_shm_or_mmap != NULL) {
+	if (block->shmid != 0 && block->ptr_shm_or_mmap_writer != NULL) {
 		if (data_size >= RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE && data_size <= block->size_capacity) {
 			goto out;
 		}
@@ -160,7 +180,7 @@ static int __rrr_mmap_channel_allocate (
 		block->shmid = shmid;
 		block->size_capacity = data_size;
 
-		if ((block->ptr_shm_or_mmap = shmat(shmid, NULL, 0)) == NULL) {
+		if ((block->ptr_shm_or_mmap_writer = shmat(shmid, NULL, 0)) == NULL) {
 			RRR_MSG_0("shmat failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
@@ -173,7 +193,15 @@ static int __rrr_mmap_channel_allocate (
 		}
 	}
 	else {
-		if ((block->ptr_shm_or_mmap = rrr_mmap_allocate(target->mmap, data_size)) == NULL) {
+		if ((block->ptr_shm_or_mmap_writer = rrr_mmap_collection_allocate (
+			&target->mmaps,
+			target->shm_master,
+			target->writer_data.shm_slave,
+			data_size,
+
+		)
+
+		allocate(target->mmap, &target->writer_data.shm_slave, data_size)) == NULL) {
 			ret = 1;
 			goto out;
 		}
@@ -213,9 +241,9 @@ int rrr_mmap_channel_write_using_callback (
 		}
 
 		if (full_wait_time_us == 0 || wait_attempts_max-- == 0) {
-			pthread_mutex_lock(&target->index_lock);
+			pthread_rwlock_wrlock(&target->index_lock);
 			target->write_full_counter++;
-			pthread_mutex_unlock(&target->index_lock);
+			pthread_rwlock_unlock(&target->index_lock);
 			ret = RRR_MMAP_CHANNEL_FULL;
 			goto out_unlock;
 		}
@@ -223,9 +251,9 @@ int rrr_mmap_channel_write_using_callback (
 		rrr_posix_usleep(full_wait_time_us);
 
 	attempt_block_lock:
-		pthread_mutex_lock(&target->index_lock);
+		pthread_rwlock_wrlock(&target->index_lock);
 		block = &(target->blocks[target->wpos]);
-		pthread_mutex_unlock(&target->index_lock);
+		pthread_rwlock_unlock(&target->index_lock);
 
 		if (pthread_mutex_trylock(&block->block_lock) != 0) {
 			goto attempt_write_wait;
@@ -258,13 +286,13 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
 
-	pthread_mutex_lock(&target->index_lock);
+	pthread_rwlock_wrlock(&target->index_lock);
 	target->entry_count++;
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
 		target->wpos = 0;
 	}
-	pthread_mutex_unlock(&target->index_lock);
+	pthread_rwlock_unlock(&target->index_lock);
 
 	if (queue_notify != NULL) {
 		if ((ret = rrr_event_pass (
@@ -339,21 +367,21 @@ int rrr_mmap_channel_read_with_callback (
 
 	struct rrr_mmap_channel_block *block = NULL;
 
-	pthread_mutex_lock(&source->index_lock);
+	pthread_rwlock_wrlock(&source->index_lock);
 
 	block = &(source->blocks[source->rpos]);
 	int entry_count = source->entry_count;
 
-	pthread_mutex_unlock(&source->index_lock);
+	pthread_rwlock_unlock(&source->index_lock);
 
 	if (entry_count == 0) {
 		goto out_unlock;
 	}
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		pthread_mutex_lock(&source->index_lock);
+		pthread_rwlock_wrlock(&source->index_lock);
 		source->read_starvation_counter++;
-		pthread_mutex_unlock(&source->index_lock);
+		pthread_rwlock_unlock(&source->index_lock);
 		ret = RRR_MMAP_CHANNEL_EMPTY;
 		goto out_unlock;
 	}
@@ -402,13 +430,13 @@ int rrr_mmap_channel_read_with_callback (
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
 
-		pthread_mutex_lock(&source->index_lock);
+		pthread_rwlock_wrlock(&source->index_lock);
 		source->entry_count--;
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
 			source->rpos = 0;
 		}
-		pthread_mutex_unlock(&source->index_lock);
+		pthread_rwlock_unlock(&source->index_lock);
 	}
 
 	out_unlock:
@@ -467,15 +495,11 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 	}
 }
 
-void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
-	if (pthread_mutex_trylock(&target->index_lock) != 0) {
-		RRR_MSG_0("Warning: Not destroying index lock of mmap channel %s, it's possibly still being used\n",
-				target->name);
-	}
-	else {
-		pthread_mutex_unlock(&target->index_lock);
-		pthread_mutex_destroy(&target->index_lock);
-	}
+static void __rrr_mmap_channel_destroy (
+		struct rrr_mmap_channel *target,
+		struct rrr_shm_collection_slave *slave
+) {
+	pthread_rwlock_destroy(&target->index_lock);
 
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
@@ -497,11 +521,13 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
 	}
 
-	rrr_mmap_free(target->mmap, target);
+	rrr_mmap_collection_clear(&target->collection, slave, &target->index_lock);
+
+	munmap(target, sizeof(*target));
 }
 
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
-	pthread_mutex_lock(&target->index_lock);
+	pthread_rwlock_wrlock(&target->index_lock);
 
 	// This function does not lock the blocks in case the reader has crashed
 	// while holding the mutex
@@ -512,25 +538,29 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 	target->wpos = 0;
 	target->rpos = 0;
 
-	pthread_mutex_unlock(&target->index_lock);
+	pthread_rwlock_unlock(&target->index_lock);
 }
 
-int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name) {
+int rrr_mmap_channel_new (
+		struct rrr_mmap_channel **target,
+		struct rrr_shm_collection_master *shm_master,
+		const char *name
+) {
 	int ret = 0;
 
 	struct rrr_mmap_channel *result = NULL;
 
 	int mutex_i = 0;
 
-    if ((result = rrr_mmap_allocate(mmap, sizeof(*result))) == NULL) {
-    	RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
-    	ret = 1;
-    	goto out;
-    }
+	if ((result = rrr_posix_mmap(sizeof(*result), 1 /* Is shared */)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
+		ret = 1;
+		goto out;
+	}
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((ret = rrr_posix_mutex_init(&result->index_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+	if ((ret = rrr_posix_rwlock_init(&result->index_lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in rrr_mmap_channel_new (%i)\n", ret);
 		ret = 1;
 		goto out_free;
@@ -545,10 +575,10 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		}
 	}
 
-    strncpy(result->name, name, sizeof(result->name));
-    result->name[sizeof(result->name) - 1] = '\0';
+	strncpy(result->name, name, sizeof(result->name));
+	result->name[sizeof(result->name) - 1] = '\0';
 
-	result->mmap = mmap;
+	result->shm_master = shm_master;
 
 	*target = result;
 	result = NULL;
@@ -560,9 +590,9 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
 			pthread_mutex_destroy(&result->blocks[mutex_i].block_lock);
 		}
-		pthread_mutex_destroy(&result->index_lock);
+		pthread_rwlock_destroy(&result->index_lock);
 	out_free:
-		rrr_mmap_free(mmap, result);
+		munmap(result, sizeof(*result));
 	out:
 		return ret;
 }
@@ -572,7 +602,7 @@ void rrr_mmap_channel_get_counters_and_reset (
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
 ) {
-	pthread_mutex_lock(&source->index_lock);
+	pthread_rwlock_wrlock(&source->index_lock);
 
 	*read_starvation_counter = source->read_starvation_counter;
 	*write_full_counter = source->write_full_counter;
@@ -580,5 +610,5 @@ void rrr_mmap_channel_get_counters_and_reset (
 	source->read_starvation_counter = 0;
 	source->write_full_counter = 0;
 
-	pthread_mutex_unlock(&source->index_lock);
+	pthread_rwlock_unlock(&source->index_lock);
 }

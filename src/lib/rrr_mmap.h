@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "util/linked_list.h"
+#include "rrr_shm.h"
 
 #define RRR_MMAP_COLLECTION_MAX 128
 #define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
@@ -37,20 +38,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // and clean mmaps.
 #define RRR_MMAP_COLLECTION_FLAG_BAD (1<<0)
 
+typedef uint64_t rrr_mmap_handle;
+
 struct rrr_mmap_stats;
 
 struct rrr_mmap {
-	void *heap;
+	rrr_shm_handle shm_handle;
+	struct rrr_shm_collection_master *shm_master;
+
 	int maintenance_cleanup_strikes;
 	uint64_t allocation_count;
 	uint8_t flags;
 	pthread_mutex_t lock;
-	uint64_t heap_size;
-	uint64_t prev_allocation_failure_req_size;
-	uint64_t prev_allocation_index_pos;
+	rrr_mmap_handle heap_size;
+	rrr_mmap_handle prev_allocation_failure_req_size;
+	rrr_mmap_handle  prev_allocation_index_pos;
 	size_t to_free_list_count;
-	uintptr_t to_free_list[RRR_MMAP_TO_FREE_LIST_MAX];
-	int is_shared;
+	rrr_mmap_handle to_free_list[RRR_MMAP_TO_FREE_LIST_MAX];
 };
 
 struct rrr_mmap_heap_index {
@@ -59,54 +63,111 @@ struct rrr_mmap_heap_index {
 	size_t mmap_idx;
 };
 
+struct rrr_mmap_collection_minmax {
+	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
+	unsigned int version;
+};
+
 struct rrr_mmap_collection {
 	size_t mmap_count;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
-	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
+	unsigned int version;
 };
 
+void *rrr_mmap_resolve (
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_mmap_handle handle
+);
 void rrr_mmap_free (
 		struct rrr_mmap *mmap,
-		void *ptr
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_mmap_handle handle
 );
 void rrr_mmap_dump_indexes (
-		struct rrr_mmap *mmap
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave
 );
 void *rrr_mmap_allocate (
 		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave,
 		uint64_t req_size
 );
 int rrr_mmap_new (
 		struct rrr_mmap **target,
-		uint64_t heap_size,
-		int is_shared
+		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
+		uint64_t heap_size
 );
 void rrr_mmap_destroy (
-		struct rrr_mmap *mmap
+		struct rrr_mmap *mmap,
+		struct rrr_shm_collection_slave *shm_slave
 );
 void rrr_mmap_collections_maintenance (
 		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collections,
 		size_t collection_count,
+		struct rrr_shm_collection_slave *shm_slave,
 		pthread_rwlock_t *index_lock
 );
 void rrr_mmap_collections_clear (
 		struct rrr_mmap_collection *collections,
+		struct rrr_shm_collection_slave *shm_slave,
 		size_t collection_count,
 		pthread_rwlock_t *index_lock
 );
 void *rrr_mmap_collection_allocate (
 		struct rrr_mmap_collection *collection,
+		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
 		uint64_t bytes,
 		uint64_t min_mmap_size,
-		pthread_rwlock_t *index_lock,
-		int is_shared
+		pthread_rwlock_t *index_lock
+);
+void *rrr_mmap_collection_allocate_with_handles (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
+		uint64_t bytes,
+		uint64_t min_mmap_size,
+		pthread_rwlock_t *index_lock
 );
 int rrr_mmap_collections_free (
 		struct rrr_mmap_collection *collections,
+		struct rrr_mmap_collection_minmax *minmaxes,
 		size_t collection_count,
+		struct rrr_shm_collection_slave *shm_slave,
 		pthread_rwlock_t *index_lock,
 		void *ptr
 );
+
+static void rrr_mmap_collection_maintenance (
+		struct rrr_mmap_stats *stats,
+		struct rrr_mmap_collection *collection,
+		struct rrr_shm_collection_slave *shm_slave,
+		pthread_rwlock_t *index_lock
+) {
+	rrr_mmap_collections_maintenance(stats, collection, 1, shm_slave, index_lock);
+}
+
+static void rrr_mmap_collection_clear (
+		struct rrr_mmap_collection *collection,
+		struct rrr_shm_collection_slave *shm_slave,
+		pthread_rwlock_t *index_lock
+) {
+	rrr_mmap_collections_clear(collection, shm_slave, 1, index_lock);
+}
+
+static int rrr_mmap_collection_free (
+		struct rrr_mmap_collection *collection,
+		struct rrr_mmap_collection_minmax *minmax,
+		struct rrr_shm_collection_slave *shm_slave,
+		pthread_rwlock_t *index_lock,
+		void *ptr
+) {
+	return rrr_mmap_collections_free(collection, minmax, 1, shm_slave, index_lock, ptr);
+}
 
 #endif /* RRR_MMAP_H */

@@ -279,6 +279,22 @@ void rrr_shm_collection_master_destroy (
 	munmap(collection, sizeof(*collection));
 }
 
+void rrr_shm_collection_master_free (
+		struct rrr_shm_collection_master *collection,
+		rrr_shm_handle handle
+) {
+	pthread_mutex_lock(&collection->lock);
+
+	if (collection->elements[handle].data_size == 0) {
+		RRR_BUG("BUG: Double free in rrr_shm_collection_master_free\n");
+	}
+	__rrr_shm_cleanup(&collection->elements[handle]);
+
+	collection->version++;
+
+	pthread_mutex_unlock(&collection->lock);
+}
+
 int rrr_shm_collection_master_allocate (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_master *collection,
@@ -354,4 +370,37 @@ int rrr_shm_access (
 
 	out:
 	return ret;
+}
+
+void *rrr_shm_resolve (
+		struct rrr_shm_collection_slave *slave,
+		rrr_shm_handle handle
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_shm_slave_refresh_if_needed(slave)) != 0) {
+		return NULL;
+	}
+
+	if (slave->ptrs[handle].ptr == NULL) {
+		RRR_MSG_0("Invalid handle %llu in rrr_shm_resolve, not allocated by master\n",
+				(long long unsigned) handle);
+		return NULL;
+	}
+
+	return slave->ptrs[handle].ptr;
+}
+
+int rrr_shm_resolve_reverse (
+		rrr_shm_handle *handle,
+		struct rrr_shm_collection_slave *slave,
+		const void *ptr
+) {
+	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
+		if (slave->ptrs[i].ptr == ptr) {
+			*handle = i;
+			return 0;
+		}
+	}
+	return 1;
 }
