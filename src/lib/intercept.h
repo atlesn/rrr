@@ -51,8 +51,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // to prevent bugs, all mutex initialization must use helper functions
 #ifndef RRR_INTERCEPT_ALLOW_PTHREAD_MUTEX_INIT
-#    define pthread_mutex_init(x,y)          RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT(xmy)
-#    define pthread_mutexattr_init(x)        RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT(x)
+#    define pthread_mutex_init(x,y)          RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEX_INIT(x,y)
+#    define pthread_mutexattr_init(x)        RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_MUTEXATTR_INIT(x)
 #    define pthread_rwlock_init(x,y)         RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCK_INIT(x,y)
 #    define pthread_rwlockattr_init(x)       RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_RWLOCKATTR_INIT(x)
 #    define pthread_condattr_init(x)         RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PTHREAD_CONDATTR_INIT(x)
