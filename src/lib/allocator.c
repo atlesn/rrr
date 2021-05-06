@@ -88,7 +88,7 @@ void *rrr_allocate (size_t bytes) {
 void *rrr_allocate_zero (size_t bytes) {
 	void *ret = malloc(bytes);
 	if (ret) {
-		memset(ret, '\0', sizeof(*ret));
+		memset(ret, '\0', bytes);
 	}
 	return ret;
 }
