@@ -88,6 +88,7 @@ struct rrr_cmodule {
 	int config_check_complete_message_printed;
 
 	struct rrr_shm_collection_master *shm_master;
+	struct rrr_shm_collection_slave *shm_slave;
 
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;

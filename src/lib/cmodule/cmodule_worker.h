@@ -37,6 +37,7 @@ struct rrr_msg_msg;
 struct rrr_msg_addr;
 struct rrr_event_queue;
 struct rrr_shm_collection_master;
+struct rrr_shm_collection_slave;
 
 int rrr_cmodule_worker_send_message_and_address_to_parent (
 		struct rrr_cmodule_worker *worker,
@@ -91,6 +92,7 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
 		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
 		rrr_setting_uint spawn_interval_us,
 		rrr_setting_uint sleep_time_us,
 		rrr_setting_uint nothing_happened_limit,

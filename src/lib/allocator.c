@@ -95,7 +95,7 @@ void *rrr_allocate_zero (size_t bytes) {
 
 /* Allocate memory from group allocator */
 void *rrr_allocate_group (size_t bytes, int group) {
-	return __rrr_allocate(bytes, group);
+	return __rrr_allocate(bytes, 0 /* group*/);
 }
 
 /* Frees both allocations done by OS allocator and group allocator */

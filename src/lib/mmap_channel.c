@@ -527,6 +527,7 @@ void rrr_mmap_channel_maintenance_by_writer (
 int rrr_mmap_channel_new (
 		struct rrr_mmap_channel **target,
 		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
 		const char *name
 ) {
 	int ret = 0;
@@ -536,10 +537,13 @@ int rrr_mmap_channel_new (
 	int mutex_i = 0;
 	rrr_shm_handle shm_handle;
 
-	if ((result = rrr_shm_collection_master_allocate_raw(&shm_handle, shm_master, sizeof(*result))) == NULL) {
+	if ((ret = rrr_shm_collection_master_allocate(&shm_handle, shm_master, sizeof(*result))) != 0) {
 		RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
-		ret = 1;
 		goto out;
+	}
+
+	if ((result = rrr_shm_resolve (shm_slave, shm_handle)) == NULL) {
+		RRR_BUG("BUG: SHM resolve failed in rrr_mmap_channel_new\n");
 	}
 
 	memset(result, '\0', sizeof(*result));

@@ -51,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_channel;
 struct rrr_event_queue;
 struct rrr_shm_collection_master;
+struct rrr_shm_collection_slave;
 
 int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
@@ -100,6 +101,7 @@ void rrr_mmap_channel_maintenance_by_writer (
 int rrr_mmap_channel_new (
 		struct rrr_mmap_channel **target,
 		struct rrr_shm_collection_master *shm_master,
+		struct rrr_shm_collection_slave *shm_slave,
 		const char *name
 );
 void rrr_mmap_channel_get_counters_and_reset (

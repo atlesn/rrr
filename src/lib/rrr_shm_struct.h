@@ -48,7 +48,7 @@ struct rrr_shm_collection_slave {
 	struct rrr_shm_ptr ptrs[RRR_SHM_COLLECTION_MAX];
 };
 
-#define RRR_SHM_COLLECTION_MASTER_INIT {0, {0}, PTHREAD_MUTEX_INITIALIZER}
-#define RRR_SHM_COLLECTION_SLAVE_INIT(master) {master, 0, {0}}
+#define RRR_SHM_COLLECTION_MASTER_INIT { 0, {{"", 0}}, PTHREAD_MUTEX_INITIALIZER }
+#define RRR_SHM_COLLECTION_SLAVE_INIT(master) { master, 0, {{0}} }
 
 #endif /* RRR_SHM_STRUCT_H */

@@ -30,7 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_COLLECTION_MAX 128
 #define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
-#define RRR_MMAP_COLLECTION_ALLOCATION_MAX 32768
+//#define RRR_MMAP_COLLECTION_ALLOCATION_MAX 32768
+#define RRR_MMAP_COLLECTION_ALLOCATION_MAX 10
 #define RRR_MMAP_TO_FREE_LIST_MAX 16
 
 // Flag set after a certain number of allocations to prevent more

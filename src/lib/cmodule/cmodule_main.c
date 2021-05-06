@@ -121,6 +121,10 @@ static int __rrr_cmodule_main_mmap_ensure (
 			RRR_MSG_0("Could not allocate SHM master in __rrr_cmodule_main_mmap_ensure\n");
 			goto out;
 		}
+		if ((ret = rrr_shm_collection_slave_new(&cmodule->shm_slave, cmodule->shm_master)) != 0) {
+			RRR_MSG_0("Could not allocate SHM slave in __rrr_cmodule_main_mmap_ensure\n");
+			goto out;
+		}
 	}
 
 	out:
@@ -170,6 +174,7 @@ int rrr_cmodule_main_worker_fork_start (
 			worker_queue,
 			cmodule->fork_handler,
 			cmodule->shm_master,
+			cmodule->shm_slave,
 			cmodule->config_data.worker_spawn_interval_us,
 			cmodule->config_data.worker_sleep_time_us,
 			cmodule->config_data.worker_nothing_happened_limit,
@@ -225,7 +230,6 @@ int rrr_cmodule_main_worker_fork_start (
 
 	exit(ret);
 
-	goto out_parent;
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
 		cmodule->worker_count--;
@@ -260,7 +264,9 @@ void rrr_cmodule_destroy (
 	__rrr_cmodule_main_workers_stop(cmodule);
 	if (cmodule->shm_master != NULL) {
 		rrr_shm_collection_master_destroy(cmodule->shm_master);
-		cmodule->shm_master = NULL;
+	}
+	if (cmodule->shm_slave != NULL) {
+		rrr_shm_collection_slave_destroy(cmodule->shm_slave);
 	}
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
 	rrr_free(cmodule->name);

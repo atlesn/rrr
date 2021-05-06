@@ -91,29 +91,20 @@ static int __rrr_shm_open_create (
 	return 0;
 }
 
-static void *__rrr_shm_create_and_mmap (struct rrr_shm *shm, size_t data_size) {
-	void *ptr = NULL;
+static int __rrr_shm_create (struct rrr_shm *shm, size_t data_size) {
+	int ret = 0;
 
 	int fd_tmp = 0;
-	if (__rrr_shm_open_create (&fd_tmp, shm->name, sizeof(shm->name)) != 0) {
+	if ((ret = __rrr_shm_open_create (&fd_tmp, shm->name, sizeof(shm->name))) != 0) {
 		goto out;
-	}
-
-	if ((ptr = rrr_posix_mmap_with_fd(fd_tmp, data_size)) == NULL) {
-		RRR_MSG_0("mmap failed in rrr_shm_create_and_mmap: %s\n", rrr_strerror(errno));
-		goto out_close;
 	}
 
 	shm->data_size = data_size;
 
 	close(fd_tmp);
 
-	goto out;
-	out_close:
-		close(fd_tmp);
-		shm_unlink(shm->name);
 	out:
-		return ptr;
+	return ret;
 }
 
 static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
@@ -149,8 +140,7 @@ static void __rrr_shm_ptr_cleanup_if_not_null (
 	if (ptr->ptr != NULL) {
 		munmap(ptr->ptr, ptr->data_size);
 	}
-	ptr->ptr = 0;
-	ptr->data_size = 0;
+	memset(ptr, '\0', sizeof(*ptr));
 }
 
 static int __rrr_shm_ptr_update (
@@ -279,8 +269,7 @@ void rrr_shm_collection_master_free (
 	pthread_mutex_unlock(&collection->lock);
 }
 
-static int __rrr_shm_collection_master_allocate (
-		void **ptr,
+int rrr_shm_collection_master_allocate (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_master *collection,
 		size_t data_size
@@ -290,12 +279,10 @@ static int __rrr_shm_collection_master_allocate (
 	pthread_mutex_lock(&collection->lock);
 
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_BEGIN();
-		void *ptr_tmp;
-		if ((ptr_tmp = __rrr_shm_create_and_mmap(shm, data_size)) == NULL) {
+		if ((ret = __rrr_shm_create(shm, data_size)) != 0) {
 			goto out;
 		}
 
-		*ptr = ptr_tmp;
 		*handle = i;
 		collection->version++;
 
@@ -307,27 +294,6 @@ static int __rrr_shm_collection_master_allocate (
 	out:
 	pthread_mutex_unlock(&collection->lock);
 	return ret;
-}
-
-void *rrr_shm_collection_master_allocate_raw (
-		rrr_shm_handle *handle,
-		struct rrr_shm_collection_master *collection,
-		size_t data_size
-) {
-	void *ptr;
-	if (__rrr_shm_collection_master_allocate(&ptr, handle, collection, data_size) != 0) {
-		return NULL;
-	}
-	return ptr;
-}
-
-int rrr_shm_collection_master_allocate (
-		rrr_shm_handle *handle,
-		struct rrr_shm_collection_master *collection,
-		size_t data_size
-) {
-	void *ptr_dummy;
-	return __rrr_shm_collection_master_allocate(&ptr_dummy, handle, collection, data_size);
 }
 
 static int __rrr_shm_slave_refresh_if_needed (
@@ -373,6 +339,8 @@ int rrr_shm_access (
 		goto out;
 	}
 
+//	printf("Resolve %lu->%p\n", handle, slave->ptrs[handle].ptr);
+
 	ret = callback(slave->ptrs[handle].ptr, callback_arg);
 
 	out:
@@ -394,6 +362,7 @@ void *rrr_shm_resolve (
 				(long long unsigned) handle);
 		return NULL;
 	}
+//	printf("Resolve %lu->%p\n", handle, slave->ptrs[handle].ptr);
 
 	return slave->ptrs[handle].ptr;
 }
