@@ -29,26 +29,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_shm {
 	char name[8];
 	size_t data_size;
+	unsigned int version_ptr;
 };
 
 struct rrr_shm_ptr {
 	void *ptr;
 	size_t data_size;
+	unsigned int version_ptr;
 };
 
 struct rrr_shm_collection_master {
-	unsigned int version;
-	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
 	pthread_mutex_t lock;
+	unsigned int version_master;
+	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
 };
 
 struct rrr_shm_collection_slave {
 	struct rrr_shm_collection_master *master;
-	unsigned int version;
+	unsigned int version_master;
 	struct rrr_shm_ptr ptrs[RRR_SHM_COLLECTION_MAX];
 };
 
-#define RRR_SHM_COLLECTION_MASTER_INIT { 0, {{"", 0}}, PTHREAD_MUTEX_INITIALIZER }
+#define RRR_SHM_COLLECTION_MASTER_INIT { PTHREAD_MUTEX_INITIALIZER, 0, {{"", 0, 0}} }
 #define RRR_SHM_COLLECTION_SLAVE_INIT(master) { master, 0, {{0}} }
 
 #endif /* RRR_SHM_STRUCT_H */

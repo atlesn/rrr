@@ -60,6 +60,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
+// printf debugging
+//#define RRR_MMAP_ALLOCATION_DEBUG 1
+
 #define RRR_MMAP_SENTINEL_DEBUG
 
 #ifdef RRR_MMAP_SENTINEL_DEBUG
@@ -484,6 +487,10 @@ static int __rrr_mmap_init (
 		goto out;
 	}
 
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+	printf("Init %p shm %lu\n", result, result->shm_handle);
+#endif
+
 	if ((ret = rrr_posix_mutex_init(&result->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Could not initialize mutex in __rrr_mmap_init (%i)\n", ret);
 		ret = 1;
@@ -543,8 +550,8 @@ int rrr_mmap_new (
 void __rrr_mmap_cleanup (
 		struct rrr_mmap *mmap
 ) {
-	pthread_mutex_destroy(&mmap->lock);
 	rrr_shm_collection_master_free(mmap->shm_master, mmap->shm_handle);
+	pthread_mutex_destroy(&mmap->lock);
 	memset(mmap, '\0', sizeof(*mmap));
 }
 
@@ -598,8 +605,10 @@ static void __rrr_mmap_collection_minmax_update_if_needed (
 			minmax->minmax[wpos].heap_min = (uintptr_t) heap;
 			minmax->minmax[wpos].heap_max = (uintptr_t) heap + mmap->heap_size;
 			minmax->minmax[wpos].mmap_idx = i;
-			printf("Make minmax %lu %p minmax pos %lu - %p<=x<%p shm %lu\n",
-				i, mmap, wpos, heap, heap + mmap->heap_size, mmap->shm_handle);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Make minmax %lu %p minmax pos %lu - %p<=x<%p shm %lu heap %p\n",
+				i, mmap, wpos, heap, heap + mmap->heap_size, mmap->shm_handle, heap);
+#endif
 			wpos++;
 		}
 		if (wpos == collection->mmap_count) {
@@ -607,7 +616,7 @@ static void __rrr_mmap_collection_minmax_update_if_needed (
 		}
 	RRR_MMAP_ITERATE_END();
 
-	// Keep write lockj
+	// Keep write lock
 
 	out:
 		return;
@@ -672,8 +681,10 @@ void rrr_mmap_collections_maintenance (
 
 			uint64_t allocation_count;
 			if (__rrr_mmap_is_empty(&allocation_count, mmap, shm_slave)) {
-				printf("Cleanup %p strike %i\n", mmap, mmap->maintenance_cleanup_strikes);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+				printf("Cleanup %p strike %i shm %lu\n", mmap, mmap->maintenance_cleanup_strikes, mmap->shm_handle);
 				rrr_mmap_dump_indexes(mmap, shm_slave);
+#endif
 				if (++mmap->maintenance_cleanup_strikes >= RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
 					 __rrr_mmap_cleanup (mmap);
 					collection->mmap_count--;
@@ -684,8 +695,10 @@ void rrr_mmap_collections_maintenance (
 			}
 			else {
 				if (allocation_count > RRR_MMAP_COLLECTION_ALLOCATION_MAX) {
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
 					printf("Bad %p\n", mmap);
 					rrr_mmap_dump_indexes(mmap, shm_slave);
+#endif
 					stats->mmap_total_bad_count++;
 					mmap->flags |= RRR_MMAP_COLLECTION_FLAG_BAD;
 					mmap->maintenance_cleanup_strikes = RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES;
@@ -723,7 +736,9 @@ void rrr_mmap_collections_clear (
 	}
 	pthread_rwlock_unlock(index_lock);
 
-//	printf("MMAPs left upon cleanup: %i\n", count);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+	printf("MMAPs left upon cleanup: %i\n", count);
+#endif
 }
 
 void *rrr_mmap_collection_allocate_with_handles (
@@ -745,7 +760,10 @@ void *rrr_mmap_collection_allocate_with_handles (
 			     (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0 &&
 			     (result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, shm_slave, bytes)) != NULL
 			) {
-				printf("Allocate %lu %p = %p shm %lu\n", i, mmap, result, mmap->shm_handle);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+				DEFINE_HEAP();
+				printf("Allocate %lu %p = %p shm %lu heap %p\n", i, mmap, result, mmap->shm_handle, heap);
+#endif
 				break;
 			}
 		RRR_MMAP_ITERATE_END();
@@ -758,16 +776,53 @@ void *rrr_mmap_collection_allocate_with_handles (
 
 	pthread_rwlock_wrlock(index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
-		printf("Init try %p\n", mmap);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+		for (size_t j = 0; j < 4; j++) {
+			printf("shm %lu ptr %p\n", j, rrr_shm_resolve(shm_slave, j));
+		}
+		printf("Init try %p heapp\n", mmap);
+#endif
 		if (mmap->heap_size == 0) {
 			if (__rrr_mmap_init (mmap, shm_master, bytes > min_mmap_size ? bytes : min_mmap_size) != 0) {
 				break;
 			}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
 			printf("- OK shm %lu\n", mmap->shm_handle);
+#endif
 			collection->mmap_count++;
 			collection->version++;
 			result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, shm_slave, bytes);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			DEFINE_HEAP();
+			printf("Allocate %lu %p = %p shm %lu heap %p\n", i, mmap, result, mmap->shm_handle, heap);
+#endif
+			break;
+		}
+	RRR_MMAP_ITERATE_END();
+	pthread_rwlock_unlock(index_lock);
+
+	if (result) {
+		goto out;
+	}
+
+	pthread_rwlock_wrlock(index_lock);
+	RRR_MMAP_ITERATE_BEGIN();
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+		printf("Init try %p\n", mmap);
+#endif
+		if (mmap->heap_size == 0) {
+			if (__rrr_mmap_init (mmap, shm_master, bytes > min_mmap_size ? bytes : min_mmap_size) != 0) {
+				break;
+			}
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("- OK shm %lu\n", mmap->shm_handle);
+#endif
+			collection->mmap_count++;
+			collection->version++;
+			result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, shm_slave, bytes);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
 			printf("Allocate %lu %p = %p shm %lu\n", i, mmap, result, mmap->shm_handle);
+#endif
 			break;
 		}
 	RRR_MMAP_ITERATE_END();
@@ -830,7 +885,9 @@ int rrr_mmap_collections_free (
 
 			DEFINE_HEAP();
 
-			printf("Free %lu %p = %p shm %lu\n", pos, mmap, ptr, mmap->shm_handle);
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Free %lu %p = %p shm %lu heap %p\n", pos, mmap, ptr, mmap->shm_handle, heap);
+#endif
 
 			rrr_mmap_free(mmap, shm_slave, (uintptr_t) ptr - (uintptr_t) heap);
 	

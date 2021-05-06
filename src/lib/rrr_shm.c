@@ -100,6 +100,7 @@ static int __rrr_shm_create (struct rrr_shm *shm, size_t data_size) {
 	}
 
 	shm->data_size = data_size;
+	shm->version_ptr++;
 
 	close(fd_tmp);
 
@@ -131,7 +132,11 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 
 static void __rrr_shm_cleanup (struct rrr_shm *shm) {
 	shm_unlink(shm->name);
-	memset(shm, '\0', sizeof(*shm));
+
+	shm->name[0] = '\0';
+	shm->data_size = 0;
+
+	shm->version_ptr++;
 }
 
 static void __rrr_shm_ptr_cleanup_if_not_null (
@@ -139,21 +144,26 @@ static void __rrr_shm_ptr_cleanup_if_not_null (
 ) {
 	if (ptr->ptr != NULL) {
 		munmap(ptr->ptr, ptr->data_size);
+		ptr->data_size = 0;
+		ptr->ptr = NULL;
 	}
-	memset(ptr, '\0', sizeof(*ptr));
 }
 
 static int __rrr_shm_ptr_update (
 		struct rrr_shm_ptr *target,
 		const struct rrr_shm *source
 ) {
-	__rrr_shm_ptr_cleanup_if_not_null(target);
+	if (target->version_ptr != source->version_ptr) {
+		__rrr_shm_ptr_cleanup_if_not_null(target);
 
-	if (source->data_size != 0) {
-		if ((target->ptr = __rrr_shm_mmap(source)) == NULL) {
-			return 1;
+		if (source->data_size != 0) {
+			if ((target->ptr = __rrr_shm_mmap(source)) == NULL) {
+				return 1;
+			}
+			target->data_size = source->data_size;
 		}
-		target->data_size = source->data_size;
+
+		target->version_ptr = source->version_ptr;
 	}
 
 	return 0;
@@ -175,7 +185,7 @@ int rrr_shm_collection_slave_new (
 	slave->master = master;
 
 	pthread_mutex_lock(&slave->master->lock);
-	slave->version = master->version - 1;
+	slave->version_master = master->version_master - 1;
 	pthread_mutex_unlock(&slave->master->lock);
 
 	*target = slave;
@@ -264,7 +274,7 @@ void rrr_shm_collection_master_free (
 	}
 	__rrr_shm_cleanup(&collection->elements[handle]);
 
-	collection->version++;
+	collection->version_master++;
 
 	pthread_mutex_unlock(&collection->lock);
 }
@@ -284,7 +294,7 @@ int rrr_shm_collection_master_allocate (
 		}
 
 		*handle = i;
-		collection->version++;
+		collection->version_master++;
 
 		ret = 0;
 
@@ -303,7 +313,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 
 	pthread_mutex_lock(&slave->master->lock);
 
-	if (slave->version == slave->master->version) {
+	if (slave->version_master == slave->master->version_master) {
 		goto out;
 	}
 
@@ -313,7 +323,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 		}
 	}
 
-	slave->version = slave->master->version;
+	slave->version_master = slave->master->version_master;
 
 	out:
 	pthread_mutex_unlock(&slave->master->lock);
@@ -339,8 +349,6 @@ int rrr_shm_access (
 		goto out;
 	}
 
-//	printf("Resolve %lu->%p\n", handle, slave->ptrs[handle].ptr);
-
 	ret = callback(slave->ptrs[handle].ptr, callback_arg);
 
 	out:
@@ -362,7 +370,6 @@ void *rrr_shm_resolve (
 				(long long unsigned) handle);
 		return NULL;
 	}
-//	printf("Resolve %lu->%p\n", handle, slave->ptrs[handle].ptr);
 
 	return slave->ptrs[handle].ptr;
 }
@@ -372,6 +379,9 @@ int rrr_shm_resolve_reverse (
 		struct rrr_shm_collection_slave *slave,
 		const void *ptr
 ) {
+	if (__rrr_shm_slave_refresh_if_needed(slave) != 0) {
+		return 1;
+	}
 	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
 		if (slave->ptrs[i].ptr == ptr) {
 			*handle = i;
