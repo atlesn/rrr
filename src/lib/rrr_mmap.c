@@ -78,6 +78,15 @@ void *rrr_mmap_resolve (
 	return rrr_shm_resolve(shm_slave, mmap->shm_handle) + handle;
 }
 
+void *rrr_mmap_resolve_raw (
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_shm_handle shm_handle,
+		rrr_mmap_handle mmap_handle
+) {
+	void *ret = rrr_shm_resolve(shm_slave, shm_handle);
+	return (ret == NULL ? NULL : ret + mmap_handle);
+}
+
 #define DEFINE_HEAP() \
 	void *heap = rrr_mmap_resolve(mmap, shm_slave, 0)
 
@@ -379,7 +388,7 @@ static void *__rrr_mmap_allocate_with_handles (
 		mmap->allocation_count++;
 
 		*shm_handle = mmap->shm_handle;
-		*mmap_handle = result - heap;
+		*mmap_handle = (uintptr_t) result - (uintptr_t) heap;
 	}
 
 	pthread_mutex_unlock(&mmap->lock);
@@ -780,7 +789,7 @@ int rrr_mmap_collections_free (
 
 			DEFINE_HEAP();
 
-			rrr_mmap_free(mmap, shm_slave, ptr - heap);
+			rrr_mmap_free(mmap, shm_slave, (uintptr_t) ptr - (uintptr_t) heap);
 	
 			ret = 0;
 

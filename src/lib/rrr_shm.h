@@ -39,9 +39,17 @@ void rrr_shm_collection_slave_destroy (
 void rrr_shm_collection_master_destroy (
 		struct rrr_shm_collection_master *collection
 );
+int rrr_shm_collection_master_new (
+		struct rrr_shm_collection_master **target
+);
 void rrr_shm_collection_master_free (
 		struct rrr_shm_collection_master *collection,
 		rrr_shm_handle handle
+);
+void *rrr_shm_collection_master_allocate_raw (
+		rrr_shm_handle *handle,
+		struct rrr_shm_collection_master *collection,
+		size_t data_size
 );
 int rrr_shm_collection_master_allocate (
 		rrr_shm_handle *handle,

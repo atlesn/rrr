@@ -56,7 +56,10 @@ int rrr_cmodule_channel_receive_messages (
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
-void rrr_cmodule_channel_bubblesort (
+void rrr_cmodule_channel_maintenance_by_reader (
+		struct rrr_mmap_channel *channel
+);
+void rrr_cmodule_channel_maintenance_by_writer (
 		struct rrr_mmap_channel *channel
 );
 

@@ -30,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_CHANNEL_SLOTS 1024
 
+// Size when a new memory map is allocated in a collection. The total
+// amount of available memory will be more as the collection may have
+// multiple memory maps
+#define RRR_MMAP_CHANNEL_MMAP_SIZE (1 * 1024 * 1024) /* 1 MB */
+
+
 #define RRR_MMAP_CHANNEL_OK               RRR_READ_OK
 #define RRR_MMAP_CHANNEL_ERROR           RRR_READ_HARD_ERROR
 #define RRR_MMAP_CHANNEL_FULL_OR_EMPTY   RRR_READ_SOFT_ERROR
@@ -53,8 +59,8 @@ int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
 		size_t data_size,
-		int wait_attempts_max,
 		unsigned int full_wait_time_us,
+		int wait_attempts_max,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -76,10 +82,6 @@ int rrr_mmap_channel_read_with_callback (
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
-void rrr_mmap_channel_bubblesort_pointers (
-		struct rrr_mmap_channel *target,
-		int *was_sorted
-);
 void rrr_mmap_channel_destroy_by_reader (
 		struct rrr_mmap_channel *target
 );
@@ -87,6 +89,12 @@ void rrr_mmap_channel_destroy_by_writer (
 		struct rrr_mmap_channel *target
 );
 void rrr_mmap_channel_writer_free_blocks (
+		struct rrr_mmap_channel *target
+);
+void rrr_mmap_channel_maintenance_by_reader (
+		struct rrr_mmap_channel *target
+);
+void rrr_mmap_channel_maintenance_by_writer (
 		struct rrr_mmap_channel *target
 );
 int rrr_mmap_channel_new (

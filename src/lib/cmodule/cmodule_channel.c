@@ -165,13 +165,14 @@ int rrr_cmodule_channel_receive_messages (
 	return ret;
 }
 
-void rrr_cmodule_channel_bubblesort (
+void rrr_cmodule_channel_maintenance_by_reader (
 		struct rrr_mmap_channel *channel
 ) {
-	int was_sorted = 0;
-	int max_rounds = 100;
+	rrr_mmap_channel_maintenance_by_reader(channel);
+}
 
-	do {
-		rrr_mmap_channel_bubblesort_pointers (channel, &was_sorted);
-	} while (was_sorted == 0 && --max_rounds > 0);
+void rrr_cmodule_channel_maintenance_by_writer (
+		struct rrr_mmap_channel *channel
+) {
+	rrr_mmap_channel_maintenance_by_writer(channel);
 }

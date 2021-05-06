@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/mman.h>
 
 #include "log.h"
+#include "rrr_shm_struct.h"
 #include "util/posix.h"
 #include "allocator.h"
 #include "rrr_strerror.h"
@@ -36,40 +37,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_mmap.h"
 #include "random.h"
 
-#define RRR_SHM_COLLECTION_MAX 192
-
-struct rrr_shm {
-	char name[8];
-	size_t data_size;
-};
-
-struct rrr_shm_ptr {
-	void *ptr;
-	size_t data_size;
-};
-
-struct rrr_shm_collection_master {
-	unsigned int version;
-	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
-	pthread_mutex_t lock;
-};
-
-struct rrr_shm_collection_slave {
-	struct rrr_shm_collection_master *master;
-	unsigned int version;
-	struct rrr_shm_ptr ptrs[RRR_SHM_COLLECTION_MAX];
-};
-
 static int __rrr_shm_open (
 		int *fd,
+		size_t size,
 		const char *name
 ) {
 	int fd_tmp;
 
 	*fd = 0;
 
-	if ((fd_tmp = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR)) != 0) {
+	if ((fd_tmp = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR)) < 0) {
 		RRR_MSG_0("shm_open failed in __rrr_shm_open: %s\n", rrr_strerror(errno));
+		return 1;
+	}
+
+	if (ftruncate (fd_tmp, (off_t) size) != 0) {
+		RRR_MSG_0("ftruncate size %llu failed in __rrr_shm_open: %s\n", (long long unsigned) size, rrr_strerror(errno));
+		shm_unlink(name);
 		return 1;
 	}
 
@@ -92,7 +76,7 @@ static int __rrr_shm_open_create (
 
 		name[0] = '/';
 
-		if ((fd_tmp = shm_open(name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)) != 0) {
+		if ((fd_tmp = shm_open(name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
 			if (errno != EEXIST) {
 				RRR_MSG_0("shm_open failed in __rrr_shm_open_create: %s\n", rrr_strerror(errno));
 				return 1;
@@ -136,7 +120,7 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 	void *ptr = NULL;
 
 	int fd_tmp = 0;
-	if (__rrr_shm_open (&fd_tmp, shm->name) != 0) {
+	if (__rrr_shm_open (&fd_tmp, shm->data_size, shm->name) != 0) {
 		goto out;
 	}
 
@@ -295,7 +279,8 @@ void rrr_shm_collection_master_free (
 	pthread_mutex_unlock(&collection->lock);
 }
 
-int rrr_shm_collection_master_allocate (
+static int __rrr_shm_collection_master_allocate (
+		void **ptr,
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_master *collection,
 		size_t data_size
@@ -305,11 +290,12 @@ int rrr_shm_collection_master_allocate (
 	pthread_mutex_lock(&collection->lock);
 
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_BEGIN();
-		void *ptr;
-		if ((ptr = __rrr_shm_create_and_mmap(shm, data_size)) == NULL) {
+		void *ptr_tmp;
+		if ((ptr_tmp = __rrr_shm_create_and_mmap(shm, data_size)) == NULL) {
 			goto out;
 		}
 
+		*ptr = ptr_tmp;
 		*handle = i;
 		collection->version++;
 
@@ -321,6 +307,27 @@ int rrr_shm_collection_master_allocate (
 	out:
 	pthread_mutex_unlock(&collection->lock);
 	return ret;
+}
+
+void *rrr_shm_collection_master_allocate_raw (
+		rrr_shm_handle *handle,
+		struct rrr_shm_collection_master *collection,
+		size_t data_size
+) {
+	void *ptr;
+	if (__rrr_shm_collection_master_allocate(&ptr, handle, collection, data_size) != 0) {
+		return NULL;
+	}
+	return ptr;
+}
+
+int rrr_shm_collection_master_allocate (
+		rrr_shm_handle *handle,
+		struct rrr_shm_collection_master *collection,
+		size_t data_size
+) {
+	void *ptr_dummy;
+	return __rrr_shm_collection_master_allocate(&ptr_dummy, handle, collection, data_size);
 }
 
 static int __rrr_shm_slave_refresh_if_needed (

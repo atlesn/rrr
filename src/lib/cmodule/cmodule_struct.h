@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap_channel;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
-struct rrr_mmap;
 struct rrr_msg_msg;
 struct rrr_msg_addr;
 
@@ -81,7 +80,6 @@ struct rrr_cmodule_worker {
 };
 
 struct rrr_cmodule {
-	struct rrr_mmap *mmap_;
 	char *name;
 
 	struct rrr_cmodule_config_data config_data;
@@ -89,10 +87,12 @@ struct rrr_cmodule {
 	int config_check_complete;
 	int config_check_complete_message_printed;
 
+	struct rrr_shm_collection_master *shm_master;
+
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
 
-	int worker_count;
+	uint8_t worker_count;
 	struct rrr_cmodule_worker workers[RRR_CMODULE_WORKER_MAX_WORKER_COUNT];
 };
 

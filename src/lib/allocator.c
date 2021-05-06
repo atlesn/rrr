@@ -53,22 +53,27 @@ The RRR Allocator (RRRA)
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_mmap_stats.h"
+#include "rrr_shm_struct.h"
 
 /* Size for new MMAPs. A collection contains multiple MMAPs. */
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
 static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
 static struct rrr_mmap_collection rrr_allocator_collections[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
+static struct rrr_mmap_collection_minmax minmaxes[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
+static struct rrr_shm_collection_master shm_master = RRR_SHM_COLLECTION_MASTER_INIT;
+static struct rrr_shm_collection_slave shm_slave = RRR_SHM_COLLECTION_SLAVE_INIT(&shm_master);
 
 static void *__rrr_allocate (size_t bytes, int group_num) {
 	void *ptr = rrr_mmap_collection_allocate (
 			&rrr_allocator_collections[group_num],
+			&shm_master,
+			&shm_slave,
 			bytes,
 			bytes > RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 				? bytes
 				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-			&index_lock,
-			0 // Not shared
+			&index_lock
 	);
 
 	return ptr;
@@ -97,7 +102,9 @@ void *rrr_allocate_group (size_t bytes, int group) {
 void rrr_free (void *ptr) {
 	if (rrr_mmap_collections_free (
 			rrr_allocator_collections,
+			minmaxes,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&shm_slave,
 			&index_lock,
 			ptr
 	) == 0) {
@@ -114,10 +121,11 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 	if (bytes_new > 0) {
 		ptr_new = rrr_mmap_collection_allocate (
 				&rrr_allocator_collections[group_num],
+				&shm_master,
+				&shm_slave,
 				bytes_new,
 				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-				&index_lock,
-				0 // Not shared
+				&index_lock
 		);
 	}
 
@@ -159,6 +167,7 @@ char *rrr_strdup (const char *str) {
 void rrr_allocator_cleanup (void) {
 	rrr_mmap_collections_clear (
 			rrr_allocator_collections,
+			&shm_slave,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
 			&index_lock
 	);
@@ -170,6 +179,7 @@ void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 			stats,
 			rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&shm_slave,
 			&index_lock
 	);
 }

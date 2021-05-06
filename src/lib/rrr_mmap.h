@@ -79,6 +79,11 @@ void *rrr_mmap_resolve (
 		struct rrr_shm_collection_slave *shm_slave,
 		rrr_mmap_handle handle
 );
+void *rrr_mmap_resolve_raw (
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_shm_handle shm_handle,
+		rrr_mmap_handle mmap_handle
+);
 void rrr_mmap_free (
 		struct rrr_mmap *mmap,
 		struct rrr_shm_collection_slave *shm_slave,
@@ -143,7 +148,7 @@ int rrr_mmap_collections_free (
 		void *ptr
 );
 
-static void rrr_mmap_collection_maintenance (
+static inline void rrr_mmap_collection_maintenance (
 		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collection,
 		struct rrr_shm_collection_slave *shm_slave,
@@ -152,7 +157,7 @@ static void rrr_mmap_collection_maintenance (
 	rrr_mmap_collections_maintenance(stats, collection, 1, shm_slave, index_lock);
 }
 
-static void rrr_mmap_collection_clear (
+static inline void rrr_mmap_collection_clear (
 		struct rrr_mmap_collection *collection,
 		struct rrr_shm_collection_slave *shm_slave,
 		pthread_rwlock_t *index_lock
@@ -160,7 +165,7 @@ static void rrr_mmap_collection_clear (
 	rrr_mmap_collections_clear(collection, shm_slave, 1, index_lock);
 }
 
-static int rrr_mmap_collection_free (
+static inline int rrr_mmap_collection_free (
 		struct rrr_mmap_collection *collection,
 		struct rrr_mmap_collection_minmax *minmax,
 		struct rrr_shm_collection_slave *shm_slave,

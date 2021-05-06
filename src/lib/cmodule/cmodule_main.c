@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_config_data.h"
 #include "../event/event.h"
 #include "../fork.h"
-#include "../rrr_mmap.h"
+#include "../rrr_shm.h"
 #include "../mmap_channel.h"
 #include "../util/posix.h"
 
@@ -114,11 +114,17 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 static int __rrr_cmodule_main_mmap_ensure (
 		struct rrr_cmodule *cmodule
 ) {
-	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, 1 /* Is shared */) != 0) {
-		RRR_MSG_0("Could not allocate mmap in __rrr_cmodule_main_mmap_ensure\n");
-		return 1;
+	int ret = 0;
+
+	if (cmodule->shm_master == NULL) {
+		if ((ret = rrr_shm_collection_master_new(&cmodule->shm_master)) != 0) {
+			RRR_MSG_0("Could not allocate SHM master in __rrr_cmodule_main_mmap_ensure\n");
+			goto out;
+		}
 	}
-	return 0;
+
+	out:
+	return ret;
 }
 
 int rrr_cmodule_main_worker_fork_start (
@@ -163,7 +169,7 @@ int rrr_cmodule_main_worker_fork_start (
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
-			cmodule->mmap_,
+			cmodule->shm_master,
 			cmodule->config_data.worker_spawn_interval_us,
 			cmodule->config_data.worker_sleep_time_us,
 			cmodule->config_data.worker_nothing_happened_limit,
@@ -252,9 +258,9 @@ void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_main_workers_stop(cmodule);
-	if (cmodule->mmap_ != NULL) {
-		rrr_mmap_destroy(cmodule->mmap_);
-		cmodule->mmap_ = NULL;
+	if (cmodule->shm_master != NULL) {
+		rrr_shm_collection_master_destroy(cmodule->shm_master);
+		cmodule->shm_master = NULL;
 	}
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
 	rrr_free(cmodule->name);
@@ -309,11 +315,8 @@ int rrr_cmodule_new (
 }
 
 static void __rrr_cmodule_main_worker_maintain (struct rrr_cmodule_worker *worker) {
-	// Speed up memory access. Sorting is usually only performed
-	// when the first few thousand messages are received, after that
-	// no sorting is needed.
-	rrr_cmodule_channel_bubblesort(worker->channel_to_fork);
-	rrr_cmodule_channel_bubblesort(worker->channel_to_parent);
+	rrr_cmodule_channel_maintenance_by_reader(worker->channel_to_parent);
+	rrr_cmodule_channel_maintenance_by_writer(worker->channel_to_fork);
 }
 
 // Call once in a while, like every second
