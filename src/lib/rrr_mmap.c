@@ -188,10 +188,9 @@ void rrr_mmap_free (
 
 	mmap->to_free_list[mmap->to_free_list_count++] = handle;
 
-// TODO : Re-anble 
-//	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
+	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
 		__rrr_mmap_free(mmap, shm_slave);
-//	}
+	}
 
 	pthread_mutex_unlock(&mmap->lock);
 
