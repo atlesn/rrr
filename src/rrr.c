@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
+#include "lib/rrr_shm.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
@@ -376,6 +377,8 @@ static int main_loop (
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 
+	rrr_shm_holders_reset();
+
 	rrr_config_set_log_prefix(config_file);
 
 	if (rrr_event_queue_new(&queue) != 0) {
@@ -474,6 +477,7 @@ static int main_loop (
 		rrr_event_queue_destroy(queue);
 	out:
 		rrr_allocator_cleanup();
+		rrr_shm_holders_cleanup();
 		return ret;
 }
 
@@ -793,5 +797,6 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_log_cleanup();
 	out:
 		rrr_allocator_cleanup();
+		rrr_shm_holders_cleanup();
 		return ret;
 }

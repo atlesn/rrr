@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "rrr_shm_struct.h"
 #include "util/posix.h"
+#include "util/linked_list.h"
 #include "allocator.h"
 #include "rrr_strerror.h"
 #include "rrr_shm.h"
@@ -40,9 +41,84 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // printf debugging
 // #define RRR_SHM_DEBUG 1
 
+struct rrr_shm_holder {
+	RRR_LL_NODE(struct rrr_shm_holder);
+	char filename[32];
+};
+
+struct rrr_shm_holder_collection {
+	RRR_LL_HEAD(struct rrr_shm_holder);
+};
+
+static pthread_mutex_t shm_holders_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct rrr_shm_holder_collection shm_holders = {0};
+
+static void __rrr_shm_holder_destroy (
+		struct rrr_shm_holder *holder
+) {
+	printf("Unlink %s\n", holder->filename);
+	shm_unlink(holder->filename);
+	rrr_free(holder);
+}
+
+static void __rrr_shm_holder_unregister_and_unlink (
+		const char *filename
+) {
+	pthread_mutex_lock(&shm_holders_lock);
+	printf("Unregister %s\n", filename);
+	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
+		if (strcmp(node->filename, filename) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; __rrr_shm_holder_destroy(node));
+	pthread_mutex_unlock(&shm_holders_lock);
+}
+
+// Call in child after forking
+void rrr_shm_holders_reset (void) {
+	pthread_mutex_lock(&shm_holders_lock);
+	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; rrr_free(node) /* Don't use destroy, free only */ );
+	pthread_mutex_unlock(&shm_holders_lock);
+}
+
+static int __rrr_shm_holder_register (
+		const char *filename
+) {
+	printf("Register %s pid %i\n", filename, getpid());
+	struct rrr_shm_holder *holder = rrr_allocate_zero(sizeof(*holder));
+
+	if (holder == NULL) {
+		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
+		return 1;
+	}
+
+	if (strlen(filename) > sizeof(holder->filename) - 1) {
+		RRR_BUG("BUG: Filename exceeds maximum length in rrr_shm_holder_register\rrr_shm_collection_slave_new");
+	}
+
+	strcpy(holder->filename, filename);
+
+	pthread_mutex_lock(&shm_holders_lock);
+	RRR_LL_APPEND(&shm_holders, holder);
+	pthread_mutex_unlock(&shm_holders_lock);
+
+	return 0;
+}
+
+void rrr_shm_holders_cleanup (void) {
+	pthread_mutex_lock(&shm_holders_lock);
+	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
+		RRR_MSG_0("Warning: SHM %s late cleanup\n", node->filename);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; __rrr_shm_holder_destroy(node));
+	pthread_mutex_unlock(&shm_holders_lock);
+}
+
 static int __rrr_shm_open (
 		int *fd,
-		size_t size,
 		const char *name
 ) {
 	int fd_tmp;
@@ -54,12 +130,6 @@ static int __rrr_shm_open (
 		return 1;
 	}
 
-	if (ftruncate (fd_tmp, (off_t) size) != 0) {
-		RRR_MSG_0("ftruncate size %llu failed in __rrr_shm_open: %s\n", (long long unsigned) size, rrr_strerror(errno));
-		shm_unlink(name);
-		return 1;
-	}
-
 	*fd = fd_tmp;
 
 	return 0;
@@ -68,12 +138,14 @@ static int __rrr_shm_open (
 static int __rrr_shm_open_create (
 		int *fd,
 		char *name,
-		size_t name_size
+		size_t name_size,
+		size_t size
 ) {
-	int fd_tmp = 0;
+	int ret = 0;
 
 	*fd = 0;
 
+	int fd_tmp = 0;
 	do {
 		rrr_random_string(name, name_size);
 
@@ -82,23 +154,39 @@ static int __rrr_shm_open_create (
 		if ((fd_tmp = shm_open(name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
 			if (errno != EEXIST) {
 				RRR_MSG_0("shm_open failed in __rrr_shm_open_create: %s\n", rrr_strerror(errno));
-				return 1;
+				ret = 1;
+				goto out;
 			}
 			// Try another name
 		}
 
 	} while(fd_tmp <= 0);
 
+	if (ftruncate (fd_tmp, (off_t) size) != 0) {
+		RRR_MSG_0("ftruncate size %llu failed in __rrr_shm_open_create: %s\n", (long long unsigned) size, rrr_strerror(errno));
+		goto out_close;
+	}
+
+	if ((ret = __rrr_shm_holder_register (name)) != 0) {
+		RRR_MSG_0("Failed to register SHM in __rrr_shm_open_create\n");
+		goto out_close;
+	}
+
 	*fd = fd_tmp;
 
-	return 0;
+	goto out;
+	out_close:
+		close(fd_tmp);
+		shm_unlink(name);
+	out:
+		return ret;
 }
 
 static int __rrr_shm_create (struct rrr_shm *shm, size_t data_size) {
 	int ret = 0;
 
 	int fd_tmp = 0;
-	if ((ret = __rrr_shm_open_create (&fd_tmp, shm->name, sizeof(shm->name))) != 0) {
+	if ((ret = __rrr_shm_open_create (&fd_tmp, shm->name, sizeof(shm->name), data_size)) != 0) {
 		goto out;
 	}
 
@@ -115,7 +203,7 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 	void *ptr = NULL;
 
 	int fd_tmp = 0;
-	if (__rrr_shm_open (&fd_tmp, shm->data_size, shm->name) != 0) {
+	if (__rrr_shm_open (&fd_tmp, shm->name) != 0) {
 		goto out;
 	}
 
@@ -134,7 +222,7 @@ static void *__rrr_shm_mmap (const struct rrr_shm *shm) {
 }
 
 static void __rrr_shm_cleanup (struct rrr_shm *shm) {
-	shm_unlink(shm->name);
+	__rrr_shm_holder_unregister_and_unlink(shm->name);
 
 	shm->name[0] = '\0';
 	shm->data_size = 0;

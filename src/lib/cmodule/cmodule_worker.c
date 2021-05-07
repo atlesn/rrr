@@ -669,6 +669,9 @@ int rrr_cmodule_worker_main (
 	rrr_event_queue_fds_get(event_fds + event_fds_count, &event_fds_count, worker->event_queue_worker);
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
+	// Reset references to SHMs created by parent process
+	rrr_shm_holders_reset();
+
 	int log_hook_handle;
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
 
@@ -715,6 +718,9 @@ int rrr_cmodule_worker_main (
 
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
+
+	// Cleanup SHMs and print warnings about any which was has not been cleaned up
+	rrr_shm_holders_cleanup();
 
 	out:
 	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
