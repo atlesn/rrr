@@ -50,11 +50,6 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 		goto out_destroy_master;
 	}
 
-	if ((ret = rrr_fork_handler_new (&fork_handler)) != 0) {
-		TEST_MSG("Failed to create fork handler in __rrr_test_allocator_shm\n");
-		goto out_destroy_slave;
-	}
-
 	RRR_DBG_1("SHM test fork starting\n");
 
 	pid_t pid = rrr_fork(fork_handler, __rrr_test_allocator_shm_child_exit_notify, NULL);
