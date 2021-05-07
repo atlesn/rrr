@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
-#define RRR_THREAD_INCAPACITATE_WATCHDOGS
+//#define RRR_THREAD_INCAPACITATE_WATCHDOGS
 
 // Threads which does not shutdown nicely will remain while others shut down
 //#define RRR_THREAD_DISABLE_CANCELLING

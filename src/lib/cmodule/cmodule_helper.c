@@ -284,9 +284,6 @@ static void __rrr_cmodule_helper_event_input_queue (
 	(void)(fd);
 	(void)(flags);
 
-	printf("Event input queue %i worker mmap channel %i %i\n",
-			RRR_LL_COUNT(&cmodule->input_queue), rrr_mmap_channel_count(cmodule->workers[0].channel_to_fork), rrr_mmap_channel_count(cmodule->workers[0].channel_to_parent));
-
 	if (__rrr_cmodule_helper_input_buffer_process(thread_data) != 0) {
 		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
 	}
@@ -532,8 +529,6 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 	int ret = 0;
 
 	// Note : Bias here to read from the first worker
-
-	printf("MMap channel data available %u\n", *amount);
 
 	int worker_i = 0;
 	while ((ret = rrr_thread_signal_encourage_stop_check(thread)) == 0 && *amount > 0) {

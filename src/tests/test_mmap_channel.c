@@ -110,8 +110,6 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 					NULL,
 					test_data_success,
 					sizeof(test_data_success),
-					0,
-					0,
 					NULL,
 					NULL
 			)) != 0) {
@@ -131,8 +129,6 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 			NULL,
 			test_data,
 			sizeof(test_data),
-			0,
-			0,
 			NULL,
 			NULL
 	)) != 0) {

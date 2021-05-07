@@ -231,8 +231,6 @@ int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
 		size_t data_size,
-		unsigned int full_wait_time_us,
-		int wait_attempts_max,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -244,38 +242,22 @@ int rrr_mmap_channel_write_using_callback (
 
 	struct rrr_mmap_channel_block *block = NULL;
 
-	goto attempt_block_lock;
+	pthread_rwlock_wrlock(&target->index_lock);
+	block = &(target->blocks[target->wpos]);
+	pthread_rwlock_unlock(&target->index_lock);
 
-	attempt_write_wait:
-		// NOTE : Index lock is only locked and unlocked locally, not at out
-		if (do_unlock_block) {
-			pthread_mutex_unlock(&block->block_lock);
-			do_unlock_block = 0;
-		}
-
-		if (full_wait_time_us == 0 || wait_attempts_max-- == 0) {
-			pthread_rwlock_wrlock(&target->index_lock);
-			target->write_full_counter++;
-			pthread_rwlock_unlock(&target->index_lock);
-			ret = RRR_MMAP_CHANNEL_FULL;
-			goto out_unlock;
-		}
-
-		rrr_posix_usleep(full_wait_time_us);
-
-	attempt_block_lock:
+	if (pthread_mutex_trylock(&block->block_lock) != 0) {
 		pthread_rwlock_wrlock(&target->index_lock);
-		block = &(target->blocks[target->wpos]);
+		target->write_full_counter++;
 		pthread_rwlock_unlock(&target->index_lock);
-
-		if (pthread_mutex_trylock(&block->block_lock) != 0) {
-			goto attempt_write_wait;
-		}
-		do_unlock_block = 1;
+		ret = RRR_MMAP_CHANNEL_FULL;
+		goto out_final;
+	}
+	do_unlock_block = 1;
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
-		goto attempt_write_wait;
+		goto out_unlock;
 	}
 
 	if (__rrr_mmap_channel_allocate(target, block, data_size) != 0) {
@@ -320,11 +302,11 @@ int rrr_mmap_channel_write_using_callback (
 	}
 
 	out_unlock:
-	if (do_unlock_block) {
-		pthread_mutex_unlock(&block->block_lock);
-	}
-
-	return ret;
+		if (do_unlock_block) {
+			pthread_mutex_unlock(&block->block_lock);
+		}
+	out_final:
+		return ret;
 }
 
 struct rrr_mmap_channel_write_callback_arg {
@@ -343,8 +325,6 @@ int rrr_mmap_channel_write (
 		struct rrr_event_queue *queue_notify,
 		const void *data,
 		size_t data_size,
-		unsigned int full_wait_time_us,
-		int retries_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
@@ -356,8 +336,6 @@ int rrr_mmap_channel_write (
 			target,
 			queue_notify,
 			data_size,
-			full_wait_time_us,
-			retries_max,
 			__rrr_mmap_channel_write_callback,
 			&callback_data,
 			check_cancel_callback,

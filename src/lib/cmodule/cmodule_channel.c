@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
 	const struct rrr_msg *message;
@@ -66,8 +67,6 @@ int rrr_cmodule_channel_send_message_simple (
 			channel,
 			notify_queue,
 			sizeof(*message),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
 			&callback_data,
 			check_cancel_callback,
@@ -118,23 +117,29 @@ int rrr_cmodule_channel_send_message_and_address (
 		message
 	};
 
-	if ((ret = rrr_mmap_channel_write_using_callback (
-			channel,
-			notify_queue,
-			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-			full_wait_time_us,
-			wait_attempts_max,
-			__rrr_cmodule_mmap_channel_write_callback,
-			&callback_data,
-			check_cancel_callback,
-			check_cancel_callback_arg
-	)) != 0) {
-		if (ret == RRR_MMAP_CHANNEL_FULL) {
+	while (--wait_attempts_max) {
+		if ((ret = rrr_mmap_channel_write_using_callback (
+				channel,
+				notify_queue,
+				MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
+				__rrr_cmodule_mmap_channel_write_callback,
+				&callback_data,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) == 0) {
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, retry
+		}
+		else {
+			RRR_MSG_0("Could not send address message on mmap channel in rrr_cmodule_channel_send_message_and_addres return was %i\n", ret);
 			goto out;
 		}
-		RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
-		ret = 1;
-		goto out;
+
+		if (full_wait_time_us > 0) {
+			rrr_posix_usleep(full_wait_time_us);
+		}
 	}
 
 	out:

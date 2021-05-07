@@ -60,8 +60,6 @@ int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		struct rrr_event_queue *queue_notify,
 		size_t data_size,
-		unsigned int full_wait_time_us,
-		int wait_attempts_max,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
@@ -72,8 +70,6 @@ int rrr_mmap_channel_write (
 		struct rrr_event_queue *queue_notify,
 		const void *data,
 		size_t data_size,
-		unsigned int full_wait_time_us,
-		int retries_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );

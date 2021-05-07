@@ -168,30 +168,42 @@ static void __rrr_cmodule_worker_log_hook (
 	}
 
 	int ret = 0;
-	if ((ret = rrr_mmap_channel_write (
-			worker->channel_to_parent,
-			worker->event_queue_parent,
-			message_log,
-			message_log->msg_size,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
-			__rrr_cmodule_worker_check_cancel_callback,
-			worker
-	)) != 0) {
-		if (ret == RRR_MMAP_CHANNEL_FULL) {
-			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				worker->name);
+
+	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
+	while (max--) {
+		ret = rrr_mmap_channel_write (
+				worker->channel_to_parent,
+				worker->event_queue_parent,
+				message_log,
+				message_log->msg_size,
+				__rrr_cmodule_worker_check_cancel_callback,
+				worker
+		);
+
+		if (ret == 0) {
+			*amount_written = 1;
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, try again
 		}
 		else if (ret == RRR_EVENT_EXIT) {
 			// OK, wait for some other function to detect exit
+			break;
 		}
 		else {
 			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
 				ret, worker->name);
+			break;
 		}
+
+		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
 	}
-	else {
-		*amount_written = 1;
+
+	if (ret == RRR_MMAP_CHANNEL_FULL) {
+		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				worker->name);
+		ret = 0;
 	}
 
 	out:
@@ -214,8 +226,6 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			worker->event_queue_parent,
 			setting,
 			sizeof(*setting),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	)) != 0) {
@@ -581,8 +591,6 @@ int rrr_cmodule_worker_loop_start (
 			worker->event_queue_parent,
 			&control_msg,
 			sizeof(control_msg),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	) != 0) {
