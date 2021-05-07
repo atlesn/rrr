@@ -39,7 +39,7 @@ struct rrr_shm_ptr {
 };
 
 struct rrr_shm_collection_master {
-	pthread_mutex_t lock;
+	pthread_rwlock_t lock;
 	unsigned int version_master;
 	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
 };

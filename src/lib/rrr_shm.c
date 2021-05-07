@@ -271,9 +271,9 @@ void rrr_shm_collection_slave_reset (
 
 	slave->master = master;
 
-	pthread_mutex_lock(&master->lock);
+	pthread_rwlock_rdlock(&master->lock);
 	slave->version_master = master->version_master - 1;
-	pthread_mutex_unlock(&master->lock);
+	pthread_rwlock_unlock(&master->lock);
 }
 
 void rrr_shm_collection_slave_cleanup (
@@ -299,9 +299,9 @@ int rrr_shm_collection_slave_new (
 
 	slave->master = master;
 
-	pthread_mutex_lock(&slave->master->lock);
+	pthread_rwlock_rdlock(&slave->master->lock);
 	slave->version_master = master->version_master - 1;
-	pthread_mutex_unlock(&slave->master->lock);
+	pthread_rwlock_unlock(&slave->master->lock);
 
 	*target = slave;
 
@@ -329,7 +329,7 @@ int rrr_shm_collection_master_new (
 		goto out;
 	}
 
-	if ((ret = rrr_posix_mutex_init (&collection->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+	if ((ret = rrr_posix_rwlock_init (&collection->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
 		RRR_MSG_0("Failed to initialize mutex in rrr_shm_collection_master_new\n");
 		goto out_munmap;
 	}
@@ -372,7 +372,7 @@ void rrr_shm_collection_master_destroy (
 	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_BEGIN();
 		__rrr_shm_cleanup(shm);
 	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_END();
-	pthread_mutex_destroy(&collection->lock);
+	pthread_rwlock_destroy(&collection->lock);
 	munmap(collection, sizeof(*collection));
 }
 
@@ -380,7 +380,7 @@ void rrr_shm_collection_master_free (
 		struct rrr_shm_collection_master *collection,
 		rrr_shm_handle handle
 ) {
-	pthread_mutex_lock(&collection->lock);
+	pthread_rwlock_wrlock(&collection->lock);
 
 	if (collection->elements[handle].data_size == 0) {
 		RRR_BUG("BUG: Double free in rrr_shm_collection_master_free\n");
@@ -389,7 +389,7 @@ void rrr_shm_collection_master_free (
 
 	collection->version_master++;
 
-	pthread_mutex_unlock(&collection->lock);
+	pthread_rwlock_unlock(&collection->lock);
 }
 
 int rrr_shm_collection_master_allocate (
@@ -399,7 +399,7 @@ int rrr_shm_collection_master_allocate (
 ) {
 	int ret = 1; /* Allocation failed */
 
-	pthread_mutex_lock(&collection->lock);
+	pthread_rwlock_wrlock(&collection->lock);
 
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_BEGIN();
 		if ((ret = __rrr_shm_create(shm, data_size)) != 0) {
@@ -419,7 +419,7 @@ int rrr_shm_collection_master_allocate (
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_END();
 
 	out:
-	pthread_mutex_unlock(&collection->lock);
+	pthread_rwlock_unlock(&collection->lock);
 	return ret;
 }
 
@@ -428,7 +428,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&slave->master->lock);
+	pthread_rwlock_rdlock(&slave->master->lock);
 
 	if (slave->version_master == slave->master->version_master) {
 		goto out;
@@ -448,7 +448,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 	slave->version_master = slave->master->version_master;
 
 	out:
-	pthread_mutex_unlock(&slave->master->lock);
+	pthread_rwlock_unlock(&slave->master->lock);
 	return ret;
 }
 
