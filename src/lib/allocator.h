@@ -31,6 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ALLOCATOR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)
 
 struct rrr_mmap_stats;
+struct rrr_shm_collection_master;
+struct rrr_shm_collection_slave;
+
+extern struct rrr_shm_collection_master *rrr_allocator_shm_master;
+extern struct rrr_shm_collection_slave *rrr_allocator_shm_slave;
 
 void *rrr_allocate (size_t bytes);
 void *rrr_allocate_zero (size_t bytes);

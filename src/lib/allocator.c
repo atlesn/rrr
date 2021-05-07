@@ -59,10 +59,15 @@ The RRR Allocator (RRRA)
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
 static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 static struct rrr_mmap_collection rrr_allocator_collections[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
 static struct rrr_mmap_collection_minmax minmaxes[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
+
 static struct rrr_shm_collection_master shm_master = RRR_SHM_COLLECTION_MASTER_INIT;
 static struct rrr_shm_collection_slave shm_slave = RRR_SHM_COLLECTION_SLAVE_INIT(&shm_master);
+
+struct rrr_shm_collection_master *rrr_allocator_shm_master = &shm_master;
+struct rrr_shm_collection_slave *rrr_allocator_shm_slave = &shm_slave;
 
 static void *__rrr_allocate (size_t bytes, int group_num) {
 	void *ptr = rrr_mmap_collection_allocate (

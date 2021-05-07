@@ -37,6 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_mmap.h"
 #include "random.h"
 
+// printf debugging
+// #define RRR_SHM_DEBUG 1
+
 static int __rrr_shm_open (
 		int *fd,
 		size_t size,
@@ -153,18 +156,16 @@ static int __rrr_shm_ptr_update (
 		struct rrr_shm_ptr *target,
 		const struct rrr_shm *source
 ) {
-	if (target->version_ptr != source->version_ptr) {
-		__rrr_shm_ptr_cleanup_if_not_null(target);
+	__rrr_shm_ptr_cleanup_if_not_null(target);
 
-		if (source->data_size != 0) {
-			if ((target->ptr = __rrr_shm_mmap(source)) == NULL) {
-				return 1;
-			}
-			target->data_size = source->data_size;
+	if (source->data_size != 0) {
+		if ((target->ptr = __rrr_shm_mmap(source)) == NULL) {
+			return 1;
 		}
-
-		target->version_ptr = source->version_ptr;
+		target->data_size = source->data_size;
 	}
+
+	target->version_ptr = source->version_ptr;
 
 	return 0;
 }
@@ -292,6 +293,10 @@ int rrr_shm_collection_master_allocate (
 		if ((ret = __rrr_shm_create(shm, data_size)) != 0) {
 			goto out;
 		}
+	
+#ifdef RRR_SHM_DEBUG
+		printf("shm %lu %p allocate\n", i, collection);
+#endif
 
 		*handle = i;
 		collection->version_master++;
@@ -318,8 +323,13 @@ static int __rrr_shm_slave_refresh_if_needed (
 	}
 
 	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
-		if ((ret = __rrr_shm_ptr_update(&slave->ptrs[i], &slave->master->elements[i])) != 0) {
-			goto out;
+		if (slave->ptrs[i].version_ptr != slave->master->elements[i].version_ptr) {
+#ifdef RRR_SHM_DEBUG
+			printf("shm %lu update\n", i);
+#endif
+			if ((ret = __rrr_shm_ptr_update(&slave->ptrs[i], &slave->master->elements[i])) != 0) {
+				goto out;
+			}
 		}
 	}
 
@@ -349,6 +359,10 @@ int rrr_shm_access (
 		goto out;
 	}
 
+#ifdef RRR_SHM_DEBUG
+	printf("shm %lu %p resolve %p\n", handle, slave->master, slave->ptrs[handle].ptr);
+#endif
+
 	ret = callback(slave->ptrs[handle].ptr, callback_arg);
 
 	out:
@@ -370,6 +384,10 @@ void *rrr_shm_resolve (
 				(long long unsigned) handle);
 		return NULL;
 	}
+
+#ifdef RRR_SHM_DEBUG
+	printf("shm %lu %p resolve %p\n", handle, slave->master, slave->ptrs[handle].ptr);
+#endif
 
 	return slave->ptrs[handle].ptr;
 }

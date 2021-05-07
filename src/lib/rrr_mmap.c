@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
 // printf debugging
-//#define RRR_MMAP_ALLOCATION_DEBUG 1
+// #define RRR_MMAP_ALLOCATION_DEBUG 1
 
 #define RRR_MMAP_SENTINEL_DEBUG
 
@@ -777,10 +777,7 @@ void *rrr_mmap_collection_allocate_with_handles (
 	pthread_rwlock_wrlock(index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
-		for (size_t j = 0; j < 4; j++) {
-			printf("shm %lu ptr %p\n", j, rrr_shm_resolve(shm_slave, j));
-		}
-		printf("Init try %p heapp\n", mmap);
+		printf("Init try %p heap\n", mmap);
 #endif
 		if (mmap->heap_size == 0) {
 			if (__rrr_mmap_init (mmap, shm_master, bytes > min_mmap_size ? bytes : min_mmap_size) != 0) {
@@ -794,7 +791,7 @@ void *rrr_mmap_collection_allocate_with_handles (
 			result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, shm_slave, bytes);
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 			DEFINE_HEAP();
-			printf("Allocate %lu %p = %p shm %lu heap %p\n", i, mmap, result, mmap->shm_handle, heap);
+			printf("Allocate %lu %p = %p shm %lu heap %p size %lu\n", i, mmap, result, mmap->shm_handle, heap, bytes);
 #endif
 			break;
 		}
