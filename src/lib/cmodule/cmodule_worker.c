@@ -773,12 +773,12 @@ int rrr_cmodule_worker_init (
 	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, shm_master, shm_slave, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, shm_master, shm_slave, to_fork_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, shm_master, shm_slave, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, shm_master, shm_slave, to_parent_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}

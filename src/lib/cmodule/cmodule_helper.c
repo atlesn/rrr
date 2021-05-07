@@ -206,7 +206,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 			message,
 			&addr_msg,
 			0, // No waiting
-			0, // No retries
+			1, // 1 attempt
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_FULL) {
@@ -240,6 +240,8 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 		}
  	WORKER_LOOP_END();
 
+ 	// TODO : Upon retry, send to other worker
+
 	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
 }
 
@@ -249,6 +251,8 @@ static int __rrr_cmodule_helper_input_buffer_process (
 		struct rrr_instance_runtime_data *thread_data
 ) {
 	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	uint64_t time_limit = rrr_time_get_64() + 200 * 1000; // 200ms
 
 	int ret = 0;
 
@@ -268,6 +272,10 @@ static int __rrr_cmodule_helper_input_buffer_process (
 		}
 
 		rrr_msg_holder_unlock(node);
+
+		if (rrr_time_get_64() > time_limit) {
+			RRR_LL_ITERATE_LAST();
+		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&cmodule->input_queue, 0; rrr_msg_holder_decref(node));
 
 	return ret;
@@ -304,23 +312,25 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	rrr_msg_holder_incref_while_locked(entry);
 	rrr_msg_holder_unlock(entry);
 
-	EVENT_ADD(cmodule->input_queue_event);
-	EVENT_ACTIVATE(cmodule->input_queue_event);
-
 	return 0;
 }
+
 
 static int __rrr_cmodule_helper_event_message_broker_data_available (
 		RRR_EVENT_FUNCTION_ARGS
 ) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	if (rrr_thread_signal_encourage_stop_check(thread)) {
 		return RRR_EVENT_EXIT;
 	}
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(thread_data);
+
+	EVENT_ADD(cmodule->input_queue_event);
+	EVENT_ACTIVATE(cmodule->input_queue_event);
 
 	return rrr_poll_do_poll_delete (
 			amount,
@@ -354,6 +364,7 @@ struct rrr_cmodule_read_from_fork_callback_data {
 		struct rrr_cmodule_worker *worker;
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
 		void *final_callback_arg;
+		int read_count;
 };
 
 static int __rrr_cmodule_helper_read_from_fork_message_callback (
@@ -454,6 +465,8 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 
 	const struct rrr_msg *msg = data;
 
+	callback_data->read_count++;
+
 	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
 	}
@@ -490,7 +503,8 @@ static int __rrr_cmodule_helper_read_from_worker (
 	struct rrr_cmodule_read_from_fork_callback_data callback_data = {
 			worker,
 			final_callback,
-			final_callback_arg
+			final_callback_arg,
+			0
 	};
 
 	if ((ret = rrr_cmodule_channel_receive_messages (

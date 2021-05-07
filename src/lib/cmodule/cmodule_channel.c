@@ -117,7 +117,7 @@ int rrr_cmodule_channel_send_message_and_address (
 		message
 	};
 
-	while (--wait_attempts_max) {
+	while (wait_attempts_max--) {
 		if ((ret = rrr_mmap_channel_write_using_callback (
 				channel,
 				notify_queue,

@@ -253,10 +253,12 @@ int rrr_mmap_channel_write_using_callback (
 		ret = RRR_MMAP_CHANNEL_FULL;
 		goto out_final;
 	}
+
 	do_unlock_block = 1;
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
+		ret = RRR_MMAP_CHANNEL_FULL;
 		goto out_unlock;
 	}
 
@@ -380,6 +382,7 @@ int rrr_mmap_channel_read_with_callback (
 	do_unlock_block = 1;
 
 	if (block->size_data == 0) {
+		ret = RRR_MMAP_CHANNEL_EMPTY;
 		goto out_unlock;
 	}
 
