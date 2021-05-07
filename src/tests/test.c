@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "../main.h"
 #include "../../build_timestamp.h"
+#include "../lib/allocator.h"
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
@@ -369,5 +370,6 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 	out_final:
+		rrr_allocator_cleanup();
 		return ret;
 }
