@@ -96,7 +96,8 @@ int rrr_mmap_channel_count (
 
 static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel *target,
-		struct rrr_mmap_channel_block *block
+		struct rrr_mmap_channel_block *block,
+		int do_lock
 ) {
 	if (block->shmid != 0) {
 		if (block->ptr_shm_or_mmap_writer == NULL) {
@@ -122,12 +123,20 @@ static int __rrr_mmap_channel_block_free (
 		}
 	}
 	else if (block->ptr_shm_or_mmap_writer != NULL) {
-		if (rrr_mmap_collection_free(&target->mmaps, &target->writer_data.minmax, target->writer_data.shm_slave, &target->index_lock, block->ptr_shm_or_mmap_writer) != 0) {
+		if (rrr_mmap_collection_free (
+				&target->mmaps,
+				&target->writer_data.minmax,
+				target->writer_data.shm_slave,
+				(do_lock ? &target->index_lock : NULL),
+				block->ptr_shm_or_mmap_writer
+		) != 0) {
 			RRR_BUG("BUG: Free failed in __rrr_mmap_channel_block_free\n");
 		}
 	}
 
 	block->ptr_shm_or_mmap_writer = NULL;
+	block->shm_handle = 0;
+	block->mmap_handle = 0;
 	block->size_data = 0;
 	block->size_capacity = 0;
 	block->shmid = 0;
@@ -155,7 +164,7 @@ static int __rrr_mmap_channel_allocate (
 		}
 	}
 
-	if ((ret = __rrr_mmap_channel_block_free(target, block)) != 0) {
+	if ((ret = __rrr_mmap_channel_block_free(target, block, 1 /* Lock index lock */)) != 0) {
 		goto out;
 	}
 
@@ -196,7 +205,9 @@ static int __rrr_mmap_channel_allocate (
 		}
 	}
 	else {
-		if ((block->ptr_shm_or_mmap_writer = rrr_mmap_collection_allocate (
+		if ((block->ptr_shm_or_mmap_writer = rrr_mmap_collection_allocate_with_handles (
+				&block->shm_handle,
+				&block->mmap_handle,
 				&target->mmaps,
 				target->shm_master,
 				target->writer_data.shm_slave,
@@ -453,8 +464,6 @@ static void __rrr_mmap_channel_destroy (
 		struct rrr_mmap_channel *target,
 		struct rrr_shm_collection_slave *slave
 ) {
-	pthread_rwlock_destroy(&target->index_lock);
-
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap_writer != NULL) {
@@ -476,6 +485,8 @@ static void __rrr_mmap_channel_destroy (
 	}
 
 	rrr_mmap_collection_clear(&target->collection, slave, &target->index_lock);
+
+	pthread_rwlock_destroy(&target->index_lock);
 
 	rrr_shm_collection_slave_destroy(target->writer_data.shm_slave);
 	rrr_shm_collection_slave_destroy(target->reader_data.shm_slave);
@@ -501,7 +512,7 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 	// This function does not lock the blocks in case the reader has crashed
 	// while holding the mutex
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
-		__rrr_mmap_channel_block_free(target, &target->blocks[i]);
+		__rrr_mmap_channel_block_free(target, &target->blocks[i], 0 /* Do not lock index lock */);
 	}
 
 	target->wpos = 0;

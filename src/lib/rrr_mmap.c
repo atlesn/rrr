@@ -587,8 +587,10 @@ static void __rrr_mmap_collection_minmax_update_if_needed (
 	}
 
 	// Change to write lock
-	pthread_rwlock_unlock(index_lock_held);
-	pthread_rwlock_wrlock(index_lock_held);
+	if (index_lock_held != NULL) {
+		pthread_rwlock_unlock(index_lock_held);
+		pthread_rwlock_wrlock(index_lock_held);
+	}
 
 	// Check again after obtaining write lock
 	if (minmax->version == collection->version) {
@@ -851,6 +853,10 @@ void *rrr_mmap_collection_allocate (
 	);
 }
 
+/* 
+ * User may pass NULL index_lock parameter if the lock
+ * is already held (write)
+ */
 int rrr_mmap_collections_free (
 		struct rrr_mmap_collection *collections,
 		struct rrr_mmap_collection_minmax *minmaxes,
@@ -861,7 +867,9 @@ int rrr_mmap_collections_free (
 ) {
 	int ret = 1; // Error
 
-	pthread_rwlock_rdlock(index_lock);
+	if (index_lock != NULL) {
+		pthread_rwlock_rdlock(index_lock);
+	}
 
 	for (size_t j = 0; j < collection_count; j++) {
 		if (collections[j].mmap_count == 0) {
@@ -893,7 +901,9 @@ int rrr_mmap_collections_free (
 		}
 	}
 
-	pthread_rwlock_unlock(index_lock);
+	if (index_lock != NULL) {
+		pthread_rwlock_unlock(index_lock);
+	}
 
 	return ret;
 

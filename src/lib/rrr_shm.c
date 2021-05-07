@@ -170,6 +170,27 @@ static int __rrr_shm_ptr_update (
 	return 0;
 }
 
+void rrr_shm_collection_slave_reset (
+		struct rrr_shm_collection_slave *slave,
+		struct rrr_shm_collection_master *master
+) {
+	memset(slave, '\0', sizeof(*slave));
+
+	slave->master = master;
+
+	pthread_mutex_lock(&master->lock);
+	slave->version_master = master->version_master - 1;
+	pthread_mutex_unlock(&master->lock);
+}
+
+void rrr_shm_collection_slave_cleanup (
+		struct rrr_shm_collection_slave *slave
+) {
+	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
+		__rrr_shm_ptr_cleanup_if_not_null (&slave->ptrs[i]);
+	}
+}
+
 int rrr_shm_collection_slave_new (
 		struct rrr_shm_collection_slave **target,
 		struct rrr_shm_collection_master *master
@@ -198,9 +219,7 @@ int rrr_shm_collection_slave_new (
 void rrr_shm_collection_slave_destroy (
 		struct rrr_shm_collection_slave *slave
 ) {
-	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
-		__rrr_shm_ptr_cleanup_if_not_null (&slave->ptrs[i]);
-	}
+	rrr_shm_collection_slave_cleanup(slave);
 	rrr_free(slave);
 }
 

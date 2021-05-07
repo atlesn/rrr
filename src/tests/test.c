@@ -52,6 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_nullsafe.h"
 #include "test_increment.h"
 #include "test_allocator.h"
+#include "test_mmap_channel.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -123,6 +124,12 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	TEST_BEGIN("rrr_allocator") {
 		ret_tmp = rrr_test_allocator(fork_handler);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("rrr_mmap_channel") {
+		ret_tmp = rrr_test_mmap_channel(fork_handler);
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;

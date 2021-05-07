@@ -29,6 +29,13 @@ typedef size_t rrr_shm_handle;
 struct rrr_shm_collection_master;
 struct rrr_shm_collection_slave;
 
+void rrr_shm_collection_slave_reset (
+		struct rrr_shm_collection_slave *slave,
+		struct rrr_shm_collection_master *master
+);
+void rrr_shm_collection_slave_cleanup (
+		struct rrr_shm_collection_slave *slave
+);
 int rrr_shm_collection_slave_new (
 		struct rrr_shm_collection_slave **target,
 		struct rrr_shm_collection_master *master
