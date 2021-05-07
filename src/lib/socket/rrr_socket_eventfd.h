@@ -22,6 +22,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_EVENTFD_H
 #define RRR_SOCKET_EVENTFD_H
 
+/*
+ * IMPORTANT !
+ *
+ * The Linux-style eventfd is disabled due to hangs in
+ * the following situation:
+ *
+ * - A Cmodule worker processes messages and generates one
+ *   output message for each message received
+ *
+ * - A lot of messages arrive simultaneously filling up the
+ *   mmap channels in both directions
+ *
+ * - If Linux eventfd is used, the amount of passes can exceed
+ *   the total capacity of the mmap channels > 1024.
+ *
+ * - The event subsystem cannot stop processing of the current
+ *   event if more of the amount is remaining thus causing hang
+ *   when the cmodule tries to write to the mmap channel which
+ *   is full. It will also remain full since the read from fork
+ *   event is not being run.
+ *
+ * - With the pipe method however, amounts are only in small
+ *   doses < 256 allowing all the events to be interleaved.
+ *
+ */
+#undef RRR_HAVE_EVENTFD
+
 #include <stdint.h>
 
 struct rrr_socket_eventfd {
