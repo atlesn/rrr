@@ -58,7 +58,7 @@ static void __rrr_shm_holder_destroy (
 ) {
 	printf("Unlink %s\n", holder->filename);
 	shm_unlink(holder->filename);
-	rrr_free(holder);
+	free(holder);
 }
 
 static void __rrr_shm_holder_unregister_and_unlink (
@@ -80,7 +80,7 @@ void rrr_shm_holders_reset (void) {
 	pthread_mutex_lock(&shm_holders_lock);
 	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; rrr_free(node) /* Don't use destroy, free only */ );
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node) /* Don't use destroy, free only */ );
 	pthread_mutex_unlock(&shm_holders_lock);
 }
 
@@ -88,12 +88,17 @@ static int __rrr_shm_holder_register (
 		const char *filename
 ) {
 	printf("Register %s pid %i\n", filename, getpid());
-	struct rrr_shm_holder *holder = rrr_allocate_zero(sizeof(*holder));
 
+	// Use only raw malloc/free in the holder functions to avoid
+	// that rrr_freecalls back into the SHM framework causing deadlock
+
+	struct rrr_shm_holder *holder = malloc(sizeof(*holder));
 	if (holder == NULL) {
 		RRR_MSG_0("Failed to allocate memory in __rrr_shm_holder_register\n");
 		return 1;
 	}
+
+	memset(holder, '\0', sizeof(*holder));
 
 	if (strlen(filename) > sizeof(holder->filename) - 1) {
 		RRR_BUG("BUG: Filename exceeds maximum length in rrr_shm_holder_register\rrr_shm_collection_slave_new");
