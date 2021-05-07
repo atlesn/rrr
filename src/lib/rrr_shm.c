@@ -56,7 +56,6 @@ static struct rrr_shm_holder_collection shm_holders = {0};
 static void __rrr_shm_holder_destroy (
 		struct rrr_shm_holder *holder
 ) {
-	printf("Unlink %s\n", holder->filename);
 	shm_unlink(holder->filename);
 	free(holder);
 }
@@ -65,7 +64,6 @@ static void __rrr_shm_holder_unregister_and_unlink (
 		const char *filename
 ) {
 	pthread_mutex_lock(&shm_holders_lock);
-	printf("Unregister %s\n", filename);
 	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
 		if (strcmp(node->filename, filename) == 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -87,8 +85,6 @@ void rrr_shm_holders_reset (void) {
 static int __rrr_shm_holder_register (
 		const char *filename
 ) {
-	printf("Register %s pid %i\n", filename, getpid());
-
 	// Use only raw malloc/free in the holder functions to avoid
 	// that rrr_freecalls back into the SHM framework causing deadlock
 
