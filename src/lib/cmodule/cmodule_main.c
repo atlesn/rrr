@@ -262,6 +262,7 @@ void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_main_workers_stop(cmodule);
+	rrr_msg_holder_collection_clear(&cmodule->input_queue);
 	if (cmodule->shm_master != NULL) {
 		rrr_shm_collection_master_destroy(cmodule->shm_master);
 	}

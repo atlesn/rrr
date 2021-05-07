@@ -47,6 +47,8 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
+		unsigned int full_wait_time_us,
+		int wait_attempts_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 );

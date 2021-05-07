@@ -80,6 +80,8 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 			worker->event_queue_parent,
 			message,
 			message_addr,
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	);

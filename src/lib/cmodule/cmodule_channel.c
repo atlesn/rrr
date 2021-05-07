@@ -102,6 +102,8 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
 		const struct rrr_msg_addr *message_addr,
+		unsigned int full_wait_time_us,
+		int wait_attempts_max,
 		int (*check_cancel_callback)(void *arg),
 		void *check_cancel_callback_arg
 ) {
@@ -120,8 +122,8 @@ int rrr_cmodule_channel_send_message_and_address (
 			channel,
 			notify_queue,
 			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
+			full_wait_time_us,
+			wait_attempts_max,
 			__rrr_cmodule_mmap_channel_write_callback,
 			&callback_data,
 			check_cancel_callback,

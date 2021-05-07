@@ -43,12 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../poll_helper.h"
 #include "../threads.h"
 #include "../event/event.h"
+#include "../event/event_collection.h"
 #include "../event/event_functions.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"
 #include "../util/macro_utils.h"
-
-#define RRR_CMODULE_HELPER_DEFAULT_THREAD_WATCHDOG_TIMER_MS 5000
 
 #define WORKER_LOOP_BEGIN()                                               \
 	do { for (int _i = 0; _i < cmodule->worker_count; _i++) {         \
@@ -206,6 +205,8 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 			worker->event_queue_worker,
 			message,
 			&addr_msg,
+			0, // No waiting
+			0, // No retries
 			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
 	)) != 0) {
 		if (ret == RRR_CMODULE_CHANNEL_FULL) {
@@ -242,24 +243,74 @@ static int __rrr_cmodule_helper_send_message_to_forks (
 	return __rrr_cmodule_helper_send_message_to_fork(thread_data, preferred, entry_locked);
 }
 
-static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_runtime_data *thread_data = arg;
+#include "../mmap_channel.h"
+
+static int __rrr_cmodule_helper_input_buffer_process (
+		struct rrr_instance_runtime_data *thread_data
+) {
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&cmodule->input_queue, struct rrr_msg_holder);
+		rrr_msg_holder_lock(node);
+
+		if ((ret = __rrr_cmodule_helper_send_message_to_forks(thread_data, node)) != 0) {
+			if (ret == RRR_CMODULE_CHANNEL_FULL) {
+				// Putback
+				ret = 0;
+			}
+			RRR_LL_ITERATE_LAST();
+		}
+		else {
+			// Sent, remove from input queue
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		rrr_msg_holder_unlock(node);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&cmodule->input_queue, 0; rrr_msg_holder_decref(node));
+
+	return ret;
+}
+
+static void __rrr_cmodule_helper_event_input_queue (
+				evutil_socket_t fd,
+				short flags,
+				void *arg
+) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	(void)(fd);
+	(void)(flags);
+
+	printf("Event input queue %i worker mmap channel %i %i\n",
+			RRR_LL_COUNT(&cmodule->input_queue), rrr_mmap_channel_count(cmodule->workers[0].channel_to_fork), rrr_mmap_channel_count(cmodule->workers[0].channel_to_parent));
+
+	if (__rrr_cmodule_helper_input_buffer_process(thread_data) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+	}
+
+	if (RRR_LL_COUNT(&cmodule->input_queue) == 0) {
+		EVENT_REMOVE(cmodule->input_queue_event);
+	}
+}
+
+static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
 
 	RRR_DBG_2("Received a message in instance '%s' with timestamp %" PRIu64 ", transmitting to worker fork\n",
 			INSTANCE_D_NAME(thread_data), ((struct rrr_msg_msg *) entry->message)->timestamp);
 
-	retry:
-	if ((ret = __rrr_cmodule_helper_send_message_to_forks(thread_data, entry)) != 0) {
-		if (ret == RRR_CMODULE_CHANNEL_FULL) {
-			rrr_posix_usleep(1000);
-			goto retry;
-		}
-	}
-
+	RRR_LL_APPEND(&cmodule->input_queue, entry);
+	rrr_msg_holder_incref_while_locked(entry);
 	rrr_msg_holder_unlock(entry);
-	return ret;
+
+	EVENT_ADD(cmodule->input_queue_event);
+	EVENT_ACTIVATE(cmodule->input_queue_event);
+
+	return 0;
 }
 
 static int __rrr_cmodule_helper_event_message_broker_data_available (
@@ -280,6 +331,22 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 			__rrr_cmodule_helper_poll_callback,
 			0
 	);
+}
+
+static void __rrr_cmodule_helper_event_pause_check (
+		int *do_pause,
+		int is_paused,
+		void *callback_arg
+) {
+	struct rrr_instance_runtime_data *thread_data = callback_arg;
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	if (is_paused) {
+		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) < (RRR_CMODULE_INPUT_QUEUE_MAX * 0.75));
+	}
+	else {
+		*do_pause = (RRR_LL_COUNT(&cmodule->input_queue) > RRR_CMODULE_INPUT_QUEUE_MAX);
+	}
 }
 
 struct rrr_instance_event_functions rrr_cmodule_helper_event_functions = {
@@ -466,6 +533,8 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 
 	// Note : Bias here to read from the first worker
 
+	printf("MMap channel data available %u\n", *amount);
+
 	int worker_i = 0;
 	while ((ret = rrr_thread_signal_encourage_stop_check(thread)) == 0 && *amount > 0) {
 		struct rrr_cmodule_worker *worker = &cmodule->workers[worker_i];
@@ -610,23 +679,50 @@ static int __rrr_cmodule_helper_event_periodic (
 }
 
 void rrr_cmodule_helper_loop (
-		struct rrr_instance_runtime_data *thread_data,
-		unsigned int periodic_interval_us
+		struct rrr_instance_runtime_data *thread_data
 ) {
+	struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+	struct rrr_event_collection events = {0};
+	rrr_event_collection_init(&events, INSTANCE_D_EVENTS(thread_data));
+
+	pthread_cleanup_push(rrr_event_collection_clear_void, &events);
+
 	if (rrr_message_broker_senders_count (INSTANCE_D_BROKER_ARGS(thread_data)) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
 			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
 				INSTANCE_D_NAME(thread_data));
-			return;
+			goto out;
 		}
 	}
 
+	if (rrr_event_collection_push_periodic (
+				&cmodule->input_queue_event,
+				&events,
+				__rrr_cmodule_helper_event_input_queue,
+				thread_data,
+				2000 // 2ms
+		) != 0) {
+		RRR_MSG_0("Failed to create input queue event in rrr_cmodule_helper_loop\n");
+		goto out;
+	}
+
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			__rrr_cmodule_helper_event_pause_check,
+			thread_data
+	);
+
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
-			periodic_interval_us,
+			1 * 1000 * 1000, // 1 s
 			__rrr_cmodule_helper_event_periodic,
 			INSTANCE_D_THREAD(thread_data)
 	);
+
+	out:
+	pthread_cleanup_pop(1);
+	return;
 }
 
 int rrr_cmodule_helper_parse_config (

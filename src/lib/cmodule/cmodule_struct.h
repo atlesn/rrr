@@ -21,6 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CMODULE_STRUCT_H
 #define RRR_CMODULE_STRUCT_H
 	
+#include "../event/event.h"
+#include "../message_holder/message_holder_collection.h"
+
 #include "cmodule_config_data.h"
 #include "cmodule_defines.h"
 
@@ -89,6 +92,11 @@ struct rrr_cmodule {
 
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
+
+	struct rrr_msg_holder_collection input_queue;
+
+	// Created just before event dispatch, not managed
+	rrr_event_handle input_queue_event;
 
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
