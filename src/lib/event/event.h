@@ -88,6 +88,11 @@ void rrr_event_function_set_with_arg (
 		void *arg,
 		const char *description
 );
+int rrr_event_function_priority_set (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		enum rrr_event_priority priority
+);
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
 		void (*callback)(int *do_pause, int is_paused, void *callback_arg),

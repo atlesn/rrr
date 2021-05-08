@@ -88,6 +88,18 @@ void rrr_event_function_set_with_arg (
 	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p(%p) (%s)\n", handle, code, function, arg, description);
 }
 
+int rrr_event_function_priority_set (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		enum rrr_event_priority priority
+) {
+	if (event_priority_set(handle->functions[code].signal_event, (int) priority) != 0) {
+		RRR_MSG_0("Failed to set priority rrr_event_function_priority_set\n");
+		return 1;
+	}
+	return 0;
+}
+
 static void __rrr_event_periodic (
 		evutil_socket_t fd,
 		short flags,
@@ -270,12 +282,6 @@ int rrr_event_dispatch (
 
 	tv_interval.tv_usec = periodic_interval_us % 1000000;
 	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
-
-/*	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
-		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
-		ret = 1;
-		goto out;
-	}*/
 
 	if (event_add(queue->periodic_event, &tv_interval)) {
 		RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");

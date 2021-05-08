@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_CHANNEL_FULL         RRR_READ_SOFT_ERROR
 #define RRR_CMODULE_CHANNEL_EMPTY        RRR_READ_SOFT_ERROR
 
-#define RRR_CMODULE_INPUT_QUEUE_MAX      10000
+#define RRR_CMODULE_INPUT_QUEUE_MAX      250
 
 #define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS            50
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT   250

@@ -312,6 +312,10 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	rrr_msg_holder_incref_while_locked(entry);
 	rrr_msg_holder_unlock(entry);
 
+	if (__rrr_cmodule_helper_input_buffer_process(thread_data) != 0) {
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+	}
+
 	return 0;
 }
 
@@ -331,12 +335,24 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	EVENT_ADD(cmodule->input_queue_event);
 	EVENT_ACTIVATE(cmodule->input_queue_event);
 
-	return rrr_poll_do_poll_delete (
-			amount,
+	uint16_t amount_new = (*amount > 32 ? 32 : *amount);
+	*amount -= amount_new;
+
+	int ret = rrr_poll_do_poll_delete (
+			&amount_new,
 			thread_data,
 			__rrr_cmodule_helper_poll_callback,
 			0
 	);
+
+	*amount += amount_new;
+
+	if (RRR_LL_COUNT(&cmodule->input_queue) > 0) {
+		EVENT_ACTIVATE(cmodule->input_queue_event);
+		EVENT_ADD(cmodule->input_queue_event);
+	}
+
+	return ret;
 }
 
 static void __rrr_cmodule_helper_event_pause_check (
@@ -582,6 +598,10 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 	}
 
 	out:
+
+	if (*amount != 0 || ret != 0) {
+		printf("mmap data available out %u ret %i\n", *amount, ret);
+	}	
 	return ret;
 }
 
@@ -618,6 +638,7 @@ static int __rrr_cmodule_helper_event_periodic (
  * Enable to debug notification counts in the eventfd.
  * RRR_SOCKET_EVENTFD_DEBUG must be enabled to get any
  * useful numbers. Note that only worker idx 0 is checked.
+ */
 	{
 
 		uint64_t deferred_dummy;
@@ -635,7 +656,7 @@ static int __rrr_cmodule_helper_event_periodic (
 			abort();
 		}
 	}
-*/
+//*/
 	int ret_tmp;
 	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
 		return ret_tmp;
@@ -742,6 +763,15 @@ void rrr_cmodule_helper_loop (
 			__rrr_cmodule_helper_event_pause_check,
 			thread_data
 	);
+
+	if (rrr_event_function_priority_set (
+			INSTANCE_D_EVENTS(thread_data),
+			RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE,
+			RRR_EVENT_PRIORITY_HIGH
+	)) {
+		RRR_MSG_0("Failed to set mmap event priority in rrr_cmodule_helper_loop\n");
+		goto out;
+	}
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
