@@ -91,6 +91,7 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 		worker->total_msg_mmap_to_parent++;
 	}
 	else if (ret == RRR_CMODULE_CHANNEL_FULL) {
+		printf("Retry %i\n", worker->to_parent_write_retry_counter);
 		rrr_posix_usleep(1); // Schedule
 		worker->to_parent_write_retry_counter += 1;
 		goto retry;

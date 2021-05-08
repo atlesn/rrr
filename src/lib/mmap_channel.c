@@ -299,7 +299,7 @@ int rrr_mmap_channel_write_using_callback (
 				check_cancel_callback,
 				check_cancel_callback_arg
 		)) != 0) {
-			goto out_unlock;
+			goto out_final;
 		}
 	}
 

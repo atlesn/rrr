@@ -118,7 +118,12 @@ int rrr_event_pass (
 		int (*retry_callback)(void *arg),
 		void *retry_callback_arg
 );
-
+void rrr_event_count (
+		int64_t *eventfd_count,
+		uint64_t *deferred_count,
+		struct rrr_event_queue *queue,
+		uint8_t function
+);
 static inline void rrr_event_activate (
 		rrr_event_handle *handle
 ) {

@@ -315,7 +315,6 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	return 0;
 }
 
-
 static int __rrr_cmodule_helper_event_message_broker_data_available (
 		RRR_EVENT_FUNCTION_ARGS
 ) {
@@ -615,6 +614,28 @@ static int __rrr_cmodule_helper_event_periodic (
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
+/*
+ * Enable to debug notification counts in the eventfd.
+ * RRR_SOCKET_EVENTFD_DEBUG must be enabled to get any
+ * useful numbers. Note that only worker idx 0 is checked.
+	{
+
+		uint64_t deferred_dummy;
+		int64_t to_fork_count = 0;
+		int64_t to_parent_count = 0;
+		struct rrr_cmodule *cmodule = INSTANCE_D_CMODULE(thread_data);
+
+		rrr_event_count(&to_fork_count, &deferred_dummy, cmodule->workers[0].event_queue_worker, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE);
+		rrr_event_count(&to_parent_count, &deferred_dummy, cmodule->workers[0].event_queue_parent, RRR_EVENT_FUNCTION_MMAP_CHANNEL_DATA_AVAILABLE);
+
+		printf("To fork: %" PRIi64 ", to parent: %" PRIi64 "\n", to_fork_count, to_parent_count);
+
+		// Adjust numbers to MMAP channel capacity
+		if (to_fork_count > 1024 || to_fork_count < 0) {
+			abort();
+		}
+	}
+*/
 	int ret_tmp;
 	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
 		return ret_tmp;

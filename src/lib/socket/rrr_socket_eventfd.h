@@ -51,7 +51,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+// Debug with separate counter which is printed out
+// #define RRR_SOCKET_EVENTFD_DEBUG 1
+
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+#	include <pthread.h>
+#endif /* RRR_SOCKET_EVENTFD_DEBUG */
+
 struct rrr_socket_eventfd {
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	pthread_mutex_t *lock;
+	int64_t *count;
+#endif
 #ifdef RRR_HAVE_EVENTFD
 	int fd;
 #else
@@ -89,5 +100,11 @@ int rrr_socket_eventfd_read (
 		uint64_t *count,
 		struct rrr_socket_eventfd *eventfd
 );
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+void rrr_socket_eventfd_count (
+		int64_t *count,
+		struct rrr_socket_eventfd *eventfd
+);
+#endif
 
 #endif /* RRR_SOCKET_EVENTFD_H */
