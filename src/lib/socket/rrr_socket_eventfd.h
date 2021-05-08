@@ -52,7 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 // Debug with separate counter which is printed out
-#define RRR_SOCKET_EVENTFD_DEBUG 1
+// #define RRR_SOCKET_EVENTFD_DEBUG 1
 
 #ifdef RRR_SOCKET_EVENTFD_DEBUG
 #	include <pthread.h>

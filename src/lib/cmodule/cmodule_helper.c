@@ -598,10 +598,6 @@ static int __rrr_cmodule_helper_event_mmap_channel_data_available (
 	}
 
 	out:
-
-	if (*amount != 0 || ret != 0) {
-		printf("mmap data available out %u ret %i\n", *amount, ret);
-	}	
 	return ret;
 }
 
@@ -638,7 +634,6 @@ static int __rrr_cmodule_helper_event_periodic (
  * Enable to debug notification counts in the eventfd.
  * RRR_SOCKET_EVENTFD_DEBUG must be enabled to get any
  * useful numbers. Note that only worker idx 0 is checked.
- */
 	{
 
 		uint64_t deferred_dummy;
@@ -656,7 +651,7 @@ static int __rrr_cmodule_helper_event_periodic (
 			abort();
 		}
 	}
-//*/
+*/
 	int ret_tmp;
 	if ((ret_tmp = __rrr_cmodule_helper_send_ping_all_workers(thread_data)) != 0) {
 		return ret_tmp;
