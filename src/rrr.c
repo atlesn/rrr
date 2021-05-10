@@ -377,8 +377,6 @@ static int main_loop (
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 
-	rrr_shm_holders_reset();
-
 	rrr_config_set_log_prefix(config_file);
 
 	if (rrr_event_queue_new(&queue) != 0) {
@@ -634,8 +632,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	int ret = EXIT_SUCCESS;
 
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_final;
+	}
 	if (rrr_log_init() != 0) {
-		goto out;
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -691,7 +694,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	if (RRR_MAP_COUNT(&config_file_map) == 0) {
 		RRR_MSG_0("No configuration files were found\n");
-		ret = 1;
+		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
 
@@ -795,8 +798,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
 		rrr_shm_holders_cleanup();
+	out_final:
 		return ret;
 }

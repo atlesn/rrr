@@ -204,8 +204,13 @@ int main (int argc, const char **argv, const char **env) {
 		exit(EXIT_FAILURE);
 	}
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -369,7 +374,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -85,6 +85,8 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 			strcpy(ptr, test_data_success);
 			ret = 0;
 		}
+	
+		RRR_DBG_1("SHM test fork complete\n");
 
 		exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
 	}
@@ -118,6 +120,8 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 	if (ret != 0) {
 		TEST_MSG("SHM test failed, data mismatch %s!=%s\n", test_data_success, test_data_result);
 	}
+
+	RRR_DBG_1("SHM test parent complete\n");
 
 	out_send_signal:
 		rrr_fork_send_sigusr1_to_pid(pid);

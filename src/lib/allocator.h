@@ -39,11 +39,12 @@ extern struct rrr_shm_collection_slave *rrr_allocator_shm_slave;
 
 void *rrr_allocate (size_t bytes);
 void *rrr_allocate_zero (size_t bytes);
-void *rrr_allocate_group (size_t bytes, int group);
+void *rrr_allocate_group (size_t bytes, size_t group);
 void rrr_free (void *ptr);
 void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new);
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group);
+void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group);
 char *rrr_strdup (const char *str);
+int rrr_allocator_init (void);
 void rrr_allocator_cleanup (void);
 void rrr_allocator_maintenance (struct rrr_mmap_stats *stats);
 void rrr_allocator_maintenance_nostats (void);

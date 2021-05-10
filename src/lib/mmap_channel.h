@@ -88,6 +88,9 @@ void rrr_mmap_channel_destroy_by_writer (
 void rrr_mmap_channel_writer_free_blocks (
 		struct rrr_mmap_channel *target
 );
+void rrr_mmap_channel_fork_unregister (
+		struct rrr_mmap_channel *target
+);
 void rrr_mmap_channel_maintenance_by_reader (
 		struct rrr_mmap_channel *target
 );

@@ -58,10 +58,8 @@ The RRR Allocator (RRRA)
 /* Size for new MMAPs. A collection contains multiple MMAPs. */
 #define RRR_DEFAULT_ALLOCATOR_MMAP_SIZE 16 * 1024 * 1024 /* 16 MB */
 
-static pthread_rwlock_t index_lock = PTHREAD_RWLOCK_INITIALIZER;
-
-static struct rrr_mmap_collection rrr_allocator_collections[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
-static struct rrr_mmap_collection_minmax minmaxes[RRR_ALLOCATOR_GROUP_MAX + 1] = {0};
+static struct rrr_mmap_collection *rrr_allocator_collections = NULL;
+static struct rrr_mmap_collection_private_data rrr_allocator_private_datas[RRR_ALLOCATOR_GROUP_MAX + 1];
 
 static struct rrr_shm_collection_master shm_master = RRR_SHM_COLLECTION_MASTER_INIT;
 static struct rrr_shm_collection_slave shm_slave = RRR_SHM_COLLECTION_SLAVE_INIT(&shm_master);
@@ -69,16 +67,16 @@ static struct rrr_shm_collection_slave shm_slave = RRR_SHM_COLLECTION_SLAVE_INIT
 struct rrr_shm_collection_master *rrr_allocator_shm_master = &shm_master;
 struct rrr_shm_collection_slave *rrr_allocator_shm_slave = &shm_slave;
 
-static void *__rrr_allocate (size_t bytes, int group_num) {
-	void *ptr = rrr_mmap_collection_allocate (
-			&rrr_allocator_collections[group_num],
+static void *__rrr_allocate (size_t bytes, size_t group_num) {
+	void *ptr = rrr_mmap_collections_allocate (
+			rrr_allocator_collections,
+			group_num,
 			&shm_master,
 			&shm_slave,
 			bytes,
 			bytes > RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 				? bytes
-				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-			&index_lock
+				: RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 	);
 
 	return ptr;
@@ -99,18 +97,15 @@ void *rrr_allocate_zero (size_t bytes) {
 }
 
 /* Allocate memory from group allocator */
-void *rrr_allocate_group (size_t bytes, int group) {
+void *rrr_allocate_group (size_t bytes, size_t group) {
 	return __rrr_allocate(bytes, group);
 }
 
 /* Frees both allocations done by OS allocator and group allocator */
 void rrr_free (void *ptr) {
 	if (rrr_mmap_collections_free (
-			rrr_allocator_collections,
-			minmaxes,
+			rrr_allocator_private_datas,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave,
-			&index_lock,
 			ptr
 	) == 0) {
 		return;
@@ -120,17 +115,17 @@ void rrr_free (void *ptr) {
 	free(ptr);
 }
 
-static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, int group_num) {
+static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group_num) {
 	void *ptr_new = NULL;
 
 	if (bytes_new > 0) {
-		ptr_new = rrr_mmap_collection_allocate (
-				&rrr_allocator_collections[group_num],
+		ptr_new = rrr_mmap_collections_allocate (
+				rrr_allocator_collections,
+				group_num,
 				&shm_master,
 				&shm_slave,
 				bytes_new,
-				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE,
-				&index_lock
+				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 		);
 	}
 
@@ -149,7 +144,7 @@ void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
 }
 
 /* Caller must ensure that old allocation is done by group allocator */
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {
+void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group) {
 	return __rrr_reallocate(ptr_old, bytes_old, bytes_new, group);
 }
 
@@ -168,13 +163,31 @@ char *rrr_strdup (const char *str) {
 	return result;
 }
 
+int rrr_allocator_init (void) {
+	if (rrr_mmap_collections_new (
+			&rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&shm_slave,
+			0 /* Not pshared */
+	) != 0) {
+		return 1;
+	}
+	rrr_mmap_collection_private_datas_init (
+			rrr_allocator_private_datas,
+			rrr_allocator_collections,
+			RRR_ALLOCATOR_GROUP_MAX + 1,
+			&shm_slave
+	);
+	return 0;
+}
+
 /* Free all mmaps, caller must ensure that users are no longer active */
 void rrr_allocator_cleanup (void) {
-	rrr_mmap_collections_clear (
+	rrr_mmap_collections_destroy (
 			rrr_allocator_collections,
-			&shm_slave,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&index_lock
+			&shm_slave,
+			&shm_slave
 	);
 }
 
@@ -184,8 +197,7 @@ void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 			stats,
 			rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave,
-			&index_lock
+			&shm_slave
 	);
 }
 
@@ -203,7 +215,7 @@ void *rrr_allocate (size_t bytes) {
 	return malloc(bytes);
 }
 
-void *rrr_allocate_group (size_t bytes, int group) {
+void *rrr_allocate_group (size_t bytes, size_t group) {
 	(void)(group);
 	return rrr_allocate(bytes);
 }
@@ -217,13 +229,17 @@ void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new) {
 	return realloc(ptr_old, bytes_new);
 }
 
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group) {
+void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, size_t group) {
 	(void)(group);
 	return rrr_reallocate(ptr_old, bytes_old, bytes_new);
 }
 
 char *rrr_strdup (const char *str) {
 	return strdup(str);
+}
+
+void rrr_allocator_init (void) {
+	// Nothing to do
 }
 
 void rrr_allocator_cleanup (void) {

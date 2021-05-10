@@ -68,7 +68,7 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 		goto out_destroy_mmap_channel_to_fork;
 	}
 
-	RRR_DBG_1("SHM test fork starting\n");
+	RRR_DBG_1("MMAP channel test fork starting\n");
 
 	pid_t pid = rrr_fork(fork_handler, __rrr_test_mmap_channel_child_exit_notify, NULL);
 
@@ -84,7 +84,7 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 	else if (pid == 0) {
 		// Slave code
 		ret = 1; // Default error
-
+	
 		for (int i = 0; i < 20; i++) {
 			rrr_posix_usleep(50000); // 50ms
 			int read_count = 0;
@@ -119,7 +119,10 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 
 		rrr_posix_usleep(100000); // 100 ms
 
+		RRR_DBG_1("MMAP channel test fork cleaning up\n");
+
 		rrr_mmap_channel_writer_free_blocks(mmap_channel_to_parent);
+		rrr_mmap_channel_fork_unregister(mmap_channel_to_parent);
 
 		exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
 	}
@@ -162,6 +165,8 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 
 	rrr_mmap_channel_writer_free_blocks(mmap_channel_to_fork);
 
+	RRR_DBG_1("MMAP channel test parent cleaning up\n");
+
 	out_send_signal:
 		rrr_fork_send_sigusr1_to_pid(pid);
 	out_destroy_mmap_channel_to_parent:
@@ -171,6 +176,7 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 	out_destroy_master:
 		rrr_shm_collection_master_destroy(master_parent);
 	out:
+		rrr_shm_holders_cleanup();
 		return ret;
 }
 

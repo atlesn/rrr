@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_shm_holder {
 	RRR_LL_NODE(struct rrr_shm_holder);
+	pid_t pid;
 	char filename[32];
 };
 
@@ -53,13 +54,6 @@ struct rrr_shm_holder_collection {
 static pthread_mutex_t shm_holders_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct rrr_shm_holder_collection shm_holders = {0};
 
-static void __rrr_shm_holder_destroy (
-		struct rrr_shm_holder *holder
-) {
-	shm_unlink(holder->filename);
-	free(holder);
-}
-
 static void __rrr_shm_holder_unregister_and_unlink (
 		const char *filename
 ) {
@@ -69,16 +63,27 @@ static void __rrr_shm_holder_unregister_and_unlink (
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; __rrr_shm_holder_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node));
 	pthread_mutex_unlock(&shm_holders_lock);
+
+	// If the SHM was not allocated in this fork, it will not
+	// be registered in this holder collection which is why
+	// we must always unlink. 
+	if (shm_unlink(filename) != 0) {
+		RRR_MSG_0("Warning: shm_unlink failed for '%s'\n", filename);
+	}
 }
 
-// Call in child after forking
-void rrr_shm_holders_reset (void) {
+static void __rrr_shm_holder_unregister (
+		const char *filename
+) {
 	pthread_mutex_lock(&shm_holders_lock);
 	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
-		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node) /* Don't use destroy, free only */ );
+		if (strcmp(node->filename, filename) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node));
 	pthread_mutex_unlock(&shm_holders_lock);
 }
 
@@ -102,6 +107,8 @@ static int __rrr_shm_holder_register (
 
 	strcpy(holder->filename, filename);
 
+	holder->pid = getpid();
+
 	pthread_mutex_lock(&shm_holders_lock);
 	RRR_LL_APPEND(&shm_holders, holder);
 	pthread_mutex_unlock(&shm_holders_lock);
@@ -112,9 +119,12 @@ static int __rrr_shm_holder_register (
 void rrr_shm_holders_cleanup (void) {
 	pthread_mutex_lock(&shm_holders_lock);
 	RRR_LL_ITERATE_BEGIN(&shm_holders, struct rrr_shm_holder);
-		RRR_MSG_0("Warning: SHM %s late cleanup\n", node->filename);
+		if (node->pid == getpid()) {
+			RRR_MSG_0("Warning: SHM %s late cleanup\n", node->filename);
+			shm_unlink(node->filename);
+		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; __rrr_shm_holder_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&shm_holders, 0; free(node));
 	pthread_mutex_unlock(&shm_holders_lock);
 }
 
@@ -259,6 +269,17 @@ static int __rrr_shm_ptr_update (
 	return 0;
 }
 
+#define WRLOCK(master) \
+	{int ret_tmp = pthread_mutex_lock(&master->lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+#define RDLOCK(master) \
+	{int ret_tmp = pthread_mutex_lock(&master->lock); if (ret_tmp != 0) RRR_BUG("BUG: RDLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+#define UNLOCK(master) \
+	{int ret_tmp = pthread_mutex_unlock(&master->lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+#define INIT(master) \
+	rrr_posix_mutex_init(&master->lock, RRR_POSIX_MUTEX_IS_PSHARED|RRR_POSIX_MUTEX_IS_ERRORCHECK)
+#define DESTROY(master) \
+	pthread_mutex_destroy(&master->lock)
+
 void rrr_shm_collection_slave_reset (
 		struct rrr_shm_collection_slave *slave,
 		struct rrr_shm_collection_master *master
@@ -267,9 +288,9 @@ void rrr_shm_collection_slave_reset (
 
 	slave->master = master;
 
-	pthread_rwlock_rdlock(&master->lock);
+	RDLOCK(master);
 	slave->version_master = master->version_master - 1;
-	pthread_rwlock_unlock(&master->lock);
+	UNLOCK(master);
 }
 
 void rrr_shm_collection_slave_cleanup (
@@ -295,9 +316,9 @@ int rrr_shm_collection_slave_new (
 
 	slave->master = master;
 
-	pthread_rwlock_rdlock(&slave->master->lock);
+	RDLOCK(slave->master);
 	slave->version_master = master->version_master - 1;
-	pthread_rwlock_unlock(&slave->master->lock);
+	UNLOCK(slave->master);
 
 	*target = slave;
 
@@ -325,7 +346,7 @@ int rrr_shm_collection_master_new (
 		goto out;
 	}
 
-	if ((ret = rrr_posix_rwlock_init (&collection->lock, RRR_POSIX_MUTEX_IS_PSHARED)) != 0) {
+	if ((ret = INIT(collection)) != 0) {
 		RRR_MSG_0("Failed to initialize mutex in rrr_shm_collection_master_new\n");
 		goto out_munmap;
 	}
@@ -366,9 +387,12 @@ void rrr_shm_collection_master_destroy (
 		struct rrr_shm_collection_master *collection
 ) {
 	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_BEGIN();
+#ifdef RRR_SHM_DEBUG
+		printf("shm %lu %p deallocate %s\n", i, collection, shm->name);
+#endif
 		__rrr_shm_cleanup(shm);
 	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_END();
-	pthread_rwlock_destroy(&collection->lock);
+	DESTROY(collection);
 	munmap(collection, sizeof(*collection));
 }
 
@@ -376,7 +400,7 @@ void rrr_shm_collection_master_free (
 		struct rrr_shm_collection_master *collection,
 		rrr_shm_handle handle
 ) {
-	pthread_rwlock_wrlock(&collection->lock);
+	WRLOCK(collection);
 
 	if (collection->elements[handle].data_size == 0) {
 		RRR_BUG("BUG: Double free in rrr_shm_collection_master_free\n");
@@ -385,7 +409,7 @@ void rrr_shm_collection_master_free (
 
 	collection->version_master++;
 
-	pthread_rwlock_unlock(&collection->lock);
+	UNLOCK(collection);
 }
 
 int rrr_shm_collection_master_allocate (
@@ -395,15 +419,15 @@ int rrr_shm_collection_master_allocate (
 ) {
 	int ret = 1; /* Allocation failed */
 
-	pthread_rwlock_wrlock(&collection->lock);
+	WRLOCK(collection);
 
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_BEGIN();
 		if ((ret = __rrr_shm_create(shm, data_size)) != 0) {
 			goto out;
 		}
-	
+
 #ifdef RRR_SHM_DEBUG
-		printf("shm %lu %p allocate\n", i, collection);
+		printf("shm %lu %p allocate %s\n", i, collection, shm->name);
 #endif
 
 		*handle = i;
@@ -415,8 +439,18 @@ int rrr_shm_collection_master_allocate (
 	RRR_SHM_COLLECTION_MASTER_ITERATE_INACTIVE_END();
 
 	out:
-	pthread_rwlock_unlock(&collection->lock);
+	UNLOCK(collection);
 	return ret;
+}
+
+void rrr_shm_collection_master_fork_unregister (
+		struct rrr_shm_collection_master *collection
+) {
+	RDLOCK(collection);
+	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_BEGIN();
+		__rrr_shm_holder_unregister(shm->name);
+	RRR_SHM_COLLECTION_MASTER_ITERATE_ACTIVE_END();
+	UNLOCK(collection);
 }
 
 static int __rrr_shm_slave_refresh_if_needed (
@@ -424,7 +458,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 ) {
 	int ret = 0;
 
-	pthread_rwlock_rdlock(&slave->master->lock);
+	RDLOCK(slave->master);
 
 	if (slave->version_master == slave->master->version_master) {
 		goto out;
@@ -444,7 +478,7 @@ static int __rrr_shm_slave_refresh_if_needed (
 	slave->version_master = slave->master->version_master;
 
 	out:
-	pthread_rwlock_unlock(&slave->master->lock);
+	UNLOCK(slave->master);
 	return ret;
 }
 
@@ -515,4 +549,26 @@ int rrr_shm_resolve_reverse (
 		}
 	}
 	return 1;
+}
+
+void *rrr_shm_allocate (
+		struct rrr_shm_collection_slave *slave,
+		size_t data_size
+) {
+	rrr_shm_handle handle;
+	if (rrr_shm_collection_master_allocate (&handle, slave->master, data_size) != 0) {
+		return NULL;
+	}
+	return rrr_shm_resolve(slave, handle);
+}
+
+void rrr_shm_free (
+		struct rrr_shm_collection_slave *slave,
+		void *ptr
+) {
+	rrr_shm_handle handle;
+	if (rrr_shm_resolve_reverse(&handle, slave, ptr) != 0) {
+		RRR_BUG("BUG: ptr %p not found in rrr_shm_free()\n", ptr);
+	}
+	rrr_shm_collection_master_free(slave->master, handle);
 }
