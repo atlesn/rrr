@@ -41,7 +41,7 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 	struct rrr_shm_collection_master *master_parent = NULL;
 	struct rrr_shm_collection_slave *slave_parent = NULL;
 
-	if ((ret = rrr_shm_collection_master_new(&master_parent)) != 0) {
+	if ((ret = rrr_shm_collection_master_new(&master_parent, "test_allocator")) != 0) {
 		TEST_MSG("Could not allocate SHM master in __rrr_test_allocator_shm\n");
 		goto out;
 	}

@@ -95,7 +95,8 @@ void rrr_mmap_collections_destroy (
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
 		size_t collection_count,
-		int is_pshared
+		int is_pshared,
+		const char *creator
 );
 void rrr_mmap_collection_private_datas_init (
 		struct rrr_mmap_collection_private_data *private_datas,
@@ -128,9 +129,10 @@ int rrr_mmap_collections_free (
 
 static inline int rrr_mmap_collection_new (
 		struct rrr_mmap_collection **result,
-		int is_pshared
+		int is_pshared,
+		const char *creator
 ) {
-	return rrr_mmap_collections_new(result, 1, is_pshared);
+	return rrr_mmap_collections_new(result, 1, is_pshared, creator);
 }
 
 static inline void rrr_mmap_collection_maintenance (

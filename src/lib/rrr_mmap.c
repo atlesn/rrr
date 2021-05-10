@@ -773,7 +773,8 @@ void rrr_mmap_collections_destroy (
 
 static int __rrr_mmap_collection_init (
 		struct rrr_mmap_collection *target,
-		int is_pshared
+		int is_pshared,
+		const char *creator
 ) {
 	int ret = 0;
 
@@ -787,7 +788,7 @@ static int __rrr_mmap_collection_init (
 	if (is_pshared) {
 		// Note : Allocated using shared memory. After fork(), all processes
 		//        still use the same shm master.
-		if ((ret = rrr_shm_collection_master_new(&target->shm_master)) != 0) {
+		if ((ret = rrr_shm_collection_master_new(&target->shm_master, creator)) != 0) {
 			RRR_MSG_0("Could create SHM master in __rrr_mmap_collection_init\n");
 			goto out_destroy_lock;
 		}
@@ -812,7 +813,8 @@ static int __rrr_mmap_collection_init (
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
 		size_t collection_count,
-		int is_pshared
+		int is_pshared,
+		const char *creator
 ) {
 	int ret = 0;
 
@@ -829,7 +831,7 @@ int rrr_mmap_collections_new (
 	size_t i_cleanup_max = 0;
 
 	for (size_t i = 0; i < collection_count; i++) {
-		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared)) != 0) {
+		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator)) != 0) {
 			goto out_free;
 		}
 		i_cleanup_max = i;

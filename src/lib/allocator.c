@@ -157,7 +157,8 @@ int rrr_allocator_init (void) {
 	if (rrr_mmap_collections_new (
 			&rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			0 /* Not pshared */
+			0 /* Not pshared */,
+			"allocator"
 	) != 0) {
 		return 1;
 	}

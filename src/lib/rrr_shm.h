@@ -44,7 +44,8 @@ void rrr_shm_collection_master_destroy (
 		struct rrr_shm_collection_master *collection
 );
 int rrr_shm_collection_master_new (
-		struct rrr_shm_collection_master **target
+		struct rrr_shm_collection_master **target,
+		const char *creator
 );
 void rrr_shm_collection_master_free (
 		struct rrr_shm_collection_master *collection,

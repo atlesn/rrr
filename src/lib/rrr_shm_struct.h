@@ -41,6 +41,7 @@ struct rrr_shm_ptr {
 struct rrr_shm_collection_master {
 	unsigned int version_master;
 	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
+	char creator[32];
 };
 
 struct rrr_shm_collection_slave {
