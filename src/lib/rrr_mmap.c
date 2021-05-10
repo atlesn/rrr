@@ -94,6 +94,8 @@ struct rrr_mmap_collection {
 
 	pthread_mutex_t index_lock;
 
+	uint64_t allocation_limit;
+
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
@@ -662,6 +664,9 @@ void rrr_mmap_collections_maintenance (
 			goto next;
 		}
 
+		uint64_t allocation_count_total = 0;
+		unsigned int allocation_count_total_entries = 0;
+
 		RRR_MMAP_ITERATE_BEGIN();
 			if (mmap->heap_size == 0) {
 				continue;
@@ -685,7 +690,7 @@ void rrr_mmap_collections_maintenance (
 				stats->mmap_total_empty_count++;
 			}
 			else {
-				if (allocation_count > RRR_MMAP_COLLECTION_ALLOCATION_MAX) {
+				if (allocation_count > collection->allocation_limit) {
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 					printf("Bad %p\n", mmap);
 					rrr_mmap_dump_indexes(mmap, shm_slave);
@@ -698,7 +703,22 @@ void rrr_mmap_collections_maintenance (
 					mmap->maintenance_cleanup_strikes = 0;
 				}
 			}
+
+			allocation_count_total += allocation_count;
+			allocation_count_total_entries++;
 		RRR_MMAP_ITERATE_END();
+
+		if (allocation_count_total_entries > 0) {
+			// New limit will be used next round
+			collection->allocation_limit = allocation_count_total / allocation_count_total_entries;
+
+			if (collection->allocation_limit < RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MIN) {
+				collection->allocation_limit = RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MIN;
+			}
+			if (collection->allocation_limit > RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MAX) {
+				collection->allocation_limit = RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MAX;
+			}
+		}
 
 		next:
 		UNLOCK(collection);
