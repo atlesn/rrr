@@ -28,10 +28,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/linked_list.h"
 #include "rrr_shm.h"
 
+// Maximum number of memory maps in a collection
 #define RRR_MMAP_COLLECTION_MAX 128
+
+// Number of cleanup strikes before an empty map is freed
 #define RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES 10
+
+// After a certain number of allocations, a memory map is
+// marked as BAD and will not be used for new allocations.
+
+// The current average allocation count for all maps in a
+// collection is set to be the allocation limit. These two
+// values define the upper and lower bounds of this limit.
+
+// Marking maps as BAD after some number of allocations is
+// important to reduce fragmentation. Applications with
+// different sized messages are very prone to fragmentation
+// which could cause high memory usage and cause soft program
+// restart due to all maps being full.
 #define RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MAX 8192
 #define RRR_MMAP_COLLECTION_ALLOCATION_LIMIT_MIN 128
+
+// As an optimization, free() commands are not processed
+// one by one, but more frees are collected and then freed.
 #define RRR_MMAP_TO_FREE_LIST_MAX 16
 
 // Flag set after a certain number of allocations to prevent more
