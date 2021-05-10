@@ -43,27 +43,15 @@ static int __rrr_test_mmap_channel_read_callback (const void *data, size_t data_
 static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 	int ret = 0;
 
-	struct rrr_shm_collection_master *master_parent = NULL;
 	struct rrr_mmap_channel *mmap_channel_to_fork = NULL;
 	struct rrr_mmap_channel *mmap_channel_to_parent = NULL;
 
-	// After forking, the parent and the fork will have their
-	// own copy of this SHM slave.
-	struct rrr_shm_collection_slave slave_common;
-
-	if ((ret = rrr_shm_collection_master_new(&master_parent)) != 0) {
-		TEST_MSG("Could not allocate SHM master in __rrr_test_mmap_channel\n");
+	if ((ret = rrr_mmap_channel_new (&mmap_channel_to_fork, "to fork")) != 0) {
+		TEST_MSG("Failed to create mmap channel in __rrr_test_mmap_channel\n");
 		goto out;
 	}
 
-	rrr_shm_collection_slave_reset (&slave_common, master_parent);
-
-	if ((ret = rrr_mmap_channel_new (&mmap_channel_to_fork, master_parent, &slave_common, "to fork")) != 0) {
-		TEST_MSG("Failed to create mmap channel in __rrr_test_mmap_channel\n");
-		goto out_destroy_master;
-	}
-
-	if ((ret = rrr_mmap_channel_new (&mmap_channel_to_parent, master_parent, &slave_common, "to parent")) != 0) {
+	if ((ret = rrr_mmap_channel_new (&mmap_channel_to_parent, "to parent")) != 0) {
 		TEST_MSG("Failed to create mmap channel in __rrr_test_mmap_channel\n");
 		goto out_destroy_mmap_channel_to_fork;
 	}
@@ -170,11 +158,9 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 	out_send_signal:
 		rrr_fork_send_sigusr1_to_pid(pid);
 	out_destroy_mmap_channel_to_parent:
-		rrr_mmap_channel_destroy_by_reader(mmap_channel_to_parent);
+		rrr_mmap_channel_destroy(mmap_channel_to_parent);
 	out_destroy_mmap_channel_to_fork:
-		rrr_mmap_channel_destroy_by_writer(mmap_channel_to_fork);
-	out_destroy_master:
-		rrr_shm_collection_master_destroy(master_parent);
+		rrr_mmap_channel_destroy(mmap_channel_to_fork);
 	out:
 		rrr_shm_holders_cleanup();
 		return ret;

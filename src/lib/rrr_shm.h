@@ -30,10 +30,6 @@ struct rrr_shm_collection_master;
 struct rrr_shm_collection_slave;
 
 void rrr_shm_holders_cleanup (void);
-void rrr_shm_collection_slave_reset (
-		struct rrr_shm_collection_slave *slave,
-		struct rrr_shm_collection_master *master
-);
 void rrr_shm_collection_slave_cleanup (
 		struct rrr_shm_collection_slave *slave
 );
@@ -62,28 +58,30 @@ int rrr_shm_collection_master_allocate (
 void rrr_shm_collection_master_fork_unregister (
 		struct rrr_shm_collection_master *collection
 );
-int rrr_shm_access (
-		struct rrr_shm_collection_slave *slave,
-		rrr_shm_handle handle,
-		int (*callback)(void *ptr, void *arg),
-		void *callback_arg
-);
 void *rrr_shm_resolve (
 		struct rrr_shm_collection_slave *slave,
-		rrr_shm_handle handle
+		rrr_shm_handle handle,
+		void (*before_refresh_callback)(void *arg),
+		void *before_refresh_callback_arg
 );
 int rrr_shm_resolve_reverse (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_slave *slave,
-		const void *ptr
+		const void *ptr,
+		void (*before_refresh_callback)(void *arg),
+		void *before_refresh_callback_arg
 );
 void *rrr_shm_allocate (
 		struct rrr_shm_collection_slave *slave,
-		size_t data_size
+		size_t data_size,
+		void (*before_refresh_callback)(void *arg),
+		void *before_refresh_callback_arg
 );
 void rrr_shm_free (
 		struct rrr_shm_collection_slave *slave,
-		void *ptr
+		void *ptr,
+		void (*before_refresh_callback)(void *arg),
+		void *before_refresh_callback_arg
 );
 
 #endif /* RRR_SHM_H */

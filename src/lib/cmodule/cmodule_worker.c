@@ -757,8 +757,6 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
 		rrr_setting_uint spawn_interval_us,
 		rrr_setting_uint sleep_time_us,
 		rrr_setting_uint nothing_happened_limit,
@@ -774,12 +772,12 @@ int rrr_cmodule_worker_init (
 	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, shm_master, shm_slave, to_fork_name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, shm_master, shm_slave, to_parent_name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, to_parent_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}
@@ -830,9 +828,9 @@ int rrr_cmodule_worker_init (
 	out_free_name:
 		rrr_free(worker->name);
 	out_destroy_channel_to_parent:
-		rrr_mmap_channel_destroy_by_reader(worker->channel_to_parent);
+		rrr_mmap_channel_destroy(worker->channel_to_parent);
 	out_destroy_channel_to_fork:
-		rrr_mmap_channel_destroy_by_writer(worker->channel_to_fork);
+		rrr_mmap_channel_destroy(worker->channel_to_fork);
 	out_free:
 		rrr_free(worker);
 	out:
@@ -845,8 +843,8 @@ int rrr_cmodule_worker_init (
 void rrr_cmodule_worker_cleanup (
 		struct rrr_cmodule_worker *worker
 ) {
-	rrr_mmap_channel_destroy_by_writer(worker->channel_to_fork);
-	rrr_mmap_channel_destroy_by_reader(worker->channel_to_parent);
+	rrr_mmap_channel_destroy(worker->channel_to_fork);
+	rrr_mmap_channel_destroy(worker->channel_to_parent);
 
 	RRR_FREE_IF_NOT_NULL(worker->name);
 }

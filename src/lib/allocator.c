@@ -61,18 +61,10 @@ The RRR Allocator (RRRA)
 static struct rrr_mmap_collection *rrr_allocator_collections = NULL;
 static struct rrr_mmap_collection_private_data rrr_allocator_private_datas[RRR_ALLOCATOR_GROUP_MAX + 1];
 
-static struct rrr_shm_collection_master shm_master = RRR_SHM_COLLECTION_MASTER_INIT;
-static struct rrr_shm_collection_slave shm_slave = RRR_SHM_COLLECTION_SLAVE_INIT(&shm_master);
-
-struct rrr_shm_collection_master *rrr_allocator_shm_master = &shm_master;
-struct rrr_shm_collection_slave *rrr_allocator_shm_slave = &shm_slave;
-
 static void *__rrr_allocate (size_t bytes, size_t group_num) {
 	void *ptr = rrr_mmap_collections_allocate (
 			rrr_allocator_collections,
 			group_num,
-			&shm_master,
-			&shm_slave,
 			bytes,
 			bytes > RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 				? bytes
@@ -122,8 +114,6 @@ static void *__rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new
 		ptr_new = rrr_mmap_collections_allocate (
 				rrr_allocator_collections,
 				group_num,
-				&shm_master,
-				&shm_slave,
 				bytes_new,
 				RRR_DEFAULT_ALLOCATOR_MMAP_SIZE
 		);
@@ -167,7 +157,6 @@ int rrr_allocator_init (void) {
 	if (rrr_mmap_collections_new (
 			&rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave,
 			0 /* Not pshared */
 	) != 0) {
 		return 1;
@@ -175,8 +164,7 @@ int rrr_allocator_init (void) {
 	rrr_mmap_collection_private_datas_init (
 			rrr_allocator_private_datas,
 			rrr_allocator_collections,
-			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave
+			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
 	return 0;
 }
@@ -185,9 +173,7 @@ int rrr_allocator_init (void) {
 void rrr_allocator_cleanup (void) {
 	rrr_mmap_collections_destroy (
 			rrr_allocator_collections,
-			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave,
-			&shm_slave
+			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
 }
 
@@ -196,8 +182,7 @@ void rrr_allocator_maintenance (struct rrr_mmap_stats *stats) {
 	rrr_mmap_collections_maintenance (
 			stats,
 			rrr_allocator_collections,
-			RRR_ALLOCATOR_GROUP_MAX + 1,
-			&shm_slave
+			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
 }
 

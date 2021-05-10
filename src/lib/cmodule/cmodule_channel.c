@@ -172,14 +172,8 @@ int rrr_cmodule_channel_receive_messages (
 	return ret;
 }
 
-void rrr_cmodule_channel_maintenance_by_reader (
+void rrr_cmodule_channel_maintenance (
 		struct rrr_mmap_channel *channel
 ) {
-	rrr_mmap_channel_maintenance_by_reader(channel);
-}
-
-void rrr_cmodule_channel_maintenance_by_writer (
-		struct rrr_mmap_channel *channel
-) {
-	rrr_mmap_channel_maintenance_by_writer(channel);
+	rrr_mmap_channel_maintenance(channel);
 }

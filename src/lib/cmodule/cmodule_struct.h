@@ -90,9 +90,6 @@ struct rrr_cmodule {
 	int config_check_complete;
 	int config_check_complete_message_printed;
 
-	struct rrr_shm_collection_master *shm_master;
-	struct rrr_shm_collection_slave *shm_slave;
-
 	struct rrr_msg_holder_collection input_queue;
 
 	// Created just before event dispatch, not managed

@@ -22,12 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SHM_STRUCT_H
 #define RRR_SHM_STRUCT_H
 
-#include <pthread.h>
+#include <stddef.h>
 
 #define RRR_SHM_COLLECTION_MAX 192
-
-// lock debugging
-#define RRR_SHM_LOCK_DEBUG
 
 struct rrr_shm {
 	char name[8];
@@ -42,11 +39,6 @@ struct rrr_shm_ptr {
 };
 
 struct rrr_shm_collection_master {
-#ifdef RRR_SHM_LOCK_DEBUG
-	pthread_mutex_t lock;
-#else
-	pthread_rwlock_t lock;
-#endif
 	unsigned int version_master;
 	struct rrr_shm elements[RRR_SHM_COLLECTION_MAX];
 };
@@ -57,11 +49,7 @@ struct rrr_shm_collection_slave {
 	struct rrr_shm_ptr ptrs[RRR_SHM_COLLECTION_MAX];
 };
 
-#ifdef RRR_SHM_LOCK_DEBUG
-#	define RRR_SHM_COLLECTION_MASTER_INIT { PTHREAD_MUTEX_INITIALIZER, 0, {{"", 0, 0}} }
-#else
-#	define RRR_SHM_COLLECTION_MASTER_INIT { PTHREAD_RWLOCK_INITIALIZER, 0, {{"", 0, 0}} }
-#endif
+#define RRR_SHM_COLLECTION_MASTER_INIT { 0, {{"", 0, 0}} }
 #define RRR_SHM_COLLECTION_SLAVE_INIT(master) { master, 0, {{0}} }
 
 #endif /* RRR_SHM_STRUCT_H */

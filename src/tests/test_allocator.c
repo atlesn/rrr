@@ -66,13 +66,14 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 		// Slave code
 		ret = 1; // Default error
 
+		// Use new slave to verify that resolve works
 		struct rrr_shm_collection_slave slave_child = RRR_SHM_COLLECTION_SLAVE_INIT(master_parent);
 
 		void *ptr;
 
 		for (int i = 0; i < 20; i++) {
 			rrr_posix_usleep(50000); // 50ms
-			ptr = rrr_shm_resolve(&slave_child, 0 /* Handle is expected to be 0 since we only have one allocation */);
+			ptr = rrr_shm_resolve(&slave_child, 0 /* Handle is expected to be 0 since we only have one allocation */, NULL, NULL);
 			if (ptr && strcmp (ptr, test_data) == 0) {
 				break;
 			}
@@ -98,7 +99,7 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 		goto out_send_signal;
 	}
 
-	void *ptr = rrr_shm_resolve(slave_parent, shm_handle);
+	void *ptr = rrr_shm_resolve(slave_parent, shm_handle, NULL, NULL);
 	if (ptr == NULL) {
 		TEST_MSG("SHM resolve failed in parent in __rrr_test_allocator_shm\n");
 		ret = 1;

@@ -53,81 +53,49 @@ struct rrr_mmap_heap_index {
 
 struct rrr_mmap_collection_private_data {
 	struct rrr_mmap_collection *collection;
-	struct rrr_shm_collection_slave *shm_slave;
 	unsigned int version;
 	struct rrr_mmap_heap_index minmax[RRR_MMAP_COLLECTION_MAX];
 };
 
-void *rrr_mmap_resolve (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave,
-		rrr_mmap_handle handle
-);
-void *rrr_mmap_resolve_raw (
-		struct rrr_shm_collection_slave *shm_slave,
+void *rrr_mmap_collection_resolve (
+		struct rrr_mmap_collection *collection,
 		rrr_shm_handle shm_handle,
 		rrr_mmap_handle mmap_handle
 );
-void rrr_mmap_free (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave,
-		rrr_mmap_handle handle
-);
-void rrr_mmap_dump_indexes (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave
-);
-void *rrr_mmap_allocate (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave,
-		uint64_t req_size
-);
-int rrr_mmap_new (
-		struct rrr_mmap **target,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
-		uint64_t heap_size
-);
-void rrr_mmap_destroy (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave
+void rrr_mmap_collection_fork_unregister (
+		struct rrr_mmap_collection *collections
 );
 void rrr_mmap_collections_maintenance (
 		struct rrr_mmap_stats *stats,
 		struct rrr_mmap_collection *collections,
-		size_t collection_count,
-		struct rrr_shm_collection_slave *shm_slave
+		size_t collection_count
 );
 void rrr_mmap_collections_destroy (
 		struct rrr_mmap_collection *collections,
-		size_t collection_count,
-		struct rrr_shm_collection_slave *shm_slave_orig,
-		struct rrr_shm_collection_slave *shm_slave
+		size_t collection_count
+);
+int rrr_mmap_collection_new (
+		struct rrr_mmap_collection **result,
+		int is_pshared
 );
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
 		size_t collection_count,
-		struct rrr_shm_collection_slave *shm_slave,
 		int is_pshared
 );
 void rrr_mmap_collection_private_datas_init (
 		struct rrr_mmap_collection_private_data *private_datas,
 		struct rrr_mmap_collection *collections,
-		size_t collection_count,
-		struct rrr_shm_collection_slave *shm_slave
+		size_t collection_count
 );
 void *rrr_mmap_collection_allocate (
 		struct rrr_mmap_collection *collection,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
 		uint64_t bytes,
 		uint64_t min_mmap_size
 );
 void *rrr_mmap_collections_allocate (
 		struct rrr_mmap_collection *collections,
 		size_t index,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
 		uint64_t bytes,
 		uint64_t min_mmap_size
 );
@@ -135,8 +103,6 @@ void *rrr_mmap_collection_allocate_with_handles (
 		rrr_shm_handle *shm_handle,
 		rrr_mmap_handle *mmap_handle,
 		struct rrr_mmap_collection *collection,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
 		uint64_t bytes,
 		uint64_t min_mmap_size
 );
@@ -148,34 +114,22 @@ int rrr_mmap_collections_free (
 
 static inline void rrr_mmap_collection_maintenance (
 		struct rrr_mmap_stats *stats,
-		struct rrr_mmap_collection *collection,
-		struct rrr_shm_collection_slave *shm_slave
+		struct rrr_mmap_collection *collection
 ) {
-	rrr_mmap_collections_maintenance(stats, collection, 1, shm_slave);
+	rrr_mmap_collections_maintenance(stats, collection, 1);
 }
 
 static inline void rrr_mmap_collection_destroy (
-		struct rrr_mmap_collection *collection,
-		struct rrr_shm_collection_slave *shm_slave_orig,
-		struct rrr_shm_collection_slave *shm_slave
+		struct rrr_mmap_collection *collection
 ) {
-	rrr_mmap_collections_destroy(collection, 1, shm_slave_orig, shm_slave);
-}
-
-static inline int rrr_mmap_collection_new (
-		struct rrr_mmap_collection **result,
-		struct rrr_shm_collection_slave *shm_slave,
-		int is_pshared
-) {
-	return rrr_mmap_collections_new(result, 1, shm_slave, is_pshared);
+	rrr_mmap_collections_destroy(collection, 1);
 }
 
 static inline void rrr_mmap_collection_private_data_init (
 		struct rrr_mmap_collection_private_data *private_data,
-		struct rrr_mmap_collection *collection,
-		struct rrr_shm_collection_slave *shm_slave
+		struct rrr_mmap_collection *collection
 ) {
-	rrr_mmap_collection_private_datas_init (private_data, collection, 1, shm_slave);
+	rrr_mmap_collection_private_datas_init (private_data, collection, 1);
 }
 
 static inline int rrr_mmap_collection_free (

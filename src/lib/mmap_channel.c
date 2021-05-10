@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/mman.h>
 
 #include "rrr_strerror.h"
 #include "log.h"
@@ -59,16 +60,10 @@ struct rrr_mmap_channel_block {
 
 struct rrr_mmap_channel_process_data {
 	struct rrr_mmap_collection_private_data private_data;
-	struct rrr_shm_collection_slave *shm_slave;
 };
 
 struct rrr_mmap_channel {
 	pthread_rwlock_t index_lock;
-
-	struct rrr_shm_collection_master *shm_master;
-	struct rrr_shm_collection_slave *shm_slave;
-
-	rrr_shm_handle shm_handle;
 
 	struct rrr_mmap_collection *mmaps;
 	struct rrr_mmap_channel_process_data reader_data;
@@ -216,8 +211,6 @@ static int __rrr_mmap_channel_allocate (
 				&block->shm_handle,
 				&block->mmap_handle,
 				target->mmaps,
-				target->shm_master,
-				target->writer_data.shm_slave,
 				data_size,
 				RRR_MMAP_CHANNEL_MMAP_SIZE
 		)) == NULL) {
@@ -416,7 +409,7 @@ int rrr_mmap_channel_read_with_callback (
 		}
 	}
 	else {
-		void *ptr = rrr_mmap_resolve_raw (source->reader_data.shm_slave, block->shm_handle, block->mmap_handle);
+		void *ptr = rrr_mmap_collection_resolve (source->mmaps, block->shm_handle, block->mmap_handle);
 		if ((ret = callback(ptr, block->size_data, callback_arg)) != 0) {
 			RRR_MSG_0("Error from callback in __rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
@@ -447,9 +440,8 @@ int rrr_mmap_channel_read_with_callback (
 	return ret;
 }
 
-static void __rrr_mmap_channel_destroy (
-		struct rrr_mmap_channel *target,
-		struct rrr_shm_collection_slave *shm_slave
+void rrr_mmap_channel_destroy (
+		struct rrr_mmap_channel *target
 ) {
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
@@ -471,24 +463,8 @@ static void __rrr_mmap_channel_destroy (
 		RRR_MSG_1("Note: Last message duplicated %i times\n", msg_count - 1);
 	}
 
-	rrr_mmap_collection_destroy(target->mmaps, target->shm_slave, shm_slave);
-
-	rrr_shm_collection_slave_destroy(target->writer_data.shm_slave);
-	rrr_shm_collection_slave_destroy(target->reader_data.shm_slave);
-
-	rrr_shm_collection_master_free(target->shm_master, target->shm_handle);
-}
-
-void rrr_mmap_channel_destroy_by_reader (
-		struct rrr_mmap_channel *target
-) {
-	return __rrr_mmap_channel_destroy (target, target->reader_data.shm_slave);
-}
-
-void rrr_mmap_channel_destroy_by_writer (
-		struct rrr_mmap_channel *target
-) {
-	return __rrr_mmap_channel_destroy (target, target->writer_data.shm_slave);
+	rrr_mmap_collection_destroy(target->mmaps);
+	munmap(target, sizeof(*target));
 }
 
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
@@ -509,44 +485,25 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 void rrr_mmap_channel_fork_unregister (
 		struct rrr_mmap_channel *target
 ) {
-	rrr_shm_collection_master_fork_unregister(target->shm_master);
+	rrr_mmap_collection_fork_unregister(target->mmaps);
 }
 
-void rrr_mmap_channel_maintenance_by_reader (
+void rrr_mmap_channel_maintenance (
 		struct rrr_mmap_channel *target
 ) {
 	struct rrr_mmap_stats stats_dummy = {0};
-	rrr_mmap_collection_maintenance(&stats_dummy, target->mmaps, target->reader_data.shm_slave);
-}
-
-void rrr_mmap_channel_maintenance_by_writer (
-		struct rrr_mmap_channel *target
-) {
-	struct rrr_mmap_stats stats_dummy = {0};
-	rrr_mmap_collection_maintenance(&stats_dummy, target->mmaps, target->writer_data.shm_slave);
+	rrr_mmap_collection_maintenance(&stats_dummy, target->mmaps);
 }
 
 int rrr_mmap_channel_new (
 		struct rrr_mmap_channel **target,
-		struct rrr_shm_collection_master *shm_master,
-		struct rrr_shm_collection_slave *shm_slave,
 		const char *name
 ) {
 	int ret = 0;
 
-	struct rrr_mmap_channel *result = NULL;
+	struct rrr_mmap_channel *result = rrr_posix_mmap(sizeof(*result), 1 /* is pshared */);
 
 	int mutex_i = 0;
-	rrr_shm_handle shm_handle;
-
-	if ((ret = rrr_shm_collection_master_allocate(&shm_handle, shm_master, sizeof(*result))) != 0) {
-		RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
-		goto out;
-	}
-
-	if ((result = rrr_shm_resolve (shm_slave, shm_handle)) == NULL) {
-		RRR_BUG("BUG: SHM resolve failed in rrr_mmap_channel_new\n");
-	}
 
 	memset(result, '\0', sizeof(*result));
 
@@ -565,27 +522,15 @@ int rrr_mmap_channel_new (
 		}
 	}
 
-	if ((ret = rrr_shm_collection_slave_new (&result->reader_data.shm_slave, shm_master)) != 0) {
+	if ((ret = rrr_mmap_collection_new(&result->mmaps, 1 /* Is pshared */)) != 0) {
 		goto out_destroy_mutexes;
 	}
 
-	if ((ret = rrr_shm_collection_slave_new (&result->writer_data.shm_slave, shm_master)) != 0) {
-		goto out_destroy_shm_reader_slave;
-	}
-
-	if ((ret = rrr_mmap_collection_new(&result->mmaps, shm_slave, 1 /* Is pshared */)) != 0) {
-		goto out_destroy_shm_writer_slave;
-	}
-
-	rrr_mmap_collection_private_data_init(&result->reader_data.private_data, result->mmaps, result->reader_data.shm_slave);
-	rrr_mmap_collection_private_data_init(&result->writer_data.private_data, result->mmaps, result->writer_data.shm_slave);
+	rrr_mmap_collection_private_data_init(&result->reader_data.private_data, result->mmaps);
+	rrr_mmap_collection_private_data_init(&result->writer_data.private_data, result->mmaps);
 
 	strncpy(result->name, name, sizeof(result->name));
 	result->name[sizeof(result->name) - 1] = '\0';
-
-	result->shm_slave = shm_slave;
-	result->shm_master = shm_master;
-	result->shm_handle = shm_handle;
 
 	*target = result;
 	result = NULL;
@@ -594,10 +539,6 @@ int rrr_mmap_channel_new (
 
 //	out_destroy_mmap_collection:
 //		rrr_mmap_collection_destroy(result->mmaps, shm_slave);
-	out_destroy_shm_writer_slave:
-		rrr_shm_collection_slave_destroy(result->writer_data.shm_slave);
-	out_destroy_shm_reader_slave:
-		rrr_shm_collection_slave_destroy(result->reader_data.shm_slave);
 	out_destroy_mutexes:
 		// Be careful with the counters, we should only destroy initialized locks
 		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
@@ -605,7 +546,7 @@ int rrr_mmap_channel_new (
 		}
 		pthread_rwlock_destroy(&result->index_lock);
 	out_free:
-		rrr_shm_collection_master_free(shm_master, shm_handle);
+		munmap(result, sizeof(*result));
 	out:
 		return ret;
 }
