@@ -1,10 +1,4 @@
-rrr (1.18-1posten3) buster; urgency=medium
-
-  * Non-maintainer upload.
-
- -- LBSdrift <lbsdrift@posten.local>  Tue, 04 May 2021 15:20:11 +0200
-
-rrr (1.18-1) buster; urgency=medium
+rrr (1.18-2) buster; urgency=medium
 
   * Development release (update) 
 

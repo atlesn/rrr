@@ -176,6 +176,7 @@ void rrr_allocator_cleanup (void) {
 			rrr_allocator_collections,
 			RRR_ALLOCATOR_GROUP_MAX + 1
 	);
+	rrr_allocator_collections = NULL;
 }
 
 /* Free unused mmaps */
