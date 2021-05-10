@@ -54,8 +54,8 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 
 	pid_t pid = rrr_fork(fork_handler, __rrr_test_allocator_shm_child_exit_notify, NULL);
 
-	const char *test_data = "abcdef";
-	const char *test_data_success = "123456";
+	const char test_data[] = "abcdef";
+	const char test_data_success[] = "123456";
 
 	if (pid < 0) {
 		TEST_MSG("Fork failed in __rrr_test_allocator_shm\n");
@@ -73,7 +73,7 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 
 		for (int i = 0; i < 20; i++) {
 			rrr_posix_usleep(50000); // 50ms
-			ptr = rrr_shm_resolve(&slave_child, 0 /* Handle is expected to be 0 since we only have one allocation */, NULL, NULL);
+			ptr = rrr_shm_resolve(&slave_child, 0 /* Handle is expected to be 0 since we only have one allocation */);
 			if (ptr && strcmp (ptr, test_data) == 0) {
 				break;
 			}
@@ -99,7 +99,7 @@ static int __rrr_test_allocator_shm(struct rrr_fork_handler *fork_handler) {
 		goto out_send_signal;
 	}
 
-	void *ptr = rrr_shm_resolve(slave_parent, shm_handle, NULL, NULL);
+	void *ptr = rrr_shm_resolve(slave_parent, shm_handle);
 	if (ptr == NULL) {
 		TEST_MSG("SHM resolve failed in parent in __rrr_test_allocator_shm\n");
 		ret = 1;
