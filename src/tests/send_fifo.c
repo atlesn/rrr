@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/util/posix.h"
@@ -33,6 +34,7 @@ int main (int argc, char **argv) {
 	int ret = 0;
 	int fd = 0;
 
+	rrr_allocator_init();
 	rrr_strerror_init();
 
 	if ((ret = rrr_log_init()) != 0) {
@@ -53,22 +55,27 @@ int main (int argc, char **argv) {
 	rrr_posix_usleep(1000000);
 
 	char buf[1024];
-	int bytes = read(STDIN_FILENO, buf, 1024);
-	if (bytes == 0) {
+	ssize_t bytes_read = read(STDIN_FILENO, buf, 1024);
+	if (bytes_read < 0) {
+		RRR_MSG_0("Read failure on STDIN: %s", rrr_strerror(errno));
+		ret = 1;
+		goto out_cleanup_log;
+	}
+	else if (bytes_read == 0) {
 		RRR_MSG_0("No data on stdin to send_fifo\n");
 		ret = 1;
 		goto out_cleanup_log;
 	}
-
-	if (bytes == sizeof(buf)) {
+	else if (bytes_read == sizeof(buf)) {
 		RRR_MSG_0("Too many bytes read in send_fifo\n");
 		ret = 1;
 		goto out_cleanup_log;
 	}
 
-	if ((ret = write(fd, buf, bytes)) != bytes) {
-		RRR_MSG_0("Write to fifo failed: %s, %i of %i bytes written in send_fifo\n",
-				rrr_strerror(errno), ret, bytes);
+	ssize_t bytes_write = write(fd, buf, (size_t) bytes_read);
+	if (bytes_write != bytes_read) {
+		RRR_MSG_0("Write to fifo failed: %s, %i of %lli bytes written in send_fifo\n",
+				rrr_strerror(errno), ret, (long long int) bytes_read);
 		ret = 1;
 		goto out_cleanup_log;
 	}
@@ -78,5 +85,6 @@ int main (int argc, char **argv) {
 	out:
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
+		rrr_allocator_cleanup();
 		return ret;
 }
