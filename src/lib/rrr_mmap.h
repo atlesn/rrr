@@ -41,8 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 typedef uint64_t rrr_mmap_handle;
 
 struct rrr_mmap_stats;
-
-struct rrr_mmap;
 struct rrr_mmap_collection;
 
 struct rrr_mmap_heap_index {

@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/posix.h"
 
 // Messages larger than this limit are transferred using SHM
-#define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
+#define RRR_MMAP_CHANNEL_SHM_LIMIT 8192
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
 
 struct rrr_mmap_channel_block {
@@ -79,7 +79,7 @@ struct rrr_mmap_channel {
 	unsigned long long int write_full_counter;
 };
 
-#define LOCK(channel) \
+#define WRLOCK(channel) \
 	do {int ret_tmp = pthread_rwlock_wrlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp))
 #define RDLOCK(channel) \
 	do {int ret_tmp = pthread_rwlock_rdlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: RDLOCK failed: %s\n", rrr_strerror(ret_tmp))
@@ -94,7 +94,7 @@ int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
 ) {
 	int count;
-	LOCK(target);
+	WRLOCK(target);
 	count = target->entry_count;
 	UNLOCK(target);
 	return count;
@@ -241,12 +241,12 @@ int rrr_mmap_channel_write_using_callback (
 
 	struct rrr_mmap_channel_block *block = NULL;
 
-	LOCK(target);
+	WRLOCK(target);
 	block = &(target->blocks[target->wpos]);
 	UNLOCK(target);
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		LOCK(target);
+		WRLOCK(target);
 		target->write_full_counter++;
 		UNLOCK(target);
 		ret = RRR_MMAP_CHANNEL_FULL;
@@ -282,7 +282,7 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
 
-	LOCK(target);
+	WRLOCK(target);
 	target->entry_count++;
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
@@ -360,7 +360,7 @@ int rrr_mmap_channel_read_with_callback (
 	struct rrr_mmap_channel_block *block = NULL;
 	int entry_count = 0;
 
-	LOCK(source);
+	WRLOCK(source);
 
 	block = &(source->blocks[source->rpos]);
 	entry_count = source->entry_count;
@@ -372,7 +372,7 @@ int rrr_mmap_channel_read_with_callback (
 	}
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		LOCK(source);
+		WRLOCK(source);
 		source->read_starvation_counter++;
 		UNLOCK(source);
 		ret = RRR_MMAP_CHANNEL_EMPTY;
@@ -425,7 +425,7 @@ int rrr_mmap_channel_read_with_callback (
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
 
-		LOCK(source);
+		WRLOCK(source);
 		source->entry_count--;
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
@@ -469,7 +469,7 @@ void rrr_mmap_channel_destroy (
 }
 
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
-	LOCK(target);
+	WRLOCK(target);
 
 	// This function does not lock the blocks in case the reader has crashed
 	// while holding the mutex
@@ -557,7 +557,7 @@ void rrr_mmap_channel_get_counters_and_reset (
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
 ) {
-	LOCK(source);
+	WRLOCK(source);
 
 	*read_starvation_counter = source->read_starvation_counter;
 	*write_full_counter = source->write_full_counter;

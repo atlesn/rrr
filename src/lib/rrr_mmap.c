@@ -237,7 +237,8 @@ static void __rrr_mmap_free_push (
 	mmap->prev_allocation_failure_req_size = 0;
 }
 
-static void __rrr_mmap_dump_indexes (
+// Use to debug, but is not an exposed function
+void rrr_mmap_dump_indexes (
 		struct rrr_mmap *mmap,
 		struct rrr_shm_collection_slave *shm_slave
 ) {
