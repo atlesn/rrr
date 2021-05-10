@@ -413,24 +413,12 @@ void rrr_shm_collection_master_fork_unregister (
 }
 
 static int __rrr_shm_slave_refresh_if_needed (
-		struct rrr_shm_collection_slave *slave,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		struct rrr_shm_collection_slave *slave
 ) {
 	int ret = 0;
 
 	if (slave->version_master == slave->master->version_master) {
 		goto out;
-	}
-
-	// Callback is used to obtain write lock since we need to update
-	if (before_refresh_callback) {
-		before_refresh_callback(before_refresh_callback_arg);
-
-		// Check again in case of lock-unlock sequence in callback
-		if (slave->version_master == slave->master->version_master) {
-			goto out;
-		}
 	}
 
 	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
@@ -452,13 +440,11 @@ static int __rrr_shm_slave_refresh_if_needed (
 
 void *rrr_shm_resolve (
 		struct rrr_shm_collection_slave *slave,
-		rrr_shm_handle handle,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		rrr_shm_handle handle
 ) {
 	int ret = 0;
 
-	if ((ret = __rrr_shm_slave_refresh_if_needed(slave, before_refresh_callback, before_refresh_callback_arg)) != 0) {
+	if ((ret = __rrr_shm_slave_refresh_if_needed(slave)) != 0) {
 		return NULL;
 	}
 
@@ -478,11 +464,9 @@ void *rrr_shm_resolve (
 int rrr_shm_resolve_reverse (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_slave *slave,
-		const void *ptr,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		const void *ptr
 ) {
-	if (__rrr_shm_slave_refresh_if_needed(slave, before_refresh_callback, before_refresh_callback_arg) != 0) {
+	if (__rrr_shm_slave_refresh_if_needed(slave) != 0) {
 		return 1;
 	}
 	for (size_t i = 0; i < RRR_SHM_COLLECTION_MAX; i++) {
@@ -496,25 +480,21 @@ int rrr_shm_resolve_reverse (
 
 void *rrr_shm_allocate (
 		struct rrr_shm_collection_slave *slave,
-		size_t data_size,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		size_t data_size
 ) {
 	rrr_shm_handle handle;
 	if (rrr_shm_collection_master_allocate (&handle, slave->master, data_size) != 0) {
 		return NULL;
 	}
-	return rrr_shm_resolve(slave, handle, before_refresh_callback, before_refresh_callback_arg);
+	return rrr_shm_resolve(slave, handle);
 }
 
 void rrr_shm_free (
 		struct rrr_shm_collection_slave *slave,
-		void *ptr,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		void *ptr
 ) {
 	rrr_shm_handle handle;
-	if (rrr_shm_resolve_reverse(&handle, slave, ptr, before_refresh_callback, before_refresh_callback_arg) != 0) {
+	if (rrr_shm_resolve_reverse(&handle, slave, ptr) != 0) {
 		RRR_BUG("BUG: ptr %p not found in rrr_shm_free()\n", ptr);
 	}
 	rrr_shm_collection_master_free(slave->master, handle);

@@ -63,7 +63,7 @@ void *rrr_mmap_collection_resolve (
 		rrr_mmap_handle mmap_handle
 );
 void rrr_mmap_collection_fork_unregister (
-		struct rrr_mmap_collection *collections
+		struct rrr_mmap_collection *collection
 );
 void rrr_mmap_collections_maintenance (
 		struct rrr_mmap_stats *stats,
@@ -73,10 +73,6 @@ void rrr_mmap_collections_maintenance (
 void rrr_mmap_collections_destroy (
 		struct rrr_mmap_collection *collections,
 		size_t collection_count
-);
-int rrr_mmap_collection_new (
-		struct rrr_mmap_collection **result,
-		int is_pshared
 );
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
@@ -111,6 +107,13 @@ int rrr_mmap_collections_free (
 		size_t collection_count,
 		void *ptr
 );
+
+static inline int rrr_mmap_collection_new (
+		struct rrr_mmap_collection **result,
+		int is_pshared
+) {
+	return rrr_mmap_collections_new(result, 1, is_pshared);
+}
 
 static inline void rrr_mmap_collection_maintenance (
 		struct rrr_mmap_stats *stats,

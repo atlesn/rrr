@@ -79,12 +79,12 @@ struct rrr_mmap_channel {
 	unsigned long long int write_full_counter;
 };
 
-#define WRLOCK(channel) \
-	{int ret_tmp = pthread_rwlock_wrlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+#define LOCK(channel) \
+	do {int ret_tmp = pthread_rwlock_wrlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp))
 #define RDLOCK(channel) \
-	{int ret_tmp = pthread_rwlock_rdlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: RDLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+	do {int ret_tmp = pthread_rwlock_rdlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: RDLOCK failed: %s\n", rrr_strerror(ret_tmp))
 #define UNLOCK(channel) \
-	{int ret_tmp = pthread_rwlock_unlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); }
+	{int ret_tmp = pthread_rwlock_unlock(&channel->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); }} while (0)
 #define INIT(channel) \
 	rrr_posix_rwlock_init(&channel->index_lock, RRR_POSIX_MUTEX_IS_PSHARED)
 #define DESTROY(channel) \
@@ -94,7 +94,7 @@ int rrr_mmap_channel_count (
 		struct rrr_mmap_channel *target
 ) {
 	int count;
-	WRLOCK(target);
+	LOCK(target);
 	count = target->entry_count;
 	UNLOCK(target);
 	return count;
@@ -241,12 +241,12 @@ int rrr_mmap_channel_write_using_callback (
 
 	struct rrr_mmap_channel_block *block = NULL;
 
-	WRLOCK(target);
+	LOCK(target);
 	block = &(target->blocks[target->wpos]);
 	UNLOCK(target);
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		WRLOCK(target);
+		LOCK(target);
 		target->write_full_counter++;
 		UNLOCK(target);
 		ret = RRR_MMAP_CHANNEL_FULL;
@@ -282,7 +282,7 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
 
-	WRLOCK(target);
+	LOCK(target);
 	target->entry_count++;
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
@@ -358,11 +358,12 @@ int rrr_mmap_channel_read_with_callback (
 	int do_unlock_block = 0;
 
 	struct rrr_mmap_channel_block *block = NULL;
+	int entry_count = 0;
 
-	WRLOCK(source);
+	LOCK(source);
 
 	block = &(source->blocks[source->rpos]);
-	int entry_count = source->entry_count;
+	entry_count = source->entry_count;
 
 	UNLOCK(source);
 
@@ -371,7 +372,7 @@ int rrr_mmap_channel_read_with_callback (
 	}
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		WRLOCK(source);
+		LOCK(source);
 		source->read_starvation_counter++;
 		UNLOCK(source);
 		ret = RRR_MMAP_CHANNEL_EMPTY;
@@ -424,7 +425,7 @@ int rrr_mmap_channel_read_with_callback (
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
 
-		WRLOCK(source);
+		LOCK(source);
 		source->entry_count--;
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
@@ -468,7 +469,7 @@ void rrr_mmap_channel_destroy (
 }
 
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
-	WRLOCK(target);
+	LOCK(target);
 
 	// This function does not lock the blocks in case the reader has crashed
 	// while holding the mutex
@@ -556,7 +557,7 @@ void rrr_mmap_channel_get_counters_and_reset (
 		unsigned long long int *write_full_counter,
 		struct rrr_mmap_channel *source
 ) {
-	WRLOCK(source);
+	LOCK(source);
 
 	*read_starvation_counter = source->read_starvation_counter;
 	*write_full_counter = source->write_full_counter;

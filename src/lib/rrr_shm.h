@@ -60,28 +60,20 @@ void rrr_shm_collection_master_fork_unregister (
 );
 void *rrr_shm_resolve (
 		struct rrr_shm_collection_slave *slave,
-		rrr_shm_handle handle,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		rrr_shm_handle handle
 );
 int rrr_shm_resolve_reverse (
 		rrr_shm_handle *handle,
 		struct rrr_shm_collection_slave *slave,
-		const void *ptr,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		const void *ptr
 );
 void *rrr_shm_allocate (
 		struct rrr_shm_collection_slave *slave,
-		size_t data_size,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		size_t data_size
 );
 void rrr_shm_free (
 		struct rrr_shm_collection_slave *slave,
-		void *ptr,
-		void (*before_refresh_callback)(void *arg),
-		void *before_refresh_callback_arg
+		void *ptr
 );
 
 #endif /* RRR_SHM_H */

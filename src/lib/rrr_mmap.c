@@ -63,6 +63,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // printf debugging
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
+// lock debugging
+// #define RRR_MMAP_LOCK_DEBUG 1
+
 #define RRR_MMAP_SENTINEL_DEBUG
 
 #ifdef RRR_MMAP_SENTINEL_DEBUG
@@ -78,7 +81,6 @@ struct rrr_mmap {
 	int maintenance_cleanup_strikes;
 	uint64_t allocation_count;
 	uint8_t flags;
-	pthread_mutex_t lock;
 	rrr_mmap_handle heap_size;
 	rrr_mmap_handle prev_allocation_failure_req_size;
 	rrr_mmap_handle  prev_allocation_index_pos;
@@ -89,7 +91,9 @@ struct rrr_mmap {
 struct rrr_mmap_collection {
 	size_t mmap_count;
 	unsigned int version;
-	pthread_rwlock_t index_lock;
+
+	pthread_mutex_t index_lock;
+
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
@@ -100,14 +104,25 @@ struct rrr_mmap_heap_block_index {
 	uint64_t block_sizes[64];
 };
 
-void __rrr_mmap_collection_ensure_wrlock (
-		void *arg
-) {
-	struct rrr_mmap_collection *collection = arg;
-
-	pthread_rwlock_unlock(&collection->index_lock);
-	pthread_rwlock_wrlock(&collection->index_lock);
-}
+#ifdef RRR_MMAP_LOCK_DEBUG
+#define LOCK(collection) \
+	do {int ret_tmp = pthread_mutex_lock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: WRLOCK failed: %s\n", rrr_strerror(ret_tmp)); printf("wrlocked %p pid %i\n", collection, getpid())
+#define UNLOCK(collection) \
+	{ int ret_tmp = pthread_mutex_unlock(&collection->index_lock); if (ret_tmp != 0) RRR_BUG("BUG: UNLOCK failed: %s\n", rrr_strerror(ret_tmp)); } printf("unlocked %p pid %i\n", collection, getpid()); } while(0)
+#define INIT(collection, is_pshared) \
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0) | RRR_POSIX_MUTEX_IS_ERRORCHECK)
+#define DESTROY(collection) \
+	pthread_mutex_destroy(&collection->index_lock)
+#else
+#define LOCK(collection) \
+	pthread_mutex_lock(&collection->index_lock);
+#define UNLOCK(collection) \
+	pthread_mutex_unlock(&collection->index_lock);
+#define INIT(collection, is_pshared) \
+	rrr_posix_mutex_init(&collection->index_lock, (is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0))
+#define DESTROY(collection) \
+	pthread_mutex_destroy(&collection->index_lock)
+#endif
 
 void *__rrr_mmap_resolve (
 		struct rrr_mmap *mmap,
@@ -115,7 +130,7 @@ void *__rrr_mmap_resolve (
 		size_t pos
 ) {
 	return (shm_slave != NULL
-		? rrr_shm_resolve(shm_slave, mmap->shm_heap, __rrr_mmap_collection_ensure_wrlock, mmap->collection) + pos
+		? rrr_shm_resolve(shm_slave, mmap->shm_heap) + pos
 		: mmap->mmap_heap + pos
 	);
 }
@@ -213,15 +228,11 @@ static void __rrr_mmap_free_push (
 		struct rrr_shm_collection_slave *shm_slave,
 		rrr_mmap_handle handle
 ) {
-	pthread_mutex_lock(&mmap->lock);
-
 	mmap->to_free_list[mmap->to_free_list_count++] = handle;
 
 	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
 		__rrr_mmap_free(mmap, shm_slave);
 	}
-
-	pthread_mutex_unlock(&mmap->lock);
 
 	mmap->prev_allocation_failure_req_size = 0;
 }
@@ -298,8 +309,6 @@ static void *__rrr_mmap_allocate_with_handles (
 			RRR_MMAP_HEAP_CHUNK_MIN_SIZE;
 
 	void *result = NULL;
-
-	pthread_mutex_lock(&mmap->lock);
 
 	struct rrr_shm_collection_slave *shm_slave = mmap->collection->shm_slave;
 	DEFINE_HEAP();
@@ -421,8 +430,6 @@ static void *__rrr_mmap_allocate_with_handles (
 		*mmap_handle = (uintptr_t) result - (uintptr_t) heap;
 	}
 
-	pthread_mutex_unlock(&mmap->lock);
-
 	return result;
 }
 
@@ -432,8 +439,6 @@ static int __rrr_mmap_is_empty (
 		struct rrr_shm_collection_slave *shm_slave
 ) {
 	int ret = 1;
-
-	pthread_mutex_lock(&mmap->lock);
 
 	DEFINE_HEAP();
 
@@ -468,8 +473,6 @@ static int __rrr_mmap_is_empty (
 	}
 
 	out_unlock:
-
-	pthread_mutex_unlock(&mmap->lock);
 
 	return ret;
 }
@@ -510,24 +513,18 @@ static int __rrr_mmap_init (
 #endif
 	}
 
-	if ((ret = rrr_posix_mutex_init(&result->lock, collection->shm_master != NULL ? RRR_POSIX_MUTEX_IS_PSHARED : 0)) != 0) {
-		RRR_MSG_0("Could not initialize mutex in __rrr_mmap_init (%i)\n", ret);
-		ret = 1;
-		goto out_free_heap;
-	}
-
 	result->heap_size = heap_size_padded;
 	result->collection = collection;
 
 	goto out;
 
-	out_free_heap:
-		if (result->shm_heap) {
-			rrr_shm_collection_master_free(collection->shm_master, result->shm_heap);
-		}
-		else {
-			munmap(result->mmap_heap, heap_size_padded);
-		}
+//	out_free_heap:
+//	if (result->shm_heap) {
+//			rrr_shm_collection_master_free(collection->shm_master, result->shm_heap);
+//		}
+//		else {
+//			munmap(result->mmap_heap, heap_size_padded);
+//		}
 	out:
 		return ret;
 }
@@ -541,7 +538,6 @@ void __rrr_mmap_cleanup (
 	else {
 		munmap(mmap->mmap_heap, mmap->heap_size);
 	}
-	pthread_mutex_destroy(&mmap->lock);
 	memset(mmap, '\0', sizeof(*mmap));
 }
 
@@ -563,9 +559,7 @@ void *rrr_mmap_collection_resolve (
 
 	void *ret = rrr_shm_resolve (
 			collection->shm_slave,
-			shm_handle,
-			__rrr_mmap_collection_ensure_wrlock,
-			collection
+			shm_handle
 	);
 
 	if (ret == NULL) {
@@ -583,10 +577,6 @@ static void __rrr_mmap_collection_minmax_update_if_needed (
 	if (private_data->version == collection->version) {
 		goto out;
 	}
-
-	// Switch to wrlock
-	pthread_rwlock_unlock(&collection->index_lock);
-	pthread_rwlock_wrlock(&collection->index_lock);
 
 	// Check version again
 	if (private_data->version == collection->version) {
@@ -637,11 +627,11 @@ static int __rrr_mmap_collection_minmax_search (
 }
 
 void rrr_mmap_collection_fork_unregister (
-		struct rrr_mmap_collection *collections
+		struct rrr_mmap_collection *collection
 ) {
-	pthread_rwlock_rdlock(&collections->index_lock);
-	rrr_shm_collection_master_fork_unregister(collections->shm_master);
-	pthread_rwlock_unlock(&collections->index_lock);
+	LOCK(collection);
+	rrr_shm_collection_master_fork_unregister(collection->shm_master);
+	UNLOCK(collection);
 }
 
 void rrr_mmap_collections_maintenance (
@@ -653,21 +643,19 @@ void rrr_mmap_collections_maintenance (
 
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
-		pthread_rwlock_rdlock(&collection->index_lock);
+		LOCK(collection);
 		RRR_MMAP_ITERATE_BEGIN();
 			if (mmap->heap_size != 0) {
-				pthread_mutex_lock(&mmap->lock);
 				__rrr_mmap_free(mmap, collection->shm_slave);
-				pthread_mutex_unlock(&mmap->lock);
 			}
 		RRR_MMAP_ITERATE_END();
-		pthread_rwlock_unlock(&collection->index_lock);
+		UNLOCK(collection);
 	}
 
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
 
-		pthread_rwlock_wrlock(&collection->index_lock);
+		LOCK(collection);
 
 		if (collection->mmap_count == 0) {
 			goto next;
@@ -712,7 +700,7 @@ void rrr_mmap_collections_maintenance (
 		RRR_MMAP_ITERATE_END();
 
 		next:
-		pthread_rwlock_unlock(&collection->index_lock);
+		UNLOCK(collection);
 	}
 }
 
@@ -721,7 +709,7 @@ void __rrr_mmap_collection_cleanup (
 ) {
 	int count = 0;
 
-	pthread_rwlock_wrlock(&collection->index_lock);
+	LOCK(collection);
 	RRR_MMAP_ITERATE_BEGIN();
 		if (mmap->heap_size != 0) {
 			__rrr_mmap_cleanup (mmap);
@@ -738,9 +726,9 @@ void __rrr_mmap_collection_cleanup (
 		rrr_shm_collection_master_destroy(collection->shm_master);
 	}
 
-	pthread_rwlock_unlock(&collection->index_lock);
+	UNLOCK(collection);
 
-	pthread_rwlock_destroy(&collection->index_lock);
+	DESTROY(collection);
 
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 	printf("MMAPs left upon cleanup: %i\n", count);
@@ -769,7 +757,7 @@ static int __rrr_mmap_collection_init (
 	int ret = 0;
 
 	memset(target, '\0', sizeof(*target));
-	if (rrr_posix_rwlock_init(&target->index_lock, is_pshared ? RRR_POSIX_MUTEX_IS_PSHARED : 0) != 0) {
+	if (INIT(target, is_pshared) != 0) {
 		RRR_MSG_0("Could not initialize lock in __rrr_mmap_collection_init\n");
 		ret = 1;
 		goto out;
@@ -795,7 +783,7 @@ static int __rrr_mmap_collection_init (
 	out_destroy_shm_master:
 		rrr_shm_collection_master_destroy(target->shm_master);
 	out_destroy_lock:
-		pthread_rwlock_destroy(&target->index_lock);
+		DESTROY(target);
 	out:
 	return ret;
 }
@@ -838,13 +826,6 @@ int rrr_mmap_collections_new (
 		return ret;
 }
 
-int rrr_mmap_collection_new (
-		struct rrr_mmap_collection **result,
-		int is_pshared
-) {
-	return rrr_mmap_collections_new(result, 1, is_pshared);
-}
-
 void rrr_mmap_collection_private_datas_init (
 		struct rrr_mmap_collection_private_data *private_datas,
 		struct rrr_mmap_collection *collections,
@@ -854,13 +835,9 @@ void rrr_mmap_collection_private_datas_init (
 		struct rrr_mmap_collection *collection = &collections[i];
 		struct rrr_mmap_collection_private_data *private_data = &private_datas[i];
 
-		pthread_rwlock_rdlock(&collection->index_lock);
-
 		memset(private_data, '\0', sizeof(*private_data));
 		private_data->version = collection->version - 1;
 		private_data->collection = collection;
-
-		pthread_rwlock_unlock(&collection->index_lock);
 	}
 }
 
@@ -873,7 +850,8 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 ) {
 	void *result = NULL;
 
-	pthread_rwlock_rdlock(&collection->index_lock);
+	LOCK(collection);
+
 	if (collection->mmap_count > 0) {
 		RRR_MMAP_ITERATE_BEGIN();
 			if (  mmap->heap_size != 0 &&
@@ -888,13 +866,11 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 			}
 		RRR_MMAP_ITERATE_END();
 	}
-	pthread_rwlock_unlock(&collection->index_lock);
 
 	if (result) {
 		goto out;
 	}
 
-	pthread_rwlock_wrlock(&collection->index_lock);
 	RRR_MMAP_ITERATE_BEGIN();
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 		printf("Init try %p heap\n", mmap);
@@ -916,9 +892,9 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 			break;
 		}
 	RRR_MMAP_ITERATE_END();
-	pthread_rwlock_unlock(&collection->index_lock);
 
 	out:
+	UNLOCK(collection);
 	return result;
 }
 
@@ -987,7 +963,7 @@ int rrr_mmap_collections_free (
 	for (size_t j = 0; j < collection_count; j++) {
 		struct rrr_mmap_collection *collection = private_datas[j].collection;
 
-		pthread_rwlock_rdlock(&collection->index_lock);
+		LOCK(collection);
 
 		if (collection->mmap_count == 0) {
 			goto next;
@@ -1014,7 +990,7 @@ int rrr_mmap_collections_free (
 		}
 
 		next:
-		pthread_rwlock_unlock(&collection->index_lock);
+		UNLOCK(collection);
 		if (ret == 0) {
 			break;
 		}
