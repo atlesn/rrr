@@ -74,7 +74,6 @@ struct rrr_event_queue;
     struct rrr_net_transport_handle_collection handles;                     \
     struct rrr_event_queue *event_queue;                                    \
     struct rrr_event_collection events;                                     \
-    rrr_event_handle event_maintenance;                                     \
     rrr_event_handle event_read_add;                                        \
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
@@ -106,10 +105,6 @@ int rrr_net_transport_handle_allocate_and_add (
 
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
-);
-int rrr_net_transport_handle_close_tag_list_push (
-		struct rrr_net_transport *transport,
-		int handle
 );
 void rrr_net_transport_stats_get (
 		int *handle_count,
@@ -146,6 +141,10 @@ int rrr_net_transport_connect (
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
+);
+void rrr_net_transport_handle_touch (
+		struct rrr_net_transport *transport,
+		int handle
 );
 int rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
@@ -195,6 +194,12 @@ int rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 );
 double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
+		struct rrr_net_transport_handle *handle
+);
+void rrr_net_transport_ctx_close_when_send_complete_set (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_ctx_close_when_send_complete_get (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_send_push (

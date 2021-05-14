@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
@@ -75,7 +76,7 @@ int rrr_mqtt_conn_set_client_id (
 		const char *id
 ) {
 	RRR_FREE_IF_NOT_NULL(connection->client_id);
-	if ((connection->client_id = strdup(id)) == NULL) {
+	if ((connection->client_id = rrr_strdup(id)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_conn_update_client_id\n");
 		return 1;
 	}
@@ -241,7 +242,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connection->will_publish);
 	__rrr_mqtt_connection_will_properties_destroy(&connection->will_properties);
 
-	free(connection);
+	rrr_free(connection);
 }
 
 static void __rrr_mqtt_connection_destroy_void (void *arg) {
@@ -260,7 +261,7 @@ static int __rrr_mqtt_conn_new (
 	*connection = NULL;
 	struct rrr_mqtt_conn *res = NULL;
 
-	res = malloc(sizeof(*res));
+	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_INTERNAL_ERROR;
@@ -305,7 +306,7 @@ static int __rrr_mqtt_conn_new (
 	goto out;
 
 	out_free:
-		free(res);
+		rrr_free(res);
 
 	out:
 		return ret;
@@ -429,7 +430,7 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 
 	if (username != NULL && *username != '\0') {
 		RRR_FREE_IF_NOT_NULL(connection->username);
-		if ((connection->username = strdup(username)) == NULL) {
+		if ((connection->username = rrr_strdup(username)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_conn_iterator_ctx_set_data_from_connect\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;
 		}
@@ -916,6 +917,10 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	ssize_t network_size = 0;
 	void *send_data = NULL;
 
+	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection) && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		RRR_BUG("BUG: Tried to send PUBLISH while not allowed in __rrr_mqtt_conn_iterator_ctx_send_packet\n");
+	}
+
 	// Packets which originate from other hosts might have different protocol
 	// version.
 	if (connection->protocol_version != NULL &&
@@ -939,7 +944,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 		}
 
 		if (network_size == 0) {
-			free(network_data);
+			rrr_free(network_data);
 			network_data = NULL;
 		}
 
@@ -1005,7 +1010,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	__rrr_mqtt_connection_update_last_write_time(connection);
 
 	const size_t send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
-	if ((send_data = malloc(send_size)) == NULL) {
+	if ((send_data = rrr_allocate(send_size)) == NULL) {
 		RRR_MSG_0("Failed to allocate send data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		ret = 1;
 		goto out;
@@ -1062,6 +1067,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(send_data);
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
 }
@@ -1071,7 +1077,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 ) {
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (do_stop, handle, packet, 0);
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (do_stop, handle, packet, 0 /* Not urgent */);
 }
 
 int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
@@ -1080,5 +1086,5 @@ int rrr_mqtt_conn_iterator_ctx_send_packet_urgent (
 ) {
 	int do_stop_dummy = 0;
 
-	return __rrr_mqtt_conn_iterator_ctx_send_packet (&do_stop_dummy, handle, packet, 1);
+	return __rrr_mqtt_conn_iterator_ctx_send_packet (&do_stop_dummy, handle, packet, 1 /* Urgent */);
 }

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "main.h"
 #include "../build_timestamp.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/common.h"
 #include "lib/rrr_config.h"
 #include "lib/version.h"
@@ -67,6 +68,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
         {0,                            'O',    "no-output",            "[-O|--no-output]"},
         {0,                            'P',    "plain-force",          "[-P|--plain-force]"},
         {0,                            'S',    "ssl-force",            "[-S|--ssl-force]"},
+        {0,                            'H',    "http10-force",         "[-H|--http10-force]"},
         {0,                            'N',    "no-cert-verify",       "[-N|--no-cert-verify]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'q',    "query",                "[-q|--query[=]HTTP QUERY]"},
         {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
@@ -84,6 +86,7 @@ struct rrr_http_client_data {
 	struct rrr_event_queue *queue;
 	struct rrr_http_client *http_client;
 	enum rrr_http_upgrade_mode upgrade_mode;
+	enum rrr_http_version protocol_version;
 	struct rrr_array_tree *tree;
 	struct rrr_read_session_collection read_sessions;
 	struct rrr_map tags;
@@ -92,8 +95,11 @@ struct rrr_http_client_data {
 	int final_callback_count;
 	rrr_http_unique_id unique_id_counter;
 
+	int redirect_pending;
+
 	struct rrr_event_collection events;
 	rrr_event_handle event_stdin;
+	rrr_event_handle event_redirect;
 };
 
 static void __rrr_http_client_data_cleanup (
@@ -137,13 +143,6 @@ static int __rrr_http_client_parse_config (
 
 	// Websocket or HTTP2 upgrade
 	if (cmd_exists(cmd, "websocket-upgrade", 0)) {
-#ifdef RRR_WITH_NGHTTP2
-		if (cmd_exists(cmd, "http2-upgrade", 0)) {
-			RRR_MSG_0("Both upgrade to websocket and http2 was set\n");
-			ret = 1;
-			goto out;
-		}
-#endif
 		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_WEBSOCKET;
 	}
 	else {
@@ -180,7 +179,7 @@ static int __rrr_http_client_parse_config (
 			ret = 1;
 			goto out;
 		}
-		array_tree_tmp = malloc(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
+		array_tree_tmp = rrr_allocate(strlen(array_definition) + 1 + 1); // plus extra ; plus \0
 		if (array_tree_tmp == NULL) {
 			RRR_MSG_0("Could not allocate temporary arry tree string in parse_config\n");
 			ret = 1;
@@ -211,7 +210,7 @@ static int __rrr_http_client_parse_config (
 		goto out;
 	}
 
-	request_data->server= strdup(server);
+	request_data->server= rrr_strdup(server);
 	if (request_data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -229,7 +228,7 @@ static int __rrr_http_client_parse_config (
 		endpoint = "/";
 	}
 
-	request_data->endpoint = strdup(endpoint);
+	request_data->endpoint = rrr_strdup(endpoint);
 	if (request_data->endpoint == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
@@ -260,6 +259,17 @@ static int __rrr_http_client_parse_config (
 	// Force Plaintext
 	if (cmd_exists(cmd, "plain-force", 0)) {
 		request_data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+	}
+
+	// Force HTTP/1.0
+	if (cmd_exists(cmd, "http10-force", 0)) {
+		if (cmd_exists(cmd, "websocket-upgrade", 0)) {
+			RRR_MSG_0("Both force HTTP/1.0 and upgrade to websocket was specified, this is an invalid combination.\n");
+			ret = 1;
+			goto out;
+		}
+		data->protocol_version = RRR_HTTP_VERSION_10;
+		data->upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
 	}
 
 	// HTTP port
@@ -321,11 +331,15 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
-
 	http_client_data->final_callback_count++;
 
-	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
+	if (transaction->response_part->response_code == 101 &&
+		EVENT_INITIALIZED(http_client_data->event_stdin) &&
+		rrr_http_client_active_transaction_count_get(http_client_data->http_client) > 0
+	) {
+		EVENT_ADD(http_client_data->event_stdin);
+	}
+	else if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_MSG_0("Error response from server: %i %s\n",
 				transaction->response_part->response_code,
 				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
@@ -335,6 +349,8 @@ static int __rrr_http_client_final_callback (
 	if (http_client_data->no_output) {
 		goto out;
 	}
+
+	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
@@ -406,30 +422,16 @@ static int __rrr_http_client_redirect_callback (
 ) {
 	struct rrr_http_client_data *http_client_data = arg;
 
-	(void)(transaction);
-
 	int ret = 0;
 
 	if ((ret = rrr_http_client_request_data_reset_from_uri(&http_client_data->request_data, uri)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_client_request_send (
-			&http_client_data->request_data,
-			http_client_data->http_client,
-			&http_client_data->net_transport_config,
-			5, // Max redirects
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			NULL
-	)) != 0) {
-		goto out;
-	}
+	// Continue using protocol provided by server
+	http_client_data->request_data.protocol_version = transaction->response_part->parsed_version;
+
+	EVENT_ACTIVATE(http_client_data->event_redirect);
 
 	out:
 	return ret;
@@ -473,6 +475,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	*is_binary = 0;
 
 	if (http_client_data->tree == NULL) {
+		ret = RRR_HTTP_DONE;
 		goto out;
 	}
 
@@ -539,6 +542,9 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	RRR_FREE_IF_NOT_NULL(raw_tmp);
 	rrr_array_clear(&array);
+	if (ret != 0 && ret != RRR_SOCKET_READ_INCOMPLETE) {
+		EVENT_REMOVE(http_client_data->event_stdin);
+	}
 	return ret;
 }
 
@@ -561,8 +567,6 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	(void)(http_client_data);
 	(void)(application_topic);
 
-	printf("Received response of %" PRIrrrl " bytes:\n", rrr_nullsafe_str_len(payload));
-
 	if (is_binary) {
 		printf ("- (binary data) -\n");
 	}
@@ -571,6 +575,21 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 	}
 
 	return 0;
+}
+
+static void rrr_http_client_event_redirect (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_http_client_data *data = arg;
+
+	data->redirect_pending = 1;
+
+	rrr_event_dispatch_exit(data->queue);
 }
 
 static void rrr_http_client_event_stdin (
@@ -594,18 +613,17 @@ int rrr_signal_handler(int s, void *arg) {
 static int rrr_http_client_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_http_client_data *data = arg;
 
-	if (EVENT_INITIALIZED(data->event_stdin)) {
-		if (rrr_http_client_active_transaction_count_get(data->http_client) > 0) {
-			EVENT_ADD(data->event_stdin);
-		}
-		else {
-			EVENT_REMOVE(data->event_stdin);
+	if (!main_running) {
+		return RRR_EVENT_EXIT;
+	}
+
+	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0) {
+		if (!EVENT_PENDING(data->event_stdin)) {
+			return RRR_EVENT_EXIT;
 		}
 	}
 
-	if (rrr_http_client_active_transaction_count_get(data->http_client) == 0 || !main_running) {
-		return RRR_EVENT_EXIT;
-	}
+	rrr_allocator_maintenance_nostats();
 
 	return 0;
 }
@@ -620,9 +638,15 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
 	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
+	}
+
 	rrr_strerror_init();
 	rrr_signal_default_signal_actions_register();
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
@@ -653,6 +677,7 @@ int main (int argc, const char **argv, const char **env) {
 			RRR_HTTP_METHOD_GET,
 			RRR_HTTP_BODY_FORMAT_URLENCODED,
 			data.upgrade_mode,
+			data.request_data.protocol_version,
 			0, // No plain HTTP2
 			RRR_HTTP_CLIENT_USER_AGENT
 	) != 0) {
@@ -699,6 +724,16 @@ int main (int argc, const char **argv, const char **env) {
 		EVENT_ADD(data.event_stdin);
 	}
 
+	if (rrr_event_collection_push_oneshot (
+			&data.event_redirect,
+			&data.events,
+			rrr_http_client_event_redirect,
+			&data
+	) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
 	if (rrr_http_client_new (
 			&data.http_client,
 			data.queue,
@@ -710,6 +745,13 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
+	data.request_data.upgrade_mode = data.upgrade_mode;
+	data.request_data.protocol_version = data.protocol_version;
+
+	redirect:
+
+	data.redirect_pending = 0;
+
 	if (__rrr_http_client_request_send_loop (
 			&data
 	) != 0) {
@@ -717,14 +759,18 @@ int main (int argc, const char **argv, const char **env) {
 		goto out;
 	}
 
-	if (rrr_event_dispatch (
+	if ((rrr_event_dispatch (
 			data.queue,
 			100000,
 			rrr_http_client_event_periodic,
 			&data
-	) != 0) {
+	) & ~(RRR_EVENT_EXIT)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
+	}
+
+	if (data.redirect_pending) {
+		goto redirect;
 	}
 
 	out:
@@ -735,6 +781,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

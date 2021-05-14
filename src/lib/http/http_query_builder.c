@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../map.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../string_builder.h"
 #include "../array.h"
 #include "../fixed_point.h"
@@ -63,7 +64,7 @@ static int __rrr_http_query_builder_escape_field (
 
 	*target = NULL;
 
-	char *result = malloc(new_size);
+	char *result = rrr_allocate(new_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_query_builder_escape_field\n");
 		return 1;

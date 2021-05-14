@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"

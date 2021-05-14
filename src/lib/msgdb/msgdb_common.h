@@ -34,6 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MSGDB_CTRL_F_ACK     RRR_MSG_CTRL_F_ACK
 #define RRR_MSGDB_CTRL_F_NACK    RRR_MSG_CTRL_F_NACK
+#define RRR_MSGDB_CTRL_F_PING    RRR_MSG_CTRL_F_PING
+#define RRR_MSGDB_CTRL_F_PONG    RRR_MSG_CTRL_F_PONG
 
 struct rrr_msg_msg;
 

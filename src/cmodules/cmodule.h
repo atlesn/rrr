@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CMODULE_NATIVE_CTX
 #	include <stdlib.h>
 #	include "log.h"
+#	include "allocator.h"
 #	include "array.h"
 #	include "type.h"
 #	include "messages/msg_msg.h"
@@ -61,14 +62,8 @@ static inline int rrr_send_and_free (
 	int ret = rrr_cmodule_ext_send_message_to_parent (
 			ctx->worker, message, message_addr
 	);
-	free(message);
+	rrr_free(message);
 	return ret;
-}
-
-static inline void rrr_free (
-		struct rrr_msg_msg *message
-) {
-	free(message);
 }
 
 #endif /* RRR_CMODULE_NATIVE_CTX */

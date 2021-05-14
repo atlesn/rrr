@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "message_holder.h"
 #include "message_holder_util.h"
@@ -46,7 +47,7 @@ int rrr_msg_holder_util_new_with_empty_message (
 
 	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
 
-	message = malloc(message_size);
+	message = rrr_allocate(message_size);
 	if (message == NULL) {
 		RRR_MSG_0("Could not allocate message in message_holder_new_with_message\n");
 		goto out;

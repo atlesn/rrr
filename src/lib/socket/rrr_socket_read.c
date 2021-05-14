@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"

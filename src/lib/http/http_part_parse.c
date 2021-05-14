@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_part.h"
 #include "http_part_parse.h"
 #include "http_common.h"
@@ -53,7 +54,7 @@ static int __rrr_http_part_parse_response_code (
 		goto out;
 	}
 
-	if (crlf - start < (ssize_t) strlen("HTTP/1.1 200")) {
+	if (crlf - start < (ssize_t) strlen("HTTP/1.x 200")) {
 		ret = RRR_HTTP_PARSE_INCOMPLETE;
 		goto out;
 	}
@@ -62,9 +63,16 @@ static int __rrr_http_part_parse_response_code (
 
 	rrr_length tmp_len = 0;
 	if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1") != 0 || start != start_orig) {
-		RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
+		start = start_orig;
+		if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.0") != 0 || start != start_orig) {
+			RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+		result->parsed_version = RRR_HTTP_VERSION_10;
+	}
+	else {
+		result->parsed_version = RRR_HTTP_VERSION_11;
 	}
 
 	start += tmp_len;
@@ -90,7 +98,8 @@ static int __rrr_http_part_parse_response_code (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
+	result->parsed_application_type = RRR_HTTP_APPLICATION_HTTP1;
+	result->parsed_application_type = RRR_HTTP_APPLICATION_HTTP1;
 
 	*parsed_bytes = (crlf - (buf + start_pos) + 2);
 
@@ -169,9 +178,16 @@ static int __rrr_http_part_parse_request (
 
 	rrr_length protocol_length = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
+		start = start_orig;
+		if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.0")) != 0 || start != start_orig) {
+			RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+		result->parsed_version = RRR_HTTP_VERSION_10;
+	}
+	else {
+		result->parsed_version = RRR_HTTP_VERSION_11;
 	}
 
 	if (start_orig + protocol_length != crlf) {
@@ -182,7 +198,7 @@ static int __rrr_http_part_parse_request (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
+	result->parsed_application_type = RRR_HTTP_APPLICATION_HTTP1;
 
 	*parsed_bytes = (crlf - (buf + start_pos) + 2);
 
@@ -448,9 +464,11 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/x-www-form-urlencoded") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_URLENCODED;
 		}
+#ifdef RRR_WITH_JSONC
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/json") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_JSON;
 		}
+#endif
 	}
 
 	out:
@@ -530,7 +548,7 @@ int rrr_http_part_parse (
 		goto out_parse_chunked;
 	}
 
-	if (part->parsed_protocol_version == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
+	if (part->parsed_application_type == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
 		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
 			ret = __rrr_http_part_parse_request (
 					part,
@@ -561,13 +579,13 @@ int rrr_http_part_parse (
 			goto out;
 		}
 		else if (ret != RRR_HTTP_PARSE_OK) {
-			if (part->parsed_protocol_version != 0) {
-				RRR_BUG("BUG: Protocol version was set prior to complete response/request parsing in rrr_http_part_parse\n");
+			if (part->parsed_application_type != 0) {
+				RRR_BUG("BUG: Application type was set prior to complete response/request parsing in rrr_http_part_parse\n");
 			}
 			goto out;
 		}
-		else if (part->parsed_protocol_version == 0) {
-			RRR_BUG("BUG: Protocol version not set after complete response/request parsing in rrr_http_part_parse\n");
+		else if (part->parsed_application_type == 0) {
+			RRR_BUG("BUG: Application type not set after complete response/request parsing in rrr_http_part_parse\n");
 		}
 
 		part->headroom_length = parsed_bytes_tmp;
@@ -622,6 +640,38 @@ int rrr_http_part_parse (
 		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
 	}
 
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(part, "connection");
+
+	if (connection != NULL) {
+		if (rrr_nullsafe_str_cmpto_case(connection->value, "close") == 0) {
+			RRR_DBG_3("HTTP 'Connection: close' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "keep-alive") == 0) {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "upgrade") == 0) {
+			RRR_DBG_3("HTTP 'Connection: upgrade' header found, implies keep-alive\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+		else {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(tmp, connection->value);
+			RRR_DBG_3("HTTP unknown value '%s' for 'Connection' header ignored\n", tmp);
+		}
+	}
+
+	if (part->parsed_connection == 0) {
+		if (part->parsed_version == RRR_HTTP_VERSION_10) {
+			RRR_DBG_3("HTTP 'Connection: close' implied by protocol version HTTP/1.0\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' implied by protocol version HTTP/1.1\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+	}
+
 	const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
 	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
 
@@ -629,7 +679,7 @@ int rrr_http_part_parse (
 		part->data_length = content_length->value_unsigned;
 		*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
 
-		RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
+		RRR_DBG_3("HTTP 'Content-Length' found in response: %llu (plus response %li and header %li) target size is %li\n",
 				content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
 
 		ret = RRR_HTTP_PARSE_OK;
@@ -637,6 +687,7 @@ int rrr_http_part_parse (
 		goto out;
 	}
 	else if (transfer_encoding != NULL && rrr_nullsafe_str_cmpto_case(transfer_encoding->value, "chunked") == 0) {
+		RRR_DBG_3("HTTP 'Transfer-Encoding: chunked' found in response\n");
 		goto out_parse_chunked;
 	}
 	else if (	parse_type == RRR_HTTP_PARSE_REQUEST ||
@@ -681,7 +732,8 @@ int rrr_http_part_parse (
 int rrr_http_part_parse_request_data_set (
 		struct rrr_http_part *part,
 		size_t data_length,
-		enum rrr_http_application_type protocol_version,
+		enum rrr_http_application_type application_type,
+		enum rrr_http_version version,
 		const struct rrr_nullsafe_str *request_method,
 		const struct rrr_nullsafe_str *uri
 ) {
@@ -699,7 +751,8 @@ int rrr_http_part_parse_request_data_set (
 		return 1;
 	}
 
-	part->parsed_protocol_version = protocol_version;
+	part->parsed_application_type = application_type;
+	part->parsed_version = version;
 	part->data_length = data_length;
 	part->header_complete = 1;
 	part->parse_complete = 1;

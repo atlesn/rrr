@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/threads.h"
@@ -63,7 +64,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTPSERVER_REQUEST_TOPIC_PREFIX                   "httpserver/request/"
 #define RRR_HTTPSERVER_WEBSOCKET_TOPIC_PREFIX                 "httpserver/websocket/"
-#define RRR_HTTPSERVER_WORKER_THREADS_MAX                     1024
 
 struct httpserver_data {
 	struct rrr_instance_runtime_data *thread_data;
@@ -86,7 +86,6 @@ struct httpserver_data {
 	int do_get_response_from_senders;
 
 	rrr_setting_uint response_timeout_ms;
-	rrr_setting_uint worker_threads;
 
 	struct rrr_http_server *http_server;
 
@@ -205,13 +204,9 @@ static int httpserver_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_allow_empty_messages", do_allow_empty_messages, 0);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_worker_threads", worker_threads, RRR_HTTPSERVER_DEFAULT_WORKER_THREADS);
-
-	if (data->worker_threads > RRR_HTTPSERVER_WORKER_THREADS_MAX || data->worker_threads == 0) {
-		RRR_MSG_0("Invalid value %" PRIrrrbl " for http_server_worker_threads in httpserver instance %s, must be in the range 0 < n < " RRR_QUOTE(RRR_HTTPSERVER_WORKER_THREADS_MAX) "\n",
-				data->worker_threads, config->name);
-		ret = 1;
-		goto out;
+	if (RRR_INSTANCE_CONFIG_EXISTS("http_server_worker_threads")) {
+		RRR_MSG_0("Warning: Deprecated option 'http_server_worker_threads' specified in httpserver instance %s, this parameter has no effect and should be removed from the configuration.\n",
+				config->name);
 	}
 
 	if ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->websocket_topic_filters, config, "http_server_websocket_topic_filters")) != 0) {
@@ -672,7 +667,7 @@ static int httpserver_response_data_new (
 
 	*target = NULL;
 
-	struct httpserver_response_data *result = malloc(sizeof(*result));
+	struct httpserver_response_data *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in httpserver_response_data_new\n");
 		ret = 1;
@@ -693,7 +688,7 @@ static int httpserver_response_data_new (
 	*target = result;
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -703,7 +698,7 @@ static void httpserver_response_data_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(data->request_topic);
 	rrr_array_clear(&data->target);
-	free(data);
+	rrr_free(data);
 }
 
 static void httpserver_response_data_destroy_void (
@@ -984,7 +979,7 @@ static int httpserver_receive_callback (
 				&response_data->target,
 				transaction->request_part,
 				data_ptr,
-				next_protocol_version
+				next_application_type
 		)) != 0) {
 			goto out;
 		}
@@ -1066,7 +1061,7 @@ static int httpserver_receive_raw_broker_callback (
 	struct rrr_msg *msg_to_free = NULL;
 
 	if (write_callback_data->is_full_rrr_msg) {
-		if ((msg_to_free = malloc(rrr_nullsafe_str_len(write_callback_data->data))) == NULL) {
+		if ((msg_to_free = rrr_allocate(rrr_nullsafe_str_len(write_callback_data->data))) == NULL) {
 			RRR_MSG_0("Could not allocate memory for RRR message in httpserver_receive_raw_broker_callback\n");
 			ret = RRR_HTTP_SOFT_ERROR; // Client may be at fault, don't make hard error
 			goto out;
@@ -1182,7 +1177,7 @@ static int httpserver_websocket_handshake_callback (
 	(void)(data_ptr);
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = 0;
 
@@ -1237,7 +1232,7 @@ static int httpserver_websocket_handshake_callback (
 		goto out_not_found;
 	}
 
-	if ((application_topic_new = strdup(topic_begin)) == NULL) {
+	if ((application_topic_new = rrr_strdup(topic_begin)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for application data in httpserver_websocket_handshake_callback \n");
 		ret = 1;
 		goto out;
@@ -1284,14 +1279,14 @@ static int httpserver_websocket_get_response_callback_extract_data (
 		goto out_unlock;
 	}
 	else if (MSG_DATA_LENGTH(msg) == 0) {
-		if ((response_data = strdup("")) == NULL) {
+		if ((response_data = rrr_strdup("")) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;
 			goto out_unlock;
 		}
 	}
 	else {
-		if ((response_data = malloc(MSG_DATA_LENGTH(msg))) == NULL) {
+		if ((response_data = rrr_allocate(MSG_DATA_LENGTH(msg))) == NULL) {
 			RRR_MSG_0("Could not allocate memory in httpserver_websocket_get_response_callback_extract_data\n");
 			ret = 1;
 			goto out_unlock;

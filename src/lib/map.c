@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "map.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
@@ -32,7 +33,7 @@ void rrr_map_item_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(item->tag);
 	RRR_FREE_IF_NOT_NULL(item->value);
-	free(item);
+	rrr_free(item);
 }
 
 void rrr_map_clear (
@@ -47,7 +48,7 @@ int rrr_map_item_new (
 ) {
 	int ret = 0;
 
-	struct rrr_map_item *item = malloc(sizeof(*item));
+	struct rrr_map_item *item = rrr_allocate(sizeof(*item));
 	if (item == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
@@ -55,8 +56,8 @@ int rrr_map_item_new (
 	}
 	memset (item, '\0', sizeof(*item));
 
-	item->tag = malloc(field_size);
-	item->value = malloc(field_size);
+	item->tag = rrr_allocate(field_size);
+	item->value = rrr_allocate(field_size);
 
 	if (item->tag == NULL || item->value == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
