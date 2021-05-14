@@ -63,6 +63,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // printf debugging
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
+// dump memory maps upon allocation failure
+#define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
+
 // lock debugging
 // #define RRR_MMAP_LOCK_DEBUG 1
 
@@ -915,6 +918,23 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 			break;
 		}
 	RRR_MMAP_ITERATE_END();
+
+#ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
+	if (result == NULL) {
+		struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
+		printf("Allocation failure of %" PRIu64 " bytes in __rrr_mmap__collection_allocate_with_handles. Dumping mmaps for this group:\n", bytes);
+		RRR_MMAP_ITERATE_BEGIN();
+			DEFINE_HEAP();
+			if (heap == NULL) {
+				printf("== MMAP %llu NO HEAP\n", (long long unsigned int) i);
+			}
+			else {
+				printf("== MMAP %llu\n", (long long unsigned int) i);
+				rrr_mmap_dump_indexes(mmap, shm_slave);
+			}
+		RRR_MMAP_ITERATE_END();
+	}
+#endif
 
 	out:
 	UNLOCK(collection);
