@@ -28,12 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ALLOCATOR_GROUP_MSG         1
 #define RRR_ALLOCATOR_GROUP_MAX         1
 
-#define RRR_ALLOCATOR_GROUP_NAME_MSG_HOLDER  "msg_holder"
-#define RRR_ALLOCATOR_GROUP_NAME_MSG         "msg"
-
-#define RRR_ALLOCATOR_GROUP_NAME_0 RRR_ALLOCATOR_GROUP_NAME_MSG_HOLDER
-#define RRR_ALLOCATOR_GROUP_NAME_1 RRR_ALLOCATOR_GROUP_NAME_MSG
-
 #define RRR_ALLOCATOR_FREE_IF_NOT_NULL(arg) do{if((arg) != NULL){rrr_free(arg);(arg)=NULL;}}while(0)
 
 struct rrr_mmap_stats;

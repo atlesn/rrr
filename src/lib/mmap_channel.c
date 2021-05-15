@@ -523,7 +523,7 @@ int rrr_mmap_channel_new (
 		}
 	}
 
-	if ((ret = rrr_mmap_collection_new(&result->mmaps, name, 1 /* Is pshared */, name)) != 0) {
+	if ((ret = rrr_mmap_collection_new(&result->mmaps, 1 /* Is pshared */, name)) != 0) {
 		goto out_destroy_mutexes;
 	}
 
