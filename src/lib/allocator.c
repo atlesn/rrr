@@ -61,6 +61,11 @@ The RRR Allocator (RRRA)
 static struct rrr_mmap_collection *rrr_allocator_collections = NULL;
 static struct rrr_mmap_collection_private_data rrr_allocator_private_datas[RRR_ALLOCATOR_GROUP_MAX + 1];
 
+static const char *rrr_allocator_group_debug_names[RRR_ALLOCATOR_GROUP_MAX + 1] = {
+	RRR_ALLOCATOR_GROUP_NAME_0,
+	RRR_ALLOCATOR_GROUP_NAME_1
+};
+
 static void *__rrr_allocate (size_t bytes, size_t group_num) {
 	void *ptr = rrr_mmap_collections_allocate (
 			rrr_allocator_collections,
@@ -156,6 +161,7 @@ char *rrr_strdup (const char *str) {
 int rrr_allocator_init (void) {
 	if (rrr_mmap_collections_new (
 			&rrr_allocator_collections,
+			rrr_allocator_group_debug_names,
 			RRR_ALLOCATOR_GROUP_MAX + 1,
 			0 /* Not pshared */,
 			"allocator"

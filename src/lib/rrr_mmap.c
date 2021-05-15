@@ -102,6 +102,8 @@ struct rrr_mmap_collection {
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
+
+	const char *debug_name;
 };
 
 struct rrr_mmap_heap_block_index {
@@ -777,7 +779,8 @@ void rrr_mmap_collections_destroy (
 static int __rrr_mmap_collection_init (
 		struct rrr_mmap_collection *target,
 		int is_pshared,
-		const char *creator
+		const char *creator,
+		const char *debug_name
 ) {
 	int ret = 0;
 
@@ -804,6 +807,8 @@ static int __rrr_mmap_collection_init (
 		}
 	}
 
+	target->debug_name = debug_name;
+
 	goto out;
 	out_destroy_shm_master:
 		rrr_shm_collection_master_destroy(target->shm_master);
@@ -815,6 +820,7 @@ static int __rrr_mmap_collection_init (
 
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
+		const char **debug_names,
 		size_t collection_count,
 		int is_pshared,
 		const char *creator
@@ -834,7 +840,7 @@ int rrr_mmap_collections_new (
 	size_t i_cleanup_max = 0;
 
 	for (size_t i = 0; i < collection_count; i++) {
-		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator)) != 0) {
+		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator, debug_names[i])) != 0) {
 			goto out_free;
 		}
 		i_cleanup_max = i;
@@ -867,21 +873,19 @@ void rrr_mmap_collection_private_datas_init (
 	}
 }
 
-static void *__rrr_mmap_collection_allocate_with_handles (
+static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
 		rrr_shm_handle *shm_handle,
 		rrr_mmap_handle *mmap_handle,
 		struct rrr_mmap_collection *collection,
 		uint64_t bytes,
-		uint64_t min_mmap_size
+		int allow_bad
 ) {
 	void *result = NULL;
-
-	LOCK(collection);
 
 	if (collection->mmap_count > 0) {
 		RRR_MMAP_ITERATE_BEGIN();
 			if (  mmap->heap_size != 0 &&
-			     (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0 &&
+			     (allow_bad || (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0) &&
 			     (result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, bytes)) != NULL
 			) {
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
@@ -893,9 +897,17 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 		RRR_MMAP_ITERATE_END();
 	}
 
-	if (result) {
-		goto out;
-	}
+	return result;
+}
+
+static void *__rrr_mmap_collection_allocate_with_handles_try_new_mmap (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		uint64_t bytes,
+		uint64_t min_mmap_size
+) {
+	void *result = NULL;
 
 	RRR_MMAP_ITERATE_BEGIN();
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
@@ -919,17 +931,68 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 		}
 	RRR_MMAP_ITERATE_END();
 
+	return result;
+}
+
+static void *__rrr_mmap_collection_allocate_with_handles (
+		rrr_shm_handle *shm_handle,
+		rrr_mmap_handle *mmap_handle,
+		struct rrr_mmap_collection *collection,
+		uint64_t bytes,
+		uint64_t min_mmap_size
+) {
+	void *result = NULL;
+
+	LOCK(collection);
+
+	/*
+	 * 1. Fill up any existing mmap which is not marked as bad
+	 * 2. If none found, try to allocate new mmap
+	 * 3. If unable, try to allocate from bad mmaps
+	 */
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_old_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			0 /* Don't allow bad */
+	)) != NULL) {
+		goto out;
+	}
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_new_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			min_mmap_size
+	)) != NULL) {
+		goto out;
+	}
+
+	if ((result = __rrr_mmap_collection_allocate_with_handles_try_old_mmap (
+			shm_handle,
+			mmap_handle,
+			collection,
+			bytes,
+			1 /* Allow bad */
+	)) != NULL) {
+		goto out;
+	}
+
 #ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 	if (result == NULL) {
 		struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
-		printf("Allocation failure of %" PRIu64 " bytes in __rrr_mmap__collection_allocate_with_handles. Dumping mmaps for this group:\n", bytes);
+		printf("Allocation failure of %" PRIu64 " bytes in __rrr_mmap_collection_allocate_with_handles. Dumping mmaps for this group (%s):\n",
+				bytes, collection->debug_name);
 		RRR_MMAP_ITERATE_BEGIN();
 			DEFINE_HEAP();
 			if (heap == NULL) {
 				printf("== MMAP %llu NO HEAP\n", (long long unsigned int) i);
 			}
 			else {
-				printf("== MMAP %llu\n", (long long unsigned int) i);
+				printf("== MMAP %llu%s\n", (long long unsigned int) i, mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD ? " BAD" : "");
 				rrr_mmap_dump_indexes(mmap, shm_slave);
 			}
 		RRR_MMAP_ITERATE_END();
