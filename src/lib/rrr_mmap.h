@@ -94,7 +94,6 @@ void rrr_mmap_collections_destroy (
 );
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
-		const char **debug_names,
 		size_t collection_count,
 		int is_pshared,
 		const char *creator
@@ -130,12 +129,10 @@ int rrr_mmap_collections_free (
 
 static inline int rrr_mmap_collection_new (
 		struct rrr_mmap_collection **result,
-		const char *debug_name,
 		int is_pshared,
 		const char *creator
 ) {
-	const char *array[1] = { debug_name };
-	return rrr_mmap_collections_new(result, array, 1, is_pshared, creator);
+	return rrr_mmap_collections_new(result, 1, is_pshared, creator);
 }
 
 static inline void rrr_mmap_collection_maintenance (

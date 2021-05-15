@@ -63,11 +63,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // printf debugging
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
-// dump memory maps upon allocation failure
-#define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
-
 // lock debugging
 // #define RRR_MMAP_LOCK_DEBUG 1
+
+// Dump mmaps upon allocation failure
+// #ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 
 #define RRR_MMAP_SENTINEL_DEBUG
 
@@ -102,8 +102,6 @@ struct rrr_mmap_collection {
 	struct rrr_shm_collection_master *shm_master;
 	struct rrr_shm_collection_slave *shm_slave;
 	struct rrr_mmap mmaps[RRR_MMAP_COLLECTION_MAX];
-
-	const char *debug_name;
 };
 
 struct rrr_mmap_heap_block_index {
@@ -779,8 +777,7 @@ void rrr_mmap_collections_destroy (
 static int __rrr_mmap_collection_init (
 		struct rrr_mmap_collection *target,
 		int is_pshared,
-		const char *creator,
-		const char *debug_name
+		const char *creator
 ) {
 	int ret = 0;
 
@@ -807,8 +804,6 @@ static int __rrr_mmap_collection_init (
 		}
 	}
 
-	target->debug_name = debug_name;
-
 	goto out;
 	out_destroy_shm_master:
 		rrr_shm_collection_master_destroy(target->shm_master);
@@ -820,7 +815,6 @@ static int __rrr_mmap_collection_init (
 
 int rrr_mmap_collections_new (
 		struct rrr_mmap_collection **result,
-		const char **debug_names,
 		size_t collection_count,
 		int is_pshared,
 		const char *creator
@@ -840,7 +834,7 @@ int rrr_mmap_collections_new (
 	size_t i_cleanup_max = 0;
 
 	for (size_t i = 0; i < collection_count; i++) {
-		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator, debug_names[i])) != 0) {
+		if ((ret = __rrr_mmap_collection_init(&collections[i], is_pshared, creator)) != 0) {
 			goto out_free;
 		}
 		i_cleanup_max = i;
@@ -984,8 +978,8 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 #ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 	if (result == NULL) {
 		struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
-		printf("Allocation failure of %" PRIu64 " bytes in __rrr_mmap_collection_allocate_with_handles. Dumping mmaps for this group (%s):\n",
-				bytes, collection->debug_name);
+		printf("Allocation failure of %" PRIu64 " bytes in __rrr_mmap_collection_allocate_with_handles. Dumping mmaps for this group:\n",
+				bytes);
 		RRR_MMAP_ITERATE_BEGIN();
 			DEFINE_HEAP();
 			if (heap == NULL) {
