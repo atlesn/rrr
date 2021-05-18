@@ -108,12 +108,9 @@ static int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			dup_entry->data_length = MSG_TOTAL_SIZE(dup_message);
 			dup_message = NULL;
 
-			// Due to linked list
 			rrr_msg_holder_incref_while_locked(dup_entry);
-
-			rrr_msg_holder_unlock(dup_entry);
-
 			RRR_LL_APPEND(&averager_data->output_list, dup_entry);
+			rrr_msg_holder_unlock(dup_entry);
 		}
 	}
 	else if (averager_data->discard_unknown_messages) {
