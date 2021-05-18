@@ -374,8 +374,8 @@ static int mysql_colplan_array_bind_execute (
 		(data->add_timestamp_col != 0 ? 1 : 0);
 
 	if (column_count != column_count_from_prepare) {
-		RRR_BUG("BUG: Column count mismatch, %i vs %i in mysql colplan_array_bind_execute\n",
-				column_count, column_count_from_prepare);
+		RRR_BUG("BUG: Column count mismatch, %llu vs %llu in mysql colplan_array_bind_execute\n",
+				(long long unsigned) column_count, (long long unsigned) column_count_from_prepare);
 	}
 
 	if (mysql_allocate_and_clear_bind_as_needed(data, column_count) != 0) {
