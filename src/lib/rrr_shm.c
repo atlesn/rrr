@@ -473,9 +473,7 @@ void *rrr_shm_resolve (
 		struct rrr_shm_collection_slave *slave,
 		rrr_shm_handle handle
 ) {
-	int ret = 0;
-
-	if ((ret = __rrr_shm_slave_refresh_if_needed(slave)) != 0) {
+	if (__rrr_shm_slave_refresh_if_needed(slave) != 0) {
 		return NULL;
 	}
 
