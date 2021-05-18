@@ -203,7 +203,6 @@ static void __rrr_cmodule_worker_log_hook (
 	if (ret == RRR_MMAP_CHANNEL_FULL) {
 		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
 				worker->name);
-		ret = 0;
 	}
 
 	out:

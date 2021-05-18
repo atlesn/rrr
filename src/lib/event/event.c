@@ -472,7 +472,7 @@ int rrr_event_queue_new (
 	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
 
 	for (unsigned short i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
-		RRR_ASSERT(sizeof(i) <= queue->functions[0].index, sizeof_loop_counter_exceeds_size_in_function_struct);
+		RRR_ASSERT(sizeof(i)<=sizeof(queue->functions[0].index), sizeof_loop_counter_exceeds_size_in_function_struct);
 
 		queue->functions[i].queue = queue;
 		if ((ret = rrr_socket_eventfd_init(&queue->functions[i].eventfd)) != 0) {
