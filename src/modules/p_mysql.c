@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MYSQL_SQL_MAX 4096
 //#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
-#define RRR_PY_PASTE(x,y) x ## _ ## y
+#define RRR_MYSQL_PASTE(x,y) x ## _ ## y
 
 // TODO : Fix URI support
 
@@ -73,7 +73,7 @@ struct mysql_data {
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
-	ssize_t bind_max;
+	size_t bind_max_current;
 	int mysql_initialized;
 	int mysql_connected;
 
@@ -106,10 +106,10 @@ struct mysql_data {
 static void mysql_bind_cleanup (struct mysql_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->bind);
 	RRR_FREE_IF_NOT_NULL(data->bind_string_lengths);
-	data->bind_max = 0;
+	data->bind_max_current = 0;
 }
 
-void data_cleanup(void *arg) {
+static void data_cleanup(void *arg) {
 	struct mysql_data *data = arg;
 
 	rrr_event_collection_clear(&data->events);
@@ -130,7 +130,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_table);
 }
 
-int data_init (
+static int data_init (
 		struct mysql_data *data,
 		struct rrr_instance_runtime_data *thread_data
 ) {
@@ -148,9 +148,9 @@ int data_init (
 
 static int mysql_allocate_and_clear_bind_as_needed (
 		struct mysql_data *data,
-		ssize_t elements
+		size_t elements
 ) {
-	if (data->bind != NULL && data->bind_max >= elements) {
+	if (data->bind != NULL && data->bind_max_current >= elements) {
 		goto out_clear;
 	}
 
@@ -166,17 +166,17 @@ static int mysql_allocate_and_clear_bind_as_needed (
 		return 1;
 	}
 
-	data->bind_max = elements;
+	data->bind_max_current = elements;
 
 	out_clear:
-	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max);
-	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max);
+	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max_current);
+	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max_current);
 	return 0;
 }
 
 struct mysql_column_configurator {
-	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_msg_holder *entry);
+	int (*create_sql)(char **target, size_t *column_count, struct mysql_data *data);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, size_t column_count, const struct rrr_msg_holder *entry);
 };
 
 /* Check order with function pointers */
@@ -195,9 +195,9 @@ struct mysql_column_configurator {
 	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
 
 #define COLUMN_PLAN_MATCH(str,name) \
-	strcmp(str,RRR_PY_PASTE(COLUMN_PLAN_NAME,name)) == 0
+	strcmp(str,RRR_MYSQL_PASTE(COLUMN_PLAN_NAME,name)) == 0
 #define COLUMN_PLAN_INDEX(name) \
-	RRR_PY_PASTE(COLUMN_PLAN,name)
+	RRR_MYSQL_PASTE(COLUMN_PLAN,name)
 
 static int mysql_columns_check_blob_write (
 		const struct mysql_data *data,
@@ -243,7 +243,7 @@ static const char *append_error_string = "Error while appending to mysql query s
 
 static int mysql_colplan_array_create_sql (
 		char **target,
-		int *column_count_result,
+		size_t *column_count_result,
 		struct mysql_data *data
 ) {
 	struct rrr_string_builder string_builder = {0};
@@ -266,7 +266,7 @@ static int mysql_colplan_array_create_sql (
 		column_source = &data->columns;
 	}
 
-	int columns_count = 0;
+	size_t columns_count = 0;
 
 	RRR_MAP_ITERATE_BEGIN(column_source);
 		const char *column_name = (node_value != NULL && *node_value != '\0' ? node_value : node_tag);
@@ -295,7 +295,7 @@ static int mysql_colplan_array_create_sql (
 
 	RESERVE_AND_CHECK(10 + 1 + columns_count * 2);
 	APPEND_UNCHECKED(") VALUES (");
-	for (int i = 0; i < columns_count; i++) {
+	for (size_t i = 0; i < columns_count; i++) {
 		if (i == 0) {
 			APPEND_UNCHECKED("?");
 		}
@@ -308,8 +308,6 @@ static int mysql_colplan_array_create_sql (
 	*target = rrr_string_builder_buffer_takeover(&string_builder);
 	*column_count_result = columns_count;
 
-//	printf ("%s", *target);
-
 	out:
 	rrr_string_builder_clear(&string_builder);
 	return ret;
@@ -318,7 +316,7 @@ static int mysql_colplan_array_create_sql (
 static int mysql_bind_value (
 		struct mysql_data *data,
 		MYSQL_BIND *bind,
-		int bind_pos,
+		size_t bind_pos,
 		struct rrr_type_value *definition,
 		const char *column_name
 ) {
@@ -332,13 +330,11 @@ static int mysql_bind_value (
 		bind[bind_pos].buffer = definition->data;
 		bind[bind_pos].length = &data->bind_string_lengths[bind_pos];
 		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
-//		printf ("bind position %i string length %lu\n", bind_pos, data->bind_string_lengths[bind_pos]);
 	}
 	else if (RRR_TYPE_IS_64(definition->definition->type)) {
 		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 		bind[bind_pos].buffer = definition->data;
 		bind[bind_pos].is_unsigned = RRR_TYPE_FLAG_IS_UNSIGNED(definition->flags);
-//		printf ("bind position %i integer %" PRIi64 "\n", bind_pos, *((int64_t*)definition->data));
 	}
 	else {
 		RRR_MSG_0("Unknown type %ul when binding with mysql\n", definition->definition->type);
@@ -350,7 +346,7 @@ static int mysql_bind_value (
 static int mysql_colplan_array_bind_execute (
 		struct mysql_data *data,
 		MYSQL_STMT *stmt,
-		int column_count_from_prepare,
+		size_t column_count_from_prepare,
 		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
@@ -371,9 +367,10 @@ static int mysql_colplan_array_bind_execute (
 				collection.version, 7);
 	}
 
-	int column_count = RRR_MAP_COUNT(&data->columns) +
-		RRR_MAP_COUNT(&data->column_tags) +
-		RRR_MAP_COUNT(&data->special_columns) +
+	size_t column_count =
+		(size_t) RRR_MAP_COUNT(&data->columns) +
+		(size_t) RRR_MAP_COUNT(&data->column_tags) +
+		(size_t) RRR_MAP_COUNT(&data->special_columns) +
 		(data->add_timestamp_col != 0 ? 1 : 0);
 
 	if (column_count != column_count_from_prepare) {
@@ -388,7 +385,7 @@ static int mysql_colplan_array_bind_execute (
 
 	MYSQL_BIND *bind = data->bind;
 
-	int bind_pos = 0;
+	size_t bind_pos = 0;
 
 	if (RRR_MAP_COUNT(&data->column_tags) > 0) {
 		RRR_MAP_ITERATE_BEGIN(&data->column_tags);
@@ -541,7 +538,7 @@ static int mysql_save (
 		struct mysql_data *data,
 		const struct rrr_msg_holder *entry,
 		MYSQL_STMT *stmt,
-		int column_count
+		size_t column_count
 ) {
 	if (data->mysql_connected != 1) {
 		return 1;
@@ -569,7 +566,7 @@ static int mysql_save (
 	if (is_unknown) {
 		return 1;
 	}
-//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_msg_msg_holder *entry
+
 	return column_configurators[colplan_index].bind_and_execute(data, stmt, column_count, entry);
 }
 
@@ -577,7 +574,7 @@ static void mysql_process_entry (
 		struct mysql_data *data,
 		struct rrr_msg_holder *entry,
 		MYSQL_STMT *stmt,
-		int column_count
+		size_t column_count
 ) {
 	struct rrr_msg_msg *message = entry->message;
 
@@ -637,7 +634,7 @@ static int mysql_process_entries (
 
 	int ret = 0;
 
-	int column_count = 0;
+	size_t column_count = 0;
 	char *query = NULL;
 
 	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
@@ -882,20 +879,12 @@ static int parse_config (
 ) {
 	int ret = 0;
 
-	// These values are parsed by sub functions
-
-	// char *mysql_colplan = NULL;
-	// char *mysql_add_ts_col = NULL;
-	// char *mysql_special_cols = NULL;
-	// char *mysql_cols_blob_wr = NULL;
-	// char *mysql_port = NULL;
-
 	// These are free()d on thread exit, not here
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,	config, "mysql_server");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,		config, "mysql_user");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,   config, "mysql_server");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,     config, "mysql_user");
 	rrr_instance_config_get_string_noconvert_silent (&data->mysql_password,	config, "mysql_password");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,		config, "mysql_db");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,	config, "mysql_table");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,       config, "mysql_db");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,    config, "mysql_table");
 
 	if (data->mysql_user == NULL || data->mysql_password == NULL) {
 		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
