@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/log.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
@@ -54,6 +56,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506
 
+#define RRR_MYSQL_INPUT_QUEUE_MAX 75000
+
 //#define RRR_MYSQL_SQL_MAX 4096
 //#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
@@ -62,13 +66,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Fix URI support
 
 struct mysql_data {
+	struct rrr_instance_runtime_data *thread_data;
+
 	struct rrr_msg_holder_collection input_buffer;
+
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
 	ssize_t bind_max;
 	int mysql_initialized;
 	int mysql_connected;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_process_entries;
 
 	/* These must be freed at thread end if not NULL */
 	char *mysql_server;
@@ -127,6 +137,8 @@ static int allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t e
 void data_cleanup(void *arg) {
 	struct mysql_data *data = arg;
 
+	rrr_event_collection_clear(&data->events);
+
 	bind_cleanup(data);
 
 	rrr_map_clear(&data->columns);
@@ -143,9 +155,13 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_table);
 }
 
-int data_init(struct mysql_data *data) {
+int data_init(struct mysql_data *data, struct rrr_instance_runtime_data *thread_data) {
 	int ret = 0;
+
 	memset (data, '\0', sizeof(*data));
+	data->thread_data = thread_data;
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
 	if (ret != 0) {
 		data_cleanup(data);
 	}
@@ -734,6 +750,9 @@ int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_unlock(entry);
 
+	EVENT_ADD(mysql_data->event_process_entries);
+	EVENT_ACTIVATE(mysql_data->event_process_entries);
+
 	return 0;
 }
 
@@ -883,12 +902,57 @@ int process_entries (struct rrr_msg_holder_collection *source_buffer, struct rrr
 	return ret;
 }
 
+static void mysql_event_process_entries (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct mysql_data *data = arg;
+
+	struct rrr_msg_holder_collection process_buffer_tmp = {0};
+
+	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
+
+	// Entries which are to be retried are written back to the input buffer
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
+	process_entries(&process_buffer_tmp, data->thread_data);
+
+	pthread_cleanup_pop(1);
+
+	// Failing entries will be retried when this event runs again due to the
+	// timer or when some other entry gets polled and this event gets activated
+	if (RRR_LL_COUNT(&data->input_buffer) == 0) {
+		EVENT_REMOVE(data->event_process_entries);
+	}
+}
+
+static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+
+	return rrr_poll_do_poll_delete (amount, thread_data, poll_callback_ip, 0);
+}
+		
+void mysql_pause_check (int *do_pause, int is_paused, void *callback_arg) {
+	struct rrr_instance_runtime_data *thread_data = callback_arg;
+	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (is_paused) {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > (RRR_MYSQL_INPUT_QUEUE_MAX * 0.75) ? 1 : 0;
+	}
+	else {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > RRR_MYSQL_INPUT_QUEUE_MAX ? 1 : 0;
+	}	
+}
+
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
-	if (data_init(data) != 0) {
+	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
@@ -897,7 +961,6 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
@@ -913,31 +976,33 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
-		rrr_thread_watchdog_time_update(thread);
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			mysql_pause_check,
+			thread_data
+	);
 
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 50) != 0) {
-			RRR_MSG_0("Error while polling in mysql instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
-		RRR_LL_VERIFY_HEAD(&process_buffer_tmp);
-		RRR_LL_VERIFY_HEAD(&data->input_buffer);
-		process_entries(&process_buffer_tmp, thread_data);
-
-		if (data->mysql_connected != 1) {
-			// Sleep a little if we can't connect to the server
-			rrr_posix_usleep (1000000);
-		}
+	if (rrr_event_collection_push_periodic (
+			&data->event_process_entries,
+			&data->events,
+			mysql_event_process_entries,
+			data,
+			1000 // 1000 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create queue process event in httpclient\n");
+		goto out_message;
 	}
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
 
 	out_message:
 	RRR_DBG_1 ("Thread mysql %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -953,6 +1018,10 @@ static struct rrr_module_operations module_operations = {
 
 static const char *module_name = "mysql";
 
+struct rrr_instance_event_functions event_functions = {
+	mysql_event_broker_data_available
+};
+
 __attribute__((constructor)) void load(void) {
 	rrr_mysql_library_init();
 }
@@ -962,6 +1031,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {
