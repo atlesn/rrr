@@ -109,7 +109,47 @@ static void mysql_bind_cleanup (struct mysql_data *data) {
 	data->bind_max = 0;
 }
 
-static int mysql_allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t elements) {
+void data_cleanup(void *arg) {
+	struct mysql_data *data = arg;
+
+	rrr_event_collection_clear(&data->events);
+
+	mysql_bind_cleanup(data);
+
+	rrr_map_clear(&data->columns);
+	rrr_map_clear(&data->special_columns);
+	rrr_map_clear(&data->column_tags);
+	rrr_map_clear(&data->blob_write_columns);
+
+	rrr_msg_holder_collection_clear(&data->input_buffer);
+
+	RRR_FREE_IF_NOT_NULL(data->mysql_server);
+	RRR_FREE_IF_NOT_NULL(data->mysql_user);
+	RRR_FREE_IF_NOT_NULL(data->mysql_password);
+	RRR_FREE_IF_NOT_NULL(data->mysql_db);
+	RRR_FREE_IF_NOT_NULL(data->mysql_table);
+}
+
+int data_init (
+		struct mysql_data *data,
+		struct rrr_instance_runtime_data *thread_data
+) {
+	int ret = 0;
+
+	memset (data, '\0', sizeof(*data));
+	data->thread_data = thread_data;
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
+}
+
+static int mysql_allocate_and_clear_bind_as_needed (
+		struct mysql_data *data,
+		ssize_t elements
+) {
 	if (data->bind != NULL && data->bind_max >= elements) {
 		goto out_clear;
 	}
@@ -132,40 +172,6 @@ static int mysql_allocate_and_clear_bind_as_needed (struct mysql_data *data, ssi
 	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max);
 	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max);
 	return 0;
-}
-
-void data_cleanup(void *arg) {
-	struct mysql_data *data = arg;
-
-	rrr_event_collection_clear(&data->events);
-
-	mysql_bind_cleanup(data);
-
-	rrr_map_clear(&data->columns);
-	rrr_map_clear(&data->special_columns);
-	rrr_map_clear(&data->column_tags);
-	rrr_map_clear(&data->blob_write_columns);
-
-	rrr_msg_holder_collection_clear(&data->input_buffer);
-
-	RRR_FREE_IF_NOT_NULL(data->mysql_server);
-	RRR_FREE_IF_NOT_NULL(data->mysql_user);
-	RRR_FREE_IF_NOT_NULL(data->mysql_password);
-	RRR_FREE_IF_NOT_NULL(data->mysql_db);
-	RRR_FREE_IF_NOT_NULL(data->mysql_table);
-}
-
-int data_init(struct mysql_data *data, struct rrr_instance_runtime_data *thread_data) {
-	int ret = 0;
-
-	memset (data, '\0', sizeof(*data));
-	data->thread_data = thread_data;
-	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
-
-	if (ret != 0) {
-		data_cleanup(data);
-	}
-	return ret;
 }
 
 struct mysql_column_configurator {
@@ -193,14 +199,20 @@ struct mysql_column_configurator {
 #define COLUMN_PLAN_INDEX(name) \
 	RRR_PY_PASTE(COLUMN_PLAN,name)
 
-int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
+static int mysql_columns_check_blob_write (
+		const struct mysql_data *data,
+		const char *col_1
+) {
 	if (rrr_map_get_value(&data->blob_write_columns, col_1) != NULL) {
 		return 1;
 	}
 	return 0;
 }
 
-int mysql_bind_and_execute (struct mysql_data *data, MYSQL_STMT *stmt) {
+static int mysql_bind_and_execute (
+		struct mysql_data *data,
+		MYSQL_STMT *stmt
+) {
 	MYSQL_BIND *bind = data->bind;
 
 	if (mysql_stmt_bind_param(stmt, bind) != 0) {
@@ -229,7 +241,11 @@ static const char *append_error_string = "Error while appending to mysql query s
 #define APPEND_UNCHECKED(str) \
 	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
 
-static int mysql_colplan_array_create_sql(char **target, int *column_count_result, struct mysql_data *data) {
+static int mysql_colplan_array_create_sql (
+		char **target,
+		int *column_count_result,
+		struct mysql_data *data
+) {
 	struct rrr_string_builder string_builder = {0};
 
 	*target = NULL;
@@ -307,10 +323,10 @@ static int mysql_bind_value (
 		struct mysql_data *data
 ) {
 	if (	// Arrays must be inserted as blobs. They might be shorter than the
-				// maximum length, the input definition decides.
-				definition->element_count > 1 ||
-				RRR_TYPE_IS_BLOB(definition->definition->type) ||
-				mysql_columns_check_blob_write(data, column_name)
+		// maximum length, the input definition decides.
+		definition->element_count > 1 ||
+		RRR_TYPE_IS_BLOB(definition->definition->type) ||
+		mysql_columns_check_blob_write(data, column_name)
 	) {
 		data->bind_string_lengths[bind_pos] = definition->total_stored_length;
 		bind[bind_pos].buffer = definition->data;
@@ -355,10 +371,10 @@ static int mysql_colplan_array_bind_execute (
 				collection.version, 7);
 	}
 
-	int column_count =	RRR_MAP_COUNT(&mysql_data->columns) +
-						RRR_MAP_COUNT(&mysql_data->column_tags) +
-						RRR_MAP_COUNT(&mysql_data->special_columns) +
-						(mysql_data->add_timestamp_col != 0 ? 1 : 0);
+	int column_count = RRR_MAP_COUNT(&mysql_data->columns) +
+		RRR_MAP_COUNT(&mysql_data->column_tags) +
+		RRR_MAP_COUNT(&mysql_data->special_columns) +
+		(mysql_data->add_timestamp_col != 0 ? 1 : 0);
 
 	if (column_count != column_count_from_prepare) {
 		RRR_BUG("BUG: Column count mismatch, %i vs %i in mysql colplan_array_bind_execute\n",
@@ -408,7 +424,7 @@ static int mysql_colplan_array_bind_execute (
 				RRR_LL_ITERATE_BREAK();
 			}
 
-			if (mysql_bind_value(
+			if (mysql_bind_value (
 					bind,
 					bind_pos,
 					definition,
@@ -438,8 +454,6 @@ static int mysql_colplan_array_bind_execute (
 		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 		bind[bind_pos].is_unsigned = 1;
 
-//		printf ("bind position %i timestamp %llu\n", bind_pos, timestamp);
-
 		bind_pos++;
 	}
 
@@ -457,13 +471,6 @@ static int mysql_colplan_array_bind_execute (
 
 	return ret;
 }
-
-/* Check index numbers with defines above */
-struct mysql_column_configurator column_configurators[] = {
-		{ .create_sql = NULL,                             .bind_and_execute = NULL },
-		{ .create_sql = NULL,                             .bind_and_execute = NULL }, // Filler, don't remove
-		{ .create_sql = &mysql_colplan_array_create_sql,  .bind_and_execute = &mysql_colplan_array_bind_execute }
-};
 
 static int mysql_disconnect(struct mysql_data *data) {
 	if (data->mysql_connected == 1) {
@@ -504,27 +511,10 @@ static int mysql_connect(struct mysql_data *data) {
 	return 0;
 }
 
-static void mysql_stop(void *arg) {
-	struct mysql_data *data = arg;
-	if (data->mysql_initialized == 1) {
-		mysql_thread_end();
-	}
-	mysql_disconnect(data);
-}
-
-static int mysql_start(struct mysql_data *data) {
-	mysql_thread_init();
-	data->mysql_initialized = 1;
-	data->mysql_connected = 0;
-	return 0;
-}
-
-struct mysql_parse_columns_data {
-	struct rrr_linked_list *target;
-};
-
 // Check that blob write columns are also defined in mysql_columns or mysql_column_tags
-static int mysql_verify_blob_write_colums (struct mysql_data *data) {
+static int mysql_verify_blob_write_colums (
+		struct mysql_data *data
+) {
 	int ret = 0;
 
 	RRR_MAP_ITERATE_BEGIN(&data->blob_write_columns);
@@ -536,193 +526,6 @@ static int mysql_verify_blob_write_colums (struct mysql_data *data) {
 			}
 		}
 	RRR_MAP_ITERATE_END();
-
-	return ret;
-}
-
-static int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config_data *config) {
-	int ret = 0;
-
-	int yesno = 0;
-
-	char *mysql_colplan = rrr_strdup("array");
-
-	// BLOB WRITE COLUMNS
-	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
-	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_blob_write_columns of instance %s\n", config->name);
-		goto out;
-	}
-	RRR_DBG_1("%i blob write columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->blob_write_columns), config->name);
-
-	// SPECIAL COLUMNS AND THEIR VALUES
-	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->special_columns, config, "mysql_special_columns", "=");
-	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_special_columns of instance %s\n", config->name);
-		goto out;
-	}
-	RRR_DBG_1("%i special columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->special_columns), config->name);
-
-	// STRIP OUT SEPARATORS
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		data->strip_array_separators = yesno;
-	}
-
-	// TABLE COLUMNS
-	ret = rrr_instance_config_parse_comma_separated_to_map(&data->columns, config, "mysql_columns");
-	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_columns of instance %s\n", config->name);
-		goto out;
-	}
-
-	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->column_tags, config, "mysql_column_tags", "->");
-	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mysql_column_tags of instance %s\n", config->name);
-		goto out;
-	}
-
-	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
-		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
-
-		if (RRR_MAP_COUNT(&data->columns) != 0 && RRR_MAP_COUNT(&data->column_tags) != 0) {
-			RRR_MSG_0("mysql_column_tags and mysql_columns cannot be specified simultaneously in instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-
-		RRR_DBG_1("%i ordinary columns specified for mysql instance %s\n",
-				RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags), config->name);
-
-		if (RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags) == 0) {
-			RRR_MSG_0("No columns specified in mysql_columns or mysql_column_tags; needed when using array column plan for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-
-		if (mysql_verify_blob_write_colums (data) != 0) {
-			RRR_MSG_0("Error in blob write column list for mysql instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		RRR_MSG_0("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
-		exit(EXIT_FAILURE);
-	}
-
-	// Reset any NOT_FOUND
-	ret = 0;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(mysql_colplan);
-	return ret;
-}
-
-static int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config_data *config) {
-	int ret = 0;
-
-	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
-	rrr_setting_uint tmp_uint;
-
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "mysql_port");
-
-	if (ret != 0) {
-		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name);
-			ret = 1;
-		}
-		else if (ret == RRR_SETTING_NOT_FOUND) {
-			ret = 0;
-		}
-	}
-
-	return ret;
-}
-
-static int parse_config(struct mysql_data *data, struct rrr_instance_config_data *config) {
-	int ret = 0;
-
-	// These values are parsed by sub functions
-
-	// char *mysql_colplan = NULL;
-	// char *mysql_add_ts_col = NULL;
-	// char *mysql_special_cols = NULL;
-	// char *mysql_cols_blob_wr = NULL;
-	// char *mysql_port = NULL;
-
-	// These are free()d on thread exit, not here
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,	config, "mysql_server");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,		config, "mysql_user");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_password,	config, "mysql_password");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,		config, "mysql_db");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,	config, "mysql_table");
-
-	if (data->mysql_user == NULL || data->mysql_password == NULL) {
-		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
-		ret = 1;
-	}
-
-	if (data->mysql_table == NULL) {
-		RRR_MSG_0 ("mysql_table not correctly set for instance %s.\n", config->name);
-		ret = 1;
-	}
-
-	if (data->mysql_server == NULL) {
-		RRR_MSG_0 ("mysql_server not correctly set for instance %s.\n", config->name);
-		ret = 1;
-	}
-
-	if (data->mysql_db == NULL) {
-		RRR_MSG_0 ("mysql_db not correctly set for instance %s.\n", config->name);
-		ret = 1;
-	}
-
-	// GENERATE TAG MESSAGES (UNDOCUMENTED, FOR TESTING)
-	int yesno = 0;
-	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_generate_tag_messages") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_0 ("mysql: Could not understand argument mysql_generate_tag_messages of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
-		);
-		ret = 1;
-	}
-	data->generate_tag_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
-
-	// DROP UNKNOWN MESSAGES
-	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_drop_unknown_messages") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_0 ("mysql: Could not understand argument mysql_drop_unknown_messages of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
-		);
-		ret = 1;
-	}
-	data->drop_unknown_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
-
-	// ADD TIMESTAMP COL
-	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_0 ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
-		);
-		ret = 1;
-	}
-	data->add_timestamp_col = (yesno == 0 || yesno == 1 ? yesno : 0);
-
-	// MYSQL PORT
-	if (mysql_parse_port(data, config) != 0) {
-		RRR_MSG_0("Error while parsing mysql port for instance %s\n", config->name);
-		ret = 1;
-	}
-
-	// COLUMN PLAN AND COLUMN LISTS
-	if (mysql_parse_column_plan(data, config) != 0) {
-		RRR_MSG_0("Error in mysql column plan for instance %s\n", config->name);
-		ret = 1;
-	}
 
 	return ret;
 }
@@ -746,7 +549,19 @@ static int mysql_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
-static int mysql_save(const struct rrr_msg_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
+/* Check index numbers with defines above */
+struct mysql_column_configurator column_configurators[] = {
+		{ .create_sql = NULL,                             .bind_and_execute = NULL },
+		{ .create_sql = NULL,                             .bind_and_execute = NULL }, // Filler, don't remove
+		{ .create_sql = &mysql_colplan_array_create_sql,  .bind_and_execute = &mysql_colplan_array_bind_execute }
+};
+
+static int mysql_save (
+		const struct rrr_msg_holder *entry,
+		MYSQL_STMT *stmt,
+		int column_count,
+		struct mysql_data *mysql_data
+) {
 	if (mysql_data->mysql_connected != 1) {
 		return 1;
 	}
@@ -834,7 +649,10 @@ static void mysql_close_stmt(void *arg) {
 	mysql_stmt_close(arg);
 }
 
-static int mysql_process_entries (struct rrr_msg_holder_collection *source_buffer, struct rrr_instance_runtime_data *thread_data) {
+static int mysql_process_entries (
+		struct rrr_msg_holder_collection *source_buffer,
+		struct rrr_instance_runtime_data *thread_data
+) {
 	struct mysql_data *data = thread_data->private_data;
 
 	if (mysql_connect(data) != 0) {
@@ -920,7 +738,11 @@ static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
 }
 		
-static void mysql_pause_check (int *do_pause, int is_paused, void *callback_arg) {
+static void mysql_pause_check (
+		int *do_pause,
+		int is_paused,
+		void *callback_arg
+) {
 	struct rrr_instance_runtime_data *thread_data = callback_arg;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -930,6 +752,217 @@ static void mysql_pause_check (int *do_pause, int is_paused, void *callback_arg)
 	else {
 		*do_pause = RRR_LL_COUNT(&data->input_buffer) > RRR_MYSQL_INPUT_QUEUE_MAX ? 1 : 0;
 	}	
+}
+
+static void mysql_stop(void *arg) {
+	struct mysql_data *data = arg;
+	if (data->mysql_initialized == 1) {
+		mysql_thread_end();
+	}
+	mysql_disconnect(data);
+}
+
+static int mysql_start(struct mysql_data *data) {
+	mysql_thread_init();
+	data->mysql_initialized = 1;
+	data->mysql_connected = 0;
+	return 0;
+}
+
+static int mysql_parse_column_plan (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	int yesno = 0;
+
+	char *mysql_colplan = rrr_strdup("array");
+
+	// BLOB WRITE COLUMNS
+	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_0("Error while parsing mysql_blob_write_columns of instance %s\n", config->name);
+		goto out;
+	}
+	RRR_DBG_1("%i blob write columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->blob_write_columns), config->name);
+
+	// SPECIAL COLUMNS AND THEIR VALUES
+	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->special_columns, config, "mysql_special_columns", "=");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_0("Error while parsing mysql_special_columns of instance %s\n", config->name);
+		goto out;
+	}
+	RRR_DBG_1("%i special columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->special_columns), config->name);
+
+	// STRIP OUT SEPARATORS
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		data->strip_array_separators = yesno;
+	}
+
+	// TABLE COLUMNS
+	ret = rrr_instance_config_parse_comma_separated_to_map(&data->columns, config, "mysql_columns");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_0("Error while parsing mysql_columns of instance %s\n", config->name);
+		goto out;
+	}
+
+	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->column_tags, config, "mysql_column_tags", "->");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_0("Error while parsing mysql_column_tags of instance %s\n", config->name);
+		goto out;
+	}
+
+	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
+		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
+
+		if (RRR_MAP_COUNT(&data->columns) != 0 && RRR_MAP_COUNT(&data->column_tags) != 0) {
+			RRR_MSG_0("mysql_column_tags and mysql_columns cannot be specified simultaneously in instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		RRR_DBG_1("%i ordinary columns specified for mysql instance %s\n",
+				RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags), config->name);
+
+		if (RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags) == 0) {
+			RRR_MSG_0("No columns specified in mysql_columns or mysql_column_tags; needed when using array column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		if (mysql_verify_blob_write_colums (data) != 0) {
+			RRR_MSG_0("Error in blob write column list for mysql instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		RRR_MSG_0("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
+		exit(EXIT_FAILURE);
+	}
+
+	// Reset any NOT_FOUND
+	ret = 0;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(mysql_colplan);
+	return ret;
+}
+
+static int mysql_parse_port (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
+	rrr_setting_uint tmp_uint;
+
+	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "mysql_port");
+
+	if (ret != 0) {
+		if (ret == RRR_SETTING_PARSE_ERROR) {
+			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name);
+			ret = 1;
+		}
+		else if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+static int parse_config (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
+	int ret = 0;
+
+	// These values are parsed by sub functions
+
+	// char *mysql_colplan = NULL;
+	// char *mysql_add_ts_col = NULL;
+	// char *mysql_special_cols = NULL;
+	// char *mysql_cols_blob_wr = NULL;
+	// char *mysql_port = NULL;
+
+	// These are free()d on thread exit, not here
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,	config, "mysql_server");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,		config, "mysql_user");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_password,	config, "mysql_password");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,		config, "mysql_db");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,	config, "mysql_table");
+
+	if (data->mysql_user == NULL || data->mysql_password == NULL) {
+		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
+	if (data->mysql_table == NULL) {
+		RRR_MSG_0 ("mysql_table not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
+	if (data->mysql_server == NULL) {
+		RRR_MSG_0 ("mysql_server not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
+	if (data->mysql_db == NULL) {
+		RRR_MSG_0 ("mysql_db not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
+	// GENERATE TAG MESSAGES (UNDOCUMENTED, FOR TESTING)
+	int yesno = 0;
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_generate_tag_messages") == RRR_SETTING_PARSE_ERROR) {
+		RRR_MSG_0 ("mysql: Could not understand argument mysql_generate_tag_messages of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+	}
+	data->generate_tag_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// DROP UNKNOWN MESSAGES
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_drop_unknown_messages") == RRR_SETTING_PARSE_ERROR) {
+		RRR_MSG_0 ("mysql: Could not understand argument mysql_drop_unknown_messages of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+	}
+	data->drop_unknown_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// ADD TIMESTAMP COL
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col") == RRR_SETTING_PARSE_ERROR) {
+		RRR_MSG_0 ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+	}
+	data->add_timestamp_col = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// MYSQL PORT
+	if (mysql_parse_port(data, config) != 0) {
+		RRR_MSG_0("Error while parsing mysql port for instance %s\n", config->name);
+		ret = 1;
+	}
+
+	// COLUMN PLAN AND COLUMN LISTS
+	if (mysql_parse_column_plan(data, config) != 0) {
+		RRR_MSG_0("Error in mysql column plan for instance %s\n", config->name);
+		ret = 1;
+	}
+
+	return ret;
 }
 
 static void *thread_entry_mysql (struct rrr_thread *thread) {
