@@ -333,6 +333,8 @@ int test_averager (
 	);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 
+	ret |= (test_result.result == 2 ? 0 : 1);
+
 	return ret;
 }
 
