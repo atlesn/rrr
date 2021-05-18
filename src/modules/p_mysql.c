@@ -990,7 +990,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 			data,
 			1000 // 1000 ms
 	) != 0) {
-		RRR_MSG_0("Failed to create queue process event in httpclient\n");
+		RRR_MSG_0("Failed to create queue process event in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
