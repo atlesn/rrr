@@ -717,17 +717,20 @@ static int mysql_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_msg_holder_unlock(entry);
 
-	EVENT_ADD(mysql_data->event_process_entries);
-	EVENT_ACTIVATE(mysql_data->event_process_entries);
-
 	return 0;
 }
 
 static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mysql_data *mysql_data = thread_data->private_data;
 
-	return rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
+
+	EVENT_ADD(mysql_data->event_process_entries);
+	EVENT_ACTIVATE(mysql_data->event_process_entries);
+
+	return ret;
 }
 		
 static void mysql_pause_check (
