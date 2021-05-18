@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/log.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/allocator.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
@@ -61,12 +63,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define INFLUXDB_HARD_ERR    RRR_READ_HARD_ERROR
 #define INFLUXDB_SOFT_ERR    RRR_READ_SOFT_ERROR
 
+#define INFLUXDB_INPUT_QUEUE_MAX 1000000
+
 struct influxdb_data {
 	struct rrr_instance_runtime_data *thread_data;
+
+	struct rrr_msg_holder_collection input_buffer;
+	struct rrr_event_collection events;
+	rrr_event_handle event_process_entries;
+
 	char *database;
 	char *table;
 	int message_count;
-	struct rrr_msg_holder_collection error_buf;
 
 	struct rrr_http_client_config http_client_config;
 	struct rrr_net_transport_config net_transport_config;
@@ -91,9 +99,10 @@ static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_ru
 
 static void influxdb_data_destroy (void *arg) {
 	struct influxdb_data *data = arg;
+	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->database);
 	RRR_FREE_IF_NOT_NULL(data->table);
-	rrr_msg_holder_collection_clear(&data->error_buf);
+	rrr_msg_holder_collection_clear(&data->input_buffer);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
 	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
@@ -136,7 +145,7 @@ static int influxdb_receive_http_response (
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
 				INSTANCE_D_NAME(data->data->thread_data),
 				transaction->response_part->response_code,
-				rrr_http_util_iana_response_phrase_from_status_code(transaction->response_part->response_code)
+				rrr_http_util_iana_response_phrase_from_status_code((unsigned int) transaction->response_part->response_code)
 		);
 		ret = 1;
 		goto out;
@@ -367,7 +376,7 @@ static int influxdb_send_data (
 
 	ret |= rrr_net_transport_connect_and_close_after_callback (
 			data->transport,
-			data->http_client_config.server_port,
+			(unsigned int) data->http_client_config.server_port,
 			data->http_client_config.server,
 			influxdb_send_data_callback,
 			&callback_data
@@ -377,9 +386,9 @@ static int influxdb_send_data (
 	return ret;
 }
 
-static int influxdb_common_callback (
-		struct rrr_msg_holder *entry,
-		struct influxdb_data *influxdb_data
+static int influxdb_process_entry (
+		struct influxdb_data *influxdb_data,
+		struct rrr_msg_holder *entry
 ) {
 	struct rrr_msg_msg *reading = entry->message;
 
@@ -412,7 +421,7 @@ static int influxdb_common_callback (
 					INSTANCE_D_NAME(influxdb_data->thread_data));
 
 			rrr_msg_holder_incref_while_locked(entry);
-			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
+			RRR_LL_APPEND(&influxdb_data->input_buffer, entry);
 			ret = 0;
 			goto discard;
 		}
@@ -428,9 +437,100 @@ static int influxdb_common_callback (
 	return ret;
 }
 
+static void influxdb_process_entries (
+		struct influxdb_data *data,
+		struct rrr_msg_holder_collection *source_buffer
+) {
+	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_holder);
+		RRR_LL_VERIFY_NODE(source_buffer);
+		rrr_msg_holder_lock(node);
+		influxdb_process_entry(data, node);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
+}
+
+static void influxdb_event_process_entries (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct influxdb_data *data = arg;
+
+	struct rrr_msg_holder_collection process_buffer_tmp = {0};
+
+	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
+
+	// Entries which are to be retried are written back to the input buffer
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
+	influxdb_process_entries(data, &process_buffer_tmp);
+
+	pthread_cleanup_pop(1);
+
+	// Failing entries will be retried when this event runs again due to the
+	// timer or when some other entry gets polled and this event gets activated
+	if (RRR_LL_COUNT(&data->input_buffer) == 0) {
+		EVENT_REMOVE(data->event_process_entries);
+	}
+}
+
 static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
-	return influxdb_common_callback(entry, thread_data->private_data);
+	struct influxdb_data *influxdb_data = thread_data->private_data;
+
+	struct rrr_msg_msg *message = entry->message;
+
+	RRR_DBG_3 ("influxdb: Result from buffer: timestamp %" PRIu64 "\n", message->timestamp);
+
+	rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&influxdb_data->input_buffer, entry);
+
+	rrr_msg_holder_unlock(entry);
+
+	return 0;
+}
+
+static int influxdb_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct influxdb_data *influxdb_data = thread_data->private_data;
+
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, influxdb_poll_callback, 0);
+
+	EVENT_ADD(influxdb_data->event_process_entries);
+	EVENT_ACTIVATE(influxdb_data->event_process_entries);
+
+	return ret;
+}
+
+static int influxdb_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct influxdb_data *influxdb_data = thread_data->private_data;
+
+	RRR_DBG_1("InfluxDB instance %s messages per second: %i\n",
+			INSTANCE_D_NAME(thread_data), influxdb_data->message_count);
+	influxdb_data->message_count = 0;
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(thread);
+}
+		
+static void influxdb_pause_check (
+		int *do_pause,
+		int is_paused,
+		void *callback_arg
+) {
+	struct rrr_instance_runtime_data *thread_data = callback_arg;
+	struct influxdb_data *data = thread_data->private_data;
+
+	if (is_paused) {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > (INFLUXDB_INPUT_QUEUE_MAX * 0.75) ? 1 : 0;
+	}
+	else {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > INFLUXDB_INPUT_QUEUE_MAX ? 1 : 0;
+	}	
 }
 
 static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config_data *config) {
@@ -531,41 +631,29 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
-	uint64_t timer_start = rrr_time_get_64();
-	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
-		rrr_thread_watchdog_time_update(thread);
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			influxdb_pause_check,
+			thread_data
+	);
 
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete (&amount, thread_data, influxdb_poll_callback, 50) != 0) {
-			RRR_MSG_0("Error while polling in influxdb instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		uint64_t timer_now = rrr_time_get_64();
-		if (timer_now - timer_start > 1000000) {
-			timer_start = timer_now;
-
-			RRR_DBG_1("InfluxDB instance %s messages per second: %i\n",
-					INSTANCE_D_NAME(thread_data), influxdb_data->message_count);
-
-			influxdb_data->message_count = 0;
-
-			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&error_buf_tmp, &influxdb_data->error_buf);
-
-			// The callback might add entries back into data->error_buf
-			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_msg_holder);
-				rrr_msg_holder_lock(node);
-				if (influxdb_common_callback(node, influxdb_data) != 0) {
-					RRR_MSG_0("Error while iterating error buffer in influxdb instance %s\n",
-							INSTANCE_D_NAME(thread_data));
-					rrr_msg_holder_unlock(node);
-					goto out_cleanup_transport;
-				}
-				RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_msg_holder_decref_while_locked_and_unlock(node));
-		}
+	if (rrr_event_collection_push_periodic (
+			&influxdb_data->event_process_entries,
+			&influxdb_data->events,
+			influxdb_event_process_entries,
+			influxdb_data,
+			1000 // 1000 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create queue process event in influxdb instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup_transport;
 	}
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			influxdb_event_periodic,
+			thread
+	);
 
 	out_cleanup_transport:
 	pthread_cleanup_pop(1);
@@ -594,6 +682,10 @@ static struct rrr_module_operations module_operations = {
 
 static const char *module_name = "influxdb";
 
+struct rrr_instance_event_functions event_functions = {
+	influxdb_event_broker_data_available
+};
+
 __attribute__((constructor)) void load(void) {
 }
 
@@ -602,6 +694,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {
