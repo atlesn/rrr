@@ -527,7 +527,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
-		if (rrr_msg_head_to_host_and_verify(msg_tmp, file_size) != 0) {
+		if (rrr_msg_head_to_host_and_verify(msg_tmp, (rrr_length) file_size) != 0) {
 			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
