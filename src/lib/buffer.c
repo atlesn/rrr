@@ -940,7 +940,8 @@ static int __rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
-		unsigned int wait_milliseconds
+		unsigned int wait_milliseconds,
+		int do_poll_all
 ) {
 	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
 	if (combined_count == 0) {
@@ -962,7 +963,7 @@ static int __rrr_fifo_buffer_read_clear_forward (
 	// Must be set after write queue merge
 	last_element = current = buffer->gptr_first;
 
-	while (last_element != NULL && --max_counter) {
+	while (last_element != NULL && (do_poll_all || --max_counter)) {
 		last_element = last_element->next;
 	}
 
@@ -1115,7 +1116,7 @@ int rrr_fifo_buffer_read_clear_forward (
 		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds);
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds, 0);
 }
 /*
  * Same as rrr_fifo_buffer_read_clear_forward(), but reads all entries.
@@ -1125,18 +1126,7 @@ int rrr_fifo_buffer_read_clear_forward_all (
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data
 ) {
-	int ret = RRR_FIFO_OK;
-	int entry_count = 0;
-
-	do {
-		ret = __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0);
-		
-		pthread_mutex_lock(&buffer->ratelimit_mutex);
-		entry_count = buffer->entry_count;
-		pthread_mutex_unlock(&buffer->ratelimit_mutex);
-	} while (ret == 0 && entry_count > 0);
-
-	return ret;
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0, 1);
 }
 
 /*

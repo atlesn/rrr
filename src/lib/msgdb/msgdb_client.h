@@ -24,30 +24,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../messages/msg_msg.h"
+#include "../event/event_collection.h"
 
 struct rrr_msgdb_client_conn {
-		int fd;
-		struct rrr_read_session_collection read_sessions;
+	int fd;
+	struct rrr_read_session_collection read_sessions;
+	struct rrr_event_collection events;
 };
 
 struct rrr_msg_msg;
+struct rrr_event_queue;
 
-int rrr_msgdb_client_open (
-		struct rrr_msgdb_client_conn *conn,
-		const char *path
-);
-void rrr_msgdb_client_close (
-		struct rrr_msgdb_client_conn *conn
-);
-void rrr_msgdb_client_close_void (
-		void *conn
-);
-int rrr_msgdb_client_conn_ensure_with_callback (
-		struct rrr_msgdb_client_conn *conn,
-		const char *socket,
-		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
-		void *callback_arg
-);
 int rrr_msgdb_client_await_ack (
 		int *positive_ack,
 		struct rrr_msgdb_client_conn *conn
@@ -78,6 +65,28 @@ int rrr_msgdb_client_cmd_get (
 int rrr_msgdb_client_cmd_del (
 		struct rrr_msgdb_client_conn *conn,
 		const char *topic
+);
+int rrr_msgdb_client_open (
+		struct rrr_msgdb_client_conn *conn,
+		const char *path,
+		struct rrr_event_queue *queue
+);
+int rrr_msgdb_client_open_simple (
+		struct rrr_msgdb_client_conn *conn,
+		const char *path
+);
+void rrr_msgdb_client_close (
+		struct rrr_msgdb_client_conn *conn
+);
+void rrr_msgdb_client_close_void (
+		void *conn
+);
+int rrr_msgdb_client_conn_ensure_with_callback (
+		struct rrr_msgdb_client_conn *conn,
+		const char *socket,
+		struct rrr_event_queue *queue,
+		int (*callback)(struct rrr_msgdb_client_conn *conn, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_MSGDB_CLIENT_H */

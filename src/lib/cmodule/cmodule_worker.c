@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../common.h"
 #include "../read_constants.h"
+#include "../rrr_shm.h"
 #include "../event/event.h"
 #include "../event/event_collection.h"
 #include "../event/event_functions.h"
@@ -79,6 +80,8 @@ int rrr_cmodule_worker_send_message_and_address_to_parent (
 			worker->event_queue_parent,
 			message,
 			message_addr,
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	);
@@ -165,30 +168,41 @@ static void __rrr_cmodule_worker_log_hook (
 	}
 
 	int ret = 0;
-	if ((ret = rrr_mmap_channel_write (
-			worker->channel_to_parent,
-			worker->event_queue_parent,
-			message_log,
-			message_log->msg_size,
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
-			__rrr_cmodule_worker_check_cancel_callback,
-			worker
-	)) != 0) {
-		if (ret == RRR_MMAP_CHANNEL_FULL) {
-			RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
-				worker->name);
+
+	int max = RRR_CMODULE_CHANNEL_WAIT_RETRIES;
+	while (max--) {
+		ret = rrr_mmap_channel_write (
+				worker->channel_to_parent,
+				worker->event_queue_parent,
+				message_log,
+				message_log->msg_size,
+				__rrr_cmodule_worker_check_cancel_callback,
+				worker
+		);
+
+		if (ret == 0) {
+			*amount_written = 1;
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, try again
 		}
 		else if (ret == RRR_EVENT_EXIT) {
 			// OK, wait for some other function to detect exit
+			break;
 		}
 		else {
 			RRR_MSG_0("Warning: Error %i while writing to mmap channel in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
 				ret, worker->name);
+			break;
 		}
+
+		rrr_posix_usleep(RRR_CMODULE_CHANNEL_WAIT_TIME_US);
 	}
-	else {
-		*amount_written = 1;
+
+	if (ret == RRR_MMAP_CHANNEL_FULL) {
+		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
+				worker->name);
 	}
 
 	out:
@@ -211,8 +225,6 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			worker->event_queue_parent,
 			setting,
 			sizeof(*setting),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	)) != 0) {
@@ -578,8 +590,6 @@ int rrr_cmodule_worker_loop_start (
 			worker->event_queue_parent,
 			&control_msg,
 			sizeof(control_msg),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_worker_check_cancel_callback,
 			worker
 	) != 0) {
@@ -715,6 +725,13 @@ int rrr_cmodule_worker_main (
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
 
+	// Unregister any SHM created by the fork. They should be cleaned
+	// up by the parent.
+	rrr_mmap_channel_fork_unregister(worker->channel_to_parent);
+
+	// Cleanup SHMs and print warnings about any which was has not been cleaned up
+	rrr_shm_holders_cleanup();
+
 	out:
 	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
 	return ret;
@@ -739,7 +756,6 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
-		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,
 		rrr_setting_uint sleep_time_us,
 		rrr_setting_uint nothing_happened_limit,
@@ -755,12 +771,12 @@ int rrr_cmodule_worker_init (
 	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_fork, to_fork_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, mmap, name)) != 0) {
+	if ((ret = rrr_mmap_channel_new(&worker->channel_to_parent, to_parent_name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}

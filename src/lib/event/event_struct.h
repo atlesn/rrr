@@ -36,12 +36,14 @@ struct rrr_event_function {
 	struct rrr_socket_eventfd eventfd;
 	struct event *signal_event;
 	struct rrr_event_queue *queue;
+	unsigned short index;
 };
 
 struct rrr_event_queue {
 	struct event_base *event_base;
 
 	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
+	uint64_t deferred_amount[RRR_EVENT_FUNCTION_MAX + 1];
 
 	struct event *periodic_event;
 	struct event *unpause_event;

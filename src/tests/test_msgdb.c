@@ -413,7 +413,7 @@ static int __rrr_test_msgdb(void) {
 
 	struct rrr_msgdb_client_conn conn = {0};
 
-	if ((ret = rrr_msgdb_client_open(&conn, MSGDB_SOCKET)) != 0) {
+	if ((ret = rrr_msgdb_client_open_simple(&conn, MSGDB_SOCKET)) != 0) {
 		goto out;
 	}
 

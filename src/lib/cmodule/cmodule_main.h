@@ -35,8 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../settings.h"
 #include "../message_holder/message_holder_collection.h"
 
-#define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S 10
-
 struct rrr_instance_config_data;
 struct rrr_instance_settings;
 struct rrr_fork_handler;

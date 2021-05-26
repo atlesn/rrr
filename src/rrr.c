@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_config.h"
 #include "lib/log.h"
 #include "lib/allocator.h"
+#include "lib/rrr_shm.h"
 #include "lib/event/event.h"
 #include "lib/common.h"
 #include "lib/instances.h"
@@ -473,7 +474,6 @@ static int main_loop (
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:
-		rrr_allocator_cleanup();
 		return ret;
 }
 
@@ -630,8 +630,13 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	int ret = EXIT_SUCCESS;
 
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_final;
+	}
 	if (rrr_log_init() != 0) {
-		goto out;
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -687,7 +692,7 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	if (RRR_MAP_COUNT(&config_file_map) == 0) {
 		RRR_MSG_0("No configuration files were found\n");
-		ret = 1;
+		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
 
@@ -791,7 +796,9 @@ int main (int argc, const char *argv[], const char *env[]) {
 		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+		rrr_shm_holders_cleanup();
+	out_final:
 		return ret;
 }

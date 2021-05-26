@@ -26,6 +26,8 @@ test_SOURCES = test.c \
 	test_conversion.c \
 	test_msgdb.c \
 	test_nullsafe.c \
+	test_allocator.c \
+	test_mmap_channel.c \
 	test_increment.c
 test_CFLAGS = ${AM_CFLAGS} -O0 -fPIE -DPIE \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \

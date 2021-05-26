@@ -88,6 +88,18 @@ void rrr_event_function_set_with_arg (
 	RRR_DBG_9_PRINTF("EQ SETF %p %u->%p(%p) (%s)\n", handle, code, function, arg, description);
 }
 
+int rrr_event_function_priority_set (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		enum rrr_event_priority priority
+) {
+	if (event_priority_set(handle->functions[code].signal_event, (int) priority) != 0) {
+		RRR_MSG_0("Failed to set priority rrr_event_function_priority_set\n");
+		return 1;
+	}
+	return 0;
+}
+
 static void __rrr_event_periodic (
 		evutil_socket_t fd,
 		short flags,
@@ -164,6 +176,11 @@ static void __rrr_event_signal_event (
 		__rrr_event_set_pause(queue, 1);
 		goto out;
 	}
+	else if (queue->deferred_amount[function->index] > 0) {
+		count = queue->deferred_amount[function->index];
+		queue->deferred_amount[function->index] = 0;
+		printf("Pass deferred %lu\n", count);
+	}
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
 			if (ret == RRR_SOCKET_NOT_READY) {
@@ -184,8 +201,9 @@ static void __rrr_event_signal_event (
 	RRR_DBG_9_PRINTF("EQ DISP %p count %" PRIu64 " function %p\n",
 		queue, count, function->function);
 
-	while (count > 0) {
-		uint16_t amount = (count > 0xffff ? 0xffff : count);
+	int retries = 5;
+	while (count > 0 && retries--) {
+		uint16_t amount = (count > 0xffff ? 0xffff : (uint16_t) count);
 		count -= amount;
 
 		const uint16_t amount_orig = amount;
@@ -222,6 +240,17 @@ static void __rrr_event_signal_event (
 			queue, count);
 	}
 
+	if (count > 0) {
+		RRR_DBG_9_PRINTF("EQ PASS %p => count %" PRIu64 " (deferred)\n",
+			queue, count);
+
+		queue->deferred_amount[function->index] = count;
+
+		event_active(function->signal_event, 0, 0);
+
+		printf("Defer %lu\n", count);
+	}
+
 	out:
 	return;
 }
@@ -253,12 +282,6 @@ int rrr_event_dispatch (
 
 	tv_interval.tv_usec = periodic_interval_us % 1000000;
 	tv_interval.tv_sec = (periodic_interval_us - tv_interval.tv_usec) / 1000000;
-
-/*	if (event_priority_set(queue->periodic_event, RRR_EVENT_PRIORITY_HIGH) != 0) {
-		RRR_MSG_0("Failed to set priority of periodict event in rrr_event_dispatch\n");
-		ret = 1;
-		goto out;
-	}*/
 
 	if (event_add(queue->periodic_event, &tv_interval)) {
 		RRR_MSG_0("Failed to add periodic event in rrr_event_dispatch\n");
@@ -338,6 +361,23 @@ int rrr_event_pass (
 
 	out:
 	return ret;
+}
+
+void rrr_event_count (
+		int64_t *eventfd_count,
+		uint64_t *deferred_count,
+		struct rrr_event_queue *queue,
+		uint8_t function
+) {
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	rrr_socket_eventfd_count(eventfd_count, &queue->functions[function].eventfd);
+#else
+	*eventfd_count = 0;
+#endif
+
+	// Note : No locking, race conditions may occur. Usually only the
+	//        reader updates the deferred counter.
+	*deferred_count = queue->deferred_amount[function];
 }
 
 void rrr_event_queue_destroy (
@@ -431,7 +471,9 @@ int rrr_event_queue_new (
 
 	RRR_DBG_9_PRINTF("EQ INIT %p thread ID %llu\n", queue, (long long unsigned) rrr_gettid());
 
-	for (size_t i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+	for (unsigned short i = 0; i <= RRR_EVENT_FUNCTION_MAX; i++) {
+		RRR_ASSERT(sizeof(i)<=sizeof(queue->functions[0].index), sizeof_loop_counter_exceeds_size_in_function_struct);
+
 		queue->functions[i].queue = queue;
 		if ((ret = rrr_socket_eventfd_init(&queue->functions[i].eventfd)) != 0) {
 			break;
@@ -452,6 +494,7 @@ int rrr_event_queue_new (
 			ret = 1;
 			break;
 		}
+		queue->functions[i].index = i;
 
 		RRR_DBG_9_PRINTF(" -      function %llu fds %i<-%i\n",
 				(long long unsigned int) i,
@@ -476,6 +519,7 @@ int rrr_event_queue_new (
 				event_free(queue->functions[i].signal_event);
 			}
 		}
+		event_free(queue->unpause_event);
 	out_destroy_periodic_event:
 		event_free(queue->periodic_event);
 	out_destroy_event_base:

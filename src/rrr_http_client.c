@@ -638,9 +638,15 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
 	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
+	}
+
 	rrr_strerror_init();
 	rrr_signal_default_signal_actions_register();
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
@@ -775,7 +781,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -231,8 +231,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -258,7 +263,6 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 0) != 0) {
-		ret = EXIT_FAILURE;
 		goto out;
 	}
 
@@ -375,7 +379,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -1,3 +1,15 @@
+rrr (1.18-3) buster; urgency=medium
+
+  * Development release (update)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 15 May 2021 09:09:48 +0200
+
+rrr (1.18-2) buster; urgency=medium
+
+  * Development release (update) 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 21:49:53 +0200
+
 rrr (1.17-1) buster; urgency=medium
 
   * HTTP fixes

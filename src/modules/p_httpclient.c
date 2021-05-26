@@ -542,6 +542,7 @@ static void httpclient_msgdb_poll (struct httpclient_data *data) {
 	if (rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
 			httpclient_msgdb_poll_callback,
 			data
 	) != 0) {
@@ -581,6 +582,7 @@ static void httpclient_msgdb_delete (struct httpclient_data *data, const struct 
 	if (rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
 			httpclient_msgdb_delete_callback,
 			&callback_data
 	) != 0) {
@@ -640,6 +642,7 @@ static int httpclient_msgdb_notify_send(struct httpclient_data *data, struct rrr
 	return rrr_msgdb_client_conn_ensure_with_callback (	
 			&data->msgdb_conn,
 			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
 			httpclient_msgdb_notify_send_callback,
 			&callback_data
 	);

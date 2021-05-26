@@ -110,6 +110,7 @@ int rrr_poll_do_poll_delete (
 	if (!(INSTANCE_D_INSTANCE(thread_data)->misc_flags & RRR_INSTANCE_MISC_OPTIONS_DISABLE_BACKSTOP)) {
 		message_broker_flags |= RRR_MESSAGE_BROKER_POLL_F_CHECK_BACKSTOP;
 	}
+
 	return rrr_message_broker_poll_delete (
 			amount,
 			INSTANCE_D_HANDLE(thread_data),
