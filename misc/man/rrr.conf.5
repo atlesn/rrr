@@ -353,6 +353,9 @@ Sends records and requests to an HTTP server.
 .It incrementer (PA)
 Keeps track of unique IDs and appends them to topics of messages.
 
+.It cacher (PA)
+Intermediate message on disk storage for continuity across restarts.
+
 .It msgdb (N)
 Filesystem storage engine for RRR messages (message DB).
 
@@ -389,24 +392,38 @@ module:
 .PP
 .Bl -tag -width -indent
 .It dummy_no_generation={yes|no}
-No messages are generated, defaults to yes. 
+No messages are generated, defaults to yes.
+
 .It dummy_no_sleeping={yes|no}
 Don't sleep between creating messages, but create as many messages as the reader can handle, limited by automatic ratelimiting. Defaults to no.
+
 .It dummy_no_ratelimit={yes|no}
 If set to yes, automatic ratelimiting will be disabled even if
 .B dummy_no_sleeping
 is set to yes. Defaults to no.
+
 .It dummy_sleep_interval_us=MICROSECONDS
 The interval to sleep between each generated message. Cannot be set to 0, defaults to 50000 (50 ms). The sleep time is an approximate value. This parameter is ignored if
 .B dummy_no_sleeping
 is set to yes.
+
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will never stop.
+
 .It dummy_random_payload_max_size={BYTES}
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
+Cannot be set together with
+.B dummy_array_tag.
+
 .It dummy_topic={TOPIC}
 Set an MQTT topic in generated messages.
+
+.It dummy_array_tag={TAG}
+If set, array messages will be created containing a single value of type vain with the specifed tag.
+Cannot be set together with
+.B dummy_random_payload_max_size.
 .El
+
 .SS raw (DA)
 This module reads messages from senders and drops them possibly after collection information from them.
 .PP
@@ -610,6 +627,10 @@ converted values is generated for every received RRR message. Non-RRR array mess
 dropped.
 .PP
 .Bl -tag -width -indent
+.It mangler_topic=MQTT-TOPIC
+If set, the specified topic is set on all outgoing messages.
+If left unset, any topic from the original messages is used.
+
 .It mangler_conversions={h2str|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob}[,...]
 A comma separated list of conversion methods which provides a conversion recipe.
 For every value of input arrays, all conversions are applied from left to right.
@@ -1881,6 +1902,45 @@ If IDn2 < IDl, then IDn = IDn2 + m
 \(bu If the modulus is set to 2 and position set to 0, only even IDs will be allocated.
 .br
 \(bu If the modulus is set to 2 and position set to 1, only odd IDs will be allocated.
+
+.SS cacher (PA)
+The
+.B cacher
+uses a message database to store messages on disk.
+Messages received are stored into the database, and it is possible to have messages read back
+by passing in request messages.
+
+.Bl -tag -width -indent
+.It cacher_msgdb_socket=PATH
+An instance of
+.B msgdb (N)
+must be running and listening on this socket.
+All messages received will be sent to the specified message database for storage, unless the messages
+are request messages. Only one message per unique topic will be stored. Mandatory parameter.
+
+.It cacher_request_tag=TAG
+If the specified tag exists in a message, the message will be treated as a request message.
+The topic of the message is used to search in the message database, and if a message exists with the same topic, this
+message is passed to the output buffer.
+Optional parameter.
+
+.It cacher_forward_requests={yes|no}
+If set to yes, messages which are treated as requests are passed to the output buffer.
+Defaults to no.
+
+.It cacher_forward_data={yes|no}
+If set to yes, messages which are not treated as requests (thus are to be stored) are passed to the output buffer.
+Defaults to no.
+
+.It cacher_forward_other={yes|no}
+If set to yes, messages without topic are forwarded.
+If set to no or left unset, messages without a topic are dropped and an error message is produced.
+
+.It cacher_ttl_seconds=SECONDS
+Any messages received from other modules with an age older than the set value is silently dropped.
+In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.
+Defaults to 0 which means that TTL check is not performed.
+.El
 
 .SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5.

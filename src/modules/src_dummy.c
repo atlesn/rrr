@@ -58,6 +58,9 @@ struct dummy_data {
 	char *topic;
 	size_t topic_len; // Optimization, don't calculate length for every message
 
+	char *array_tag;
+	struct rrr_array array_template;
+
 	struct rrr_event_collection events;
 	rrr_event_handle event_write_entry;
 
@@ -103,6 +106,8 @@ static int dummy_data_init(struct dummy_data *data, struct rrr_instance_runtime_
 static void dummy_data_cleanup(void *arg) {
 	struct dummy_data *data = (struct dummy_data *) arg;
 	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_FREE_IF_NOT_NULL(data->array_tag);
+	rrr_array_clear(&data->array_template);
 	rrr_event_collection_clear(&data->events);
 }
 
@@ -116,6 +121,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, 0); // Set to 0 to indicate sleep controlled by event framework
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_array_tag", array_tag);
 
 	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
 		RRR_MSG_0("Parameter 'dummy_random_payload_max_size' exceeds maximum of %" PRIu32 "in dummy instance %s\n",
@@ -161,6 +167,13 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
+	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_random_payload_size_max") && RRR_INSTANCE_CONFIG_EXISTS("dummy_array_tag")) {
+		RRR_MSG_0("Parameters dummy_random_payload_size_max and dummy_array_tag was both set in dummy instance %s, this is an invalid confiuguration.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
 	/* On error, memory is freed by data_cleanup */
 
 	out:
@@ -178,27 +191,39 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 
 //	printf("Dummy new %" PRIu64 "\n", time);
 
-	rrr_biglength payload_size = 0;
-	if (data->random_payload_max_size > 0) {
-		if ((payload_size = ((rrr_biglength) rrr_rand()) % data->random_payload_max_size) > UINT32_MAX) {
-			RRR_BUG("BUG: Payload size exceeds maximum in dummy_write_message_callback, config parses should check for this\n");
+	if (RRR_LL_COUNT(&data->array_template) > 0) {
+		if ((ret = rrr_array_new_message_from_collection(
+			&reading,
+			&data->array_template,
+			rrr_time_get_64(),
+			data->topic,
+			(rrr_u16) data->topic_len
+		)) != 0) {
+			goto out;
 		}
 	}
+	else {
+		rrr_biglength payload_size = 0;
+		if (data->random_payload_max_size > 0) {
+			if ((payload_size = ((rrr_biglength) rrr_rand()) % data->random_payload_max_size) > UINT32_MAX) {
+				RRR_BUG("BUG: Payload size exceeds maximum in dummy_write_message_callback, config parses should check for this\n");
+			}
+		}
 
-	if (rrr_msg_msg_new_empty (
-			&reading,
-			MSG_TYPE_MSG,
-			MSG_CLASS_DATA,
-			time,
-			(rrr_u16) data->topic_len,
-			(rrr_u32) payload_size
-	) != 0) {
-		ret = 1;
-		goto out;
-	}
+		if ((ret = rrr_msg_msg_new_empty (
+				&reading,
+				MSG_TYPE_MSG,
+				MSG_CLASS_DATA,
+				time,
+				(rrr_u16) data->topic_len,
+				(rrr_u32) payload_size
+		)) != 0) {
+			goto out;
+		}
 
-	if (data->topic != NULL && *(data->topic) != '\0') {
-		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len);
+		if (data->topic != NULL && *(data->topic) != '\0') {
+			memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len);
+		}
 	}
 
 	entry->message = reading;
@@ -323,6 +348,14 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	}
 
 	if (data->no_generation == 0) {
+		if (data->array_tag != NULL && *(data->array_tag) != '\0') {
+			if (rrr_array_push_value_vain_with_tag(&data->array_template, data->array_tag) != 0) {
+				RRR_MSG_0("Failed to push vain value to template array in dummy instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+				goto out_cleanup;
+			}
+		}
+
 		uint64_t sleep_time = DUMMY_DEFAULT_SLEEP_INTERVAL_US;
 
 		if (data->sleep_interval_us > DUMMY_DEFAULT_SLEEP_INTERVAL_US) {

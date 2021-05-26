@@ -107,11 +107,11 @@ struct test_final_data {
 
 	struct rrr_msg_msg msg;
 };
+		
+#define TEST_POLL_CALLBACK_SIGNATURE \
+	struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data
 
-int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
+int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
@@ -124,51 +124,52 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
+struct test_poll_callback_intermediate_callback_data {
+		int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);
+		struct rrr_test_callback_data *callback_data;
+};
+
+int test_poll_callback_intermediate (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct test_poll_callback_intermediate_callback_data *callback_data = arg;
+	return callback_data->callback(entry, callback_data->callback_data);
+}
+
 int test_do_poll_loop (
-		struct rrr_instance *self,
-		struct rrr_message_broker *broker,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(TEST_POLL_CALLBACK_SIGNATURE),
 		struct rrr_test_callback_data *callback_data
 ) {
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
 
-	struct rrr_message_broker_costumer *handle_self = NULL;
-
-	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
-
-	while (rrr_time_get_64() < limit && (handle_self == NULL)) {
-		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
-		rrr_posix_usleep(50000);
-	}
-
-	if (handle_self == NULL) {
-		TEST_MSG("Could not find message broker handle for self after 2 seconds in test_do_poll_loop\n");
-		ret = 1;
-		goto out;
-	}
+	struct test_poll_callback_intermediate_callback_data callback_data_intermediate = {
+		callback,
+		callback_data
+	};
 
 	// Poll from output
 	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
-		if (rrr_thread_signal_encourage_stop_check(self->thread) != 0) {
+		if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 0) {
 			break;
 		}
 
-		rrr_thread_watchdog_time_update(self->thread);
+		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
 		TEST_MSG("Test result polling try: %i of %i\n",
 				i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		uint16_t amount = 100;
-		ret = rrr_message_broker_poll_delete (
-				&amount,
-				handle_self,
-				0,
-				callback,
-				callback_data,
-				150
+
+
+		ret = rrr_poll_do_poll_delete_custom_arg (
+			&amount,
+			thread_data,
+			test_poll_callback_intermediate,
+			&callback_data_intermediate,
+			150
 		);
+
 
 		if (ret != 0) {
 			TEST_MSG("Error from poll_delete function in test_type_array\n");
@@ -236,10 +237,7 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 	return ret;
 }
 
-int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
+int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
@@ -326,8 +324,7 @@ int test_averager (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_averager_callback,
 			&callback_data
 	);
@@ -348,12 +345,9 @@ struct rrr_test_type_array_callback_data {
  *  The main output receives an identical message_1 as the one we sent in,
  *  we check for correct endianess among other things
  */
-int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_test_type_array_callback_data *array_callback_data = callback_data->private_data;
 	const struct rrr_test_function_data *config = array_callback_data->config;
@@ -667,8 +661,7 @@ int test_array (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_type_array_callback,
 			&callback_data
 	);
@@ -699,8 +692,7 @@ int test_anything (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_anything_callback,
 			&callback_data
 	);
@@ -717,8 +709,7 @@ int test_anything (
 }
 
 #ifdef RRR_WITH_MYSQL
-int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_test_callback_data *callback_data = arg;
+int test_type_array_mysql_and_network_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *test_result = callback_data->test_result;
 
 	int ret = 0;
@@ -886,8 +877,7 @@ int test_type_array_mysql (
 
 	TEST_MSG("Polling MySQL\n");
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_type_array_mysql_and_network_callback,
 			&callback_data
 	);

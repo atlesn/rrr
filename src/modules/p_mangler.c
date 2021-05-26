@@ -49,6 +49,9 @@ struct mangler_data {
 	struct rrr_map conversions_map;
 	struct rrr_type_conversion_collection *conversions;
 
+	char *topic;
+	size_t topic_length;
+
 	int do_non_array_passthrough;
 	int do_convert_tolerant_blobs;
 	int do_convert_tolerant_strings;
@@ -61,6 +64,7 @@ static void mangler_data_init(struct mangler_data *data, struct rrr_instance_run
 
 static void mangler_data_cleanup(void *arg) {
 	struct mangler_data *data = arg;
+	RRR_FREE_IF_NOT_NULL(data->topic);
 	RRR_MAP_CLEAR(&data->conversions_map);
 	if (data->conversions != NULL) {
 		rrr_type_conversion_collection_destroy(data->conversions);
@@ -169,8 +173,12 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			&message_new,
 			&array_new,
 			rrr_time_get_64(),
-			MSG_TOPIC_PTR((const struct rrr_msg_msg *) entry->message),
-			MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
+			data->topic != NULL
+				? data->topic
+				: MSG_TOPIC_PTR((const struct rrr_msg_msg *) entry->message),
+			data->topic != NULL
+				? (rrr_u16) data->topic_length
+				: MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
 	)) != 0) {
 		RRR_MSG_0("Failed to create array message in mangler_poll_callback\n");
 		goto out_drop;
@@ -203,6 +211,20 @@ static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mangler_topic", topic);
+
+	if (data->topic != NULL && *(data->topic) != '\0') {
+		if ((data->topic_length = strlen(data->topic)) > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Length of topic in 'mangler_topic' exceeds maximum length (%llu>%i) in mangler instance %s\n",
+				(unsigned long long int) data->topic_length,
+				RRR_MSG_TOPIC_MAX,
+				config->name
+			);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_non_array_passthrough", do_non_array_passthrough, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_convert_tolerant_blobs", do_convert_tolerant_blobs, 0);
