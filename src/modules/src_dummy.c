@@ -61,8 +61,8 @@ struct dummy_data {
 	struct rrr_event_collection events;
 	rrr_event_handle event_write_entry;
 
-	int generated_count;
-	int generated_count_to_stats;
+	unsigned int generated_count;
+	unsigned int generated_count_to_stats;
 	rrr_setting_uint generated_count_total;
 
 	uint64_t last_periodic_time;
@@ -117,8 +117,34 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_sleep_interval_us", sleep_interval_us, 0); // Set to 0 to indicate sleep controlled by event framework
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
 
+	if ((rrr_biglength) data->random_payload_max_size > UINT32_MAX) { // Note : UINT32 (unsigned)
+		RRR_MSG_0("Parameter 'dummy_random_payload_max_size' exceeds maximum of %" PRIu32 "in dummy instance %s\n",
+			(uint32_t) UINT32_MAX,
+			config->name
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if ((rrr_biglength) data->random_payload_max_size > INT_MAX) {
+		RRR_MSG_0("Parameter 'dummy_sleep_interval_us' exceeds maximum of %i in dummy instance %s\n",
+			INT_MAX,
+			config->name
+		);
+		ret = 1;
+		goto out;
+	}
+
 	if (data->topic != NULL) {
-		data->topic_len = strlen(data->topic);
+		if ((data->topic_len = strlen(data->topic)) > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Length of parameter 'dummy_topic' exceeds maximum (%llu>%i) in dummy instance %s\n",
+				(unsigned long long int) data->topic_len,
+				RRR_MSG_TOPIC_MAX,
+				config->name
+			);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	if (RRR_INSTANCE_CONFIG_EXISTS("dummy_sleep_interval_us") && data->sleep_interval_us == 0) {
@@ -152,9 +178,11 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 
 //	printf("Dummy new %" PRIu64 "\n", time);
 
-	size_t payload_size = 0;
+	rrr_biglength payload_size = 0;
 	if (data->random_payload_max_size > 0) {
-		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
+		if ((payload_size = ((rrr_biglength) rrr_rand()) % data->random_payload_max_size) > UINT32_MAX) {
+			RRR_BUG("BUG: Payload size exceeds maximum in dummy_write_message_callback, config parses should check for this\n");
+		}
 	}
 
 	if (rrr_msg_msg_new_empty (
@@ -162,8 +190,8 @@ static int dummy_write_message_callback (struct rrr_msg_holder *entry, void *arg
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
 			time,
-			data->topic_len,
-			payload_size
+			(rrr_u16) data->topic_len,
+			(rrr_u32) payload_size
 	) != 0) {
 		ret = 1;
 		goto out;
@@ -202,7 +230,8 @@ static void dummy_event_write_entry (
 		uint64_t average_time_us = data->write_duration_total_us / data->generated_count_total;
 
 		if (average_time_us <= data->sleep_interval_us) {
-			rrr_posix_usleep(data->sleep_interval_us);
+			// Config parser must check integer sizes
+			rrr_posix_usleep((int) data->sleep_interval_us);
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;
