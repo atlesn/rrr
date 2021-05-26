@@ -70,7 +70,7 @@ struct dummy_data {
 	uint64_t write_duration_total_us;
 };
 
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+static int dummy_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("dummy instance %s: writing data from inject function\n",
 			INSTANCE_D_NAME(thread_data));
 
@@ -91,7 +91,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return ret;
 }
 
-int data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int dummy_data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -100,13 +100,13 @@ int data_init(struct dummy_data *data, struct rrr_instance_runtime_data *thread_
 	return 0;
 }
 
-void data_cleanup(void *arg) {
+static void dummy_data_cleanup(void *arg) {
 	struct dummy_data *data = (struct dummy_data *) arg;
 	RRR_FREE_IF_NOT_NULL(data->topic);
 	rrr_event_collection_clear(&data->events);
 }
 
-int parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
+static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
@@ -264,18 +264,18 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
+	if (dummy_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(dummy_data_cleanup, data);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (dummy_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
@@ -346,7 +346,7 @@ static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
 	NULL,
-	inject,
+	dummy_inject,
 	NULL
 };
 
