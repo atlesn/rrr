@@ -67,6 +67,7 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 struct rrr_poll_intermediate_callback_data {
 	struct rrr_instance_runtime_data *thread_data;
 	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	void *arg;
 };
 
 static int __rrr_poll_intermediate_callback (
@@ -86,7 +87,7 @@ static int __rrr_poll_intermediate_callback (
 
 	if (does_match) {
 		// Callback unlocks
-		return callback_data->callback(entry, callback_data->thread_data);
+		return callback_data->callback(entry, callback_data->arg);
 	}
 
 	out:
@@ -94,15 +95,17 @@ static int __rrr_poll_intermediate_callback (
 		return ret;
 }
 
-int rrr_poll_do_poll_delete (
+int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
 		unsigned int wait_milliseconds
 ) {
 	struct rrr_poll_intermediate_callback_data callback_data = {
 		thread_data,
-		callback
+		callback,
+		callback_arg
 	};
 
 	int message_broker_flags = 0;
@@ -119,4 +122,13 @@ int rrr_poll_do_poll_delete (
 			&callback_data,
 			wait_milliseconds
 	);
+}
+
+int rrr_poll_do_poll_delete (
+		uint16_t *amount,
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) {
+	return rrr_poll_do_poll_delete_custom_arg(amount, thread_data, callback, thread_data, wait_milliseconds);
 }
