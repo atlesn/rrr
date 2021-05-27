@@ -1943,6 +1943,10 @@ Defaults to no.
 If set to yes, messages without topic are forwarded.
 If set to no or left unset, messages without a topic are dropped and an error message is produced.
 
+.It cacher_no_update={yes|no}
+If set to yes, no writes will be performed and all messages which are not requests will be treated as 'other'.
+Defaults to no.
+
 .It cacher_ttl_seconds=SECONDS
 Any messages received from other modules with an age older than the set value is silently dropped.
 In addition, the age of messages in the message database is checked every 5 minutes and expired messages are deleted.

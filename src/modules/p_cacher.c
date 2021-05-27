@@ -54,6 +54,7 @@ struct cacher_data {
 	int do_forward_requests;
 	int do_forward_data;
 	int do_forward_other;
+	int do_no_update;
 };
 
 static void cacher_data_init(struct cacher_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -264,6 +265,21 @@ static int cacher_process (
 		goto out;
 	}
 
+	if (data->do_no_update) {
+		if (data->do_forward_other) {
+			RRR_DBG_2("cacher instance %s forwarding other message with timestamp %" PRIu64 " (updates are disabled)\n",
+					INSTANCE_D_NAME(data->thread_data),
+					msg->timestamp
+			);
+			*do_forward = 1;
+		}
+		else {
+			RRR_MSG_0("Warning: Received a message in cacher instance %s which will be dropped without processing (updates and forwarding is disabled and message is not a reqest)\n",
+				INSTANCE_D_NAME(data->thread_data));
+		}
+		goto out;
+	}
+
 	RRR_DBG_2("cacher instance %s storing data message with timestamp %" PRIu64 " with topic '%s'%s\n",
 			INSTANCE_D_NAME(data->thread_data),
 			msg->timestamp,
@@ -299,7 +315,7 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// Do not produce errors for message process failures, just drop them
 
-	int do_forward;
+	int do_forward = 0;
 	if (cacher_process(&do_forward, data, entry) != 0) {
 		RRR_MSG_0("Warning: Failed to process message in cacher instance %s\n",
 			INSTANCE_D_NAME(data->thread_data));
@@ -354,6 +370,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_requests", do_forward_requests, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_data", do_forward_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_other", do_forward_other, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_no_update", do_no_update, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
 	data->message_ttl_us = data->message_ttl_seconds * 1000 * 1000;
