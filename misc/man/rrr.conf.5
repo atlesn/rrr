@@ -631,6 +631,11 @@ dropped.
 If set, the specified topic is set on all outgoing messages.
 If left unset, any topic from the original messages is used.
 
+.It mangler_clear_tags=TAG[,TAG...]
+Values in input arrays which match one of the specified tags are deleted.
+The deletion is performed prior to any conversion.
+Optional parameter.
+
 .It mangler_conversions={h2str|blob2str|blob2blob|blob2hex|str2str|str2blob|str2h|msg2blob}[,...]
 A comma separated list of conversion methods which provides a conversion recipe.
 For every value of input arrays, all conversions are applied from left to right.
@@ -662,6 +667,8 @@ they will be exported without quotes.
 Refer to the
 .B CONVERSION METHODS
 section for descriptions of all conversions and type compatibility.
+
+If this parameter is not set, no conversion is performed.
 
 .It mangler_non_array_passthrough={yes|no}
 If set to 'yes', non RRR-array messages are passed through to readers. Defaults to 'no' which will cause

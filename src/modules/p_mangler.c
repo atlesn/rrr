@@ -46,6 +46,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct mangler_data {
 	struct rrr_instance_runtime_data *thread_data;
 
+	struct rrr_map clear_tags_map;
+
 	struct rrr_map conversions_map;
 	struct rrr_type_conversion_collection *conversions;
 
@@ -65,6 +67,7 @@ static void mangler_data_init(struct mangler_data *data, struct rrr_instance_run
 static void mangler_data_cleanup(void *arg) {
 	struct mangler_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->topic);
+	RRR_MAP_CLEAR(&data->clear_tags_map);
 	RRR_MAP_CLEAR(&data->conversions_map);
 	if (data->conversions != NULL) {
 		rrr_type_conversion_collection_destroy(data->conversions);
@@ -134,7 +137,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
-	if (RRR_LL_COUNT(&data->conversions_map) == 0) {
+	if (RRR_LL_COUNT(&data->conversions_map) == 0 && RRR_LL_COUNT(&data->clear_tags_map) == 0) {
 		RRR_DBG_3("mangler instance %s passthrough of array message, no conversions defined\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_set_topic;
@@ -151,29 +154,35 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
+	RRR_MAP_ITERATE_BEGIN_CONST(&data->clear_tags_map);
+		rrr_array_clear_by_tag(&array_from_message, node_tag);
+	RRR_MAP_ITERATE_END();
+
 	const int convert_flags =
 			RRR_TYPE_CONVERT_F_ON_ERROR_TRY_NEXT |
 			(data->do_convert_tolerant_blobs ? 0 : RRR_TYPE_CONVERT_F_STRICT_BLOBS) |
 			(data->do_convert_tolerant_strings ? 0 : RRR_TYPE_CONVERT_F_STRICT_STRINGS);
 
-	int i = 0;
-	RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
-		RRR_DBG_3("mangler instance %s CONVERT idx %i type %s\n",
-				INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
-		if ((ret = mangler_process_value (
-				&array_new,
-				data,
-				node,
-				convert_flags
-		)) != 0) {
-			RRR_MSG_0("mangler instance %s dropping message following error %i\n",
-					INSTANCE_D_NAME(thread_data), ret);
-			// Let only hard error propagate
-			ret &= ~(1);
-			goto out_drop;
-		}
-		i++;
-	RRR_LL_ITERATE_END();
+	if (RRR_LL_COUNT(&data->conversions_map) > 0) {
+		int i = 0;
+		RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
+			RRR_DBG_3("mangler instance %s CONVERT idx %i type %s\n",
+					INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
+			if ((ret = mangler_process_value (
+					&array_new,
+					data,
+					node,
+					convert_flags
+			)) != 0) {
+				RRR_MSG_0("mangler instance %s dropping message following error %i\n",
+						INSTANCE_D_NAME(thread_data), ret);
+				// Let only hard error propagate
+				ret &= ~(1);
+				goto out_drop;
+			}
+			i++;
+		RRR_LL_ITERATE_END();
+	}
 
 	if ((ret = rrr_array_new_message_from_collection (
 			&message_new,
@@ -247,6 +256,14 @@ static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_
 	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->conversions_map, config, "mangler_conversions")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Failed to parse parameter 'mangler_conversions' of mangler instance %s\n",
+					config->name);
+			goto out;
+		}
+	}
+
+	if  ((ret = rrr_instance_config_parse_comma_separated_to_map(&data->clear_tags_map, config, "mangler_clear_tags")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_0("Failed to parse parameter 'mangler_clear_tags' of mangler instance %s\n",
 					config->name);
 			goto out;
 		}
