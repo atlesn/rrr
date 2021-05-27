@@ -134,6 +134,12 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_drop;
 	}
 
+	if (RRR_LL_COUNT(&data->conversions_map) == 0) {
+		RRR_DBG_3("mangler instance %s passthrough of array message, no conversions defined\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_set_topic;
+	}
+
 	uint16_t array_version_dummy;
 	if ((ret = rrr_array_message_append_to_collection (
 			&array_version_dummy,
@@ -152,7 +158,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(&array_from_message, const struct rrr_type_value);
-		RRR_DBG_3("Mangler instance %s CONVERT idx %i type %s\n",
+		RRR_DBG_3("mangler instance %s CONVERT idx %i type %s\n",
 				INSTANCE_D_NAME(data->thread_data), i, node->definition->identifier);
 		if ((ret = mangler_process_value (
 				&array_new,
@@ -188,18 +194,26 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_msg_holder_set_data_unlocked(entry, message_new, MSG_TOTAL_SIZE(message_new));
 	message_new = NULL;
 
+	goto out_write;
+	out_set_topic:
+		if (data->topic != NULL) {
+			if ((ret = rrr_msg_msg_topic_set((struct rrr_msg_msg **) &entry->message, data->topic, (ssize_t) data->topic_length)) != 0) {
+				RRR_MSG_0("Failed to set message of topic in mangler_poll_callback\n");
+				goto out_drop;
+			}
+			entry->data_length = MSG_TOTAL_SIZE((const struct rrr_msg_msg *) entry->message);
+		}
 	out_write:
-	ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-			INSTANCE_D_BROKER_ARGS(thread_data),
-			entry,
-			INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-	);
-
+		ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				INSTANCE_D_BROKER_ARGS(thread_data),
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
+		);
 	out_drop:
-	rrr_array_clear(&array_new);
-	rrr_array_clear(&array_from_message);
-	rrr_msg_holder_unlock(entry);
-	return ret;
+		rrr_array_clear(&array_new);
+		rrr_array_clear(&array_from_message);
+		rrr_msg_holder_unlock(entry);
+		return ret;
 }
 
 static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
