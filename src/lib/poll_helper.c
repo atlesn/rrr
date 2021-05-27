@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
+#include "allocator.h"
 #include "poll_helper.h"
 #include "instances.h"
 #include "instance_config.h"
@@ -53,11 +54,15 @@ static int __rrr_poll_intermediate_callback_topic_filter (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s': %s\n",
+		char *topic_tmp = NULL;
+		rrr_msg_msg_topic_get(&topic_tmp, (const struct rrr_msg_msg *) entry->message);
+		RRR_DBG_3("Result of topic match while polling in instance %s with topic filter is '%s' topic is '%s': %s\n",
 				INSTANCE_D_NAME(thread_data),
 				INSTANCE_D_TOPIC_STR(thread_data),
-				(does_match ? "MATCH" : "MISMATCH/DROPPED")
+				topic_tmp,
+				(*does_match ? "MATCH" : "MISMATCH/DROPPED")
 		);
+		RRR_FREE_IF_NOT_NULL(topic_tmp);
 	}
 
 	out:
