@@ -547,7 +547,7 @@ int rrr_socket_open_and_read_file (
 	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);
 
 	if (fd <= 0) {
-		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
+		RRR_DBG_7("Could not open file '%s' for reading: %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;

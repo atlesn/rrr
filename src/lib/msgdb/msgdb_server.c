@@ -515,8 +515,10 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		}
 
 		if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0) != 0) {
-			RRR_MSG_0("Could not read file '%s' in message db server\n",
-				str);
+			if (errno != EEXIST && errno != ENOENT) {
+				RRR_MSG_0("Could not read file '%s' in message db server\n",
+					str);
+			}
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
