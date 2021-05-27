@@ -122,16 +122,6 @@ do_test_fifo() {
 	fi
 }
 
-do_test_standalone() {
-	conf=$1
-	print_test_header STANDALONE $conf
-	echo \$ $TEST $conf
-	$TEST $conf
-	if test $? -ne 0; then
-		fail $conf 
-	fi
-}
-
 $TEST_DATA_GENERATOR $TEST_DATA_FILE
 if test $? -ne 0; then
 	fail "data generation"
@@ -143,15 +133,15 @@ do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
 do_test_simple test_journal.conf
 
-do_test_standalone test_file.conf
+do_test_simple test_file.conf
 
 # Begin message DB tests
 rm -rf /tmp/rrr-test-msgdb*
 
-do_test_standalone test_incrementer.conf
+do_test_simple test_incrementer.conf
 
-do_test_standalone test_cacher_1.conf 
-do_test_standalone test_cacher_2.conf 
+do_test_simple test_cacher_1.conf 
+do_test_simple test_cacher_2.conf 
 
 rm -rf /tmp/rrr-test-msgdb* || exit 1
 # End message DB tests
