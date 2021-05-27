@@ -421,15 +421,23 @@ void rrr_array_clear_void (void *collection) {
 	rrr_array_clear(collection);
 }
 
-void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_array *collection, const char *tag) {
+	*cleared_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
 		if (node->tag == NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
 		if (strcmp(node->tag, tag) == 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
+			(*cleared_count)++;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
+}
+
+void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+	unsigned int cleared_count_dummy = 0;
+	rrr_array_clear_by_tag_checked(&cleared_count_dummy, collection, tag);
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (

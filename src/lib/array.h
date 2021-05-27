@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -127,6 +127,11 @@ void rrr_array_clear (
 );
 void rrr_array_clear_void (
 		void *collection
+);
+void rrr_array_clear_by_tag_checked (
+		unsigned int *cleared_count,
+		struct rrr_array *collection,
+		const char *tag
 );
 void rrr_array_clear_by_tag (
 		struct rrr_array *collection,

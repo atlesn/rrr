@@ -155,7 +155,12 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	RRR_MAP_ITERATE_BEGIN_CONST(&data->clear_tags_map);
-		rrr_array_clear_by_tag(&array_from_message, node_tag);
+		unsigned int cleared_count = 0;
+		rrr_array_clear_by_tag_checked(&cleared_count, &array_from_message, node_tag);
+		if (cleared_count > 0){
+			RRR_DBG_3("mangler instance %s CLEAR tag '%s' (%u values)\n",
+					INSTANCE_D_NAME(data->thread_data), node_tag, cleared_count);
+		}
 	RRR_MAP_ITERATE_END();
 
 	const int convert_flags =
