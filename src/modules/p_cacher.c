@@ -103,6 +103,11 @@ static int cacher_get_from_msgdb_callback (
 	}
 
 	if (msg_tmp != NULL) {
+		RRR_DBG_2("cacher instance %s output message with timestamp %" PRIu64 " (requested)\n",
+				INSTANCE_D_NAME(callback_data->data->thread_data),
+				msg_tmp->timestamp
+		);
+
 		struct cacher_get_from_msgdb_broker_callback_data broker_callback_data = {
 			&msg_tmp
 		};
