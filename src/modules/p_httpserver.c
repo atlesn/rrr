@@ -95,6 +95,7 @@ struct httpserver_data {
 	struct rrr_map websocket_topic_filters;
 
 	char *allow_origin_header;
+	char *cache_control_header;
 
 	pthread_mutex_t oustanding_responses_lock;
 
@@ -110,6 +111,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_map_clear(&data->websocket_topic_filters);
 	rrr_fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
+	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
 	if (data->http_server != NULL) {
 		rrr_http_server_destroy(data->http_server);
 	}
@@ -238,6 +240,7 @@ static int httpserver_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_cache_control_header", cache_control_header);
 
 	// Undocumented, used to test failures in clients
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
@@ -1024,6 +1027,14 @@ static int httpserver_receive_callback (
 	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
 		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
 			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (data->cache_control_header != NULL && *(data->cache_control_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Cache-Control", data->cache_control_header)) != 0) {
+			RRR_MSG_0("Failed to push cache-control header in httpserver_receive_callback\n");
 			ret = 1;
 			goto out;
 		}
