@@ -288,12 +288,29 @@ int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
 		uint32_t max_age_s
 ) {
-	return rrr_msgdb_common_ctrl_msg_send_tidy (
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_common_ctrl_msg_send_tidy (
 			conn->fd,
 			max_age_s,
 			__rrr_msgdb_client_send_callback,
 			NULL
-	);
+	)) != 0) {
+		goto out;
+	}
+
+	int positive_ack;
+	if ((ret = rrr_msgdb_client_await_ack (
+		&positive_ack,
+		conn
+	)) != 0) {
+		goto out;
+	}
+
+	ret = positive_ack ? 0 : 1;
+
+	out:
+	return ret;
 }
 
 int rrr_msgdb_client_cmd_get (

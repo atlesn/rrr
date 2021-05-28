@@ -796,7 +796,8 @@ static int __rrr_msgdb_server_get (
 
 static int __rrr_msgdb_server_tidy (
 		struct rrr_msgdb_server *server,
-		uint32_t max_age
+		uint32_t max_age,
+		int response_fd
 ) {
 	int ret = 0;
 
@@ -863,6 +864,8 @@ static int __rrr_msgdb_server_tidy (
 			}
 		}
 	RRR_LL_ITERATE_END();
+
+	ret = __rrr_msgdb_server_send_msg_ack(server, response_fd);
 
 	out:
 	rrr_array_clear(&dirs_and_files);
@@ -976,7 +979,7 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_TIDY) {
 		RRR_DBG_3("msgdb fd %i recv TIDY max age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
-		return __rrr_msgdb_server_tidy(server, msg->msg_value);
+		return __rrr_msgdb_server_tidy(server, msg->msg_value, client->fd);
 	}
 
 	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));

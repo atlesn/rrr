@@ -504,8 +504,18 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	// Valid
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_OK)) != 0) {
+	// Tidy everything older than 10 seconds (no messages should be tidied)
+	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 10)) != 0) {
+		goto out;
+	}
+
+	// Invalid, a/b already exists
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b/c", ACK_MODE_NOT_OK)) != 0) {
+		goto out;
+	}
+
+	// Tidy everything older than 0 seconds (all messages should be tidied)
+	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 0)) != 0) {
 		goto out;
 	}
 
