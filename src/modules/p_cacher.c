@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_holder/message_holder.h"
 #include "../lib/message_holder/message_holder_struct.h"
@@ -42,6 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct cacher_data {
 	struct rrr_instance_runtime_data *thread_data;
+
+	struct rrr_event_collection events;
 
 	struct rrr_msgdb_client_conn msgdb_conn;
 
@@ -60,10 +63,12 @@ struct cacher_data {
 static void cacher_data_init(struct cacher_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	data->thread_data = thread_data;
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
 }
 
 static void cacher_data_cleanup(void *arg) {
 	struct cacher_data *data = arg;
+	rrr_event_collection_clear(&data->events);
 	rrr_msgdb_client_close(&data->msgdb_conn);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
 	RRR_FREE_IF_NOT_NULL(data->request_tag);
@@ -342,6 +347,46 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
+static int cacher_event_tidy_callback (
+		struct rrr_msgdb_client_conn *conn,
+		void *arg
+) {
+	struct cacher_data *data = arg;
+
+	if (data->message_ttl_seconds > UINT32_MAX) {
+		RRR_BUG("BUG: TTL exceeds maximum, config parser must check for this\n");
+	}
+
+	return rrr_msgdb_client_cmd_tidy(conn, (uint32_t) data->message_ttl_seconds);
+}
+
+static void cacher_event_tidy (
+	int fd,
+	short flags,
+	void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct cacher_data *data = thread_data->private_data;
+
+	if (data->message_ttl_seconds == 0) {
+		RRR_MSG_0("Peridoc tidy in cacher instance %s: Not TTL set, not performing tidy\n", INSTANCE_D_NAME(thread_data));
+		return;
+	}
+
+	rrr_msgdb_client_conn_ensure_with_callback (
+			&data->msgdb_conn,
+			data->msgdb_socket,
+			INSTANCE_D_EVENTS(data->thread_data),
+			cacher_event_tidy_callback,
+			data
+	);
+
+}
+
 static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
@@ -351,13 +396,6 @@ static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 static int cacher_event_periodic (void *arg) {
 	struct rrr_thread *thread = arg;
-	struct rrr_instance_runtime_data *thread_data = thread->private_data;
-	struct cacher_data *data = thread_data->private_data;
-
-	if (data->message_ttl_seconds != 0) {
-		RRR_MSG_0("TODO: Implement TTL check in msgdb\n");
-	}
-
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
 
@@ -378,6 +416,17 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_no_update", do_no_update, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
+
+	if (data->message_ttl_seconds > UINT32_MAX) {
+		RRR_MSG_0("Parameter message_ttl_seconds in cacher instance %s exceeds maximum value (%llu>%llu)\n",
+			config->name,
+			(unsigned long long int) data->message_ttl_seconds,
+			(unsigned long long int) UINT32_MAX
+		);
+		ret = 1;
+		goto out;
+	}
+
 	data->message_ttl_us = data->message_ttl_seconds * 1000 * 1000;
 
 	out:
@@ -404,6 +453,19 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("cacher instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
+
+	rrr_event_handle tidy_event;
+	if (rrr_event_collection_push_periodic (
+			&tidy_event,
+			&data->events,
+			cacher_event_tidy,
+			thread,
+			300 * 1000 * 1000 /* 5 minutes */
+	) != 0) {
+		RRR_MSG_0("Failed to create tidy event in cacher instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+	EVENT_ADD(tidy_event);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

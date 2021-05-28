@@ -816,10 +816,10 @@ static int __rrr_msgdb_server_tidy (
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (!RRR_TYPE_IS_STR(node->flags)) {
-			RRR_BUG("BUG: File path element was not of string type in __rrr_msgdb_server_tidy\n");
+		if (!RRR_TYPE_IS_BLOB(node->definition->type)) {
+			RRR_BUG("BUG: File path element was not of blob type in __rrr_msgdb_server_tidy\n");
 		}
-		if (node->total_stored_length > sizeof(path_tmp) - 1) {
+		if (node->total_stored_length > PATH_MAX) {
 			RRR_BUG("BUG: File path length too long in __rrr_msgdb_server_tidy\n");
 		}
 
@@ -865,6 +865,7 @@ static int __rrr_msgdb_server_tidy (
 	RRR_LL_ITERATE_END();
 
 	out:
+	rrr_array_clear(&dirs_and_files);
 	RRR_FREE_IF_NOT_NULL(path_tmp);
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
