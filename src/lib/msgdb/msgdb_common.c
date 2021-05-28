@@ -30,9 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_msg.h"
 #include "../socket/rrr_socket.h"
 
-int rrr_msgdb_common_ctrl_msg_send (
+static int __rrr_msgdb_common_ctrl_msg_send (
 		int fd,
-		int flags,
+		rrr_u16 flags,
+		rrr_u64 arg,
 		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
 		void *callback_arg
 ) {
@@ -48,7 +49,7 @@ int rrr_msgdb_common_ctrl_msg_send (
 		goto out;
 	}
 
-	rrr_msg_populate_control_msg (msg_tmp, flags, 0);
+	rrr_msg_populate_control_msg (msg_tmp, flags, arg);
 	rrr_msg_checksum_and_to_network_endian (msg_tmp);
 
 	ret = send_callback(fd, (void**) &msg_tmp, sizeof(*msg_tmp), callback_arg);
@@ -56,6 +57,47 @@ int rrr_msgdb_common_ctrl_msg_send (
 	out:
 	RRR_FREE_IF_NOT_NULL(msg_tmp);
 	return ret;
+}
+
+int rrr_msgdb_common_ctrl_msg_send_ack (
+		int fd,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_ACK, 0, send_callback, callback_arg);
+}
+
+int rrr_msgdb_common_ctrl_msg_send_nack (
+		int fd,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_NACK, 0, send_callback, callback_arg);
+}
+
+int rrr_msgdb_common_ctrl_msg_send_ping (
+		int fd,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_PING, 0, send_callback, callback_arg);
+}
+
+int rrr_msgdb_common_ctrl_msg_send_pong (
+		int fd,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_PONG, 0, send_callback, callback_arg);
+}
+
+int rrr_msgdb_common_ctrl_msg_send_tidy (
+		int fd,
+		uint64_t min_time,
+		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_TIDY, min_time, send_callback, callback_arg);
 }
 
 int rrr_msgdb_common_msg_send (

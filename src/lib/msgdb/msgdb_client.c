@@ -208,7 +208,7 @@ int rrr_msgdb_client_send (
 	return ret;
 }
 
-int rrr_msgdb_client_send_empty (
+static int __rrr_msgdb_client_send_empty (
 		struct rrr_msgdb_client_conn *conn,
 		rrr_u8 type,
 		const char *topic
@@ -228,7 +228,18 @@ int rrr_msgdb_client_send_empty (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	const size_t topic_len = strlen(topic);
+
+	if (topic_len > SSIZE_MAX) {
+		RRR_MSG_0("Topic exceeds maximum length in rrr_msgdb_client_send_empty (%llu>%llu)\n",
+			(unsigned long long) topic_len,
+			(unsigned long long) SSIZE_MAX
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, (ssize_t) topic_len)) != 0) {
 		goto out;
 	}
 
@@ -252,7 +263,7 @@ int rrr_msgdb_client_cmd_idx (
 
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, topic)) != 0) {
 		goto out;
 	}
 
@@ -273,6 +284,18 @@ int rrr_msgdb_client_cmd_idx (
 	return ret;
 }
 
+int rrr_msgdb_client_cmd_tidy (
+		struct rrr_msgdb_client_conn *conn,
+		uint64_t min_time
+) {
+	return rrr_msgdb_common_ctrl_msg_send_tidy (
+			conn->fd,
+			min_time,
+			__rrr_msgdb_client_send_callback,
+			NULL
+	);
+}
+
 int rrr_msgdb_client_cmd_get (
 		struct rrr_msg_msg **target,
 		struct rrr_msgdb_client_conn *conn,
@@ -280,7 +303,7 @@ int rrr_msgdb_client_cmd_get (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
 		goto out;
 	}
 
@@ -301,7 +324,7 @@ int rrr_msgdb_client_cmd_del (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
 		goto out;
 	}
 
@@ -331,9 +354,8 @@ static void __rrr_msgdb_client_event_periodic (
 
 	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
 
-	if (rrr_msgdb_common_ctrl_msg_send (
+	if (rrr_msgdb_common_ctrl_msg_send_ping (
 			conn->fd,
-			RRR_MSG_CTRL_F_PING,
 			__rrr_msgdb_client_send_callback,
 			NULL
 	) != 0) {

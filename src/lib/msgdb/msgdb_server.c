@@ -468,7 +468,7 @@ static int __rrr_msgdb_server_send_msg_ack (
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_ACK, __rrr_msgdb_server_send_callback, server);
+	return rrr_msgdb_common_ctrl_msg_send_ack(fd, __rrr_msgdb_server_send_callback, server);
 }
 
 static int __rrr_msgdb_server_send_msg_nack (
@@ -476,7 +476,7 @@ static int __rrr_msgdb_server_send_msg_nack (
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_NACK, __rrr_msgdb_server_send_callback, server);
+	return rrr_msgdb_common_ctrl_msg_send_nack(fd, __rrr_msgdb_server_send_callback, server);
 }
 
 static int __rrr_msgdb_server_send_msg_pong (
@@ -484,7 +484,7 @@ static int __rrr_msgdb_server_send_msg_pong (
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send PONG\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_PONG, __rrr_msgdb_server_send_callback, server);
+	return rrr_msgdb_common_ctrl_msg_send_pong(fd, __rrr_msgdb_server_send_callback, server);
 }
 
 struct rrr_msgdb_server_get_path_split_callback_data {
@@ -775,6 +775,12 @@ static int __rrr_msgdb_server_get (
 	return ret;
 }
 
+static int __rrr_msgdb_server_tidy (
+		struct rrr_msgdb_server *server,
+		uint64_t min_time
+) {
+}
+
 static int __rrr_msgdb_server_read_msg_msg_callback (
 		struct rrr_msg_msg **msg,
 		void *private_data,
@@ -876,6 +882,11 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_PING) {
 		RRR_DBG_3("msgdb fd %i recv PING\n", client->fd);
 		return __rrr_msgdb_server_send_msg_pong(server, client->fd) ? RRR_MSGDB_EOF : 0;
+	}
+
+	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_TIDY) {
+		RRR_DBG_3("msgdb fd %i recv TIDY min time %" PRIu32 "\n", client->fd, msg->msg_value);
+		return __rrr_msgdb_server_tidy(server, msg->msg_value);
 	}
 
 	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
