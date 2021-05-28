@@ -62,7 +62,7 @@ int rrr_msgdb_common_ctrl_msg_send_pong (
 );
 int rrr_msgdb_common_ctrl_msg_send_tidy (
 		int fd,
-		uint64_t min_time,
+		uint32_t max_age_s,
 		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
 		void *callback_arg
 );

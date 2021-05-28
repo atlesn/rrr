@@ -214,8 +214,9 @@ static int __rrr_msgdb_server_path_iterate_split_callback (
 	);
 }
 
-static int __rrr_msgdb_server_path_iterate (
-		const struct rrr_msg_msg *msg,
+static int __rrr_msgdb_server_path_iterate_raw (
+		const char *path,
+		rrr_nullsafe_len path_len,
 		const int allow_trailing_slash,
 		int (*callback)(const char *str, int is_last, void *arg),
 		void *callback_arg
@@ -224,7 +225,7 @@ static int __rrr_msgdb_server_path_iterate (
 
 	struct rrr_nullsafe_str *path_tmp = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&path_tmp, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg))) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&path_tmp, path, path_len)) != 0) {
 		goto out;
 	}
 
@@ -242,6 +243,15 @@ static int __rrr_msgdb_server_path_iterate (
 	out:
 	rrr_nullsafe_str_destroy_if_not_null(&path_tmp);
 	return ret;
+}
+
+static int __rrr_msgdb_server_path_iterate (
+		const struct rrr_msg_msg *msg,
+		const int allow_trailing_slash,
+		int (*callback)(const char *str, int is_last, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_server_path_iterate_raw(MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg), allow_trailing_slash, callback, callback_arg);
 }
 
 struct rrr_msgdb_server_put_path_split_callback_data {
@@ -381,9 +391,10 @@ static int __rrr_msgdb_server_del_path_split_callback (
 	return ret;
 }
 
-static int __rrr_msgdb_server_del (
+static int __rrr_msgdb_server_del_raw (
 		struct rrr_msgdb_server *server,
-		const struct rrr_msg_msg *msg
+		const char *path,
+		rrr_nullsafe_len path_len
 ) {
 	int ret = 0;
 
@@ -393,8 +404,9 @@ static int __rrr_msgdb_server_del (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_path_iterate (
-			msg,
+	if ((ret = __rrr_msgdb_server_path_iterate_raw (
+			path,
+			path_len,
 			0, // Disallow trailing slash
 			__rrr_msgdb_server_del_path_split_callback,
 			&callback_data
@@ -429,6 +441,13 @@ static int __rrr_msgdb_server_del (
 	out:
 	RRR_MAP_CLEAR(&callback_data.path_elements_reverse);
 	return ret;
+}
+
+static int __rrr_msgdb_server_del (
+		struct rrr_msgdb_server *server,
+		const struct rrr_msg_msg *msg
+) {
+	return __rrr_msgdb_server_del_raw(server, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg));
 }
 
 static int __rrr_msgdb_server_send_callback (
@@ -777,8 +796,78 @@ static int __rrr_msgdb_server_get (
 
 static int __rrr_msgdb_server_tidy (
 		struct rrr_msgdb_server *server,
-		uint64_t min_time
+		uint32_t max_age
 ) {
+	int ret = 0;
+
+	struct rrr_array dirs_and_files = {0};
+	struct rrr_map path_base_dummy = {0};
+	uint64_t min_time = rrr_time_get_64() - (max_age * 1000 * 1000);
+
+	char *path_tmp = NULL;
+	char *msg_tmp = NULL;
+
+	if ((ret = __rrr_msgdb_server_idx_make_index (&dirs_and_files, server, &path_base_dummy)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(&dirs_and_files, struct rrr_type_value);
+		if (!rrr_type_value_is_tag(node, "file")) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if (!RRR_TYPE_IS_STR(node->flags)) {
+			RRR_BUG("BUG: File path element was not of string type in __rrr_msgdb_server_tidy\n");
+		}
+		if (node->total_stored_length > sizeof(path_tmp) - 1) {
+			RRR_BUG("BUG: File path length too long in __rrr_msgdb_server_tidy\n");
+		}
+
+		RRR_FREE_IF_NOT_NULL(path_tmp);
+		RRR_FREE_IF_NOT_NULL(msg_tmp);
+
+		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
+			RRR_MSG_0("Failed to extract string in __rrr_msgdb_server_tidy\n");
+			goto out;
+		}
+
+		ssize_t msg_bytes_dummy = 0;
+		ssize_t msg_size = 0;
+		if (rrr_socket_open_and_read_file_head (
+				&msg_tmp,
+				&msg_bytes_dummy,
+				&msg_size,
+				path_tmp,
+				O_RDONLY,
+				0,
+				sizeof(struct rrr_msg_msg)
+		) != 0 || msg_bytes_dummy < (ssize_t) sizeof(struct rrr_msg_msg)) {
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy\n", path_tmp);
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		struct rrr_msg_msg *msg = (struct rrr_msg_msg *) msg_tmp;
+
+		if ( rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, (rrr_length) msg_size) != 0 ||
+		     rrr_msg_msg_to_host_and_verify(msg, (rrr_biglength) msg_size) != 0
+		) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		// Do not perform checksum test, only the message head has been read in
+
+		if (msg->timestamp < min_time) {
+			RRR_DBG_3("msgdb del '%s'\n", path_tmp);
+			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
+				RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", path_tmp);
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	RRR_FREE_IF_NOT_NULL(path_tmp);
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
 }
 
 static int __rrr_msgdb_server_read_msg_msg_callback (
@@ -885,7 +974,7 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 	}
 
 	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_TIDY) {
-		RRR_DBG_3("msgdb fd %i recv TIDY min time %" PRIu32 "\n", client->fd, msg->msg_value);
+		RRR_DBG_3("msgdb fd %i recv TIDY max age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
 		return __rrr_msgdb_server_tidy(server, msg->msg_value);
 	}
 

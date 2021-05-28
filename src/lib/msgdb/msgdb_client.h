@@ -54,7 +54,7 @@ int rrr_msgdb_client_cmd_idx (
 );
 int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
-		uint64_t min_time
+		uint32_t max_age_s
 );
 int rrr_msgdb_client_cmd_get (
 		struct rrr_msg_msg **target,

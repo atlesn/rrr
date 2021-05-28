@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static int __rrr_msgdb_common_ctrl_msg_send (
 		int fd,
 		rrr_u16 flags,
-		rrr_u64 arg,
+		rrr_u32 arg,
 		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
 		void *callback_arg
 ) {
@@ -93,11 +93,11 @@ int rrr_msgdb_common_ctrl_msg_send_pong (
 
 int rrr_msgdb_common_ctrl_msg_send_tidy (
 		int fd,
-		uint64_t min_time,
+		uint32_t max_age_s,
 		int (*send_callback)(int fd, void **data, ssize_t data_size, void *arg),
 		void *callback_arg
 ) {
-	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_TIDY, min_time, send_callback, callback_arg);
+	return __rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_TIDY, max_age_s, send_callback, callback_arg);
 }
 
 int rrr_msgdb_common_msg_send (

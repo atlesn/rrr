@@ -286,11 +286,11 @@ int rrr_msgdb_client_cmd_idx (
 
 int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
-		uint64_t min_time
+		uint32_t max_age_s
 ) {
 	return rrr_msgdb_common_ctrl_msg_send_tidy (
 			conn->fd,
-			min_time,
+			max_age_s,
 			__rrr_msgdb_client_send_callback,
 			NULL
 	);
