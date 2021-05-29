@@ -1070,7 +1070,7 @@ int rrr_http2_transport_ctx_streams_iterate (
 
 	struct rrr_http2_stream_collection *collection = &session->streams;
 
-	RRR_HTTP2_STREAMS_ITERATE_DELETE_ME_BEGIN();
+	RRR_HTTP2_STREAMS_ITERATE_ACTIVE_BEGIN();
 		if ((ret = callback(collection->stream_ids[i], node->application_data, callback_arg)) != 0) {
 			goto out;
 		}
