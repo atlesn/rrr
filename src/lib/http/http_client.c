@@ -713,7 +713,9 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			upgrade_mode,
 			protocol_version
 	)) != 0) {
-		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		if (ret != RRR_HTTP_BUSY) {
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		}
 		goto out;
 	}
 
