@@ -672,19 +672,19 @@ int rrr_http2_session_new_or_reset (
 		goto out;
 	}
 
-	nghttp2_session_callbacks_set_send_callback					(callbacks, __rrr_http2_send_callback);
-	nghttp2_session_callbacks_set_recv_callback					(callbacks, __rrr_http2_recv_callback);
-	nghttp2_session_callbacks_set_on_data_chunk_recv_callback	(callbacks, __rrr_http2_on_data_chunk_recv_callback);
-	nghttp2_session_callbacks_set_on_stream_close_callback		(callbacks, __rrr_http2_on_stream_close_callback);
-	nghttp2_session_callbacks_set_on_frame_recv_callback		(callbacks, __rrr_http2_on_frame_recv_callback);
-	nghttp2_session_callbacks_set_on_header_callback			(callbacks, __rrr_http2_on_header_callback);
-	nghttp2_session_callbacks_set_before_frame_send_callback	(callbacks, __rrr_http2_before_frame_send_callback);
+	nghttp2_session_callbacks_set_send_callback               (callbacks, __rrr_http2_send_callback);
+	nghttp2_session_callbacks_set_recv_callback               (callbacks, __rrr_http2_recv_callback);
+	nghttp2_session_callbacks_set_on_data_chunk_recv_callback (callbacks, __rrr_http2_on_data_chunk_recv_callback);
+	nghttp2_session_callbacks_set_on_stream_close_callback    (callbacks, __rrr_http2_on_stream_close_callback);
+	nghttp2_session_callbacks_set_on_frame_recv_callback      (callbacks, __rrr_http2_on_frame_recv_callback);
+	nghttp2_session_callbacks_set_on_header_callback          (callbacks, __rrr_http2_on_header_callback);
+	nghttp2_session_callbacks_set_before_frame_send_callback  (callbacks, __rrr_http2_before_frame_send_callback);
 
 	if (RRR_DEBUGLEVEL_7) {
-		nghttp2_session_callbacks_set_on_frame_send_callback		(callbacks, __rrr_http2_on_frame_send_callback);
-		nghttp2_session_callbacks_set_on_begin_headers_callback		(callbacks, __rrr_http2_on_begin_headers_callback);
-		nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(callbacks, __rrr_http2_on_invalid_frame_recv_callback);
-		nghttp2_session_callbacks_set_error_callback 				(callbacks, __rrr_http2_error_callback);
+		nghttp2_session_callbacks_set_on_frame_send_callback         (callbacks, __rrr_http2_on_frame_send_callback);
+		nghttp2_session_callbacks_set_on_begin_headers_callback      (callbacks, __rrr_http2_on_begin_headers_callback);
+		nghttp2_session_callbacks_set_on_invalid_frame_recv_callback (callbacks, __rrr_http2_on_invalid_frame_recv_callback);
+		nghttp2_session_callbacks_set_error_callback                 (callbacks, __rrr_http2_error_callback);
 	}
 
 	if (result == NULL) {
