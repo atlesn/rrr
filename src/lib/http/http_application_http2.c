@@ -607,7 +607,7 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 
 	int ret = 0;
 
-	if (transaction->need_response) {
+	if (transaction && transaction->need_response) {
 		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
 			ret &= ~(RRR_HTTP_NO_RESULT);
 			goto out;
