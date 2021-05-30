@@ -37,14 +37,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP2_DONE          RRR_READ_EOF
 #define RRR_HTTP2_BUSY          RRR_READ_INCOMPLETE
 
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END      (1<<0)
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE  (1<<1)
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR  (1<<2)
+
 #define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
     struct rrr_http2_session *session,                         \
     struct rrr_http_header_field_collection *headers,          \
     int32_t stream_id,                                         \
-    short is_header_end,                                       \
-    short is_data_end,                                         \
-    short is_stream_close,                                     \
-    short is_stream_error,                                     \
+    int flags,                                                 \
     const char *stream_error_msg,                              \
     void *data,                                                \
     size_t data_size,                                          \
