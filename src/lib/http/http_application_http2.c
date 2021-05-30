@@ -324,6 +324,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
 
 	(void)(session);
+	(void)(is_header_end);
 
 	int ret = 0;
 
@@ -332,7 +333,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
+	if (is_stream_error) {
 		if (callback_data->failure_callback == NULL) {
 			if (callback_data->unique_id_generator_callback == NULL) {
 				// Is client
@@ -358,7 +359,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
-		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
+		if (!is_stream_close) {
 			// Wait for any data
 			goto out;
 		}
@@ -392,7 +393,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	else {
 		// Is server
 
-		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
+		if (is_stream_close) {
 			goto out;
 		}
 
@@ -436,7 +437,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out_send_response_bad_request;
 		}
 
-		if ((post || put) && !(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+		if ((post || put) && (!is_data_end)) {
 			// Wait for DATA frames and END DATA
 			goto out;
 		}
