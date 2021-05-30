@@ -312,6 +312,8 @@ struct rrr_http_application_http2_callback_data {
 	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
+	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
+	void *failure_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
 	void *async_response_get_callback_arg;
 };
@@ -331,7 +333,26 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	// TODO : Create separate functions for client and server
+	if (is_stream_error) {
+		if (callback_data->failure_callback == NULL) {
+			if (callback_data->unique_id_generator_callback == NULL) {
+				// Is client
+				RRR_MSG_0("HTTP2 request failed and no failure delivery defined, data is lost\n");
+			}
+			else {
+				RRR_DBG_3("http2 stream error from client: %s\n", stream_error_msg);
+			}
+			goto out;
+		}
+
+		ret = callback_data->failure_callback (
+				callback_data->handle,
+				transaction,
+				stream_error_msg,
+				callback_data->failure_callback_arg
+		);
+		goto out;
+	}
 
 	if (callback_data->unique_id_generator_callback == NULL) {
 		// Is client
@@ -628,6 +649,8 @@ static int __rrr_http_application_http2_tick (
 			unique_id_generator_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	};

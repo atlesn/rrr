@@ -81,6 +81,7 @@ struct rrr_http2_session {
 	void *initial_receive_data;
 	ssize_t initial_receive_data_len;
 	struct rrr_http2_stream_collection streams;
+	short no_more_streams;
 	// Must be updated on every tick
 	struct rrr_http2_callback_data callback_data;
 	uint64_t last_ping_send_time;
@@ -376,10 +377,36 @@ static int __rrr_http2_on_stream_close_callback (
 
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
-
 	struct rrr_http2_stream *stream = __rrr_http2_stream_find(session, stream_id);
 	__rrr_http2_stream_delete_me_set(session, stream_id);
+
+	if (error_code == NGHTTP2_NO_ERROR) {
+		RRR_DBG_7 ("http2 close stream %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
+	}
+	else {
+		switch (error_code) {
+			case NGHTTP2_REFUSED_STREAM:
+				RRR_DBG_7 ("http2 close stream %" PRIi32 " and no more streams for this connection: %s\n", stream_id, nghttp2_http2_strerror(error_code));
+				break;
+			case NGHTTP2_HTTP_1_1_REQUIRED:
+			case NGHTTP2_PROTOCOL_ERROR:
+			case NGHTTP2_INTERNAL_ERROR:
+			case NGHTTP2_FLOW_CONTROL_ERROR:
+			case NGHTTP2_SETTINGS_TIMEOUT:
+			case NGHTTP2_STREAM_CLOSED:
+			case NGHTTP2_FRAME_SIZE_ERROR:
+			case NGHTTP2_CANCEL:
+			case NGHTTP2_COMPRESSION_ERROR:
+			case NGHTTP2_CONNECT_ERROR:
+			case NGHTTP2_ENHANCE_YOUR_CALM:
+			case NGHTTP2_INADEQUATE_SECURITY:
+			default:
+				RRR_MSG_0 ("http2 close stream with error %" PRIi32 ": %s\n", stream_id, nghttp2_http2_strerror(error_code));
+				break;
+		};
+
+		session->no_more_streams = 1;
+	}
 
 	if (session->callback_data.callback != NULL) {
 		if (session->callback_data.callback (
@@ -389,6 +416,8 @@ static int __rrr_http2_on_stream_close_callback (
 				0,
 				0,
 				1, // Is stream close
+				error_code != NGHTTP2_NO_ERROR,
+				error_code != NGHTTP2_NO_ERROR ? nghttp2_http2_strerror(error_code) : NULL,
 				stream->data,
 				stream->data_wpos,
 				stream->application_data,
@@ -452,6 +481,8 @@ static int __rrr_http2_on_frame_recv_callback (
 				(frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0,
 				(frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0,
 				0, // Is not stream close
+				0, // No error
+				NULL, // No error message
 				stream->data,
 				stream->data_wpos,
 				stream->application_data,
@@ -949,11 +980,17 @@ int rrr_http2_request_start (
 
 	*stream_id = 0;
 
+	if (session->no_more_streams) {
+		ret = RRR_HTTP_BUSY;
+		goto out;
+	}
+
 	// Note that stream ID will not be incremented in the library until we send headers
 	uint32_t stream_id_tmp = nghttp2_session_get_next_stream_id(session->session);
 	if (stream_id_tmp >= (uint32_t) 1 << 31) {
-		RRR_MSG_0 ("HTTP2 request submission failed, IDs exhausted: %s", nghttp2_strerror(stream_id_tmp));
-		ret = RRR_HTTP2_SOFT_ERROR;
+		RRR_DBG_7("http2 IDs exhausted\n");
+		session->no_more_streams = 1;
+		ret = RRR_HTTP_BUSY;
 		goto out;
 	}
 
@@ -1106,6 +1143,12 @@ int rrr_http2_transport_ctx_tick (
 
 	// Just to clean up any streams needing deletion
 	__rrr_http2_stream_find(session, 0);
+
+	// Happens if server refuses a stream, close connection after all other streams are complete.
+	if (session->no_more_streams && session->streams.stream_count == 0) {
+		RRR_DBG_7("http2 done after no more streams\n");
+		goto out;
+	}
 
 	// Always update callback data. Persistent user_data pointer was set in the
 	// new() function

@@ -335,6 +335,8 @@ static void influxdb_send_data_callback (
 				NULL,
 				influxdb_receive_http_response,
 				&response_callback_data,
+				NULL, /* Failure callback, not implemented in InfluxDB) */
+				NULL,
 				NULL,
 				NULL,
 				NULL,

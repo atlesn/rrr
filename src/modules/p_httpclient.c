@@ -712,6 +712,35 @@ static int httpclient_final_callback (
 	return ret;
 }
 
+static void httpclient_requeue_entry_while_locked (
+		struct httpclient_data *data,
+		struct rrr_msg_holder *entry
+) {
+	rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&data->from_senders_queue, entry);
+	httpclient_check_queues_and_activate_event_as_needed(data);
+}
+
+static int httpclient_failure_callback (
+		RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS
+) {
+	struct httpclient_data *httpclient_data = arg;
+	struct httpclient_transaction_data *transaction_data = transaction->application_data;
+
+	RRR_DBG_3("HTTP temporary failure from server in httpclient instance %s (%s), retry: transaction age %" PRIu64 " ms transaction endpoint str %s\n",
+			error_msg,
+			INSTANCE_D_NAME(httpclient_data->thread_data),
+			rrr_http_transaction_lifetime_get(transaction) / 1000,
+			transaction->endpoint_str
+	);
+
+	rrr_msg_holder_lock(transaction_data->entry);
+	httpclient_requeue_entry_while_locked(httpclient_data, transaction_data->entry);
+	rrr_msg_holder_unlock(transaction_data->entry);
+
+	return 0;
+}
+
 static int httpclient_transaction_field_add (
 		struct httpclient_data *data,
 		struct rrr_http_transaction *transaction,
@@ -1343,9 +1372,7 @@ static int httpclient_redirect_callback (
 
 	redirect_data->request_data.protocol_version = transaction->response_part->parsed_version;
 
-	rrr_msg_holder_incref_while_locked(transaction_data->entry);
-	RRR_LL_APPEND(&data->from_senders_queue, transaction_data->entry);
-	httpclient_check_queues_and_activate_event_as_needed(data);
+	httpclient_requeue_entry_while_locked(data, transaction_data->entry);
 
 	out:
 	rrr_msg_holder_unlock(transaction_data->entry);
@@ -1879,6 +1906,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 
 	struct rrr_http_client_callbacks callbacks = {
 		httpclient_final_callback,
+		data,
+		httpclient_failure_callback,
 		data,
 		httpclient_redirect_callback,
 		data,

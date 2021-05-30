@@ -446,6 +446,23 @@ static int __rrr_http_client_receive_http_part_callback (
 	return ret;
 }
 
+static int __rrr_http_client_request_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	(void)(handle);
+
+	return http_client->callbacks.failure_callback != NULL
+		? http_client->callbacks.failure_callback (
+				transaction,
+				error_msg,
+				http_client->callbacks.failure_callback_arg
+		)
+		: 0
+	;
+}
+
 static int __rrr_http_client_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -545,6 +562,8 @@ static int __rrr_http_client_read_callback (
 			__rrr_http_client_websocket_handshake_callback,
 			NULL,
 			__rrr_http_client_receive_http_part_callback,
+			http_client,
+			__rrr_http_client_request_failure_callback,
 			http_client,
 			http_client->callbacks.get_response_callback,
 			http_client->callbacks.get_response_callback_arg,

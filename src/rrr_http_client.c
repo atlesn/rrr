@@ -378,6 +378,19 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
+static int __rrr_http_client_failure_callback (
+		RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(transaction);
+	(void)(http_client_data);
+
+	RRR_MSG_0("Error while sending request: %s\n", error_msg);
+
+	return RRR_HTTP_SOFT_ERROR;
+}
+
 static int __rrr_http_client_unique_id_generator_callback (
 		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
@@ -689,6 +702,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,
+			&data,
+			__rrr_http_client_failure_callback,
 			&data,
 			__rrr_http_client_redirect_callback,
 			&data,

@@ -1553,6 +1553,10 @@ static int __rrr_http_application_http1_tick (
 ) {
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
 
+	// Async failure callback not implemented for HTTP1
+	(void)(failure_callback);
+	(void)(failure_callback_arg);
+
 	int ret = RRR_HTTP_OK;
 
 	*upgraded_app = NULL;
