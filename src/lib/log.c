@@ -131,6 +131,8 @@ struct rrr_log_hook {
 	);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
+	int (*event_pass_retry_callback)(void *arg);
+	void *event_pass_retry_callback_arg;
 	int handle;
 };
 
@@ -149,7 +151,9 @@ void rrr_log_hook_register (
 				void *private_arg
 		),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue
+		struct rrr_event_queue *notify_queue,
+		int (*event_pass_retry_callback)(void *arg),
+		void *event_pass_retry_callback_arg
 ) {
 	*handle = 0;
 
@@ -164,6 +168,8 @@ void rrr_log_hook_register (
 		 log,
 		 private_arg,
 		 notify_queue,
+		 event_pass_retry_callback,
+		 event_pass_retry_callback_arg,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -237,8 +243,8 @@ void rrr_log_hooks_call_raw (
 					hook->notify_queue,
 					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
 					write_amount,
-					NULL,
-					NULL
+					hook->event_pass_retry_callback,
+					hook->event_pass_retry_callback_arg
 			);
 		}
 	}
