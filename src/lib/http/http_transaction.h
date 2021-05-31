@@ -54,6 +54,8 @@ struct rrr_http_transaction {
 
 	int need_response;
 
+	int stream_flags;
+
 	uint64_t creation_time;
 };
 
@@ -164,5 +166,19 @@ int rrr_http_transaction_request_prepare_wrapper (
 		int (*final_callback)(struct rrr_http_part *request_part, const struct rrr_nullsafe_str *send_body, void *arg),
 		void *callback_arg
 );
+
+static inline void rrr_http_transaction_stream_flags_add (
+		struct rrr_http_transaction *transaction,
+		int flags
+) {
+	transaction->stream_flags |= flags;
+}
+
+static inline int rrr_http_transaction_stream_flags_has (
+		struct rrr_http_transaction *transaction,
+		int flags
+) {
+	return ((transaction->stream_flags & flags) == flags);
+}
 
 #endif /* RRR_HTTP_TRANSACTION_H */

@@ -483,6 +483,10 @@ static int __rrr_http2_on_frame_recv_callback (
 			flags |= RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END;
 		}
 
+		if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
+			flags |= RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END;
+		}
+
 		if (session->callback_data.callback (
 				session,
 				&stream->headers,

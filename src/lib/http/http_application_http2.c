@@ -392,7 +392,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	else {
 		// Is server
 
-		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
+		if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE) {
 			goto out;
 		}
 
@@ -418,26 +418,36 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction = transaction_to_destroy;
 		}
 
+		// All flags are ORed in to the persistent transaction flag variable. We
+		// can both check for flags which have been received in earlier frames or
+		// flags which arrived in this particular frame.
+		rrr_http_transaction_stream_flags_add(transaction, flags);
+
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 
-		const struct rrr_http_header_field *post = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "POST");
-		const struct rrr_http_header_field *put = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "PUT");
+//		const struct rrr_http_header_field *post = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "POST");
+//		const struct rrr_http_header_field *put = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "PUT");
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
 
-		if (method == NULL) {
-			RRR_DBG_3("http2 field :method missing in request\n");
-			goto out_send_response_bad_request;
-		}
+		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+				// Possible CONTINUATION frame  
+				goto out;
+			}
+			if (method == NULL) {
+				RRR_DBG_3("http2 field :method missing in request\n");
+				goto out_send_response_bad_request;
+			}
 
-		if (path == NULL) {
-			RRR_DBG_3("http2 field :path missing in request\n");
-			goto out_send_response_bad_request;
+			if (path == NULL) {
+				RRR_DBG_3("http2 field :path missing in request\n");
+				goto out_send_response_bad_request;
+			}
 		}
-
-		if ((post || put) && !(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
-			// Wait for DATA frames and END DATA
+		else {
+			// Wait for any DATA frames and END DATA
 			goto out;
 		}
 
