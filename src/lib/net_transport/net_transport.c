@@ -201,7 +201,7 @@ static int __rrr_net_transport_handle_destroy (
 	// Delete events first as libevent might produce warnings if
 	// this is performed after FD is closed
 	rrr_event_collection_clear(&handle->events);
-	
+
 	rrr_read_session_collection_clear(&handle->read_sessions);
 
 	handle->transport->methods->close(handle);
