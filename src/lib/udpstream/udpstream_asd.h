@@ -22,11 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_UDPSTREAM_ASD_H
 #define RRR_UDPSTREAM_ASD_H
 
-#include <pthread.h>
-
 #include "udpstream.h"
-#include "../buffer.h"
-#include "../util/linked_list.h"
 
 #define RRR_UDPSTREAM_ASD_CONNECT_TIMEOUT_MS 5000
 #define RRR_UDPSTREAM_ASD_BUFFER_MAX 500
@@ -75,74 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_holder;
 struct rrr_event_queue;
-
-struct rrr_udpstream_asd_queue_entry {
-	RRR_LL_NODE(struct rrr_udpstream_asd_queue_entry);
-	struct rrr_msg_holder *message;
-	uint32_t message_id;
-	uint64_t send_time;
-	int delivered_grace_counter;
-	int ack_status_flags;
-	int send_count;
-};
-
-struct rrr_udpstream_asd_queue_new {
-	RRR_LL_NODE(struct rrr_udpstream_asd_queue_new);
-	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_entry);
-	uint32_t source_connect_handle;
-};
-
-struct rrr_udpstream_asd_queue_collection {
-	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_new);
-};
-
-struct rrr_udpstream_asd_control_queue_entry {
-	RRR_LL_NODE(struct rrr_udpstream_asd_control_queue_entry);
-	uint32_t connect_handle;
-	uint32_t message_id;
-	uint32_t ack_flags;
-};
-
-struct rrr_udpstream_asd_control_queue {
-	RRR_LL_HEAD(struct rrr_udpstream_asd_control_queue_entry);
-};
-
-struct rrr_udpstream_asd {
-	struct rrr_udpstream udpstream;
-
-	// Stores inbound messages from multiple remote hosts
-	struct rrr_udpstream_asd_queue_collection release_queues;
-
-	// Stores outbound messages to default remote host
-	struct rrr_udpstream_asd_queue_new send_queue;
-
-	// Stores control messages to multiple remote hosts
-	struct rrr_udpstream_asd_control_queue control_send_queue;
-
-	char *remote_host;
-	char *remote_port;
-
-	pthread_mutex_t connect_lock;
-	int is_connected;
-	uint64_t connection_attempt_time;
-	uint32_t connect_handle;
-
-	pthread_mutex_t message_id_lock;
-	uint32_t message_id_pos;
-
-	pthread_mutex_t queue_lock;
-
-	unsigned int sent_count;
-	unsigned int delivered_count;
-
-	int (*receive_callback)(struct rrr_msg_holder *message, void *arg);
-	void *receive_callback_arg;
-};
-
-struct rrr_udpstream_asd_control_msg {
-	uint32_t flags;
-	uint32_t message_id;
-} __attribute((packed));
+struct rrr_udpstream_asd;
 
 int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
