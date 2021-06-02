@@ -103,7 +103,7 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_collectio
 	return NULL;
 }
 
-int __rrr_udpstream_asd_queue_collection_iterate (
+static int __rrr_udpstream_asd_queue_collection_iterate (
 		struct rrr_udpstream_asd_queue_collection *collection,
 		int (*callback)(struct rrr_udpstream_asd_queue_new *queue, void *private_arg),
 		void *private_arg
@@ -121,7 +121,7 @@ int __rrr_udpstream_asd_queue_collection_iterate (
 	return ret;
 }
 
-int __rrr_udpstream_asd_queue_collection_count_entries (
+static int __rrr_udpstream_asd_queue_collection_count_entries (
 		struct rrr_udpstream_asd_queue_collection *collection
 ) {
 	int total = 0;
@@ -244,20 +244,20 @@ static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 	return ret;
 }
 
-void __rrr_udpstream_asd_queue_clear(struct rrr_udpstream_asd_queue_new *queue) {
+static void __rrr_udpstream_asd_queue_clear(struct rrr_udpstream_asd_queue_new *queue) {
 	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_queue_entry, __rrr_udpstream_asd_queue_entry_destroy(node));
 }
 
-void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue_new *queue) {
+static void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue_new *queue) {
 	__rrr_udpstream_asd_queue_clear(queue);
 	rrr_free(queue);
 }
 
-void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_collection *collection) {
+static void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_collection *collection) {
 	RRR_LL_DESTROY(collection, struct rrr_udpstream_asd_queue_new, __rrr_udpstream_asd_queue_destroy(node));
 }
 
-void __rrr_udpstream_asd_control_queue_clear(struct rrr_udpstream_asd_control_queue *queue) {
+static void __rrr_udpstream_asd_control_queue_clear(struct rrr_udpstream_asd_control_queue *queue) {
 	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_control_queue_entry, rrr_free(node));
 }
 
@@ -286,7 +286,7 @@ static int __rrr_udpstream_asd_queue_control_frame (
 	return ret;
 }
 
-int __rrr_udpstream_asd_send_control_message (
+static int __rrr_udpstream_asd_send_control_message (
 		struct rrr_udpstream_asd *session,
 		uint32_t flags,
 		uint32_t connect_handle,
@@ -377,7 +377,7 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	return ret;
 }
 
-void __rrr_udpstream_asd_release_queue_clear_by_handle (
+static void __rrr_udpstream_asd_release_queue_clear_by_handle (
 		struct rrr_udpstream_asd *session,
 		uint32_t connect_handle
 ) {
@@ -529,7 +529,7 @@ int rrr_udpstream_asd_queue_and_incref_message (
 	return ret;
 }
 
-int __rrr_udpstream_asd_send_message (
+static int __rrr_udpstream_asd_send_message (
 		struct rrr_udpstream_asd *session,
 		struct rrr_udpstream_asd_queue_entry *node
 ) {
@@ -643,9 +643,14 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 	// Send data messages and reminder ACKs for outbound messages
 	RRR_LL_ITERATE_BEGIN(&session->send_queue, struct rrr_udpstream_asd_queue_entry);
 		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK) != 0) {
+			session->delivered_count++;
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
+			if (node->send_time == 0) {
+				session->sent_count++;
+			}
+
 			// Always update send time to prevent hardcore looping upon error conditions
 			node->send_time = time_now;
 			node->send_count++;
@@ -864,7 +869,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 	return ret;
 }
 
-int __rrr_udpstream_asd_queue_deliver_messages (
+static int __rrr_udpstream_asd_queue_deliver_messages (
 		int *delivered_count,
 		struct rrr_udpstream_asd *session,
 		struct rrr_udpstream_asd_queue_new *queue
@@ -905,7 +910,7 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 	return ret;
 }
 
-int __rrr_udpstream_asd_queue_update_delivery_grace (
+static int __rrr_udpstream_asd_queue_update_delivery_grace (
 		int *grace_count,
 		struct rrr_udpstream_asd_queue_new *queue,
 		int delivered_count
@@ -1217,4 +1222,16 @@ int rrr_udpstream_asd_new (
 		rrr_free(session);
 	out:
 		return ret;
+}
+
+void rrr_udpstream_asd_get_and_reset_counters (
+		unsigned int *sent_count,
+		unsigned int *delivered_count,
+		struct rrr_udpstream_asd *session
+) {
+	*sent_count = session->sent_count;
+	*delivered_count = session->delivered_count;
+
+	session->sent_count = 0;
+	session->delivered_count = 0;
 }

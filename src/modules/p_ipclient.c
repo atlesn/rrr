@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IPCLIENT_DEFAULT_PORT 5555
 
 // Max unsent messages to store from other modules
-#define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 500
+#define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 10000
 
 #define RRR_IPCLIENT_CONNECT_TIMEOUT_MS 5000
 #define RRR_IPCLIENT_CONCURRENT_CONNECTIONS 3
@@ -82,10 +82,8 @@ struct ipclient_data {
 	uint64_t total_poll_count;
 	uint64_t total_queued_count;
 
-	int receive_total;
-	int queued_total;
-	int send_total;
-	int delivered_total;
+	unsigned int received_per_second;
+	unsigned int queued_per_second;
 
 	char *ip_default_remote;
 	char *ip_default_remote_port;
@@ -197,6 +195,9 @@ static int ipclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_LL_APPEND(&private_data->send_queue_intermediate, entry);
 
 	rrr_msg_holder_unlock(entry);
+
+	private_data->total_poll_count++;
+
 	return 0;
 }
 
@@ -220,7 +221,7 @@ static int ipclient_receive_callback(struct rrr_msg_holder *entry, void *arg) {
 		goto out;
 	}
 
-	data->receive_total++;
+	data->received_per_second++;
 
 	out:
 	rrr_msg_holder_unlock(entry);
@@ -431,10 +432,21 @@ static void ipclient_event_send_queue (int fd, short flags, void *arg) {
 		// Don't return, must increment counter
 	}
 
-	data->queued_total += queue_count;
+	data->queued_per_second += (unsigned int) queue_count;
 
 	if (sending_complete) {
 		EVENT_REMOVE(data->event_send_queue);
+	}
+}
+
+static void ipclient_pause_check (int *do_pause, int is_paused, void *callback_arg) {
+	struct ipclient_data *data = callback_arg;
+
+	if (is_paused) {
+		*do_pause = !(RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX * 0.75);
+	}
+	else {
+		*do_pause = RRR_LL_COUNT(&data->send_queue_intermediate) >RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX;
 	}
 }
 
@@ -458,7 +470,6 @@ static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 
 	int output_buffer_count = 0;
 	int ratelimit_active = 0;
-	int send_queue_count = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 				&output_buffer_count,
@@ -470,27 +481,27 @@ static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return RRR_EVENT_ERR;
 	}
 
-	send_queue_count = RRR_LL_COUNT(&data->send_queue_intermediate);
+	data->total_queued_count += data->queued_per_second;
+
+	unsigned int sent_per_second, delivered_per_second;
+	rrr_udpstream_asd_get_and_reset_counters(&sent_per_second, &delivered_per_second, data->udpstream_asd);
 
 	if (RRR_DEBUGLEVEL_1) {
-		RRR_MSG_1("-- ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %i q/s %i s/s %i d/s %i\n",
+		RRR_MSG_1("ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %u q/s %u s/s %u d/s %u\n",
 				INSTANCE_D_NAME(thread_data),
 				output_buffer_count,
-				send_queue_count,
+				RRR_LL_COUNT(&data->send_queue_intermediate),
 				data->total_poll_count,
 				data->total_queued_count,
-				data->receive_total,
-				data->queued_total,
-				data->send_total,
-				data->delivered_total
+				data->received_per_second,
+				data->queued_per_second,
+				sent_per_second,
+				delivered_per_second
 			 );
-		RRR_MSG_1("--------------\n");
 	}
 
-	data->receive_total = 0;
-	data->queued_total = 0;
-	data->send_total = 0;
-	data->delivered_total = 0;
+	data->received_per_second = 0;
+	data->queued_per_second = 0;
 
 	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
 }
@@ -542,6 +553,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			ipclient_pause_check,
+			data
+	);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

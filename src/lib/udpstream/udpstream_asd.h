@@ -132,6 +132,9 @@ struct rrr_udpstream_asd {
 
 	pthread_mutex_t queue_lock;
 
+	unsigned int sent_count;
+	unsigned int delivered_count;
+
 	int (*receive_callback)(struct rrr_msg_holder *message, void *arg);
 	void *receive_callback_arg;
 };
@@ -141,6 +144,10 @@ struct rrr_udpstream_asd_control_msg {
 	uint32_t message_id;
 } __attribute((packed));
 
+int rrr_udpstream_asd_queue_and_incref_message (
+		struct rrr_udpstream_asd *session,
+		struct rrr_msg_holder *message
+);
 void rrr_udpstream_asd_destroy (
 		struct rrr_udpstream_asd *session
 );
@@ -159,8 +166,9 @@ int rrr_udpstream_asd_new (
 		int (*receive_callback)(struct rrr_msg_holder *message, void *arg),
 		void *receive_callback_arg
 );
-int rrr_udpstream_asd_queue_and_incref_message (
-		struct rrr_udpstream_asd *session,
-		struct rrr_msg_holder *message
+void rrr_udpstream_asd_get_and_reset_counters (
+		unsigned int *sent_count,
+		unsigned int *delivered_count,
+		struct rrr_udpstream_asd *session
 );
 #endif /* RRR_UDPSTREAM_ASD_H */
