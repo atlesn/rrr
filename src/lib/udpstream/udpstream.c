@@ -196,7 +196,6 @@ void rrr_udpstream_clear (
 	rrr_event_collection_clear(&data->events);
 	rrr_read_session_collection_clear(&data->read_sessions);
 	__rrr_udpstream_stream_collection_clear(&data->streams);
-	pthread_mutex_destroy(&data->lock);
 	RRR_FREE_IF_NOT_NULL(data->send_buffer);
 }
 
@@ -218,11 +217,6 @@ int rrr_udpstream_init (
 		void *upstream_final_callback_arg
 ) {
 	memset (data, '\0', sizeof(*data));
-
-	if (rrr_posix_mutex_init(&data->lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_udpstream_init\n");
-		return 1;
-	}
 
 	data->flags = flags;
 
@@ -256,9 +250,7 @@ void rrr_udpstream_set_flags (
 		struct rrr_udpstream *data,
 		int flags
 ) {
-	pthread_mutex_lock(&data->lock);
 	data->flags = flags;
-	pthread_mutex_unlock(&data->lock);
 }
 
 static void __rrr_udpstream_frame_packed_dump (
@@ -1492,8 +1484,6 @@ static int __rrr_udpstream_process_receive_buffers (
 
 	*receive_complete = 1;
 
-	pthread_mutex_lock(&data->lock);
-
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		int receive_complete_tmp = 1;
 		if ((ret = __rrr_udpstream_process_receive_buffer (
@@ -1510,7 +1500,6 @@ static int __rrr_udpstream_process_receive_buffers (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -1548,8 +1537,6 @@ static int __rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&data->lock);
 
 	struct rrr_udpstream_read_callback_data callback_data = {
 			data,
@@ -1597,7 +1584,6 @@ static int __rrr_udpstream_do_read_tasks (
 	RRR_DBG_3 ("UDP-stream RECV cnt: %i, err cnt: %i\n", callback_data.receive_count, errors);
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -1700,8 +1686,6 @@ static int __rrr_udpstream_do_send_tasks (
 	*send_count = 0;
 	*sending_complete = 1;
 
-	pthread_mutex_lock(&data->lock);
-
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		int count = 0;
 		int sending_complete_tmp = 0;
@@ -1717,7 +1701,6 @@ static int __rrr_udpstream_do_send_tasks (
 	RRR_LL_ITERATE_END();
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -1740,8 +1723,6 @@ int rrr_udpstream_connection_check_address_equal (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&data->lock);
-
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(data, connect_handle);
 	if (stream == NULL) {
 		ret = 0;
@@ -1754,7 +1735,6 @@ int rrr_udpstream_connection_check_address_equal (
 	}
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -1763,8 +1743,6 @@ int rrr_udpstream_connection_check (
 		uint32_t connect_handle
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&data->lock);
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(data, connect_handle);
 	if (stream == NULL) {
@@ -1785,7 +1763,6 @@ int rrr_udpstream_connection_check (
 	}
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -1799,8 +1776,6 @@ int rrr_udpstream_regulate_window_size (
 		int window_size_change
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&udpstream_data->lock);
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
@@ -1817,7 +1792,6 @@ int rrr_udpstream_regulate_window_size (
 	RRR_DBG_3("UDP-stream WS REQ %u change %i\n", stream->stream_id, window_size_change);
 
 	out:
-	pthread_mutex_unlock(&udpstream_data->lock);
 	return ret;
 }
 
@@ -1828,8 +1802,6 @@ int rrr_udpstream_send_control_frame (
 		uint64_t application_data
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&udpstream_data->lock);
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
@@ -1855,7 +1827,6 @@ int rrr_udpstream_send_control_frame (
 	}
 
 	out:
-	pthread_mutex_unlock(&udpstream_data->lock);
 	return ret;
 }
 
@@ -1868,8 +1839,6 @@ int rrr_udpstream_queue_outbound_data (
 		uint64_t application_data
 ) {
 	int ret = 0;
-
-	pthread_mutex_lock(&udpstream_data->lock);
 
 	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
 	if (stream == NULL) {
@@ -1922,16 +1891,13 @@ int rrr_udpstream_queue_outbound_data (
 	EVENT_ADD(udpstream_data->event_write);
 
 	out:
-	pthread_mutex_unlock(&udpstream_data->lock);
 	return ret;
 }
 
 void rrr_udpstream_close (
 		struct rrr_udpstream *data
 ) {
-	pthread_mutex_lock(&data->lock);
 	rrr_ip_network_cleanup(&data->ip);
-	pthread_mutex_unlock(&data->lock);
 }
 
 static int __rrr_udpstream_bind (
@@ -2107,8 +2073,6 @@ int rrr_udpstream_bind_v6_priority (
 		RRR_BUG("rrr_udpstream_bind called with non-zero fd, bind already complete\n");
 	}
 
-	pthread_mutex_lock(&data->lock);
-
 	int ret_4 = 0, ret_6 = 0;
 
 	ret_6 = __rrr_udpstream_bind(&data->ip, local_port, 1);
@@ -2139,7 +2103,6 @@ int rrr_udpstream_bind_v6_priority (
 	out_unbind:
 		rrr_ip_network_cleanup(&data->ip);
 	out:
-		pthread_mutex_unlock(&data->lock);
 		return ret;
 }
 
@@ -2152,8 +2115,6 @@ int rrr_udpstream_bind_v4_only (
 	if (data->ip.fd != 0) {
 		RRR_BUG("rrr_udpstream_bind called with non-zero fd, bind already complete\n");
 	}
-
-	pthread_mutex_lock(&data->lock);
 
 	if (__rrr_udpstream_bind(&data->ip, local_port, 0) != 0) {
 		RRR_MSG_0("Listening failed on IPv4 in udpstream on port %u\n", local_port);
@@ -2172,7 +2133,6 @@ int rrr_udpstream_bind_v4_only (
 	out_unbind:
 		rrr_ip_network_cleanup(&data->ip);
 	out:
-		pthread_mutex_unlock(&data->lock);
 		return ret;
 }
 
@@ -2184,8 +2144,6 @@ int rrr_udpstream_connect_raw (
 ) {
 	int ret = 0;
 
-	pthread_mutex_lock(&data->lock);
-
 	if (data->ip.fd == 0) {
 		RRR_BUG("FD was 0 in rrr_udpstream_connect_raw, must bind first\n");
 	}
@@ -2196,7 +2154,6 @@ int rrr_udpstream_connect_raw (
 	}
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
@@ -2252,15 +2209,12 @@ int rrr_udpstream_connect (
 	freeaddrinfo(result);
 
 	out:
-	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
 
 void rrr_udpstream_dump_stats (
 	struct rrr_udpstream *data
 ) {
-	pthread_mutex_lock(&data->lock);
-
 	RRR_DBG("UDP-stream streams: %i, read sessions: %i\n",
 			RRR_LL_COUNT(&data->streams), RRR_LL_COUNT(&data->read_sessions));
 
@@ -2276,6 +2230,4 @@ void rrr_udpstream_dump_stats (
 				node->invalidated
 		);
 	RRR_LL_ITERATE_END();
-
-	pthread_mutex_unlock(&data->lock);
 }

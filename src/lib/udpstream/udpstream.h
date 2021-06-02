@@ -62,7 +62,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_H
 
 #include <inttypes.h>
-#include <pthread.h>
 
 #include "../read.h"
 #include "../read_constants.h"
@@ -338,8 +337,6 @@ struct rrr_udpstream {
 
 	struct rrr_udpstream_stream_collection streams;
 	struct rrr_read_session_collection read_sessions;
-
-	pthread_mutex_t lock;
 
 	struct rrr_event_queue *queue;
 	struct rrr_event_collection events;
