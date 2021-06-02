@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,15 +84,11 @@ struct rrr_udpstream_asd {
 	char *remote_host;
 	char *remote_port;
 
-	pthread_mutex_t connect_lock;
 	int is_connected;
 	uint64_t connection_attempt_time;
 	uint32_t connect_handle;
 
-	pthread_mutex_t message_id_lock;
 	uint32_t message_id_pos;
-
-	pthread_mutex_t queue_lock;
 
 	unsigned int sent_count;
 	unsigned int delivered_count;
@@ -378,8 +373,6 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 ) {
 	int ret = RRR_UDPSTREAM_ASD_OK;
 
-	pthread_mutex_lock(&session->connect_lock);
-
 	int udpstream_ret = rrr_udpstream_connection_check(&session->udpstream, session->connect_handle);
 	if (udpstream_ret == 0) {
 		session->connection_attempt_time = 0;
@@ -441,7 +434,6 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	if (ret == 0 && !session->is_connected) {
 		ret = RRR_UDPSTREAM_ASD_NOT_READY;
 	}
-	pthread_mutex_unlock(&session->connect_lock);
 	return ret;
 }
 
@@ -464,8 +456,6 @@ static int __rrr_udpstream_asd_control_frame_callback (
 	int ret = 0;
 
 	struct rrr_udpstream_asd *session = arg;
-
-	pthread_mutex_lock(&session->queue_lock);
 
 	struct rrr_udpstream_asd_control_msg control_msg = __rrr_udpstream_asd_control_msg_split(application_data);
 
@@ -545,7 +535,6 @@ static int __rrr_udpstream_asd_control_frame_callback (
 		);
 	}
 
-	pthread_mutex_unlock(&session->queue_lock);
 	return ret;
 }
 
@@ -559,9 +548,6 @@ int rrr_udpstream_asd_queue_and_incref_message (
 	if (session->remote_host == NULL || *(session->remote_host) == '\0') {
 		RRR_BUG("Attempted to queue message with rrr_udpstream_asd_queue_message while remote host was not set\n");
 	}
-
-	pthread_mutex_lock(&session->queue_lock);
-	pthread_mutex_lock(&session->message_id_lock);
 
 	if (RRR_LL_COUNT(&session->send_queue) >= RRR_UDPSTREAM_ASD_BUFFER_MAX) {
 		ret = RRR_UDPSTREAM_ASD_NOT_READY;
@@ -592,8 +578,6 @@ int rrr_udpstream_asd_queue_and_incref_message (
 	}
 
 	out:
-	pthread_mutex_unlock(&session->message_id_lock);
-	pthread_mutex_unlock(&session->queue_lock);
 	return ret;
 }
 
@@ -685,8 +669,6 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 
 	uint64_t time_now = rrr_time_get_64();
 
-	pthread_mutex_lock(&session->queue_lock);
-
 	// Send control messages queued in control message callback
 	RRR_LL_ITERATE_BEGIN(&session->control_send_queue, struct rrr_udpstream_asd_control_queue_entry);
 		ret = __rrr_udpstream_asd_send_control_message (
@@ -776,7 +758,6 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 	}
 
 	out:
-	pthread_mutex_unlock(&session->queue_lock);
 	return ret;
 }
 
@@ -1095,9 +1076,6 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 void rrr_udpstream_asd_destroy (
 		struct rrr_udpstream_asd *session
 ) {
-	pthread_mutex_destroy(&session->queue_lock);
-	pthread_mutex_destroy(&session->connect_lock);
-	pthread_mutex_destroy(&session->message_id_lock);
 	__rrr_udpstream_asd_queue_collection_clear(&session->release_queues);
 	__rrr_udpstream_asd_queue_clear(&session->send_queue);
 	__rrr_udpstream_asd_control_queue_clear(&session->control_send_queue);
@@ -1247,24 +1225,6 @@ int rrr_udpstream_asd_new (
 		}
 	}
 
-	if (rrr_posix_mutex_init(&session->message_id_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize id lock in rrr_udpstream_asd_new\n");
-		ret = 1;
-		goto out_close_udpstream;
-	}
-
-	if (rrr_posix_mutex_init(&session->connect_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize connect lock in rrr_udpstream_asd_new\n");
-		ret = 1;
-		goto out_destroy_id_lock;
-	}
-
-	if (rrr_posix_mutex_init(&session->queue_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize queue lock in rrr_udpstream_asd_new\n");
-		ret = 1;
-		goto out_destroy_connect_lock;
-	}
-
 	session->connect_handle = client_id;
 
 	session->receive_callback = receive_callback;
@@ -1274,12 +1234,8 @@ int rrr_udpstream_asd_new (
 	session = NULL;
 	goto out;
 
-	out_destroy_connect_lock:
-		pthread_mutex_destroy(&session->connect_lock);
-	out_destroy_id_lock:
-		pthread_mutex_destroy(&session->message_id_lock);
-	out_close_udpstream:
-		rrr_udpstream_close(&session->udpstream);
+//	out_close_udpstream:
+//		rrr_udpstream_close(&session->udpstream);
 	out_clear_udpstream:
 		rrr_udpstream_clear(&session->udpstream);
 	out_free_remote_port:
