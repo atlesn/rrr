@@ -1551,11 +1551,6 @@ static int __rrr_udpstream_do_read_tasks (
 
 	pthread_mutex_lock(&data->lock);
 
-	if ((ret = __rrr_udpstream_maintain(data)) != 0) {
-		RRR_MSG_0("Error while maintaining streams in rrr_udpstream_do_read_tasks\n");
-		goto out;
-	}
-
 	struct rrr_udpstream_read_callback_data callback_data = {
 			data,
 			0
@@ -1639,6 +1634,7 @@ static int __rrr_udpstream_send_loop (
 	uint64_t time_now = rrr_time_get_64();
 
 	*sent_count_return = 0;
+	*sending_complete = 1;
 
 	int ret = 0;
 
@@ -1681,12 +1677,12 @@ static int __rrr_udpstream_send_loop (
 			node->last_send_time = rrr_time_get_64();
 			sent_count++;
 			if (sent_count >= RRR_UDPSTREAM_BURST_LIMIT_SEND) {
+				*sending_complete = 0;
 				RRR_LL_ITERATE_LAST();
 			}
 		}
 	RRR_LL_ITERATE_END();
 
-	*sending_complete = RRR_LL_COUNT(&stream->send_buffer) == 0;
 	*sent_count_return = sent_count;
 
 	out:
@@ -1963,6 +1959,8 @@ static void __rrr_udpstream_event_read (
 	(void)(fd);
 	(void)(flags);
 
+//	printf("Read event\n");
+
 	// The read callback is always active and will be called
 	// when there is data to read or periodically. The event
 	// is currently not removed when the read functions report
@@ -1992,6 +1990,30 @@ static void __rrr_udpstream_event_read (
 	}
 }
 
+static void __rrr_udpstream_event_periodic (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_udpstream *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int sending_complete_dummy;
+	int send_count_dummy;
+
+	// Send any unacknowledged messages
+	if (__rrr_udpstream_do_send_tasks (&sending_complete_dummy, &send_count_dummy, data) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	// Check connection timeouts
+	if (__rrr_udpstream_maintain(data) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+}
+
 static void __rrr_udpstream_event_write (
 		int fd,
 		short flags,
@@ -2014,6 +2036,8 @@ static void __rrr_udpstream_event_write (
 		rrr_event_dispatch_break(data->queue);
 	}
 
+//	printf("Write event sent %i\n", send_count);
+
 	if (data->upstream_event_write(&sending_complete_upstream, data->upstream_event_write_arg) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
@@ -2034,25 +2058,37 @@ static int __rrr_udpstream_events_create (
 			data->ip.fd,
 			__rrr_udpstream_event_read,
 			data,
-			50 * 1000 // 50 ms
+			100 * 1000 // 100 ms
 	)) != 0) {
 		goto out_err;
 	}
 
 	EVENT_ADD(data->event_read);
 
+	// Added as needed to send new messages immediately
 	if ((ret = rrr_event_collection_push_write (
 			&data->event_write,
 			&data->events,
 			data->ip.fd,
 			__rrr_udpstream_event_write,
 			data,
-			50 * 1000 // 50 ms
+			1000 * 1000 // 1000 ms
 	)) != 0) {
 		goto out_err;
 	}
 
-	// Do not add write event
+	// Resend unacknowledged messages and maintain connections
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_periodic,
+			&data->events,
+			__rrr_udpstream_event_periodic,
+			data,
+			1000 * RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS / 4
+	)) != 0) {
+		goto out_err;
+	}
+
+	EVENT_ADD(data->event_periodic);
 
 	goto out;
 	out_err:

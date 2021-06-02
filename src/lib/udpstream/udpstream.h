@@ -90,7 +90,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS (RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS*2)
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
-#define RRR_UDPSTREAM_RESEND_INTERVAL_ASD_ACK_MS 150
 #define RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT 5
 
 #define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_RESEND_ASD_ACK -10
@@ -347,6 +346,7 @@ struct rrr_udpstream {
 
 	rrr_event_handle event_read;
 	rrr_event_handle event_write;
+	rrr_event_handle event_periodic;
 
 	int (*upstream_event_write)(int *no_more_writes, void *arg);
 	void *upstream_event_write_arg;
