@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,19 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // and will send the appropriate ACK messages back an forward even if a
 // client does not actually implement ASD. If a client chooses not to, it must
 // provide a dummy callback function to the API.
-
-// UDP-stream is thread-safe but is not optimized for threading in any particular
-// way as all API functions use the same lock. Many UDP-stream entries may however
-// be created and accessed at the same time as no static data is used anywhere (apart
-// from in the RRR socket API, but it has its own locking anyway).
-
-// Each UDP-stream instance has its own lock. Note that callbacks provided by API user to certain
-// functions needs to implement some form of locking if different UDP-streams are used by
-// multiple threads. If only one UDP-stream is used by multiple threads, no such locking is
-// needed as the callbacks will be protected by the UDP-stream lock.
-
-// Please note that no UDP-stream functions may be called from the callbacks, this will always
-// cause a deadlock.
 
 // Data sent to UDP-stream is copied, indicated by using const pointers. For data given to
 // back to the API user using the data callback function upon receival, it is expected that
