@@ -74,6 +74,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK		07
 
 struct rrr_msg_holder;
+struct rrr_event_queue;
 
 struct rrr_udpstream_asd_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_queue_entry);
@@ -130,6 +131,9 @@ struct rrr_udpstream_asd {
 	uint32_t message_id_pos;
 
 	pthread_mutex_t queue_lock;
+
+	int (*receive_callback)(struct rrr_msg_holder *message, void *arg);
+	void *receive_callback_arg;
 };
 
 struct rrr_udpstream_asd_control_msg {
@@ -142,28 +146,21 @@ void rrr_udpstream_asd_destroy (
 );
 int rrr_udpstream_asd_new (
 		struct rrr_udpstream_asd **target,
+		struct rrr_event_queue *queue,
 		unsigned int local_port,
 		const char *remote_host,
 		const char *remote_port,
 		uint32_t client_id,
 		int accept_connections,
 		int disallow_ip_swap,
-		int v4_only
+		int v4_only,
+		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
+		void *allocator_callback_arg,
+		int (*receive_callback)(struct rrr_msg_holder *message, void *arg),
+		void *receive_callback_arg
 );
 int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
 		struct rrr_msg_holder *message
-);
-int rrr_udpstream_asd_deliver_and_maintain_queues (
-		struct rrr_udpstream_asd *session,
-		int (*receive_callback)(struct rrr_msg_holder *message, void *arg),
-		void *receive_callback_arg
-);
-int rrr_udpstream_asd_buffer_tick (
-		int *receive_count,
-		int *send_count,
-		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *allocator_callback_arg,
-		struct rrr_udpstream_asd *session
 );
 #endif /* RRR_UDPSTREAM_ASD_H */

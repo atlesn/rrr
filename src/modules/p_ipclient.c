@@ -38,6 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
 #include "../lib/messages/msg_msg.h"
@@ -66,6 +68,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct rrr_msg_holder_collection send_queue_intermediate;
 
+	struct rrr_event_collection events;
+	rrr_event_handle event_send_queue;
+
 	struct rrr_instance_runtime_data *thread_data;
 
 	uint32_t client_number;
@@ -77,6 +82,11 @@ struct ipclient_data {
 	uint64_t total_poll_count;
 	uint64_t total_queued_count;
 
+	int receive_total;
+	int queued_total;
+	int send_total;
+	int delivered_total;
+
 	char *ip_default_remote;
 	char *ip_default_remote_port;
 
@@ -84,9 +94,11 @@ struct ipclient_data {
 
 	rrr_setting_uint src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
+
+	int need_network_restart;
 };
 
-void data_cleanup(void *arg) {
+static void ipclient_data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
 
 	if (data->udpstream_asd != NULL) {
@@ -94,40 +106,44 @@ void data_cleanup(void *arg) {
 		data->udpstream_asd = NULL;
 	}
 
+	rrr_event_collection_clear(&data->events);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote_port);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote);
 	rrr_msg_holder_collection_clear(&data->send_queue_intermediate);
 }
 
-int data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
+static int ipclient_data_init(struct ipclient_data *data, struct rrr_instance_runtime_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
 	return 0;
 }
 
-int delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
-int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
+static int ipclient_delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
+static int ipclient_queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data);
 
-int parse_config (struct ipclient_data *data, struct rrr_instance_config_data *config) {
+static int ipclient_parse_config (struct ipclient_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ipclient_client_number", client_number, 0);
-
-	if (data->client_number == 0 || data->client_number > 0xffffffff) {
+	rrr_setting_uint client_number;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW("ipclient_client_number", client_number, 0);
+	if (client_number == 0 || client_number > 0xffffffff) {
 		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
 		ret = 1;
 		goto out;
 	}
+	data->client_number = (uint32_t) client_number;
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ipclient_default_remote", ip_default_remote);
 
 	if (data->ip_default_remote == NULL || *(data->ip_default_remote) == '\0') {
-		data->queue_method = delete_message_callback;
+		data->queue_method = ipclient_delete_message_callback;
 	}
 	else {
-		data->queue_method = queue_message_callback;
+		data->queue_method = ipclient_queue_message_callback;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote_port, config, "ipclient_default_remote_port")) != 0) {
@@ -168,7 +184,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config_data *c
 	return ret;
 }
 
-static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int ipclient_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct ipclient_data *private_data = thread_data->private_data;
 
@@ -184,14 +200,8 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
-struct receive_messages_callback_data {
-	struct ipclient_data *data;
-	int count;
-};
-
-static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *arg) {
-	struct receive_messages_callback_data *callback_data = arg;
-	struct ipclient_data *data = callback_data->data;
+static int ipclient_receive_callback(struct rrr_msg_holder *entry, void *arg) {
+	struct ipclient_data *data = arg;
 
 	int ret = 0;
 
@@ -210,47 +220,18 @@ static int receive_messages_callback_final(struct rrr_msg_holder *entry, void *a
 		goto out;
 	}
 
-	callback_data->count++;
+	data->receive_total++;
 
 	out:
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
 
-static int receive_messages (int *receive_count, struct ipclient_data *data) {
-	int ret = 0;
-
-	struct receive_messages_callback_data callback_data = { data, 0 };
-
-	if ((ret = rrr_udpstream_asd_deliver_and_maintain_queues (
-			data->udpstream_asd,
-			receive_messages_callback_final,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_0("Error while receiving messages from ASD in receive_messages of ipclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	*receive_count = callback_data.count;
-	return ret;
-}
-
-struct send_packet_callback_data {
+struct ipclient_send_packet_callback_data {
 	int packet_counter;
 };
 
-/*
-#define IPCLIENT_QUEUE_RESULT_OK			0
-#define IPCLIENT_QUEUE_RESULT_ERR			(1<<0)
-#define IPCLIENT_QUEUE_RESULT_DATA_ERR		(1<<1)
-#define IPCLIENT_QUEUE_RESULT_STOP			(1<<2)
-#define IPCLIENT_QUEUE_RESULT_NOT_QUEUED	(1<<3)
-*/
-
-int delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
+static int ipclient_delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
 	RRR_MSG_0("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
 			INSTANCE_D_NAME(ipclient_data->thread_data));
 
@@ -258,7 +239,7 @@ int delete_message_callback (struct rrr_msg_holder *entry, struct ipclient_data 
 	return 0;
 }
 
-int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
+static int ipclient_queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *ipclient_data) {
 	int ret = 0;
 
 	if ((ret = rrr_udpstream_asd_queue_and_incref_message(ipclient_data->udpstream_asd, entry)) != 0) {
@@ -277,7 +258,7 @@ int queue_message_callback (struct rrr_msg_holder *entry, struct ipclient_data *
 	return ret;
 }
 
-int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
+static int ipclient_queue_or_delete_messages(int *send_count, int *sending_complete, struct ipclient_data *data) {
 	int ret = 0;
 
 	*send_count = 0;
@@ -304,33 +285,8 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 				INSTANCE_D_NAME(data->thread_data), (*send_count));
 	}
 
-	return ret;
-}
+	*sending_complete = RRR_LL_COUNT(&data->send_queue_intermediate) == 0;
 
-static int __ipclient_asd_reconnect (struct ipclient_data *data) {
-	int ret = 0;
-
-	if (data->udpstream_asd != NULL) {
-		rrr_udpstream_asd_destroy(data->udpstream_asd);
-		data->udpstream_asd = NULL;
-	}
-
-	if ((ret = rrr_udpstream_asd_new (
-			&data->udpstream_asd,
-			data->src_port,
-			data->ip_default_remote,
-			data->ip_default_remote_port,
-			data->client_number,
-			data->do_listen,
-			data->do_disallow_remote_ip_swap,
-			data->do_ipv4_only
-	)) != 0) {
-		RRR_MSG_0("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	out:
 	return ret;
 }
 
@@ -398,7 +354,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		return ret;
 }
 
-static int ipclient_udpstream_allocator (
+static int ipclient_allocator_callback (
 		RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS
 ) {
 	struct ipclient_data *data = arg;
@@ -429,158 +385,174 @@ static int ipclient_udpstream_allocator (
 	return ret;
 }
 
+static int ipclient_asd_reconnect (struct ipclient_data *data) {
+	int ret = 0;
+
+	if (data->udpstream_asd != NULL) {
+		rrr_udpstream_asd_destroy(data->udpstream_asd);
+		data->udpstream_asd = NULL;
+	}
+
+	if ((ret = rrr_udpstream_asd_new (
+			&data->udpstream_asd,
+			INSTANCE_D_EVENTS(data->thread_data),
+			(unsigned int) data->src_port,
+			data->ip_default_remote,
+			data->ip_default_remote_port,
+			data->client_number,
+			data->do_listen,
+			data->do_disallow_remote_ip_swap,
+			data->do_ipv4_only,
+			ipclient_allocator_callback,
+			data,
+			ipclient_receive_callback,
+			data
+	)) != 0) {
+		RRR_MSG_0("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static void ipclient_event_send_queue (int fd, short flags, void *arg) {
+	struct ipclient_data *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int queue_count = 0;
+	int sending_complete = 0;
+	if (ipclient_queue_or_delete_messages(&queue_count, &sending_complete, data) != 0) {
+		data->need_network_restart = 1;
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+		// Don't return, must increment counter
+	}
+
+	data->queued_total += queue_count;
+
+	if (sending_complete) {
+		EVENT_REMOVE(data->event_send_queue);
+	}
+}
+
+static int ipclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ipclient_data *data = thread_data->private_data;
+
+	if (!EVENT_PENDING(data->event_send_queue)) {
+		EVENT_ADD(data->event_send_queue);
+		EVENT_ACTIVATE(data->event_send_queue);
+	}
+
+	return rrr_poll_do_poll_delete (amount, thread_data, ipclient_poll_callback, 0);
+}
+
+static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct ipclient_data *data = thread_data->private_data;
+
+	int output_buffer_count = 0;
+	int ratelimit_active = 0;
+	int send_queue_count = 0;
+
+	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+				&output_buffer_count,
+				&ratelimit_active,
+				thread_data
+				) != 0) {
+		RRR_MSG_0("Error while setting ratelimit in ipclient instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		return RRR_EVENT_ERR;
+	}
+
+	send_queue_count = RRR_LL_COUNT(&data->send_queue_intermediate);
+
+	if (RRR_DEBUGLEVEL_1) {
+		RRR_MSG_1("-- ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %i q/s %i s/s %i d/s %i\n",
+				INSTANCE_D_NAME(thread_data),
+				output_buffer_count,
+				send_queue_count,
+				data->total_poll_count,
+				data->total_queued_count,
+				data->receive_total,
+				data->queued_total,
+				data->send_total,
+				data->delivered_total
+			 );
+		RRR_MSG_1("--------------\n");
+	}
+
+	data->receive_total = 0;
+	data->queued_total = 0;
+	data->send_total = 0;
+	data->delivered_total = 0;
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread);
+}
+
 static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
+	if (ipclient_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("ipclient thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(ipclient_data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (ipclient_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	int no_polling = rrr_message_broker_senders_count(INSTANCE_D_BROKER_ARGS(thread_data)) > 0 ? 0 : 1;
-
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
+
+	if (rrr_event_collection_push_periodic (
+			&data->event_send_queue,
+			&data->events,
+			ipclient_event_send_queue,
+			data,
+			50 * 1000 // 50 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create send queue event in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
 
 	network_restart:
 	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
+	data->need_network_restart = 0;
 
 	// TODO : Does the following comment still apply?
 	//     Only close here and not when shutting down the thread (might cause
 	//     deadlock in rrr_socket). rrr_socket cleanup will close the socket if we exit.
-	if (__ipclient_asd_reconnect(data) != 0) {
+	if (ipclient_asd_reconnect(data) != 0) {
 		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
-	uint64_t time_now = rrr_time_get_64();
-	uint64_t prev_stats_time = time_now;
-	int consecutive_zero_recv_and_send = 0;
-	int receive_total = 0;
-	int queued_total = 0;
-	int send_total = 0;
-	int delivered_total = 0;
-	while (rrr_thread_signal_encourage_stop_check(thread) == 0) {
-		rrr_thread_watchdog_time_update(thread);
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			ipclient_event_periodic,
+			thread
+	);
 
-		time_now = rrr_time_get_64();
-
-		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
-		while ( RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
-		        rrr_time_get_64() < poll_timeout &&
-		        no_polling == 0
-		) {
-			uint16_t amount = 100;
-			if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback, 25) != 0) {
-				RRR_MSG_0("Error while polling in ipclient instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				break;
-			}
-		}
-
-		int queue_count = 0;
-		rrr_thread_watchdog_time_update(thread);
-		if (queue_or_delete_messages(&queue_count, data) != 0) {
-			rrr_posix_usleep (10000); // 10 ms
-			goto network_restart;
-		}
-		queued_total += queue_count;
-
-		int receive_count = 0;
-		int send_count = 0;
-		if (rrr_udpstream_asd_buffer_tick (
-				&receive_count,
-				&send_count,
-				ipclient_udpstream_allocator,
-				data,
-				data->udpstream_asd
-		) != 0) {
-			RRR_MSG_0("UDP-stream regular tasks failed in send_packets of ipclient instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			rrr_posix_usleep (10000); // 10 ms
-			goto network_restart;
-		}
-		send_total += send_count;
-		receive_total += receive_count;
-
-		if (receive_count == 0 && send_count == 0) {
-			if (consecutive_zero_recv_and_send > 1000 && RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX) {
-/*				RRR_DEBUG_MSG_2("ipclient instance %s long sleep send buffer %i\n",
-						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_queue_intermediate));*/
-				rrr_posix_usleep (100000); // 100 ms
-			}
-			else {
-				if (consecutive_zero_recv_and_send++ > 10) {
-					rrr_posix_usleep(10);
-				}
-//				printf("ipclient instance %s yield\n", INSTANCE_D_NAME(thread_data));
-			}
-		}
-		else {
-			consecutive_zero_recv_and_send = 0;
-			RRR_DBG_3("ipclient instance %s receive count %i send count %i queued count %i\n",
-					INSTANCE_D_NAME(thread_data), receive_count, send_count, queue_count);
-		}
-
-		int delivered_count = 0;
-		if (receive_messages(&delivered_count, data) != 0) {
-			RRR_MSG_0("Error while receiving messages in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
-		}
-		delivered_total += delivered_count;
-
-		if (time_now - prev_stats_time > 1000000) {
-			int output_buffer_count = 0;
-			int ratelimit_active = 0;
-			unsigned int send_queue_count = 0;
-
-			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-					&output_buffer_count,
-					&ratelimit_active,
-					thread_data
-			) != 0) {
-				RRR_MSG_0("Error while setting ratelimit in ipclient instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-				break;
-			}
-
-			send_queue_count = RRR_LL_COUNT(&data->send_queue_intermediate);
-
-			if (RRR_DEBUGLEVEL_1) {
-				RRR_MSG_1("-- ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %i q/s %i s/s %i d/s %i\n",
-						INSTANCE_D_NAME(thread_data),
-						output_buffer_count,
-						send_queue_count,
-						data->total_poll_count,
-						data->total_queued_count,
-						receive_total,
-						queued_total,
-						send_total,
-						delivered_total
-				);
-				RRR_MSG_1("--------------\n");
-			}
-
-			prev_stats_time = time_now;
-			receive_total = 0;
-			queued_total = 0;
-			send_total = 0;
-			delivered_total = 0;
-		}
+	if (data->need_network_restart) {
+		rrr_posix_usleep (10000); // 10 ms
+		goto network_restart;
 	}
 
 	out_message:
@@ -601,6 +573,10 @@ static struct rrr_module_operations module_operations = {
 		NULL
 };
 
+struct rrr_instance_event_functions event_functions = {
+	ipclient_event_broker_data_available
+};
+
 static const char *module_name = "ipclient";
 
 __attribute__((constructor)) void load(void) {
@@ -611,6 +587,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

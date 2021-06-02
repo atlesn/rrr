@@ -193,6 +193,7 @@ static void __rrr_udpstream_stream_collection_init(struct rrr_udpstream_stream_c
 void rrr_udpstream_clear (
 		struct rrr_udpstream *data
 ) {
+	rrr_event_collection_clear(&data->events);
 	rrr_read_session_collection_clear(&data->read_sessions);
 	__rrr_udpstream_stream_collection_clear(&data->streams);
 	pthread_mutex_destroy(&data->lock);
@@ -201,7 +202,20 @@ void rrr_udpstream_clear (
 
 int rrr_udpstream_init (
 		struct rrr_udpstream *data,
-		int flags
+		struct rrr_event_queue *queue,
+		int flags,
+		int (*upstream_event_write)(int *no_more_writes, void *arg),
+		void *upstream_event_write_arg,
+		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
+		void *upstream_event_read_arg,
+		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
+		void *upstream_control_frame_callback_arg,
+		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
+		void *upstream_allocator_callback_arg,
+		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
+		void *upstream_validator_callback_arg,
+		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
+		void *upstream_final_callback_arg
 ) {
 	memset (data, '\0', sizeof(*data));
 
@@ -219,6 +233,21 @@ int rrr_udpstream_init (
 
 	__rrr_udpstream_stream_collection_init(&data->streams);
 	rrr_read_session_collection_init(&data->read_sessions);
+	rrr_event_collection_init(&data->events, queue);
+
+	data->queue = queue;
+	data->upstream_event_write = upstream_event_write;
+	data->upstream_event_write_arg = upstream_event_write_arg;
+	data->upstream_event_read = upstream_event_read;
+	data->upstream_event_read_arg = upstream_event_read_arg;
+	data->upstream_control_frame_callback = upstream_control_frame_callback;
+	data->upstream_control_frame_callback_arg = upstream_control_frame_callback_arg;
+	data->upstream_allocator_callback = upstream_allocator_callback;
+	data->upstream_allocator_callback_arg = upstream_allocator_callback_arg;
+	data->upstream_validator_callback = upstream_validator_callback;
+	data->upstream_validator_callback_arg = upstream_validator_callback_arg;
+	data->upstream_final_callback = upstream_final_callback;
+	data->upstream_final_callback_arg = upstream_final_callback_arg;
 
 	return 0;
 }
@@ -835,20 +864,19 @@ static int __rrr_udpstream_handle_received_frame_ack (
 }
 
 static int __rrr_udpstream_handle_received_frame_control (
+		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
-		struct rrr_udpstream_frame *new_frame,
-		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *control_frame_listener_arg
+		struct rrr_udpstream_frame *new_frame
 ) {
 	int ret = 0;
 
 	RRR_DBG_3("UDP-stream RX CTRL %u-%" PRIu64 "\n",
-			new_frame->stream_id, new_frame->application_data);
+		new_frame->stream_id, new_frame->application_data);
 
-	if ((ret = control_frame_listener (
+	if ((ret = data->upstream_control_frame_callback (
 			stream->connect_handle,
 			new_frame->application_data,
-			control_frame_listener_arg
+			data->upstream_control_frame_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from control frame listener in __rrr_udpstream_handle_received_frame_control\n");
 		goto out;
@@ -880,9 +908,7 @@ static int __rrr_udpstream_handle_received_frame (
 		struct rrr_udpstream *data,
 		const struct rrr_udpstream_frame_packed *frame,
 		const struct sockaddr *src_addr,
-		socklen_t addr_len,
-		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *control_frame_listener_arg
+		socklen_t addr_len
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -967,10 +993,9 @@ static int __rrr_udpstream_handle_received_frame (
 
 	if (RRR_UDPSTREAM_FRAME_IS_CONTROL(frame)) {
 		ret = __rrr_udpstream_handle_received_frame_control (
+				data,
 				stream,
-				new_frame,
-				control_frame_listener,
-				control_frame_listener_arg
+				new_frame
 		);
 		goto out;
 	}
@@ -1043,8 +1068,6 @@ static int __rrr_udpstream_handle_received_frame (
 struct rrr_udpstream_read_callback_data {
 	struct rrr_udpstream *data;
 	int receive_count;
-	int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg);
-	void *control_frame_listener_arg;
 };
 
 static int __rrr_udpstream_read_callback (
@@ -1095,9 +1118,7 @@ static int __rrr_udpstream_read_callback (
 			data,
 			frame,
 			(const struct sockaddr *) &read_session->src_addr,
-			read_session->src_addr_len,
-			callback_data->control_frame_listener,
-			callback_data->control_frame_listener_arg
+			read_session->src_addr_len
 	)) != 0) {
 		RRR_MSG_0("Error while pushing received frame to buffer in __rrr_udpstream_read_callback\n");
 		goto out;
@@ -1121,11 +1142,8 @@ struct ack_list {
 };
 
 struct rrr_udpstream_process_receive_buffer_callback_data {
+	struct rrr_udpstream *data;
 	struct rrr_udpstream_stream *stream;
-	int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS);
-	void *callback_validator_arg;
-	int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS);
-	void *receive_callback_arg;
 
 	uint32_t accumulated_data_size;
 	struct rrr_udpstream_frame *first_deliver_node;
@@ -1138,75 +1156,74 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 		void *arg
 ) {
 	void *write_pos = *joined_data;
-	struct rrr_udpstream_process_receive_buffer_callback_data *data = arg;
+	struct rrr_udpstream_process_receive_buffer_callback_data *callback_data = arg;
+	struct rrr_udpstream *data = callback_data->data;
 
 	int ret = 0;
 
 	// Read from the first undelivered node up to boundary to get a full original message
-	RRR_LL_ITERATE_BEGIN_AT(&stream->receive_buffer, struct rrr_udpstream_frame, data->first_deliver_node, 0);
+	RRR_LL_ITERATE_BEGIN_AT(&stream->receive_buffer, struct rrr_udpstream_frame, callback_data->first_deliver_node, 0);
 		if (node->data != NULL && node->data_size > 0) {
 			memcpy (write_pos, node->data, node->data_size);
 			write_pos += node->data_size;
 		}
 
-		if (node == data->last_deliver_node) {
+		if (node == callback_data->last_deliver_node) {
 			RRR_LL_ITERATE_LAST();
 
 			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
-					data->stream->stream_id, node->frame_id, node->application_data);
+					callback_data->stream->stream_id, node->frame_id, node->application_data);
 
-			if ((size_t) write_pos - (size_t) *joined_data != data->accumulated_data_size) {
+			if ((size_t) write_pos - (size_t) *joined_data != callback_data->accumulated_data_size) {
 				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
 			}
 
-			if (data->validator_callback != NULL) {
+			if (data->upstream_validator_callback) {
 				ssize_t target_size = 0;
 
-				if ((ret = data->validator_callback (
+				if ((ret = data->upstream_validator_callback (
 						&target_size,
 						*joined_data,
-						data->accumulated_data_size,
-						data->callback_validator_arg
+						callback_data->accumulated_data_size,
+						data->upstream_allocator_callback_arg
 				)) != 0) {
 					RRR_MSG_0("Header validation failed of message in UDP-stream %u, data will be lost\n",
-							data->stream->stream_id);
+							callback_data->stream->stream_id);
 					ret = 0;
 					goto loop_bottom_clenaup;
 				}
 
-				if (target_size != (int64_t) data->accumulated_data_size) {
+				if (target_size != (int64_t) callback_data->accumulated_data_size) {
 					RRR_MSG_0("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
-							data->stream->stream_id);
+							callback_data->stream->stream_id);
 					goto loop_bottom_clenaup;
 				}
 			}
 
-			if (data->receive_callback != NULL) {
-				struct rrr_udpstream_receive_data callback_data = {
-						allocation_handle,
-						data->accumulated_data_size,
-						data->stream->connect_handle,
-						data->stream->stream_id,
-						node->application_data,
-						node->source_addr,
-						node->source_addr_len
-				};
+			struct rrr_udpstream_receive_data receive_callback_data = {
+					allocation_handle,
+					callback_data->accumulated_data_size,
+					callback_data->stream->connect_handle,
+					callback_data->stream->stream_id,
+					node->application_data,
+					node->source_addr,
+					node->source_addr_len
+			};
 
-				// This function must always take care of or free memory in callback_data->data
-				if (data->receive_callback (joined_data, &callback_data, data->receive_callback_arg) != 0) {
-					RRR_MSG_0("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
-					ret = 1;
-					goto out;
-				}
+			// This function must always take care of or free memory in callback_data->data
+			if (data->upstream_final_callback (joined_data, &receive_callback_data, data->upstream_final_callback_arg) != 0) {
+				RRR_MSG_0("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
+				ret = 1;
+				goto out;
 			}
 
 			loop_bottom_clenaup:
-			data->accumulated_data_size = 0;
-			data->first_deliver_node = NULL;
+			callback_data->accumulated_data_size = 0;
+			callback_data->first_deliver_node = NULL;
 		}
 
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->stream->receive_buffer, __rrr_udpstream_frame_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&callback_data->stream->receive_buffer, __rrr_udpstream_frame_destroy(node));
 
 	out:
 	return ret;
@@ -1241,14 +1258,9 @@ int rrr_udpstream_default_allocator (
 }
 */
 static int __rrr_udpstream_process_receive_buffer (
+		int *receive_complete,
 		struct rrr_udpstream *data,
-		struct rrr_udpstream_stream *stream,
-		int (*allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *allocator_callback_arg,
-		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
-		void *validator_callback_arg,
-		int (*final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
-		void *final_callback_arg
+		struct rrr_udpstream_stream *stream
 ) {
 	int ret = 0;
 
@@ -1434,23 +1446,20 @@ static int __rrr_udpstream_process_receive_buffer (
 	stream->receive_buffer.frame_id_prev_boundary_pos = last_deliver_node->frame_id;
 
 	struct rrr_udpstream_process_receive_buffer_callback_data callback_data = {
+			data,
 			stream,
-			validator_callback,
-			validator_callback_arg,
-			final_callback,
-			final_callback_arg,
 			accumulated_data_size,
 			first_deliver_node,
 			last_deliver_node
 	};
 
-	if ((ret = allocator_callback (
+	if ((ret = data->upstream_allocator_callback (
 			accumulated_data_size,
 			stream->remote_addr,
 			stream->remote_addr_len,
 			__rrr_udpstream_process_receive_buffer_callback,
 			&callback_data,
-			allocator_callback_arg
+			data->upstream_allocator_callback_arg
 	)) != 0) {
 		RRR_MSG_0("Error from allocator in __rrr_udpstream_process_receive_buffer\n");
 		goto out;
@@ -1460,38 +1469,44 @@ static int __rrr_udpstream_process_receive_buffer (
 
 	out:
 	RRR_LL_DESTROY(&ack_list, struct ack_list_node, rrr_free(node));
+	*receive_complete = RRR_LL_COUNT(&stream->receive_buffer) == 0;
 	return ret;
 }
 
-// Read messages from inbound buffer. The receive callback must always take care of
-// memory in receive_data->data or free it, also upon errors
-int rrr_udpstream_do_process_receive_buffers (
-		struct rrr_udpstream *data,
-		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *allocator_callback_arg,
-		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
-		void *validator_callback_arg,
-		int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
-		void *receive_callback_arg
+// This function will merge received frames back into the original messages. If the messages
+// themselves contain length information and CRC32, this should be checked in the
+// callback_validator-function. A length MUST be returned from this function. If it is not
+// possible to extract the message length from the data, a dummy function may be provided
+// which simply writes the data_size parameter into target_size.
+//
+// The callback function receives the actual message. It MUST ALWAYS take care of the memory
+// in the data pointer of the receive_data struct, also if there are errors. The actual struct
+// must not be freed, it is allocated on the stack.
+//
+// ACK messages are also sent from this function and window size regulation is performed.
+static int __rrr_udpstream_process_receive_buffers (
+		int *receive_complete,
+		struct rrr_udpstream *data
 ) {
 	int ret = 0;
+
+	*receive_complete = 1;
 
 	pthread_mutex_lock(&data->lock);
 
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
+		int receive_complete_tmp = 1;
 		if ((ret = __rrr_udpstream_process_receive_buffer (
+				&receive_complete_tmp,
 				data,
-				node,
-				allocator_callback,
-				allocator_callback_arg,
-				validator_callback,
-				validator_callback_arg,
-				receive_callback,
-				receive_callback_arg
+				node
 		)) != 0) {
 			RRR_MSG_0("Destroying UDP-stream with ID %u following error condition\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 			ret = 0;
+		}
+		if (!receive_complete_tmp) {
+			*receive_complete = 0;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
@@ -1529,10 +1544,8 @@ static int __rrr_udpstream_maintain (
 // Do all reading and store messages into the buffer. Control messages are
 // not buffered, but delivered directly to the application layer through
 // the callback function.
-int rrr_udpstream_do_read_tasks (
-		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *control_frame_listener_arg
+static int __rrr_udpstream_do_read_tasks (
+		struct rrr_udpstream *data
 ) {
 	int ret = 0;
 
@@ -1545,9 +1558,7 @@ int rrr_udpstream_do_read_tasks (
 
 	struct rrr_udpstream_read_callback_data callback_data = {
 			data,
-			0,
-			control_frame_listener,
-			control_frame_listener_arg
+			0
 	};
 
 	int errors = 0;
@@ -1620,6 +1631,7 @@ static int __rrr_udpstream_send_frame_to_remote (
 }
 
 static int __rrr_udpstream_send_loop (
+		int *sending_complete,
 		int *sent_count_return,
 		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream
@@ -1674,6 +1686,7 @@ static int __rrr_udpstream_send_loop (
 		}
 	RRR_LL_ITERATE_END();
 
+	*sending_complete = RRR_LL_COUNT(&stream->send_buffer) == 0;
 	*sent_count_return = sent_count;
 
 	out:
@@ -1681,22 +1694,30 @@ static int __rrr_udpstream_send_loop (
 }
 
 // Send out buffered messages from outbound buffer
-int rrr_udpstream_do_send_tasks (
+static int __rrr_udpstream_do_send_tasks (
+		int *sending_complete,
 		int *send_count,
 		struct rrr_udpstream *data
 ) {
 	int ret = 0;
 
 	*send_count = 0;
+	*sending_complete = 1;
 
 	pthread_mutex_lock(&data->lock);
 
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		int count = 0;
-		if ((ret = __rrr_udpstream_send_loop(&count, data, node)) != 0) {
+		int sending_complete_tmp = 0;
+
+		if ((ret = __rrr_udpstream_send_loop(&sending_complete_tmp, &count, data, node)) != 0) {
 			goto out;
 		}
+
 		*send_count += count;
+		if (!sending_complete_tmp) {
+			*sending_complete = 0;
+		}
 	RRR_LL_ITERATE_END();
 
 	out:
@@ -1902,6 +1923,8 @@ int rrr_udpstream_queue_outbound_data (
 		new_frame->flags_and_type |= (RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY << 4);
 	}
 
+	EVENT_ADD(udpstream_data->event_write);
+
 	out:
 	pthread_mutex_unlock(&udpstream_data->lock);
 	return ret;
@@ -1930,6 +1953,114 @@ static int __rrr_udpstream_bind (
 	return 0;
 }
 
+static void __rrr_udpstream_event_read (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_udpstream *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	// The read callback is always active and will be called
+	// when there is data to read or periodically. The event
+	// is currently not removed when the read functions report
+	// there is nothing more to do.
+	int receive_complete_dummy = 0;
+	int reading_complete_upstream_dummy = 0;
+
+	int ready_for_delivery = 0;
+
+	if ( __rrr_udpstream_do_read_tasks (data) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	if (data->upstream_event_read (
+			&reading_complete_upstream_dummy,
+			&ready_for_delivery,
+			data->upstream_event_read_arg
+	) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	if (ready_for_delivery && __rrr_udpstream_process_receive_buffers (
+		&receive_complete_dummy,
+		data
+	) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+}
+
+static void __rrr_udpstream_event_write (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_udpstream *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int sending_complete_upstream = 1;
+	int sending_complete = 1;
+	int send_count = 0;
+
+	if (__rrr_udpstream_do_send_tasks (
+			&sending_complete,
+			&send_count,
+			data
+	) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	if (data->upstream_event_write(&sending_complete_upstream, data->upstream_event_write_arg) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	if (sending_complete && sending_complete_upstream) {
+		EVENT_REMOVE(data->event_write);
+	}
+}
+
+static int __rrr_udpstream_events_create (
+		struct rrr_udpstream *data
+) {
+	int ret = 0;
+
+	if ((ret = rrr_event_collection_push_read (
+			&data->event_read,
+			&data->events,
+			data->ip.fd,
+			__rrr_udpstream_event_read,
+			data,
+			50 * 1000 // 50 ms
+	)) != 0) {
+		goto out_err;
+	}
+
+	EVENT_ADD(data->event_read);
+
+	if ((ret = rrr_event_collection_push_write (
+			&data->event_write,
+			&data->events,
+			data->ip.fd,
+			__rrr_udpstream_event_write,
+			data,
+			50 * 1000 // 50 ms
+	)) != 0) {
+		goto out_err;
+	}
+
+	// Do not add write event
+
+	goto out;
+	out_err:
+		rrr_event_collection_clear(&data->events);
+	out:
+		return ret;
+}
+
 int rrr_udpstream_bind_v6_priority (
 		struct rrr_udpstream *data,
 		unsigned int local_port
@@ -1956,6 +2087,11 @@ int rrr_udpstream_bind_v6_priority (
 		goto out;
 	}
 
+	if ((ret = __rrr_udpstream_events_create(data)) != 0) {
+		RRR_MSG_0("Failed to create events in rrr_udpstream_bind_v6_priority\n");
+		goto out_unbind;
+	}
+
 	if (ret_6 == 0) {
 		RRR_DBG_1("udpstream bind on port %u IPv6 (possibly dual-stack)\n", local_port);
 	}
@@ -1963,9 +2099,12 @@ int rrr_udpstream_bind_v6_priority (
 		RRR_DBG_1("udpstream bind on port %u IPv4\n", local_port);
 	}
 
+	goto out;
+	out_unbind:
+		rrr_ip_network_cleanup(&data->ip);
 	out:
-	pthread_mutex_unlock(&data->lock);
-	return ret;
+		pthread_mutex_unlock(&data->lock);
+		return ret;
 }
 
 int rrr_udpstream_bind_v4_only (
@@ -1986,11 +2125,19 @@ int rrr_udpstream_bind_v4_only (
 		goto out;
 	}
 
+	if ((ret = __rrr_udpstream_events_create(data)) != 0) {
+		RRR_MSG_0("Failed to create events in rrr_udpstream_bind_v4_only\n");
+		goto out_unbind;
+	}
+
 	RRR_DBG_1("udpstream bind on port %u IPv4 only\n", local_port);
 
+	goto out;
+	out_unbind:
+		rrr_ip_network_cleanup(&data->ip);
 	out:
-	pthread_mutex_unlock(&data->lock);
-	return ret;
+		pthread_mutex_unlock(&data->lock);
+		return ret;
 }
 
 int rrr_udpstream_connect_raw (

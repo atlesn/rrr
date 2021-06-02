@@ -69,6 +69,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
+#include "../event/event_collection.h"
 
 // Configuration
 #define RRR_UDPSTREAM_VERSION 2
@@ -318,6 +319,17 @@ struct rrr_udpstream_stream_collection {
 	RRR_LL_HEAD(struct rrr_udpstream_stream);
 };
 
+// Used when data is delivered to the API user after receiving a full message
+struct rrr_udpstream_receive_data {
+	void *allocation_handle;
+	ssize_t data_size;
+	uint32_t connect_handle;
+	uint16_t stream_id;
+	uint64_t application_data;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
+};
+
 // The API user must allocate this struct either statically or dynamically.
 // Before freeing it, the clear function must be called. Before using, the init
 // function must be called.
@@ -330,19 +342,27 @@ struct rrr_udpstream {
 
 	pthread_mutex_t lock;
 
+	struct rrr_event_queue *queue;
+	struct rrr_event_collection events;
+
+	rrr_event_handle event_read;
+	rrr_event_handle event_write;
+
+	int (*upstream_event_write)(int *no_more_writes, void *arg);
+	void *upstream_event_write_arg;
+	int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg);
+	void *upstream_event_read_arg;
+	int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg);
+	void *upstream_control_frame_callback_arg;
+	int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS);
+	void *upstream_allocator_callback_arg;
+	int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS);
+	void *upstream_validator_callback_arg;
+	int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS);
+	void *upstream_final_callback_arg;
+
 	void *send_buffer;
 	ssize_t send_buffer_size;
-};
-
-// Used when data is delivered to the API user after receiving a full message
-struct rrr_udpstream_receive_data {
-	void *allocation_handle;
-	ssize_t data_size;
-	uint32_t connect_handle;
-	uint16_t stream_id;
-	uint64_t application_data;
-	const struct sockaddr *addr;
-	socklen_t addr_len;
 };
 
 struct rrr_udpstream_send_data {
@@ -364,7 +384,20 @@ void rrr_udpstream_clear (
 );
 int rrr_udpstream_init (
 		struct rrr_udpstream *stream,
-		int flags
+		struct rrr_event_queue *queue,
+		int flags,
+		int (*upstream_event_write)(int *no_more_writes, void *arg),
+		void *upstream_event_write_arg,
+		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
+		void *upstream_event_read_arg,
+		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
+		void *upstream_control_frame_callback_arg,
+		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
+		void *upstream_allocator_callback_arg,
+		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
+		void *upstream_validator_callback_arg,
+		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
+		void *upstream_final_callback_arg
 );
 
 // Change the flags after initialization, may be called at any time
@@ -392,41 +425,6 @@ int rrr_udpstream_default_allocator (
 		void *arg
 );
 */
-
-// This function will merge received frames back into the original messages. If the messages
-// themselves contain length information and CRC32, this should be checked in the
-// callback_validator-function. A length MUST be returned from this function. If it is not
-// possible to extract the message length from the data, a dummy function may be provided
-// which simply writes the data_size parameter into target_size.
-//
-// The callback function receives the actual message. It MUST ALWAYS take care of the memory
-// in the data pointer of the receive_data struct, also if there are errors. The actual struct
-// must not be freed, it is allocated on the stack.
-//
-// ACK messages are also sent from this function and window size regulation is performed.
-
-int rrr_udpstream_do_process_receive_buffers (
-		struct rrr_udpstream *data,
-		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *allocator_callback_arg,
-		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
-		void *validator_callback_arg,
-		int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
-		void *receive_callback_arg
-);
-// This should be called on a regular basis to perform all reading from network. If a control frame
-// is received, the callback is called.
-int rrr_udpstream_do_read_tasks (
-		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *control_frame_listener_arg
-);
-
-// This should be called on a regular basis to perform any sending of data
-int rrr_udpstream_do_send_tasks (
-		int *send_count,
-		struct rrr_udpstream *data
-);
 
 // Check if a particular stream ID is registered
 int rrr_udpstream_stream_exists (
