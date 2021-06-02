@@ -41,6 +41,150 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../string_builder.h"
 #include "../ip/ip_util.h"
 
+// Configuration
+#define RRR_UDPSTREAM_VERSION 2
+
+#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 500
+#define RRR_UDPSTREAM_BURST_LIMIT_SEND 50
+
+#define RRR_UDPSTREAM_MESSAGE_SIZE_MAX 67584
+
+#define RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT 1024
+#define RRR_UDPSTREAM_FRAME_ID_LIMIT 4294967295
+
+#define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
+
+#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 240000
+#define RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS (RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS*2)
+
+#define RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT 5
+
+#define RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_SHORT 10
+#define RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_LONG 50
+
+#define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_RESEND_ASD_ACK -10
+#define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_BUFFER_HOLE -5
+#define RRR_UDPSTREAM_WINDOW_SIZE_GAIN_BUFFER_COMPLETE -5
+#define RRR_UDPSTREAM_WINDOW_SIZE_MIN 10
+
+// Flags and type are stored together, 4 bits each. Lower 4 are for type.
+
+// Current frame is a message boundary (end of a message). Preceding frames
+// after previous boundary (if any) including boundary message are to be merged.
+#define RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY			(1<<0)
+
+// Regulate window size. Receiver sends this to tell a sender to slow down or
+// speed up. Any ACK packet may contain window size regulation.
+#define RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE		(1<<1)
+
+// Used to initiate connection stop. If the reset packet contains a frame id,
+// delivery of frames up to this point is completed before the connection
+// is closed. If frame id is zero, a hard reset is performed and sending should
+// stop immediately and a new stream must be used instead. This might happen
+// if a client restarts and gets ready again before the connection times out.
+#define RRR_UDPSTREAM_FRAME_TYPE_RESET				0
+
+// Used to initiate a new stream, both request and response
+#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			1
+
+// Used for data transmission
+#define RRR_UDPSTREAM_FRAME_TYPE_DATA				3
+
+// Used to acknowledge frames and to regulate window size
+#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			4
+
+// Used for control packets with no data. The application_data field may be used
+// by the application to exchange control data. Delivery is not guaranteed like
+// with data packets, control packets are just sent immediately.
+#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			5
+
+#define RRR_UDPSTREAM_FRAME_TYPE(frame) \
+	((frame)->flags_and_type & 0x0f)
+#define RRR_UDPSTREAM_FRAME_FLAGS(frame) \
+	((frame)->flags_and_type >> 4)
+#define RRR_UDPSTREAM_FRAME_VERSION(frame) \
+	((frame)->version)
+
+// Every frame contains a CRC32 checksum. Upon mismatch, frames are dropped and must be re-sent.
+// This CRC32 verifies the header only and is used to make sure the data length specified in
+// a frame is valid.
+#define RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame) \
+	(rrr_be32toh((frame)->header_crc32))
+
+#define RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) \
+	(rrr_be16toh((frame)->data_size))
+#define RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame) \
+	(sizeof(*(frame)) - 1 + RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame))
+
+#define RRR_UDPSTREAM_FRAME_PACKED_DATA_PTR(frame) \
+	(&(frame)->data)
+
+#define RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame) \
+	((frame)->version)
+
+// Each stream has an ID which is chosen randomly. The sender IP/port is not
+// checked when frames are received, and it is not a problem if this changes
+// as long as the same stream ID is used and the connection does not time out.
+#define RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame) \
+	(rrr_be16toh((frame)->stream_id))
+
+// Number to identify each frame. Begins with 1 for each new stream. The IDs
+// may become exhausted if there are a lot of traffic or for long-lasting streams,
+// after which a new stream must be initiated.
+#define RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame) \
+	(rrr_be32toh((frame)->frame_id))
+
+// Identifier chosen randomly to match sent CONNECT frames with received ones. It
+// is possible to have collisions (although unlikely), and a client might reject
+// a connection if a connect handle is already taken.
+#define RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(frame) \
+	(rrr_be32toh((frame)->connect_handle))
+
+// Frame ACK messages contain an ACK range which specifies a low and high frame ID
+// for frames which are received. ACK frames are sent constantly for all messages
+// which are currently not delivered to the application. A single data frame may therefore
+// be "mentioned" in multiple ACK frames.
+
+// Each time a sender receives an ACK frame,
+// it increments the "unacknowledged counter" for frames which was not mentioned in the ACK.
+// If this counter reached a specific limit, the frame is re-sent. The way a client sends
+// ACK packets will therefore ensure that frames which are missing out (holes in the stream)
+// is re-sent.
+
+// If there are missing frames and holes in the receive buffer, a client will request the
+// window size to be reduced slightly. If there are no holes, the window size is carefully
+// increased.
+#define RRR_UDPSTREAM_FRAME_PACKED_ACK_FIRST(frame) \
+	(rrr_be32toh((frame)->ack_data.ack_id_first))
+#define RRR_UDPSTREAM_FRAME_PACKED_ACK_LAST(frame) \
+	(rrr_be32toh((frame)->ack_data.ack_id_last))
+
+#define RRR_UDPSTREAM_FRAME_PACKED_APPLICATION_DATA(frame) \
+	(rrr_be64toh((frame)->application_data))
+
+// After a full frame with data is received, this checksum is verified
+#define RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame) \
+	(rrr_be32toh((frame)->data_crc32))
+
+#define RRR_UDPSTREAM_FRAME_IS_BOUNDARY(frame) \
+	((RRR_UDPSTREAM_FRAME_FLAGS(frame) & RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY) != 0)
+#define RRR_UDPSTREAM_FRAME_HAS_WINDOW_SIZE(frame) \
+	((RRR_UDPSTREAM_FRAME_FLAGS(frame) & RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE) != 0)
+
+#define RRR_UDPSTREAM_FRAME_IS_CONNECT(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_CONNECT) != 0)
+#define RRR_UDPSTREAM_FRAME_IS_FRAME_ACK(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK) != 0)
+#define RRR_UDPSTREAM_FRAME_IS_DATA(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_DATA) != 0)
+#define RRR_UDPSTREAM_FRAME_IS_CONTROL(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_CONTROL) != 0)
+#define RRR_UDPSTREAM_FRAME_IS_RESET(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
+
+// Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
+// #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
+
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
 	RRR_FREE_IF_NOT_NULL(frame->source_addr);
