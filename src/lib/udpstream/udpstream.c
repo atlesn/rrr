@@ -1927,12 +1927,8 @@ static void __rrr_udpstream_event_read (
 
 //	printf("Read event\n");
 
-	// The read callback is always active and will be called
-	// when there is data to read or periodically. The event
-	// is currently not removed when the read functions report
-	// there is nothing more to do.
-	int receive_complete_dummy = 0;
-	int reading_complete_upstream_dummy = 0;
+	int reading_complete = 0;
+	int reading_complete_upstream = 0;
 
 	int ready_for_delivery = 0;
 
@@ -1941,7 +1937,7 @@ static void __rrr_udpstream_event_read (
 	}
 
 	if (data->upstream_event_read (
-			&reading_complete_upstream_dummy,
+			&reading_complete_upstream,
 			&ready_for_delivery,
 			data->upstream_event_read_arg
 	) != 0) {
@@ -1949,10 +1945,22 @@ static void __rrr_udpstream_event_read (
 	}
 
 	if (ready_for_delivery && __rrr_udpstream_process_receive_buffers (
-		&receive_complete_dummy,
+		&reading_complete,
 		data
 	) != 0) {
 		rrr_event_dispatch_break(data->queue);
+	}
+
+	unsigned int timeout_new = (reading_complete && reading_complete_upstream
+		? RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_LONG
+		: RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_SHORT
+	);
+
+	if (data->event_read_current_timeout != timeout_new) {
+		data->event_read_current_timeout = timeout_new;
+		EVENT_INTERVAL_SET(data->event_read, timeout_new);
+		EVENT_ADD(data->event_read);
+		printf("Read timeout %u\n", timeout_new);
 	}
 }
 
@@ -2024,7 +2032,7 @@ static int __rrr_udpstream_events_create (
 			data->ip.fd,
 			__rrr_udpstream_event_read,
 			data,
-			100 * 1000 // 100 ms
+			10 * 1000 // 10 ms
 	)) != 0) {
 		goto out_err;
 	}

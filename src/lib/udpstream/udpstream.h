@@ -62,8 +62,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPSTREAM_BUFFER_LIMIT 1500
 
-#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 100000
-#define RRR_UDPSTREAM_BURST_LIMIT_SEND 100
+#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 500
+#define RRR_UDPSTREAM_BURST_LIMIT_SEND 50
 
 #define RRR_UDPSTREAM_MESSAGE_SIZE_MAX 67584
 
@@ -77,6 +77,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
 #define RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT 5
+
+#define RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_SHORT 10
+#define RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_LONG 50
 
 #define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_RESEND_ASD_ACK -10
 #define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_BUFFER_HOLE -5
@@ -331,6 +334,8 @@ struct rrr_udpstream {
 	rrr_event_handle event_read;
 	rrr_event_handle event_write;
 	rrr_event_handle event_periodic;
+
+	unsigned int event_read_current_timeout;
 
 	int (*upstream_event_write)(int *no_more_writes, void *arg);
 	void *upstream_event_write_arg;
