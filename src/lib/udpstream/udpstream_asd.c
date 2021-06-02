@@ -871,7 +871,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_m
 			&session->release_queues,
 			entry,
 			receive_data->udpstream_receive_data->connect_handle,
-			receive_data->udpstream_receive_data->application_data
+			(uint32_t) receive_data->udpstream_receive_data->application_data
 	)) != 0) {
 		RRR_MSG_0("Could not insert ASD message into release queue\n");
 		ret = 1;
@@ -911,7 +911,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	if ((ret = rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) joined_data,
-			receive_data->data_size,
+			(rrr_length) receive_data->data_size,
 			__rrr_udpstream_asd_receive_messages_callback_final,
 			NULL,
 			NULL,
