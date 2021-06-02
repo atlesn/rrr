@@ -48,14 +48,14 @@ struct rrr_udpstream_asd_queue_entry {
 	int send_count;
 };
 
-struct rrr_udpstream_asd_queue_new {
-	RRR_LL_NODE(struct rrr_udpstream_asd_queue_new);
+struct rrr_udpstream_asd_queue {
+	RRR_LL_NODE(struct rrr_udpstream_asd_queue);
 	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_entry);
 	uint32_t source_connect_handle;
 };
 
 struct rrr_udpstream_asd_queue_collection {
-	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_new);
+	RRR_LL_HEAD(struct rrr_udpstream_asd_queue);
 };
 
 struct rrr_udpstream_asd_control_queue_entry {
@@ -76,7 +76,7 @@ struct rrr_udpstream_asd {
 	struct rrr_udpstream_asd_queue_collection release_queues;
 
 	// Stores outbound messages to default remote host
-	struct rrr_udpstream_asd_queue_new send_queue;
+	struct rrr_udpstream_asd_queue send_queue;
 
 	// Stores control messages to multiple remote hosts
 	struct rrr_udpstream_asd_control_queue control_send_queue;
@@ -130,7 +130,7 @@ static int __rrr_udpstream_asd_queue_entry_destroy (
 }
 
 static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entry (
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		uint32_t message_id
 ) {
 	if (RRR_LL_FIRST(queue) != NULL && message_id < RRR_LL_FIRST(queue)->message_id) {
@@ -157,7 +157,7 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_collectio
 		uint32_t connect_handle,
 		uint32_t message_id
 ) {
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue);
 		if (node->source_connect_handle == connect_handle) {
 			return __rrr_udpstream_asd_queue_find_entry(node, message_id);
 		}
@@ -168,12 +168,12 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_collectio
 
 static int __rrr_udpstream_asd_queue_collection_iterate (
 		struct rrr_udpstream_asd_queue_collection *collection,
-		int (*callback)(struct rrr_udpstream_asd_queue_new *queue, void *private_arg),
+		int (*callback)(struct rrr_udpstream_asd_queue *queue, void *private_arg),
 		void *private_arg
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue);
 		if (callback(node, private_arg) != 0) {
 			ret = 1;
 			goto out;
@@ -189,7 +189,7 @@ static int __rrr_udpstream_asd_queue_collection_count_entries (
 ) {
 	int total = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue);
 		total += RRR_LL_COUNT(node);
 	RRR_LL_ITERATE_END();
 
@@ -198,7 +198,7 @@ static int __rrr_udpstream_asd_queue_collection_count_entries (
 
 
 static void __rrr_udpstream_asd_queue_insert_ordered (
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		struct rrr_udpstream_asd_queue_entry *entry
 ) {
 	if (RRR_LL_LAST(queue) == NULL || RRR_LL_LAST(queue)->message_id < entry->message_id) {
@@ -223,7 +223,7 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 }
 
 static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		struct rrr_msg_holder *ip_entry,
 		uint32_t message_id
 ) {
@@ -256,10 +256,10 @@ static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 	return ret;
 }
 
-static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **target, uint32_t connect_handle) {
+static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue **target, uint32_t connect_handle) {
 	*target = NULL;
 
-	struct rrr_udpstream_asd_queue_new *queue = rrr_allocate(sizeof(*queue));
+	struct rrr_udpstream_asd_queue *queue = rrr_allocate(sizeof(*queue));
 
 	if (queue == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_new\n");
@@ -283,9 +283,9 @@ static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 ) {
 	int ret = 0;
 
-	struct rrr_udpstream_asd_queue_new *target = NULL;
+	struct rrr_udpstream_asd_queue *target = NULL;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_udpstream_asd_queue);
 		if (connect_handle == node->source_connect_handle) {
 			target = node;
 			RRR_LL_ITERATE_BREAK();
@@ -307,17 +307,17 @@ static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 	return ret;
 }
 
-static void __rrr_udpstream_asd_queue_clear(struct rrr_udpstream_asd_queue_new *queue) {
+static void __rrr_udpstream_asd_queue_clear(struct rrr_udpstream_asd_queue *queue) {
 	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_queue_entry, __rrr_udpstream_asd_queue_entry_destroy(node));
 }
 
-static void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue_new *queue) {
+static void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue *queue) {
 	__rrr_udpstream_asd_queue_clear(queue);
 	rrr_free(queue);
 }
 
 static void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_collection *collection) {
-	RRR_LL_DESTROY(collection, struct rrr_udpstream_asd_queue_new, __rrr_udpstream_asd_queue_destroy(node));
+	RRR_LL_DESTROY(collection, struct rrr_udpstream_asd_queue, __rrr_udpstream_asd_queue_destroy(node));
 }
 
 static void __rrr_udpstream_asd_control_queue_clear(struct rrr_udpstream_asd_control_queue *queue) {
@@ -441,7 +441,7 @@ static void __rrr_udpstream_asd_release_queue_clear_by_handle (
 		struct rrr_udpstream_asd *session,
 		uint32_t connect_handle
 ) {
-	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue);
 		if (node->source_connect_handle == connect_handle) {
 			__rrr_udpstream_asd_queue_clear(node);
 		}
@@ -626,7 +626,7 @@ static int __rrr_udpstream_asd_send_message (
 }
 
 static int __rrr_udpstream_asd_do_release_queue_send_tasks (
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		void *private_arg
 ) {
 	struct rrr_udpstream_asd *session = private_arg;
@@ -921,7 +921,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 static int __rrr_udpstream_asd_queue_deliver_messages (
 		int *delivered_count,
 		struct rrr_udpstream_asd *session,
-		struct rrr_udpstream_asd_queue_new *queue
+		struct rrr_udpstream_asd_queue *queue
 ) {
 	*delivered_count = 0;
 
@@ -961,7 +961,7 @@ static int __rrr_udpstream_asd_queue_deliver_messages (
 
 static int __rrr_udpstream_asd_queue_update_delivery_grace (
 		int *grace_count,
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		int delivered_count
 ) {
 	*grace_count = 0;
@@ -986,7 +986,7 @@ static int __rrr_udpstream_asd_queue_update_delivery_grace (
 
 int __rrr_udpstream_asd_queue_regulate_window_size (
 		struct rrr_udpstream_asd *session,
-		struct rrr_udpstream_asd_queue_new *queue,
+		struct rrr_udpstream_asd_queue *queue,
 		int grace_count
 ) {
 	int ret = 0;
@@ -1008,7 +1008,7 @@ int __rrr_udpstream_asd_queue_regulate_window_size (
 
 static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 		struct rrr_udpstream_asd *session,
-		struct rrr_udpstream_asd_queue_new *queue
+		struct rrr_udpstream_asd_queue *queue
 ) {
 	int ret = 0;
 
@@ -1058,7 +1058,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 	// Note : We could have deleted empty queues here, but they never get empty
 	//        due to the grace time of delivered messages
 
-	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue_new);
+	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue);
 		if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queue (
 				session,
 				node
