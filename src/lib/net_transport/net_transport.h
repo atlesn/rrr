@@ -143,19 +143,6 @@ int rrr_net_transport_bind_and_listen_dualstack (
 void rrr_net_transport_event_activate_all_connected_read (
 		struct rrr_net_transport *transport
 );
-int rrr_net_transport_event_setup (
-		struct rrr_net_transport *transport,
-		uint64_t first_read_timeout_ms,
-		uint64_t soft_read_timeout_ms,
-		uint64_t hard_read_timeout_ms,
-		int send_chunk_count_limit,
-		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
-		void *accept_callback_arg,
-		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
-		void *handshake_complete_callback_arg,
-		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
-		void *read_callback_arg
-);
 int rrr_net_transport_is_tls (
 		struct rrr_net_transport *transport
 );
@@ -191,7 +178,23 @@ int rrr_net_transport_new (
 		int flags,
 		struct rrr_event_queue *queue,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		unsigned int alpn_protos_length,
+		uint64_t first_read_timeout_ms,
+		uint64_t soft_read_timeout_ms,
+		uint64_t hard_read_timeout_ms,
+		int send_chunk_count_limit,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *accept_callback_arg,
+		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		void *handshake_complete_callback_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
+);
+int rrr_net_transport_new_simple (
+		struct rrr_net_transport **result,
+		const struct rrr_net_transport_config *config,
+		int flags,
+		struct rrr_event_queue *queue
 );
 void rrr_net_transport_destroy (
 		struct rrr_net_transport *transport

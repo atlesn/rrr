@@ -851,7 +851,7 @@ void rrr_net_transport_event_activate_all_connected_read (
 	RRR_LL_ITERATE_END();
 }
 
-int rrr_net_transport_event_setup (
+static int __rrr_net_transport_event_setup (
 		struct rrr_net_transport *transport,
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
@@ -1018,13 +1018,24 @@ void rrr_net_transport_stats_get (
 	*handle_count = RRR_LL_COUNT(collection);
 }
 
-int rrr_net_transport_new (
+static int __rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
 		int flags,
 		struct rrr_event_queue *queue,
 		const char *alpn_protos,
-		unsigned int alpn_protos_length
+		unsigned int alpn_protos_length,
+		int do_setup_events,
+		uint64_t first_read_timeout_ms,
+		uint64_t soft_read_timeout_ms,
+		uint64_t hard_read_timeout_ms,
+		int send_chunk_count_limit,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *accept_callback_arg,
+		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		void *handshake_complete_callback_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
 ) {
 #if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL)
 	(void)(alpn_protos_length);
@@ -1075,13 +1086,97 @@ int rrr_net_transport_new (
 	rrr_event_collection_init(&new_transport->events, queue);
 	new_transport->event_queue = queue;
 
+	if (do_setup_events) {
+		if ((ret = __rrr_net_transport_event_setup (
+				new_transport,
+				first_read_timeout_ms,
+				soft_read_timeout_ms,
+				hard_read_timeout_ms,
+				send_chunk_count_limit,
+				accept_callback,
+				accept_callback_arg,
+				handshake_complete_callback,
+				handshake_complete_callback_arg,
+				read_callback,
+				read_callback_arg
+		)) != 0) {
+			goto out_destroy;
+		}
+	}
+
 	*result = new_transport;
 
 	goto out;
-//	out_destroy:
-//		new_transport->methods->destroy(new_transport);
+	out_destroy:
+		new_transport->methods->destroy(new_transport);
 	out:
 		return ret;
+}
+
+int rrr_net_transport_new (
+		struct rrr_net_transport **result,
+		const struct rrr_net_transport_config *config,
+		int flags,
+		struct rrr_event_queue *queue,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length,
+		uint64_t first_read_timeout_ms,
+		uint64_t soft_read_timeout_ms,
+		uint64_t hard_read_timeout_ms,
+		int send_chunk_count_limit,
+		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
+		void *accept_callback_arg,
+		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),
+		void *handshake_complete_callback_arg,
+		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
+		void *read_callback_arg
+) {
+	return __rrr_net_transport_new (
+			result,
+			config,
+			flags,
+			queue,
+			alpn_protos,
+			alpn_protos_length,
+			1, /* Do setup events */
+			first_read_timeout_ms,
+			soft_read_timeout_ms,
+			hard_read_timeout_ms,
+			send_chunk_count_limit,
+			accept_callback,
+			accept_callback_arg,
+			handshake_complete_callback,
+			handshake_complete_callback_arg,
+			read_callback,
+			read_callback_arg
+	);
+}
+
+int rrr_net_transport_new_simple (
+		struct rrr_net_transport **result,
+		const struct rrr_net_transport_config *config,
+		int flags,
+		struct rrr_event_queue *queue
+) {
+	return __rrr_net_transport_new (
+			result,
+			config,
+			flags,
+			queue,
+			NULL,
+			0,
+			0, /* Do not setup events */
+			0,
+			0,
+			0,
+			0,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL
+	);
 }
 
 void rrr_net_transport_destroy (

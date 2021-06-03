@@ -114,6 +114,21 @@ static void __rrr_mqtt_transport_accept_callback (
 	transport->accept_callback(handle, sockaddr, socklen, &callback_data);
 }
 
+#define RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS                         \
+            transport->queue,                                         \
+            NULL,                                                     \
+            0,                                                        \
+            2 * 2000,   /* First read timeout 2s */                   \
+            1 * 1000,   /* Soft timeout 1 s, maintenance interval */  \
+            0xffff * 2, /* Hard timeout */                            \
+            RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT,           \
+            __rrr_mqtt_transport_accept_callback,                     \
+            transport,                                                \
+            NULL,                                                     \
+            NULL,                                                     \
+            transport->read_callback,                                 \
+            transport->read_callback_arg
+
 int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
 		const struct rrr_net_transport_config *net_transport_config
@@ -133,9 +148,7 @@ int rrr_mqtt_transport_start (
 				&tmp,
 				net_transport_config,
 				RRR_NET_TRANSPORT_F_TLS_VERSION_MIN_1_1,
-				transport->queue,
-				NULL,
-				0
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
 			RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
 			goto out;
@@ -148,9 +161,7 @@ int rrr_mqtt_transport_start (
 				&tmp,
 				&net_transport_config_plain,
 				0,
-				transport->queue,
-				NULL,
-				0
+				RRR_MQTT_TRANSPORT_NET_TRANSPORT_ARGS
 		)) != 0) {
 			RRR_MSG_0("Could not initialize plain network type in rrr_mqtt_transport_start_plain\n");
 			goto out;
@@ -161,22 +172,6 @@ int rrr_mqtt_transport_start (
 	}
 
 	transport->transports[transport->transport_count++] = tmp;
-
-	if ((ret = rrr_net_transport_event_setup (
-			tmp,
-			2 * 2000,   // First read timeout 2s 
-			1 * 1000,   // Soft timeout 1 s, maintenance interval
-			0xffff * 2, // Hard timeout
-			RRR_MQTT_TRANSPORT_SEND_CHUNK_COLLECTION_LIMIT,
-			__rrr_mqtt_transport_accept_callback,
-			transport,
-			NULL,
-			NULL,
-			transport->read_callback,
-			transport->read_callback_arg
-	)) != 0) {
-		goto out;
-	}
 
 	out:
 	return ret;

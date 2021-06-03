@@ -869,25 +869,6 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
-static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-		struct rrr_http_client *http_client,
-		struct rrr_net_transport *transport
-) {
-	return rrr_net_transport_event_setup (
-			transport,
-			0,
-			0,
-			http_client->idle_timeout_ms,
-			http_client->send_chunk_count_limit,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			__rrr_http_client_read_callback,
-			http_client
-	);
-}
-
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -919,17 +900,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				tls_flags,
 				http_client->events,
 				alpn_protos,
-				alpn_protos_length
+				alpn_protos_length,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_tls
-		)) != 0) {
 			goto out;
 		}
 	}
@@ -954,17 +938,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				0,
 				http_client->events,
 				NULL,
-				0
+				0,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_plain
-		)) != 0) {
 			goto out;
 		}
 	}

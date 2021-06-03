@@ -99,30 +99,6 @@ int rrr_http_server_new (
 		return ret;
 }
 
-struct rrr_http_server_start_alpn_protos_callback_data {
-	struct rrr_net_transport **result_transport;
-	const struct rrr_net_transport_config *net_transport_config;
-	int net_transport_flags;
-	struct rrr_event_queue *queue;
-};
-
-static int __rrr_http_server_start_alpn_protos_callback (
-		const char *alpn_protos,
-		unsigned int alpn_protos_length,
-		void *callback_arg
-) {
-	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
-
-	return rrr_net_transport_new (
-			callback_data->result_transport,
-			callback_data->net_transport_config,
-			callback_data->net_transport_flags,
-			callback_data->queue,
-			alpn_protos,
-			alpn_protos_length
-	);
-}
-
 static void __rrr_http_server_accept_callback (
 		RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS
 ) {
@@ -413,6 +389,49 @@ static int __rrr_http_server_read_callback (
 	return ret;
 }
 
+#define RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS                \
+    __rrr_http_server_accept_callback,                         \
+    http_server,                                               \
+    __rrr_http_server_handshake_complete_callback,             \
+    http_server,                                               \
+    __rrr_http_server_read_callback,                           \
+    http_server
+
+struct rrr_http_server_start_alpn_protos_callback_data {
+	struct rrr_http_server *server;
+	struct rrr_net_transport **result_transport;
+	const struct rrr_net_transport_config *net_transport_config;
+	const int net_transport_flags;
+	struct rrr_event_queue *queue;
+	const uint64_t first_read_timeout_ms;
+	const uint64_t hard_timeout_ms;
+	const uint64_t ping_timeout_ms;
+	const int send_chunk_count_limit;
+};
+
+static int __rrr_http_server_start_alpn_protos_callback (
+		const char *alpn_protos,
+		unsigned int alpn_protos_length,
+		void *callback_arg
+) {
+	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
+	struct rrr_http_server *http_server = callback_data->server;
+
+	return rrr_net_transport_new (
+			callback_data->result_transport,
+			callback_data->net_transport_config,
+			callback_data->net_transport_flags,
+			callback_data->queue,
+			alpn_protos,
+			alpn_protos_length,
+			callback_data->first_read_timeout_ms,
+			callback_data->ping_timeout_ms,
+			callback_data->hard_timeout_ms,
+			callback_data->send_chunk_count_limit,
+			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
+	);
+}
+
 static int __rrr_http_server_start (
 		struct rrr_net_transport **result_transport,
 		struct rrr_http_server *http_server,
@@ -430,12 +449,20 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
+	const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
+	const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
+
 	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				http_server,
 				result_transport,
 				net_transport_config,
 				net_transport_flags,
-				queue
+				queue,
+				first_read_timeout_ms,
+				hard_timeout_ms,
+				ping_timeout_ms,
+				send_chunk_count_limit
 		};
 
 		ret = rrr_http_application_alpn_protos_with_all_do (
@@ -450,7 +477,12 @@ static int __rrr_http_server_start (
 				net_transport_flags,
 				queue,
 				NULL,
-				0
+				0,
+				first_read_timeout_ms,
+				ping_timeout_ms,
+				hard_timeout_ms,
+				send_chunk_count_limit,
+				RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
 		);
 	}
 
@@ -461,24 +493,6 @@ static int __rrr_http_server_start (
 	}
 
 	if (queue != NULL) {
-		const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
-		const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
-
-		if ((ret = rrr_net_transport_event_setup (
-				*result_transport,
-				first_read_timeout_ms,
-				ping_timeout_ms,
-				hard_timeout_ms,
-				send_chunk_count_limit,
-				__rrr_http_server_accept_callback,
-				http_server,
-				__rrr_http_server_handshake_complete_callback,
-				http_server,
-				__rrr_http_server_read_callback,
-				http_server
-		)) != 0) {
-			goto out;
-		}
 	}
 
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
