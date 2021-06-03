@@ -160,6 +160,7 @@ struct rrr_udpstream_stream {
 	int window_size_regulation_from_application;
 	int invalidated;
 	int hard_reset_received;
+	uint32_t last_ack_id;
 };
 
 struct rrr_udpstream_stream_collection {

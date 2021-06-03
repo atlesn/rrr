@@ -588,7 +588,7 @@ static int __rrr_udpstream_send_frame_ack (
 ) {
 	struct rrr_udpstream_frame_packed frame = {0};
 
-	RRR_DBG_3("UDP-stream RX ACK %u-%u-%u DUP %i\n",
+	RRR_DBG_3("UDP-stream TX ACK %u-%u-%u count %i\n",
 			stream_id, ack_id_first, ack_id_last, copies);
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK;
@@ -984,12 +984,30 @@ static int __rrr_udpstream_handle_received_frame_ack (
 ) {
 	int ret = 0;
 
-	RRR_DBG_3("UDP-stream RX ACK %u-%u-%u\n",
-			new_frame->stream_id, new_frame->ack_data.ack_id_first, new_frame->ack_data.ack_id_last);
+	int64_t nag_id = -1;
+
+	if (new_frame->ack_data.ack_id_first == new_frame->ack_data.ack_id_last) {
+		if (new_frame->ack_data.ack_id_last == stream->last_ack_id) {
+			nag_id = stream->last_ack_id;
+		}
+		else {
+			stream->last_ack_id = new_frame->ack_data.ack_id_last;
+		}
+	}
+
+	RRR_DBG_3("UDP-stream RX ACK %u-%u-%u%s\n",
+			new_frame->stream_id,
+			new_frame->ack_data.ack_id_first,
+			new_frame->ack_data.ack_id_last,
+			nag_id > 0 ? " (nagging)" : ""
+	);
 
 	RRR_LL_ITERATE_BEGIN(&stream->send_buffer, struct rrr_udpstream_frame);
 		if (node->frame_id >= new_frame->ack_data.ack_id_first && node->frame_id <= new_frame->ack_data.ack_id_last) {
 			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->frame_id == nag_id + 1) {
+			node->unacknowledged_count = RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT;
 		}
 		else {
 			node->unacknowledged_count++;
@@ -1425,9 +1443,6 @@ static int __rrr_udpstream_process_receive_buffer (
 		uint32_t ack_id_from_tmp = 0;
 		uint32_t ack_id_to_tmp = 0;
 		struct ack_list_node *ack_node = NULL;
-
-		printf ("Prev boundary %u\n", stream->receive_buffer.frame_id_prev_boundary_pos);
-		printf ("Frame id %u\n", node->frame_id);
 
 		if (first_ack_id == 0) {
 			first_ack_id = node->frame_id;
