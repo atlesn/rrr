@@ -35,6 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/linked_list.h"
 #include "../socket/rrr_socket_send_chunk.h"
 
+typedef long long int rrr_net_transport_handle;
+
 struct rrr_read_session;
 struct rrr_net_transport;
 struct rrr_net_transport_config;
@@ -92,7 +94,7 @@ struct rrr_event_queue;
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 int rrr_net_transport_handle_allocate_and_add (
-		int *handle_final,
+		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
@@ -123,7 +125,7 @@ void rrr_net_transport_destroy_void (
 );
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
-		int transport_handle
+		rrr_net_transport_handle transport_handle
 );
 int rrr_net_transport_connect_and_close_after_callback (
 		struct rrr_net_transport *transport,
@@ -141,9 +143,9 @@ int rrr_net_transport_connect (
 );
 void rrr_net_transport_handle_touch (
 		struct rrr_net_transport *transport,
-		int handle
+		rrr_net_transport_handle handle
 );
-int rrr_net_transport_handle_get_by_match (
+rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
@@ -156,7 +158,7 @@ void rrr_net_transport_notify_read_all_connected (
 );
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
-		int transport_handle,
+		rrr_net_transport_handle transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 );
@@ -168,13 +170,13 @@ int rrr_net_transport_iterate_with_callback (
 );
 int rrr_net_transport_match_data_set (
 		struct rrr_net_transport *transport,
-		int transport_handle,
+		rrr_net_transport_handle transport_handle,
 		const char *string,
 		uint64_t number
 );
 int rrr_net_transport_check_handshake_complete (
 		struct rrr_net_transport *transport,
-		int transport_handle
+		rrr_net_transport_handle transport_handle
 );
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,

@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 		struct rrr_net_transport *transport,
-		int handle,
+		rrr_net_transport_handle handle,
 		const char *source
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -82,7 +82,7 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 
 static int __rrr_net_transport_handle_create_and_push (
 		struct rrr_net_transport *transport,
-		int handle,
+		rrr_net_transport_handle handle,
 		enum rrr_net_transport_socket_mode mode,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
 		void *submodule_callback_arg
@@ -130,7 +130,7 @@ static int __rrr_net_transport_handle_create_and_push (
  * and if not continue incrementing to find the first available. This should be efficient
  * considering the lifetime of connections is usually short thus handles may be re-used. */
 int rrr_net_transport_handle_allocate_and_add (
-		int *handle_final,
+		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
@@ -142,7 +142,7 @@ int rrr_net_transport_handle_allocate_and_add (
 
 	*handle_final = 0;
 
-	int new_handle_id = 0;
+	rrr_net_transport_handle new_handle_id = 0;
 
 	if (RRR_LL_COUNT(collection) >= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX) {
 		RRR_MSG_0("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
@@ -152,7 +152,7 @@ int rrr_net_transport_handle_allocate_and_add (
 	}
 
 	int max_attempts = 100000;
-	for (int i = collection->next_handle_position; --max_attempts > 0; i++) {
+	for (rrr_net_transport_handle i = collection->next_handle_position; --max_attempts > 0; i++) {
 		if (i <= 0 || i > 99999999) {
 			i = 1;
 		}
@@ -326,7 +326,7 @@ void rrr_net_transport_destroy_void (
 
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
-		int transport_handle
+		rrr_net_transport_handle transport_handle
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
@@ -672,7 +672,7 @@ static int __rrr_net_transport_connect (
 
 	int ret = 0;
 
-	int transport_handle = 0;
+	rrr_net_transport_handle transport_handle = 0;
 	struct sockaddr_storage addr;
 	socklen_t socklen = sizeof(addr);
 
@@ -739,7 +739,7 @@ int rrr_net_transport_connect (
 
 void rrr_net_transport_handle_touch (
 		struct rrr_net_transport *transport,
-		int handle
+		rrr_net_transport_handle handle
 ) {
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
@@ -749,12 +749,12 @@ void rrr_net_transport_handle_touch (
 	RRR_LL_ITERATE_END();
 }
 
-int rrr_net_transport_handle_get_by_match (
+rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		struct rrr_net_transport *transport,
 		const char *string,
 		uint64_t number
 ) {
-	int result_handle = 0;
+	rrr_net_transport_handle result_handle = 0;
 
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (number != node->match_number) {
@@ -795,7 +795,7 @@ void rrr_net_transport_notify_read_all_connected (
 
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
-		int transport_handle,
+		rrr_net_transport_handle transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
 ) {
@@ -860,7 +860,7 @@ int rrr_net_transport_iterate_with_callback (
 
 int rrr_net_transport_match_data_set (
 		struct rrr_net_transport *transport,
-		int transport_handle,
+		rrr_net_transport_handle transport_handle,
 		const char *string,
 		uint64_t number
 ) {
@@ -875,7 +875,7 @@ int rrr_net_transport_match_data_set (
 
 int rrr_net_transport_check_handshake_complete (
 		struct rrr_net_transport *transport,
-		int transport_handle
+		rrr_net_transport_handle transport_handle
 ) {
 	int ret = 0;
 

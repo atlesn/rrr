@@ -120,7 +120,7 @@ static int __rrr_net_transport_plain_connect (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -292,7 +292,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -341,7 +341,7 @@ int __rrr_net_transport_plain_accept (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,

@@ -788,7 +788,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	do {
 		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
 	
-		int keepalive_handle = rrr_net_transport_handle_get_by_match (
+		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
 				match_data
