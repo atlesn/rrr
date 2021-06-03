@@ -525,11 +525,13 @@ void rrr_log_fprintf (
 
 	unsigned int loglevel_translated = 0;
 
-	if (file == stderr) {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
-	}
-	else {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+	if (rrr_config_global.rfc5424_loglevel_output) {
+		if (file == stderr) {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
+		}
+		else {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+		}
 	}
 
 #ifndef RRR_LOG_DISABLE_PRINT
