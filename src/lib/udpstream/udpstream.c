@@ -183,7 +183,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
 
 // Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
-#define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
+//#define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -638,6 +638,48 @@ static int __rrr_udpstream_send_connect_response (
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, 3);
 }
 
+static int __rrr_udpstream_send_frame (
+		struct rrr_udpstream *data,
+		const struct rrr_udpstream_stream *stream,
+		const struct rrr_udpstream_frame *frame
+) {
+	struct rrr_udpstream_frame_packed frame_packed = {0};
+
+	frame_packed.version = RRR_UDPSTREAM_VERSION;
+	frame_packed.frame_id = rrr_htobe32(frame->frame_id);
+	frame_packed.flags_and_type = frame->flags_and_type;
+	frame_packed.stream_id = rrr_htobe16(stream->stream_id);
+	frame_packed.application_data = rrr_htobe64(frame->application_data);
+
+	return __rrr_udpstream_checksum_and_send_packed_frame (
+			data,
+			stream->remote_addr,
+			stream->remote_addr_len,
+			&frame_packed,
+			frame->data,
+			frame->data_size,
+			1
+	);
+}
+
+static int __rrr_udpstream_send_and_update_frame (
+		struct rrr_udpstream *data,
+		struct rrr_udpstream_stream *stream,
+		struct rrr_udpstream_frame *frame
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_udpstream_send_frame(data, stream, frame)) != 0) {
+		RRR_MSG_0("Could not send frame in __rrr_udpstream_send_loop\n");
+		goto out;
+	}
+	frame->unacknowledged_count = 0;
+	frame->last_send_time = rrr_time_get_64();
+
+	out:
+	return ret;
+}
+
 static uint32_t __rrr_udpstream_allocate_connect_handle (
 		struct rrr_udpstream *data
 ) {
@@ -979,6 +1021,7 @@ static int __rrr_udpstream_handle_received_reset (
 }
 
 static int __rrr_udpstream_handle_received_frame_ack (
+		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
 		struct rrr_udpstream_frame *new_frame
 ) {
@@ -1007,13 +1050,17 @@ static int __rrr_udpstream_handle_received_frame_ack (
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (node->frame_id == nag_id + 1) {
-			node->unacknowledged_count = RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT;
+			if ((ret = __rrr_udpstream_send_and_update_frame(data, stream, node)) != 0) {
+				RRR_MSG_0("Could not send dup frame in __rrr_udpstream_handle_received_frame_ack\n");
+				goto out;
+			}
 		}
 		else {
 			node->unacknowledged_count++;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&stream->send_buffer, __rrr_udpstream_frame_destroy(node));
 
+	out:
 	return ret;
 }
 
@@ -1141,7 +1188,7 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (RRR_UDPSTREAM_FRAME_IS_FRAME_ACK(frame)) {
-		ret = __rrr_udpstream_handle_received_frame_ack(stream, new_frame);
+		ret = __rrr_udpstream_handle_received_frame_ack(data, stream, new_frame);
 		goto out;
 	}
 
@@ -1753,30 +1800,6 @@ static int __rrr_udpstream_do_read_tasks (
 	return ret;
 }
 
-static int __rrr_udpstream_send_frame_to_remote (
-		struct rrr_udpstream *data,
-		struct rrr_udpstream_stream *stream,
-		struct rrr_udpstream_frame *frame
-) {
-	struct rrr_udpstream_frame_packed frame_packed = {0};
-
-	frame_packed.version = RRR_UDPSTREAM_VERSION;
-	frame_packed.frame_id = rrr_htobe32(frame->frame_id);
-	frame_packed.flags_and_type = frame->flags_and_type;
-	frame_packed.stream_id = rrr_htobe16(stream->stream_id);
-	frame_packed.application_data = rrr_htobe64(frame->application_data);
-
-	return __rrr_udpstream_checksum_and_send_packed_frame (
-			data,
-			stream->remote_addr,
-			stream->remote_addr_len,
-			&frame_packed,
-			frame->data,
-			frame->data_size,
-			1
-	);
-}
-
 static int __rrr_udpstream_send_loop (
 		int *sending_complete,
 		int *sent_count_return,
@@ -1820,15 +1843,12 @@ static int __rrr_udpstream_send_loop (
 		}
 
 		if (do_send != 0) {
-			if ((ret = __rrr_udpstream_send_frame_to_remote(data, stream, node)) != 0) {
+			if ((ret = __rrr_udpstream_send_and_update_frame(data, stream, node)) != 0) {
 				RRR_MSG_0("Could not send frame in __rrr_udpstream_send_loop\n");
-				ret = 1;
 				goto out;
 			}
-			node->unacknowledged_count = 0;
-			node->last_send_time = rrr_time_get_64();
-			sent_count++;
-			if (sent_count >= RRR_UDPSTREAM_BURST_LIMIT_SEND) {
+
+			if (++sent_count >= RRR_UDPSTREAM_BURST_LIMIT_SEND) {
 				*sending_complete = 0;
 				RRR_LL_ITERATE_LAST();
 			}
@@ -1986,7 +2006,7 @@ int rrr_udpstream_send_control_frame (
 	frame.stream_id = stream->stream_id;
 	frame.application_data = application_data;
 
-	if ((ret = __rrr_udpstream_send_frame_to_remote (udpstream_data, stream, &frame)) != 0) {
+	if ((ret = __rrr_udpstream_send_frame (udpstream_data, stream, &frame)) != 0) {
 		RRR_MSG_0("Could not send control frame in rrr_udpstream_send_control_frame for stream with connect handle %u\n",
 				connect_handle);
 		goto out;
@@ -2092,30 +2112,29 @@ static void __rrr_udpstream_event_read (
 	(void)(flags);
 
 	int reading_complete = 0;
-	int reading_complete_upstream = 0;
-
-	int ready_for_delivery = 0;
+	int upstream_reading_complete = 0;
+	int upstream_ready_for_delivery = 0;
 
 	if ( __rrr_udpstream_do_read_tasks (data) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
 
 	if (data->upstream_event_read (
-			&reading_complete_upstream,
-			&ready_for_delivery,
+			&upstream_reading_complete,
+			&upstream_ready_for_delivery,
 			data->upstream_event_read_arg
 	) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
 
-	if (ready_for_delivery && __rrr_udpstream_process_receive_buffers (
+	if (upstream_ready_for_delivery && __rrr_udpstream_process_receive_buffers (
 		&reading_complete,
 		data
 	) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
 
-	unsigned int timeout_new = (reading_complete && reading_complete_upstream
+	unsigned int timeout_new = (reading_complete &upstream_reading_complete
 		? RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_LONG
 		: RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_SHORT
 	);
