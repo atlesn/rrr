@@ -715,6 +715,32 @@ static int __rrr_udpstream_send_reset_and_connect (
 	return ret;
 }
 
+static void __rrr_udpstream_fd_close_callback (
+		int fd,
+		const struct sockaddr *addr,
+		socklen_t socklen,
+		const char *addr_string,
+		enum rrr_socket_client_collection_create_type create_type,
+		short was_finalized,
+		void *arg
+) {
+	struct rrr_udpstream *data = arg;
+
+	(void)(addr);
+	(void)(socklen);
+	(void)(addr_string);
+	(void)(create_type);
+	(void)(was_finalized);
+
+	if (fd != data->ip.fd) {
+		RRR_MSG_0("Warning: FD mismatch actual %i vs expected %i in __rrr_udpstream_fd_close_callback\n", fd, data->ip.fd);
+		return;
+	}
+
+	// Client collection has closed the FD
+	rrr_ip_network_reset_hard(&data->ip);
+}
+
 static int __rrr_udpstream_frame_packed_validate (
 		const struct rrr_udpstream_frame_packed *frame
 ) {
@@ -1978,7 +2004,16 @@ int rrr_udpstream_queue_outbound_data (
 void rrr_udpstream_close (
 		struct rrr_udpstream *data
 ) {
+	if (data->clients != NULL) {
+		rrr_socket_client_collection_destroy(data->clients);
+		data->clients = NULL;
+	}
+
+	// In case socket client collection has not already closed the FD
 	rrr_ip_network_cleanup(&data->ip);
+
+	__rrr_udpstream_stream_collection_clear(&data->streams);
+	rrr_event_collection_clear(&data->events);
 }
 
 static int __rrr_udpstream_bind (
@@ -2293,11 +2328,7 @@ void rrr_udpstream_dump_stats (
 void rrr_udpstream_clear (
 		struct rrr_udpstream *data
 ) {
-	if (data->clients != NULL) {
-		rrr_socket_client_collection_destroy(data->clients);
-	}
-	__rrr_udpstream_stream_collection_clear(&data->streams);
-	rrr_event_collection_clear(&data->events);
+	rrr_udpstream_close(data);
 	RRR_FREE_IF_NOT_NULL(data->send_buffer);
 }
 
@@ -2345,6 +2376,12 @@ int rrr_udpstream_init (
 			__rrr_udpstream_read_get_target_size,
 			NULL,
 			__rrr_udpstream_read_callback,
+			data
+	);
+
+	rrr_socket_client_collection_fd_close_notify_setup (
+			data->clients,
+			__rrr_udpstream_fd_close_callback,
 			data
 	);
 

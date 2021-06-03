@@ -58,6 +58,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
 
+void rrr_ip_network_reset_hard (
+		void *arg
+) {
+	struct rrr_ip_data *data = arg;
+	memset(data, '\0', sizeof(*data));
+}
+
 void rrr_ip_network_cleanup (
 		void *arg
 ) {
