@@ -887,23 +887,23 @@ int rrr_net_transport_ctx_read_message (
 	return ret;
 }
 
-int rrr_net_transport_ctx_send_waiting_chunk_count (
+size_t rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 ) {
 	return rrr_socket_send_chunk_collection_count(&handle->send_chunks);
 }
 
-double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
+long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 ) {
-	double count = rrr_socket_send_chunk_collection_count(&handle->send_chunks);
-	double limit = handle->transport->send_chunk_count_limit;
+	long double count = rrr_socket_send_chunk_collection_count(&handle->send_chunks);
+	long double limit = handle->transport->send_chunk_count_limit;
 
 	if (limit <= 0) {
 		return 0.0;
 	}
 
-	double result = count / limit;
+	long double result = count / limit;
 
 	return (result > 1.0 ? 1.0 : result);
 }

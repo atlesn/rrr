@@ -190,10 +190,10 @@ int rrr_net_transport_ctx_read_message (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 );
-int rrr_net_transport_ctx_send_waiting_chunk_count (
+size_t rrr_net_transport_ctx_send_waiting_chunk_count (
 		struct rrr_net_transport_handle *handle
 );
-double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
+long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
 		struct rrr_net_transport_handle *handle
 );
 void rrr_net_transport_ctx_close_when_send_complete_set (
