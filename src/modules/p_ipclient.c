@@ -404,6 +404,7 @@ static int ipclient_asd_reconnect (struct ipclient_data *data) {
 			data->do_listen,
 			data->do_disallow_remote_ip_swap,
 			data->do_ipv4_only,
+			1, // Reset remote after first connection estabilshment
 			ipclient_allocator_callback,
 			data,
 			ipclient_receive_callback,
@@ -546,9 +547,6 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	RRR_DBG_1 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));
 	data->need_network_restart = 0;
 
-	// TODO : Does the following comment still apply?
-	//     Only close here and not when shutting down the thread (might cause
-	//     deadlock in rrr_socket). rrr_socket cleanup will close the socket if we exit.
 	if (ipclient_asd_reconnect(data) != 0) {
 		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;

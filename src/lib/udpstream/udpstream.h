@@ -71,7 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // parameters should derive from these values.
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
-#define RRR_UDPSTREAM_BUFFER_LIMIT 500
+#define RRR_UDPSTREAM_BUFFER_LIMIT 1000
 #define RRR_UDPSTREAM_WINDOW_SIZE_MAX RRR_UDPSTREAM_BUFFER_LIMIT*2
 #define RRR_UDPSTREAM_WINDOW_SIZE_INITIAL RRR_UDPSTREAM_WINDOW_SIZE_MAX/4
 
@@ -163,7 +163,6 @@ struct rrr_udpstream_stream {
 	uint32_t window_size_from_remote;
 	int window_size_regulation_from_application;
 	int invalidated;
-	int hard_reset_received;
 	uint32_t last_ack_id;
 };
 

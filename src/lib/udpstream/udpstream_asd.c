@@ -46,13 +46,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS (RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS * 4)
 
 // Max unreleased messages awaiting release ACK
-#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX*2)
+#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX * 2)
 
 // Note : The following method to avoid duplicate IDs is very inefficient
 // This many delivered messages must follow a message before it is deleted from release queue
-#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX / 2
+#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER (RRR_UDPSTREAM_WINDOW_SIZE_MAX)
 
-#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD 500
+#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD 200
 #define RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT -20
 
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_RST       (0<<0)
@@ -116,6 +116,10 @@ struct rrr_udpstream_asd {
 	unsigned int sent_count;
 	unsigned int delivered_count;
 
+	int delivery_grace_started_count;
+	
+	int reset_on_next_connect;
+
 	int (*receive_callback)(struct rrr_msg_holder *message, void *arg);
 	void *receive_callback_arg;
 };
@@ -173,6 +177,52 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entr
 	RRR_LL_ITERATE_END();
 
 	return NULL;
+}
+
+static void __rrr_udpstream_asd_queue_reset_send_times (
+		struct rrr_udpstream_asd_queue *queue
+) {
+	int count = 0;
+	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
+		if (node->send_time != 0) {
+			count++;
+			node->send_time = rrr_time_get_64() - (2 * RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000);
+		}
+	RRR_LL_ITERATE_END();
+	RRR_DBG_3("ASD reset send time for %i entries\n", count);
+}
+
+static int __rrr_udpstream_asd_queue_entry_deliver (
+		struct rrr_udpstream_asd *session,
+		struct rrr_udpstream_asd_queue_entry *node
+) {
+	int ret = 0;
+
+	if (node->delivered_grace_counter != 0) {
+		goto out;
+	}
+
+	struct rrr_msg_holder *message = node->message;
+
+	RRR_DBG_3("ASD D %u:%u MSG timestamp %" PRIu64 ", grace started\n",
+			session->connect_handle, node->message_id, node->send_time);
+
+	// Callback must ALWAYS unlock
+	rrr_msg_holder_lock(message);
+	if ((ret = session->receive_callback(message, session->receive_callback_arg)) != 0) {
+		RRR_MSG_0("Error from callback in __rrr_udpstream_asd_queue_entry_deliver\n");
+		ret = 1;
+		goto out;
+	}
+
+	rrr_msg_holder_decref(message);
+	node->message = NULL;
+
+	node->delivered_grace_counter = RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER;
+	session->delivery_grace_started_count++;
+
+	out:
+	return ret;
 }
 
 static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_collection_find_entry (
@@ -358,7 +408,31 @@ static int __rrr_udpstream_asd_send_control_message (
 	RRR_DBG_3("ASD TX %" PRIu32 ":%" PRIu32 " CTRL flags %" PRIu32 "\n",
 			connect_handle, message_id, flags);
 
-	return rrr_udpstream_send_control_frame(&session->udpstream, connect_handle, application_data);
+	int ret = rrr_udpstream_send_control_frame(&session->udpstream, connect_handle, application_data);
+
+	ret &= ~(RRR_UDPSTREAM_NOT_READY);
+
+	return ret;
+}
+
+static int __rrr_udpstream_asd_buffer_after_connect_tasks (
+		struct rrr_udpstream_asd *session
+) {
+	int ret = 0;
+
+	if (session->reset_on_next_connect) {
+		RRR_DBG_3("ASD TX %" PRIu32 " RST\n", session->connect_handle);
+		if ((ret = __rrr_udpstream_asd_send_control_message(session, RRR_UDPSTREAM_ASD_ACK_FLAGS_RST, session->connect_handle, 0)) != 0) {
+			RRR_MSG_0("Could not queue reset frame in __rrr_udpstream_asd_buffer_connect_if_needed\n");
+			goto out;
+		}
+		session->reset_on_next_connect = 0;
+	}
+
+	__rrr_udpstream_asd_queue_reset_send_times (&session->send_queue);
+
+	out:
+	return ret;
 }
 
 static int __rrr_udpstream_asd_buffer_connect_if_needed (
@@ -371,11 +445,11 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 		session->connection_attempt_time = 0;
 		if (session->is_connected == 0) {
 			RRR_DBG_3("ASD %" PRIu32 " ready\n", session->connect_handle);
-			RRR_DBG_3("ASD TX %" PRIu32 " RST\n", session->connect_handle);
-			if ((ret = __rrr_udpstream_asd_send_control_message(session, RRR_UDPSTREAM_ASD_ACK_FLAGS_RST, session->connect_handle, 0)) != 0) {
-				RRR_MSG_0("Could not queue reset frame in __rrr_udpstream_asd_buffer_connect_if_needed\n");
+
+			if ((ret = __rrr_udpstream_asd_buffer_after_connect_tasks (session)) != 0) {
 				goto out;
 			}
+
 			session->is_connected = 1;
 		}
 		goto out;
@@ -483,6 +557,13 @@ static int __rrr_udpstream_asd_control_frame_callback (
 			RRR_DBG_3("ASD RX %" PRIu32 ":%" PRIu32 " RACK\n",
 					session->connect_handle, control_msg.message_id);
 			node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK;
+
+			if ((ret = __rrr_udpstream_asd_queue_entry_deliver (
+					session,
+					node
+			)) != 0) {
+				goto out;
+			}
 		}
 		else {
 			RRR_DBG_3("ASD RX %" PRIu32 ":%" PRIu32 " RACK (unknown)\n",
@@ -528,6 +609,7 @@ static int __rrr_udpstream_asd_control_frame_callback (
 		);
 	}
 
+	out:
 	return ret;
 }
 
@@ -653,12 +735,15 @@ static int __rrr_udpstream_asd_do_release_queue_send_tasks (
 						queue->source_connect_handle,
 						node->message_id
 				);
+
 				node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK;
 				node->send_count++;
 			}
 
+			ret &= ~(RRR_UDPSTREAM_NOT_READY);
+
 			if (ret != 0) {
-				RRR_DBG_3("Error while sending message B in ___rrr_udpstream_asd_do_release_queue_send_tasks return was %i\n", ret);
+				RRR_DBG_3("Error while sending message in __rrr_udpstream_asd_do_release_queue_send_tasks return was %i\n", ret);
 				goto out;
 			}
 		}
@@ -702,7 +787,7 @@ static int __rrr_udpstream_asd_do_send_tasks (
 						session->connect_handle, node->message_id, dup);
 					ret = __rrr_udpstream_asd_send_message(session, node);
 					if (ret == RRR_UDPSTREAM_ASD_NOT_READY) {
-						RRR_DBG_3("Buffer full while sending message in rrr_udpstream_asd_do_send_tasks\n");
+						RRR_DBG_3("ASD TX failed (NOT READY)\n");
 						buffer_was_full = 1;
 						ret = 0;
 					}
@@ -909,47 +994,6 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 	return ret;
 }
 
-static int __rrr_udpstream_asd_queue_deliver_messages (
-		int *delivered_count,
-		struct rrr_udpstream_asd *session,
-		struct rrr_udpstream_asd_queue *queue
-) {
-	*delivered_count = 0;
-
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK) != 0 && node->delivered_grace_counter == 0) {
-			if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK) == 0) {
-				RRR_BUG("RACK without DACK in __rrr_udpstream_asd_deliver_messages_from_queue\n");
-			}
-
-			struct rrr_msg_holder *message = node->message;
-
-			RRR_DBG_3("ASD D %u:%u MSG timestamp %" PRIu64 ", grace started\n",
-					session->connect_handle, node->message_id, node->send_time);
-
-			// Callback must ALWAYS unlock
-			rrr_msg_holder_lock(message);
-			if ((ret = session->receive_callback(message, session->receive_callback_arg)) != 0) {
-				RRR_MSG_0("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
-				ret = 1;
-				goto out;
-			}
-
-			rrr_msg_holder_decref(message);
-			node->message = NULL;
-
-			(*delivered_count)++;
-
-			node->delivered_grace_counter = RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER;
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	return ret;
-}
-
 static int __rrr_udpstream_asd_queue_update_delivery_grace (
 		int *grace_count,
 		struct rrr_udpstream_asd_queue *queue,
@@ -1005,29 +1049,19 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 	int ret = 0;
 
 	int graced_messages_count = 0;
-	int delivered_messages_count = 0;
 
 	*all_are_grace = 0;
-
-	// Deliver messages
-	if ((ret = __rrr_udpstream_asd_queue_deliver_messages (
-			&delivered_messages_count,
-			session,
-			queue
-	)) != 0) {
-		RRR_MSG_0("Error while delivering messages in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
-		goto out;
-	}
 
 	// Update grace counters
 	if ((ret = __rrr_udpstream_asd_queue_update_delivery_grace (
 			&graced_messages_count,
 			queue,
-			delivered_messages_count
+			session->delivery_grace_started_count
 	)) != 0) {
 		RRR_MSG_0("Error while updating grace in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
 		goto out;
 	}
+	session->delivery_grace_started_count = 0;
 
 	// Reduce message traffic if we have many ACK handshakes to complete
 	if ((ret = __rrr_udpstream_asd_queue_regulate_window_size (
@@ -1079,7 +1113,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 			__rrr_udpstream_asd_do_release_queue_send_tasks,
 			session
 	)) != 0) {
-		RRR_MSG_0("Error while iterating release queues in _rrr_udpstream_asd_do_send_tasks\n");
+		RRR_MSG_0("Error while iterating release queues in __rrr_udpstream_asd_deliver_and_maintain_queues\n");
 		goto out;
 	}
 
@@ -1109,8 +1143,6 @@ static int __rrr_udpstream_asd_tick (
 
 	*no_more_send = 1;
 	*no_more_delivery = 1;
-
-	// TODO : Detect exhausted ID etc. and reconnect
 
 	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0 &&
 	     ret != RRR_UDPSTREAM_ASD_NOT_READY
@@ -1162,6 +1194,7 @@ int rrr_udpstream_asd_new (
 		int accept_connections,
 		int disallow_ip_swap,
 		int v4_only,
+		int reset_on_next_connect,
 		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
 		int (*receive_callback)(struct rrr_msg_holder *message, void *arg),
@@ -1253,6 +1286,7 @@ int rrr_udpstream_asd_new (
 	session->connect_handle = client_id;
 	session->receive_callback = receive_callback;
 	session->receive_callback_arg = receive_callback_arg;
+	session->reset_on_next_connect = reset_on_next_connect;
 
 	*target = session;
 	session = NULL;

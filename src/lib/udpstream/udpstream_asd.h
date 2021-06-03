@@ -51,6 +51,7 @@ int rrr_udpstream_asd_new (
 		int accept_connections,
 		int disallow_ip_swap,
 		int v4_only,
+		int reset_on_next_connect,
 		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
 		void *allocator_callback_arg,
 		int (*receive_callback)(struct rrr_msg_holder *message, void *arg),
