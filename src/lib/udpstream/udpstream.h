@@ -162,7 +162,6 @@ struct rrr_udpstream_stream {
 	uint32_t window_size_to_remote;
 	uint32_t window_size_from_remote;
 	int window_size_regulation_from_application;
-	int invalidated;
 	uint32_t last_ack_id;
 };
 

@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_MESSAGE_SIZE_MAX 67584
 
 #define RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT 1024
-#define RRR_UDPSTREAM_FRAME_ID_LIMIT 4294967295
+#define RRR_UDPSTREAM_FRAME_ID_LIMIT 50000 // 4294967295
 
 #define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
 
@@ -319,11 +319,6 @@ static int __rrr_udpstream_stream_new(struct rrr_udpstream_stream **target) {
 	*target = res;
 
 	return 0;
-}
-
-static void __rrr_udpstream_stream_invalidate(struct rrr_udpstream_stream *stream) {
-	stream->send_buffer.frame_id_max = 0;
-	stream->invalidated = 1; // Prevents stream find-functions from returning this stream
 }
 
 static void __rrr_udpstream_stream_collection_clear(struct rrr_udpstream_stream_collection *collection) {
@@ -676,6 +671,8 @@ static int __rrr_udpstream_send_reset_and_connect (
 	}
 
 	{
+		// Reset with connect handle only, all associated stream IDs will be
+		// deleted at remote.
 		struct rrr_udpstream_frame_packed frame = {0};
 		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
 		frame.connect_handle = rrr_htobe32(connect_handle);
@@ -799,7 +796,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handl
 		uint32_t connect_handle
 ) {
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
-		if (node->connect_handle == connect_handle && node->invalidated == 0) {
+		if (node->connect_handle == connect_handle) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
@@ -815,8 +812,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handl
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		if (node->connect_handle == connect_handle &&
 			node->remote_addr_len == addr_len &&
-			memcmp(node->remote_addr, addr, addr_len) == 0 &&
-			node->invalidated == 0
+			memcmp(node->remote_addr, addr, addr_len) == 0
 		) {
 			return node;
 		}
@@ -829,11 +825,45 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_stream_id (
 		uint16_t stream_id
 ) {
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
-		if (node->stream_id == stream_id && node->invalidated == 0) {
+		if (node->stream_id == stream_id) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
 	return NULL;
+}
+
+static void __rrr_udpstream_find_and_destroy_stream_by_stream_id (
+	struct rrr_udpstream *data,
+	uint32_t stream_id
+) {
+	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
+		if (node->stream_id == stream_id) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
+}
+
+static void __rrr_udpstream_find_and_destroy_stream_by_connect_handle (
+	struct rrr_udpstream *data,
+	uint32_t connect_handle
+) {
+	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
+		if (node->connect_handle == connect_handle) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
+}
+
+static void __rrr_udpstream_find_and_destroy_stream (
+	struct rrr_udpstream *data,
+	uint32_t connect_handle,
+	uint32_t stream_id
+) {
+	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
+		if (node->connect_handle == connect_handle && node->stream_id == stream_id) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 }
 
 static int __rrr_udpstream_update_stream_remote (
@@ -891,7 +921,7 @@ static int __rrr_udpstream_handle_received_connect (
 		struct rrr_udpstream_stream *stream_test = __rrr_udpstream_find_stream_by_stream_id(data, frame->stream_id);
 		if (stream_test != NULL) {
 			RRR_DBG_3("UDP-stream stream ID collision for connect with handle %u, connection must be closed\n", frame->connect_handle);
-			__rrr_udpstream_stream_invalidate(stream);
+			__rrr_udpstream_find_and_destroy_stream_by_connect_handle(data, frame->connect_handle);
 			goto out;
 		}
 
@@ -1061,17 +1091,6 @@ static int __rrr_udpstream_regulate_window_size (
 	return 0;
 }
 
-static void __rrr_udpstream_find_and_destroy_stream (
-	struct rrr_udpstream *data,
-	uint32_t connect_handle
-) {
-	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
-		if (node->connect_handle == connect_handle) {
-			RRR_LL_ITERATE_SET_DESTROY();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
-}
-
 static int __rrr_udpstream_handle_received_frame (
 		struct rrr_udpstream *data,
 		const struct rrr_udpstream_frame_packed *frame,
@@ -1108,8 +1127,8 @@ static int __rrr_udpstream_handle_received_frame (
 	if (stream == NULL) {
 		// Check that unknown packet is not a reset, if not we would keep sending resets back and forward
 		if (!RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
-			RRR_DBG_3("UDP-stream received packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
-			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, new_frame->connect_handle) != 0) {
+			RRR_DBG_3("UDP-stream received packet with unknown stream ID %u, sending reset\n", new_frame->stream_id);
+			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
 				RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
@@ -1132,9 +1151,23 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
-		RRR_DBG_3("UDP-stream RX RST connect handle %" PRIu32 " stream id %" PRIu32 "\n",
+		if (new_frame->stream_id == 0 && new_frame->connect_handle != 0) {
+			// Reset before connect packet, all streams with matchin connect handle is destroyed
+			RRR_DBG_3("UDP-stream RX RST connect handle %" PRIu32 "\n",
+					new_frame->connect_handle);
+			__rrr_udpstream_find_and_destroy_stream_by_connect_handle (data, new_frame->connect_handle);
+		}
+		if (new_frame->stream_id != 0 && new_frame->connect_handle == 0) {
+			RRR_DBG_3("UDP-stream RX RST stream ID %" PRIu16 "\n",
+					new_frame->stream_id);
+			__rrr_udpstream_find_and_destroy_stream_by_stream_id (data, new_frame->stream_id);
+		}
+		else {
+			// Reset with both IDs
+			RRR_DBG_3("UDP-stream RX RST connect handle %" PRIu32 " stream id %" PRIu16 "\n",
 				stream->connect_handle, stream->stream_id);
-		__rrr_udpstream_find_and_destroy_stream (data, new_frame->connect_handle);
+			__rrr_udpstream_find_and_destroy_stream (data, new_frame->connect_handle, new_frame->stream_id);
+		}
 		goto out;
 	}
 
@@ -1183,13 +1216,13 @@ static int __rrr_udpstream_handle_received_frame (
 		RRR_DBG_3("udpstream id %u dropping frame ID %u as we expect first frame id 1\n",
 				new_frame->stream_id, new_frame->frame_id);
 
-		if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
-			RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
+		if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, new_frame->connect_handle) != 0) {
+			RRR_MSG_0("Could not send UDP-stream reset in __rrr_udpstream_handle_received_frame\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 
-		__rrr_udpstream_stream_invalidate(stream);
+		__rrr_udpstream_find_and_destroy_stream_by_stream_id (data, new_frame->stream_id);
 
 		goto out;
 	}
@@ -1701,12 +1734,9 @@ static int __rrr_udpstream_maintain (
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		uint64_t diff = time_now - node->last_seen;
 
-		if (diff > RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS * 1000 && node->invalidated == 0) {
-			RRR_DBG_3("UDP-stream connection with id %u timed out, invalidating\n", node->stream_id);
-			__rrr_udpstream_stream_invalidate(node);
-		}
-		else if (diff > RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS * 1000) {
-			RRR_DBG_3("UDP-stream connection with id %u timed out after being invalid\n", node->stream_id);
+		if (diff > RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS * 1000) {
+			RRR_DBG_3("UDP-stream connection with connect handle %" PRIu32 " stream ID %" PRIu16 " timed out, removing.\n",
+					node->connect_handle, node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
@@ -2308,15 +2338,14 @@ void rrr_udpstream_dump_stats (
 	struct rrr_udpstream *data
 ) {
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
-		RRR_DBG(" - Stream %i: recv buf %i delivered id pos %u, send buf %i id pos %u window size f/t %" PRIu32 "/%" PRIu32 " invalid %i\n",
+		RRR_DBG(" - Stream %i: recv buf %i delivered id pos %u, send buf %i id pos %u window size f/t %" PRIu32 "/%" PRIu32 "\n",
 				node->stream_id,
 				RRR_LL_COUNT(&node->receive_buffer),
 				node->receive_buffer.frame_id_prev_boundary_pos,
 				RRR_LL_COUNT(&node->send_buffer),
 				node->send_buffer.frame_id_counter,
 				node->window_size_from_remote,
-				node->window_size_to_remote,
-				node->invalidated
+				node->window_size_to_remote
 		);
 	RRR_LL_ITERATE_END();
 }
