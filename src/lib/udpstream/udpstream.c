@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../random.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
+#include "../socket/rrr_socket_client.h"
 #include "../util/macro_utils.h"
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"
@@ -334,62 +335,6 @@ static void __rrr_udpstream_stream_collection_init(struct rrr_udpstream_stream_c
 	memset (collection, '\0', sizeof(*collection));
 }
 
-void rrr_udpstream_clear (
-		struct rrr_udpstream *data
-) {
-	rrr_event_collection_clear(&data->events);
-	rrr_read_session_collection_clear(&data->read_sessions);
-	__rrr_udpstream_stream_collection_clear(&data->streams);
-	RRR_FREE_IF_NOT_NULL(data->send_buffer);
-}
-
-int rrr_udpstream_init (
-		struct rrr_udpstream *data,
-		struct rrr_event_queue *queue,
-		int flags,
-		int (*upstream_event_write)(int *no_more_writes, void *arg),
-		void *upstream_event_write_arg,
-		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
-		void *upstream_event_read_arg,
-		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *upstream_control_frame_callback_arg,
-		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *upstream_allocator_callback_arg,
-		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
-		void *upstream_validator_callback_arg,
-		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
-		void *upstream_final_callback_arg
-) {
-	memset (data, '\0', sizeof(*data));
-
-	data->flags = flags;
-
-	flags &= ~(RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS|RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE);
-	if (flags != 0) {
-		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
-	}
-
-	__rrr_udpstream_stream_collection_init(&data->streams);
-	rrr_read_session_collection_init(&data->read_sessions);
-	rrr_event_collection_init(&data->events, queue);
-
-	data->queue = queue;
-	data->upstream_event_write = upstream_event_write;
-	data->upstream_event_write_arg = upstream_event_write_arg;
-	data->upstream_event_read = upstream_event_read;
-	data->upstream_event_read_arg = upstream_event_read_arg;
-	data->upstream_control_frame_callback = upstream_control_frame_callback;
-	data->upstream_control_frame_callback_arg = upstream_control_frame_callback_arg;
-	data->upstream_allocator_callback = upstream_allocator_callback;
-	data->upstream_allocator_callback_arg = upstream_allocator_callback_arg;
-	data->upstream_validator_callback = upstream_validator_callback;
-	data->upstream_validator_callback_arg = upstream_validator_callback_arg;
-	data->upstream_final_callback = upstream_final_callback;
-	data->upstream_final_callback_arg = upstream_final_callback_arg;
-
-	return 0;
-}
-
 void rrr_udpstream_set_flags (
 		struct rrr_udpstream *data,
 		int flags
@@ -505,17 +450,21 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 			continue;
 		}
 #endif
-		int err;
-		if ((ret = rrr_socket_sendto_nonblock_fail_on_partial_write(
-				&err,
+
+		int send_chunk_count = 0;
+		if ((ret = rrr_socket_client_collection_sendto_push_const (
+				&send_chunk_count,
+				udpstream_data->clients,
 				udpstream_data->ip.fd,
+				addr,
+				addrlen,
 				udpstream_data->send_buffer,
 				sizeof(*frame) - 1 + data_size,
-				addr,
-				addrlen
+				NULL,
+				NULL,
+				NULL
 		)) != 0) {
-			RRR_MSG_0("Could not send packed frame header in __rrr_udpstream_send_packed_frame, return was %i\n", ret);
-			ret = 1;
+			RRR_MSG_0("Could not push packed frame in __rrr_udpstream_send_packed_frame, return was %i\n", ret);
 			goto out;
 		}
 	}
@@ -1266,22 +1215,17 @@ static int __rrr_udpstream_handle_received_frame (
 		return ret;
 }
 
-struct rrr_udpstream_read_callback_data {
-	struct rrr_udpstream *data;
-	int receive_count;
-};
-
 static int __rrr_udpstream_read_callback (
 		struct rrr_read_session *read_session,
+		void *private_data,
 		void *arg
 ) {
 	int ret = RRR_SOCKET_OK;
 
-	struct rrr_udpstream_read_callback_data *callback_data = arg;
-	struct rrr_udpstream *data = callback_data->data;
+	struct rrr_udpstream *data = arg;
 	struct rrr_udpstream_frame_packed *frame = (struct rrr_udpstream_frame_packed *) read_session->rx_buf_ptr;
 
-	callback_data->receive_count++;
+	(void)(private_data);
 
 	RRR_DBG_3("UDP-stream RX %u-%u CS: %" PRIu32 "/%" PRIu32 " S: %llu F/T: %u CH/ID/WS: %u\n",
 			rrr_be16toh(frame->stream_id),
@@ -1743,63 +1687,6 @@ static int __rrr_udpstream_maintain (
 	return ret;
 }
 
-// Do all reading and store messages into the buffer. Control messages are
-// not buffered, but delivered directly to the application layer through
-// the callback function.
-static int __rrr_udpstream_do_read_tasks (
-		struct rrr_udpstream *data
-) {
-	int ret = 0;
-
-	struct rrr_udpstream_read_callback_data callback_data = {
-			data,
-			0
-	};
-
-	int errors = 0;
-	do {
-		uint64_t bytes_read = 0;
-		if ((ret = rrr_socket_read_message_default (
-				&bytes_read,
-				&data->read_sessions,
-				data->ip.fd,
-				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
-				RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT + sizeof(struct rrr_udpstream_frame_packed) - 1,
-				0, // No maximum size
-				RRR_SOCKET_READ_METHOD_RECVFROM,
-				0, // No ratelimit interval
-				0, // No ratelimit max bytes	
-				__rrr_udpstream_read_get_target_size,
-				data,
-				__rrr_udpstream_read_callback,
-				&callback_data
-		)) != 0) {
-			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-				ret = 0;
-				goto out;
-			}
-			else if (ret == RRR_SOCKET_SOFT_ERROR) {
-				// Don't stop reading despite of clients sending bad data
-				errors++;
-				ret = 0;
-			}
-			else {
-				RRR_MSG_0("Error while reading from socket in rrr_udpstream_read, return was %i\n", ret);
-				ret = 1;
-				goto out;
-			}
-		}
-	} while (
-			callback_data.receive_count + errors > 0 &&
-			callback_data.receive_count + errors < RRR_UDPSTREAM_BURST_LIMIT_RECEIVE
-	);
-
-	RRR_DBG_3 ("UDP-stream RECV cnt: %i, err cnt: %i\n", callback_data.receive_count, errors);
-
-	out:
-	return ret;
-}
-
 static int __rrr_udpstream_send_loop (
 		int *sending_complete,
 		int *sent_count_return,
@@ -2115,10 +2002,6 @@ static void __rrr_udpstream_event_read (
 	int upstream_reading_complete = 0;
 	int upstream_ready_for_delivery = 0;
 
-	if ( __rrr_udpstream_do_read_tasks (data) != 0) {
-		rrr_event_dispatch_break(data->queue);
-	}
-
 	if (data->upstream_event_read (
 			&upstream_reading_complete,
 			&upstream_ready_for_delivery,
@@ -2243,6 +2126,15 @@ static int __rrr_udpstream_events_create (
 	}
 
 	EVENT_ADD(data->event_periodic);
+
+	if ((ret = rrr_socket_client_collection_connected_fd_push (
+			data->clients,
+			data->ip.fd,
+			RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT
+	)) != 0) {
+		RRR_MSG_0("Failed to push FD to client collection in __rrr_udpstream_events_create\n");
+		goto out;
+	}
 
 	goto out;
 	out_err:
@@ -2403,9 +2295,6 @@ int rrr_udpstream_connect (
 void rrr_udpstream_dump_stats (
 	struct rrr_udpstream *data
 ) {
-	RRR_DBG("UDP-stream streams: %i, read sessions: %i\n",
-			RRR_LL_COUNT(&data->streams), RRR_LL_COUNT(&data->read_sessions));
-
 	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
 		RRR_DBG(" - Stream %i: recv buf %i delivered id pos %u, send buf %i id pos %u window size f/t %" PRIu32 "/%" PRIu32 " invalid %i\n",
 				node->stream_id,
@@ -2418,4 +2307,82 @@ void rrr_udpstream_dump_stats (
 				node->invalidated
 		);
 	RRR_LL_ITERATE_END();
+}
+
+void rrr_udpstream_clear (
+		struct rrr_udpstream *data
+) {
+	if (data->clients != NULL) {
+		rrr_socket_client_collection_destroy(data->clients);
+	}
+	__rrr_udpstream_stream_collection_clear(&data->streams);
+	rrr_event_collection_clear(&data->events);
+	RRR_FREE_IF_NOT_NULL(data->send_buffer);
+}
+
+int rrr_udpstream_init (
+		struct rrr_udpstream *data,
+		struct rrr_event_queue *queue,
+		int flags,
+		int (*upstream_event_write)(int *no_more_writes, void *arg),
+		void *upstream_event_write_arg,
+		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
+		void *upstream_event_read_arg,
+		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
+		void *upstream_control_frame_callback_arg,
+		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
+		void *upstream_allocator_callback_arg,
+		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
+		void *upstream_validator_callback_arg,
+		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
+		void *upstream_final_callback_arg
+) {
+	int ret = 0;
+
+	memset (data, '\0', sizeof(*data));
+
+	data->flags = flags;
+
+	flags &= ~(RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS|RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE);
+	if (flags != 0) {
+		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
+	}
+
+	rrr_event_collection_init(&data->events, queue);
+	__rrr_udpstream_stream_collection_init(&data->streams);
+
+	if ((ret = rrr_socket_client_collection_new (&data->clients, queue, "udpstream")) != 0) {
+		RRR_MSG_0("Failed to create client collection in rrr_udpstream_init\n");
+		goto out;
+	}
+
+	rrr_socket_client_collection_event_setup_raw (
+			data->clients,
+			NULL,
+			NULL,
+			data,
+			8192,
+			RRR_SOCKET_READ_METHOD_RECVFROM,
+			__rrr_udpstream_read_get_target_size,
+			NULL,
+			__rrr_udpstream_read_callback,
+			data
+	);
+
+	data->queue = queue;
+	data->upstream_event_write = upstream_event_write;
+	data->upstream_event_write_arg = upstream_event_write_arg;
+	data->upstream_event_read = upstream_event_read;
+	data->upstream_event_read_arg = upstream_event_read_arg;
+	data->upstream_control_frame_callback = upstream_control_frame_callback;
+	data->upstream_control_frame_callback_arg = upstream_control_frame_callback_arg;
+	data->upstream_allocator_callback = upstream_allocator_callback;
+	data->upstream_allocator_callback_arg = upstream_allocator_callback_arg;
+	data->upstream_validator_callback = upstream_validator_callback;
+	data->upstream_validator_callback_arg = upstream_validator_callback_arg;
+	data->upstream_final_callback = upstream_final_callback;
+	data->upstream_final_callback_arg = upstream_final_callback_arg;
+
+	out:
+	return ret;
 }

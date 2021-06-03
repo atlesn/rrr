@@ -53,6 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
+#include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
 #include "../event/event_collection.h"
@@ -70,7 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // parameters should derive from these values.
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
-#define RRR_UDPSTREAM_BUFFER_LIMIT 1500
+#define RRR_UDPSTREAM_BUFFER_LIMIT 500
 #define RRR_UDPSTREAM_WINDOW_SIZE_MAX RRR_UDPSTREAM_BUFFER_LIMIT*2
 #define RRR_UDPSTREAM_WINDOW_SIZE_INITIAL RRR_UDPSTREAM_WINDOW_SIZE_MAX/4
 
@@ -186,9 +187,11 @@ struct rrr_udpstream {
 	int flags;
 
 	struct rrr_udpstream_stream_collection streams;
-	struct rrr_read_session_collection read_sessions;
+//	struct rrr_read_session_collection read_sessions;
 
 	struct rrr_event_queue *queue;
+	struct rrr_socket_client_collection *clients;
+
 	struct rrr_event_collection events;
 
 	rrr_event_handle event_read;
