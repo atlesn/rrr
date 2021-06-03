@@ -841,37 +841,6 @@ int rrr_net_transport_bind_and_listen_dualstack (
 	return ret;
 }
 
-int rrr_net_transport_accept_all_handles (
-		struct rrr_net_transport *transport,
-		int at_most_one_accept,
-		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
-			int did_accept = 0;
-			ret = transport->methods->accept (
-					&did_accept,
-					node,
-					__rrr_net_transport_accept_callback_intermediate,
-					NULL,
-					callback,
-					callback_arg
-			);
-
-			if (ret != 0 || (at_most_one_accept && did_accept)) {
-				RRR_LL_ITERATE_LAST();
-			}
-		}
-	RRR_LL_ITERATE_END();
-
-	return ret;
-}
-
 void rrr_net_transport_event_activate_all_connected_read (
 		struct rrr_net_transport *transport
 ) {

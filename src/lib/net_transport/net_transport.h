@@ -140,12 +140,6 @@ int rrr_net_transport_bind_and_listen_dualstack (
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
-int rrr_net_transport_accept_all_handles (
-		struct rrr_net_transport *transport,
-		int at_most_one_accept,
-		void (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
-		void *callback_arg
-);
 void rrr_net_transport_event_activate_all_connected_read (
 		struct rrr_net_transport *transport
 );
