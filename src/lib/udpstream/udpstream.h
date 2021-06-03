@@ -187,23 +187,18 @@ struct rrr_udpstream {
 	int flags;
 
 	struct rrr_udpstream_stream_collection streams;
-//	struct rrr_read_session_collection read_sessions;
 
 	struct rrr_event_queue *queue;
 	struct rrr_socket_client_collection *clients;
 
 	struct rrr_event_collection events;
 
-	rrr_event_handle event_read;
-	rrr_event_handle event_write;
+	rrr_event_handle event_deliver;
+	rrr_event_handle event_send;
 	rrr_event_handle event_periodic;
 
 	unsigned int event_read_current_timeout;
 
-	int (*upstream_event_write)(int *no_more_writes, void *arg);
-	void *upstream_event_write_arg;
-	int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg);
-	void *upstream_event_read_arg;
 	int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg);
 	void *upstream_control_frame_callback_arg;
 	int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS);
@@ -238,10 +233,6 @@ int rrr_udpstream_init (
 		struct rrr_udpstream *stream,
 		struct rrr_event_queue *queue,
 		int flags,
-		int (*upstream_event_write)(int *no_more_writes, void *arg),
-		void *upstream_event_write_arg,
-		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
-		void *upstream_event_read_arg,
 		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *upstream_control_frame_callback_arg,
 		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),

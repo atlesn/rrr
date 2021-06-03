@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../buffer.h"
 #include "../read.h"
 #include "../ip/ip.h"
+#include "../event/event_collection.h"
 #include "../message_holder/message_holder.h"
 #include "../message_holder/message_holder_struct.h"
 #include "../socket/rrr_socket_constants.h"
@@ -89,17 +90,6 @@ struct rrr_udpstream_asd_queue_collection {
 	RRR_LL_HEAD(struct rrr_udpstream_asd_queue);
 };
 
-struct rrr_udpstream_asd_control_queue_entry {
-	RRR_LL_NODE(struct rrr_udpstream_asd_control_queue_entry);
-	uint32_t connect_handle;
-	uint32_t message_id;
-	uint32_t ack_flags;
-};
-
-struct rrr_udpstream_asd_control_queue {
-	RRR_LL_HEAD(struct rrr_udpstream_asd_control_queue_entry);
-};
-
 struct rrr_udpstream_asd {
 	struct rrr_udpstream udpstream;
 
@@ -109,8 +99,9 @@ struct rrr_udpstream_asd {
 	// Stores outbound messages to default remote host
 	struct rrr_udpstream_asd_queue send_queue;
 
-	// Stores control messages to multiple remote hosts
-	struct rrr_udpstream_asd_control_queue control_send_queue;
+	struct rrr_event_queue *queue;
+	struct rrr_event_collection events;
+	rrr_event_handle event_periodic;
 
 	char *remote_host;
 	char *remote_port;
@@ -214,7 +205,7 @@ static int __rrr_udpstream_asd_queue_collection_iterate (
 	out:
 	return ret;
 }
-
+/*
 static int __rrr_udpstream_asd_queue_collection_count_entries (
 		struct rrr_udpstream_asd_queue_collection *collection
 ) {
@@ -226,7 +217,7 @@ static int __rrr_udpstream_asd_queue_collection_count_entries (
 
 	return total;
 }
-
+*/
 
 static void __rrr_udpstream_asd_queue_insert_ordered (
 		struct rrr_udpstream_asd_queue *queue,
@@ -349,35 +340,6 @@ static void __rrr_udpstream_asd_queue_destroy(struct rrr_udpstream_asd_queue *qu
 
 static void __rrr_udpstream_asd_queue_collection_clear(struct rrr_udpstream_asd_queue_collection *collection) {
 	RRR_LL_DESTROY(collection, struct rrr_udpstream_asd_queue, __rrr_udpstream_asd_queue_destroy(node));
-}
-
-static void __rrr_udpstream_asd_control_queue_clear(struct rrr_udpstream_asd_control_queue *queue) {
-	RRR_LL_DESTROY(queue, struct rrr_udpstream_asd_control_queue_entry, rrr_free(node));
-}
-
-static int __rrr_udpstream_asd_queue_control_frame (
-		struct rrr_udpstream_asd *session,
-		uint32_t connect_handle,
-		uint32_t message_id,
-		uint32_t ack_flags
-) {
-	int ret = 0;
-
-	struct rrr_udpstream_asd_control_queue_entry *entry = rrr_allocate(sizeof(*entry));
-	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
-		ret = 1;
-		goto out;
-	}
-
-	entry->connect_handle = connect_handle;
-	entry->ack_flags = ack_flags;
-	entry->message_id = message_id;
-
-	RRR_LL_APPEND(&session->control_send_queue, entry);
-
-	out:
-	return ret;
 }
 
 static int __rrr_udpstream_asd_send_control_message (
@@ -558,15 +520,24 @@ static int __rrr_udpstream_asd_control_frame_callback (
 	// Corresponding ACKs to received ACKs are always sent, also when the IDs are not found in the
 	// buffers.
 	if (reply_ack_flags != 0) {
-		ret = __rrr_udpstream_asd_queue_control_frame(
+		ret = __rrr_udpstream_asd_send_control_message(
 				session,
+				reply_ack_flags,
 				connect_handle,
-				control_msg.message_id,
-				reply_ack_flags
+				control_msg.message_id
 		);
 	}
 
 	return ret;
+}
+
+static void  __rrr_udpstream_asd_periodic_event_add (
+		struct rrr_udpstream_asd *session
+) {
+	if (!EVENT_PENDING(session->event_periodic)) {
+		EVENT_ADD(session->event_periodic);
+	}
+	EVENT_ACTIVATE(session->event_periodic);
 }
 
 int rrr_udpstream_asd_queue_and_incref_message (
@@ -607,6 +578,8 @@ int rrr_udpstream_asd_queue_and_incref_message (
 		ret = 1;
 		goto out;
 	}
+
+	__rrr_udpstream_asd_periodic_event_add(session);
 
 	out:
 	return ret;
@@ -685,7 +658,7 @@ static int __rrr_udpstream_asd_do_release_queue_send_tasks (
 			}
 
 			if (ret != 0) {
-				RRR_DBG_3("Error while sending message B in rrr_udpstream_asd_do_send_tasks return was %i\n", ret);
+				RRR_DBG_3("Error while sending message B in ___rrr_udpstream_asd_do_release_queue_send_tasks return was %i\n", ret);
 				goto out;
 			}
 		}
@@ -695,29 +668,13 @@ static int __rrr_udpstream_asd_do_release_queue_send_tasks (
 	return ret;
 }
 
-static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
+static int __rrr_udpstream_asd_do_send_tasks (
+		int *no_more_send,
+		struct rrr_udpstream_asd *session
+) {
 	int ret = 0;
 
 	uint64_t time_now = rrr_time_get_64();
-
-	// Send control messages queued in control message callback
-	RRR_LL_ITERATE_BEGIN(&session->control_send_queue, struct rrr_udpstream_asd_control_queue_entry);
-		ret = __rrr_udpstream_asd_send_control_message (
-				session,
-				node->ack_flags,
-				node->connect_handle,
-				node->message_id
-		);
-		if (ret == RRR_UDPSTREAM_NOT_READY || ret == RRR_UDPSTREAM_SOFT_ERR) {
-			RRR_DBG_3("ASD control message deleted after failed send attempt (connect handle %u)\n", node->connect_handle);
-		}
-		else if (ret != 0) {
-			RRR_DBG_3("Could not send ASD control message in rrr_udpstream_asd_do_send_tasks return was %i\n", ret);
-			ret = 1;
-			goto out;
-		}
-		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->control_send_queue, 0; rrr_free(node));
 
 	int buffer_was_full = 0;
 
@@ -778,17 +735,8 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->send_queue, __rrr_udpstream_asd_queue_entry_destroy(node));
 
-	// Send data messages and reminder ACKs for inbound messages
-	if ((ret = __rrr_udpstream_asd_queue_collection_iterate (
-			&session->release_queues,
-			__rrr_udpstream_asd_do_release_queue_send_tasks,
-			session
-	)) != 0) {
-		RRR_MSG_0("Error while iterating release queues in _rrr_udpstream_asd_do_send_tasks\n");
-		goto out;
-	}
-
 	out:
+	*no_more_send = RRR_LL_COUNT(&session->send_queue) == 0;
 	return ret;
 }
 
@@ -944,6 +892,8 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 			goto out;
 		}
 	}
+
+	__rrr_udpstream_asd_periodic_event_add(session);
 
 	out:
 	return ret;
@@ -1114,6 +1064,16 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 		}
 	RRR_LL_ITERATE_END();
 
+	// Send data messages and reminder ACKs for inbound messages
+	if ((ret = __rrr_udpstream_asd_queue_collection_iterate (
+			&session->release_queues,
+			__rrr_udpstream_asd_do_release_queue_send_tasks,
+			session
+	)) != 0) {
+		RRR_MSG_0("Error while iterating release queues in _rrr_udpstream_asd_do_send_tasks\n");
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -1121,9 +1081,9 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 void rrr_udpstream_asd_destroy (
 		struct rrr_udpstream_asd *session
 ) {
+	rrr_event_collection_clear(&session->events);
 	__rrr_udpstream_asd_queue_collection_clear(&session->release_queues);
 	__rrr_udpstream_asd_queue_clear(&session->send_queue);
-	__rrr_udpstream_asd_control_queue_clear(&session->control_send_queue);
 	rrr_udpstream_close(&session->udpstream);
 	rrr_udpstream_clear(&session->udpstream);
 	RRR_FREE_IF_NOT_NULL(session->remote_host);
@@ -1131,31 +1091,23 @@ void rrr_udpstream_asd_destroy (
 	rrr_free(session);
 }
 
-static int __rrr_udpstream_asd_event_write (int *no_more_writes, void *arg) {
-	struct rrr_udpstream_asd *session = arg;
-
-	(void)(session);
-
-	// Currently everything is done in the read event
-
-	*no_more_writes = 1;
-
-	return 0;
-}
-
-static int __rrr_udpstream_asd_event_read (int *no_more_reads, int *ready_for_delivery, void *arg) {
-	struct rrr_udpstream_asd *session = arg;
-
+static int __rrr_udpstream_asd_tick (
+		struct rrr_udpstream_asd *session,
+		int *no_more_send,
+		int *no_more_delivery
+) {
 	int ret = 0;
 
-	*no_more_reads = 0;
-	*ready_for_delivery = 1;
+	*no_more_send = 1;
+	*no_more_delivery = 1;
 
-	if (__rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues) > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
+/*
+	const int release_queue_count = __rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues);
+	if (release_queue_count > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
 		*ready_for_delivery = 0;
 		RRR_DBG_3("UDP-stream ASD handle %u release queue is full\n", session->connect_handle);
 	}
-
+*/
 	// TODO : Detect exhausted ID etc. and reconnect
 
 	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0) {
@@ -1169,13 +1121,11 @@ static int __rrr_udpstream_asd_event_read (int *no_more_reads, int *ready_for_de
 		}
 	}
 
-	if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queues (no_more_reads, session)) != 0) {
+	if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queues (no_more_delivery, session)) != 0) {
 		goto out;
 	}
 
-	// This is done in the read callback to avoid spinning if we used
-	// the write event instead.
-	if ((ret = __rrr_udpstream_asd_do_send_tasks (session)) != 0) {
+	if ((ret = __rrr_udpstream_asd_do_send_tasks (no_more_send, session)) != 0) {
 		goto out;
 	}
 
@@ -1183,7 +1133,26 @@ static int __rrr_udpstream_asd_event_read (int *no_more_reads, int *ready_for_de
 	return ret;
 }
 
-//static int __rrr_udpstream_asd_final_callback (RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS) {}
+static void __rrr_udpstream_asd_event_periodic (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_udpstream_asd *session = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int no_more_send, no_more_delivery;
+
+	if (__rrr_udpstream_asd_tick (session, &no_more_send, &no_more_delivery) != 0) {
+		rrr_event_dispatch_break(session->queue);
+	}
+
+	if (no_more_send && no_more_delivery) {
+		EVENT_REMOVE(session->event_periodic);
+	}
+}
 
 int rrr_udpstream_asd_new (
 		struct rrr_udpstream_asd **target,
@@ -1211,6 +1180,8 @@ int rrr_udpstream_asd_new (
 		goto out;
 	}
 	memset(session, '\0', sizeof(*session));
+
+	rrr_event_collection_init(&session->events, queue);
 
 	if (remote_host != NULL && *remote_host != '\0') {
 		if ((session->remote_host = rrr_strdup(remote_host)) == NULL) {
@@ -1240,10 +1211,6 @@ int rrr_udpstream_asd_new (
 			&session->udpstream,
 			queue,
 			udpstream_flags|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE,
-			__rrr_udpstream_asd_event_write,
-			session,
-			__rrr_udpstream_asd_event_read,
-			session,
 			__rrr_udpstream_asd_control_frame_callback,
 			session,
 			allocator_callback,
@@ -1270,8 +1237,20 @@ int rrr_udpstream_asd_new (
 		}
 	}
 
-	session->connect_handle = client_id;
+	if ((ret = rrr_event_collection_push_periodic (
+			&session->event_periodic,
+			&session->events,
+			__rrr_udpstream_asd_event_periodic,
+			session,
+			10 * 1000 // 10 ms
+	)) != 0) {
+		RRR_MSG_0("Failed to create periodic event in rrr_udpstream_asd_new\n");
+		goto out_close_udpstream;
+	}
 
+
+	session->queue = queue;
+	session->connect_handle = client_id;
 	session->receive_callback = receive_callback;
 	session->receive_callback_arg = receive_callback_arg;
 
@@ -1279,8 +1258,8 @@ int rrr_udpstream_asd_new (
 	session = NULL;
 	goto out;
 
-//	out_close_udpstream:
-//		rrr_udpstream_close(&session->udpstream);
+	out_close_udpstream:
+		rrr_udpstream_close(&session->udpstream);
 	out_clear_udpstream:
 		rrr_udpstream_clear(&session->udpstream);
 	out_free_remote_port:

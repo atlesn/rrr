@@ -1063,6 +1063,7 @@ static int __rrr_udpstream_handle_received_frame (
 	int ret = RRR_SOCKET_OK;
 
 	struct rrr_udpstream_frame *new_frame = NULL;
+	struct rrr_udpstream_stream *stream = NULL;
 
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
 		RRR_MSG_0("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
@@ -1074,8 +1075,6 @@ static int __rrr_udpstream_handle_received_frame (
 		ret = __rrr_udpstream_handle_received_connect(data, new_frame, src_addr, addr_len);
 		goto out;
 	}
-
-	struct rrr_udpstream_stream *stream = NULL;
 
 	if (new_frame->stream_id != 0) {
 		stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id);
@@ -1209,6 +1208,9 @@ static int __rrr_udpstream_handle_received_frame (
 		new_frame = NULL;
 
 	out:
+		if (stream != NULL && RRR_LL_COUNT(&stream->receive_buffer) > 0 && !EVENT_PENDING(data->event_deliver)) {
+			EVENT_ADD(data->event_deliver);
+		}
 		if (new_frame != NULL) {
 			__rrr_udpstream_frame_destroy(new_frame);
 		}
@@ -1961,7 +1963,9 @@ int rrr_udpstream_queue_outbound_data (
 		new_frame->flags_and_type |= (RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY << 4);
 	}
 
-	EVENT_ADD(udpstream_data->event_write);
+	if (!EVENT_PENDING(udpstream_data->event_send)) {
+		EVENT_ADD(udpstream_data->event_send);
+	}
 
 	out:
 	return ret;
@@ -1988,7 +1992,33 @@ static int __rrr_udpstream_bind (
 	return 0;
 }
 
-static void __rrr_udpstream_event_read (
+static void __rrr_udpstream_event_send (
+		int fd,
+		short flags,
+		void *arg
+) {
+	struct rrr_udpstream *data = arg;
+
+	(void)(fd);
+	(void)(flags);
+
+	int sending_complete = 0;
+	int send_count_dummy = 0;
+
+	if (__rrr_udpstream_do_send_tasks (
+			&sending_complete,
+			&send_count_dummy,
+			data
+	) != 0) {
+		rrr_event_dispatch_break(data->queue);
+	}
+
+	if (sending_complete) {
+		EVENT_REMOVE(data->event_send);
+	}
+}
+
+static void __rrr_udpstream_event_deliver (
 		int fd,
 		short flags,
 		void *arg
@@ -1999,33 +2029,18 @@ static void __rrr_udpstream_event_read (
 	(void)(flags);
 
 	int reading_complete = 0;
-	int upstream_reading_complete = 0;
-	int upstream_ready_for_delivery = 0;
 
-	if (data->upstream_event_read (
-			&upstream_reading_complete,
-			&upstream_ready_for_delivery,
-			data->upstream_event_read_arg
-	) != 0) {
-		rrr_event_dispatch_break(data->queue);
-	}
+	// TODO : Check upstram ready for delivery
 
-	if (upstream_ready_for_delivery && __rrr_udpstream_process_receive_buffers (
+	if (__rrr_udpstream_process_receive_buffers (
 		&reading_complete,
 		data
 	) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
 
-	unsigned int timeout_new = (reading_complete &upstream_reading_complete
-		? RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_LONG
-		: RRR_UDPSTREAM_EVENT_READ_TIMEOUT_MS_SHORT
-	);
-
-	if (data->event_read_current_timeout != timeout_new) {
-		data->event_read_current_timeout = timeout_new;
-		EVENT_INTERVAL_SET(data->event_read, timeout_new);
-		EVENT_ADD(data->event_read);
+	if (reading_complete) {
+		EVENT_REMOVE(data->event_deliver);
 	}
 }
 
@@ -2039,48 +2054,18 @@ static void __rrr_udpstream_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	// Send any unacknowledged messages
+/*
+
 	int sending_complete_dummy;
 	int send_count_dummy;
-
-	// Send any unacknowledged messages
-	if (__rrr_udpstream_do_send_tasks (&sending_complete_dummy, &send_count_dummy, data) != 0) {
+if (__rrr_udpstream_do_send_tasks (&sending_complete_dummy, &send_count_dummy, data) != 0) {
 		rrr_event_dispatch_break(data->queue);
-	}
+	}*/
 
 	// Check connection timeouts
 	if (__rrr_udpstream_maintain(data) != 0) {
 		rrr_event_dispatch_break(data->queue);
-	}
-}
-
-static void __rrr_udpstream_event_write (
-		int fd,
-		short flags,
-		void *arg
-) {
-	struct rrr_udpstream *data = arg;
-
-	(void)(fd);
-	(void)(flags);
-
-	int sending_complete_upstream = 1;
-	int sending_complete = 1;
-	int send_count = 0;
-
-	if (__rrr_udpstream_do_send_tasks (
-			&sending_complete,
-			&send_count,
-			data
-	) != 0) {
-		rrr_event_dispatch_break(data->queue);
-	}
-
-	if (data->upstream_event_write(&sending_complete_upstream, data->upstream_event_write_arg) != 0) {
-		rrr_event_dispatch_break(data->queue);
-	}
-
-	if (sending_complete && sending_complete_upstream) {
-		EVENT_REMOVE(data->event_write);
 	}
 }
 
@@ -2089,32 +2074,26 @@ static int __rrr_udpstream_events_create (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_event_collection_push_read (
-			&data->event_read,
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_deliver,
 			&data->events,
-			data->ip.fd,
-			__rrr_udpstream_event_read,
+			__rrr_udpstream_event_deliver,
 			data,
 			10 * 1000 // 10 ms
 	)) != 0) {
 		goto out_err;
 	}
 
-	EVENT_ADD(data->event_read);
-
-	// Added as needed to send new messages immediately
-	if ((ret = rrr_event_collection_push_write (
-			&data->event_write,
+	if ((ret = rrr_event_collection_push_periodic (
+			&data->event_send,
 			&data->events,
-			data->ip.fd,
-			__rrr_udpstream_event_write,
+			__rrr_udpstream_event_send,
 			data,
-			1000 * 1000 // 1000 ms
+			10 * 1000 // 10 ms
 	)) != 0) {
 		goto out_err;
 	}
 
-	// Resend unacknowledged messages and maintain connections
 	if ((ret = rrr_event_collection_push_periodic (
 			&data->event_periodic,
 			&data->events,
@@ -2124,8 +2103,6 @@ static int __rrr_udpstream_events_create (
 	)) != 0) {
 		goto out_err;
 	}
-
-	EVENT_ADD(data->event_periodic);
 
 	if ((ret = rrr_socket_client_collection_connected_fd_push (
 			data->clients,
@@ -2324,10 +2301,6 @@ int rrr_udpstream_init (
 		struct rrr_udpstream *data,
 		struct rrr_event_queue *queue,
 		int flags,
-		int (*upstream_event_write)(int *no_more_writes, void *arg),
-		void *upstream_event_write_arg,
-		int (*upstream_event_read)(int *no_more_reads, int *ready_for_delivery, void *arg),
-		void *upstream_event_read_arg,
 		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *upstream_control_frame_callback_arg,
 		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
@@ -2370,10 +2343,6 @@ int rrr_udpstream_init (
 	);
 
 	data->queue = queue;
-	data->upstream_event_write = upstream_event_write;
-	data->upstream_event_write_arg = upstream_event_write_arg;
-	data->upstream_event_read = upstream_event_read;
-	data->upstream_event_read_arg = upstream_event_read_arg;
 	data->upstream_control_frame_callback = upstream_control_frame_callback;
 	data->upstream_control_frame_callback_arg = upstream_control_frame_callback_arg;
 	data->upstream_allocator_callback = upstream_allocator_callback;
