@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_struct.h"
 #include "net_transport_plain.h"
 #include "net_transport_config.h"
+#include "net_transport_ctx.h"
 
 #if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
 #	include "net_transport_tls.h"
@@ -354,7 +355,7 @@ int rrr_net_transport_handle_close (
 	return ret;
 }
 
-static int __rrr_net_transport_ctx_send_nonblock (
+static int __rrr_net_transport_handle_send_nonblock (
 		ssize_t *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
@@ -363,11 +364,11 @@ static int __rrr_net_transport_ctx_send_nonblock (
 	int ret = 0;
 
 	if (size < 0) {
-		RRR_BUG("BUG: Size was < 0 in rrr_net_transport_ctx_send_nonblock\n");
+		RRR_BUG("BUG: Size was < 0 in __rrr_net_transport_handle_send_nonblock\n");
 	}
 
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-		RRR_BUG("BUG: Handle to rrr_net_transport_ctx_send_nonblock was not of CONNECTION type\n");
+		RRR_BUG("BUG: Handle to __rrr_net_transport_handle_send_nonblock was not of CONNECTION type\n");
 	}
 
 	if ((ret = handle->transport->methods->send (
@@ -377,7 +378,7 @@ static int __rrr_net_transport_ctx_send_nonblock (
 			size
 	)) != 0) {
 		if (ret != RRR_NET_TRANSPORT_SEND_INCOMPLETE) {
-			RRR_DBG_7("Error %i from submodule send() in rrr_net_transport_send_nonblock, connection should be closed\n", ret);
+			RRR_DBG_7("Error %i from submodule send() in __rrr_net_transport_handle_send_nonblock, connection should be closed\n", ret);
 			goto out;
 		}
 	}
@@ -390,14 +391,6 @@ static int __rrr_net_transport_ctx_send_nonblock (
 
 	out:
 	return ret;
-}
-
-void __rrr_net_transport_handle_touch (
-		struct rrr_net_transport_handle *handle
-) {
-	if (handle->transport->hard_read_timeout_ms > 0) {
-		EVENT_ADD(handle->event_hard_read_timeout);
-	}
 }
 
 static void __rrr_net_transport_handle_event_read_add_if_needed (
@@ -509,7 +502,7 @@ static void __rrr_net_transport_event_read (
 	}
 
 	if (flags & EV_READ) {
-		__rrr_net_transport_handle_touch (handle);
+		rrr_net_transport_ctx_touch (handle);
 	}
 
 	EVENT_REMOVE(handle->event_first_read_timeout);
@@ -535,7 +528,7 @@ static int __rrr_net_transport_event_write_send_chunk_callback (
 	(void)(addr);
 	(void)(addr_len);
 
-	int ret = __rrr_net_transport_ctx_send_nonblock (
+	int ret = __rrr_net_transport_handle_send_nonblock (
 			written_bytes,
 			handle,
 			data,
@@ -750,7 +743,7 @@ void rrr_net_transport_handle_touch (
 ) {
 	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
-			__rrr_net_transport_handle_touch(node);
+			rrr_net_transport_ctx_touch(node);
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
@@ -790,12 +783,6 @@ int rrr_net_transport_is_tls (
 	return transport->methods->is_tls();
 }
 
-void rrr_net_transport_ctx_notify_read (
-		struct rrr_net_transport_handle *handle
-) {
-	EVENT_ACTIVATE(handle->event_read);
-}
-
 void rrr_net_transport_notify_read_all_connected (
 		struct rrr_net_transport *transport
 ) {
@@ -804,336 +791,6 @@ void rrr_net_transport_notify_read_all_connected (
 			rrr_net_transport_ctx_notify_read(node);
 		}
 	RRR_LL_ITERATE_END();
-}
-
-int rrr_net_transport_ctx_get_fd (
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->submodule_fd;
-}
-
-void *rrr_net_transport_ctx_get_private_ptr (
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->application_private_ptr;
-}
-
-int rrr_net_transport_ctx_get_handle (
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->handle;
-}
-
-int rrr_net_transport_ctx_handle_match_data_set (
-		struct rrr_net_transport_handle *handle,
-		const char *string,
-		uint64_t number
-) {
-	RRR_FREE_IF_NOT_NULL(handle->match_string);
-	if ((handle->match_string = rrr_strdup(string)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_net_transport_ctx_handle_match_data_set\n");
-		return 1;
-	}
-
-	handle->match_number = number;
-
-	return 0;
-}
-
-int rrr_net_transport_ctx_check_alive (
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->transport->methods->poll(handle);
-}
-
-int rrr_net_transport_ctx_read_message (
-		struct rrr_net_transport_handle *handle,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
-		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
-) {
-	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-		RRR_BUG("BUG: Handle to rrr_net_transport_read_message was not of CONNECTION type\n");
-	}
-
-	uint64_t bytes_read = 0;
-	int ret = handle->transport->methods->read_message (
-			&bytes_read,
-			handle,
-			read_attempts,
-			read_step_initial,
-			read_step_max_size,
-			read_max_size,
-			ratelimit_interval_us,
-			ratelimit_max_bytes,
-			get_target_size,
-			get_target_size_arg,
-			complete_callback,
-			complete_callback_arg
-	);
-	handle->bytes_read_total += bytes_read;
-
-	if (ret == RRR_NET_TRANSPORT_READ_RATELIMIT) {
-		EVENT_REMOVE(handle->event_read);
-	}
-
-	return ret;
-}
-
-size_t rrr_net_transport_ctx_send_waiting_chunk_count (
-		struct rrr_net_transport_handle *handle
-) {
-	return rrr_socket_send_chunk_collection_count(&handle->send_chunks);
-}
-
-long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
-		struct rrr_net_transport_handle *handle
-) {
-	long double count = rrr_socket_send_chunk_collection_count(&handle->send_chunks);
-	long double limit = handle->transport->send_chunk_count_limit;
-
-	if (limit <= 0) {
-		return 0.0;
-	}
-
-	long double result = count / limit;
-
-	return (result > 1.0 ? 1.0 : result);
-}
-
-static int __rrr_net_transport_ctx_send_push_postcheck (
-		struct rrr_net_transport_handle *handle,
-		int send_chunk_count
-) {
-	if (handle->transport->send_chunk_count_limit != 0 && send_chunk_count > handle->transport->send_chunk_count_limit) {
-		RRR_MSG_0("net transport fd %i send chunk count exceeded specified limit (%i/%i), soft error.\n",
-				handle->submodule_fd,
-				send_chunk_count,
-				handle->transport->send_chunk_count_limit
-		);
-		return RRR_NET_TRANSPORT_SEND_SOFT_ERROR;
-	}
-	return 0;
-}
-
-static int __rrr_net_transport_ctx_send_push (
-		struct rrr_net_transport_handle *handle,
-		void **data,
-		ssize_t size,
-		int is_urgent
-) {
-	int ret = 0;
-
-	EVENT_ADD(handle->event_write);
-
-	int send_chunk_count = 0;
-	if ((ret = rrr_socket_send_chunk_collection_push (
-			&send_chunk_count,
-			&handle->send_chunks,
-			data,
-			size,
-			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
-			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
-	)) != 0) {
-		goto out;
-	}
-
-	ret = __rrr_net_transport_ctx_send_push_postcheck (handle, send_chunk_count);
-
-	out:
-	return ret;
-}
-
-void rrr_net_transport_ctx_close_when_send_complete_set (
-		struct rrr_net_transport_handle *handle
-) {
-	if (!handle->close_when_send_complete) {
-		handle->close_when_send_complete = 1;
-		RRR_DBG_7("net transport fd %i close when send complete activated\n",
-				handle->submodule_fd);
-
-		EVENT_ADD(handle->event_write);
-	}
-}
-
-int rrr_net_transport_ctx_close_when_send_complete_get (
-		struct rrr_net_transport_handle *handle
-) {
-	return handle->close_when_send_complete;
-}
-
-int rrr_net_transport_ctx_send_push (
-		struct rrr_net_transport_handle *handle,
-		void **data,
-		ssize_t size
-) {
-	return __rrr_net_transport_ctx_send_push (handle, data, size, 0 /* Not urgent */);
-}
-
-int rrr_net_transport_ctx_send_push_urgent (
-		struct rrr_net_transport_handle *handle,
-		void **data,
-		ssize_t size
-) {
-	return __rrr_net_transport_ctx_send_push (handle, data, size, 1 /* Urgent */);
-}
-
-static int __rrr_net_transport_ctx_send_push_const (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size,
-		int is_urgent
-) {
-	int ret = 0;
-
-	EVENT_ADD(handle->event_write);
-
-	int send_chunk_count = 0;
-	if ((ret = rrr_socket_send_chunk_collection_push_const (
-			&send_chunk_count,
-			&handle->send_chunks,
-			data,
-			size,
-			is_urgent ? RRR_SOCKET_SEND_CHUNK_PRIORITY_HIGH
-			          : RRR_SOCKET_SEND_CHUNK_PRIORITY_NORMAL
-	)) != 0) {
-		goto out;
-	}
-
-	ret = __rrr_net_transport_ctx_send_push_postcheck (handle, send_chunk_count);
-
-	out:
-	return ret;
-}
-
-int rrr_net_transport_ctx_send_push_const (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-) {
-	return __rrr_net_transport_ctx_send_push_const (handle, data, size, 0 /* Not urgent */);
-}
-
-int rrr_net_transport_ctx_send_push_const_urgent (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-) {
-	return __rrr_net_transport_ctx_send_push_const (handle, data, size, 1 /* Urgent */);
-}
-
-static int __rrr_net_transport_ctx_send_push_nullsafe_callback (
-		const void *data,
-		rrr_nullsafe_len data_len,
-		void *arg
-) {
-	struct rrr_net_transport_handle *handle = arg;
-
-	return rrr_net_transport_ctx_send_push_const (handle, data, data_len);
-}
-
-int rrr_net_transport_ctx_send_push_nullsafe (
-		struct rrr_net_transport_handle *handle,
-		const struct rrr_nullsafe_str *nullsafe
-) {
-	return rrr_nullsafe_str_with_raw_do_const(nullsafe, __rrr_net_transport_ctx_send_push_nullsafe_callback, handle);
-}
-
-int rrr_net_transport_ctx_read (
-		uint64_t *bytes_read,
-		struct rrr_net_transport_handle *handle,
-		char *buf,
-		size_t buf_size
-) {
-	int ret = handle->transport->methods->read(bytes_read, handle, buf, buf_size);
-
-	handle->bytes_read_total += *bytes_read;
-
-	return ret;
-}
-
-int rrr_net_transport_ctx_handle_has_application_data (
-		struct rrr_net_transport_handle *handle
-) {
-	return (handle->application_private_ptr != NULL);
-}
-
-void rrr_net_transport_ctx_handle_application_data_bind (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-) {
-	if (handle->application_private_ptr != NULL) {
-		RRR_BUG("rrr_net_transport_handle_application_data_bind called twice, pointer was already set\n");
-	}
-	handle->application_private_ptr = application_data;
-	handle->application_ptr_destroy = application_data_destroy;
-}
-
-void rrr_net_transport_ctx_handle_pre_destroy_function_set (
-		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
-) {
-	handle->application_ptr_iterator_pre_destroy = pre_destroy_function;
-}
-
-void rrr_net_transport_ctx_get_socket_stats (
-		uint64_t *bytes_read_total,
-		uint64_t *bytes_written_total,
-		uint64_t *bytes_total,
-		struct rrr_net_transport_handle *handle
-) {
-	if (bytes_read_total != NULL) {
-		*bytes_read_total = handle->bytes_read_total;
-	}
-	if (bytes_written_total != NULL) {
-		*bytes_written_total = handle->bytes_written_total;
-	}
-	if (bytes_total != NULL) {
-		*bytes_total = handle->bytes_read_total + handle->bytes_written_total;
-	}
-}
-
-int rrr_net_transport_ctx_is_tls (
-		struct rrr_net_transport_handle *handle
-) {
-	return rrr_net_transport_is_tls(handle->transport);
-}
-
-void rrr_net_transport_ctx_connected_address_to_str (
-		char *buf,
-		size_t buf_size,
-		struct rrr_net_transport_handle *handle
-) {
-	if (handle->connected_addr_len == 0) {
-		snprintf(buf, buf_size, "(unknown)");
-	}
-	else {
-		rrr_ip_to_str(buf, buf_size, (const struct sockaddr *) &handle->connected_addr, handle->connected_addr_len);
-	}
-}
-
-void rrr_net_transport_ctx_connected_address_get (
-		const struct sockaddr **addr,
-		socklen_t *addr_len,
-		const struct rrr_net_transport_handle *handle
-) {
-	*addr = (const struct sockaddr *) &handle->connected_addr;
-	*addr_len = handle->connected_addr_len;
-}
-
-void rrr_net_transport_ctx_selected_proto_get (
-		const char **proto,
-		struct rrr_net_transport_handle *handle
-) {
-	handle->transport->methods->selected_proto_get(proto, handle);
 }
 
 int rrr_net_transport_handle_with_transport_ctx_do (

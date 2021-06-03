@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "net_transport_defines.h"
+#include "net_transport_ctx.h"
 
 #include "../event/event.h"
 #include "../read.h"
@@ -99,10 +100,6 @@ int rrr_net_transport_handle_allocate_and_add (
 );
 #endif
 
-#define RRR_NET_TRANSPORT_CTX_FD(handle) rrr_net_transport_ctx_get_fd(handle)
-#define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_private_ptr(handle)
-#define RRR_NET_TRANSPORT_CTX_HANDLE(handle) rrr_net_transport_ctx_get_handle(handle)
-
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 );
@@ -154,118 +151,8 @@ int rrr_net_transport_handle_get_by_match (
 int rrr_net_transport_is_tls (
 		struct rrr_net_transport *transport
 );
-void rrr_net_transport_ctx_notify_read (
-		struct rrr_net_transport_handle *handle
-);
 void rrr_net_transport_notify_read_all_connected (
 		struct rrr_net_transport *transport
-);
-int rrr_net_transport_ctx_get_fd (
-		struct rrr_net_transport_handle *handle
-);
-void *rrr_net_transport_ctx_get_private_ptr (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_get_handle (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_handle_match_data_set (
-		struct rrr_net_transport_handle *handle,
-		const char *string,
-		uint64_t number
-);
-int rrr_net_transport_ctx_check_alive (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_read_message (
-		struct rrr_net_transport_handle *handle,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
-		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
-);
-size_t rrr_net_transport_ctx_send_waiting_chunk_count (
-		struct rrr_net_transport_handle *handle
-);
-long double rrr_net_transport_ctx_send_waiting_chunk_limit_factor (
-		struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_close_when_send_complete_set (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_close_when_send_complete_get (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_send_push (
-		struct rrr_net_transport_handle *handle,
-		void **data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_push_urgent (
-		struct rrr_net_transport_handle *handle,
-		void **data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_push_const (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_push_const_urgent (
-		struct rrr_net_transport_handle *handle,
-		const void *data,
-		ssize_t size
-);
-int rrr_net_transport_ctx_send_push_nullsafe (
-		struct rrr_net_transport_handle *handle,
-		const struct rrr_nullsafe_str *nullsafe
-);
-int rrr_net_transport_ctx_read (
-		uint64_t *bytes_read,
-		struct rrr_net_transport_handle *handle,
-		char *buf,
-		size_t buf_size
-);
-int rrr_net_transport_ctx_handle_has_application_data (
-		struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_handle_application_data_bind (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-);
-void rrr_net_transport_ctx_handle_pre_destroy_function_set (
-		struct rrr_net_transport_handle *handle,
-		int (*pre_destroy_function)(struct rrr_net_transport_handle *handle, void *ptr)
-);
-void rrr_net_transport_ctx_get_socket_stats (
-		uint64_t *bytes_read_total,
-		uint64_t *bytes_written_total,
-		uint64_t *bytes_total,
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_ctx_is_tls (
-		struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_connected_address_to_str (
-		char *buf,
-		size_t buf_size,
-		struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_connected_address_get (
-		const struct sockaddr **addr,
-		socklen_t *addr_len,
-		const struct rrr_net_transport_handle *handle
-);
-void rrr_net_transport_ctx_selected_proto_get (
-		const char **proto,
-		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
