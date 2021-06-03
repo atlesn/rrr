@@ -183,7 +183,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
 
 // Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
-// #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
+#define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -1426,10 +1426,14 @@ static int __rrr_udpstream_process_receive_buffer (
 		uint32_t ack_id_to_tmp = 0;
 		struct ack_list_node *ack_node = NULL;
 
+		printf ("Prev boundary %u\n", stream->receive_buffer.frame_id_prev_boundary_pos);
+		printf ("Frame id %u\n", node->frame_id);
+
 		if (first_ack_id == 0) {
 			first_ack_id = node->frame_id;
-			if (stream->receive_buffer.frame_id_prev_boundary_pos != 0 &&
-				node->frame_id - stream->receive_buffer.frame_id_prev_boundary_pos > 1
+			if ( stream->receive_buffer.frame_id_prev_boundary_pos != 0 &&
+			     node->frame_id > stream->receive_buffer.frame_id_prev_boundary_pos &&
+			     node->frame_id - stream->receive_buffer.frame_id_prev_boundary_pos > 1
 			) {
 				// Some frames are missing out, send ACK of last delivered frame
 				ack_id_from_tmp = stream->receive_buffer.frame_id_prev_boundary_pos;
@@ -1444,7 +1448,10 @@ static int __rrr_udpstream_process_receive_buffer (
 			}
 		}
 
-		if (last_ack_id != 0 && node->frame_id - last_ack_id > 1) {
+		if ( last_ack_id != 0 &&
+		     node->frame_id > last_ack_id &&
+		     node->frame_id - last_ack_id > 1
+		) {
 			ack_id_from_tmp = first_ack_id;
 			ack_id_to_tmp = last_ack_id;
 
