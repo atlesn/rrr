@@ -621,7 +621,7 @@ static int __rrr_udpstream_asd_send_message (
 	struct rrr_msg_msg *message = node->message->message;
 	struct rrr_msg_msg *message_network = NULL;
 	message_network = rrr_msg_msg_duplicate(message);
-	ssize_t message_network_size = MSG_TOTAL_SIZE(message_network);
+	const rrr_length message_network_size = MSG_TOTAL_SIZE(message_network);
 
 	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) message_network);
 	rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message_network);

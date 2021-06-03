@@ -310,7 +310,7 @@ int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		uint64_t application_data
 );
 void rrr_udpstream_close (

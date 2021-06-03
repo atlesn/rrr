@@ -469,8 +469,8 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 		frame_new->data_size = 0;
 	}
 
-	char *crc32_start_pos = ((char *) frame_new) + sizeof(frame_new->header_crc32);
-	ssize_t crc32_size = sizeof(*frame_new) - sizeof(frame_new->header_crc32) - 1;
+	const char *crc32_start_pos = ((char *) frame_new) + sizeof(frame_new->header_crc32);
+	const uint32_t crc32_size = sizeof(*frame_new) - sizeof(frame_new->header_crc32) - 1;
 
 	frame_new->header_crc32 = rrr_htobe32(rrr_crc32buf(crc32_start_pos, crc32_size));
 
@@ -641,7 +641,7 @@ static int __rrr_udpstream_send_connect_response (
 static uint32_t __rrr_udpstream_allocate_connect_handle (
 		struct rrr_udpstream *data
 ) {
-	uint32_t ret = rrr_rand();
+	uint32_t ret = (uint32_t) rrr_rand();
 	for (int retries = 0xffff; retries > 0; retries--) {
 		int collission = 0;
 		RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
@@ -729,8 +729,8 @@ static int __rrr_udpstream_frame_packed_validate (
 ) {
 	uint32_t header_crc32 = RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame);
 
-	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
-	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
+	const char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
+	const uint32_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
 	if (rrr_crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
 		RRR_MSG_0("Header CRC32 mismatch in __rrr_udpstream_frame_pack_validate\n");
@@ -1035,7 +1035,7 @@ static int __rrr_udpstream_regulate_window_size (
 		tmp = RRR_UDPSTREAM_WINDOW_SIZE_MAX;
 	}
 
-	stream->window_size_to_remote = tmp;
+	stream->window_size_to_remote = (uint32_t) tmp;
 
 	return 0;
 }
@@ -1238,7 +1238,7 @@ static int __rrr_udpstream_read_callback (
 		goto out;
 	}
 
-	ssize_t data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
+	const rrr_biglength data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
 	if (data_size > 0) {
 		if (rrr_crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
 			RRR_MSG_0("Data CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
@@ -1979,7 +1979,7 @@ int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		uint64_t application_data
 ) {
 	int ret = 0;
@@ -2009,7 +2009,7 @@ int rrr_udpstream_queue_outbound_data (
 	const void *pos = data;
 	struct rrr_udpstream_frame *new_frame = NULL;
 	while (data_size > 0) {
-		uint16_t chunk_size = (data_size > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT ? RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT : data_size);
+		uint16_t chunk_size = (data_size > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT ? RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT : (uint16_t) data_size);
 		new_frame = NULL;
 		if ((ret = __rrr_udpstream_frame_new_from_data(&new_frame, pos, chunk_size)) != 0) {
 			RRR_MSG_0("Could not allocate frame in rrr_udpstream_queue_outbound_data\n");
