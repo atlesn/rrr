@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "../helpers/nullsafe_str.h"
+#include "net_transport_types.h"
 
 #define RRR_NET_TRANSPORT_CTX_FD(handle) rrr_net_transport_ctx_get_fd(handle)
 #define RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) rrr_net_transport_ctx_get_private_ptr(handle)
@@ -55,7 +56,7 @@ int rrr_net_transport_ctx_get_fd (
 void *rrr_net_transport_ctx_get_private_ptr (
 		struct rrr_net_transport_handle *handle
 );
-int rrr_net_transport_ctx_get_handle (
+rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_ctx_handle_match_data_set (

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "net_transport_defines.h"
+#include "net_transport_types.h"
 #include "net_transport_ctx.h"
 
 #include "../event/event.h"
@@ -34,8 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../util/linked_list.h"
 #include "../socket/rrr_socket_send_chunk.h"
-
-typedef long long int rrr_net_transport_handle;
 
 struct rrr_read_session;
 struct rrr_net_transport;

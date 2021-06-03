@@ -54,7 +54,7 @@ void *rrr_net_transport_ctx_get_private_ptr (
 	return handle->application_private_ptr;
 }
 
-int rrr_net_transport_ctx_get_handle (
+rrr_net_transport_handle rrr_net_transport_ctx_get_handle (
 		struct rrr_net_transport_handle *handle
 ) {
 	return handle->handle;
