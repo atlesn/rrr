@@ -404,7 +404,8 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cacher_msgdb_socket", msgdb_socket);
 	if (data->msgdb_socket == NULL || *(data->msgdb_socket) == '\0') {
-		RRR_MSG_0("Required aramenter cacher_msgdb_socket missing in cacher instance %s\n");
+		RRR_MSG_0("Required aramenter cacher_msgdb_socket missing in cacher instance %s\n",
+			INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
