@@ -1038,6 +1038,7 @@ int __rrr_udpstream_asd_queue_regulate_window_size (
 }
 
 static int __rrr_udpstream_asd_deliver_and_maintain_queue (
+		int *all_are_grace,
 		struct rrr_udpstream_asd *session,
 		struct rrr_udpstream_asd_queue *queue
 ) {
@@ -1045,6 +1046,8 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 
 	int graced_messages_count = 0;
 	int delivered_messages_count = 0;
+
+	*all_are_grace = 0;
 
 	// Deliver messages
 	if ((ret = __rrr_udpstream_asd_queue_deliver_messages (
@@ -1076,27 +1079,38 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 		goto out;
 	}
 
+	*all_are_grace = graced_messages_count == RRR_LL_COUNT(queue);
+
 	out:
 	return ret;
 }
 
 // Deliver ready messages to application through callback function
 static int __rrr_udpstream_asd_deliver_and_maintain_queues (
+		int *queues_empty,
 		struct rrr_udpstream_asd *session
 ) {
 	int ret = 0;
+
+	*queues_empty = 1;
 
 	// Note : We could have deleted empty queues here, but they never get empty
 	//        due to the grace time of delivered messages
 
 	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue);
+		int all_are_grace = 0;
 		if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queue (
+				&all_are_grace,
 				session,
 				node
 		)) != 0) {
 			RRR_MSG_0("ASD error while maintaining release queue for connect handle %u\n", node->source_connect_handle);
 			ret = 1;
 			goto out;
+		}
+
+		if (!all_are_grace) {
+			*queues_empty = 0;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -1155,7 +1169,7 @@ static int __rrr_udpstream_asd_event_read (int *no_more_reads, int *ready_for_de
 		}
 	}
 
-	if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queues (session)) != 0) {
+	if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queues (no_more_reads, session)) != 0) {
 		goto out;
 	}
 

@@ -2069,8 +2069,6 @@ static void __rrr_udpstream_event_read (
 	(void)(fd);
 	(void)(flags);
 
-//	printf("Read event\n");
-
 	int reading_complete = 0;
 	int reading_complete_upstream = 0;
 
@@ -2104,7 +2102,6 @@ static void __rrr_udpstream_event_read (
 		data->event_read_current_timeout = timeout_new;
 		EVENT_INTERVAL_SET(data->event_read, timeout_new);
 		EVENT_ADD(data->event_read);
-		printf("Read timeout %u\n", timeout_new);
 	}
 }
 
@@ -2153,8 +2150,6 @@ static void __rrr_udpstream_event_write (
 	) != 0) {
 		rrr_event_dispatch_break(data->queue);
 	}
-
-//	printf("Write event sent %i\n", send_count);
 
 	if (data->upstream_event_write(&sending_complete_upstream, data->upstream_event_write_arg) != 0) {
 		rrr_event_dispatch_break(data->queue);
