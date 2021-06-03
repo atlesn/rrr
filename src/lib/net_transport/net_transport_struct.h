@@ -128,7 +128,7 @@ struct rrr_net_transport_methods {
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
 	int (*send)(
-			uint64_t *bytes_written,
+			ssize_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
 			const void *data,
 			ssize_t size

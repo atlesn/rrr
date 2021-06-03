@@ -355,7 +355,7 @@ int rrr_net_transport_handle_close (
 }
 
 static int __rrr_net_transport_ctx_send_nonblock (
-		uint64_t *written_bytes,
+		ssize_t *written_bytes,
 		struct rrr_net_transport_handle *handle,
 		const void *data,
 		ssize_t size
@@ -382,12 +382,11 @@ static int __rrr_net_transport_ctx_send_nonblock (
 		}
 	}
 
-	uint64_t size_tmp_u = size;
-	if (ret == 0 && *written_bytes != size_tmp_u) {
+	if (ret == 0 && *written_bytes != size) {
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
 
-	handle->bytes_written_total += *written_bytes;
+	handle->bytes_written_total += (uint64_t) *written_bytes;
 
 	out:
 	return ret;
@@ -536,16 +535,12 @@ static int __rrr_net_transport_event_write_send_chunk_callback (
 	(void)(addr);
 	(void)(addr_len);
 
-	uint64_t written_bytes_u64 = 0;
-
 	int ret = __rrr_net_transport_ctx_send_nonblock (
-			&written_bytes_u64,
+			written_bytes,
 			handle,
 			data,
 			data_size
 	);
-
-	*written_bytes = written_bytes_u64;
 
 	return ret;
 }

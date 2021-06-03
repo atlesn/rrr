@@ -588,7 +588,7 @@ static int __rrr_net_transport_libressl_read (
 }
 
 static int __rrr_net_transport_libressl_send (
-	uint64_t *sent_bytes,
+	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	const ssize_t size
@@ -618,9 +618,7 @@ static int __rrr_net_transport_libressl_send (
 			goto out;
 		}
 		else if ((pfd.revents & (pfd.events|POLLHUP))) {
-			ssize_t bytes;
-
-			bytes = tls_write(tls_data->ctx, data, size);
+			ssize_t bytes = tls_write(tls_data->ctx, data, size);
 			if (bytes == TLS_WANT_POLLIN) {
 				pfd.events = POLLIN;
 			}

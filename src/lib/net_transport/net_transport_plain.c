@@ -256,7 +256,7 @@ static int __rrr_net_transport_plain_read (
 }
 
 static int __rrr_net_transport_plain_send (
-	uint64_t *written_bytes,
+	ssize_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
@@ -266,7 +266,6 @@ static int __rrr_net_transport_plain_send (
 	*written_bytes = 0;
 
 	ssize_t written_bytes_tmp = 0;
-
 	ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size);
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);

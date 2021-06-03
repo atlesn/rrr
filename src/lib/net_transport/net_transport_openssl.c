@@ -932,7 +932,7 @@ static int __rrr_net_transport_openssl_read (
 }
 
 static int __rrr_net_transport_openssl_send (
-	uint64_t *sent_bytes,
+	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
