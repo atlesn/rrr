@@ -101,27 +101,6 @@ int rrr_net_transport_handle_allocate_and_add (
 );
 #endif
 
-void rrr_net_transport_common_cleanup (
-		struct rrr_net_transport *transport
-);
-void rrr_net_transport_stats_get (
-		int *handle_count,
-		struct rrr_net_transport *transport
-);
-int rrr_net_transport_new (
-		struct rrr_net_transport **result,
-		const struct rrr_net_transport_config *config,
-		int flags,
-		struct rrr_event_queue *queue,
-		const char *alpn_protos,
-		unsigned int alpn_protos_length
-);
-void rrr_net_transport_destroy (
-		struct rrr_net_transport *transport
-);
-void rrr_net_transport_destroy_void (
-		void *arg
-);
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
@@ -149,33 +128,11 @@ rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 		const char *string,
 		uint64_t number
 );
-int rrr_net_transport_is_tls (
-		struct rrr_net_transport *transport
-);
-void rrr_net_transport_notify_read_all_connected (
-		struct rrr_net_transport *transport
-);
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
-);
-int rrr_net_transport_iterate_with_callback (
-		struct rrr_net_transport *transport,
-		enum rrr_net_transport_socket_mode mode,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-);
-int rrr_net_transport_match_data_set (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle,
-		const char *string,
-		uint64_t number
-);
-int rrr_net_transport_check_handshake_complete (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle
 );
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
@@ -204,6 +161,49 @@ int rrr_net_transport_event_setup (
 		void *handshake_complete_callback_arg,
 		int (*read_callback)(RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS),
 		void *read_callback_arg
+);
+int rrr_net_transport_is_tls (
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_notify_read_all_connected (
+		struct rrr_net_transport *transport
+);
+int rrr_net_transport_iterate_with_callback (
+		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+);
+int rrr_net_transport_match_data_set (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const char *string,
+		uint64_t number
+);
+int rrr_net_transport_check_handshake_complete (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+);
+void rrr_net_transport_common_cleanup (
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_stats_get (
+		int *handle_count,
+		struct rrr_net_transport *transport
+);
+int rrr_net_transport_new (
+		struct rrr_net_transport **result,
+		const struct rrr_net_transport_config *config,
+		int flags,
+		struct rrr_event_queue *queue,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
+);
+void rrr_net_transport_destroy (
+		struct rrr_net_transport *transport
+);
+void rrr_net_transport_destroy_void (
+		void *arg
 );
 
 #endif /* RRR_NET_TRANSPORT_H */

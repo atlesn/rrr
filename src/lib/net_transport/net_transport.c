@@ -220,110 +220,6 @@ static int __rrr_net_transport_handle_destroy (
 	return RRR_LL_DID_DESTROY;
 }
 
-void rrr_net_transport_common_cleanup (
-		struct rrr_net_transport *transport
-) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_LL_DESTROY(
-			collection,
-			struct rrr_net_transport_handle,
-			__rrr_net_transport_handle_destroy (node)
-	);
-}
-
-void rrr_net_transport_stats_get (
-		int *handle_count,
-		struct rrr_net_transport *transport
-) {
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-	*handle_count = RRR_LL_COUNT(collection);
-}
-
-int rrr_net_transport_new (
-		struct rrr_net_transport **result,
-		const struct rrr_net_transport_config *config,
-		int flags,
-		struct rrr_event_queue *queue,
-		const char *alpn_protos,
-		unsigned int alpn_protos_length
-) {
-#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL)
-	(void)(alpn_protos_length);
-#endif
-	int ret = 0;
-
-	*result = NULL;
-
-	struct rrr_net_transport *new_transport = NULL;
-
-	switch (config->transport_type) {
-		case RRR_NET_TRANSPORT_PLAIN:
-			if (flags != 0) {
-				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
-			}
-			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
-				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
-			}
-			if (alpn_protos != NULL) {
-				RRR_BUG("BUG: Plain method does not support ALPN in rrr_net_transport_new but it was given\n");
-			}
-			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
-			break;
-#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
-		case RRR_NET_TRANSPORT_TLS:
-			ret = rrr_net_transport_tls_new (
-					(struct rrr_net_transport_tls **) &new_transport,
-					flags,
-					config->tls_certificate_file,
-					config->tls_key_file,
-					config->tls_ca_file,
-					config->tls_ca_path,
-					alpn_protos,
-					alpn_protos_length
-			);
-			break;
-#endif
-		default:
-			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", config->transport_type);
-			break;
-	};
-
-	if (ret != 0) {
-		RRR_MSG_0("Could not create transport method in rrr_net_transport_new\n");
-		goto out;
-	}
-
-	rrr_event_collection_init(&new_transport->events, queue);
-	new_transport->event_queue = queue;
-
-	*result = new_transport;
-
-	goto out;
-//	out_destroy:
-//		new_transport->methods->destroy(new_transport);
-	out:
-		return ret;
-}
-
-void rrr_net_transport_destroy (
-		struct rrr_net_transport *transport
-) {
-	rrr_net_transport_common_cleanup(transport);
-
-	rrr_event_collection_clear(&transport->events);
-
-	// The matching destroy function of the new function which allocated
-	// memory for the transport will free()
-	transport->methods->destroy(transport);
-}
-
-void rrr_net_transport_destroy_void (
-		void *arg
-) {
-	rrr_net_transport_destroy(arg);
-}
-
 int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle
@@ -777,22 +673,6 @@ rrr_net_transport_handle rrr_net_transport_handle_get_by_match (
 	return result_handle;
 }
 
-int rrr_net_transport_is_tls (
-		struct rrr_net_transport *transport
-) {
-	return transport->methods->is_tls();
-}
-
-void rrr_net_transport_notify_read_all_connected (
-		struct rrr_net_transport *transport
-) {
-	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
-		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
-			rrr_net_transport_ctx_notify_read(node);
-		}
-	RRR_LL_ITERATE_END();
-}
-
 int rrr_net_transport_handle_with_transport_ctx_do (
 		struct rrr_net_transport *transport,
 		rrr_net_transport_handle transport_handle,
@@ -806,86 +686,6 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 
 	return ret;
 }
-
-int rrr_net_transport_iterate_with_callback (
-		struct rrr_net_transport *transport,
-		enum rrr_net_transport_socket_mode mode,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
-) {
-	int ret = 0;
-
-	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (mode == RRR_NET_TRANSPORT_SOCKET_MODE_ANY || mode == node->mode) {
-			if ((ret = callback (
-					node,
-					arg
-			)) != 0) {
-				if (ret == RRR_READ_INCOMPLETE) {
-					ret = 0;
-					RRR_LL_ITERATE_NEXT();
-				}
-				else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
-					ret = 0;
-					// For nice treatment of remote, for instance send a disconnect packet
-					if (node->application_ptr_iterator_pre_destroy != NULL) {
-						ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
-					}
-
-					if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
-						RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
-						RRR_LL_ITERATE_BREAK();
-					}
-
-					// When pre_destroy returns 0 or is not set, go ahead with destruction
-					if (ret == 0) {
-						__rrr_net_transport_handle_destroy(node);
-						RRR_LL_ITERATE_SET_DESTROY();
-						RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
-					}
-				}
-				else {
-					RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
-					ret = 1;
-					RRR_LL_ITERATE_LAST();
-				}
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
-
-	return ret;
-}
-
-int rrr_net_transport_match_data_set (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle,
-		const char *string,
-		uint64_t number
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
-
-	ret = rrr_net_transport_ctx_handle_match_data_set(handle, string, number);
-
-	return ret;
-}
-
-int rrr_net_transport_check_handshake_complete (
-		struct rrr_net_transport *transport,
-		rrr_net_transport_handle transport_handle
-) {
-	int ret = 0;
-
-	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
-
-	ret = (handle->handshake_complete ? RRR_READ_OK : RRR_READ_INCOMPLETE);
-
-	return ret;
-}
-
 static void __rrr_net_transport_event_read_add (
 		evutil_socket_t fd,
 		short flags,
@@ -1131,4 +931,204 @@ int rrr_net_transport_event_setup (
 
 	out:
 	return ret;
+}
+
+int rrr_net_transport_is_tls (
+		struct rrr_net_transport *transport
+) {
+	return transport->methods->is_tls();
+}
+
+void rrr_net_transport_notify_read_all_connected (
+		struct rrr_net_transport *transport
+) {
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
+			rrr_net_transport_ctx_notify_read(node);
+		}
+	RRR_LL_ITERATE_END();
+}
+
+int rrr_net_transport_iterate_with_callback (
+		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		if (mode == RRR_NET_TRANSPORT_SOCKET_MODE_ANY || mode == node->mode) {
+			if ((ret = callback (
+					node,
+					arg
+			)) != 0) {
+				if (ret == RRR_READ_INCOMPLETE) {
+					ret = 0;
+					RRR_LL_ITERATE_NEXT();
+				}
+				else if (ret == RRR_READ_SOFT_ERROR || ret == RRR_READ_EOF) {
+					ret = 0;
+					// For nice treatment of remote, for instance send a disconnect packet
+					if (node->application_ptr_iterator_pre_destroy != NULL) {
+						ret = node->application_ptr_iterator_pre_destroy(node, node->application_private_ptr);
+					}
+
+					if (ret == RRR_NET_TRANSPORT_READ_HARD_ERROR) {
+						RRR_MSG_0("Internal error in rrr_net_transport_iterate_with_callback\n");
+						RRR_LL_ITERATE_BREAK();
+					}
+
+					// When pre_destroy returns 0 or is not set, go ahead with destruction
+					if (ret == 0) {
+						__rrr_net_transport_handle_destroy(node);
+						RRR_LL_ITERATE_SET_DESTROY();
+						RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
+					}
+				}
+				else {
+					RRR_MSG_0("Error %i from read function in rrr_net_transport_iterate_with_callback\n", ret);
+					ret = 1;
+					RRR_LL_ITERATE_LAST();
+				}
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(collection);
+
+	return ret;
+}
+
+int rrr_net_transport_match_data_set (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle,
+		const char *string,
+		uint64_t number
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
+
+	ret = rrr_net_transport_ctx_handle_match_data_set(handle, string, number);
+
+	return ret;
+}
+
+int rrr_net_transport_check_handshake_complete (
+		struct rrr_net_transport *transport,
+		rrr_net_transport_handle transport_handle
+) {
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_GET("rrr_net_transport_match_data_set");
+
+	ret = (handle->handshake_complete ? RRR_READ_OK : RRR_READ_INCOMPLETE);
+
+	return ret;
+}
+
+
+void rrr_net_transport_common_cleanup (
+		struct rrr_net_transport *transport
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_LL_DESTROY(
+			collection,
+			struct rrr_net_transport_handle,
+			__rrr_net_transport_handle_destroy (node)
+	);
+}
+
+void rrr_net_transport_stats_get (
+		int *handle_count,
+		struct rrr_net_transport *transport
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+	*handle_count = RRR_LL_COUNT(collection);
+}
+
+int rrr_net_transport_new (
+		struct rrr_net_transport **result,
+		const struct rrr_net_transport_config *config,
+		int flags,
+		struct rrr_event_queue *queue,
+		const char *alpn_protos,
+		unsigned int alpn_protos_length
+) {
+#if !defined(RRR_WITH_LIBRESSL) && !defined(RRR_WITH_OPENSSL)
+	(void)(alpn_protos_length);
+#endif
+	int ret = 0;
+
+	*result = NULL;
+
+	struct rrr_net_transport *new_transport = NULL;
+
+	switch (config->transport_type) {
+		case RRR_NET_TRANSPORT_PLAIN:
+			if (flags != 0) {
+				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
+			}
+			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
+				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
+			}
+			if (alpn_protos != NULL) {
+				RRR_BUG("BUG: Plain method does not support ALPN in rrr_net_transport_new but it was given\n");
+			}
+			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
+			break;
+#if defined(RRR_WITH_LIBRESSL) || defined(RRR_WITH_OPENSSL)
+		case RRR_NET_TRANSPORT_TLS:
+			ret = rrr_net_transport_tls_new (
+					(struct rrr_net_transport_tls **) &new_transport,
+					flags,
+					config->tls_certificate_file,
+					config->tls_key_file,
+					config->tls_ca_file,
+					config->tls_ca_path,
+					alpn_protos,
+					alpn_protos_length
+			);
+			break;
+#endif
+		default:
+			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", config->transport_type);
+			break;
+	};
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not create transport method in rrr_net_transport_new\n");
+		goto out;
+	}
+
+	rrr_event_collection_init(&new_transport->events, queue);
+	new_transport->event_queue = queue;
+
+	*result = new_transport;
+
+	goto out;
+//	out_destroy:
+//		new_transport->methods->destroy(new_transport);
+	out:
+		return ret;
+}
+
+void rrr_net_transport_destroy (
+		struct rrr_net_transport *transport
+) {
+	rrr_net_transport_common_cleanup(transport);
+
+	rrr_event_collection_clear(&transport->events);
+
+	// The matching destroy function of the new function which allocated
+	// memory for the transport will free()
+	transport->methods->destroy(transport);
+}
+
+void rrr_net_transport_destroy_void (
+		void *arg
+) {
+	rrr_net_transport_destroy(arg);
 }
