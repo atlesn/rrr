@@ -473,7 +473,8 @@ The different frameworks are used both by RRR main() and instances framwork, and
 
 - net_transport.c
   - Wrapper framework for transparent plaintext TCP/IP and TLS TCP/IP connection management
-  - Used for listening servers
+  - Used for listening servers or connecting clients
+  - Multiple servers/client of the same application can use the same net transport instance (which is either TLS or plain)
   - Management of connections and per-connection lifetime application data
   - No stream management, application must handle this
   - Automatic writing
@@ -481,6 +482,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
 - rrr_socket_client.c
   - Protocol independent wrapper framework for connection management
   - File descriptors are created outside the framework and then "pushed" into a collection
+  - Used for listening servers, connecting clients and datagram reading
   - Automatic reading streams of RRR-messages, array tree data and raw data
   - Automatic writing
 
