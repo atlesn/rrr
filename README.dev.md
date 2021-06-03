@@ -281,6 +281,18 @@ hangs on I/O and doesn't exit nicely, it will be left dangling in memory untill 
 A new instance will be created instead, and therefore we MUST NOT use statically allocated data in the module which might cause
 corruption. Use the private memory provided instead.
 
+### Memory allocation
+
+To mitigate memory fragmentation over time, messages and message holder structs are allocated using a custom allocator.
+The constructor functions of these structs use the `rrr_allocate_group()` function.
+Other allocations are performed using `rrr_allocate()` which again maps to the default library allocator `malloc()`.
+
+Memory for structures without destuctor function is done using `rrr_free()`.
+This function will automatically identify which allocator was being used to allocate the memory being freed.
+
+The `malloc()` and family functions should not be used directly as this makes it harder to switch to another allocator in the future.
+It is also not safe to call the standard `free()` function.
+
 ## Modules, threads and instances
 
 The RRR threads use three different frameworks to operate. The lower level frameworks threads.c and modules.c operate independently. The
@@ -328,6 +340,9 @@ The functions defined in each module are called from different contexts and at d
 
 The different frameworks are used both by RRR main() and instances framwork, and they are in some cases used stand-alone in different modules.
 
+- allocator.c, rrr_mmap.c
+  - Memory management
+
 - rrr_config.c
   - Global configuration from command line parameters, like debuglevels
 
@@ -352,7 +367,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Frameworks which need to check for signals may register a handler with the signal framework
   - Exit handlers are used to clean up after 3rd party libraries to easy memory leak debugging
 
-- event.c
+- event.c, event_collection.c
   - Handles event processing
 
 - fork.c
@@ -385,7 +400,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
     currently only standard RRR messages are used.
   - May contain IP address and protocol information 
   - Used by message_broker.c to hold messages being passed between instances
-  - Has locking to provice memory fence and shared ownership using user count logic
+  - Has locking to provide memory fence and shared ownership using user count logic
   - Framework for an one-slot buffer used by message broker
 
 - message_broker.c
@@ -457,7 +472,17 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Separates different datagram connections with the read session collection sister framework
 
 - net_transport.c
-  - Wrapper framework for plaintext TCP and TLS TCP
+  - Wrapper framework for transparent plaintext TCP/IP and TLS TCP/IP connection management
+  - Used for listening servers
+  - Management of connections and per-connection lifetime application data
+  - No stream management, application must handle this
+  - Automatic writing
+
+- rrr_socket_client.c
+  - Protocol independent wrapper framework for connection management
+  - File descriptors are created outside the framework and then "pushed" into a collection
+  - Automatic reading streams of RRR-messages, array tree data and raw data
+  - Automatic writing
 
 - string_builder.c / nullsafe_str.c
   - Helpers to reduce the amount of "manual" handling of strings needed in C
