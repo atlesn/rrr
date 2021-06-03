@@ -1065,7 +1065,6 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 				node
 		)) != 0) {
 			RRR_MSG_0("ASD error while maintaining release queue for connect handle %u\n", node->source_connect_handle);
-			ret = 1;
 			goto out;
 		}
 
@@ -1113,15 +1112,11 @@ static int __rrr_udpstream_asd_tick (
 
 	// TODO : Detect exhausted ID etc. and reconnect
 
-	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0) {
-		if (ret == RRR_UDPSTREAM_ASD_NOT_READY) {
-			// Connection not ready yet, do read and send tasks
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error from connect_if_needed in ASD connect handle %" PRIu32 "\n", session->connect_handle);
-			goto out;
-		}
+	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0 &&
+	     ret != RRR_UDPSTREAM_ASD_NOT_READY
+	) {
+		RRR_MSG_0("Error from connect_if_needed in ASD connect handle %" PRIu32 "\n", session->connect_handle);
+		goto out;
 	}
 
 	if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queues (no_more_delivery, session)) != 0) {
