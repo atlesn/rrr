@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "src/lib/udpstream/udpstream.h"
 #include "udpstream_asd.h"
 #include "../buffer.h"
 #include "../read.h"
@@ -205,7 +206,7 @@ static int __rrr_udpstream_asd_queue_collection_iterate (
 	out:
 	return ret;
 }
-/*
+
 static int __rrr_udpstream_asd_queue_collection_count_entries (
 		struct rrr_udpstream_asd_queue_collection *collection
 ) {
@@ -217,7 +218,6 @@ static int __rrr_udpstream_asd_queue_collection_count_entries (
 
 	return total;
 }
-*/
 
 static void __rrr_udpstream_asd_queue_insert_ordered (
 		struct rrr_udpstream_asd_queue *queue,
@@ -848,12 +848,22 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_m
 	return ret;
 }
 
+static int __rrr_udpstream_asd_receive_messages_possible_callback (
+		RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS
+) {
+	struct rrr_udpstream_asd *session = arg;
+
+	const int release_queue_count = __rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues);
+	return release_queue_count < RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX;
+}
+
 static int __rrr_udpstream_asd_receive_messages_callback (
 		RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_udpstream_asd *session = arg;
 
 	int ret = 0;
+
 
 #if SSIZE_MAX > RRR_LENGTH_MAX
 	if ((rrr_slength) receive_data->data_size > (rrr_slength) RRR_LENGTH_MAX) {
@@ -1101,13 +1111,6 @@ static int __rrr_udpstream_asd_tick (
 	*no_more_send = 1;
 	*no_more_delivery = 1;
 
-/*
-	const int release_queue_count = __rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues);
-	if (release_queue_count > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
-		*ready_for_delivery = 0;
-		RRR_DBG_3("UDP-stream ASD handle %u release queue is full\n", session->connect_handle);
-	}
-*/
 	// TODO : Detect exhausted ID etc. and reconnect
 
 	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0) {
@@ -1217,6 +1220,8 @@ int rrr_udpstream_asd_new (
 			allocator_callback_arg,
 			NULL,
 			NULL,
+			__rrr_udpstream_asd_receive_messages_possible_callback,
+			session,
 			__rrr_udpstream_asd_receive_messages_callback,
 			session
 	)) != 0) {

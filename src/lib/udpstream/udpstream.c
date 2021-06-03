@@ -1544,6 +1544,10 @@ static int __rrr_udpstream_process_receive_buffer (
 
 	deliver_again:
 
+	if (!data->upstream_final_receive_possible_callback(data->upstream_final_receive_possible_callback_arg)) {
+		goto out;
+	}
+
 	accumulated_data_size = 0;
 	accumulated_frame_count = 0;
 	first_deliver_node = NULL;
@@ -2307,6 +2311,8 @@ int rrr_udpstream_init (
 		void *upstream_allocator_callback_arg,
 		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
 		void *upstream_validator_callback_arg,
+		int (*upstream_final_receive_possible_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS),
+		void *upstream_final_receive_possible_callback_arg,
 		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
 		void *upstream_final_callback_arg
 ) {
@@ -2349,6 +2355,8 @@ int rrr_udpstream_init (
 	data->upstream_allocator_callback_arg = upstream_allocator_callback_arg;
 	data->upstream_validator_callback = upstream_validator_callback;
 	data->upstream_validator_callback_arg = upstream_validator_callback_arg;
+	data->upstream_final_receive_possible_callback = upstream_final_receive_possible_callback,
+	data->upstream_final_receive_possible_callback_arg = upstream_final_receive_possible_callback_arg,
 	data->upstream_final_callback = upstream_final_callback;
 	data->upstream_final_callback_arg = upstream_final_callback_arg;
 

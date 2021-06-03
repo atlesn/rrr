@@ -106,6 +106,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS                  \
     RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
 
+#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS     \
+    void *arg
+
 #define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS              \
     void **joined_data,                                        \
     const struct rrr_udpstream_receive_data *receive_data,     \
@@ -205,6 +208,8 @@ struct rrr_udpstream {
 	void *upstream_allocator_callback_arg;
 	int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS);
 	void *upstream_validator_callback_arg;
+	int (*upstream_final_receive_possible_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS);
+	void *upstream_final_receive_possible_callback_arg;
 	int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS);
 	void *upstream_final_callback_arg;
 
@@ -239,6 +244,8 @@ int rrr_udpstream_init (
 		void *upstream_allocator_callback_arg,
 		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
 		void *upstream_validator_callback_arg,
+		int (*upstream_final_receive_possible_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS),
+		void *upstream_final_receive_possible_callback_arg,
 		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
 		void *upstream_final_callback_arg
 );
