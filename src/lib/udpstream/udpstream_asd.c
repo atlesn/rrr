@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS (RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS * 4)
 
 // Max unreleased messages awaiting release ACK
-#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX * 2)
+#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX * 3)
 
 // Note : The following method to avoid duplicate IDs is very inefficient
 // This many delivered messages must follow a message before it is deleted from release queue
