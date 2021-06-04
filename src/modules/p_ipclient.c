@@ -453,8 +453,8 @@ static int ipclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	if (!EVENT_PENDING(data->event_send_queue)) {
 		EVENT_ADD(data->event_send_queue);
-		EVENT_ACTIVATE(data->event_send_queue);
 	}
+	EVENT_ACTIVATE(data->event_send_queue);
 
 	return rrr_poll_do_poll_delete (amount, thread_data, ipclient_poll_callback, 0);
 }

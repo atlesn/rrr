@@ -179,6 +179,28 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entr
 	return NULL;
 }
 
+static void __rrr_udpstream_asd_queue_remove_entry (
+		struct rrr_udpstream_asd_queue *queue,
+		uint32_t message_id
+) {
+	if (RRR_LL_FIRST(queue) != NULL && message_id < RRR_LL_FIRST(queue)->message_id) {
+		return;
+	}
+	if (RRR_LL_LAST(queue) != NULL && message_id > RRR_LL_LAST(queue)->message_id) {
+		return;
+	}
+
+	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
+		if (node->message_id > message_id) {
+			RRR_LL_ITERATE_LAST();
+		}
+		if (node->message_id == message_id) {
+			RRR_LL_ITERATE_LAST();
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __rrr_udpstream_asd_queue_entry_destroy(node));
+}
+
 static void __rrr_udpstream_asd_queue_reset_send_times (
 		struct rrr_udpstream_asd_queue *queue
 ) {
@@ -515,6 +537,15 @@ static void __rrr_udpstream_asd_release_queue_clear_by_handle (
 	RRR_LL_ITERATE_END();
 }
 
+static void __rrr_udpstream_asd_periodic_event_add (
+		struct rrr_udpstream_asd *session
+) {
+	if (!EVENT_PENDING(session->event_periodic)) {
+		EVENT_ADD(session->event_periodic);
+	}
+	EVENT_ACTIVATE(session->event_periodic);
+}
+
 static int __rrr_udpstream_asd_control_frame_callback (
 		uint32_t connect_handle,
 		uint64_t application_data,
@@ -578,13 +609,14 @@ static int __rrr_udpstream_asd_control_frame_callback (
 		RRR_DBG_3("ASD RX %" PRIu32 ":%" PRIu32 " CACK\n",
 				session->connect_handle, control_msg.message_id);
 
-		node = __rrr_udpstream_asd_queue_find_entry (
+		__rrr_udpstream_asd_queue_remove_entry (
 				&session->send_queue,
 				control_msg.message_id
 		);
-		if (node != NULL) {
-			node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK;
-		}
+
+		session->delivered_count++;
+
+		__rrr_udpstream_asd_periodic_event_add (session);
 	}
 	else if (control_msg.flags == RRR_UDPSTREAM_ASD_ACK_FLAGS_RST) {
 		RRR_DBG_3("ASD RX %" PRIu32 " RST\n",
@@ -611,15 +643,6 @@ static int __rrr_udpstream_asd_control_frame_callback (
 
 	out:
 	return ret;
-}
-
-static void  __rrr_udpstream_asd_periodic_event_add (
-		struct rrr_udpstream_asd *session
-) {
-	if (!EVENT_PENDING(session->event_periodic)) {
-		EVENT_ADD(session->event_periodic);
-	}
-	EVENT_ACTIVATE(session->event_periodic);
 }
 
 int rrr_udpstream_asd_queue_and_incref_message (
@@ -724,10 +747,10 @@ static int __rrr_udpstream_asd_do_send_tasks (
 	// Send data messages and reminder ACKs for outbound messages
 	RRR_LL_ITERATE_BEGIN(&session->send_queue, struct rrr_udpstream_asd_queue_entry);
 		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK) != 0) {
-			session->delivered_count++;
-			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_BUG("BUG: Message in send queue had CACK set\n");
 		}
-		else if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
+
+		if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
 			if (node->send_time == 0) {
 				session->sent_count++;
 			}
@@ -737,6 +760,9 @@ static int __rrr_udpstream_asd_do_send_tasks (
 			node->send_count++;
 
 			const char *dup = node->send_count > 1 ? " DUP" : "";
+
+			// Only MSG and RACK are attempted to be re-sent. This will trigger
+			// the cascade of the other ACKs as needed.
 
 			if (node->ack_status_flags == 0 || node->ack_status_flags == RRR_UDPSTREAM_ASD_ACK_FLAGS_MSG) {
 				// We are missing delivery ACK, re-send message
@@ -1235,12 +1261,11 @@ int rrr_udpstream_asd_new (
 			&session->events,
 			__rrr_udpstream_asd_event_periodic,
 			session,
-			10 * 1000 // 10 ms
+			500 * 1000 // 500 ms
 	)) != 0) {
 		RRR_MSG_0("Failed to create periodic event in rrr_udpstream_asd_new\n");
 		goto out_close_udpstream;
 	}
-
 
 	session->queue = queue;
 	session->connect_handle = client_id;

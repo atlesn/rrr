@@ -46,14 +46,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_VERSION 3
 #define RRR_UDPSTREAM_VERSION_MINIMUM 2
 
-#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 500
-#define RRR_UDPSTREAM_BURST_LIMIT_SEND 50
+#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 50
+#define RRR_UDPSTREAM_BURST_LIMIT_SEND 100
 
 #define RRR_UDPSTREAM_MESSAGE_SIZE_MAX 67584
 
 #define RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT 1024
-// TODO : Leave at 100k for testing purposes (force reconnections)
-#define RRR_UDPSTREAM_FRAME_ID_LIMIT 100000 // 4294967295
+#define RRR_UDPSTREAM_FRAME_ID_LIMIT 50000000 // 50 mill
 
 #define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
 
@@ -684,19 +683,6 @@ static int __rrr_udpstream_send_connect (
 		}
 	}
 
-/*	{
-		// Reset with connect handle only, all associated stream IDs will be
-		// deleted at remote.
-		struct rrr_udpstream_frame_packed frame = {0};
-		frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
-		frame.connect_handle = rrr_htobe32(connect_handle);
-		if (__rrr_udpstream_checksum_and_send_packed_frame(data, addr, addr_len, &frame, NULL, 0, 3) != 0) {
-			RRR_MSG_0("Could not send RST packet in __rrr_udpstream_send_connect\n");
-			ret = 1;
-			goto out;
-		}
-	}*/
-
 	{
 		struct rrr_udpstream_frame_packed frame = {0};
 
@@ -1283,8 +1269,8 @@ static int __rrr_udpstream_handle_received_frame (
 	out:
 		if (stream != NULL && RRR_LL_COUNT(&stream->receive_buffer) > 0 && !EVENT_PENDING(data->event_deliver)) {
 			EVENT_ADD(data->event_deliver);
-			EVENT_ACTIVATE(data->event_deliver);
 		}
+		EVENT_ACTIVATE(data->event_deliver);
 		if (new_frame != NULL) {
 			__rrr_udpstream_frame_destroy(new_frame);
 		}
@@ -2050,7 +2036,6 @@ int rrr_udpstream_queue_outbound_data (
 
 	if (!EVENT_PENDING(udpstream_data->event_send)) {
 		EVENT_ADD(udpstream_data->event_send);
-		EVENT_ACTIVATE(udpstream_data->event_send);
 	}
 
 	out:
