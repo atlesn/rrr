@@ -55,15 +55,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/util/linked_list.h"
 #include "../lib/util/rrr_time.h"
 
-// Should not be smaller than module max
-#define RRR_IPCLIENT_MAX_SENDERS RRR_MODULE_MAX_SENDERS
 #define RRR_IPCLIENT_DEFAULT_PORT 5555
 
 // Max unsent messages to store from other modules
 #define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 10000
-
-#define RRR_IPCLIENT_CONNECT_TIMEOUT_MS 5000
-#define RRR_IPCLIENT_CONCURRENT_CONNECTIONS 3
 
 struct ipclient_data {
 	struct rrr_msg_holder_collection send_queue_intermediate;

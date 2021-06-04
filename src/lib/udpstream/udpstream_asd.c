@@ -1292,6 +1292,8 @@ int rrr_udpstream_asd_new (
 	session = NULL;
 	goto out;
 
+//	out_clear_event_collection:
+//		rrr_event_collection_clear(&session->events);
 	out_close_udpstream:
 		rrr_udpstream_close(&session->udpstream);
 	out_clear_udpstream:

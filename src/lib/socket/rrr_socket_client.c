@@ -602,7 +602,9 @@ static void __rrr_socket_client_return_value_process (
 		client->last_seen = rrr_time_get_64();
 	}
 	else if (ret == RRR_READ_INCOMPLETE || ret == RRR_SOCKET_NOT_READY) {
-		if (client->last_seen < timeout) {
+		if ((client->last_seen < timeout) &&
+		    (client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_PERSISTENT && client->create_type != RRR_SOCKET_CLIENT_COLLECTION_CREATE_TYPE_LISTEN)
+		) {
 			RRR_DBG_7("Disconnecting fd %i in client collection following hard inactivity timeout\n", client->connected_fd->fd);
 			ret = RRR_READ_EOF;
 		}
