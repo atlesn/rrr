@@ -238,7 +238,7 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_collectio
 
 	return NULL;
 }
-
+/*
 static int __rrr_udpstream_asd_queue_collection_iterate (
 		struct rrr_udpstream_asd_queue_collection *collection,
 		int (*callback)(struct rrr_udpstream_asd_queue *queue, void *private_arg),
@@ -256,7 +256,7 @@ static int __rrr_udpstream_asd_queue_collection_iterate (
 	out:
 	return ret;
 }
-
+*/
 static int __rrr_udpstream_asd_queue_collection_count_entries (
 		struct rrr_udpstream_asd_queue_collection *collection
 ) {
@@ -711,48 +711,6 @@ static int __rrr_udpstream_asd_send_message (
 	return ret;
 }
 
-static int __rrr_udpstream_asd_do_release_queue_send_tasks (
-		struct rrr_udpstream_asd_queue *queue,
-		void *private_arg
-) {
-	struct rrr_udpstream_asd *session = private_arg;
-
-	uint64_t time_now = rrr_time_get_64();
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-		if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
-			// Always update send time to prevent hardcore looping upon error conditions
-			node->send_time = time_now;
-
-			if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK) == 0 || (node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK) == 0) {
-				// We have not sent delivery ACK or need to re-send it
-				RRR_DBG_3("ASD TX %" PRIu32 ":%" PRIu32 " DACK DUP\n",
-						session->connect_handle, node->message_id);
-				ret = __rrr_udpstream_asd_send_control_message (
-						session,
-						RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK,
-						queue->source_connect_handle,
-						node->message_id
-				);
-
-				node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK;
-				node->send_count++;
-			}
-
-			ret &= ~(RRR_UDPSTREAM_NOT_READY);
-
-			if (ret != 0) {
-				RRR_DBG_3("Error while sending message in __rrr_udpstream_asd_do_release_queue_send_tasks return was %i\n", ret);
-				goto out;
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __rrr_udpstream_asd_queue_entry_destroy(node));
-
-	out:
-	return ret;
-}
-
 static int __rrr_udpstream_asd_do_send_tasks (
 		int *no_more_send,
 		struct rrr_udpstream_asd *session
@@ -926,6 +884,18 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_m
 		// Tells the allocator that we are now using the memory
 		*message = NULL;
 	}
+
+	// We have not sent delivery ACK or need to re-send it
+	RRR_DBG_3("ASD TX %" PRIu32 ":%" PRIu32 " DACK\n",
+			session->connect_handle, (uint32_t) receive_data->udpstream_receive_data->application_data);
+
+	// Ignore errors
+	__rrr_udpstream_asd_send_control_message (
+			session,
+			RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK,
+			receive_data->udpstream_receive_data->connect_handle,
+			(uint32_t) receive_data->udpstream_receive_data->application_data
+	); 
 
 	receive_data->count++;
 
@@ -1106,16 +1076,6 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queues (
 			*queues_empty = 0;
 		}
 	RRR_LL_ITERATE_END();
-
-	// Send data messages and reminder ACKs for inbound messages
-	if ((ret = __rrr_udpstream_asd_queue_collection_iterate (
-			&session->release_queues,
-			__rrr_udpstream_asd_do_release_queue_send_tasks,
-			session
-	)) != 0) {
-		RRR_MSG_0("Error while iterating release queues in __rrr_udpstream_asd_deliver_and_maintain_queues\n");
-		goto out;
-	}
 
 	out:
 	return ret;
