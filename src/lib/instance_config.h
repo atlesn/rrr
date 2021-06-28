@@ -71,7 +71,7 @@ do {if ((ret = rrr_instance_config_parse_optional_utf8(&data->target, config, st
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)								\
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, NULL)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)							\
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, target, default_uint)							\
 do {rrr_setting_uint tmp_uint = (default_uint);																\
 	if ((ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, string)) != 0) {				\
 		if (ret == RRR_SETTING_NOT_FOUND) {																	\
@@ -81,7 +81,10 @@ do {rrr_setting_uint tmp_uint = (default_uint);																\
 			RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);					\
 			ret = 1; goto out;																				\
 		}																									\
-	} data->target = tmp_uint; } while(0)
+	} target = tmp_uint; } while(0)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)							\
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, data->target, default_uint)
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT(string, target, default_uint)								\
 do {RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint);								\

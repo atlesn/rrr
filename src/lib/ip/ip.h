@@ -50,6 +50,9 @@ struct rrr_ip_data {
 	unsigned int port;
 };
 
+void rrr_ip_network_reset_hard (
+		void *arg
+);
 void rrr_ip_network_cleanup (
 		void *arg
 );

@@ -41,6 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../util/rrr_time.h"
 
+// Uncomment to debug event processing
+//#define RRR_WITH_LIBEVENT_DEBUG
+
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
 ) {
@@ -179,7 +182,6 @@ static void __rrr_event_signal_event (
 	else if (queue->deferred_amount[function->index] > 0) {
 		count = queue->deferred_amount[function->index];
 		queue->deferred_amount[function->index] = 0;
-		printf("Pass deferred %lu\n", count);
 	}
 	else {
 		if ((ret = rrr_socket_eventfd_read(&count, &function->eventfd)) != 0) {
@@ -247,8 +249,6 @@ static void __rrr_event_signal_event (
 		queue->deferred_amount[function->index] = count;
 
 		event_active(function->signal_event, 0, 0);
-
-		printf("Defer %lu\n", count);
 	}
 
 	out:
@@ -401,11 +401,23 @@ void rrr_event_queue_destroy (
 	rrr_free(queue);
 }
 
+#ifdef RRR_WITH_LIBEVENT_DEBUG
+static int debug_active = 0;
+#endif
+
 int rrr_event_queue_new (
 		struct rrr_event_queue **target
 ) {
 	int ret = 0;
 
+
+#ifdef RRR_WITH_LIBEVENT_DEBUG
+	if (!debug_active) {
+		event_enable_debug_mode();
+		event_enable_debug_logging(EVENT_DBG_ALL);
+		debug_active = 1;
+	}
+#endif
 	struct event_config *cfg = NULL;
 
 	*target = NULL;

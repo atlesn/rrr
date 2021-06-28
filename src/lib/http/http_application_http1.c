@@ -844,6 +844,11 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
+	if (*(receive_data->upgraded_application) != NULL) {
+		// Upgrade was performed in get target size function, nothing to do
+		goto out;
+	}
+
 	if (transaction->request_part->request_method == 0) {
 		RRR_DBG_2("Request parsing was incomplete in HTTP final callback, sending bad request to client.\n");
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
@@ -852,11 +857,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_header_dump(transaction->request_part);
-	}
-
-	// Upgrade was performed in get target size function, nothing to do
-	if (*(receive_data->upgraded_application) != 0) {
-		goto out;
 	}
 
 	RRR_DBG_3("HTTP request reading complete, data length is %li response length is %li header length is %li\n",
@@ -956,7 +956,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 					transaction
 			);
 		}
-
 
 		// HTTP2 application will send the actual response during the next tick (unless an error occured)
 		goto out;

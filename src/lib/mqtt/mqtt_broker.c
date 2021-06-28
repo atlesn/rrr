@@ -1119,46 +1119,6 @@ int rrr_mqtt_broker_new (
 		return ret;
 }
 
-int rrr_mqtt_broker_accept_connections (
-		struct rrr_mqtt_broker_data *data
-) {
-	int ret = 0;
-
-	unsigned int accepted_count = 0;
-
-	int new_handle = 0;
-
-	do {
-		new_handle = 0;
-		ret = rrr_mqtt_transport_accept (
-				&new_handle,
-				data->mqtt_data.transport,
-				rrr_mqtt_conn_accept_and_connect_callback
-		);
-		if (new_handle != 0) {
-			accepted_count++;
-		}
-	} while (new_handle != 0 && (ret & RRR_MQTT_INTERNAL_ERROR) == 0);
-
-	// Do this also upon errors
-	if (accepted_count > 0) {
-		data->stats.total_connections_accepted += accepted_count;
-	}
-
-	if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-		RRR_MSG_0("Internal error in rrr_mqtt_broker_accept_connections while accepting connections\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Error while accepting connections in rrr_mqtt_broker_accept_connections\n");
-	}
-
-	out:
-	return ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) ? 1 : 0;
-}
-
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,
 		struct rrr_mqtt_broker_data *data

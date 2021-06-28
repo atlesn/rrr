@@ -613,13 +613,11 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	if (rrr_net_transport_new (
+	if (rrr_net_transport_new_simple (
 			&transport,
 			&influxdb_data->net_transport_config,
 			0,
-			INSTANCE_D_EVENTS(thread_data),
-			NULL,
-			0
+			INSTANCE_D_EVENTS(thread_data)
 	) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");
 		goto out_message;

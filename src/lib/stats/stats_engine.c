@@ -377,6 +377,11 @@ static void __rrr_stats_engine_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	if (stats->exit_now_ret != 0) {
+		RRR_MSG_0("Error %i in statistics engine, exiting\n", stats->exit_now_ret);
+		rrr_event_dispatch_break(stats->queue);
+		return;
+	}
 	if ( __rrr_stats_engine_send_messages(stats)) {
 		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
 		rrr_event_dispatch_break(stats->queue);
@@ -395,6 +400,21 @@ static int __rrr_stats_engine_read_callback (
 	// Only keepalive messages are received, no useful content
 
 	return 0;
+}
+
+static int __rrr_stats_engine_event_pass_retry_callback (
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+ 	(void)(arg);
+
+	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
+
+	// Checked in periodic functions
+	stats->exit_now_ret = RRR_EVENT_ERR;
+
+	return RRR_EVENT_ERR;
 }
 
 // To provide memory fence, this must be called prior to any thread starting or forking
@@ -476,7 +496,14 @@ int rrr_stats_engine_init (
 
 	EVENT_ADD(stats->event_periodic);
 
-	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats, queue);
+	rrr_log_hook_register (
+			&stats->log_hook_handle,
+			__rrr_stats_engine_log_listener,
+			stats,
+			queue,
+			__rrr_stats_engine_event_pass_retry_callback,
+			stats
+	);
 
 	rrr_event_function_set_with_arg (
 			queue,

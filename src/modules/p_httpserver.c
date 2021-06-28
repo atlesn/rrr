@@ -593,8 +593,8 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
-	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
-	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
+	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
 	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
@@ -615,7 +615,7 @@ static int httpserver_receive_callback_full_request (
 	}
 
 	if (body_len > 0){
-		ret |= rrr_array_push_value_blob_with_tag_with_size (
+		ret |= rrr_array_push_value_str_with_tag_with_size (
 				target_array, "http_body", body_ptr, body_len
 		);
 	}
@@ -642,7 +642,7 @@ static int httpserver_receive_get_response_extract_data (
 		}
 	}
 	else if (MSG_IS_DATA(msg)) {
-		if ((ret = rrr_array_push_value_blob_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
+		if ((ret = rrr_array_push_value_str_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
 			goto out;
 		}
 	}

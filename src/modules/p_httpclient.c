@@ -65,6 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTPCLIENT_SEND_CHUNK_COUNT_LIMIT            100000
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S    30
 #define RRR_HTTPCLIENT_DEFAULT_MSGDB_POLL_MAX            10000
+#define RRR_HTTPCLIENT_INPUT_QUEUE_MAX                   500
 
 struct httpclient_transaction_data {
 	char *msg_topic;
@@ -1726,6 +1727,22 @@ static int httpclient_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	return ret_tmp;
 }
 
+static void httpclient_pause_check (
+		int *do_pause,
+		int is_paused,
+		void *callback_arg
+) {
+	struct rrr_instance_runtime_data *thread_data = callback_arg;
+	struct httpclient_data *data = thread_data->private_data;
+
+	if (is_paused) {
+		*do_pause = RRR_LL_COUNT(&data->from_senders_queue) > (RRR_HTTPCLIENT_INPUT_QUEUE_MAX * 0.75) ? 1 : 0;
+	}
+	else {
+		*do_pause = RRR_LL_COUNT(&data->from_senders_queue) > RRR_HTTPCLIENT_INPUT_QUEUE_MAX ? 1 : 0;
+	}
+}
+
 static int httpclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_thread *thread = arg;
 
@@ -1956,6 +1973,12 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		RRR_MSG_0("Failed to create queue process event in httpclient\n");
 		goto out_message;
 	}
+
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			httpclient_pause_check,
+			thread_data
+	);
 
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),

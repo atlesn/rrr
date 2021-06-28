@@ -79,16 +79,6 @@ int rrr_mqtt_transport_start (
 int rrr_mqtt_transport_client_count_get (
 		struct rrr_mqtt_transport *transport
 );
-int rrr_mqtt_transport_accept (
-		int *new_transport_handle,
-		struct rrr_mqtt_transport *transport,
-		void (*new_connection_callback)(
-				struct rrr_net_transport_handle *handle,
-				const struct sockaddr *sockaddr,
-				socklen_t socklen,
-				void *rrr_mqtt_transport_accept_and_connect_callback_data
-		)
-);
 int rrr_mqtt_transport_connect (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,
