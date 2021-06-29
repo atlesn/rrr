@@ -90,6 +90,8 @@ struct httpclient_data {
 	int do_drop_on_error;
 	int do_receive_part_data;
 	int do_receive_json_data;
+	int do_receive_ignore_error_part_data;
+	int do_receive_404_as_empty_part;
 
 	int do_endpoint_from_topic;
 	int do_endpoint_from_topic_force;
@@ -243,6 +245,57 @@ static void httpclient_redirect_data_destroy (struct httpclient_redirect_data *r
 
 static void httpclient_redirect_data_destroy_void (void *target) {
 	httpclient_redirect_data_destroy(target);
+}
+
+struct httpclient_create_message_from_404_callback_data {
+	const struct httpclient_transaction_data *transaction_data;
+};
+
+static int httpclient_create_message_from_404_callback (
+		struct rrr_msg_holder *new_entry,
+		void *arg
+) {
+	struct httpclient_create_message_from_404_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_msg_msg_new_with_data (
+			(struct rrr_msg_msg **) &new_entry->message,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			callback_data->transaction_data->msg_topic,
+			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
+			NULL,
+			0
+	)) != 0) {
+		goto out;
+	}
+
+	new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) new_entry->message);
+
+	out:
+	rrr_msg_holder_unlock(new_entry);
+	return ret;
+}
+
+static int httpclient_final_callback_receive_404 (
+		struct httpclient_data *httpclient_data,
+		const struct httpclient_transaction_data *transaction_data
+) {
+	struct httpclient_create_message_from_404_callback_data callback_data_broker = {
+		transaction_data
+	};
+
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(httpclient_data->thread_data),
+			NULL,
+			0,
+			0,
+			httpclient_create_message_from_404_callback,
+			&callback_data_broker,
+			INSTANCE_D_CANCEL_CHECK_ARGS(httpclient_data->thread_data)
+	);
 }
 
 struct httpclient_create_message_from_response_data_nullsafe_callback_data {
@@ -681,14 +734,27 @@ static int httpclient_final_callback (
 			transaction->endpoint_str
 	);
 
+	// Condition must always be checked regardless of other configuration parameters
+	if (transaction->response_part->response_code == 404 && httpclient_data->do_receive_404_as_empty_part) {
+		RRR_DBG_3("httpclient instance %s creating empty data message for 404 response\n",
+				INSTANCE_D_NAME(httpclient_data->thread_data));
+
+		ret |= httpclient_final_callback_receive_404(httpclient_data, transaction->application_data);
+	}
+
 	if (transaction->response_part->response_code < 200 || transaction->response_part->response_code > 299) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
-		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)\n",
+		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
 				transaction->response_part->response_code,
 				rrr_http_util_iana_response_phrase_from_status_code (transaction->response_part->response_code),
 				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
-				transaction->endpoint_str
+				transaction->endpoint_str,
+				httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
 		);
+
+		if (httpclient_data->do_receive_ignore_error_part_data) {
+			goto out;
+		}
 	}
 	else if (transaction->method == RRR_HTTP_METHOD_PUT) {
 		rrr_msg_holder_lock(transaction_data->entry);
@@ -710,6 +776,7 @@ static int httpclient_final_callback (
 		ret |= httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
 	}
 
+	out:
 	return ret;
 }
 
@@ -1507,6 +1574,8 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_part_data", do_receive_part_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_ignore_error_part_data", do_receive_ignore_error_part_data, 1 /* Default is yes */);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_404_as_empty_part", do_receive_404_as_empty_part, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);
 	data->message_ttl_us *= 1000 * 1000;
