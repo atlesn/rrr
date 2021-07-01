@@ -548,8 +548,29 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
+		rrr_length target_size_control = 0;
+		if (rrr_msg_get_target_size_and_check_checksum (
+				&target_size_control,
+				msg_tmp,
+				sizeof(*msg_tmp)
+		) != 0) {
+			RRR_MSG_0("Head verification step 1/4 of '%s' failed in message db server (checksum error)\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
 		if (rrr_msg_head_to_host_and_verify(msg_tmp, (rrr_length) file_size) != 0) {
-			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
+			RRR_MSG_0("Head verification step 2/4 of '%s' failed in message db server (possible invalid field values)\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((rrr_length) file_size != target_size_control) {
+			RRR_MSG_0("Head verification step 3/4 of '%s' failed in message db server (actual size was %llu while %llu was excpected)\n",
+					str,
+					(unsigned long long) file_size,
+					(unsigned long long) target_size_control
+			);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -561,7 +582,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		}
 
 		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
-			RRR_MSG_0("Head 2/2 verification of '%s' failed in message db server\n", str);
+			RRR_MSG_0("Head verification step 4/4 of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -812,6 +833,10 @@ static int __rrr_msgdb_server_tidy (
 		goto out;
 	}
 
+	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+		goto out;
+	}
+
 	RRR_LL_ITERATE_BEGIN(&dirs_and_files, struct rrr_type_value);
 		if (!rrr_type_value_is_tag(node, "file")) {
 			RRR_LL_ITERATE_NEXT();
@@ -843,7 +868,12 @@ static int __rrr_msgdb_server_tidy (
 				0,
 				sizeof(struct rrr_msg_msg)
 		) != 0 || msg_bytes_dummy < (ssize_t) sizeof(struct rrr_msg_msg)) {
-			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy\n", path_tmp);
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s\n",
+					path_tmp,
+					msg_bytes_dummy,
+					(ssize_t) sizeof(struct rrr_msg_msg),
+					rrr_strerror(errno)
+			);
 			RRR_LL_ITERATE_NEXT();
 		}
 
@@ -860,7 +890,7 @@ static int __rrr_msgdb_server_tidy (
 		if (msg->timestamp < min_time) {
 			RRR_DBG_3("msgdb del '%s'\n", path_tmp);
 			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
-				RRR_MSG_0("Warning: msgdb deletion failed for '%s'\n", path_tmp);
+				RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
 			}
 		}
 	RRR_LL_ITERATE_END();
