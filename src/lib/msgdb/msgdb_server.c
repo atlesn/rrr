@@ -824,7 +824,7 @@ static int __rrr_msgdb_server_tidy (
 
 	struct rrr_array dirs_and_files = {0};
 	struct rrr_map path_base_dummy = {0};
-	uint64_t min_time = rrr_time_get_64() - (max_age * 1000 * 1000);
+	uint64_t max_age_us = (uint64_t) max_age * 1000 * 1000;
 
 	char *path_tmp = NULL;
 	char *msg_tmp = NULL;
@@ -901,11 +901,9 @@ static int __rrr_msgdb_server_tidy (
 
 		// Do not perform checksum test, only the message head has been read in
 
-		if (msg->timestamp < min_time) {
-			RRR_DBG_3("msgdb del '%s' (tidy, %llu < %" PRIu64 "\n",
-					path_tmp,
-					(unsigned long long) msg->timestamp,
-					min_time
+		if (!rrr_msg_msg_ttl_ok(msg, max_age_us)) {
+			RRR_DBG_3("msgdb del '%s' (tidy)\n",
+					path_tmp
 			);
 			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
 				RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
