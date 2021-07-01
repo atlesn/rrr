@@ -1800,6 +1800,11 @@ This parameter is not affected by
 .B http_receive_ignore_error_part_data
 and does not affect any other parameters.
 
+.It http_low_priority_put={yes|no}
+If set to yes, messages which are to be sent using the PUT method will be prioritized behind other messages. This
+can improve performance in certain applications if stores are slow.
+If set to no or left unset, PUT messages will be treated as other messages.
+
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
 This parameter is ignored if
