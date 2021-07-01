@@ -499,6 +499,9 @@ static void *thread_entry_cacher (struct rrr_thread *thread) {
 	}
 	EVENT_ADD(tidy_event);
 
+	// Run tidy once upon startup
+	EVENT_ACTIVATE(tidy_event);
+
 	rrr_event_dispatch (
 			INSTANCE_D_EVENTS(thread_data),
 			1 * 1000 * 1000, // 1 s
