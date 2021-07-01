@@ -879,6 +879,18 @@ static int __rrr_msgdb_server_tidy (
 
 		struct rrr_msg_msg *msg = (struct rrr_msg_msg *) msg_tmp;
 
+		rrr_length target_size_control = 0;
+		if (rrr_msg_get_target_size_and_check_checksum (
+				&target_size_control,
+				(const struct rrr_msg *) msg,
+				sizeof(struct rrr_msg)
+		) != 0) {
+			RRR_MSG_0("Warning: msgdb header checksum failed for '%s' during tidy\n",
+					path_tmp);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
 		if ( rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, (rrr_length) msg_size) != 0 ||
 		     rrr_msg_msg_to_host_and_verify(msg, (rrr_biglength) msg_size) != 0
 		) {

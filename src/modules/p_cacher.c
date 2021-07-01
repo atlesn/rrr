@@ -57,6 +57,7 @@ struct cacher_data {
 	int do_forward_requests;
 	int do_forward_data;
 	int do_forward_other;
+	int do_empty_is_delete;
 	int do_no_update;
 };
 
@@ -161,27 +162,39 @@ static int cacher_get_from_msgdb (
 	return ret;
 }
 
+struct cacher_send_to_msgdb_callback_final_data {
+	struct rrr_msg_msg *msg;
+	int do_delete;
+};
+
 static int cacher_send_to_msgdb_callback_final (
 		struct rrr_msgdb_client_conn *conn,
 		void *arg
 ) {
-	struct rrr_msg_msg *msg = arg;
+	struct cacher_send_to_msgdb_callback_final_data *callback_data = arg;
 
 	int ret = 0;
 
-	MSG_SET_TYPE(msg, MSG_TYPE_PUT);
+	MSG_SET_TYPE(callback_data->msg, callback_data->do_delete ? MSG_TYPE_DEL : MSG_TYPE_PUT);
 
-	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {	
+	if ((ret = rrr_msgdb_client_send(conn, callback_data->msg)) != 0) {	
 		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from send was %i\n",
 			ret);
 		goto out;
 	}
 
 	int positive_ack = 0;
-	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0 || positive_ack == 0) {
-		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from await ack was %i positive ack was %i\n",
-			ret, positive_ack);
-		ret = 1; // Ensure failure is returned upon negative ACK
+	if ((ret = rrr_msgdb_client_await_ack(&positive_ack, conn)) != 0) {
+		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, return from await ack was %i\n",
+			ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (!callback_data->do_delete && !positive_ack) {
+		// Ensure failure is returned upon negative ACK (only relevant for stores)
+		RRR_DBG_7("Failed to send message to msgdb in cacher_send_to_msgdb_callback, negative ACK received\n");
+		ret = 1;
 		goto out;
 	}
 
@@ -191,7 +204,8 @@ static int cacher_send_to_msgdb_callback_final (
 
 static int cacher_send_to_msgdb (
 	struct cacher_data *data,
-	struct rrr_msg_msg *msg
+	struct rrr_msg_msg *msg,
+	int do_delete
 ) {
 	int ret = 0;
 
@@ -206,14 +220,19 @@ static int cacher_send_to_msgdb (
 		goto out;
 	}
 
+	struct cacher_send_to_msgdb_callback_final_data callback_data = {
+		msg,
+		do_delete
+	};
+
 	if ((ret = rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
 			INSTANCE_D_EVENTS(data->thread_data),
 			cacher_send_to_msgdb_callback_final,
-			msg
+			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Failed to send message to message DB in cacher_send_to_msgdb_callback\n");
+		RRR_MSG_0("Failed to send message to message DB in cacher_send_to_msgdb\n");
 		goto out;
 	}
 
@@ -290,14 +309,25 @@ static int cacher_process (
 		goto out;
 	}
 
-	RRR_DBG_2("cacher instance %s storing data message with timestamp %" PRIu64 " with topic '%s'%s\n",
+	RRR_DBG_2("cacher instance %s %s with timestamp %" PRIu64 " with topic '%s'%s\n",
 			INSTANCE_D_NAME(data->thread_data),
+			MSG_DATA_LENGTH(msg) == 0 && data->do_empty_is_delete
+				? "processing delete message"
+				: "storing data message",
 			msg->timestamp,
 			topic_tmp,
-			data->do_forward_data ? " (and forwarding)" : ""
+			data->do_forward_data
+				? " (and forwarding)"
+				: ""
 	);
 
-	if ((ret = cacher_send_to_msgdb(data, msg)) != 0) {
+	if ((ret = cacher_send_to_msgdb (
+			data,
+			msg,
+			MSG_DATA_LENGTH(msg) == 0 && data->do_empty_is_delete
+				? 1 /* Delete command */
+				: 0 /* Store command */
+	)) != 0) {
 		goto out;
 	}
 
@@ -414,6 +444,7 @@ static int cacher_parse_config (struct cacher_data *data, struct rrr_instance_co
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_requests", do_forward_requests, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_data", do_forward_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_forward_other", do_forward_other, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_empty_is_delete", do_empty_is_delete, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("cacher_no_update", do_no_update, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("cacher_ttl_seconds", message_ttl_seconds, 0);
