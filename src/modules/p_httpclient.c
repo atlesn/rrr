@@ -1700,7 +1700,7 @@ static void httpclient_queue_process (
 	struct rrr_msg_holder_collection *queue,
 	struct httpclient_data *data
 ) {
-	if (RRR_LL_COUNT(queue) ==  0) {
+	if (RRR_LL_COUNT(queue) == 0) {
 		return;
 	}
 
