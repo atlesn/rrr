@@ -1786,6 +1786,20 @@ Should the parsing fail, no error messages are printed unless debuglevel 2 is se
 
 If the original message which caused the query had a topic set, this topic will be present in generated messages. 
 
+.It http_receive_ignore_error_part_data={yes|no}
+If set to no, attempts will be made to create messages from the part data of any responses from the server, even
+if they are error responses (HTTP response code is less than 200 or more than 299).
+If set to yes or left unset, no messages will be generated from error responses.
+
+.It http_receive_404_as_empty_part={yes|no}
+If set to yes and a 404 NOT FOUND response is received, an empty RRR data message will be created.
+
+If set to no or left unset, no such messages are created upon 404 responses.
+
+This parameter is not affected by
+.B http_receive_ignore_error_part_data
+and does not affect any other parameters.
+
 .It http_plain_http2={yes|no}
 In non-TLS mode, send requests using HTTP2 without upgrading through HTTP/1.1. Note that some servers may get confused by this (but the RRR httpserver module supports it). Defaults to no.
 This parameter is ignored if
@@ -1947,6 +1961,10 @@ Defaults to no.
 .It cacher_forward_other={yes|no}
 If set to yes, messages without topic are forwarded.
 If set to no or left unset, messages without a topic are dropped and an error message is produced.
+
+.It cacher_empty_is_delete={yes|no}
+If set to yes, and empty message which otherwise would be stored will instead cause deletion of any previously stored message with mathcing topic.
+If set to no, empty messages will be stored.
 
 .It cacher_no_update={yes|no}
 If set to yes, no writes will be performed and all messages which are not requests will be treated as 'other'.
