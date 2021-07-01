@@ -833,10 +833,6 @@ static int __rrr_msgdb_server_tidy (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
-		goto out;
-	}
-
 	RRR_LL_ITERATE_BEGIN(&dirs_and_files, struct rrr_type_value);
 		if (!rrr_type_value_is_tag(node, "file")) {
 			RRR_LL_ITERATE_NEXT();
@@ -857,20 +853,26 @@ static int __rrr_msgdb_server_tidy (
 			goto out;
 		}
 
-		ssize_t msg_bytes_dummy = 0;
+		// The delete function might have chdir-ed the last round,
+		// ensure we are still in base directory.
+		if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+			goto out;
+		}
+
+		ssize_t msg_bytes_read = 0;
 		ssize_t msg_size = 0;
 		if (rrr_socket_open_and_read_file_head (
 				&msg_tmp,
-				&msg_bytes_dummy,
+				&msg_bytes_read,
 				&msg_size,
 				path_tmp,
 				O_RDONLY,
 				0,
 				sizeof(struct rrr_msg_msg)
-		) != 0 || msg_bytes_dummy < (ssize_t) sizeof(struct rrr_msg_msg)) {
+		) != 0 || msg_bytes_read < (ssize_t) sizeof(struct rrr_msg_msg)) {
 			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s\n",
 					path_tmp,
-					msg_bytes_dummy,
+					msg_bytes_read,
 					(ssize_t) sizeof(struct rrr_msg_msg),
 					rrr_strerror(errno)
 			);
@@ -900,7 +902,11 @@ static int __rrr_msgdb_server_tidy (
 		// Do not perform checksum test, only the message head has been read in
 
 		if (msg->timestamp < min_time) {
-			RRR_DBG_3("msgdb del '%s'\n", path_tmp);
+			RRR_DBG_3("msgdb del '%s' (tidy, %llu < %" PRIu64 "\n",
+					path_tmp,
+					(unsigned long long) msg->timestamp,
+					min_time
+			);
 			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
 				RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
 			}
