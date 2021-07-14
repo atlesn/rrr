@@ -1297,6 +1297,13 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_final);
+
+	if (ret == 1) {
+		RRR_MSG_0("MQTT client instance %s stopping due to hard error during processing of received PUBLISH\n",
+				INSTANCE_D_NAME(data->thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(data->thread_data));
+	}
+
 	return ret;
 }
 

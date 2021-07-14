@@ -446,6 +446,23 @@ static int __rrr_http_client_receive_http_part_callback (
 	return ret;
 }
 
+static int __rrr_http_client_request_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	(void)(handle);
+
+	return http_client->callbacks.failure_callback != NULL
+		? http_client->callbacks.failure_callback (
+				transaction,
+				error_msg,
+				http_client->callbacks.failure_callback_arg
+		)
+		: 0
+	;
+}
+
 static int __rrr_http_client_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -545,6 +562,8 @@ static int __rrr_http_client_read_callback (
 			__rrr_http_client_websocket_handshake_callback,
 			NULL,
 			__rrr_http_client_receive_http_part_callback,
+			http_client,
+			__rrr_http_client_request_failure_callback,
 			http_client,
 			http_client->callbacks.get_response_callback,
 			http_client->callbacks.get_response_callback_arg,
@@ -713,7 +732,9 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			upgrade_mode,
 			protocol_version
 	)) != 0) {
-		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		if (ret != RRR_HTTP_BUSY) {
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		}
 		goto out;
 	}
 
@@ -767,7 +788,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	do {
 		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
 	
-		int keepalive_handle = rrr_net_transport_handle_get_by_match (
+		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
 				match_data
@@ -848,25 +869,6 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
-static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-		struct rrr_http_client *http_client,
-		struct rrr_net_transport *transport
-) {
-	return rrr_net_transport_event_setup (
-			transport,
-			0,
-			0,
-			http_client->idle_timeout_ms,
-			http_client->send_chunk_count_limit,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			__rrr_http_client_read_callback,
-			http_client
-	);
-}
-
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -898,17 +900,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				tls_flags,
 				http_client->events,
 				alpn_protos,
-				alpn_protos_length
+				alpn_protos_length,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_tls
-		)) != 0) {
 			goto out;
 		}
 	}
@@ -933,17 +938,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				0,
 				http_client->events,
 				NULL,
-				0
+				0,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_plain
-		)) != 0) {
 			goto out;
 		}
 	}

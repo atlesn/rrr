@@ -39,7 +39,7 @@ struct rrr_net_transport_config;
 struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_CONNECT_ARGS                         \
-    int *handle,                                               \
+    rrr_net_transport_handle *handle,                          \
     struct sockaddr *addr,                                     \
     socklen_t *socklen,                                        \
     struct rrr_net_transport *transport,                       \
@@ -55,7 +55,7 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS                \
     struct rrr_net_transport *transport,                                            \
-    int transport_handle,                                                           \
+    rrr_net_transport_handle transport_handle,                                      \
     void (*final_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),  \
     void *final_callback_arg,                                                       \
     void *arg
@@ -71,7 +71,7 @@ struct rrr_nullsafe_str;
 
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS                \
     struct rrr_net_transport *transport,                                   \
-    int transport_handle,                                                  \
+    rrr_net_transport_handle transport_handle,                             \
     const struct sockaddr *sockaddr,                                       \
     socklen_t socklen,                                                     \
     void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),  \
@@ -128,13 +128,13 @@ struct rrr_net_transport_methods {
 	int (*read_message)(RRR_NET_TRANSPORT_READ_MESSAGE_ARGS);
 	int (*read)(RRR_NET_TRANSPORT_READ_ARGS);
 	int (*send)(
-			uint64_t *bytes_written,
+			ssize_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
 			const void *data,
 			ssize_t size
 	);
 	int (*poll)(
-    		struct rrr_net_transport_handle *handle
+	    		struct rrr_net_transport_handle *handle
 	);
 	int (*handshake)(
 			struct rrr_net_transport_handle *handle
@@ -149,9 +149,9 @@ struct rrr_net_transport_methods {
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 
-	int lock_count;
+	rrr_net_transport_handle handle;
+
 	struct rrr_net_transport *transport;
-	int handle;
 	enum rrr_net_transport_socket_mode mode;
 	struct rrr_read_session_collection read_sessions;
 
@@ -195,7 +195,7 @@ struct rrr_net_transport_handle {
 
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
-	int next_handle_position;
+	rrr_net_transport_handle next_handle_position;
 };
 
 struct rrr_net_transport {

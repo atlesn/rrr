@@ -95,6 +95,7 @@ struct httpserver_data {
 	struct rrr_map websocket_topic_filters;
 
 	char *allow_origin_header;
+	char *cache_control_header;
 
 	pthread_mutex_t oustanding_responses_lock;
 
@@ -110,6 +111,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_map_clear(&data->websocket_topic_filters);
 	rrr_fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
+	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
 	if (data->http_server != NULL) {
 		rrr_http_server_destroy(data->http_server);
 	}
@@ -238,6 +240,7 @@ static int httpserver_parse_config (
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_allow_origin_header", allow_origin_header);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server_cache_control_header", cache_control_header);
 
 	// Undocumented, used to test failures in clients
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_server_startup_delay_s", startup_delay_us, 0);
@@ -590,8 +593,8 @@ static int httpserver_receive_callback_full_request (
 	const struct rrr_http_header_field *content_transfer_encoding = rrr_http_part_header_field_get(part, "content-transfer-encoding");
 
 	ret |= rrr_array_push_value_u64_with_tag(target_array, "http_protocol", next_protocol_version);
-	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
-	ret |= rrr_array_push_value_blob_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
+	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_method", part->request_method_str_nullsafe);
+	ret |= rrr_array_push_value_str_with_tag_nullsafe(target_array, "http_endpoint", part->request_uri_nullsafe);
 
 	if (content_type != NULL && rrr_nullsafe_str_isset(content_type->value)) {
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(value,content_type->value);
@@ -612,7 +615,7 @@ static int httpserver_receive_callback_full_request (
 	}
 
 	if (body_len > 0){
-		ret |= rrr_array_push_value_blob_with_tag_with_size (
+		ret |= rrr_array_push_value_str_with_tag_with_size (
 				target_array, "http_body", body_ptr, body_len
 		);
 	}
@@ -639,7 +642,7 @@ static int httpserver_receive_get_response_extract_data (
 		}
 	}
 	else if (MSG_IS_DATA(msg)) {
-		if ((ret = rrr_array_push_value_blob_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
+		if ((ret = rrr_array_push_value_str_with_tag_with_size(target, "http_body", MSG_DATA_PTR(msg), MSG_DATA_LENGTH(msg))) != 0) {
 			goto out;
 		}
 	}
@@ -1024,6 +1027,14 @@ static int httpserver_receive_callback (
 	if (data->allow_origin_header != NULL && *(data->allow_origin_header) != '\0') {
 		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Access-Control-Allow-Origin", data->allow_origin_header)) != 0) {
 			RRR_MSG_0("Failed to push allow-origin header in httpserver_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (data->cache_control_header != NULL && *(data->cache_control_header) != '\0') {
+		if ((ret = rrr_http_part_header_field_push(transaction->response_part, "Cache-Control", data->cache_control_header)) != 0) {
+			RRR_MSG_0("Failed to push cache-control header in httpserver_receive_callback\n");
 			ret = 1;
 			goto out;
 		}

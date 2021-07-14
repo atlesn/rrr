@@ -1,8 +1,20 @@
-rrr (1.17-1bullseye1) bullseye; urgency=medium
+rrr (1.18-3bullseye1) bullseye; urgency=medium
 
   * Debian testing release
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 21:24:20 +0200
+ -- LBSdrift <lbsdrift@posten.local>  Thu, 08 Jul 2021 18:56:37 +0200
+
+rrr (1.18-3) buster; urgency=medium
+
+  * Development release (update)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 15 May 2021 09:09:48 +0200
+
+rrr (1.18-2) buster; urgency=medium
+
+  * Development release (update) 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 21:49:53 +0200
 
 rrr (1.17-1) buster; urgency=medium
 

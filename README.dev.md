@@ -114,6 +114,10 @@ Currently only one function is supported.
 
 The event structure, if used, is allocated statically and a pointer to it must be set in the `init()` function.
 
+All modules of type `PROCESSOR`, `DEADEND` and `FLEXIBLE`, which reads from other modules, must be event based.
+The event framework has counters of how many messages a module is to receive, and these must match the actual number of messages at all times.
+If a module reads messages without these counters being updated, the event queue will become full and cause message processing to stop.
+
 In addition, one must specify the `load()` and `unload()` functions. These are called only once directly after loading the module and once just
 before unloading it. That means they are not called for each instance. If a module is dependent on some external library which needs to
 be initialized, this may be done in these functions.
@@ -176,30 +180,12 @@ the output queue:
 	// Allocate new memory and copy to it
 	rrr_message_broker_clone_and_write_entry(...);
 
-### Reading/polling from other modules (custom loop)
+### Module with custom loop
 
-The action of retrieving messages from the output buffers of other instances is called polling. The structures needed for polling are 
-initialized automatically for every instance in the intermediate thread entry functions. It contains information about all the senders
-specified in the configuration file, or it is empty if there are no senders.
+Modules which do not read from other modules may use a simple processing loop as opposed to using the event framework.
+Such modulse should have some sleep or wait mechanism in their loop to prevent spinning.
+The watchdog timer must be updated regularly, and checks for encourage stop signal must be performed.
 
-It is possible to manipulate the poll structure in the module or create "custom" poll collections, but currently no modules do this.
-
-Here is an example of the minimum structure needed to perform polls in a module. The dots are where other code goes.
-
-	static int my_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-		struct rrr_msg_msg *message = entry->message;
-		
-		// It is allowed to return RRR_FIFO_SEARCH_STOP to signal that
-		// no more messages should be polled this round
-		int ret = RRR_FIFO_OK;
-		
-		... (do stuff with message)
-		
-		// Message holder must ALWAYS be unlocked
-		rrr_msg_holder_unlock(entry);
-		return ret;	
-	}
-	
 	static void *thread_entry_my(struct rrr_thread *thread) {
 		// This line is present in all modules at the top of the thread entry function. It casts the
 		// void * private_data pointer, which the intermediate thread entry function has initialized,
@@ -207,35 +193,24 @@ Here is an example of the minimum structure needed to perform polls in a module.
 		// else than just pointing to the pre-allocated memory, like a custom allocation.
 		struct rrr_instance_runtime_data *thread_data = thread->private_data = thread_data->private_memory;
 		
+		// Initialization
 		...
 		
-		// Main thread loop
-		while (...) {
-			// Do the polling and call the callback if data was polled. When callback returns, the polled
-			// data is deleted. The callback will be called multiple but a finite number of times if
-			// there are mulitple elements in the buffer. The `amount` variable defines the maximum number
-			// of messages to poll. It will be decremented for every message returned to the callback.
-			uint16_t amount = 16;
-			if (rrr_poll_do_rrr_poll_delete (&amount, thread_data, &thread_data->poll, my_poll_callback, 0) != 0) {
-				break;
-			}
+		// Main thread loop, stop looping when encourage stop signal is received
+		while (!rrr_thread_signal_encourage_stop_check(...)) {
+			// Notify the watchdog that everything is still OK
+			rrr_thread_watchdog_time_update(...);
+
+			// Do custom stuff and possibly write messages to the message broker
 		}
 		
+		// Cleanup
 		...
 	}
 	
-
-The message holder struct may be used directly in linked lists. If it is added to another list in the callback, the
-user count must be incremented using `rrr_msg_holder_incref_while_locked`. It cannot be part of two linked lists
-at the same becuse the linked list pointers are inside it, thus it will always exists only in one instance at a time.
-
-Clone functions are available if an entry is to be used in multiple places simultaneously.
-
-Inside the poll callback function, the entry can be directly written to the output buffer using `rrr_message_broker_incref_and_write_entry_unsafe_no_unlock`.
-
 ### Reading/polling from other modules (event loop, recommended form)
 
-When the module is using events instead of a costum loop, it may pool from other modules *exclusively* in the provided event callback.
+Modules must poll messages from other modules *exclusively* using the provided event callback.
 This is to ensure that the event counter and number of messages to poll are consistent.
 
 The minimal event callback for messages from senders looks like this. Note that the `amount` variable is
@@ -253,7 +228,7 @@ An event module has no while loop, the dispatch function is called instead.
 
 	rrr_event_dispatch (
 		INSTANCE_D_EVENTS(thread_data),
-		1 * 1000 * 1000, // 1 second interval
+		1 * 1000 * 1000, // 1 second interval (recommended)
 		rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
 		thread
 	);
@@ -306,6 +281,18 @@ hangs on I/O and doesn't exit nicely, it will be left dangling in memory untill 
 A new instance will be created instead, and therefore we MUST NOT use statically allocated data in the module which might cause
 corruption. Use the private memory provided instead.
 
+### Memory allocation
+
+To mitigate memory fragmentation over time, messages and message holder structs are allocated using a custom allocator.
+The constructor functions of these structs use the `rrr_allocate_group()` function.
+Other allocations are performed using `rrr_allocate()` which again maps to the default library allocator `malloc()`.
+
+Memory for structures without destuctor function is done using `rrr_free()`.
+This function will automatically identify which allocator was being used to allocate the memory being freed.
+
+The `malloc()` and family functions should not be used directly as this makes it harder to switch to another allocator in the future.
+It is also not safe to call the standard `free()` function.
+
 ## Modules, threads and instances
 
 The RRR threads use three different frameworks to operate. The lower level frameworks threads.c and modules.c operate independently. The
@@ -353,6 +340,9 @@ The functions defined in each module are called from different contexts and at d
 
 The different frameworks are used both by RRR main() and instances framwork, and they are in some cases used stand-alone in different modules.
 
+- allocator.c, rrr_mmap.c
+  - Memory management
+
 - rrr_config.c
   - Global configuration from command line parameters, like debuglevels
 
@@ -377,7 +367,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Frameworks which need to check for signals may register a handler with the signal framework
   - Exit handlers are used to clean up after 3rd party libraries to easy memory leak debugging
 
-- event.c
+- event.c, event_collection.c
   - Handles event processing
 
 - fork.c
@@ -410,7 +400,7 @@ The different frameworks are used both by RRR main() and instances framwork, and
     currently only standard RRR messages are used.
   - May contain IP address and protocol information 
   - Used by message_broker.c to hold messages being passed between instances
-  - Has locking to provice memory fence and shared ownership using user count logic
+  - Has locking to provide memory fence and shared ownership using user count logic
   - Framework for an one-slot buffer used by message broker
 
 - message_broker.c
@@ -482,7 +472,19 @@ The different frameworks are used both by RRR main() and instances framwork, and
   - Separates different datagram connections with the read session collection sister framework
 
 - net_transport.c
-  - Wrapper framework for plaintext TCP and TLS TCP
+  - Wrapper framework for transparent plaintext TCP/IP and TLS TCP/IP connection management
+  - Used for listening servers or connecting clients
+  - Multiple servers/client of the same application can use the same net transport instance (which is either TLS or plain)
+  - Management of connections and per-connection lifetime application data
+  - No stream management, application must handle this
+  - Automatic writing
+
+- rrr_socket_client.c
+  - Protocol independent wrapper framework for connection management
+  - File descriptors are created outside the framework and then "pushed" into a collection
+  - Used for listening servers, connecting clients and datagram reading
+  - Automatic reading streams of RRR-messages, array tree data and raw data
+  - Automatic writing
 
 - string_builder.c / nullsafe_str.c
   - Helpers to reduce the amount of "manual" handling of strings needed in C

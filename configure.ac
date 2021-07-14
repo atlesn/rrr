@@ -1,8 +1,8 @@
 # Even minor version = development, odd minor version = stable
-AC_INIT([Read Route Record],[1.17-1])
-AC_DEFINE([RRR_CONFIG_VERSION], "1.17-1", [Full version])
+AC_INIT([Read Route Record],[1.18-1])
+AC_DEFINE([RRR_CONFIG_VERSION], "1.18-1", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 17, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 18, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type in type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -47,7 +47,6 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
-AC_ARG_WITH([eventfd],[AS_HELP_STRING([--without-eventfd],[build without the eventfd bindings event when available])],[enable_eventfd=no],[enable_eventfd=yes])
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable LibreSSL/OpenSSL password encryption])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([autossl], [AS_HELP_STRING([--without-autossl], [Disable automatic LibreSSL/OpenSSL support])], [enable_auto_ssl=no], [enable_auto_ssl=yes])
 AC_ARG_WITH([libressl], [AS_HELP_STRING([--with-libressl], [Force enable LibreSSL support])], [enable_libressl=yes; enable_auto_ssl=no], [ enable_libressl=no ])
@@ -172,29 +171,6 @@ AC_RUN_IFELSE([
 	AC_MSG_RESULT([no])
 ])
 		
-AC_MSG_CHECKING([usage of eventfd()])
-AS_IF([test "x$enable_eventfd" != "xno"], [
-	AC_MSG_RESULT([yes])
-	AC_MSG_CHECKING([precense of eventfd()])
-	AC_RUN_IFELSE([
-		AC_LANG_SOURCE([[
-			#include <sys/eventfd.h>
-
-			int main (int argc, char *argv[]) {
-				int fd = eventfd(0, 0);
-				return 0;
-			}
-		]])
-	], [
-		AC_MSG_RESULT([yes])
-		AC_DEFINE([RRR_HAVE_EVENTFD], [1], [Linux-specific eventfd() is present])
-	], [
-		AC_MSG_RESULT([no])
-	])
-], [
-	AC_MSG_RESULT([no])
-])
-
 AC_CHECK_HEADERS([event2/event.h event2/thread.h], [], [AC_MSG_ERROR([libevent headers not found])])
 AC_CHECK_LIB([event], [event_base_new], [], [AC_MSG_ERROR([libevent library not found])])
 AC_CHECK_LIB([event_pthreads], [evthread_use_pthreads], [], [AC_MSG_ERROR([libevent pthreads library not found])])

@@ -214,8 +214,9 @@ static int __rrr_msgdb_server_path_iterate_split_callback (
 	);
 }
 
-static int __rrr_msgdb_server_path_iterate (
-		const struct rrr_msg_msg *msg,
+static int __rrr_msgdb_server_path_iterate_raw (
+		const char *path,
+		rrr_nullsafe_len path_len,
 		const int allow_trailing_slash,
 		int (*callback)(const char *str, int is_last, void *arg),
 		void *callback_arg
@@ -224,7 +225,7 @@ static int __rrr_msgdb_server_path_iterate (
 
 	struct rrr_nullsafe_str *path_tmp = NULL;
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&path_tmp, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg))) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&path_tmp, path, path_len)) != 0) {
 		goto out;
 	}
 
@@ -242,6 +243,15 @@ static int __rrr_msgdb_server_path_iterate (
 	out:
 	rrr_nullsafe_str_destroy_if_not_null(&path_tmp);
 	return ret;
+}
+
+static int __rrr_msgdb_server_path_iterate (
+		const struct rrr_msg_msg *msg,
+		const int allow_trailing_slash,
+		int (*callback)(const char *str, int is_last, void *arg),
+		void *callback_arg
+) {
+	return __rrr_msgdb_server_path_iterate_raw(MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg), allow_trailing_slash, callback, callback_arg);
 }
 
 struct rrr_msgdb_server_put_path_split_callback_data {
@@ -381,9 +391,10 @@ static int __rrr_msgdb_server_del_path_split_callback (
 	return ret;
 }
 
-static int __rrr_msgdb_server_del (
+static int __rrr_msgdb_server_del_raw (
 		struct rrr_msgdb_server *server,
-		const struct rrr_msg_msg *msg
+		const char *path,
+		rrr_nullsafe_len path_len
 ) {
 	int ret = 0;
 
@@ -393,8 +404,9 @@ static int __rrr_msgdb_server_del (
 		goto out;
 	}
 
-	if ((ret = __rrr_msgdb_server_path_iterate (
-			msg,
+	if ((ret = __rrr_msgdb_server_path_iterate_raw (
+			path,
+			path_len,
 			0, // Disallow trailing slash
 			__rrr_msgdb_server_del_path_split_callback,
 			&callback_data
@@ -429,6 +441,13 @@ static int __rrr_msgdb_server_del (
 	out:
 	RRR_MAP_CLEAR(&callback_data.path_elements_reverse);
 	return ret;
+}
+
+static int __rrr_msgdb_server_del (
+		struct rrr_msgdb_server *server,
+		const struct rrr_msg_msg *msg
+) {
+	return __rrr_msgdb_server_del_raw(server, MSG_TOPIC_PTR(msg), MSG_TOPIC_LENGTH(msg));
 }
 
 static int __rrr_msgdb_server_send_callback (
@@ -468,7 +487,7 @@ static int __rrr_msgdb_server_send_msg_ack (
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send ACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_ACK, __rrr_msgdb_server_send_callback, server);
+	return rrr_msgdb_common_ctrl_msg_send_ack(fd, __rrr_msgdb_server_send_callback, server);
 }
 
 static int __rrr_msgdb_server_send_msg_nack (
@@ -476,7 +495,15 @@ static int __rrr_msgdb_server_send_msg_nack (
 		int fd
 ) {
 	RRR_DBG_3("msgdb fd %i send NACK\n", fd);
-	return rrr_msgdb_common_ctrl_msg_send(fd, RRR_MSGDB_CTRL_F_NACK, __rrr_msgdb_server_send_callback, server);
+	return rrr_msgdb_common_ctrl_msg_send_nack(fd, __rrr_msgdb_server_send_callback, server);
+}
+
+static int __rrr_msgdb_server_send_msg_pong (
+		struct rrr_msgdb_server *server,
+		int fd
+) {
+	RRR_DBG_3("msgdb fd %i send PONG\n", fd);
+	return rrr_msgdb_common_ctrl_msg_send_pong(fd, __rrr_msgdb_server_send_callback, server);
 }
 
 struct rrr_msgdb_server_get_path_split_callback_data {
@@ -507,8 +534,10 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		}
 
 		if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0) != 0) {
-			RRR_MSG_0("Could not read file '%s' in message db server\n",
-				str);
+			if (errno != EEXIST && errno != ENOENT) {
+				RRR_MSG_0("Could not read file '%s' in message db server\n",
+					str);
+			}
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -519,8 +548,29 @@ static int __rrr_msgdb_server_get_path_split_callback (
 			goto out;
 		}
 
-		if (rrr_msg_head_to_host_and_verify(msg_tmp, file_size) != 0) {
-			RRR_MSG_0("Head 1/2 verification of '%s' failed in message db server\n", str);
+		rrr_length target_size_control = 0;
+		if (rrr_msg_get_target_size_and_check_checksum (
+				&target_size_control,
+				msg_tmp,
+				sizeof(*msg_tmp)
+		) != 0) {
+			RRR_MSG_0("Head verification step 1/4 of '%s' failed in message db server (checksum error)\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if (rrr_msg_head_to_host_and_verify(msg_tmp, (rrr_length) file_size) != 0) {
+			RRR_MSG_0("Head verification step 2/4 of '%s' failed in message db server (possible invalid field values)\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((rrr_length) file_size != target_size_control) {
+			RRR_MSG_0("Head verification step 3/4 of '%s' failed in message db server (actual size was %llu while %llu was excpected)\n",
+					str,
+					(unsigned long long) file_size,
+					(unsigned long long) target_size_control
+			);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -532,7 +582,7 @@ static int __rrr_msgdb_server_get_path_split_callback (
 		}
 
 		if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
-			RRR_MSG_0("Head 2/2 verification of '%s' failed in message db server\n", str);
+			RRR_MSG_0("Head verification step 4/4 of '%s' failed in message db server\n", str);
 			ret = RRR_MSGDB_SOFT_ERROR;
 			goto out;
 		}
@@ -765,6 +815,111 @@ static int __rrr_msgdb_server_get (
 	return ret;
 }
 
+static int __rrr_msgdb_server_tidy (
+		struct rrr_msgdb_server *server,
+		uint32_t max_age,
+		int response_fd
+) {
+	int ret = 0;
+
+	struct rrr_array dirs_and_files = {0};
+	struct rrr_map path_base_dummy = {0};
+	uint64_t max_age_us = (uint64_t) max_age * 1000 * 1000;
+
+	char *path_tmp = NULL;
+	char *msg_tmp = NULL;
+
+	if ((ret = __rrr_msgdb_server_idx_make_index (&dirs_and_files, server, &path_base_dummy)) != 0) {
+		goto out;
+	}
+
+	RRR_LL_ITERATE_BEGIN(&dirs_and_files, struct rrr_type_value);
+		if (!rrr_type_value_is_tag(node, "file")) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if (!RRR_TYPE_IS_BLOB(node->definition->type)) {
+			RRR_BUG("BUG: File path element was not of blob type in __rrr_msgdb_server_tidy\n");
+		}
+		if (node->total_stored_length > PATH_MAX) {
+			RRR_BUG("BUG: File path length too long in __rrr_msgdb_server_tidy\n");
+		}
+
+		RRR_FREE_IF_NOT_NULL(path_tmp);
+		RRR_FREE_IF_NOT_NULL(msg_tmp);
+
+		if ((ret = node->definition->to_str(&path_tmp, node)) != 0) {
+			RRR_MSG_0("Failed to extract string in __rrr_msgdb_server_tidy\n");
+			goto out;
+		}
+
+		// The delete function might have chdir-ed the last round,
+		// ensure we are still in base directory.
+		if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
+			goto out;
+		}
+
+		ssize_t msg_bytes_read = 0;
+		ssize_t msg_size = 0;
+		if (rrr_socket_open_and_read_file_head (
+				&msg_tmp,
+				&msg_bytes_read,
+				&msg_size,
+				path_tmp,
+				O_RDONLY,
+				0,
+				sizeof(struct rrr_msg_msg)
+		) != 0 || msg_bytes_read < (ssize_t) sizeof(struct rrr_msg_msg)) {
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s\n",
+					path_tmp,
+					msg_bytes_read,
+					(ssize_t) sizeof(struct rrr_msg_msg),
+					rrr_strerror(errno)
+			);
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		struct rrr_msg_msg *msg = (struct rrr_msg_msg *) msg_tmp;
+
+		rrr_length target_size_control = 0;
+		if (rrr_msg_get_target_size_and_check_checksum (
+				&target_size_control,
+				(const struct rrr_msg *) msg,
+				sizeof(struct rrr_msg)
+		) != 0) {
+			RRR_MSG_0("Warning: msgdb header checksum failed for '%s' during tidy\n",
+					path_tmp);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ( rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, (rrr_length) msg_size) != 0 ||
+		     rrr_msg_msg_to_host_and_verify(msg, (rrr_biglength) msg_size) != 0
+		) {
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		// Do not perform checksum test, only the message head has been read in
+
+		if (!rrr_msg_msg_ttl_ok(msg, max_age_us)) {
+			RRR_DBG_3("msgdb del '%s' (tidy)\n",
+					path_tmp
+			);
+			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
+				RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	ret = __rrr_msgdb_server_send_msg_ack(server, response_fd);
+
+	out:
+	rrr_array_clear(&dirs_and_files);
+	RRR_FREE_IF_NOT_NULL(path_tmp);
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
 static int __rrr_msgdb_server_read_msg_msg_callback (
 		struct rrr_msg_msg **msg,
 		void *private_data,
@@ -859,9 +1014,19 @@ static int __rrr_msgdb_server_read_msg_ctrl_callback (
 		void *arg
 ) {
 	struct rrr_msgdb_server_client *client = private_data;
+	struct rrr_msgdb_server *server = arg;
 
-	(void)(arg);
 	(void)(client);
+
+	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_PING) {
+		RRR_DBG_3("msgdb fd %i recv PING\n", client->fd);
+		return __rrr_msgdb_server_send_msg_pong(server, client->fd) ? RRR_MSGDB_EOF : 0;
+	}
+
+	if (RRR_MSG_CTRL_FLAGS(msg) & RRR_MSGDB_CTRL_F_TIDY) {
+		RRR_DBG_3("msgdb fd %i recv TIDY max age %" PRIu32 " seconds\n", client->fd, msg->msg_value);
+		return __rrr_msgdb_server_tidy(server, msg->msg_value, client->fd);
+	}
 
 	RRR_MSG_0("Received unknown control message %u\n", RRR_MSG_CTRL_FLAGS(msg));
 	return RRR_MSGDB_SOFT_ERROR;

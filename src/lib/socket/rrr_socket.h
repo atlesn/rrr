@@ -97,6 +97,15 @@ int rrr_socket_open (
 		const char *creator,
 		int register_for_unlink
 );
+int rrr_socket_open_and_read_file_head (
+		char **result,
+		ssize_t *result_bytes,
+		ssize_t *file_size,
+		const char *filename,
+		int options,
+		int mode,
+		ssize_t bytes
+);
 int rrr_socket_open_and_read_file (
 		char **result,
 		ssize_t *result_bytes,

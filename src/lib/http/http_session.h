@@ -61,6 +61,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS
 
+#define RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS
 
@@ -130,6 +133,8 @@ int rrr_http_session_transport_ctx_tick_client (
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),	
+		void *failure_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),

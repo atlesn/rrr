@@ -531,12 +531,14 @@ int rrr_socket_open (
 	return fd;
 }
 
-int rrr_socket_open_and_read_file (
+int rrr_socket_open_and_read_file_head (
 		char **result,
 		ssize_t *result_bytes,
+		ssize_t *file_size,
 		const char *filename,
 		int options,
-		int mode
+		int mode,
+		ssize_t bytes
 ) {
 	int ret = 0;
 
@@ -547,21 +549,25 @@ int rrr_socket_open_and_read_file (
 	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);
 
 	if (fd <= 0) {
-		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
+		RRR_DBG_7("Could not open file '%s' for reading: %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
-	ssize_t bytes = lseek(fd, 0, SEEK_END);
-	if (bytes == 0) {
+	ssize_t bytes_total = lseek(fd, 0, SEEK_END);
+	if (bytes_total == 0) {
 		goto out;
 	}
-	else if (bytes < 0) {
+	else if (bytes_total < 0) {
 		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;
+	}
+
+	if (bytes <= 0) {
+		bytes = bytes_total;
 	}
 
 	if (lseek(fd, 0, SEEK_SET) != 0) {
@@ -571,14 +577,14 @@ int rrr_socket_open_and_read_file (
 		goto out;
 	}
 
-	if ((contents_tmp = rrr_allocate(bytes + 1)) == NULL) {
+	if ((contents_tmp = rrr_allocate((size_t) bytes + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_file\n");
 		ret = 1;
 		goto out;
 	}
 
 	ssize_t bytes_read;
-	if ((bytes_read = read(fd, contents_tmp, bytes)) != bytes) {
+	if ((bytes_read = read(fd, contents_tmp, (size_t) bytes)) != bytes) {
 		RRR_MSG_0("Could not read all bytes from file '%s', return was %lli: %s\n",
 				filename, (long long int) bytes_read, rrr_strerror(errno));
 		ret = 1;
@@ -590,6 +596,7 @@ int rrr_socket_open_and_read_file (
 
 	*result = contents_tmp;
 	*result_bytes = bytes;
+	*file_size = bytes_total;
 	contents_tmp = NULL;
 
 	out:
@@ -599,6 +606,26 @@ int rrr_socket_open_and_read_file (
 	}
 	return ret;
 
+}
+
+int rrr_socket_open_and_read_file (
+		char **result,
+		ssize_t *result_bytes,
+		const char *filename,
+		int options,
+		int mode
+) {
+	ssize_t file_size_dummy;
+
+	return rrr_socket_open_and_read_file_head (
+			result,
+			result_bytes,
+			&file_size_dummy,
+			filename,
+			options,
+			mode,
+			0 /* 0 means whole file */
+	);
 }
 
 #ifdef RRR_HAVE_EVENTFD
@@ -1044,7 +1071,7 @@ static int __rrr_socket_send_check (
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
+			RRR_DBG_7("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}

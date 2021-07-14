@@ -218,7 +218,7 @@ int rrr_msg_holder_new (
 
 	struct rrr_msg_holder *entry = rrr_allocate_group(sizeof(*entry), RRR_ALLOCATOR_GROUP_MSG_HOLDER);
 	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_msg_holder_new\n");
 		ret = 1;
 		goto out;
 	}

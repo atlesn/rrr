@@ -97,6 +97,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     rrr_u8 version;            \
     rrr_u16 topic_length
 
+#define RRR_MSG_TOPIC_MAX (0xffff)
+
 struct rrr_msg_msg {
 	RRR_MSG_HEAD;
 	RRR_MSG_MSG_HEAD;

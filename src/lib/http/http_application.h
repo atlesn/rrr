@@ -63,6 +63,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_COMMON_ARGS,         \
     void *arg
 
+#define RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS             \
+    struct rrr_net_transport_handle *handle,                   \
+    struct rrr_http_transaction *transaction,                  \
+    const char *error_msg,                                     \
+    void *arg
+
 #define RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS         \
     RRR_HTTP_COMMON_RECEIVE_RAW_CALLBACK_ARGS
 
@@ -123,6 +129,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 );

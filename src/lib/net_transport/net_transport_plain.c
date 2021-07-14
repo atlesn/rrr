@@ -120,7 +120,7 @@ static int __rrr_net_transport_plain_connect (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -256,7 +256,7 @@ static int __rrr_net_transport_plain_read (
 }
 
 static int __rrr_net_transport_plain_send (
-	uint64_t *written_bytes,
+	ssize_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
@@ -266,7 +266,6 @@ static int __rrr_net_transport_plain_send (
 	*written_bytes = 0;
 
 	ssize_t written_bytes_tmp = 0;
-
 	ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size);
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
@@ -293,7 +292,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -342,7 +341,7 @@ int __rrr_net_transport_plain_accept (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,

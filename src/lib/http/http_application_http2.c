@@ -312,6 +312,8 @@ struct rrr_http_application_http2_callback_data {
 	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
+	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
+	void *failure_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
 	void *async_response_get_callback_arg;
 };
@@ -322,7 +324,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
 
 	(void)(session);
-	(void)(is_header_end);
 
 	int ret = 0;
 
@@ -331,14 +332,33 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	// TODO : Create separate functions for client and server
+	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
+		if (callback_data->failure_callback == NULL) {
+			if (callback_data->unique_id_generator_callback == NULL) {
+				// Is client
+				RRR_MSG_0("HTTP2 request failed and no failure delivery defined, data is lost\n");
+			}
+			else {
+				RRR_DBG_3("http2 stream error from client: %s\n", stream_error_msg);
+			}
+			goto out;
+		}
+
+		ret = callback_data->failure_callback (
+				callback_data->handle,
+				transaction,
+				stream_error_msg,
+				callback_data->failure_callback_arg
+		);
+		goto out;
+	}
 
 	if (callback_data->unique_id_generator_callback == NULL) {
 		// Is client
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
-		if (!is_stream_close) {
+		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
 			// Wait for any data
 			goto out;
 		}
@@ -372,7 +392,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	else {
 		// Is server
 
-		if (is_stream_close) {
+		if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE) {
 			goto out;
 		}
 
@@ -398,26 +418,33 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction = transaction_to_destroy;
 		}
 
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
+		// All flags are ORed in to the persistent transaction flag variable. We
+		// can both check for flags which have been received in earlier frames or
+		// flags which arrived in this particular frame.
+		rrr_http_transaction_stream_flags_add(transaction, flags);
 
-		const struct rrr_http_header_field *post = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "POST");
-		const struct rrr_http_header_field *put = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "PUT");
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
 
-		if (method == NULL) {
-			RRR_DBG_3("http2 field :method missing in request\n");
-			goto out_send_response_bad_request;
-		}
+		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+				// Possible CONTINUATION frame
+				goto out;
+			}
+			if (method == NULL) {
+				RRR_DBG_3("http2 field :method missing in request\n");
+				goto out_send_response_bad_request;
+			}
 
-		if (path == NULL) {
-			RRR_DBG_3("http2 field :path missing in request\n");
-			goto out_send_response_bad_request;
+			if (path == NULL) {
+				RRR_DBG_3("http2 field :path missing in request\n");
+				goto out_send_response_bad_request;
+			}
 		}
-
-		if ((post || put) && (!is_data_end)) {
-			// Wait for DATA frames and END DATA
+		else {
+			// Wait for any DATA frames and END DATA
 			goto out;
 		}
 
@@ -587,7 +614,7 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 
 	int ret = 0;
 
-	if (transaction->need_response) {
+	if (transaction && transaction->need_response) {
 		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
 			ret &= ~(RRR_HTTP_NO_RESULT);
 			goto out;
@@ -628,6 +655,8 @@ static int __rrr_http_application_http2_tick (
 			unique_id_generator_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	};

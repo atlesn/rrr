@@ -509,7 +509,7 @@ int __rrr_net_transport_openssl_connect_callback (
 }
 
 static int __rrr_net_transport_openssl_connect (
-		int *handle,
+		rrr_net_transport_handle *handle,
 		struct sockaddr *addr,
 		socklen_t *socklen,
 		struct rrr_net_transport *transport,
@@ -643,7 +643,7 @@ static int __rrr_net_transport_openssl_bind_and_listen (
 			do_ipv6
 	};
 
-	int new_handle;
+	rrr_net_transport_handle new_handle;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -767,7 +767,7 @@ int __rrr_net_transport_openssl_accept (
 		accept_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
@@ -932,7 +932,7 @@ static int __rrr_net_transport_openssl_read (
 }
 
 static int __rrr_net_transport_openssl_send (
-	uint64_t *sent_bytes,
+	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size

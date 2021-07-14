@@ -378,6 +378,19 @@ static int __rrr_http_client_final_callback (
 	return ret;
 }
 
+static int __rrr_http_client_failure_callback (
+		RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(transaction);
+	(void)(http_client_data);
+
+	RRR_MSG_0("Error while sending request: %s\n", error_msg);
+
+	return RRR_HTTP_SOFT_ERROR;
+}
+
 static int __rrr_http_client_unique_id_generator_callback (
 		RRR_HTTP_CLIENT_UNIQUE_ID_GENERATOR_CALLBACK_ARGS
 ) {
@@ -638,9 +651,15 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
 	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
+	}
+
 	rrr_strerror_init();
 	rrr_signal_default_signal_actions_register();
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
@@ -683,6 +702,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,
+			&data,
+			__rrr_http_client_failure_callback,
 			&data,
 			__rrr_http_client_redirect_callback,
 			&data,
@@ -775,7 +796,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

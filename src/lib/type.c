@@ -1342,6 +1342,13 @@ void rrr_type_value_destroy (
 	rrr_free(template);
 }
 
+int rrr_type_value_is_tag (
+		struct rrr_type_value *value,
+		const char *tag
+) {
+	return ((value->tag == NULL && value == NULL) || (value->tag != NULL && strcmp(tag, value->tag) == 0));
+}
+
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,

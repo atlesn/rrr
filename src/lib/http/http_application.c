@@ -118,6 +118,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 ) {
@@ -139,6 +141,8 @@ int rrr_http_application_transport_ctx_tick (
 			frame_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	);
