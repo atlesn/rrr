@@ -74,16 +74,8 @@ static int __rrr_json_to_array_recurse_object (
 
 			RRR_DBG_3("        => STRING %s\n", value);
 
-			// Note : Zero length strings not possible in RRR arrays
-			if (*value == '\0') {
-				if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, key, 0)) != 0) {
-					goto out;
-				}
-			}
-			else {
-				if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
-					goto out;
-				}
+			if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
+				goto out;
 			}
 		}
 		else if (type == json_type_int) {
