@@ -1006,7 +1006,7 @@ void *rrr_mmap_collection_allocate_with_handles (
 		uint64_t min_mmap_size
 ) {
 	if (collection->shm_master == NULL) {
-		RRR_BUG("BUG: futex_abstimed_wait_cancelable called on non-pshared mmap collection\n");
+		RRR_BUG("BUG: rrr_mmap_collection_allocate_with_handles called on non-pshared mmap collection\n");
 	}
 
 	return __rrr_mmap_collection_allocate_with_handles (
