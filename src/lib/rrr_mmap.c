@@ -563,10 +563,12 @@ void *rrr_mmap_collection_resolve (
 		RRR_BUG("BUG: rrr_mmap_collection_resolve called on non-pshared mmap collection\n");
 	}
 
+	LOCK(collection);
 	void *ret = rrr_shm_resolve (
 			collection->shm_slave,
 			shm_handle
 	);
+	UNLOCK(collection);
 
 	if (ret == NULL) {
 		RRR_BUG("BUG: Unknown handle %llu in rrr_mmap_collection_resolve\n",
