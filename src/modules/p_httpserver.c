@@ -425,7 +425,6 @@ struct httpserver_write_message_callback_data {
 	const char *topic;
 };
 
-// NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
 		struct rrr_msg_holder *new_entry,
 		void *arg
@@ -918,7 +917,6 @@ static int httpserver_receive_callback_response_process (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_async_response_get
 static int httpserver_async_response_get (
 		RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS
 ) {
@@ -939,7 +937,6 @@ static int httpserver_async_response_get (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_receive_callback
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
@@ -1177,7 +1174,6 @@ static int httpserver_receive_raw_broker_callback (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_receive_websocket_callback
 static int httpserver_websocket_handshake_callback (
 		RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
