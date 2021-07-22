@@ -120,6 +120,8 @@ struct httpclient_data {
 
 	struct rrr_map meta_tags_all;
 
+	char *http_header_accept;
+
 	rrr_setting_uint message_timeout_us;
 	rrr_setting_uint message_ttl_us;
 
@@ -1176,6 +1178,13 @@ static int httpclient_session_query_prepare_callback (
 
 	array_to_send_tmp.version = RRR_ARRAY_VERSION;
 
+	if (data->http_header_accept) {
+		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "Accept", data->http_header_accept)) != 0) {
+			RRR_MSG_0("Failed to push Accept: header to request in httpclient_session_query_prepare_callback\n");
+			goto out;
+		}
+	}
+
 	if (!callback_data->no_destination_override) {
 		if (data->do_endpoint_from_topic) {
 			if ((ret = httpclient_session_query_prepare_callback_process_endpoint_from_topic_override (
@@ -1604,6 +1613,8 @@ static int httpclient_parse_config (
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_accept", http_header_accept);
+
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_msgdb_socket", msgdb_socket);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_msgdb_poll_interval_s", msgdb_poll_interval_us, RRR_HTTPCLIENT_DEFAULT_MSGDB_RETRY_INTERVAL_S);
 
@@ -1934,6 +1945,7 @@ static void httpclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->body_tag);
 	rrr_map_clear(&data->meta_tags_all);
 	RRR_FREE_IF_NOT_NULL(data->msgdb_socket);
+	RRR_FREE_IF_NOT_NULL(data->http_header_accept);
 }
 
 static int httpclient_data_init (
