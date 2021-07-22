@@ -442,12 +442,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 		goto out;
 	}
 
-	if ( rrr_nullsafe_str_len(transaction->send_body) > 0 ||
-	     ( transaction->response_part->response_code >= 200 &&
-	       transaction->response_part->response_code <= 299 &&
-	       transaction->response_part->response_code != 204
-	     )
-	) {
+	if (transaction->response_part->response_code != 204) {
 		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
 			goto out;
 		}
