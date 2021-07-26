@@ -1,4 +1,4 @@
-.Dd 2021-04-07
+.Dd 2021-07-22
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -1768,6 +1768,13 @@ Defaults to 0 which means that TTL check is not performed.
 
 .It http_max_redirects=UNSIGNED INTEGER
 The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
+
+.It http_accept=STRING
+If specified, an Accept: header field will be sent with all requests containing the given value. If
+.B http_accept=application/json
+is specified,
+.B Accept: application/json
+will be sent to the server. Note that it is not possible to specifiy a value with newlines.
 
 .It http_receive_part_data={yes|no}
 .It http_receive_json_data={yes|no}

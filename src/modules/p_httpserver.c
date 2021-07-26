@@ -425,7 +425,6 @@ struct httpserver_write_message_callback_data {
 	const char *topic;
 };
 
-// NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
 		struct rrr_msg_holder *new_entry,
 		void *arg
@@ -519,15 +518,15 @@ static int httpserver_receive_callback_get_fields (
 	return ret;
 }
 
-struct receive_get_response_callback_data {
+struct httpserver_async_response_get_callback_data {
 	struct rrr_msg_holder *entry;
 	const char *topic_filter;
 };
 
-static int httpserver_receive_get_response_callback (
+static int httpserver_async_response_get_fifo_callback (
 		RRR_FIFO_READ_CALLBACK_ARGS
 ) {
-	struct receive_get_response_callback_data *callback_data = arg;
+	struct httpserver_async_response_get_callback_data *callback_data = arg;
 	struct rrr_msg_holder *entry = (struct rrr_msg_holder *) data;
 
 	(void)(size);
@@ -568,8 +567,8 @@ static int httpserver_receive_get_response_callback (
 	return ret;
 }
 
-static void httpserver_receive_get_response_callback_data_cleanup (void *ptr) {
-	struct receive_get_response_callback_data *callback_data = ptr;
+static void httpserver_async_response_get_callback_data_cleanup (void *ptr) {
+	struct httpserver_async_response_get_callback_data *callback_data = ptr;
 
 	if (callback_data->entry != NULL) {
 		rrr_msg_holder_decref(callback_data->entry);
@@ -629,7 +628,7 @@ static int httpserver_receive_callback_full_request (
 	return ret;
 }
 
-static int httpserver_receive_get_response_extract_data (
+static int httpserver_async_response_get_extract_data (
 		struct rrr_array *target,
 		const struct rrr_msg_msg *msg
 ) {
@@ -720,15 +719,15 @@ static void httpserver_response_data_destroy_if_not_null_void_dbl_ptr (
 	httpserver_response_data_destroy(*data);
 }
 
-static int httpserver_receive_callback_response_get (
+static int httpserver_async_response_get (
 		struct httpserver_data *data,
 		struct httpserver_response_data *response_data
 ) {
 	int ret = 0;
 
-	struct receive_get_response_callback_data callback_data = {0};
+	struct httpserver_async_response_get_callback_data callback_data = {0};
 
-	pthread_cleanup_push(httpserver_receive_get_response_callback_data_cleanup, &callback_data);
+	pthread_cleanup_push(httpserver_async_response_get_callback_data_cleanup, &callback_data);
 
 	callback_data.topic_filter = response_data->request_topic;
 
@@ -738,7 +737,7 @@ static int httpserver_receive_callback_response_get (
 
 	if ((ret = rrr_fifo_buffer_search (
 			&data->buffer,
-			httpserver_receive_get_response_callback,
+			httpserver_async_response_get_fifo_callback,
 			&callback_data,
 			0
 	)) != 0) {
@@ -761,7 +760,7 @@ static int httpserver_receive_callback_response_get (
 				INSTANCE_D_NAME(data->thread_data), callback_data.topic_filter);
 
 		rrr_msg_holder_lock(callback_data.entry);
-		ret = httpserver_receive_get_response_extract_data (
+		ret = httpserver_async_response_get_extract_data (
 				&response_data->target,
 				(struct rrr_msg_msg *) callback_data.entry->message
 		);
@@ -785,7 +784,7 @@ static int httpserver_receive_callback_response_get (
 
 }
 
-static int httpserver_receive_callback_response_process_string_value (
+static int httpserver_async_response_get_process_string_value (
 	char **target,
 	const struct rrr_type_value *value
 ) {
@@ -821,7 +820,7 @@ static int httpserver_receive_callback_response_process_string_value (
 		RRR_MSG_0("Field " name " in response from senders in httpserver instance %s did not contain excactly one element\n", INSTANCE_D_NAME(data->thread_data)); \
 	}} while (0)
 
-static int httpserver_receive_callback_response_process (
+static int httpserver_async_response_process (
 	struct httpserver_data *data,
 	struct httpserver_response_data *response_data,
 	struct rrr_http_transaction *transaction
@@ -897,7 +896,7 @@ static int httpserver_receive_callback_response_process (
 
 		if (value_content_type != 0) {
 			VERIFY_SINGLE_ELEMENT(value_content_type, "content type");
-			if ((ret = httpserver_receive_callback_response_process_string_value (&content_type_to_free, value_content_type)) != 0) {
+			if ((ret = httpserver_async_response_get_process_string_value (&content_type_to_free, value_content_type)) != 0) {
 				RRR_MSG_0("Failed to process content type field in httpserver instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 				goto out;
@@ -918,8 +917,7 @@ static int httpserver_receive_callback_response_process (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_async_response_get
-static int httpserver_async_response_get (
+static int httpserver_async_response_get_callback (
 		RRR_HTTP_SERVER_WORKER_ASYNC_RESPONSE_GET_CALLBACK_ARGS
 ) {
 	struct httpserver_callback_data *receive_callback_data = arg;
@@ -928,10 +926,10 @@ static int httpserver_async_response_get (
 
 	int ret = 0;
 
-	if ((ret = httpserver_receive_callback_response_get (data, response_data)) != 0) {
+	if ((ret = httpserver_async_response_get (data, response_data)) != 0) {
 		goto out;
 	}
-	if ((ret = httpserver_receive_callback_response_process (data, response_data, transaction)) != 0) {
+	if ((ret = httpserver_async_response_process (data, response_data, transaction)) != 0) {
 		goto out;
 	}
 
@@ -939,7 +937,6 @@ static int httpserver_async_response_get (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_receive_callback
 static int httpserver_receive_callback (
 		RRR_HTTP_SERVER_WORKER_RECEIVE_CALLBACK_ARGS
 ) {
@@ -1177,7 +1174,6 @@ static int httpserver_receive_raw_broker_callback (
 	return ret;
 }
 
-// NOTE : Worker thread CTX in httpserver_receive_websocket_callback
 static int httpserver_websocket_handshake_callback (
 		RRR_HTTP_SERVER_WORKER_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -1325,9 +1321,9 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	char *topic_filter = NULL;
 
-	struct receive_get_response_callback_data callback_data = {0};
+	struct httpserver_async_response_get_callback_data callback_data = {0};
 
-	pthread_cleanup_push(httpserver_receive_get_response_callback_data_cleanup, &callback_data);
+	pthread_cleanup_push(httpserver_async_response_get_callback_data_cleanup, &callback_data);
 	pthread_cleanup_push(rrr_http_util_dbl_ptr_free, &topic_filter);
 
 	if ((ret = httpserver_generate_unique_topic (
@@ -1343,7 +1339,7 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	if ((ret = rrr_fifo_buffer_search (
 			&httpserver_callback_data->httpserver_data->buffer,
-			httpserver_receive_get_response_callback,
+			httpserver_async_response_get_fifo_callback,
 			&callback_data,
 			0
 	)) != 0) {
@@ -1561,7 +1557,7 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		(RRR_LL_COUNT(&data->websocket_topic_filters) > 0 ? &callback_data : NULL),
 		httpserver_receive_callback,
 		&callback_data,
-		httpserver_async_response_get,
+		httpserver_async_response_get_callback,
 		&callback_data
 	};
 
