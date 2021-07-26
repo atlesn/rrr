@@ -60,14 +60,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
-// printf debugging
+// Enable printf debugging (very verbose)
 // #define RRR_MMAP_ALLOCATION_DEBUG 1
 
-// lock debugging
+// Enable lock debugging
 // #define RRR_MMAP_LOCK_DEBUG 1
 
 // Dump mmaps upon allocation failure
-// #ifdef RRR_MMAP_ALLOCATION_FAILURE_DEBUG
+// #define RRR_MMAP_ALLOCATION_FAILURE_DEBUG
 
 #define RRR_MMAP_SENTINEL_DEBUG
 
@@ -880,6 +880,9 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
 
 	if (collection->mmap_count > 0) {
 		RRR_MMAP_ITERATE_BEGIN();
+#ifdef RRR_MMAP_ALLOCATION_DEBUG
+			printf("Old try %p heap allow bad %i is bad %i\n", mmap, allow_bad, mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD);
+#endif
 			if (  mmap->heap_size != 0 &&
 			     (allow_bad || (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0) &&
 			     (result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, bytes)) != NULL
@@ -887,7 +890,7 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 				struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
 				DEFINE_HEAP();
-				printf("Allocate %lu %p = %p shm %lu heap %p\n", i, mmap, result, mmap->shm_heap, heap);
+				printf("Allocate %lu %p = %p shm %lu heap %p size %" PRIu64 "\n", i, mmap, result, mmap->shm_heap, heap, bytes);
 #endif
 				break;
 			}
@@ -923,7 +926,7 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_new_mmap (
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 			struct rrr_shm_collection_slave *shm_slave = collection->shm_slave;
 			DEFINE_HEAP();
-			printf("Allocate %lu %p = %p shm %lu heap %p size %lu\n", i, mmap, result, mmap->shm_heap, heap, bytes);
+			printf("Allocate %lu %p = %p shm %lu heap %p size %" PRIu64 "\n", i, mmap, result, mmap->shm_heap, heap, bytes);
 #endif
 			break;
 		}
