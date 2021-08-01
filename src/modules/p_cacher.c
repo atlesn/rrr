@@ -377,6 +377,16 @@ static int cacher_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		return ret;
 }
 
+static int cacher_event_tidy_wait_callback (
+		void *arg
+) {
+	struct cacher_data *data = arg;
+
+	rrr_posix_usleep(5 * 1000); // 5 ms
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
+}
+
 static int cacher_event_tidy_callback (
 		struct rrr_msgdb_client_conn *conn,
 		void *arg
@@ -387,7 +397,12 @@ static int cacher_event_tidy_callback (
 		RRR_BUG("BUG: TTL exceeds maximum, config parser must check for this\n");
 	}
 
-	return rrr_msgdb_client_cmd_tidy(conn, (uint32_t) data->message_ttl_seconds);
+	return rrr_msgdb_client_cmd_tidy_with_wait_callback (
+			conn,
+			(uint32_t) data->message_ttl_seconds,
+			cacher_event_tidy_wait_callback,
+			data
+	);
 }
 
 static void cacher_event_tidy (
@@ -407,7 +422,9 @@ static void cacher_event_tidy (
 		return;
 	}
 
-	rrr_msgdb_client_conn_ensure_with_callback (
+	RRR_DBG_1("cacher instance %s tidy...\n", INSTANCE_D_NAME(data->thread_data));
+
+	int ret_tmp = rrr_msgdb_client_conn_ensure_with_callback (
 			&data->msgdb_conn,
 			data->msgdb_socket,
 			INSTANCE_D_EVENTS(data->thread_data),
@@ -415,6 +432,18 @@ static void cacher_event_tidy (
 			data
 	);
 
+	RRR_DBG_1("cacher instance %s tidy completed with status %i\n",
+			INSTANCE_D_NAME(data->thread_data), ret_tmp);
+
+	// Check for encourage stop, return code does not always
+	// propagate from msgdb client and we also cannot 
+	// distinguish between socket EOF and encourage stop from
+	// wait the callback.
+	if (rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(thread) != 0) {
+		RRR_DBG_1("cacher instance %s received encourage stop while tidying, exiting now.\n",
+				INSTANCE_D_NAME(thread_data));
+		rrr_event_dispatch_break(INSTANCE_D_EVENTS(thread_data));
+	}
 }
 
 static int cacher_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {

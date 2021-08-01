@@ -870,13 +870,13 @@ static int __rrr_msgdb_server_tidy (
 				0,
 				sizeof(struct rrr_msg_msg)
 		) != 0 || msg_bytes_read < (ssize_t) sizeof(struct rrr_msg_msg)) {
-			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s\n",
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s. Deleting file.\n",
 					path_tmp,
 					msg_bytes_read,
 					(ssize_t) sizeof(struct rrr_msg_msg),
 					rrr_strerror(errno)
 			);
-			RRR_LL_ITERATE_NEXT();
+			goto delete;
 		}
 
 		struct rrr_msg_msg *msg = (struct rrr_msg_msg *) msg_tmp;
@@ -887,16 +887,17 @@ static int __rrr_msgdb_server_tidy (
 				(const struct rrr_msg *) msg,
 				sizeof(struct rrr_msg)
 		) != 0) {
-			RRR_MSG_0("Warning: msgdb header checksum failed for '%s' during tidy\n",
+			RRR_MSG_0("Warning: msgdb header checksum failed for '%s' during tidy, deleting file.\n",
 					path_tmp);
-			ret = RRR_MSGDB_SOFT_ERROR;
-			goto out;
+			goto delete;
 		}
 
 		if ( rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, (rrr_length) msg_size) != 0 ||
 		     rrr_msg_msg_to_host_and_verify(msg, (rrr_biglength) msg_size) != 0
 		) {
-			RRR_LL_ITERATE_NEXT();
+			RRR_MSG_0("Warning: msgdb head verification failed for '%s' during tidy, deleting file.\n",
+				path_tmp);
+			goto delete;
 		}
 
 		// Do not perform checksum test, only the message head has been read in
@@ -905,9 +906,16 @@ static int __rrr_msgdb_server_tidy (
 			RRR_DBG_3("msgdb del '%s' (tidy)\n",
 					path_tmp
 			);
-			if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
-				RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
-			}
+			goto delete;
+		}
+
+		// OK
+		RRR_LL_ITERATE_NEXT();
+
+		// Error / delete file
+		delete:
+		if (__rrr_msgdb_server_del_raw(server, path_tmp, (rrr_nullsafe_len) strlen(path_tmp)) != 0) {
+			RRR_MSG_0("Warning: msgdb deletion failed for '%s' during tidy\n", path_tmp);
 		}
 	RRR_LL_ITERATE_END();
 
