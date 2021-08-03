@@ -41,13 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/gnu.h"
 #include "../util/rrr_time.h"
 
-<<<<<<< HEAD
-static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
-static volatile int rrr_event_libevent_initialized = 0;
-=======
 // Uncomment to debug event processing
 //#define RRR_WITH_LIBEVENT_DEBUG
->>>>>>> development
 
 int rrr_event_queue_reinit (
 		struct rrr_event_queue *queue
