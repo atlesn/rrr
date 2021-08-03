@@ -1832,14 +1832,7 @@ section for descriptions of TLS parameters. All TLS parameters are optional.
 The message DB saves messages on the file system for persistence across program restarts.
 Clients may connect to the message DB using a UNIX socket and perform REST-like (REpresentional State Transfer) queries to save and retrieve messages.
 
-Messages are stored in a file hirarchy based on their topics, and due to this, there are restrictions on valid topics:
-
-.Bl -width 
-.It - Topics with dots ('.', '..' etc.) might get rejected as they have special meaning for the filesystem
-.It - Topics cannot end with a slash /
-.It - While a message 'a/b' is stored, a message 'a' cannot be stored because 'a' is now a directroy (and vice versa)
-.It - Empty topics cannot be used
-.El
+Messages are stored with their filename being the SHA-256 hash of their topic. Messages with empty topics cannot be stored.
 
 Using the socket is the only way to communicate with the message DB, it cannot read from other modules nor can it be read from.
 

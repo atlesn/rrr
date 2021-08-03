@@ -566,7 +566,7 @@ int rrr_socket_open_and_read_file_head (
 		goto out;
 	}
 
-	if (bytes <= 0) {
+	if (bytes <= 0 || bytes > bytes_total) {
 		bytes = bytes_total;
 	}
 

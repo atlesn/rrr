@@ -55,8 +55,7 @@ int rrr_msgdb_client_send (
 );
 int rrr_msgdb_client_cmd_idx (
 		struct rrr_array *target_paths,
-		struct rrr_msgdb_client_conn *conn,
-		const char *topic
+		struct rrr_msgdb_client_conn *conn
 );
 int rrr_msgdb_client_cmd_tidy (
 		struct rrr_msgdb_client_conn *conn,
