@@ -87,8 +87,6 @@ struct rrr_mmap {
 	rrr_mmap_handle heap_size;
 	rrr_mmap_handle prev_allocation_failure_req_size;
 	rrr_mmap_handle  prev_allocation_index_pos;
-	size_t to_free_list_count;
-	rrr_mmap_handle to_free_list[RRR_MMAP_TO_FREE_LIST_MAX];
 };
 
 struct rrr_mmap_collection {
@@ -145,37 +143,14 @@ void *__rrr_mmap_resolve (
 
 static void __rrr_mmap_free (
 		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave
+		struct rrr_shm_collection_slave *shm_slave,
+		rrr_mmap_handle handle
 ) {
 	int blocks = 0;
 	int iterations = 0;
 
 	DEFINE_HEAP();
 
-	if (mmap->to_free_list_count == 0) {
-		return;
-	}
-
-	size_t to_free_list_sorted_count = 0;
-	uintptr_t last_value = 0;
-	rrr_mmap_handle to_free_list_sorted[RRR_MMAP_TO_FREE_LIST_MAX];
-	for (size_t i = 0; i < mmap->to_free_list_count; i++) {
-		uintptr_t min_value = 0;
-		for (size_t i = 0; i < mmap->to_free_list_count; i++) {
-			if (mmap->to_free_list[i] > last_value && (min_value == 0 || mmap->to_free_list[i] < min_value)) {
-				min_value = mmap->to_free_list[i];
-			}
-		}
-		last_value = min_value;
-		to_free_list_sorted[i] = min_value;
-		to_free_list_sorted_count++;
-	}
-
-	if (to_free_list_sorted_count != mmap->to_free_list_count) {
-		RRR_BUG("BUG: Pointer sorting error in __rrr_mmap_free, possibly duplicate pointers in free list\n");
-	}
-
-	size_t to_free_list_sorted_pos = 0;
 	rrr_mmap_handle block_pos = 0;
 
 	while (block_pos < mmap->heap_size) {
@@ -198,16 +173,13 @@ static void __rrr_mmap_free (
 				continue;
 			}
 
-			if (to_free_list_sorted[to_free_list_sorted_pos] == block_pos) {
+			if (handle == block_pos) {
 				if ((index->block_used_map & used_mask) == 0) {
 					RRR_BUG("BUG: Double free of pos %" PRIu64 " ptr %p in __rrr_mmap_free\n", block_pos, heap + block_pos);
 				}
 
 				index->block_used_map &= ~(used_mask);
-
-				if (++to_free_list_sorted_pos == to_free_list_sorted_count) {
-					goto out;
-				}
+				goto out;
 			}
 
 			block_pos += index->block_sizes[j];
@@ -217,27 +189,9 @@ static void __rrr_mmap_free (
 		}
 	}
 
+	RRR_BUG("BUG: Invalid free of in rrr_mmap_free, %llu not found\n", (long long unsigned int) handle);
+
 	out:
-
-	if (to_free_list_sorted_pos != to_free_list_sorted_count) {
-		RRR_BUG("BUG: Invalid free of in rrr_mmap_free, one or more positions not found %lu<>%lu (%lu not found)\n",
-				to_free_list_sorted_pos, to_free_list_sorted_count, to_free_list_sorted[to_free_list_sorted_pos]);
-	}
-
-	mmap->prev_allocation_failure_req_size = 0;
-	mmap->to_free_list_count = 0;
-}
-
-static void __rrr_mmap_free_push (
-		struct rrr_mmap *mmap,
-		struct rrr_shm_collection_slave *shm_slave,
-		rrr_mmap_handle handle
-) {
-	mmap->to_free_list[mmap->to_free_list_count++] = handle;
-
-	if (mmap->to_free_list_count == RRR_MMAP_TO_FREE_LIST_MAX) {
-		__rrr_mmap_free(mmap, shm_slave);
-	}
 
 	mmap->prev_allocation_failure_req_size = 0;
 }
@@ -655,17 +609,6 @@ void rrr_mmap_collections_maintenance (
 
 	for (size_t i = 0; i < collection_count; i++) {
 		struct rrr_mmap_collection *collection = &collections[i];
-		LOCK(collection);
-		RRR_MMAP_ITERATE_BEGIN();
-			if (mmap->heap_size != 0) {
-				__rrr_mmap_free(mmap, collection->shm_slave);
-			}
-		RRR_MMAP_ITERATE_END();
-		UNLOCK(collection);
-	}
-
-	for (size_t i = 0; i < collection_count; i++) {
-		struct rrr_mmap_collection *collection = &collections[i];
 
 		LOCK(collection);
 
@@ -878,8 +821,7 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
 		rrr_mmap_handle *mmap_handle,
 		struct rrr_mmap_collection *collection,
 		uint64_t bytes,
-		short do_allow_bad,
-		short do_cleanup
+		short do_allow_bad
 ) {
 	void *result = NULL;
 
@@ -891,10 +833,6 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_old_mmap (
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 			printf("Old try %p heap allow bad %i is bad %i\n", mmap, do_allow_bad, mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD);
 #endif
-			if (do_cleanup) {
-				__rrr_mmap_free (mmap, collection->shm_slave);
-			}
-
 			if ( (do_allow_bad || (mmap->flags & RRR_MMAP_COLLECTION_FLAG_BAD) == 0) &&
 			     (result = __rrr_mmap_allocate_with_handles(shm_handle, mmap_handle, mmap, bytes)) != NULL
 			) {
@@ -966,8 +904,7 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 	/*
 	 * 1. Fill up any existing mmap which is not marked as bad
 	 * 2. If none found, try to allocate new mmap
-	 * 3. If unable, try to allocate from bad mmaps after
-	 *    processing up the free() queue.
+	 * 3. If unable, try to allocate from bad mmaps
 	 */
 
 	if ((result = __rrr_mmap_collection_allocate_with_handles_try_old_mmap (
@@ -975,8 +912,7 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 			mmap_handle,
 			collection,
 			bytes,
-			0, /* Don't allow bad */
-			0  /* Don't clean up first */
+			0 /* Don't allow bad */
 	)) != NULL) {
 		goto out;
 	}
@@ -996,8 +932,7 @@ static void *__rrr_mmap_collection_allocate_with_handles (
 			mmap_handle,
 			collection,
 			bytes,
-			1, /* Allow bad */
-			1  /* Clean up first */
+			1 /* Allow bad */
 	)) != NULL) {
 		goto out;
 	}
@@ -1111,7 +1046,7 @@ int rrr_mmap_collections_free (
 			printf("Free %lu %p = %p shm %lu heap %p\n", pos, mmap, ptr, mmap->shm_heap, heap);
 #endif
 
-			__rrr_mmap_free_push(mmap, shm_slave, (uintptr_t) ptr - (uintptr_t) heap);
+			__rrr_mmap_free(mmap, shm_slave, (uintptr_t) ptr - (uintptr_t) heap);
 	
 			ret = 0;
 		}
