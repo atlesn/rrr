@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_common.h"
 #include "mqtt_broker.h"
@@ -800,7 +801,7 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	ret = rrr_mqtt_conn_iterator_ctx_send_packet(handle, (struct rrr_mqtt_p *) pingresp);
+	ret = rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, (struct rrr_mqtt_p *) pingresp);
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingresp);
@@ -993,7 +994,7 @@ static int __rrr_mqtt_broker_acl_handler (
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
-	free(broker);
+	rrr_free(broker);
 }
 
 void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker) {
@@ -1073,7 +1074,7 @@ int rrr_mqtt_broker_new (
 
 	struct rrr_mqtt_broker_data *res = NULL;
 
-	res = malloc(sizeof(*res));
+	res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_broker_new\n");
 		ret = 1;
@@ -1116,46 +1117,6 @@ int rrr_mqtt_broker_new (
 		RRR_FREE_IF_NOT_NULL(res);
 	out:
 		return ret;
-}
-
-int rrr_mqtt_broker_accept_connections (
-		struct rrr_mqtt_broker_data *data
-) {
-	int ret = 0;
-
-	unsigned int accepted_count = 0;
-
-	int new_handle = 0;
-
-	do {
-		new_handle = 0;
-		ret = rrr_mqtt_transport_accept (
-				&new_handle,
-				data->mqtt_data.transport,
-				rrr_mqtt_conn_accept_and_connect_callback
-		);
-		if (new_handle != 0) {
-			accepted_count++;
-		}
-	} while (new_handle != 0 && (ret & RRR_MQTT_INTERNAL_ERROR) == 0);
-
-	// Do this also upon errors
-	if (accepted_count > 0) {
-		data->stats.total_connections_accepted += accepted_count;
-	}
-
-	if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-		RRR_MSG_0("Internal error in rrr_mqtt_broker_accept_connections while accepting connections\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (ret != 0) {
-		RRR_MSG_0("Error while accepting connections in rrr_mqtt_broker_accept_connections\n");
-	}
-
-	out:
-	return ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) ? 1 : 0;
 }
 
 void rrr_mqtt_broker_get_stats (

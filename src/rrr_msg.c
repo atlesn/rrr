@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "main.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/version.h"
 #include "lib/common.h"
 #include "lib/rrr_config.h"
@@ -457,9 +458,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
 		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 
 	rrr_strerror_init();
@@ -512,6 +517,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

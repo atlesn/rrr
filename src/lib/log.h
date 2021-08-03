@@ -248,7 +248,7 @@ void rrr_log_cleanup(void);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_count,
+				uint8_t *write_count,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
@@ -256,7 +256,9 @@ void rrr_log_hook_register (
 				void *private_arg
 		),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue
+		struct rrr_event_queue *notify_queue,
+		int (*event_pass_retry_callback)(void *arg),
+		void *event_pass_retry_callback_arg
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (

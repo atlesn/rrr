@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/rrr_strerror.h"
 #include "../lib/poll_helper.h"
@@ -387,8 +388,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread_data);
 
 	rrr_cmodule_helper_loop (
-			thread_data,
-			1 * 1000 * 1000 // 1 s
+			thread_data
 	);
 
 	out_message:

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "websocket.h"
 #include "../net_transport/net_transport.h"
 #include "../util/rrr_endian.h"
@@ -41,7 +42,7 @@ static void __rrr_websocket_frame_destroy (
 		struct rrr_websocket_frame *frame
 ) {
 	RRR_FREE_IF_NOT_NULL(frame->payload);
-	free(frame);
+	rrr_free(frame);
 }
 
 void rrr_websocket_state_set_client_mode (
@@ -110,7 +111,7 @@ int rrr_websocket_frame_enqueue (
 
 	struct rrr_websocket_frame *frame;
 
-	if ((frame = malloc(sizeof(*frame))) == NULL) {
+	if ((frame = rrr_allocate(sizeof(*frame))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_websocket_frame_enqueue\n");
 		ret = 1;
 		goto out;
@@ -251,7 +252,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			RRR_BUG("BUG: pos exceeds header size in __rrr_websocket_transport_ctx_send_frame\n");
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_push(handle, header, pos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push_const(handle, header, pos)) != 0) {
 			RRR_DBG_1("Failed to send websocket header for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}
@@ -262,7 +263,7 @@ static int __rrr_websocket_transport_ctx_frame_send (
 			__rrr_websocket_payload_mask_unmask((uint8_t *) frame->payload, frame->header.payload_len, frame->header.masking_key);
 		}
 
-		if ((ret = rrr_net_transport_ctx_send_push(handle, frame->payload, frame->header.payload_len)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push_const(handle, frame->payload, frame->header.payload_len)) != 0) {
 			RRR_DBG_1("Failed to send websocket payload for handle %i\n", RRR_NET_TRANSPORT_CTX_HANDLE(handle));
 			goto out;
 		}

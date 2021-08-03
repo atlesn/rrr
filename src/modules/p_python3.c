@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -365,8 +366,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
 	rrr_cmodule_helper_loop (
-			thread_data,
-			1 * 1000 * 1000 // 1 s
+			thread_data
 	);
 
 	out_message:

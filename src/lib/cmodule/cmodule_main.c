@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "cmodule_main.h"
 #include "cmodule_worker.h"
@@ -33,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_config_data.h"
 #include "../event/event.h"
 #include "../fork.h"
-#include "../rrr_mmap.h"
 #include "../mmap_channel.h"
 #include "../util/posix.h"
 
@@ -147,7 +147,6 @@ int rrr_cmodule_main_worker_fork_start (
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
-			cmodule->mmap,
 			cmodule->config_data.worker_spawn_interval_us,
 			cmodule->config_data.worker_sleep_time_us,
 			cmodule->config_data.worker_nothing_happened_limit,
@@ -203,7 +202,6 @@ int rrr_cmodule_main_worker_fork_start (
 
 	exit(ret);
 
-	goto out_parent;
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
 		cmodule->worker_count--;
@@ -236,12 +234,10 @@ void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_main_workers_stop(cmodule);
-	if (cmodule->mmap != NULL) {
-		rrr_mmap_destroy(cmodule->mmap);
-		cmodule->mmap = NULL;
-	}
+	rrr_msg_holder_collection_clear(&cmodule->input_queue);
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
-	free(cmodule);
+	rrr_free(cmodule->name);
+	rrr_free(cmodule);
 }
 
 void rrr_cmodule_destroy_void (
@@ -257,7 +253,7 @@ int rrr_cmodule_new (
 ) {
 	int ret = 0;
 
-	struct rrr_cmodule *cmodule = malloc(sizeof(*cmodule));
+	struct rrr_cmodule *cmodule = rrr_allocate(sizeof(*cmodule));
 	if (cmodule == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_cmodule_new\n");
 		ret = 1;
@@ -266,8 +262,8 @@ int rrr_cmodule_new (
 
 	memset(cmodule, '\0', sizeof(*cmodule));
 
-	if (rrr_mmap_new(&cmodule->mmap, RRR_CMODULE_CHANNEL_SIZE, name) != 0) {
-		RRR_MSG_0("Could not allocate mmap in rrr_cmodule_init\n");
+	if ((cmodule->name = rrr_strdup(name)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for name in rrr_cmodule_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -280,21 +276,20 @@ int rrr_cmodule_new (
 	cmodule->config_data.worker_nothing_happened_limit = RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT;
 	cmodule->config_data.worker_count = RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT;
 
+	// Memory map not allocated until needed
+
 	*result = cmodule;
 
 	goto out;
 	out_free:
-		free(cmodule);
+		rrr_free(cmodule);
 	out:
 		return ret;
 }
 
 static void __rrr_cmodule_main_worker_maintain (struct rrr_cmodule_worker *worker) {
-	// Speed up memory access. Sorting is usually only performed
-	// when the first few thousand messages are received, after that
-	// no sorting is needed.
-	rrr_cmodule_channel_bubblesort(worker->channel_to_fork);
-	rrr_cmodule_channel_bubblesort(worker->channel_to_parent);
+	rrr_cmodule_channel_maintenance(worker->channel_to_fork);
+	rrr_cmodule_channel_maintenance(worker->channel_to_parent);
 }
 
 // Call once in a while, like every second

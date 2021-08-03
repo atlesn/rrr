@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_part.h"
 #include "http_fields.h"
 #include "http_util.h"
@@ -76,11 +77,11 @@ const struct rrr_http_field *__rrr_http_part_header_field_subvalue_get (
 void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LL_DESTROY(part, struct rrr_http_part, rrr_http_part_destroy(node));
 	rrr_http_header_field_collection_clear(&part->headers);
-	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, free(node));
+	RRR_LL_DESTROY(&part->chunks, struct rrr_http_chunk, rrr_free(node));
 	rrr_http_field_collection_clear(&part->fields);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_uri_nullsafe);
 	rrr_nullsafe_str_destroy_if_not_null(&part->request_method_str_nullsafe);
-	free (part);
+	rrr_free (part);
 }
 
 void rrr_http_part_destroy_void (void *part) {
@@ -92,7 +93,7 @@ int rrr_http_part_new (struct rrr_http_part **result) {
 
 	*result = NULL;
 
-	struct rrr_http_part *part = malloc (sizeof(*part));
+	struct rrr_http_part *part = rrr_allocate (sizeof(*part));
 	if (part == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_part_new\n");
 		ret = 1;
@@ -175,7 +176,7 @@ struct rrr_http_chunk *rrr_http_part_chunk_new (
 		rrr_length chunk_start,
 		rrr_length chunk_length
 ) {
-	struct rrr_http_chunk *new_chunk = malloc(sizeof(*new_chunk));
+	struct rrr_http_chunk *new_chunk = rrr_allocate(sizeof(*new_chunk));
 	if (new_chunk == NULL) {
 		RRR_MSG_0("Could not allocate memory for chunk in rrr_http_part_chunk_new\n");
 		return NULL;
@@ -325,7 +326,7 @@ static int __rrr_http_part_query_string_parse (
 		start++;
 	}
 
-	if ((buf = malloc((end - start) + 1)) == NULL) {
+	if ((buf = rrr_allocate((end - start) + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for buffer in __rrr_http_part_query_string_parse\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
@@ -572,7 +573,7 @@ int rrr_http_part_chunks_merge (
 		new_buf_size += node->length;
 	RRR_LL_ITERATE_END();
 
-	if ((data_new = malloc(new_buf_size)) == NULL) {
+	if ((data_new = rrr_allocate(new_buf_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_part_chunks_merge\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
@@ -587,7 +588,7 @@ int rrr_http_part_chunks_merge (
 		memcpy(data_new + wpos, data_ptr + node->start, node->length);
 		wpos += node->length;
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->chunks, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->chunks, 0; rrr_free(node));
 
 	part->is_chunked = 0;
 	part->data_length = wpos;
@@ -636,6 +637,7 @@ int rrr_http_part_post_x_www_form_body_make (
 	return ret;
 }
 
+#ifdef RRR_WITH_JSONC
 int rrr_http_part_json_make (
 		struct rrr_http_part *part,
 		int (*chunk_callback)(RRR_HTTP_COMMON_DATA_MAKE_CALLBACK_ARGS),
@@ -663,6 +665,7 @@ int rrr_http_part_json_make (
 	pthread_cleanup_pop(1);
 	return ret;
 }
+#endif
 
 static void __rrr_http_part_header_field_dump (
 		struct rrr_http_header_field *field

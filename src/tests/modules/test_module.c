@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "../../lib/log.h"
+#include "../../lib/allocator.h"
 
 #include "type_array.h"
 #include "../test.h"
@@ -106,7 +107,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	// Uncomment to make test module halt before it runs
-/*	while (rrr_thread_signal_encourage_stop_check(thread_data->thread) != 1) {
+/*	while (rrr_thread_signal_encourage_stop_check(thread_data->thread) == 0) {
 		rrr_thread_watchdog_time_update(thread_data->thread);
 		rrr_posix_usleep (20000); // 20 ms
 	}*/

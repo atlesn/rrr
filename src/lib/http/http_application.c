@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_application.h"
 #include "http_application_internals.h"
 #ifdef RRR_WITH_NGHTTP2
@@ -48,10 +49,10 @@ void rrr_http_application_destroy_if_not_null_void (
 	rrr_http_application_destroy_if_not_null((struct rrr_http_application **) app_double_ptr);
 }
 
-uint64_t rrr_http_application_active_transaction_count_get (
+uint64_t rrr_http_application_active_transaction_count_get_and_maintain (
 		struct rrr_http_application *app
 ) {
-	return app->constants->active_transaction_count_get(app);
+	return app->constants->active_transaction_count_get_and_maintain(app);
 }
 
 int rrr_http_application_new (
@@ -87,9 +88,10 @@ int rrr_http_application_transport_ctx_request_send (
 		const char *user_agent,
 		const char *host,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_transaction *transaction
 ) {
-	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, transaction);
+	return app->constants->request_send(upgraded_app, app, handle, user_agent, host, upgrade_mode, protocol_version, transaction);
 }
 
 int rrr_http_application_transport_ctx_need_tick (
@@ -116,6 +118,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 ) {
@@ -137,6 +141,8 @@ int rrr_http_application_transport_ctx_tick (
 			frame_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	);

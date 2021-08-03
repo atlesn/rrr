@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport_libressl.h"
 #include "net_transport_tls_common.h"
@@ -71,7 +72,7 @@ static void __rrr_net_transport_libressl_data_destroy (
 
 	RRR_FREE_IF_NOT_NULL(data->alpn_selected_proto);
 
-	free(data);
+	rrr_free(data);
 }
 
 static int __rrr_net_transport_libressl_data_new (
@@ -81,7 +82,7 @@ static int __rrr_net_transport_libressl_data_new (
 
 	*result = NULL;
 
-	struct rrr_net_transport_tls_data *data = malloc(sizeof(*data));
+	struct rrr_net_transport_tls_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_net_transport_libressl_data_new\n");
 		ret = 1;
@@ -195,7 +196,7 @@ static int __rrr_net_transport_libressl_connect_callback (
 }
 
 static int __rrr_net_transport_libressl_connect (
-		int *handle,
+		rrr_net_transport_handle *handle,
 		struct sockaddr *addr,
 		socklen_t *socklen,
 		struct rrr_net_transport *transport,
@@ -208,7 +209,7 @@ static int __rrr_net_transport_libressl_connect (
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_DBG_1("Could not create TLS connection to %s:%u\n", host, port);
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		goto out;
@@ -225,7 +226,7 @@ static int __rrr_net_transport_libressl_connect (
 			host
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -327,7 +328,7 @@ static int __rrr_net_transport_libressl_bind_and_listen (
 			do_ipv6
 	};
 
-	int new_handle;
+	rrr_net_transport_handle new_handle;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -427,7 +428,7 @@ int __rrr_net_transport_libressl_accept (
 		data->ctx
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
@@ -480,14 +481,16 @@ static int __rrr_net_transport_libressl_read_raw (
 	int ret = RRR_READ_OK;
 
 	ssize_t result = tls_read(tls_data->ctx, buf, read_step_max_size);
-	if (result < 0) {
+	if (result == 0) {
+		ret = RRR_READ_EOF;
+	}
+	else if (result < 0) {
 		if (result == TLS_WANT_POLLIN || result == TLS_WANT_POLLOUT) {
 			goto out;
 		}
 
 		RRR_MSG_0("Error while reading in __rrr_net_transport_libressl_read_raw: %s\n", tls_error(tls_data->ctx));
 		ret = RRR_READ_SOFT_ERROR;
-		goto out;
 	}
 
 	out:
@@ -585,7 +588,7 @@ static int __rrr_net_transport_libressl_read (
 }
 
 static int __rrr_net_transport_libressl_send (
-	uint64_t *sent_bytes,
+	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	const ssize_t size
@@ -615,9 +618,7 @@ static int __rrr_net_transport_libressl_send (
 			goto out;
 		}
 		else if ((pfd.revents & (pfd.events|POLLHUP))) {
-			ssize_t bytes;
-
-			bytes = tls_write(tls_data->ctx, data, size);
+			ssize_t bytes = tls_write(tls_data->ctx, data, size);
 			if (bytes == TLS_WANT_POLLIN) {
 				pfd.events = POLLIN;
 			}

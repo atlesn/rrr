@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <poll.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/mqtt/mqtt_broker.h"
 #include "../lib/mqtt/mqtt_common.h"
@@ -161,7 +162,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	if (data->permission_name == NULL || *(data->permission_name) == '\0') {
 		RRR_FREE_IF_NOT_NULL(data->permission_name);
-		if ((data->permission_name = strdup("mqtt")) == NULL) {
+		if ((data->permission_name = rrr_strdup("mqtt")) == NULL) {
 			RRR_MSG_0("Could not allocate memory for permission name in mqttbroker_parse_config\n");
 			ret = 1;
 			goto out;
@@ -181,7 +182,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
 
-	if ((rrr_net_transport_config_parse (
+	if ((ret = rrr_net_transport_config_parse (
 			&data->net_transport_config,
 			config,
 			"mqtt_broker",

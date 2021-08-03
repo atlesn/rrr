@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "log.h"
+#include "allocator.h"
 #include "util/posix.h"
 #include "util/slow_noop.h"
 #include "util/rrr_time.h"
@@ -172,7 +173,7 @@ static void __rrr_fifo_buffer_entry_destroy_unlocked (
 	}
 	__rrr_fifo_buffer_entry_unlock(entry);
 	pthread_mutex_destroy(&entry->lock);
-	free(entry);
+	rrr_free(entry);
 }
 
 static void __rrr_fifo_buffer_entry_destroy_simple_void (
@@ -180,7 +181,7 @@ static void __rrr_fifo_buffer_entry_destroy_simple_void (
 ) {
 	struct rrr_fifo_buffer_entry *entry = ptr;
 	pthread_mutex_destroy(&entry->lock);
-	free(entry);
+	rrr_free(entry);
 }
 
 static void __rrr_fifo_buffer_entry_destroy_data_unlocked (
@@ -210,7 +211,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (
 
 	*result = NULL;
 
-	struct rrr_fifo_buffer_entry *entry = malloc(sizeof(*entry));
+	struct rrr_fifo_buffer_entry *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
 		ret = 1;
@@ -230,7 +231,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (
 	goto out;
 
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }
@@ -294,7 +295,7 @@ void rrr_fifo_buffer_destroy (
 static void __rrr_fifo_default_free (
 		void *ptr
 ) {
-	free(ptr);
+	rrr_free(ptr);
 }
 
 int rrr_fifo_buffer_init (
@@ -939,7 +940,8 @@ static int __rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
-		unsigned int wait_milliseconds
+		unsigned int wait_milliseconds,
+		int do_poll_all
 ) {
 	int combined_count = rrr_fifo_buffer_get_entry_count_combined(buffer);
 	if (combined_count == 0) {
@@ -961,7 +963,7 @@ static int __rrr_fifo_buffer_read_clear_forward (
 	// Must be set after write queue merge
 	last_element = current = buffer->gptr_first;
 
-	while (last_element != NULL && --max_counter) {
+	while (last_element != NULL && (do_poll_all || --max_counter)) {
 		last_element = last_element->next;
 	}
 
@@ -1114,7 +1116,7 @@ int rrr_fifo_buffer_read_clear_forward (
 		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds);
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, wait_milliseconds, 0);
 }
 /*
  * Same as rrr_fifo_buffer_read_clear_forward(), but reads all entries.
@@ -1124,18 +1126,7 @@ int rrr_fifo_buffer_read_clear_forward_all (
 		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data
 ) {
-	int ret = RRR_FIFO_OK;
-	int entry_count = 0;
-
-	do {
-		ret = __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0);
-		
-		pthread_mutex_lock(&buffer->ratelimit_mutex);
-		entry_count = buffer->entry_count;
-		pthread_mutex_unlock(&buffer->ratelimit_mutex);
-	} while (ret == 0 && entry_count > 0);
-
-	return ret;
+	return __rrr_fifo_buffer_read_clear_forward(buffer, callback, callback_data, 0, 1);
 }
 
 /*
@@ -1348,7 +1339,7 @@ static void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 #ifdef RRR_FIFO_BUFFER_RATELIMIT_DEBUG
 	uint64_t time = rrr_time_get_64() - ratelimit_in;
 	if (time > 0) {
-		printf("Ratelimit %p: %" PRIu64 "\n", buffer, time);
+		printf("Ratelimit %p: %" PRIu64 "\tc: %i\n", buffer, time, buffer->entry_count);
 	}
 #endif
 }

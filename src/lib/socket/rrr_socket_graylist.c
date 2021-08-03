@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "rrr_socket_graylist.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
@@ -52,7 +53,7 @@ int rrr_socket_graylist_exists (
 				return 1;
 			}
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; free(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; rrr_free(node));
 	return 0;
 }
 
@@ -70,11 +71,7 @@ static int __rrr_socket_graylist_push (
 		goto out;
 	}
 
-	if (rrr_socket_graylist_exists(target, addr, len)) {
-		goto out;
-	}
-
-	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+	if ((new_entry = rrr_allocate(sizeof(*new_entry))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_graylist_push\n");
 		ret = 1;
 		goto out;
@@ -111,7 +108,7 @@ int rrr_socket_graylist_push (
 void rrr_socket_graylist_clear (
 		struct rrr_socket_graylist *target
 ) {
-	RRR_LL_DESTROY(target, struct rrr_socket_graylist_entry, free(node));
+	RRR_LL_DESTROY(target, struct rrr_socket_graylist_entry, rrr_free(node));
 }
 
 void rrr_socket_graylist_clear_void (

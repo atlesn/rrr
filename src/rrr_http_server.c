@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "main.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
@@ -47,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS  3000
 #define RRR_HTTP_SERVER_IDLE_TIMEOUT_MS        RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS * 2
+#define RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT 100000
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
@@ -106,7 +108,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 	if (certificate != NULL) {
-		data->certificate_file = strdup(certificate);
+		data->certificate_file = rrr_strdup(certificate);
 		if (data->certificate_file == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -122,7 +124,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		goto out;
 	}
 	if (key != NULL) {
-		data->private_key_file = strdup(key);
+		data->private_key_file = rrr_strdup(key);
 		if (data->private_key_file == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
@@ -215,6 +217,9 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 
 static int rrr_http_server_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	(void)(arg);
+
+	rrr_allocator_maintenance_nostats();
+
 	return (main_running ? 0 : RRR_EVENT_EXIT);
 }
 
@@ -226,8 +231,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -253,7 +263,6 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	if (rrr_main_print_banner_help_and_version(&cmd, 0) != 0) {
-		ret = EXIT_FAILURE;
 		goto out;
 	}
 
@@ -285,7 +294,8 @@ int main (int argc, const char **argv, const char **env) {
 				events,
 				data.http_port,
 				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
-				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS
+				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT
 		) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -319,6 +329,7 @@ int main (int argc, const char **argv, const char **env) {
 				data.https_port,
 				RRR_HTTP_SERVER_FIRST_DATA_TIMEOUT_MS,
 				RRR_HTTP_SERVER_IDLE_TIMEOUT_MS,
+				RRR_HTTP_SERVER_SEND_CHUNK_COUNT_LIMIT,
 				&net_transport_config_tls,
 				flags
 		) != 0) {
@@ -368,6 +379,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

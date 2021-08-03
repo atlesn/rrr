@@ -88,9 +88,14 @@ void rrr_event_function_set_with_arg (
 		void *arg,
 		const char *description
 );
+int rrr_event_function_priority_set (
+		struct rrr_event_queue *handle,
+		uint8_t code,
+		enum rrr_event_priority priority
+);
 void rrr_event_callback_pause_set (
 		struct rrr_event_queue *queue,
-		void (*callback)(int *do_pause, void *callback_arg),
+		void (*callback)(int *do_pause, int is_paused, void *callback_arg),
 		void *callback_arg
 );
 int rrr_event_dispatch_once (
@@ -105,12 +110,25 @@ int rrr_event_dispatch (
 void rrr_event_dispatch_break (
 		struct rrr_event_queue *queue
 );
+void rrr_event_dispatch_exit (
+		struct rrr_event_queue *queue
+);
+void rrr_event_dispatch_restart (
+		struct rrr_event_queue *queue
+);
 int rrr_event_pass (
 		struct rrr_event_queue *queue,
 		uint8_t function,
-		uint16_t amount
+		uint8_t amount,
+		int (*retry_callback)(void *arg),
+		void *retry_callback_arg
 );
-
+void rrr_event_count (
+		int64_t *eventfd_count,
+		uint64_t *deferred_count,
+		struct rrr_event_queue *queue,
+		uint8_t function
+);
 static inline void rrr_event_activate (
 		rrr_event_handle *handle
 ) {

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "input.h"
 #include "../read_constants.h"
 #include "../socket/rrr_socket.h"

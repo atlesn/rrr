@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "json.h"
 #include "../array.h"
 #include "../fixed_point.h"
@@ -73,16 +74,8 @@ static int __rrr_json_to_array_recurse_object (
 
 			RRR_DBG_3("        => STRING %s\n", value);
 
-			// Note : Zero length strings not possible in RRR arrays
-			if (*value == '\0') {
-				if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, key, 0)) != 0) {
-					goto out;
-				}
-			}
-			else {
-				if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
-					goto out;
-				}
+			if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
+				goto out;
 			}
 		}
 		else if (type == json_type_int) {
@@ -121,7 +114,7 @@ static int __rrr_json_to_array_recurse_object (
 			}
 		}
 		else if (type == json_type_null) {
-			RRR_DBG_3("        => NULL\n", cur_level, max_levels);
+			RRR_DBG_3("        => NULL\n");
 
 			if ((ret = rrr_array_push_value_vain_with_tag(&array_tmp, key)) != 0) {
 				goto out;
@@ -337,7 +330,9 @@ static int __rrr_json_object_add (
 		RRR_DBG_3("Note: Overwrote already existing value '%s' in JSON object\n", key);
 	}
 
+#ifndef RRR_HAVE_JSONC_OBJECT_ADD_VOID
 	out:
+#endif
 	return ret;
 }
 
@@ -375,7 +370,7 @@ static int __rrr_json_from_array_callback (
 	char *tag_tmp = NULL;
 	json_object *object_new = NULL;
 
-	if ((tag_tmp = malloc(node_orig->tag_length + 1)) == NULL) {
+	if ((tag_tmp = rrr_allocate(node_orig->tag_length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_json_from_array_callback\n");
 		ret = 1;
 		goto out;
@@ -459,7 +454,7 @@ int rrr_json_from_array (
 
 	const char *json_str = json_object_to_json_string_ext(base, JSON_C_TO_STRING_PLAIN);
 
-	if ((*target = strdup(json_str)) == NULL) {
+	if ((*target = rrr_strdup(json_str)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_json_from_array\n");
 		ret = 1;
 		goto out;

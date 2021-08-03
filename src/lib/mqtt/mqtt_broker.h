@@ -62,9 +62,6 @@ struct rrr_mqtt_broker_data {
 	const struct rrr_mqtt_acl *acl;
 };
 
-int rrr_mqtt_broker_accept_connections (
-		struct rrr_mqtt_broker_data *data
-);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
 static inline void rrr_mqtt_broker_destroy_void (void *broker) {
 	rrr_mqtt_broker_destroy (broker);

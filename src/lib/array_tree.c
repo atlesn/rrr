@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "parse.h"
 #include "string_builder.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
@@ -44,7 +45,7 @@ static void __rrr_array_branch_destroy (
 	if (branch->tree_else != NULL) {
 		rrr_array_tree_destroy(branch->tree_else);
 	}
-	free(branch);
+	rrr_free(branch);
 }
 
 static void __rrr_array_node_destroy (
@@ -54,7 +55,7 @@ static void __rrr_array_node_destroy (
 	if (node->branch_if != NULL) {
 		__rrr_array_branch_destroy(node->branch_if);
 	}
-	free(node);
+	rrr_free(node);
 }
 
 void rrr_array_tree_clear (
@@ -68,7 +69,7 @@ void rrr_array_tree_destroy (
 		struct rrr_array_tree *tree
 ) {
 	 rrr_array_tree_clear(tree);
-	free(tree);
+	rrr_free(tree);
 }
 
 int rrr_array_tree_new (
@@ -77,7 +78,7 @@ int rrr_array_tree_new (
 ) {
 	int ret = 0;
 
-	struct rrr_array_tree *new_tree = malloc(sizeof(*new_tree));
+	struct rrr_array_tree *new_tree = rrr_allocate(sizeof(*new_tree));
 	if (new_tree == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
@@ -86,7 +87,7 @@ int rrr_array_tree_new (
 
 	memset(new_tree, '\0', sizeof(*new_tree));
 
-	if ((new_tree->name = strdup(name != NULL ? name : "-")) == NULL) {
+	if ((new_tree->name = rrr_strdup(name != NULL ? name : "-")) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
 		goto out;
@@ -97,7 +98,7 @@ int rrr_array_tree_new (
 
 	out:
 	if (new_tree != NULL) {
-		free(new_tree);
+		rrr_free(new_tree);
 	}
 	return ret;
 }
@@ -121,7 +122,7 @@ const struct rrr_array_tree *rrr_array_tree_list_get_tree_by_name (
 }
 
 static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
-	struct rrr_array_branch *branch = malloc(sizeof(*branch));
+	struct rrr_array_branch *branch = rrr_allocate(sizeof(*branch));
 	if (branch == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_array_branch_allocate\n");
 		return NULL;
@@ -131,7 +132,7 @@ static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
 }
 
 static struct rrr_array_node *__rrr_array_node_allocate (void) {
-	struct rrr_array_node *node = malloc(sizeof(*node));
+	struct rrr_array_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_array_node_allocate\n");
 		return NULL;
@@ -341,7 +342,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 	(*parsed_bytes)++;
 	(*start)++;
 
-	if ((result = malloc(length + 1)) == NULL) {
+	if ((result = rrr_allocate(length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
 		goto out;

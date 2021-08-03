@@ -25,15 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS 500
 
 #include <pthread.h>
+#include <stdint.h>
 
 #include "../util/linked_list.h"
 
 #define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
 
-#define RRR_INSTANCE_POST_ARGUMENTS									\
-	struct rrr_stats_instance *instance,							\
-	const char *path_postfix,										\
-	int sticky
+#define RRR_INSTANCE_POST_ARGUMENTS                            \
+    struct rrr_stats_instance *instance,                       \
+    const char *path_postfix,                                  \
+    int sticky
 
 struct rrr_stats_engine;
 

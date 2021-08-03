@@ -22,8 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_H
 #define RRR_SOCKET_H
 
-#include "../../../config.h"
-
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
 #include <sys/socket.h>
@@ -98,6 +96,15 @@ int rrr_socket_open (
 		int mode,
 		const char *creator,
 		int register_for_unlink
+);
+int rrr_socket_open_and_read_file_head (
+		char **result,
+		ssize_t *result_bytes,
+		ssize_t *file_size,
+		const char *filename,
+		int options,
+		int mode,
+		ssize_t bytes
 );
 int rrr_socket_open_and_read_file (
 		char **result,

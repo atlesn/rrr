@@ -28,10 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "stats_engine.h"
 #include "stats_message.h"
-#include "../../../config.h"
 #include "../rrr_config.h"
 #include "../read.h"
 #include "../random.h"
@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
+#define RRR_STATS_ENGINE_SEND_CHUNK_LIMIT 10000
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
@@ -79,15 +80,15 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 	__rrr_stats_engine_journal_unlock(engine);
 }
 
-#define JOURNAL_LOCK(engine) 												\
-	__rrr_stats_engine_journal_lock(engine);								\
-	pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)		\
+#define JOURNAL_LOCK(engine)                                   \
+    __rrr_stats_engine_journal_lock(engine);                   \
+    pthread_cleanup_push(__rrr_stats_engine_journal_unlock_void, engine)
 
-#define JOURNAL_UNLOCK()													\
-	pthread_cleanup_pop(1)
+#define JOURNAL_UNLOCK()                                       \
+    pthread_cleanup_pop(1)
 
 static void __rrr_stats_engine_log_listener (
-		uint16_t *write_amount,
+		uint8_t *write_amount,
 		unsigned short loglevel_translated,
 		unsigned short loglevel_orig,
 		const char *prefix,
@@ -194,10 +195,14 @@ int __rrr_stats_engine_multicast_send_intermediate (
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
+
+	int send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count_dummy,
 			stats->client_collection,
 			data,
-			size
+			size,
+			RRR_STATS_ENGINE_SEND_CHUNK_LIMIT
 	);
 	return 0;
 }
@@ -209,7 +214,7 @@ static int __rrr_stats_client_new (
 ) {
 	(void)(fd);
 
-	struct rrr_stats_client *client = malloc(sizeof(*client));
+	struct rrr_stats_client *client = rrr_allocate(sizeof(*client));
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
 		return 1;
@@ -227,7 +232,7 @@ static int __rrr_stats_client_new (
 static void __rrr_stats_client_destroy (
 		struct rrr_stats_client *client
 ) {
-	free(client);
+	rrr_free(client);
 }
 
 static int __rrr_stats_client_new_void (void **target, int fd, void *private_data) {
@@ -242,7 +247,7 @@ static int __rrr_stats_named_message_list_destroy (
 		struct rrr_stats_named_message_list *list
 ) {
 	RRR_LL_DESTROY(list, struct rrr_msg_stats, rrr_msg_stats_destroy(node));
-	free(list);
+	rrr_free(list);
 	return 0;
 }
 
@@ -372,6 +377,11 @@ static void __rrr_stats_engine_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	if (stats->exit_now_ret != 0) {
+		RRR_MSG_0("Error %i in statistics engine, exiting\n", stats->exit_now_ret);
+		rrr_event_dispatch_break(stats->queue);
+		return;
+	}
 	if ( __rrr_stats_engine_send_messages(stats)) {
 		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
 		rrr_event_dispatch_break(stats->queue);
@@ -390,6 +400,21 @@ static int __rrr_stats_engine_read_callback (
 	// Only keepalive messages are received, no useful content
 
 	return 0;
+}
+
+static int __rrr_stats_engine_event_pass_retry_callback (
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+ 	(void)(arg);
+
+	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
+
+	// Checked in periodic functions
+	stats->exit_now_ret = RRR_EVENT_ERR;
+
+	return RRR_EVENT_ERR;
 }
 
 // To provide memory fence, this must be called prior to any thread starting or forking
@@ -471,7 +496,14 @@ int rrr_stats_engine_init (
 
 	EVENT_ADD(stats->event_periodic);
 
-	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats, queue);
+	rrr_log_hook_register (
+			&stats->log_hook_handle,
+			__rrr_stats_engine_log_listener,
+			stats,
+			queue,
+			__rrr_stats_engine_event_pass_retry_callback,
+			stats
+	);
 
 	rrr_event_function_set_with_arg (
 			queue,
@@ -632,7 +664,7 @@ static int __rrr_stats_engine_handle_register_nolock (
 ) {
 	int ret = 0;
 
-	struct rrr_stats_named_message_list *entry = malloc(sizeof(*entry));
+	struct rrr_stats_named_message_list *entry = rrr_allocate(sizeof(*entry));
 	if (entry == NULL) {
 		RRR_MSG_0("Could not allocate memory in _rrr_stats_engine_register_handle_nolock\n");
 		ret = 1;

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "net_transport_plain.h"
 
@@ -46,7 +47,7 @@ static void __rrr_net_transport_plain_data_destroy (struct rrr_net_transport_pla
 static int __rrr_net_transport_plain_data_new (struct rrr_net_transport_plain_data **result) {
 	*result = NULL;
 
-	struct rrr_net_transport_plain_data *data = malloc(sizeof(*data));
+	struct rrr_net_transport_plain_data *data = rrr_allocate(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_net_transport_plain_data_new\n");
 		return 1;
@@ -69,7 +70,7 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
-	free(plain);
+	rrr_free(plain);
 }
 
 struct rrr_net_transport_plain_allocate_and_add_callback_data {
@@ -119,7 +120,7 @@ static int __rrr_net_transport_plain_connect (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -255,7 +256,7 @@ static int __rrr_net_transport_plain_read (
 }
 
 static int __rrr_net_transport_plain_send (
-	uint64_t *written_bytes,
+	ssize_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
@@ -265,7 +266,6 @@ static int __rrr_net_transport_plain_send (
 	*written_bytes = 0;
 
 	ssize_t written_bytes_tmp = 0;
-
 	ret = rrr_socket_send_nonblock_check_retry(&written_bytes_tmp, handle->submodule_fd, data, size);
 
 	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
@@ -292,7 +292,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			&ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
@@ -341,7 +341,7 @@ int __rrr_net_transport_plain_accept (
 			&accept_data->ip_data
 	};
 
-	int new_handle = 0;
+	rrr_net_transport_handle new_handle = 0;
 	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
@@ -430,7 +430,7 @@ int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {
 
 	int ret = 0;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_net_transport_plain_new\n");
 		ret = 1;
 		goto out;

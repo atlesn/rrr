@@ -41,7 +41,8 @@ int rrr_http_part_parse (
 int rrr_http_part_parse_request_data_set (
 		struct rrr_http_part *part,
 		size_t data_length,
-		enum rrr_http_application_type protocol_version,
+		enum rrr_http_application_type application_type,
+		enum rrr_http_version version,
 		const struct rrr_nullsafe_str *request_method,
 		const struct rrr_nullsafe_str *uri
 );

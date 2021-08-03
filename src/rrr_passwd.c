@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 
 #include "lib/log.h"
+#include "lib/allocator.h"
 
 #include "main.h"
 #include "../build_timestamp.h"
@@ -131,7 +132,7 @@ static int __rrr_passwd_parse_config (struct rrr_passwd_data *data, struct cmd_d
 
 	const char *file = cmd_get_value(cmd, "file", 0);
 	if (file != NULL && *file != '\0') {
-		data->filename = strdup(file);
+		data->filename = rrr_strdup(file);
 		if (data->filename == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_passwd_parse_config\n");
 			ret = 1;
@@ -141,7 +142,7 @@ static int __rrr_passwd_parse_config (struct rrr_passwd_data *data, struct cmd_d
 
 	const char *username = cmd_get_value(cmd, "username", 0);
 	if (username != NULL && *username != '\0') {
-		data->username = strdup(username);
+		data->username = rrr_strdup(username);
 		if (data->username == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_passwd_parse_config\n");
 			ret = 1;
@@ -152,7 +153,7 @@ static int __rrr_passwd_parse_config (struct rrr_passwd_data *data, struct cmd_d
 	// Empty password allowed
 	const char *password = cmd_get_value(cmd, "password", 0);
 	if (password != NULL) {
-		data->password = strdup(password);
+		data->password = rrr_strdup(password);
 		if (data->password == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_passwd_parse_config\n");
 			ret = 1;
@@ -439,8 +440,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -598,6 +604,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

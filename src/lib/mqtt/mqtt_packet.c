@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_assemble.h"
 #include "mqtt_parse.h"
@@ -65,7 +66,7 @@ static int __rrr_mqtt_p_standarized_usercount_init (
 static void __rrr_mqtt_p_payload_destroy (void *arg) {
 	struct rrr_mqtt_p_payload *payload = arg;
 	RRR_FREE_IF_NOT_NULL(payload->packet_data);
-	free(payload);
+	rrr_free(payload);
 }
 
 int rrr_mqtt_p_payload_set_data (
@@ -77,7 +78,7 @@ int rrr_mqtt_p_payload_set_data (
 
 	RRR_FREE_IF_NOT_NULL(target->packet_data);
 
-	target->packet_data = malloc(size);
+	target->packet_data = rrr_allocate(size);
 	if (target->packet_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_p_payload_set_data\n");
 		ret = 1;
@@ -99,7 +100,7 @@ int rrr_mqtt_p_payload_new (
 
 	*target = NULL;
 
-	struct rrr_mqtt_p_payload *result = malloc(sizeof(*result));
+	struct rrr_mqtt_p_payload *result = rrr_allocate(sizeof(*result));
 
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_p_payload_new\n");
@@ -122,7 +123,7 @@ int rrr_mqtt_p_payload_new (
 
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -178,7 +179,7 @@ static void __rrr_mqtt_p_destroy (void *arg) {
  * be written which again calls this default allocator to initialize the header before
  * initializing other special data. */
 static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p *ret = malloc(type_properties->packet_size);
+	struct rrr_mqtt_p *ret = rrr_allocate(type_properties->packet_size);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_p_allocate_raw\n");
 		goto out;
@@ -204,7 +205,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 
 	goto out;
 	out_free:
-		free(ret);
+		rrr_free(ret);
 		ret = NULL;
 	out:
 		return ret;
@@ -248,13 +249,13 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	RRR_FREE_IF_NOT_NULL(connect->will_topic);
 	RRR_FREE_IF_NOT_NULL(connect->will_message);
 
-	free(connect);
+	rrr_free(connect);
 }
 
 static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
 	rrr_mqtt_property_collection_clear(&connack->properties);
-	free(connack);
+	rrr_free(connack);
 }
 
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
@@ -268,13 +269,13 @@ static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubrec);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubrel);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubcomp);
-	free(publish);
+	rrr_free(publish);
 }
 
 static void __rrr_mqtt_p_free_def_puback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_def_puback *puback_default = (struct rrr_mqtt_p_def_puback *) packet;
 	rrr_mqtt_property_collection_clear(&puback_default->properties);
-	free(packet);
+	rrr_free(packet);
 }
 
 static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
@@ -285,14 +286,14 @@ static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	}
 	RRR_FREE_IF_NOT_NULL(subscribe->data_tmp);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(subscribe->suback);
-	free(packet);
+	rrr_free(packet);
 }
 
 static void __rrr_mqtt_p_free_suback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
 	rrr_mqtt_property_collection_clear(&suback->properties);
 	rrr_mqtt_subscription_collection_destroy(suback->subscriptions_);
-	free(packet);
+	rrr_free(packet);
 }
 
 static void __rrr_mqtt_p_free_unsubscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
@@ -304,21 +305,21 @@ static void __rrr_mqtt_p_free_unsuback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_pingreq (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	free(packet);
+	rrr_free(packet);
 }
 
 static void __rrr_mqtt_p_free_pingresp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	free(packet);
+	rrr_free(packet);
 }
 
 static void __rrr_mqtt_p_free_disconnect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
 	rrr_mqtt_property_collection_clear(&disconnect->properties);
-	free(disconnect);
+	rrr_free(disconnect);
 }
 
 static void __rrr_mqtt_p_free_auth (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	free(packet);
+	rrr_free(packet);
 }
 
 const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
@@ -426,7 +427,7 @@ int rrr_mqtt_p_new_publish (
 		}
 	}
 
-	if ((publish->topic = strdup(topic)) == NULL) {
+	if ((publish->topic = rrr_strdup(topic)) == NULL) {
 		RRR_MSG_0("Could not allocate topic in rrr_mqtt_p_new_publish\n");
 		ret = 1;
 		goto out_free;
@@ -466,7 +467,7 @@ static struct rrr_mqtt_p_publish *__rrr_mqtt_p_clone_publish_raw (
 	}
 
 	if (publish->topic != NULL) {
-		if ((result->topic = strdup(publish->topic)) == NULL) {
+		if ((result->topic = rrr_strdup(publish->topic)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
 			goto out_destroy_properties;
 		}

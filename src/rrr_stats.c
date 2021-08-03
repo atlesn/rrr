@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "../build_timestamp.h"
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
 #include "lib/rrr_strerror.h"
@@ -177,7 +178,7 @@ static int __rrr_stats_socket_prefix_register (
 ) {
 	int ret = 0;
 
-	struct rrr_map_item *node = malloc(sizeof(*node));
+	struct rrr_map_item *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
@@ -185,7 +186,7 @@ static int __rrr_stats_socket_prefix_register (
 	}
 	memset(node, '\0', sizeof(*node));
 
-	node->tag = strdup(prefix);
+	node->tag = rrr_strdup(prefix);
 	if (node->tag == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
@@ -256,7 +257,7 @@ static int __rrr_stats_attempt_connect_exact (
 	RRR_DBG_1("Connected to socket %s\n", path);
 
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
-	if ((data->socket_path_active = strdup(path)) == NULL) {
+	if ((data->socket_path_active = rrr_strdup(path)) == NULL) {
 		RRR_MSG_0("Could not save socket path name in __rrr_stats_attempt_connect_exact\n");
 		ret = 1;
 		goto out_close;
@@ -375,8 +376,8 @@ static int __rrr_stats_attempt_connect_prefix (
 		}
 	}
 	else {
-		prefix_copy_a = strdup(prefix);
-		prefix_copy_b = strdup(prefix);
+		prefix_copy_a = rrr_strdup(prefix);
+		prefix_copy_b = rrr_strdup(prefix);
 
 		if (prefix_copy_a == NULL || prefix_copy_b == NULL) {
 			RRR_MSG_0("Could not duplicate path in __rrr_stats_attempt_connect_prefix\n");
@@ -464,7 +465,14 @@ static int __rrr_stats_send_message (
 			message->path
 	);
 
-	rrr_socket_client_collection_send_push_const_multicast(data->connections, &message_packed, total_size); 
+	int send_chunk_count_dummy = 0;
+	rrr_socket_client_collection_send_push_const_multicast (
+			&send_chunk_count_dummy,
+			data->connections,
+			&message_packed,
+			total_size,
+			10 // Send chunk count limit
+	); 
 
 	return 0;
 }
@@ -593,7 +601,7 @@ static int __rrr_stats_events_setup (struct rrr_stats_data *data) {
 			&data->events,
 			__rrr_stats_event_keepalive,
 			data,
-			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000 * 1000
+			(RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2) * 1000 * 1000
 	)) != 0) {
 		goto out;
 	}
@@ -626,6 +634,8 @@ static int __rrr_stats_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		return 1;
 	}
 
+	rrr_allocator_maintenance_nostats();
+
 	return 0;
 }
 
@@ -637,8 +647,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -729,6 +744,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 		rrr_socket_close_all();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

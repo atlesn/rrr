@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "allocator.h"
 #include "event/event.h"
 #include "event/event_functions.h"
 #include "util/gnu.h"
@@ -121,7 +122,7 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 
 struct rrr_log_hook {
 	void (*log)(
-			uint16_t *write_amount,
+			uint8_t *write_amount,
 			unsigned short loglevel_translated,
 			unsigned short loglevel_orig,
 			const char *prefix,
@@ -130,6 +131,8 @@ struct rrr_log_hook {
 	);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
+	int (*event_pass_retry_callback)(void *arg);
+	void *event_pass_retry_callback_arg;
 	int handle;
 };
 
@@ -140,7 +143,7 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_amount,
+				uint8_t *write_amount,
 				unsigned short loglevel_translated,
 				unsigned short loglevel_orig,
 				const char *prefix,
@@ -148,7 +151,9 @@ void rrr_log_hook_register (
 				void *private_arg
 		),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue
+		struct rrr_event_queue *notify_queue,
+		int (*event_pass_retry_callback)(void *arg),
+		void *event_pass_retry_callback_arg
 ) {
 	*handle = 0;
 
@@ -163,6 +168,8 @@ void rrr_log_hook_register (
 		 log,
 		 private_arg,
 		 notify_queue,
+		 event_pass_retry_callback,
+		 event_pass_retry_callback_arg,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -220,7 +227,7 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
-		uint16_t write_amount = 0;
+		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				&write_amount,
@@ -232,7 +239,13 @@ void rrr_log_hooks_call_raw (
 		);
 
 		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, write_amount);
+			rrr_event_pass (
+					hook->notify_queue,
+					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
+					write_amount,
+					hook->event_pass_retry_callback,
+					hook->event_pass_retry_callback_arg
+			);
 		}
 	}
 
@@ -512,11 +525,13 @@ void rrr_log_fprintf (
 
 	unsigned int loglevel_translated = 0;
 
-	if (file == stderr) {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
-	}
-	else {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+	if (rrr_config_global.rfc5424_loglevel_output) {
+		if (file == stderr) {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
+		}
+		else {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+		}
 	}
 
 #ifndef RRR_LOG_DISABLE_PRINT

@@ -43,6 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_READ_USE_POLL            (1<<8)
 #define RRR_SOCKET_READ_FIRST_EOF_OK        (1<<9)
 
-#define RRR_SOCKET_CLIENT_TIMEOUT_S 30
+#define RRR_SOCKET_CLIENT_HARD_TIMEOUT_S 30
 
 #endif /* RRR_SOCKET_CONSTANTS_H */

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "array.h"
+#include "allocator.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
@@ -420,15 +421,23 @@ void rrr_array_clear_void (void *collection) {
 	rrr_array_clear(collection);
 }
 
-void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_array *collection, const char *tag) {
+	*cleared_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
 		if (node->tag == NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
 		if (strcmp(node->tag, tag) == 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
+			(*cleared_count)++;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
+}
+
+void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+	unsigned int cleared_count_dummy = 0;
+	rrr_array_clear_by_tag_checked(&cleared_count_dummy, collection, tag);
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (
@@ -751,7 +760,7 @@ int rrr_array_selected_tags_export (
 	*target = NULL;
 	*target_size = 0;
 
-	char *result = malloc(total_data_length);
+	char *result = rrr_allocate(total_data_length);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
 		ret = 1;
@@ -831,7 +840,7 @@ int rrr_array_new_message_from_collection (
 	message = NULL;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 

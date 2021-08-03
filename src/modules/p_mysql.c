@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -32,6 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/log.h"
+#include "../lib/event/event.h"
+#include "../lib/event/event_collection.h"
+#include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -53,21 +56,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506
 
+#define RRR_MYSQL_INPUT_QUEUE_MAX 75000
+
 //#define RRR_MYSQL_SQL_MAX 4096
 //#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
-#define RRR_PY_PASTE(x,y) x ## _ ## y
+#define RRR_MYSQL_PASTE(x,y) x ## _ ## y
 
 // TODO : Fix URI support
 
 struct mysql_data {
+	struct rrr_instance_runtime_data *thread_data;
+
 	struct rrr_msg_holder_collection input_buffer;
+
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
-	ssize_t bind_max;
+	size_t bind_max_current;
 	int mysql_initialized;
 	int mysql_connected;
+
+	struct rrr_event_collection events;
+	rrr_event_handle event_process_entries;
 
 	/* These must be freed at thread end if not NULL */
 	char *mysql_server;
@@ -92,41 +103,18 @@ struct mysql_data {
 	int generate_tag_messages;
 };
 
-static void bind_cleanup (struct mysql_data *data) {
+static void mysql_bind_cleanup (struct mysql_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->bind);
 	RRR_FREE_IF_NOT_NULL(data->bind_string_lengths);
-	data->bind_max = 0;
+	data->bind_max_current = 0;
 }
 
-static int allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t elements) {
-	if (data->bind != NULL && data->bind_max >= elements) {
-		goto out_clear;
-	}
-
-	bind_cleanup(data);
-
-	if ((data->bind = malloc(sizeof(*(data->bind)) * elements)) == NULL) {
-		RRR_MSG_0("Could not allocate mysql bind structure in bind_allocate_if_needed\n");
-		return 1;
-	}
-
-	if ((data->bind_string_lengths = malloc(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
-		RRR_MSG_0("Could not allocate mysql bind string lengths in bind_allocate_if_needed\n");
-		return 1;
-	}
-
-	data->bind_max = elements;
-
-	out_clear:
-	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max);
-	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max);
-	return 0;
-}
-
-void data_cleanup(void *arg) {
+static void data_cleanup(void *arg) {
 	struct mysql_data *data = arg;
 
-	bind_cleanup(data);
+	rrr_event_collection_clear(&data->events);
+
+	mysql_bind_cleanup(data);
 
 	rrr_map_clear(&data->columns);
 	rrr_map_clear(&data->special_columns);
@@ -142,24 +130,53 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_table);
 }
 
-int data_init(struct mysql_data *data) {
+static int data_init (
+		struct mysql_data *data,
+		struct rrr_instance_runtime_data *thread_data
+) {
 	int ret = 0;
+
 	memset (data, '\0', sizeof(*data));
+	data->thread_data = thread_data;
+	rrr_event_collection_init(&data->events, INSTANCE_D_EVENTS(thread_data));
+
 	if (ret != 0) {
 		data_cleanup(data);
 	}
 	return ret;
 }
 
-struct process_entries_data {
-	struct mysql_data *data;
-	ssize_t column_count;
-	MYSQL_STMT *stmt;
-};
+static int mysql_allocate_and_clear_bind_as_needed (
+		struct mysql_data *data,
+		size_t elements
+) {
+	if (data->bind != NULL && data->bind_max_current >= elements) {
+		goto out_clear;
+	}
 
-struct column_configurator {
-	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_msg_holder *entry);
+	mysql_bind_cleanup(data);
+
+	if ((data->bind = rrr_allocate(sizeof(*(data->bind)) * elements)) == NULL) {
+		RRR_MSG_0("Could not allocate mysql bind structure in bind_allocate_if_needed\n");
+		return 1;
+	}
+
+	if ((data->bind_string_lengths = rrr_allocate(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
+		RRR_MSG_0("Could not allocate mysql bind string lengths in bind_allocate_if_needed\n");
+		return 1;
+	}
+
+	data->bind_max_current = elements;
+
+	out_clear:
+	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max_current);
+	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max_current);
+	return 0;
+}
+
+struct mysql_column_configurator {
+	int (*create_sql)(char **target, size_t *column_count, struct mysql_data *data);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, size_t column_count, const struct rrr_msg_holder *entry);
 };
 
 /* Check order with function pointers */
@@ -178,18 +195,24 @@ struct column_configurator {
 	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
 
 #define COLUMN_PLAN_MATCH(str,name) \
-	strcmp(str,RRR_PY_PASTE(COLUMN_PLAN_NAME,name)) == 0
+	strcmp(str,RRR_MYSQL_PASTE(COLUMN_PLAN_NAME,name)) == 0
 #define COLUMN_PLAN_INDEX(name) \
-	RRR_PY_PASTE(COLUMN_PLAN,name)
+	RRR_MYSQL_PASTE(COLUMN_PLAN,name)
 
-int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
+static int mysql_columns_check_blob_write (
+		const struct mysql_data *data,
+		const char *col_1
+) {
 	if (rrr_map_get_value(&data->blob_write_columns, col_1) != NULL) {
 		return 1;
 	}
 	return 0;
 }
 
-int mysql_bind_and_execute (struct mysql_data *data, MYSQL_STMT *stmt) {
+static int mysql_bind_and_execute (
+		struct mysql_data *data,
+		MYSQL_STMT *stmt
+) {
 	MYSQL_BIND *bind = data->bind;
 
 	if (mysql_stmt_bind_param(stmt, bind) != 0) {
@@ -218,7 +241,11 @@ static const char *append_error_string = "Error while appending to mysql query s
 #define APPEND_UNCHECKED(str) \
 	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
 
-int colplan_array_create_sql(char **target, int *column_count_result, struct mysql_data *data) {
+static int mysql_colplan_array_create_sql (
+		char **target,
+		size_t *column_count_result,
+		struct mysql_data *data
+) {
 	struct rrr_string_builder string_builder = {0};
 
 	*target = NULL;
@@ -239,7 +266,7 @@ int colplan_array_create_sql(char **target, int *column_count_result, struct mys
 		column_source = &data->columns;
 	}
 
-	int columns_count = 0;
+	size_t columns_count = 0;
 
 	RRR_MAP_ITERATE_BEGIN(column_source);
 		const char *column_name = (node_value != NULL && *node_value != '\0' ? node_value : node_tag);
@@ -268,7 +295,7 @@ int colplan_array_create_sql(char **target, int *column_count_result, struct mys
 
 	RESERVE_AND_CHECK(10 + 1 + columns_count * 2);
 	APPEND_UNCHECKED(") VALUES (");
-	for (int i = 0; i < columns_count; i++) {
+	for (size_t i = 0; i < columns_count; i++) {
 		if (i == 0) {
 			APPEND_UNCHECKED("?");
 		}
@@ -281,41 +308,33 @@ int colplan_array_create_sql(char **target, int *column_count_result, struct mys
 	*target = rrr_string_builder_buffer_takeover(&string_builder);
 	*column_count_result = columns_count;
 
-//	printf ("%s", *target);
-
 	out:
 	rrr_string_builder_clear(&string_builder);
 	return ret;
 }
 
-void free_collection(void *arg) {
-	rrr_array_clear(arg);
-}
-
-static int bind_value (
+static int mysql_bind_value (
+		struct mysql_data *data,
 		MYSQL_BIND *bind,
-		int bind_pos,
+		size_t bind_pos,
 		struct rrr_type_value *definition,
-		const char *column_name,
-		struct mysql_data *data
+		const char *column_name
 ) {
 	if (	// Arrays must be inserted as blobs. They might be shorter than the
-				// maximum length, the input definition decides.
-				definition->element_count > 1 ||
-				RRR_TYPE_IS_BLOB(definition->definition->type) ||
-				mysql_columns_check_blob_write(data, column_name)
+		// maximum length, the input definition decides.
+		definition->element_count > 1 ||
+		RRR_TYPE_IS_BLOB(definition->definition->type) ||
+		mysql_columns_check_blob_write(data, column_name)
 	) {
 		data->bind_string_lengths[bind_pos] = definition->total_stored_length;
 		bind[bind_pos].buffer = definition->data;
 		bind[bind_pos].length = &data->bind_string_lengths[bind_pos];
 		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
-//		printf ("bind position %i string length %lu\n", bind_pos, data->bind_string_lengths[bind_pos]);
 	}
 	else if (RRR_TYPE_IS_64(definition->definition->type)) {
 		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 		bind[bind_pos].buffer = definition->data;
 		bind[bind_pos].is_unsigned = RRR_TYPE_FLAG_IS_UNSIGNED(definition->flags);
-//		printf ("bind position %i integer %" PRIi64 "\n", bind_pos, *((int64_t*)definition->data));
 	}
 	else {
 		RRR_MSG_0("Unknown type %ul when binding with mysql\n", definition->definition->type);
@@ -324,16 +343,16 @@ static int bind_value (
 	return 0;
 }
 
-int colplan_array_bind_execute (
-		struct mysql_data *mysql_data,
+static int mysql_colplan_array_bind_execute (
+		struct mysql_data *data,
 		MYSQL_STMT *stmt,
-		int column_count_from_prepare,
+		size_t column_count_from_prepare,
 		const struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
 
 	struct rrr_array collection = {0};
-	pthread_cleanup_push(free_collection, &collection);
+	pthread_cleanup_push(rrr_array_clear_void, &collection);
 
 	uint16_t array_version = 0;
 
@@ -348,27 +367,28 @@ int colplan_array_bind_execute (
 				collection.version, 7);
 	}
 
-	int column_count =	RRR_MAP_COUNT(&mysql_data->columns) +
-						RRR_MAP_COUNT(&mysql_data->column_tags) +
-						RRR_MAP_COUNT(&mysql_data->special_columns) +
-						(mysql_data->add_timestamp_col != 0 ? 1 : 0);
+	size_t column_count =
+		(size_t) RRR_MAP_COUNT(&data->columns) +
+		(size_t) RRR_MAP_COUNT(&data->column_tags) +
+		(size_t) RRR_MAP_COUNT(&data->special_columns) +
+		(data->add_timestamp_col != 0 ? 1 : 0);
 
 	if (column_count != column_count_from_prepare) {
-		RRR_BUG("BUG: Column count mismatch, %i vs %i in mysql colplan_array_bind_execute\n",
-				column_count, column_count_from_prepare);
+		RRR_BUG("BUG: Column count mismatch, %llu vs %llu in mysql colplan_array_bind_execute\n",
+				(long long unsigned) column_count, (long long unsigned) column_count_from_prepare);
 	}
 
-	if (allocate_and_clear_bind_as_needed(mysql_data, column_count) != 0) {
+	if (mysql_allocate_and_clear_bind_as_needed(data, column_count) != 0) {
 		ret = 1;
 		goto out_cleanup;
 	}
 
-	MYSQL_BIND *bind = mysql_data->bind;
+	MYSQL_BIND *bind = data->bind;
 
-	int bind_pos = 0;
+	size_t bind_pos = 0;
 
-	if (RRR_MAP_COUNT(&mysql_data->column_tags) > 0) {
-		RRR_MAP_ITERATE_BEGIN(&mysql_data->column_tags);
+	if (RRR_MAP_COUNT(&data->column_tags) > 0) {
+		RRR_MAP_ITERATE_BEGIN(&data->column_tags);
 			struct rrr_type_value *array_value = rrr_array_value_get_by_tag(&collection, node_tag);
 
 			if (array_value == NULL) {
@@ -377,7 +397,7 @@ int colplan_array_bind_execute (
 				goto out_cleanup;
 			}
 
-			if (bind_value(bind, bind_pos, array_value, node_value, mysql_data) != 0) {
+			if (mysql_bind_value(data, bind, bind_pos, array_value, node_value) != 0) {
 				ret = 1;
 				goto out_cleanup;
 			}
@@ -386,12 +406,12 @@ int colplan_array_bind_execute (
 		RRR_MAP_ITERATE_END();
 	}
 	else {
-		RRR_MAP_ITERATOR_CREATE(column_iterator, &mysql_data->columns);
+		RRR_MAP_ITERATOR_CREATE(column_iterator, &data->columns);
 
 		RRR_LL_ITERATE_BEGIN(&collection, struct rrr_type_value);
 			struct rrr_type_value *definition = node;
 
-			if (mysql_data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+			if (data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
 				RRR_LL_ITERATE_NEXT();
 			}
 
@@ -401,12 +421,12 @@ int colplan_array_bind_execute (
 				RRR_LL_ITERATE_BREAK();
 			}
 
-			if (bind_value(
+			if (mysql_bind_value (
+					data,
 					bind,
 					bind_pos,
 					definition,
-					(item->value != NULL && *(item->value) != '\0' ? item->value : item->tag),
-					mysql_data
+					(item->value != NULL && *(item->value) != '\0' ? item->value : item->tag)
 			) != 0) {
 				ret = 1;
 				goto out_cleanup;
@@ -416,22 +436,20 @@ int colplan_array_bind_execute (
 		RRR_LL_ITERATE_END();
 	}
 
-	RRR_MAP_ITERATE_BEGIN(&mysql_data->special_columns);
-		mysql_data->bind_string_lengths[bind_pos] = strlen(node_value);
+	RRR_MAP_ITERATE_BEGIN(&data->special_columns);
+		data->bind_string_lengths[bind_pos] = strlen(node_value);
 		bind[bind_pos].buffer = (char *) node_value;
-		bind[bind_pos].length = &mysql_data->bind_string_lengths[bind_pos];
+		bind[bind_pos].length = &data->bind_string_lengths[bind_pos];
 		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 
 		bind_pos++;
 	RRR_MAP_ITERATE_END();
 
 	unsigned long long int timestamp = rrr_time_get_64();
-	if (mysql_data->add_timestamp_col) {
+	if (data->add_timestamp_col) {
 		bind[bind_pos].buffer = &timestamp;
 		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 		bind[bind_pos].is_unsigned = 1;
-
-//		printf ("bind position %i timestamp %llu\n", bind_pos, timestamp);
 
 		bind_pos++;
 	}
@@ -440,7 +458,7 @@ int colplan_array_bind_execute (
 		RRR_BUG("Bind items did not match column count in colplan_array_bind_execute\n");
 	}
 
-	ret = mysql_bind_and_execute(mysql_data, stmt);
+	ret = mysql_bind_and_execute(data, stmt);
 
 	out_cleanup:
 	if (ret != 0) {
@@ -451,14 +469,7 @@ int colplan_array_bind_execute (
 	return ret;
 }
 
-/* Check index numbers with defines above */
-struct column_configurator column_configurators[] = {
-		{ .create_sql = NULL,							.bind_and_execute = NULL },
-		{ .create_sql = NULL,							.bind_and_execute = NULL }, // Filler, don't remove
-		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
-};
-
-int mysql_disconnect(struct mysql_data *data) {
+static int mysql_disconnect(struct mysql_data *data) {
 	if (data->mysql_connected == 1) {
 		mysql_close(&data->mysql);
 		data->mysql_connected = 0;
@@ -466,7 +477,7 @@ int mysql_disconnect(struct mysql_data *data) {
 	return 0;
 }
 
-int connect_to_mysql(struct mysql_data *data) {
+static int mysql_connect(struct mysql_data *data) {
 	if (data->mysql_connected != 1) {
 		void *ptr = mysql_init(&data->mysql);
 		if (ptr == NULL) {
@@ -497,27 +508,10 @@ int connect_to_mysql(struct mysql_data *data) {
 	return 0;
 }
 
-void stop_mysql(void *arg) {
-	struct mysql_data *data = arg;
-	if (data->mysql_initialized == 1) {
-		mysql_thread_end();
-	}
-	mysql_disconnect(data);
-}
-
-int start_mysql(struct mysql_data *data) {
-	mysql_thread_init();
-	data->mysql_initialized = 1;
-	data->mysql_connected = 0;
-	return 0;
-}
-
-struct mysql_parse_columns_data {
-	struct rrr_linked_list *target;
-};
-
 // Check that blob write columns are also defined in mysql_columns or mysql_column_tags
-int mysql_verify_blob_write_colums (struct mysql_data *data) {
+static int mysql_verify_blob_write_colums (
+		struct mysql_data *data
+) {
 	int ret = 0;
 
 	RRR_MAP_ITERATE_BEGIN(&data->blob_write_columns);
@@ -533,12 +527,252 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 	return ret;
 }
 
-int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config_data *config) {
+/* Check index numbers with defines above */
+struct mysql_column_configurator column_configurators[] = {
+		{ .create_sql = NULL,                             .bind_and_execute = NULL },
+		{ .create_sql = NULL,                             .bind_and_execute = NULL }, // Filler, don't remove
+		{ .create_sql = &mysql_colplan_array_create_sql,  .bind_and_execute = &mysql_colplan_array_bind_execute }
+};
+
+static int mysql_save (
+		struct mysql_data *data,
+		const struct rrr_msg_holder *entry,
+		MYSQL_STMT *stmt,
+		size_t column_count
+) {
+	if (data->mysql_connected != 1) {
+		return 1;
+	}
+
+	const struct rrr_msg_msg *message = entry->message;
+
+	int is_unknown = 0;
+	int colplan_index = COLUMN_PLAN_VOLTAGE;
+	if (MSG_IS_MSG_ARRAY(message)) {
+		if (!IS_COLPLAN_ARRAY(data)) {
+			RRR_MSG_0("Received an array message in mysql but array column plan is not being used\n");
+			is_unknown = 1;
+			goto out;
+		}
+		colplan_index = COLUMN_PLAN_ARRAY;
+	}
+	else {
+		RRR_MSG_0("Unknown message class/type %u/%u received in mysql_save\n", MSG_CLASS(message), MSG_TYPE(message));
+		is_unknown = 1;
+		goto out;
+	}
+
+	out:
+	if (is_unknown) {
+		return 1;
+	}
+
+	return column_configurators[colplan_index].bind_and_execute(data, stmt, column_count, entry);
+}
+
+static void mysql_process_entry (
+		struct mysql_data *data,
+		struct rrr_msg_holder *entry,
+		MYSQL_STMT *stmt,
+		size_t column_count
+) {
+	struct rrr_msg_msg *message = entry->message;
+
+	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
+
+	RRR_DBG_3 ("mysql instance %s: processing message with timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(data->thread_data), message->timestamp);
+
+	int mysql_save_res = mysql_save (data, entry, stmt, column_count);
+
+	if (mysql_save_res != 0) {
+		if (data->drop_unknown_messages) {
+			RRR_MSG_0("mysql instance %s dropping message\n", INSTANCE_D_NAME(data->thread_data));
+			// Will be destroyed below
+		}
+		else {
+			// Put back in buffer
+			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
+			rrr_msg_holder_incref_while_locked(entry);
+			RRR_LL_APPEND(&data->input_buffer, entry);
+		}
+	}
+	else if (data->generate_tag_messages != 0) {
+		// Tag message as saved to sender, only done in test module
+		RRR_DBG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp);
+		MSG_SET_TYPE(message, MSG_TYPE_TAG);
+		MSG_SET_CLASS(message, MSG_CLASS_ARRAY);
+
+		// The entry is re-used, with 0 data length of message
+		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
+		entry->data_length = MSG_TOTAL_SIZE(message);
+
+		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+				INSTANCE_D_BROKER_ARGS(data->thread_data),
+				entry,
+				INSTANCE_D_CANCEL_CHECK_ARGS(data->thread_data)
+		) != 0) {
+			RRR_MSG_0("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
+					INSTANCE_D_NAME(data->thread_data));
+		}
+	}
+
+	rrr_msg_holder_decref_while_locked_and_unlock(entry);
+}
+
+static void mysql_close_stmt(void *arg) {
+	mysql_stmt_close(arg);
+}
+
+static int mysql_process_entries (
+		struct mysql_data *data,
+		struct rrr_msg_holder_collection *source_buffer
+) {
+	if (mysql_connect(data) != 0) {
+		return 1;
+	}
+
+	int ret = 0;
+
+	size_t column_count = 0;
+	char *query = NULL;
+
+	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
+
+	pthread_cleanup_push(mysql_close_stmt, stmt);
+
+	if (!COLPLAN_OK(data)) {
+		RRR_MSG_0("BUG: Mysql colplan was out of range in process_entries\n");
+		exit (EXIT_FAILURE);
+	}
+
+	if (column_configurators[data->colplan].create_sql(&query, &column_count, data) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+		RRR_MSG_0 ("mysql: Failed to prepare statement: Error: %s\n",
+				mysql_error(&data->mysql));
+		mysql_disconnect(data);
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		if (RRR_LL_COUNT(source_buffer) > 0) {
+			RRR_MSG_3("mysql SQL: %s\n", query);
+		}
+	}
+
+	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_holder);
+		RRR_LL_VERIFY_NODE(source_buffer);
+		rrr_msg_holder_lock(node);
+		mysql_process_entry(data, node, stmt, column_count);
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(query);
+	pthread_cleanup_pop(1);
+	return ret;
+}
+
+static void mysql_event_process_entries (
+		evutil_socket_t fd,
+		short flags,
+		void *arg
+) {
+	(void)(fd);
+	(void)(flags);
+
+	struct mysql_data *data = arg;
+
+	struct rrr_msg_holder_collection process_buffer_tmp = {0};
+
+	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
+
+	// Entries which are to be retried are written back to the input buffer
+	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
+	mysql_process_entries(data, &process_buffer_tmp);
+
+	pthread_cleanup_pop(1);
+
+	// Failing entries will be retried when this event runs again due to the
+	// timer or when some other entry gets polled and this event gets activated
+	if (RRR_LL_COUNT(&data->input_buffer) == 0) {
+		EVENT_REMOVE(data->event_process_entries);
+	}
+}
+
+static int mysql_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_runtime_data *thread_data = arg;
+	struct mysql_data *mysql_data = thread_data->private_data;
+
+	struct rrr_msg_msg *message = entry->message;
+
+	RRR_DBG_3 ("mysql: Result from buffer: timestamp %" PRIu64 "\n", message->timestamp);
+
+	rrr_msg_holder_incref_while_locked(entry);
+	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
+
+	rrr_msg_holder_unlock(entry);
+
+	return 0;
+}
+
+static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_runtime_data *thread_data = thread->private_data;
+	struct mysql_data *mysql_data = thread_data->private_data;
+
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
+
+	EVENT_ADD(mysql_data->event_process_entries);
+	EVENT_ACTIVATE(mysql_data->event_process_entries);
+
+	return ret;
+}
+		
+static void mysql_pause_check (
+		int *do_pause,
+		int is_paused,
+		void *callback_arg
+) {
+	struct rrr_instance_runtime_data *thread_data = callback_arg;
+	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
+
+	if (is_paused) {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > (RRR_MYSQL_INPUT_QUEUE_MAX * 0.75) ? 1 : 0;
+	}
+	else {
+		*do_pause = RRR_LL_COUNT(&data->input_buffer) > RRR_MYSQL_INPUT_QUEUE_MAX ? 1 : 0;
+	}	
+}
+
+static void mysql_stop(void *arg) {
+	struct mysql_data *data = arg;
+	if (data->mysql_initialized == 1) {
+		mysql_thread_end();
+	}
+	mysql_disconnect(data);
+}
+
+static int mysql_start(struct mysql_data *data) {
+	mysql_thread_init();
+	data->mysql_initialized = 1;
+	data->mysql_connected = 0;
+	return 0;
+}
+
+static int mysql_parse_column_plan (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
 	int ret = 0;
 
 	int yesno = 0;
 
-	char *mysql_colplan = strdup("array");
+	char *mysql_colplan = rrr_strdup("array");
 
 	// BLOB WRITE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
@@ -618,7 +852,10 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	return ret;
 }
 
-int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config_data *config) {
+static int mysql_parse_port (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
 	int ret = 0;
 
 	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
@@ -639,23 +876,18 @@ int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config_data *
 	return ret;
 }
 
-int parse_config(struct mysql_data *data, struct rrr_instance_config_data *config) {
+static int parse_config (
+		struct mysql_data *data,
+		struct rrr_instance_config_data *config
+) {
 	int ret = 0;
 
-	// These values are parsed by sub functions
-
-	// char *mysql_colplan = NULL;
-	// char *mysql_add_ts_col = NULL;
-	// char *mysql_special_cols = NULL;
-	// char *mysql_cols_blob_wr = NULL;
-	// char *mysql_port = NULL;
-
 	// These are free()d on thread exit, not here
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,	config, "mysql_server");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,		config, "mysql_user");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,   config, "mysql_server");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,     config, "mysql_user");
 	rrr_instance_config_get_string_noconvert_silent (&data->mysql_password,	config, "mysql_password");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,		config, "mysql_db");
-	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,	config, "mysql_table");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,       config, "mysql_db");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,    config, "mysql_table");
 
 	if (data->mysql_user == NULL || data->mysql_password == NULL) {
 		RRR_MSG_0 ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
@@ -720,187 +952,23 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config_data *confi
 	return ret;
 }
 
-int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_instance_runtime_data *thread_data = arg;
-	struct mysql_data *mysql_data = thread_data->private_data;
-
-	struct rrr_msg_msg *message = entry->message;
-
-	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
-
-	rrr_msg_holder_incref_while_locked(entry);
-	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
-
-	rrr_msg_holder_unlock(entry);
-
-	return 0;
-}
-
-int mysql_save(const struct rrr_msg_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
-	if (mysql_data->mysql_connected != 1) {
-		return 1;
-	}
-
-	const struct rrr_msg_msg *message = entry->message;
-
-	int is_unknown = 0;
-	int colplan_index = COLUMN_PLAN_VOLTAGE;
-	if (MSG_IS_MSG_ARRAY(message)) {
-		if (!IS_COLPLAN_ARRAY(mysql_data)) {
-			RRR_MSG_0("Received an array message in mysql but array column plan is not being used\n");
-			is_unknown = 1;
-			goto out;
-		}
-		colplan_index = COLUMN_PLAN_ARRAY;
-	}
-	else {
-		RRR_MSG_0("Unknown message class/type %u/%u received in mysql_save\n", MSG_CLASS(message), MSG_TYPE(message));
-		is_unknown = 1;
-		goto out;
-	}
-
-	out:
-	if (is_unknown) {
-		return 1;
-	}
-//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_msg_msg_holder *entry
-	return column_configurators[colplan_index].bind_and_execute(mysql_data, stmt, column_count, entry);
-}
-
-struct process_callback_data {
-	MYSQL_STMT *stmt;
-	int column_count;
-	struct rrr_instance_runtime_data *thread_data;
-};
-
-int process_callback (
-		struct rrr_msg_holder *entry,
-		MYSQL_STMT *stmt,
-		int column_count,
-		struct rrr_instance_runtime_data *thread_data
-) {
-	struct mysql_data *mysql_data = thread_data->private_data;
-	struct rrr_msg_msg *message = entry->message;
-
-	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
-
-	RRR_DBG_3 ("mysql instance %s: processing message with timestamp %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp);
-
-	int mysql_save_res = mysql_save (entry, stmt, column_count, mysql_data);
-
-	if (mysql_save_res != 0) {
-		if (mysql_data->drop_unknown_messages) {
-			RRR_MSG_0("mysql instance %s dropping message\n", INSTANCE_D_NAME(thread_data));
-			// Will be destroyed below
-		}
-		else {
-			// Put back in buffer
-			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
-			rrr_msg_holder_incref_while_locked(entry);
-			RRR_LL_APPEND(&mysql_data->input_buffer, entry);
-		}
-	}
-	else if (mysql_data->generate_tag_messages != 0) {
-		// Tag message as saved to sender, only done in test module
-		RRR_DBG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp);
-		MSG_SET_TYPE(message, MSG_TYPE_TAG);
-		MSG_SET_CLASS(message, MSG_CLASS_ARRAY);
-
-		// The entry is re-used, with 0 data length of message
-		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
-		entry->data_length = MSG_TOTAL_SIZE(message);
-
-		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
-				INSTANCE_D_BROKER_ARGS(thread_data),
-				entry,
-				INSTANCE_D_CANCEL_CHECK_ARGS(thread_data)
-		) != 0) {
-			RRR_MSG_0("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
-					INSTANCE_D_NAME(thread_data));
-		}
-	}
-
-	rrr_msg_holder_decref_while_locked_and_unlock(entry);
-
-	return 0;
-}
-
-void close_mysql_stmt(void *arg) {
-	mysql_stmt_close(arg);
-}
-
-int process_entries (struct rrr_msg_holder_collection *source_buffer, struct rrr_instance_runtime_data *thread_data) {
-	struct mysql_data *data = thread_data->private_data;
-
-	if (connect_to_mysql(data) != 0) {
-		return 1;
-	}
-
-	int ret = 0;
-
-	int column_count = 0;
-	char *query = NULL;
-
-	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
-
-	pthread_cleanup_push(close_mysql_stmt, stmt);
-
-	if (!COLPLAN_OK(data)) {
-		RRR_MSG_0("BUG: Mysql colplan was out of range in process_entries\n");
-		exit (EXIT_FAILURE);
-	}
-
-	if (column_configurators[data->colplan].create_sql(&query, &column_count, data) != 0) {
-		ret = 1;
-		goto out;
-	}
-
-	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
-		RRR_MSG_0 ("mysql: Failed to prepare statement: Error: %s\n",
-				mysql_error(&data->mysql));
-		mysql_disconnect(data);
-		goto out;
-	}
-
-	if (RRR_DEBUGLEVEL_3) {
-		if (RRR_LL_COUNT(source_buffer) > 0) {
-			RRR_MSG_3("mysql SQL: %s\n", query);
-		}
-	}
-
-	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_msg_holder);
-		RRR_LL_VERIFY_NODE(source_buffer);
-		rrr_msg_holder_lock(node);
-		process_callback(node, stmt, column_count, thread_data);
-		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
-
-	out:
-	RRR_FREE_IF_NOT_NULL(query);
-	pthread_cleanup_pop(1);
-	return ret;
-}
-
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_msg_holder_collection process_buffer_tmp = {0};
 
-	if (data_init(data) != 0) {
+	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	pthread_cleanup_push(stop_mysql, data);
+	pthread_cleanup_push(mysql_stop, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_msg_holder_collection_clear_void, &process_buffer_tmp);
 
 	rrr_thread_start_condition_helper_nofork(thread);
 
-	if (start_mysql(data) != 0) {
+	if (mysql_start(data) != 0) {
 		goto out_message;
 	}
 
@@ -912,31 +980,33 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
-	while (rrr_thread_signal_encourage_stop_check(thread) != 1) {
-		rrr_thread_watchdog_time_update(thread);
+	rrr_event_callback_pause_set (
+			INSTANCE_D_EVENTS(thread_data),
+			mysql_pause_check,
+			thread_data
+	);
 
-		uint16_t amount = 100;
-		if (rrr_poll_do_poll_delete (&amount, thread_data, poll_callback_ip, 50) != 0) {
-			RRR_MSG_0("Error while polling in mysql instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
-
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
-		RRR_LL_VERIFY_HEAD(&process_buffer_tmp);
-		RRR_LL_VERIFY_HEAD(&data->input_buffer);
-		process_entries(&process_buffer_tmp, thread_data);
-
-		if (data->mysql_connected != 1) {
-			// Sleep a little if we can't connect to the server
-			rrr_posix_usleep (1000000);
-		}
+	if (rrr_event_collection_push_periodic (
+			&data->event_process_entries,
+			&data->events,
+			mysql_event_process_entries,
+			data,
+			1000 // 1000 ms
+	) != 0) {
+		RRR_MSG_0("Failed to create queue process event in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
 	}
+
+	rrr_event_dispatch (
+			INSTANCE_D_EVENTS(thread_data),
+			1 * 1000 * 1000,
+			rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void,
+			thread
+	);
 
 	out_message:
 	RRR_DBG_1 ("Thread mysql %p exiting\n", thread);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -952,6 +1022,10 @@ static struct rrr_module_operations module_operations = {
 
 static const char *module_name = "mysql";
 
+struct rrr_instance_event_functions event_functions = {
+	mysql_event_broker_data_available
+};
+
 __attribute__((constructor)) void load(void) {
 	rrr_mysql_library_init();
 }
@@ -961,6 +1035,7 @@ void init(struct rrr_instance_module_data *data) {
 	data->module_name = module_name;
 	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
+	data->event_functions = event_functions;
 }
 
 void unload(void) {

@@ -61,6 +61,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS
 
+#define RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS \
+	RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS
+
 #define RRR_HTTP_SESSION_RECEIVE_RAW_CALLBACK_ARGS \
 	RRR_HTTP_APPLICATION_RECEIVE_RAW_CALLBACK_ARGS
 
@@ -110,9 +113,10 @@ int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host,
 		struct rrr_http_transaction *transaction,
-		enum rrr_http_upgrade_mode upgrade_mode
+		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version
 );
-uint64_t rrr_http_session_transport_ctx_active_transaction_count_get (
+uint64_t rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain (
 		struct rrr_net_transport_handle *handle
 );
 void rrr_http_session_transport_ctx_websocket_response_available_notify (
@@ -129,6 +133,8 @@ int rrr_http_session_transport_ctx_tick_client (
 		void *websocket_callback_arg,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS),	
+		void *failure_callback_arg,
 		int (*get_response_callback)(RRR_HTTP_SESSION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_SESSION_WEBSOCKET_FRAME_CALLBACK_ARGS),
