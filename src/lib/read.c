@@ -353,7 +353,9 @@ int rrr_read_message_using_callbacks (
 			}
 
 			ssize_t new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
+
 			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
+
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory (%lli->%lli) in rrr_read_message_using_callbacks\n",
 					(long long int) read_session->rx_buf_size,

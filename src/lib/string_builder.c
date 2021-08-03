@@ -142,6 +142,15 @@ int rrr_string_builder_reserve (
 	return 0;
 }
 
+void rrr_string_builder_truncate (
+		struct rrr_string_builder *string_builder
+) {
+	if (string_builder->buf == NULL) {
+		return;
+	}
+	*(string_builder->buf) = '\0';
+	string_builder->wpos = 0;
+}
 
 int rrr_string_builder_append_from (
 		struct rrr_string_builder *target,

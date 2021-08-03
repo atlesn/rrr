@@ -463,6 +463,8 @@ static int __rrr_msgdb_server_idx (
 
 	RRR_LL_ITERATE_BEGIN(&results_tmp, struct rrr_type_value);
 		RRR_FREE_IF_NOT_NULL(filename_tmp);
+		rrr_string_builder_truncate(&topic_tmp);
+
 		if ((ret = node->definition->to_str(&filename_tmp, node)) != 0) {
 			goto out;
 		}
