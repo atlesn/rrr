@@ -38,6 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 
+#define RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD  2 * 1024 * 1024
+#define RRR_READ_BIGALLOC_STEP                   1 * 1024 * 1024
+
 struct rrr_read_session *rrr_read_session_new (
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
@@ -339,9 +342,17 @@ int rrr_read_message_using_callbacks (
 
 	/* Check for expansion of buffer */
 	if (bytes > 0) {
-		*bytes_read = bytes;
+		*bytes_read = (uint64_t) bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
-			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
+			ssize_t expansion_max = read_session->target_size > RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD && read_step_max_size < RRR_READ_BIGALLOC_STEP
+				? RRR_READ_BIGALLOC_STEP
+				: read_step_max_size;
+
+			if (read_session->rx_buf_size + expansion_max > read_session->target_size) {
+				expansion_max = 0;
+			}
+
+			ssize_t new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
 			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory (%lli->%lli) in rrr_read_message_using_callbacks\n",
