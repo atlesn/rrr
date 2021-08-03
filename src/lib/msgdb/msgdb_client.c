@@ -159,9 +159,11 @@ static int __rrr_msgdb_client_await_msg_callback (
 	return 0;
 }
 
-int rrr_msgdb_client_await_msg (
+static int __rrr_msgdb_client_await_msg (
 		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
@@ -187,7 +189,12 @@ int rrr_msgdb_client_await_msg (
 			result_msg
 	)) != 0) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			if (bytes_read == bytes_read_prev) {
+			if (wait_callback) {
+				if ((ret = wait_callback(wait_callback_arg)) != 0) {
+					goto out;
+				}
+			}
+			else if (bytes_read == bytes_read_prev) {
 				rrr_posix_usleep(50); // 50 us (schedule)
 			}
 			bytes_read_prev = bytes_read;
@@ -203,6 +210,22 @@ int rrr_msgdb_client_await_msg (
 
 	out:
 	return ret;
+}
+
+int rrr_msgdb_client_await_msg (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn
+) {
+	return __rrr_msgdb_client_await_msg(result_msg, conn, NULL, NULL);
+}
+
+int rrr_msgdb_client_await_msg_with_wait_callback (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
+) {
+	return __rrr_msgdb_client_await_msg(result_msg, conn, wait_callback, wait_callback_arg);
 }
 
 static int __rrr_msgdb_client_send_callback (
@@ -288,9 +311,19 @@ static int __rrr_msgdb_client_send_empty (
 	return ret;
 }
 
-int rrr_msgdb_client_cmd_idx (
+static int __rrr_msgdb_client_wait_callback (
+		void *arg
+) {
+	(void)(arg);
+	rrr_posix_usleep(1 * 1000); // 1 ms
+	return 0;
+}
+
+int rrr_msgdb_client_cmd_idx_with_wait_callback (
 		struct rrr_array *target_paths,
-		struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
@@ -300,9 +333,11 @@ int rrr_msgdb_client_cmd_idx (
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_client_await_msg (
+	if ((ret = rrr_msgdb_client_await_msg_with_wait_callback (
 		&msg_tmp,
-		conn
+		conn,
+		wait_callback,
+		wait_callback_arg
 	)) != 0 || msg_tmp == NULL) {
 		goto out;
 	}
@@ -317,12 +352,11 @@ int rrr_msgdb_client_cmd_idx (
 	return ret;
 }
 
-static int __rrr_msgdb_client_wait_callback (
-		void *arg
+int rrr_msgdb_client_cmd_idx (
+		struct rrr_array *target_paths,
+		struct rrr_msgdb_client_conn *conn
 ) {
-	(void)(arg);
-	rrr_posix_usleep(1 * 1000); // 1 ms
-	return 0;
+	return rrr_msgdb_client_cmd_idx_with_wait_callback(target_paths, conn, NULL, NULL);
 }
 
 static int __rrr_msgdb_client_cmd_tidy_with_wait_callback (

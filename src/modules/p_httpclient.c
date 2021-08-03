@@ -569,6 +569,14 @@ static int httpclient_msgdb_poll_callback_get_msg (struct httpclient_data *data,
 	return ret;
 }
 
+static int __httpclient_msgdb_wait_callback (void *callback_arg) {
+	struct httpclient_data *data = callback_arg;
+
+	rrr_posix_usleep(5 * 1000); // 5ms
+
+	return rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(INSTANCE_D_THREAD(data->thread_data));
+}
+
 static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, void *callback_arg) {
 	struct httpclient_data *data = callback_arg;
 
@@ -576,7 +584,7 @@ static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, v
 
 	struct rrr_array paths = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx(&paths, conn)) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx_with_wait_callback (&paths, conn, __httpclient_msgdb_wait_callback, data)) != 0) {
 		goto out;
 	}
 
