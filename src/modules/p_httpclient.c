@@ -576,7 +576,7 @@ static int httpclient_msgdb_poll_callback (struct rrr_msgdb_client_conn *conn, v
 
 	struct rrr_array paths = {0};
 
-	if ((ret = rrr_msgdb_client_cmd_idx(&paths, conn, "/")) != 0) {
+	if ((ret = rrr_msgdb_client_cmd_idx(&paths, conn)) != 0) {
 		goto out;
 	}
 

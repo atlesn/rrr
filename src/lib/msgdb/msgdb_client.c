@@ -290,14 +290,13 @@ static int __rrr_msgdb_client_send_empty (
 
 int rrr_msgdb_client_cmd_idx (
 		struct rrr_array *target_paths,
-		struct rrr_msgdb_client_conn *conn,
-		const char *topic
+		struct rrr_msgdb_client_conn *conn
 ) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, "")) != 0) {
 		goto out;
 	}
 
