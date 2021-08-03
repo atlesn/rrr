@@ -493,7 +493,7 @@ static int __rrr_mmap_init (
 		return ret;
 }
 
-void __rrr_mmap_cleanup (
+static void __rrr_mmap_cleanup (
 		struct rrr_mmap *mmap
 ) {
 	if (mmap->shm_heap) {
@@ -503,6 +503,15 @@ void __rrr_mmap_cleanup (
 		munmap(mmap->mmap_heap, mmap->heap_size);
 	}
 	memset(mmap, '\0', sizeof(*mmap));
+}
+
+static void __rrr_mmap_collection_mmap_cleanup (
+		struct rrr_mmap_collection *collection,
+		struct rrr_mmap *mmap
+) {
+	__rrr_mmap_cleanup (mmap);
+	collection->mmap_count--;
+	collection->version++;
 }
 
 #define RRR_MMAP_ITERATE_BEGIN() \
@@ -634,9 +643,7 @@ void rrr_mmap_collections_maintenance (
 				rrr_mmap_dump_indexes(mmap, collection->shm_slave);
 #endif
 				if (++mmap->maintenance_cleanup_strikes >= RRR_MMAP_COLLECTION_MAINTENANCE_CLEANUP_STRIKES) {
-					 __rrr_mmap_cleanup (mmap);
-					collection->mmap_count--;
-					collection->version++;
+					__rrr_mmap_collection_mmap_cleanup(collection, mmap);
 					continue;
 				}
 				stats->mmap_total_empty_count++;
@@ -685,8 +692,7 @@ void __rrr_mmap_collection_cleanup (
 	LOCK(collection);
 	RRR_MMAP_ITERATE_BEGIN();
 		if (mmap->heap_size != 0) {
-			__rrr_mmap_cleanup (mmap);
-			collection->mmap_count--;
+			__rrr_mmap_collection_mmap_cleanup(collection, mmap);
 			count++;
 		}
 	RRR_MMAP_ITERATE_END();
@@ -865,7 +871,7 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_new_mmap (
 		uint64_t allocation_count_dummy;
 		// Force empty mmaps to be re-allocated in case we need them to be larger
 		if (mmap->heap_size > 0 && __rrr_mmap_is_empty(&allocation_count_dummy, mmap, collection->shm_slave)) {
-			__rrr_mmap_cleanup (mmap);
+			__rrr_mmap_collection_mmap_cleanup(collection, mmap);
 		}
 
 		if (mmap->heap_size == 0) {
