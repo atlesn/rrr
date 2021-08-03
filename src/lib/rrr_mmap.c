@@ -323,6 +323,10 @@ static void *__rrr_mmap_allocate_with_handles (
 		goto out_unlock;
 	}
 
+	if (req_size > mmap->heap_size - sizeof(struct rrr_mmap_heap_block_index)) {
+		goto out_unlock;
+	}
+
 	int retry_count = 0;
 	rrr_mmap_handle block_pos = mmap->prev_allocation_index_pos;
 
@@ -920,6 +924,12 @@ static void *__rrr_mmap_collection_allocate_with_handles_try_new_mmap (
 #ifdef RRR_MMAP_ALLOCATION_DEBUG
 		printf("Init try %p heap\n", mmap);
 #endif
+		uint64_t allocation_count_dummy;
+		// Force empty mmaps to be re-allocated in case we need them to be larger
+		if (mmap->heap_size > 0 && __rrr_mmap_is_empty(&allocation_count_dummy, mmap, collection->shm_slave)) {
+			__rrr_mmap_cleanup (mmap);
+		}
+
 		if (mmap->heap_size == 0) {
 			if (__rrr_mmap_init (mmap, collection, bytes > min_mmap_size ? bytes : min_mmap_size) != 0) {
 				break;
