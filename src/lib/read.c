@@ -323,7 +323,7 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = rrr_allocate_group(bytes > read_step_max_size ? bytes : read_step_max_size, RRR_ALLOCATOR_GROUP_MSG);
+			read_session->rx_buf_ptr = rrr_allocate_group((size_t) (bytes > read_step_max_size ? bytes : read_step_max_size), RRR_ALLOCATOR_GROUP_MSG);
 			if (read_session->rx_buf_ptr == NULL) {
 				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
@@ -353,7 +353,7 @@ int rrr_read_message_using_callbacks (
 			}
 
 			ssize_t new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
-			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, read_session->rx_buf_size, new_size, RRR_ALLOCATOR_GROUP_MSG);
+			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
 			if (new_buf == NULL) {
 				RRR_MSG_0("Could not re-allocate memory (%lli->%lli) in rrr_read_message_using_callbacks\n",
 					(long long int) read_session->rx_buf_size,
