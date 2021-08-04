@@ -326,7 +326,7 @@ static int httpclient_create_array_message (
 			)
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			RRR_MSG_0("Response was to big in httpclient instance %s, cannot create array message. Request endpoint was '%s'.\n",
+			RRR_MSG_0("Response was too big in httpclient instance %s, cannot create array message. Request endpoint was '%s'.\n",
 					INSTANCE_D_NAME(httpclient_data->thread_data),
 					transaction->endpoint_str
 			);

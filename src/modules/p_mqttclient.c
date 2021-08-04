@@ -175,7 +175,7 @@ static void mqttclient_data_cleanup(void *arg) {
 
 static int mqttclient_message_data_to_payload (
 		char **result,
-		ssize_t *result_size,
+		rrr_u32 *result_size,
 		const struct rrr_msg_msg *reading
 ) {
 	*result = NULL;
@@ -208,7 +208,7 @@ static int mqttclient_publish (
 	struct rrr_mqtt_p_publish *publish = NULL;
 
 	char *payload = NULL;
-	ssize_t payload_size = 0;
+	rrr_u32 payload_size = 0;
 
 	struct rrr_array array_tmp = {0};
 	struct rrr_msg_msg *msg_copy = NULL;
@@ -296,7 +296,7 @@ static int mqttclient_publish (
 			goto out_free;
 		}
 
-		ssize_t msg_size = MSG_TOTAL_SIZE(msg_copy);
+		rrr_u32 msg_size = MSG_TOTAL_SIZE(msg_copy);
 
 		msg_copy->msg_size = msg_size;
 
@@ -341,17 +341,30 @@ static int mqttclient_publish (
 		}
 
 		int found_tags = 0;
-		if ((ret = rrr_array_selected_tags_export (
-				&payload,
-				&payload_size,
-				&found_tags,
-				&array_tmp,
-				tags_to_use
-		)) != 0) {
-			RRR_MSG_0("Could not create payload data from selected array tags in MQTT client instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto out_free;
+
+		{
+			rrr_biglength payload_size_tmp = 0;
+			if ((ret = rrr_array_selected_tags_export (
+					&payload,
+					&payload_size_tmp,
+					&found_tags,
+					&array_tmp,
+					tags_to_use
+			)) != 0) {
+				RRR_MSG_0("Could not create payload data from selected array tags in MQTT client instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				ret = 1;
+				goto out_free;
+			}
+
+			if (payload_size_tmp > UINT32_MAX) {
+				RRR_MSG_0("Payload was to long while exporting array data in MQTT client instance %s (%llu > %llu)\n",
+					(unsigned long long) payload_size_tmp,
+					(unsigned long long) UINT32_MAX,
+					INSTANCE_D_NAME(data->thread_data)
+				);
+				payload_size = (rrr_u32) payload_size_tmp;
+			}
 		}
 
 		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(tags_to_use)) {
@@ -372,7 +385,7 @@ static int mqttclient_publish (
 				INSTANCE_D_NAME(data->thread_data));
 			goto out_free;
 		}
-		payload_size = strlen(payload) + 1;
+		payload_size = (rrr_u32) strlen(payload) + 1;
 	}
 
 	if (payload != NULL && payload_size > 0) {

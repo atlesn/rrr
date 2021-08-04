@@ -89,13 +89,13 @@ int rrr_array_push_value_str_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
 		const char *value,
-		size_t value_size
+		rrr_length value_size
 );
 int rrr_array_push_value_blob_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
 		const char *value,
-		size_t value_size
+		rrr_length value_size
 );
 int rrr_array_push_value_blob_with_tag_nullsafe (
 		struct rrr_array *collection,
@@ -116,7 +116,7 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		uint64_t *result,
 		struct rrr_array *array,
 		const char *tag,
-		int index
+		unsigned int index
 );
 void rrr_array_strip_type (
 		struct rrr_array *collection,
@@ -158,7 +158,7 @@ int rrr_array_selected_tags_split (
 );
 int rrr_array_selected_tags_export (
 		char **target,
-		ssize_t *target_size,
+		rrr_biglength *target_size,
 		int *found_tags,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags

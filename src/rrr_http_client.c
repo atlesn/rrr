@@ -520,14 +520,23 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 	if (rrr_array_count(&array)) {
 		if (RRR_LL_COUNT(&http_client_data->tags)) {
-			ssize_t target_size = 0;
+			rrr_biglength target_size = 0;
 			int found_tags = 0;
 			if ((ret = rrr_array_selected_tags_export(&raw_tmp, &target_size, &found_tags, &array, &http_client_data->tags)) != 0) {
 				RRR_MSG_0("Failed to get specified array tags from input data, return was %i\n", ret);
 				goto out;
 			}
 
-			*data_len = target_size;
+			if (target_size > SSIZE_MAX) {
+				RRR_MSG_0("Exported size of array exceeds maximum (%llu > %lli)\n",
+					(unsigned long long) target_size,
+					(long long int) SSIZE_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
+			*data_len = (ssize_t) target_size;
 
 			*data = raw_tmp;
 			raw_tmp = NULL;
