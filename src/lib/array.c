@@ -554,6 +554,8 @@ static int __rrr_array_get_exported_length (
 			RRR_MSG_0("Overfow while getting export length of array\n");
 			return RRR_ARRAY_SOFT_ERROR;
 		}
+
+		sum = b;
 	RRR_LL_ITERATE_END();
 
 	*result = sum;
