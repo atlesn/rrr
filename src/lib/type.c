@@ -817,15 +817,27 @@ static int __rrr_type_msg_export (RRR_TYPE_EXPORT_ARGS) {
 	return __rrr_type_msg_pack_or_export(target, written_bytes, node);
 }
 
-static void __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
+static int __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
 	rrr_length escape_count = 0;
+
 	const char *end = node->data + node->total_stored_length;
 	for (const char *pos = node->data; pos < end; pos++) {
 		if ((*pos) == '\\' || (*pos) == '"') {
 			escape_count++;
 		}
 	}
-	*bytes = node->total_stored_length + 2 + escape_count;
+
+	rrr_biglength tmp = (rrr_biglength) node->total_stored_length + 2 + escape_count;
+	if (tmp > RRR_LENGTH_MAX) {
+		RRR_MSG_0("String was too long to export in  __rrr_type_str_get_export_length (%llu > %llu)\n",
+			(unsigned long long) tmp,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
+
+	*bytes = (rrr_length) tmp;
+
+	return 0;
 }
 
 static int __rrr_type_str_export (RRR_TYPE_EXPORT_ARGS) {
@@ -1599,19 +1611,19 @@ int rrr_type_value_clone (
 	return ret;
 }
 
-rrr_length rrr_type_value_get_export_length (
+int rrr_type_value_get_export_length (
+		rrr_length *result,
 		const struct rrr_type_value *value
 ) {
-	rrr_length exported_length = 0;
+	*result = 0;
 
 	if (value->definition->get_export_length != NULL) {
-		value->definition->get_export_length(&exported_length, value);
-	}
-	else {
-		exported_length = value->total_stored_length;
+		return value->definition->get_export_length(result, value);
 	}
 
-	return exported_length;
+	*result = value->total_stored_length;
+
+	return 0;
 }
 
 int rrr_type_value_allocate_and_export (
@@ -1625,7 +1637,11 @@ int rrr_type_value_allocate_and_export (
 	*written_bytes = 0;
 
 	char *buf_tmp = NULL;
-	rrr_length buf_size = rrr_type_value_get_export_length(node);
+	rrr_length buf_size = 0;
+
+	if ((ret = rrr_type_value_get_export_length(&buf_size, node)) != 0) {
+		goto out;
+	}
 
 	if ((buf_tmp = rrr_allocate(buf_size)) == NULL) {
 		RRR_MSG_0("Error while allocating memory before exporting in rrr_type_value_allocate_and_export \n");

@@ -1280,7 +1280,7 @@ static int ip_push_message (
 		}
 
 		RRR_FREE_IF_NOT_NULL(tmp_data);
-		ssize_t target_size = 0;
+		rrr_biglength target_size = 0;
 		int found_tags = 0;
 		struct rrr_map *tag_map = (tag_count > 0 ? &ip_data->array_send_tags : NULL);
 		if (rrr_array_selected_tags_export (
@@ -1295,6 +1295,16 @@ static int ip_push_message (
 			goto out;
 		}
 
+		if (target_size > SSIZE_MAX) {
+			RRR_MSG_0("Array message export size too long in ip instance %s\n (%llu > %lli)\n",
+				INSTANCE_D_NAME(thread_data),
+				(unsigned long long) target_size,
+				(long long int) SSIZE_MAX
+			);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+
 		if (tag_count != 0 && found_tags != tag_count) {
 			RRR_MSG_0("Array message to send in ip instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
 					INSTANCE_D_NAME(thread_data), tag_count - found_tags);
@@ -1305,7 +1315,7 @@ static int ip_push_message (
 				INSTANCE_D_NAME(thread_data), message->timestamp, found_tags, target_size);
 
 		send_data = tmp_data;
-		send_size = target_size;
+		send_size = (ssize_t) target_size;
 	}
 	else if (RRR_MAP_COUNT(&ip_data->array_send_tags) > 0) {
 		RRR_MSG_0("ip instance %s received a non-array message while setting ip_array_send_tags was defined, dropping it\n",
