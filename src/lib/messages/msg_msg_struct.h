@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS(message)            (((message)->type_and_class & 0xf0) >> 4)
 
 #define MSG_SET_TYPE(message,n)       (message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
-#define MSG_SET_CLASS(message,n)      (message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
+#define MSG_SET_CLASS(message,n)      (message)->type_and_class = (rrr_u8) (((message)->type_and_class & 0x0f) | (n << 4))
 
 #define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
 #define MSG_IS_TAG(message)           (MSG_TYPE(message) == MSG_TYPE_TAG)

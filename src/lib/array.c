@@ -486,17 +486,24 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 	return NULL;
 }
 
-ssize_t rrr_array_get_packed_length (
+static int __rrr_array_get_packed_length (
+		rrr_biglength *result,
 		const struct rrr_array *definition
 ) {
-	ssize_t result = 0;
+	rrr_biglength sum = 0;
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
-		result += node->tag_length;
+		rrr_biglength a = node->tag_length + node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
+		rrr_biglength b = sum + a;
+		if (b < sum || b < a) {
+			return 1;
+		}
+		sum = b;
 	RRR_LL_ITERATE_END();
 
-	return result;
+	*result = sum;
+
+	return 0;
 }
 
 static ssize_t __rrr_array_get_exported_length (
@@ -797,14 +804,29 @@ int rrr_array_new_message_from_collection (
 ) {
 	int ret = 0;
 
+	struct rrr_msg_msg *message = NULL;
+
 	*final_message = NULL;
 
-	rrr_length total_data_length = rrr_array_get_packed_length(definition);
+	rrr_biglength total_data_length = 0;
 
-	struct rrr_msg_msg *message = rrr_msg_msg_new_array(time, topic_length, total_data_length);
-	if (message == NULL) {
-		RRR_MSG_0("Could not create message for data collection\n");
-		ret = RRR_ARRAY_HARD_ERROR;
+	// Allocation errors here are soft errors, likely to be due to big input data
+
+	if ((ret = __rrr_array_get_packed_length(&total_data_length, definition)) != 0 ||
+	     total_data_length > UINT32_MAX
+	) {
+		RRR_MSG_0("Cannot convery array to message, total data length exceeds maximum (%llu>%llu)\n",
+			(unsigned long long) total_data_length,
+			(unsigned long long) UINT32_MAX
+		);
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((message = rrr_msg_msg_new_array(time, topic_length, (rrr_u32) total_data_length)) == NULL) {
+		RRR_MSG_0("Could not create message for data collection (size was %llu)\n",
+				(unsigned long long) total_data_length);
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 
