@@ -93,6 +93,7 @@ struct httpclient_data {
 	int do_receive_json_data;
 	int do_receive_ignore_error_part_data;
 	int do_receive_404_as_empty_part;
+	int do_receive_structured;
 	int do_low_priority_put;
 
 	int do_endpoint_from_topic;
@@ -175,7 +176,7 @@ static void httpclient_transaction_destroy (struct httpclient_transaction_data *
 static int httpclient_transaction_data_new (
 		struct httpclient_transaction_data **target,
 		const char *topic,
-		size_t topic_len,
+		rrr_u16 topic_len,
 		struct rrr_msg_holder *entry
 ) {
 	int ret = 0;
@@ -272,7 +273,7 @@ static int httpclient_create_message_from_404_callback (
 			MSG_CLASS_DATA,
 			rrr_time_get_64(),
 			callback_data->transaction_data->msg_topic,
-			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
+			(rrr_u16) (callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
 			NULL,
 			0
 	)) != 0) {
@@ -305,6 +306,44 @@ static int httpclient_final_callback_receive_404 (
 	);
 }
 
+static int httpclient_create_array_message (
+	struct rrr_msg_holder *new_entry,
+	struct httpclient_data *httpclient_data,
+	const struct rrr_http_transaction *transaction,
+	const struct httpclient_transaction_data *transaction_data,
+	const struct rrr_array *array
+) {
+	int ret = 0;
+
+	if ((ret = rrr_array_new_message_from_collection (
+			(struct rrr_msg_msg **) &new_entry->message,
+			array,
+			rrr_time_get_64(),
+			transaction_data->msg_topic,
+			(transaction_data->msg_topic != NULL
+				? (rrr_u16) strlen(transaction_data->msg_topic)
+				: 0
+			)
+	)) != 0) {
+		if (ret == RRR_ARRAY_SOFT_ERROR) {
+			RRR_MSG_0("Response was to big in httpclient instance %s, cannot create array message. Request endpoint was '%s'.\n",
+					INSTANCE_D_NAME(httpclient_data->thread_data),
+					transaction->endpoint_str
+			);
+		}
+		else {
+			RRR_MSG_0("Failed to create array message in httpclient_create_array_message of httpclient instance %s\n",
+					INSTANCE_D_NAME(httpclient_data->thread_data));
+		}
+		goto out;
+	}
+
+	new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) new_entry->message);
+
+	out:
+	return ret;
+}
+
 struct httpclient_create_message_from_response_data_nullsafe_callback_data {
 	struct rrr_msg_holder *new_entry;
 	const struct httpclient_transaction_data *transaction_data;
@@ -325,7 +364,7 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 			MSG_CLASS_DATA,
 			rrr_time_get_64(),
 			callback_data->transaction_data->msg_topic,
-			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0),
+			(callback_data->transaction_data->msg_topic != NULL ? (rrr_u16) strlen(callback_data->transaction_data->msg_topic) : 0),
 			str,
 			len
 	)) != 0) {
@@ -340,8 +379,10 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 
 struct httpclient_create_message_from_response_data_callback_data {
 	struct httpclient_data *httpclient_data;
+	const struct rrr_http_transaction *transaction;
 	const struct httpclient_transaction_data *transaction_data;
 	const struct rrr_nullsafe_str *response_data;
+	const struct rrr_array *structured_data;
 };
 
 static int httpclient_create_message_from_response_data_callback (
@@ -352,29 +393,55 @@ static int httpclient_create_message_from_response_data_callback (
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
+	struct rrr_array array_tmp = {0};
+
 	if (rrr_nullsafe_str_len(callback_data->response_data) > 0xffffffff) { // Eight f's
 		RRR_MSG_0("HTTP length too long in httpclient_create_message_callback, max is 0xffffffff\n");
 		ret = RRR_MESSAGE_BROKER_DROP;
 		goto out;
 	}
 
-	struct httpclient_create_message_from_response_data_nullsafe_callback_data nullsafe_callback_data = {
-			new_entry,
-			callback_data->transaction_data
-	};
+	if (RRR_LL_COUNT(callback_data->structured_data) != 0) {
+		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
+			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_response_data_callback\n");
+			goto out;
+		}
 
-	if ((ret = rrr_nullsafe_str_with_raw_do_const (
-			callback_data->response_data,
-			httpclient_create_message_from_response_data_nullsafe_callback,
-			&nullsafe_callback_data
-	)) != 0) {
-		RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
-		ret = RRR_MESSAGE_BROKER_ERR;
-		goto out;
+		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (&array_tmp, "http_body", callback_data->response_data)) != 0) {
+			RRR_MSG_0("Failed to push response data to array in httpclient_create_message_from_response_data_callback\n");
+			goto out;
+		}
+
+		if ((ret = httpclient_create_array_message (
+				new_entry,
+				callback_data->httpclient_data,
+				callback_data->transaction,
+				callback_data->transaction_data,
+				&array_tmp
+		)) != 0) {
+			goto out;
+		}
+	}
+	else {
+		struct httpclient_create_message_from_response_data_nullsafe_callback_data nullsafe_callback_data = {
+				new_entry,
+				callback_data->transaction_data
+		};
+
+		if ((ret = rrr_nullsafe_str_with_raw_do_const (
+				callback_data->response_data,
+				httpclient_create_message_from_response_data_nullsafe_callback,
+				&nullsafe_callback_data
+		)) != 0) {
+			RRR_MSG_0("Failed to create message in httpclient_create_message_callback\n");
+			ret = RRR_MESSAGE_BROKER_ERR;
+			goto out;
+		}
 	}
 
 	out:
 	rrr_msg_holder_unlock(new_entry);
+	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
@@ -384,13 +451,17 @@ struct httpclient_final_callback_data {
 
 static int httpclient_final_callback_receive_data (
 		struct httpclient_data *httpclient_data,
+		const struct rrr_http_transaction *transaction,
 		const struct httpclient_transaction_data *transaction_data,
-		const struct rrr_nullsafe_str *response_data
+		const struct rrr_nullsafe_str *response_data,
+		const struct rrr_array *structured_data
 ) {
 	struct httpclient_create_message_from_response_data_callback_data callback_data_broker = {
 			httpclient_data,
+			transaction,
 			transaction_data,
-			response_data
+			response_data,
+			structured_data
 	};
 
 	return rrr_message_broker_write_entry (
@@ -406,8 +477,10 @@ static int httpclient_final_callback_receive_data (
 
 struct httpclient_create_message_from_json_broker_callback_data {
 	struct httpclient_data *httpclient_data;
+	const struct rrr_http_transaction *transaction;
 	const struct httpclient_transaction_data *transaction_data;
 	const struct rrr_array *array;
+	const struct rrr_array *structured_data;
 };
 
 static int httpclient_create_message_from_json_callback (
@@ -418,28 +491,42 @@ static int httpclient_create_message_from_json_callback (
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	if ((ret = rrr_array_new_message_from_collection (
-			(struct rrr_msg_msg **) &new_entry->message,
-			callback_data->array,
-			rrr_time_get_64(),
-			callback_data->transaction_data->msg_topic,
-			(callback_data->transaction_data->msg_topic != NULL ? strlen(callback_data->transaction_data->msg_topic) : 0)
+	struct rrr_array array_tmp = {0};
+
+	const struct rrr_array *array_to_use = callback_data->array;
+	if (RRR_LL_COUNT(callback_data->structured_data) > 0) {
+		if ((ret = rrr_array_append_from (&array_tmp, callback_data->structured_data)) != 0) {
+			RRR_MSG_0("Failed to clone structured data in httpclient_create_message_from_json_callback\n");
+			goto out;
+		}
+		if ((ret = rrr_array_append_from (&array_tmp, callback_data->array)) != 0) {
+			RRR_MSG_0("Failed to clone json data in httpclient_create_message_from_json_callback\n");
+			goto out;
+		}
+		array_to_use = &array_tmp;
+	}
+
+	if ((ret = httpclient_create_array_message (
+			new_entry,
+			callback_data->httpclient_data,
+			callback_data->transaction,
+			callback_data->transaction_data,
+			array_to_use
 	)) != 0) {
-		RRR_MSG_0("Failed to create array message in httpclient_create_message_from_json_callback of httpclient instance %s\n",
-				INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
 		goto out;
 	}
 
-	new_entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) new_entry->message);
-
 	out:
+	rrr_array_clear(&array_tmp);
 	rrr_msg_holder_unlock(new_entry);
 	return ret;
 }
 
 struct httpclient_create_message_from_json_callback_data {
 	struct httpclient_data *httpclient_data;
+	const struct rrr_http_transaction *transaction;
 	const struct httpclient_transaction_data *transaction_data;
+	const struct rrr_array *structured_data;
 };
 
 static int httpclient_create_message_from_json_array_callback (
@@ -450,8 +537,10 @@ static int httpclient_create_message_from_json_array_callback (
 
 	struct httpclient_create_message_from_json_broker_callback_data callback_data_broker = {
 			callback_data->httpclient_data,
+			callback_data->transaction,
 			callback_data->transaction_data,
-			array
+			array,
+			callback_data->structured_data
 	};
 
 	return rrr_message_broker_write_entry (
@@ -499,12 +588,16 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 
 static int httpclient_final_callback_receive_json (
 		struct httpclient_data *httpclient_data,
+		const struct rrr_http_transaction *transaction,
 		const struct httpclient_transaction_data *transaction_data,
-		const struct rrr_nullsafe_str *response_data
+		const struct rrr_nullsafe_str *response_data,
+		const struct rrr_array *structured_data
 ) {
 	struct httpclient_create_message_from_json_callback_data callback_data = {
 			httpclient_data,
-			transaction_data
+			transaction,
+			transaction_data,
+			structured_data
 	};
 
 	return rrr_nullsafe_str_with_raw_do_const (
@@ -745,6 +838,8 @@ static int httpclient_final_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	struct rrr_array structured_data = {0};
+
 	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
 			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
@@ -752,6 +847,40 @@ static int httpclient_final_callback (
 			rrr_http_transaction_lifetime_get(transaction) / 1000,
 			transaction->endpoint_str
 	);
+
+	if (httpclient_data->do_receive_structured) {
+		if ((ret = rrr_array_push_value_u64_with_tag (
+				&structured_data,
+				"http_response_code",
+				(unsigned int) transaction->response_part->response_code
+		)) != 0)  {
+			RRR_MSG_0("Failed to push response code to array in httpclient_final_callback\n");
+			goto out;
+		}
+
+		const struct rrr_http_header_field *field;
+
+		if ((field = rrr_http_part_header_field_get (transaction->response_part, "content-type")) != NULL && field->value != NULL) {
+			if ((ret = rrr_array_push_value_str_with_tag_nullsafe (
+					&structured_data,
+					"http_content_type",
+					field->value
+			)) != 0) {
+				RRR_MSG_0("Failed to push content type to array in httpclient_final_callback A\n");
+				goto out;
+			}
+		}
+		else {
+			if ((ret = rrr_array_push_value_str_with_tag (
+					&structured_data,
+					"http_content_type",
+					""
+			)) != 0) {
+				RRR_MSG_0("Failed to push content type to array in httpclient_final_callback B\n");
+				goto out;
+			}
+		}
+	}
 
 	// Condition must always be checked regardless of other configuration parameters
 	if (transaction->response_part->response_code == 404 && httpclient_data->do_receive_404_as_empty_part) {
@@ -765,7 +894,7 @@ static int httpclient_final_callback (
 		RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(method,transaction->request_part->request_method_str_nullsafe);
 		RRR_MSG_0("Error response while fetching HTTP: %i %s (request was %s %s)%s\n",
 				transaction->response_part->response_code,
-				rrr_http_util_iana_response_phrase_from_status_code (transaction->response_part->response_code),
+				rrr_http_util_iana_response_phrase_from_status_code ((unsigned int) transaction->response_part->response_code),
 				RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 				transaction->endpoint_str,
 				httpclient_data->do_receive_ignore_error_part_data == 0 ? " (error part data not ignored, continuing)" : ""
@@ -785,17 +914,30 @@ static int httpclient_final_callback (
 		RRR_DBG_3("httpclient instance %s creating message with HTTP response data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-		ret |= httpclient_final_callback_receive_data(httpclient_data, transaction->application_data, response_data);
+		ret |= httpclient_final_callback_receive_data (
+				httpclient_data,
+				transaction,
+				transaction->application_data,
+				response_data,
+				&structured_data
+		);
 	}
 
 	if (httpclient_data->do_receive_json_data) {
 		RRR_DBG_3("httpclient instance %s creating messages with JSON data\n",
 				INSTANCE_D_NAME(httpclient_data->thread_data));
 
-		ret |= httpclient_final_callback_receive_json(httpclient_data, transaction->application_data, response_data);
+		ret |= httpclient_final_callback_receive_json (
+				httpclient_data,
+				transaction,
+				transaction->application_data,
+				response_data,
+				&structured_data
+		);
 	}
 
 	out:
+	rrr_array_clear(&structured_data);
 	return ret;
 }
 
@@ -968,7 +1110,7 @@ static int httpclient_session_query_prepare_callback_process_override (
 			goto out_check_force;
 		}
 
-		data_length = strlen(data_to_free);
+		data_length = (unsigned int) strlen(data_to_free);
 	}
 
 	out_check_force:
@@ -1610,6 +1752,7 @@ static int httpclient_parse_config (
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_json_data", do_receive_json_data, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_ignore_error_part_data", do_receive_ignore_error_part_data, 1 /* Default is yes */);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_404_as_empty_part", do_receive_404_as_empty_part, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_receive_structured", do_receive_structured, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_low_priority_put", do_low_priority_put, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_ttl_seconds", message_ttl_us, 0);

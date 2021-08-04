@@ -69,8 +69,15 @@ int rrr_msg_msg_new_empty (
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 ) {
-	ssize_t total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
 	// -1 because the char which points to the data holds 1 byte
+	rrr_biglength total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
+
+	if (total_size > UINT32_MAX) {
+		RRR_MSG_0("Could not allocate message, too big (%llu>%llu)\n",
+			(unsigned long long) total_size, (unsigned long long) UINT32_MAX);
+		return 1;
+	}
+
 	struct rrr_msg_msg *result = rrr_allocate_group(total_size, RRR_ALLOCATOR_GROUP_MSG);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
@@ -82,7 +89,7 @@ int rrr_msg_msg_new_empty (
 	rrr_msg_populate_head (
 			(struct rrr_msg *) result,
 			RRR_MSG_TYPE_MESSAGE,
-			total_size,
+			(rrr_u32) total_size,
 			0
 	);
 
