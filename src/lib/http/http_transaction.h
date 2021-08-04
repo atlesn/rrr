@@ -96,7 +96,7 @@ int rrr_http_transaction_query_field_add (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type,
 		const struct rrr_type_value *value_orig
 );
