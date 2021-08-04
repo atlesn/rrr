@@ -358,13 +358,15 @@ static int mqttclient_publish (
 			}
 
 			if (payload_size_tmp > UINT32_MAX) {
-				RRR_MSG_0("Payload was to long while exporting array data in MQTT client instance %s (%llu > %llu)\n",
+				RRR_MSG_0("Payload was too long while exporting array data in MQTT client instance %s (%llu > %llu)\n",
 					(unsigned long long) payload_size_tmp,
 					(unsigned long long) UINT32_MAX,
 					INSTANCE_D_NAME(data->thread_data)
 				);
-				payload_size = (rrr_u32) payload_size_tmp;
+				ret = 1;
+				goto out_free;
 			}
+			payload_size = (rrr_u32) payload_size_tmp;
 		}
 
 		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(tags_to_use)) {
