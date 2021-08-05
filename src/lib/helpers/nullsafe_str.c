@@ -479,6 +479,7 @@ int rrr_nullsafe_str_check_likely_binary (
 	for (rrr_nullsafe_len i = 0; i < nullsafe->len && i < test_length; i++) {
 		unsigned char chr = *((unsigned char *) nullsafe->str + i);
 		if (chr == '\0') {
+			ret = 1;
 			goto out;
 		}
 		if (chr > 0x7f) {
