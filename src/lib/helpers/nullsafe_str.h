@@ -135,6 +135,9 @@ int rrr_nullsafe_str_str (
 		),
 		void *callback_arg
 );
+int rrr_nullsafe_str_check_likely_binary (
+		const struct rrr_nullsafe_str *nullsafe
+);
 int rrr_nullsafe_str_str_raw (
 		const void *haystack_str,
 		rrr_nullsafe_len haystack_len,

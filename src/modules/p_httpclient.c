@@ -407,7 +407,14 @@ static int httpclient_create_message_from_response_data_callback (
 			goto out;
 		}
 
-		if ((ret = rrr_array_push_value_str_with_tag_nullsafe (&array_tmp, "http_body", callback_data->response_data)) != 0) {
+		if (rrr_nullsafe_str_check_likely_binary (callback_data->response_data)) {
+			ret = rrr_array_push_value_blob_with_tag_nullsafe (&array_tmp, "http_body", callback_data->response_data);
+		}
+		else {
+			ret = rrr_array_push_value_str_with_tag_nullsafe (&array_tmp, "http_body", callback_data->response_data);
+		}
+
+		if (ret != 0) {
 			RRR_MSG_0("Failed to push response data to array in httpclient_create_message_from_response_data_callback\n");
 			goto out;
 		}

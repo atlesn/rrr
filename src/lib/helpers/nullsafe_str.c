@@ -461,6 +461,41 @@ int rrr_nullsafe_str_str (
 	return ret;
 }
 
+int rrr_nullsafe_str_check_likely_binary (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	int ret = 0; // 0 = probably text
+
+	const double treshold = 0.3;
+	const rrr_nullsafe_len test_length = 512;
+
+	if (nullsafe == NULL) {
+		goto out;
+	}
+
+	double count_non_ascii = 0.0;
+	double count_total = 0.0;
+
+	for (rrr_nullsafe_len i = 0; i < nullsafe->len && i < test_length; i++) {
+		unsigned char chr = *((unsigned char *) nullsafe->str + i);
+		if (chr == '\0') {
+			goto out;
+		}
+		if (chr > 0x7f) {
+			count_non_ascii++;
+		}
+		count_total++;
+	}
+
+	if (count_non_ascii / count_total >= treshold) {
+		ret = 1; // 1 = probably binary
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_nullsafe_str_str_raw (
 		const void *haystack_str,
 		rrr_nullsafe_len haystack_len,
