@@ -687,7 +687,7 @@ static int ip_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	EVENT_ACTIVATE(ip_data->event_send_buffer_iterate);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, ip_poll_callback);
 }
 
 struct ip_resolve_suggestion_callback_data {

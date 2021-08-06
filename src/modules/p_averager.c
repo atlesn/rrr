@@ -452,7 +452,7 @@ static int averager_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, averager_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, averager_poll_callback);
 
 	if (RRR_LL_COUNT(&data->output_list) > 0) {
 		EVENT_ACTIVATE(data->output_list_event);

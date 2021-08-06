@@ -499,7 +499,7 @@ static int influxdb_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, influxdb_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, influxdb_poll_callback);
 
 	EVENT_ADD(influxdb_data->event_process_entries);
 	EVENT_ACTIVATE(influxdb_data->event_process_entries);

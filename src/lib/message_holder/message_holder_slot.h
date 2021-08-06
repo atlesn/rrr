@@ -44,15 +44,14 @@ void rrr_msg_holder_slot_get_stats (
 		uint64_t *entries_written,
 		struct rrr_msg_holder_slot *slot
 );
-int rrr_msg_holder_slot_count (
+unsigned int rrr_msg_holder_slot_count (
 		struct rrr_msg_holder_slot *slot
 );
 int rrr_msg_holder_slot_read (
 		struct rrr_msg_holder_slot *slot,
 		void *self,
 		int (*callback)(int *do_keep, struct rrr_msg_holder *entry, void *arg),
-		void *callback_arg,
-		unsigned int wait_ms
+		void *callback_arg
 );
 int rrr_msg_holder_slot_discard (
 		int *did_discard,

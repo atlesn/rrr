@@ -104,8 +104,7 @@ int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		void *callback_arg,
-		unsigned int wait_milliseconds
+		void *callback_arg
 ) {
 	struct rrr_poll_intermediate_callback_data callback_data = {
 		thread_data,
@@ -124,16 +123,14 @@ int rrr_poll_do_poll_delete_custom_arg (
 			INSTANCE_D_HANDLE(thread_data),
 			message_broker_flags,
 			__rrr_poll_intermediate_callback,
-			&callback_data,
-			wait_milliseconds
+			&callback_data
 	);
 }
 
 int rrr_poll_do_poll_delete (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 ) {
-	return rrr_poll_do_poll_delete_custom_arg(amount, thread_data, callback, thread_data, wait_milliseconds);
+	return rrr_poll_do_poll_delete_custom_arg(amount, thread_data, callback, thread_data);
 }

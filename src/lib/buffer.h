@@ -69,11 +69,11 @@ struct rrr_fifo_buffer_entry {
 
 struct rrr_fifo_buffer_ratelimit {
 	double read_write_balance;
-	int prev_entry_count;
+	unsigned int prev_entry_count;
+	unsigned int burst_counter;
 	long long int sleep_spin_time;
-	uint64_t prev_time;
-	int burst_counter;
 	long long int spins_per_us;
+	uint64_t prev_time;
 };
 
 struct rrr_fifo_buffer_stats {
@@ -109,8 +109,8 @@ struct rrr_fifo_buffer {
 	pthread_mutex_t stats_mutex;
 
 	int buffer_do_ratelimit;
-	int entry_count;
-	int write_queue_entry_count;
+	unsigned int entry_count;
+	unsigned int write_queue_entry_count;
 
 	struct rrr_fifo_buffer_ratelimit ratelimit;
 	struct rrr_fifo_buffer_stats stats;

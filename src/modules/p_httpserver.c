@@ -1449,7 +1449,7 @@ static int httpserver_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, httpserver_poll_callback);
 }
 
 // If we receive messages from senders which no worker seem to want, we must delete them

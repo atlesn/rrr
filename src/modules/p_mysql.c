@@ -725,7 +725,7 @@ static int mysql_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct mysql_data *mysql_data = thread_data->private_data;
 
-	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback, 0);
+	int ret = rrr_poll_do_poll_delete (amount, thread_data, mysql_poll_callback);
 
 	EVENT_ADD(mysql_data->event_process_entries);
 	EVENT_ACTIVATE(mysql_data->event_process_entries);

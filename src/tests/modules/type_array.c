@@ -166,8 +166,7 @@ int test_do_poll_loop (
 			&amount,
 			thread_data,
 			test_poll_callback_intermediate,
-			&callback_data_intermediate,
-			150
+			&callback_data_intermediate
 		);
 
 
@@ -186,6 +185,8 @@ int test_do_poll_loop (
 			TEST_MSG("Result of polling: %i\n",
 					test_result->result);
 		}
+
+		rrr_posix_usleep(100 * 1000); // 100ms
 	}
 
 	out:

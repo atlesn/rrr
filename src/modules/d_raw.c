@@ -109,7 +109,7 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback);
 }
 
 static int raw_event_periodic (void *arg) {

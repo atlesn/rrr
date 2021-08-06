@@ -232,7 +232,7 @@ static int exploder_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	return rrr_poll_do_poll_delete (amount, thread_data, exploder_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, exploder_poll_callback);
 }
 
 static int exploder_parse_config (struct exploder_data *data, struct rrr_instance_config_data *config) {

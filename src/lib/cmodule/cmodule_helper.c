@@ -341,8 +341,7 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	int ret = rrr_poll_do_poll_delete (
 			&amount_new,
 			thread_data,
-			__rrr_cmodule_helper_poll_callback,
-			0
+			__rrr_cmodule_helper_poll_callback
 	);
 
 	*amount += amount_new;
