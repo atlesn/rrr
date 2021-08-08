@@ -895,7 +895,7 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 		if (PyFloat_Check(subject)) {
 			test_d = PyFloat_AsDouble(subject);
 			if (test_d == -1.0 && PyErr_Occurred()) {
-				RRR_MSG_0("Error while converting double in __preliminary_check_long\n");
+				RRR_MSG_0("Error while converting double in __preliminary_check_fixp\n");
 				ret = 1;
 				goto out;
 			}
@@ -965,7 +965,8 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 			ret = 1;
 			goto out;
 		}
-		if (test_d > INT64_MAX || test_d < INT64_MIN) {
+		// Value of INT64_MAX as double
+		if (test_d > 9223372036854775807.0 || test_d < INT64_MIN) {
 			RRR_MSG_0("Double value was out of range in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
