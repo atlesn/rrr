@@ -464,7 +464,7 @@ static int ipclient_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data;
 
-	int output_buffer_count = 0;
+	unsigned int output_buffer_count = 0;
 	int ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (

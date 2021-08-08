@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/allocator.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"

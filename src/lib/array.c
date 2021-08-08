@@ -870,7 +870,7 @@ int rrr_array_new_message_from_collection (
 
 	// Allocation errors here are soft errors, likely to be due to big input data
 
-	if ((ret = __rrr_array_get_packed_length(&total_data_length, definition)) != 0 ||
+	if (__rrr_array_get_packed_length(&total_data_length, definition) != 0 ||
 	     total_data_length > RRR_LENGTH_MAX
 	) {
 		RRR_MSG_0("Cannot convery array to message, total data length exceeds maximum (%llu>%llu)\n",

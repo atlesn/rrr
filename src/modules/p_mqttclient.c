@@ -48,7 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages/msg_msg.h"
 #include "../lib/message_broker.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/map.h"
 #include "../lib/array.h"

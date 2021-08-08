@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_socket.h"
 #include "../array.h"
 #include "../settings.h"
-#include "../buffer.h"
 #include "../fork.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"

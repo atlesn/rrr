@@ -25,33 +25,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <inttypes.h>
 
+#include "fifo_common.h"
+
 #define RRR_FIFO_PROTECTED_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 #define RRR_FIFO_PROTECTED_MAX_READS 500 // Maximum number of reads per call to a read function
 
-#define RRR_FIFO_PROTECTED_OK             0
-#define RRR_FIFO_PROTECTED_GLOBAL_ERR     (1<<0)
-#define RRR_FIFO_PROTECTED_CALLBACK_ERR   (1<<1)
+#define RRR_FIFO_PROTECTED_OK             RRR_FIFO_COMMON_OK
+#define RRR_FIFO_PROTECTED_GLOBAL_ERR     RRR_FIFO_COMMON_GLOBAL_ERR
+#define RRR_FIFO_PROTECTED_CALLBACK_ERR   RRR_FIFO_COMMON_CALLBACK_ERR
 
-#define RRR_FIFO_PROTECTED_SEARCH_STOP    (1<<3)
-#define RRR_FIFO_PROTECTED_SEARCH_FREE    (1<<5)
+#define RRR_FIFO_PROTECTED_SEARCH_KEEP    RRR_FIFO_COMMON_SEARCH_KEEP
+#define RRR_FIFO_PROTECTED_SEARCH_STOP    RRR_FIFO_COMMON_SEARCH_STOP
+#define RRR_FIFO_PROTECTED_SEARCH_GIVE    RRR_FIFO_COMMON_SEARCH_GIVE
+#define RRR_FIFO_PROTECTED_SEARCH_FREE    RRR_FIFO_COMMON_SEARCH_FREE
+#define RRR_FIFO_PROTECTED_SEARCH_REPLACE RRR_FIFO_COMMON_SEARCH_REPLACE
 
-#define RRR_FIFO_PROTECTED_WRITE_AGAIN    (1<<10)
-#define RRR_FIFO_PROTECTED_WRITE_DROP     (1<<11)
-#define RRR_FIFO_PROTECTED_WRITE_ORDERED  (1<<12)
+#define RRR_FIFO_PROTECTED_WRITE_AGAIN    RRR_FIFO_COMMON_WRITE_AGAIN
+#define RRR_FIFO_PROTECTED_WRITE_DROP     RRR_FIFO_COMMON_WRITE_DROP
+#define RRR_FIFO_PROTECTED_WRITE_ORDERED  RRR_FIFO_COMMON_WRITE_ORDERED
 
-#define RRR_FIFO_PROTECTED_READ_CALLBACK_ARGS \
-	void *arg, char *data, unsigned long int size
-
-#define RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS \
-	char **data, unsigned long int *size, uint64_t *order, void *arg
-
-/*
-void {
-	void *source;
-	void *private_data;
-	unsigned int flags;
-};
-*/
+#define RRR_FIFO_PROTECTED_READ_CALLBACK_ARGS   RRR_FIFO_COMMON_READ_CALLBACK_ARGS
+#define RRR_FIFO_PROTECTED_WRITE_CALLBACK_ARGS  RRR_FIFO_COMMON_WRITE_CALLBACK_ARGS
 
 struct rrr_fifo_protected_entry {
 	char *data;

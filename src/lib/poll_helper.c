@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "poll_helper.h"
 #include "instances.h"
 #include "instance_config.h"
-#include "buffer.h"
+#include "fifo_protected.h"
 #include "message_broker.h"
 #include "message_holder/message_holder_struct.h"
 #include "message_holder/message_holder.h"

@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_channel.h"
 #include "cmodule_struct.h"
 
-#include "../buffer.h"
+#include "../fifo_protected.h"
 #include "../modules.h"
 #include "../messages/msg_addr.h"
 #include "../messages/msg_log.h"
@@ -660,7 +660,7 @@ static int __rrr_cmodule_helper_event_periodic (
 		return 1;
 	}
 
-	int output_buffer_count = 0;
+	unsigned int output_buffer_count = 0;
 	int output_buffer_ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
@@ -710,7 +710,7 @@ static int __rrr_cmodule_helper_event_periodic (
 	// rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 11, "input_counter", INSTANCE_D_COUNTERS(thread_data)->total_message_count);
 	rrr_stats_instance_post_unsigned_base10_text(INSTANCE_D_STATS(thread_data), "output_buffer_count", 0, output_buffer_count);
 
-	struct rrr_fifo_buffer_stats fifo_stats;
+	struct rrr_fifo_protected_stats fifo_stats;
 	if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
 		RRR_MSG_0("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
 		return 1;

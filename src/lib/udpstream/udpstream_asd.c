@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../allocator.h"
 #include "src/lib/udpstream/udpstream.h"
 #include "udpstream_asd.h"
-#include "../buffer.h"
 #include "../read.h"
 #include "../ip/ip.h"
 #include "../event/event_collection.h"

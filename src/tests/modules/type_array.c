@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instances.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
-#include "../../lib/buffer.h"
 #include "../../lib/message_holder/message_holder.h"
 #include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages/msg_msg.h"

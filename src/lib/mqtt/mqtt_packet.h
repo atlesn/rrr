@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "mqtt_property.h"
-#include "../buffer.h"
+#include "../fifo.h"
 #include "../log.h"
 #include "../util/linked_list.h"
 
@@ -509,7 +509,7 @@ struct rrr_mqtt_p_auth {
 };
 
 struct rrr_mqtt_p_queue {
-	struct rrr_fifo_buffer buffer;
+	struct rrr_fifo buffer;
 };
 
 #define RRR_MQTT_P_TYPE_RESERVED	0

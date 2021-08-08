@@ -205,7 +205,7 @@ int rrr_instance_count_receivers_of_self (
 		struct rrr_instance *self
 );
 int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
-		int *delivery_entry_count,
+		unsigned int *delivery_entry_count,
 		int *delivery_ratelimit_active,
 		struct rrr_instance_runtime_data *thread_data
 );

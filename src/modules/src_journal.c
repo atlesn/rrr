@@ -447,7 +447,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 		}
 
 		if (time_now - time_start > 1000000) {
-			int output_buffer_count = 0;
+			unsigned int output_buffer_count = 0;
 			int delivery_ratelimit_active = 0;
 			uint64_t delivery_queue_sleep_event_count = 0;
 			int delivery_queue_count = 0;

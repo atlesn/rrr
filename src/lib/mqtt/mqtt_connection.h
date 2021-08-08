@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
-#include "../buffer.h"
+#include "../fifo.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
 #include "../util/linked_list.h"

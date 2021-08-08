@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
-#include "../lib/buffer.h"
+#include "../lib/fifo.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_transaction.h"
 #include "../lib/http/http_server.h"
@@ -90,7 +90,7 @@ struct httpserver_data {
 	struct rrr_http_server *http_server;
 
 	struct rrr_poll_helper_counters counters;
-	struct rrr_fifo_buffer buffer;
+	struct rrr_fifo buffer;
 
 	struct rrr_map websocket_topic_filters;
 
@@ -109,7 +109,7 @@ static void httpserver_data_cleanup(void *arg) {
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_map_clear(&data->http_fields_accept);
 	rrr_map_clear(&data->websocket_topic_filters);
-	rrr_fifo_buffer_destroy(&data->buffer);
+	rrr_fifo_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->allow_origin_header);
 	RRR_FREE_IF_NOT_NULL(data->cache_control_header);
 	if (data->http_server != NULL) {
@@ -125,7 +125,7 @@ static int httpserver_data_init (
 
 	data->thread_data = thread_data;
 
-	if (rrr_fifo_buffer_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
+	if (rrr_fifo_init_custom_free(&data->buffer, rrr_msg_holder_decref_void) != 0) {
 		return 1;
 	}
 
@@ -735,11 +735,10 @@ static int httpserver_async_response_get (
 		response_data->time_begin = rrr_time_get_64();
 	}
 
-	if ((ret = rrr_fifo_buffer_search (
+	if ((ret = rrr_fifo_search (
 			&data->buffer,
 			httpserver_async_response_get_fifo_callback,
-			&callback_data,
-			0
+			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Error from poll in httpserver_receive_callback_get_response\n");
 		goto out;
@@ -1337,11 +1336,10 @@ static int httpserver_websocket_get_response_callback (RRR_HTTP_SERVER_WORKER_WE
 
 	callback_data.topic_filter = topic_filter;
 
-	if ((ret = rrr_fifo_buffer_search (
+	if ((ret = rrr_fifo_search (
 			&httpserver_callback_data->httpserver_data->buffer,
 			httpserver_async_response_get_fifo_callback,
-			&callback_data,
-			0
+			&callback_data
 	)) != 0) {
 		RRR_MSG_0("Error from poll in httpserver_websocket_get_response_callback\n");
 		goto out;
@@ -1435,7 +1433,7 @@ static int httpserver_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_runtime_data *thread_data = arg;
 	struct httpserver_data *data = thread_data->private_data;
 
-	int ret = rrr_fifo_buffer_write(&data->buffer, httpserver_poll_callback_write, entry);
+	int ret = rrr_fifo_write(&data->buffer, httpserver_poll_callback_write, entry);
 	rrr_msg_holder_unlock(entry);
 	return ret;
 }
@@ -1492,11 +1490,10 @@ static int httpserver_event_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 		data
 	};
 
-	if (rrr_fifo_buffer_search (
+	if (rrr_fifo_search (
 			&data->buffer,
 			httpserver_housekeep_callback,
-			&callback_data,
-			0
+			&callback_data
 	)) {
 		return 1;
 	}

@@ -1847,7 +1847,7 @@ static int ip_function_periodic (RRR_EVENT_FUNCTION_PERIODIC_ARGS) {
 	ip_data->messages_count_read = 0;
 	ip_data->messages_count_polled = 0;
 
-	int delivery_entry_count = 0;
+	unsigned int delivery_entry_count = 0;
 	int delivery_ratelimit_active = 0;
 
 	if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
