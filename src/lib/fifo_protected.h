@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <inttypes.h>
 
+#include "rrr_types.h"
 #include "fifo_common.h"
 
 #define RRR_FIFO_PROTECTED_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
@@ -57,7 +58,7 @@ struct rrr_fifo_protected_entry {
 
 struct rrr_fifo_protected_ratelimit {
 	double read_write_balance;
-	unsigned int prev_entry_count;
+	rrr_length prev_entry_count;
 	unsigned int burst_counter;
 	long long int sleep_spin_time;
 	long long int spins_per_us;
@@ -94,8 +95,8 @@ struct rrr_fifo_protected {
 	pthread_mutex_t stats_mutex;
 
 	int buffer_do_ratelimit;
-	unsigned int entry_count;
-	unsigned int write_queue_entry_count;
+	rrr_length entry_count;
+	rrr_length write_queue_entry_count;
 
 	struct rrr_fifo_protected_ratelimit ratelimit;
 	struct rrr_fifo_protected_stats stats;
@@ -122,10 +123,7 @@ void rrr_fifo_protected_set_do_ratelimit (
 		struct rrr_fifo_protected *buffer,
 		int set
 );
-unsigned int rrr_fifo_protected_get_entry_count (
-		struct rrr_fifo_protected *buffer
-);
-int rrr_fifo_protected_get_entry_count_combined (
+rrr_length rrr_fifo_protected_get_entry_count (
 		struct rrr_fifo_protected *buffer
 );
 int rrr_fifo_protected_get_ratelimit_active (

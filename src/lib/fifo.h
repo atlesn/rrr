@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "fifo_common.h"
+#include "rrr_types.h"
 
 #define RRR_FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 #define RRR_FIFO_MAX_READS 500 // Maximum number of reads per call to a read function
@@ -60,7 +61,7 @@ struct rrr_fifo {
 	struct rrr_fifo_entry *gptr_first;
 	struct rrr_fifo_entry *gptr_last;
 
-	unsigned int entry_count;
+	rrr_length entry_count;
 
 	void (*free_entry)(void *arg);
 };
@@ -76,7 +77,7 @@ int rrr_fifo_init_custom_free (
 		void (*custom_free)(void *arg)
 );
 
-static inline int rrr_fifo_get_entry_count (
+static inline rrr_length rrr_fifo_get_entry_count (
 		struct rrr_fifo *buffer
 ) {
 	return buffer->entry_count;

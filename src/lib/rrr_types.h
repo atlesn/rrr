@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,9 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TYPES_H
 #define RRR_TYPES_H
 
+#include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
 
+#include "log.h"
 #include "util/macro_utils.h"
 
 /*
@@ -95,6 +97,38 @@ static inline void __rrr_types_checked_length_counter_sub (rrr_slength *target, 
 	*target -= (rrr_slength) operand;
 	if (*target < 0 || operand > RRR_LENGTH_MAX) {
 		RRR_BUG("BUG: Underflow in __rrr_types_checked_tmp_add");
+	}
+}
+
+static inline void rrr_length_sub_bug (rrr_length *a, rrr_length b) {
+	rrr_length r = *a - b;
+	if (r > *a) {
+		RRR_BUG("Bug: Underflow in rrr_types_length_sub_bug input was %" PRIrrrl " and %" PRIrrrl "\n", *a, b);
+	}
+	*a = r;
+}
+
+static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
+	rrr_length r = *a + b;
+	if (r < *a) {
+		RRR_MSG_0("Error: Overflow in rrr_length_add_err, input was %" PRIrrrl " and %" PRIrrrl "\n", *a, b);
+		return 1;
+	}
+	*a = r;
+	return 0;
+}
+
+static inline int rrr_length_inc_err (rrr_length *a) {
+	if (++(*a) == 0) {
+		RRR_MSG_0("Error: Overflow in rrr_length_inc_err\n");
+		return 1;
+	}
+	return 0;
+}
+
+static inline void rrr_length_inc_bug (rrr_length *a) {
+	if (++(*a) == 0) {
+		RRR_BUG("Bug: Overflow in rrr_length_inc_bug\n");
 	}
 }
 

@@ -61,11 +61,11 @@ static inline void __rrr_fifo_protected_unlock_void(void *arg) {
     action;                                                    \
     pthread_mutex_unlock(&buffer->stats_mutex)
 
-static inline void __rrr_fifo_protected_stats_add_written (struct rrr_fifo_protected *buffer, unsigned int num) {
+static inline void __rrr_fifo_protected_stats_add_written (struct rrr_fifo_protected *buffer, rrr_length num) {
 	RRR_FIFO_PROTECTED_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_written += num);
 }
 
-static inline void __rrr_fifo_protected_stats_add_deleted (struct rrr_fifo_protected *buffer, unsigned int num) {
+static inline void __rrr_fifo_protected_stats_add_deleted (struct rrr_fifo_protected *buffer, rrr_length num) {
 	RRR_FIFO_PROTECTED_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_deleted += num);
 }
 
@@ -210,14 +210,11 @@ static int __rrr_fifo_write_queue_merge_nolock (
 		__rrr_fifo_protected_stats_add_written(buffer, buffer->write_queue_entry_count);
 
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
-		unsigned int entry_count_new = buffer->entry_count + buffer->write_queue_entry_count;
-		buffer->write_queue_entry_count = 0;
-		if (entry_count_new < buffer->entry_count) {
+		if ((ret = rrr_length_add_err (&buffer->entry_count, buffer->write_queue_entry_count)) != 0) {
 			RRR_MSG_0("Entry count overflow in buffer during write queue merge\n");
-			buffer->entry_count = 0;
 			ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
 		}
-		buffer->entry_count = entry_count_new;
+		buffer->write_queue_entry_count = 0;
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	}
@@ -325,10 +322,10 @@ void rrr_fifo_protected_set_do_ratelimit (
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 }
 
-unsigned int rrr_fifo_protected_get_entry_count (
+rrr_length rrr_fifo_protected_get_entry_count (
 		struct rrr_fifo_protected *buffer
 ) {
-	unsigned int ret = 0;
+	rrr_length ret = 0;
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	ret = buffer->entry_count;
@@ -530,7 +527,7 @@ int rrr_fifo_protected_read_clear_forward (
 		goto out;
 	}
 
-	unsigned int processed_entries = 0;
+	rrr_length processed_entries = 0;
 	while (current != stop) {
 		struct rrr_fifo_protected_entry *next = NULL;
 
@@ -558,7 +555,7 @@ int rrr_fifo_protected_read_clear_forward (
 			}
 		}
 
-		processed_entries++;
+		rrr_length_inc_bug(&processed_entries);
 
 		if (ret_tmp != 0) {
 			{
@@ -629,11 +626,7 @@ int rrr_fifo_protected_read_clear_forward (
 	__rrr_fifo_protected_stats_add_deleted(buffer, processed_entries);
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
-	unsigned int entry_count_new = buffer->entry_count - processed_entries;
-	if (entry_count_new > buffer->entry_count) {
-		RRR_BUG("Buffer entry count underflow in rrr_fifo_protected_read_clear_forward\n");
-	}
-	buffer->entry_count = entry_count_new;
+	rrr_length_sub_bug (&buffer->entry_count, processed_entries);
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	out:
@@ -713,7 +706,7 @@ static void __rrr_fifo_protected_do_ratelimit(struct rrr_fifo_protected *buffer)
 #ifdef RRR_FIFO_PROTECTED_BUFFER_RATELIMIT_DEBUG
 	uint64_t time = rrr_time_get_64() - ratelimit_in;
 	if (time > 0) {
-		printf("Ratelimit %p: %" PRIu64 "\tc: %i\n", buffer, time, buffer->entry_count);
+		printf("Ratelimit %p: %" PRIu64 "\tc: %" PRIrrrl "\n", buffer, time, buffer->entry_count);
 	}
 #endif
 }
@@ -814,14 +807,6 @@ int rrr_fifo_protected_write (
 
 	int write_again = 0;
 
-	// Unsynchronized counters, for informational purposes only
-	unsigned int entry_count_before = 0;
-	unsigned int entry_count_after = 0;
-
-	pthread_mutex_lock(&buffer->ratelimit_mutex);
-	entry_count_before = buffer->entry_count;
-	pthread_mutex_unlock(&buffer->ratelimit_mutex);
-
 	do {
 		struct rrr_fifo_protected_entry *entry = NULL;
 		int do_free_callback = 0;
@@ -870,17 +855,9 @@ int rrr_fifo_protected_write (
 		__rrr_fifo_protected_stats_add_written(buffer, 1);
 
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
-		unsigned int entry_count_new = buffer->entry_count + 1;
-		entry_count_after = buffer->entry_count;
-		if (entry_count_new < buffer->entry_count) {
-			RRR_MSG_0("Buffer entry count overflow while writing %lu<%lu\n", buffer->entry_count, entry_count_before);
+		if ((ret = rrr_length_inc_err (&buffer->entry_count)) != 0) {
 			write_again = 0;
-			entry_count_before = 0;
-			entry_count_after = 0;
-			buffer->entry_count = 0;
-			ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
 		}
-		buffer->entry_count = entry_count_new;
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 		if (ret != 0) {
@@ -899,11 +876,6 @@ int rrr_fifo_protected_write (
 		loop_out_no_entry_free:
 			__rrr_fifo_protected_do_ratelimit(buffer);
 	} while (write_again);
-
-	if (entry_count_before != 0 || entry_count_after != 0) {
-		RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
-				buffer, entry_count_before, entry_count_after);
-	}
 
 	return ret;
 }
@@ -988,14 +960,9 @@ int rrr_fifo_protected_write_delayed (
 
 		{
 			pthread_mutex_lock(&buffer->ratelimit_mutex);
-			unsigned int write_queue_entry_count_new = buffer->write_queue_entry_count + 1;
-			if (write_queue_entry_count_new < buffer->write_queue_entry_count) {
-				RRR_MSG_0("Buffer delayed write queue entry count overflow\n");
+			if ((ret = rrr_length_inc_err (&buffer->write_queue_entry_count)) != 0) {
 				write_again = 0;
-				buffer->write_queue_entry_count = 0;
-				ret = RRR_FIFO_PROTECTED_GLOBAL_ERR;
 			}
-			buffer->write_queue_entry_count = write_queue_entry_count_new;
 			pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 			if (ret != 0) {

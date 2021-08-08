@@ -168,7 +168,6 @@ void rrr_fifo_clear_with_callback (
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
 	buffer->entry_count = 0;
-
 }
 
 void rrr_fifo_clear (
@@ -235,7 +234,7 @@ int rrr_fifo_search (
 		goto out;
 	}
 
-	int cleared_entries = 0;
+	rrr_length cleared_entries = 0;
 
 	struct rrr_fifo_entry *entry;
 	struct rrr_fifo_entry *next;
@@ -267,7 +266,7 @@ int rrr_fifo_search (
 				prev->next = entry->next;
 			}
 
-			cleared_entries++;
+			rrr_length_inc_bug(&cleared_entries);
 
 			// If we are not asked to free, zero out the pointer to stop it from being
 			// destroyed by entry destroy functions
@@ -291,7 +290,7 @@ int rrr_fifo_search (
 		prev = entry;
 	}
 
-	buffer->entry_count -= cleared_entries;
+	rrr_length_sub_bug (&buffer->entry_count, cleared_entries);
 
 	out:
 	return ret;
@@ -480,8 +479,8 @@ int rrr_fifo_search_and_replace (
 		goto out;
 	}
 
-	int cleared_entries = 0;
-	int new_entries = 0;
+	rrr_length cleared_entries = 0;
+	rrr_length new_entries = 0;
 
 	struct rrr_fifo_entry *entry;
 	struct rrr_fifo_entry *next;
@@ -530,8 +529,7 @@ int rrr_fifo_search_and_replace (
 				}
 
 				__rrr_fifo_entry_destroy(buffer, entry);
-
-				cleared_entries++;
+				rrr_length_inc_bug(&cleared_entries);
 			}
 			else {
 				if (entry->data == data) {
@@ -544,8 +542,10 @@ int rrr_fifo_search_and_replace (
 				entry->size = size;
 				entry->order = order;
 
-				cleared_entries++;
-				new_entries++;
+				rrr_length_inc_bug(&cleared_entries);
+				if ((ret = rrr_length_inc_err (&new_entries)) != 0) {
+					break;
+				}
 			}
 
 			entry = prev;
@@ -566,8 +566,10 @@ int rrr_fifo_search_and_replace (
 		ret = __rrr_fifo_search_and_replace_call_again(buffer, callback, callback_arg);
 	}
 
-	buffer->entry_count -= cleared_entries;
-	buffer->entry_count += new_entries;
+	rrr_length_sub_bug (&buffer->entry_count, cleared_entries);
+	if ((ret = rrr_length_add_err (&buffer->entry_count, new_entries)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -594,7 +596,7 @@ int rrr_fifo_read_clear_forward_all (
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
 
-	int processed_entries = 0;
+	rrr_length processed_entries = 0;
 	while (current != NULL) {
 		struct rrr_fifo_entry *next = NULL;
 
@@ -603,7 +605,7 @@ int rrr_fifo_read_clear_forward_all (
 		next = current->next;
 		ret_tmp = callback(callback_data, current->data, current->size);
 
-		processed_entries++;
+		rrr_length_inc_bug(&processed_entries);
 
 		if (ret_tmp != 0) {
 			{
@@ -666,7 +668,7 @@ int rrr_fifo_read_clear_forward_all (
 		current = next;
 	}
 
-	buffer->entry_count -= processed_entries;
+	rrr_length_sub_bug (&buffer->entry_count, processed_entries);
 
 	out:
 	return ret;
@@ -791,8 +793,8 @@ int rrr_fifo_write (
 
 	int write_again = 0;
 
-	unsigned int entry_count_before = buffer->entry_count;
-	unsigned int entry_count_after = 0;
+	rrr_length entry_count_before = buffer->entry_count;
+	rrr_length entry_count_after = 0;
 
 	do {
 		struct rrr_fifo_entry *entry = NULL;
@@ -830,7 +832,9 @@ int rrr_fifo_write (
 		__rrr_fifo_write_update_pointers (buffer, entry, order, do_ordered_write);
 		entry = NULL;
 
-		buffer->entry_count++;
+		if ((ret = rrr_length_inc_err (&buffer->entry_count)) != 0) {
+			goto loop_out_no_drop;
+		}
 		entry_count_after = buffer->entry_count;
 
 		do_free_entry = 0;
