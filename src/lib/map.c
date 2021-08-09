@@ -132,8 +132,8 @@ static int __rrr_map_item_new_with_values (
 	struct rrr_map_item *item_new = NULL;
 
 	// Remember + 1 and minimum size 1
-	rrr_length tag_size = rrr_length_from_size_t_bug (tag != NULL ? strlen(tag) + 1 : 1);
-	rrr_length value_size = rrr_length_from_size_t_bug(value != NULL ? strlen(value) + 1 : 1);
+	rrr_length tag_size = rrr_length_from_size_t_bug_const (tag != NULL ? strlen(tag) + 1 : 1);
+	rrr_length value_size = rrr_length_from_size_t_bug_const(value != NULL ? strlen(value) + 1 : 1);
 	rrr_length max_size = (tag_size > value_size ? tag_size : value_size);
 
 	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
@@ -238,7 +238,7 @@ int rrr_map_parse_pair (
 	int ret = 0;
 	struct rrr_map_item *column = NULL;
 
-	rrr_length input_length = rrr_length_from_size_t_bug(strlen(input));
+	rrr_length input_length = rrr_length_from_size_t_bug_const(strlen(input));
 
 	if ((ret = rrr_map_item_new (&column, input_length + 1)) != 0) {
 		goto out;
@@ -252,7 +252,7 @@ int rrr_map_parse_pair (
 		const size_t delimeter_length = strlen(delimeter);
 
 		if (delimeter_pos != NULL) {
-			strncpy(column->tag, input, rrr_length_from_ptr_sub_bug(delimeter_pos, input));
+			strncpy(column->tag, input, rrr_length_from_ptr_sub_bug_const(delimeter_pos, input));
 
 			const char *pos = delimeter_pos + delimeter_length;
 			if (*pos == '\0' || pos > (input + input_length)) {

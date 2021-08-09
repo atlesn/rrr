@@ -27,13 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "util/linked_list.h"
+#include "rrr_types.h"
 
 //struct rrr_socket_client;
 
 #define RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS    \
-        ssize_t *result,                                       \
+        rrr_biglength *result,                                        \
         void *data,                                            \
-        ssize_t data_size,                                     \
+        rrr_biglength data_size,                                      \
         void *arg
 
 struct rrr_read_session_collection {
@@ -58,7 +59,7 @@ struct rrr_read_session {
 	// Ratelimit working values. If more than bytes_max has been read within the interval,
 	// no reading is performed. When interval has passed, the byte counter and time is reset.
 	uint64_t ratelimit_time;
-	ssize_t ratelimit_bytes;
+	rrr_biglength ratelimit_bytes;
 
 	// This is set if get socket options callback is used
 	int socket_options;
@@ -70,18 +71,18 @@ struct rrr_read_session {
 	/* Read untill target size is reached (default) or set to read until
 	 * connection is closed. */
 	int read_complete_method;
-	ssize_t target_size;
+	rrr_biglength target_size;
 
 	// Populated by socket read function (contain all read data)
 	char *rx_buf_ptr;
-	ssize_t rx_buf_size;
-	ssize_t rx_buf_wpos;
+	rrr_biglength rx_buf_size;
+	rrr_biglength rx_buf_wpos;
 
 	// Populated by get target length-function if bytes are to be skipped at beginning of buffer
-	ssize_t rx_buf_skip;
+	rrr_biglength rx_buf_skip;
 
 	// May be used by freely by application layer to keep track of any parsing
-	ssize_t parse_pos;
+	rrr_biglength parse_pos;
 
 	// Complete callback may set this to indicate that parsing of a block has completed successfully
 	// and that if an EOF or connection close occurs in the next read, this should not produce a soft error.
@@ -92,7 +93,7 @@ struct rrr_read_session {
 	// At the next iteration, no read will be performed and the overshoot is moved to
 	// rx_buf_ptr before get target size is called.
 	char *rx_overshoot;
-	ssize_t rx_overshoot_size;
+	rrr_biglength rx_overshoot_size;
 
 	// Set to 1 before read complete callback and 0 after the callback unless it fails. If the
 	// final callback fails, the read session must be clear or a bugtrap will be triggered the
@@ -130,12 +131,12 @@ int rrr_read_session_destroy (
 );
 int rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		struct rrr_read_session *read_session_ratelimit,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -146,8 +147,8 @@ int rrr_read_message_using_callbacks (
 		),
 		int (*function_read) (
 				char *buf,
-				ssize_t *read_bytes,
-				ssize_t read_step_max_size,
+				rrr_biglength *read_bytes,
+				rrr_biglength read_step_max_size,
 				void *private_arg
 		),
 		struct rrr_read_session*(*function_get_read_session_with_overshoot) (

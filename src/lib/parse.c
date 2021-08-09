@@ -203,7 +203,7 @@ int rrr_parse_match_letters_simple (
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end,
+		rrr_slength *end,
 		rrr_length flags
 ) {
 	*start = pos->pos;
@@ -232,13 +232,13 @@ void rrr_parse_match_letters (
 		c = pos->data[pos->pos];
 	}
 
-	*end = pos->pos - 1;
+	*end = (rrr_slength) pos->pos - 1;
 }
 
 void rrr_parse_match_until (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end,
+		rrr_slength *end,
 		rrr_length flags
 ) {
 	*start = pos->pos;
@@ -276,13 +276,13 @@ void rrr_parse_match_until (
 		pos->pos = pos_orig;
 	}
 
-	*end = pos->pos - 1;
+	*end = (rrr_slength) pos->pos - 1;
 }
 
 void rrr_parse_non_newline (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end
+		rrr_slength *end
 ) {
 	*start = pos->pos;
 	*end = pos->pos;
@@ -300,7 +300,7 @@ void rrr_parse_non_newline (
 		c = pos->data[pos->pos];
 	}
 
-	*end = pos->pos - 1;
+	*end = (rrr_slength) pos->pos - 1;
 }
 
 int rrr_parse_str_extract (

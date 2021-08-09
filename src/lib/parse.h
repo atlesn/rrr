@@ -93,19 +93,19 @@ int rrr_parse_match_letters_simple (
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end,
+		rrr_slength *end,
 		rrr_length flags
 );
 void rrr_parse_match_until (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end,
+		rrr_slength *end,
 		rrr_length flags
 );
 void rrr_parse_non_newline (
 		struct rrr_parse_pos *pos,
 		rrr_length *start,
-		rrr_length *end
+		rrr_slength *end
 );
 int rrr_parse_str_extract (
 		char **target,

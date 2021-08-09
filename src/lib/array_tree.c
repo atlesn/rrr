@@ -326,7 +326,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 		(*start)++;
 	}
 
-	rrr_length length = rrr_length_from_ptr_sub_bug(*start,  tag_begin);
+	rrr_length length = rrr_length_from_ptr_sub_bug_const(*start,  tag_begin);
 	if (length == 0) {
 		RRR_MSG_0("Missing tag name after { in defintion\n");
 		ret = RRR_ARRAY_TREE_SOFT_ERROR;
@@ -442,7 +442,7 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 				goto out_err;
 			}
 
-			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug (integer_end, start));
+			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug_const (integer_end, start));
 			start = integer_end;
 
 			if (length <= 0) {
@@ -512,7 +512,7 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 				goto out_err;
 			}
 
-			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug (integer_end, start));
+			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug_const (integer_end, start));
 		}
 
 		// start = integer_end; - Enable if more parsing is to be performed
@@ -756,7 +756,7 @@ static int __rrr_array_tree_interpret_node (
 		}
 
 		rrr_length start;
-		rrr_length end;
+		rrr_slength end;
 
 		rrr_parse_match_until (
 				pos,
@@ -779,7 +779,7 @@ static int __rrr_array_tree_interpret_node (
 			goto out_destroy;
 		}
 
-		rrr_length length = end - start + 1; // +1 here is not for the \0
+		rrr_length length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start)); // +1 here is not for the \0
 
 		char tmp[length + 1];
 		memcpy(tmp, pos->data + start, length);
@@ -842,7 +842,7 @@ int __rrr_array_tree_interpret_rewind (
 	struct rrr_array_node *node = NULL;
 
 	rrr_length start;
-	rrr_length end;
+	rrr_slength end;
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
@@ -859,7 +859,7 @@ int __rrr_array_tree_interpret_rewind (
 		goto out;
 	}
 
-	rrr_length length = end - start + 1;
+	rrr_length length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
 
 	if (length > 12) {
 		RRR_MSG_0("Count after REWIND keyword too long in array tree\n");
@@ -872,7 +872,7 @@ int __rrr_array_tree_interpret_rewind (
 	tmp[length] = '\0';
 
 	char *endptr;
-	rrr_length count = rrr_length_from_size_t_bug(strtoul(tmp, &endptr, 10));
+	rrr_length count = rrr_length_from_size_t_bug_const(strtoul(tmp, &endptr, 10));
 
 	if ((node = __rrr_array_node_allocate()) == NULL) {
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
@@ -1499,9 +1499,9 @@ int rrr_array_tree_clone_without_data (
 }
 
 int rrr_array_tree_import_from_buffer (
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *buf,
-		ssize_t buf_len,
+		rrr_length buf_len,
 		const struct rrr_array_tree *tree,
 		int (*callback)(struct rrr_array *array, void *arg),
 		void *callback_arg
@@ -1533,7 +1533,7 @@ int rrr_array_tree_import_from_buffer (
 		goto out;
 	}
 
-	*parsed_bytes = callback_data.pos - buf;
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (callback_data.pos, buf);
 
 	out:
 	rrr_array_clear(&callback_data.array);

@@ -170,12 +170,12 @@ void rrr_read_session_collection_remove_session (
 
 int rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		struct rrr_read_session *read_session_ratelimit,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*function_get_target_size) (
 				struct rrr_read_session *read_session,
 				void *private_arg
@@ -186,8 +186,8 @@ int rrr_read_message_using_callbacks (
 		),
 		int (*function_read) (
 				char *buf,
-				ssize_t *read_bytes,
-				ssize_t read_step_max_size,
+				rrr_biglength *read_bytes,
+				rrr_biglength read_step_max_size,
 				void *private_arg
 		),
 		struct rrr_read_session*(*function_get_read_session_with_overshoot) (
@@ -211,7 +211,7 @@ int rrr_read_message_using_callbacks (
 
 	*bytes_read = 0;
 
-	ssize_t bytes = 0;
+	rrr_biglength bytes = 0;
 	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
 
@@ -230,8 +230,11 @@ int rrr_read_message_using_callbacks (
 				read_session_ratelimit->ratelimit_bytes = 0;
 			}
 			else if (read_session_ratelimit->ratelimit_bytes > ratelimit_max_bytes) {
-				RRR_DBG_7("Read ratelimited %lli > %lli within %" PRIu64 " us\n",
-					(long long int) read_session_ratelimit->ratelimit_bytes, (long long int) ratelimit_max_bytes, ratelimit_interval_us);
+				RRR_DBG_7("Read ratelimited %llu > %llu within %" PRIu64 " us\n",
+					(long long unsigned) read_session_ratelimit->ratelimit_bytes,
+					(long long unsigned) ratelimit_max_bytes,
+					ratelimit_interval_us
+				);
 				ret = RRR_READ_RATELIMIT;
 				goto out;
 			}
@@ -344,7 +347,7 @@ int rrr_read_message_using_callbacks (
 	if (bytes > 0) {
 		*bytes_read = (uint64_t) bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
-			ssize_t expansion_max = read_session->target_size > RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD && read_step_max_size < RRR_READ_BIGALLOC_STEP
+			rrr_biglength expansion_max = read_session->target_size > RRR_READ_BIGALLOC_TARGET_SIZE_THRESHOLD && read_step_max_size < RRR_READ_BIGALLOC_STEP
 				? RRR_READ_BIGALLOC_STEP
 				: read_step_max_size;
 
@@ -352,14 +355,14 @@ int rrr_read_message_using_callbacks (
 				expansion_max = 0;
 			}
 
-			ssize_t new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
+			rrr_biglength new_size = read_session->rx_buf_size + (bytes > expansion_max ? bytes : expansion_max);
 
 			char *new_buf = rrr_reallocate_group(read_session->rx_buf_ptr, (size_t) read_session->rx_buf_size, (size_t) new_size, RRR_ALLOCATOR_GROUP_MSG);
 
 			if (new_buf == NULL) {
-				RRR_MSG_0("Could not re-allocate memory (%lli->%lli) in rrr_read_message_using_callbacks\n",
-					(long long int) read_session->rx_buf_size,
-					(long long int) new_size
+				RRR_MSG_0("Could not re-allocate memory (%llu->%llu) in rrr_read_message_using_callbacks\n",
+					(long long unsigned) read_session->rx_buf_size,
+					(long long unsigned) new_size
 				);
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
@@ -368,14 +371,14 @@ int rrr_read_message_using_callbacks (
 			read_session->rx_buf_size = new_size;
 		}
 
-		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
+		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, (size_t) bytes);
 		read_session->rx_buf_wpos += bytes;
 		read_session->last_read_time = rrr_time_get_64();
 	}
 
 	/* Check for max bytes read */
 	if (read_max_size > 0 && read_session->rx_buf_wpos > read_max_size) {
-		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%li>%li)\n",
+		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%" PRIrrrbl ">%" PRIrrrbl ")\n",
 				read_session->rx_buf_wpos, read_max_size);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -402,10 +405,6 @@ int rrr_read_message_using_callbacks (
 
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
-			if (read_session->rx_buf_skip < 0) {
-				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_read_message_using_callbacks\n");
-			}
-
 			RRR_DBG_7("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
 			char *new_buf = rrr_allocate_group(read_session->rx_buf_size, RRR_ALLOCATOR_GROUP_MSG);
@@ -492,9 +491,9 @@ int rrr_read_message_using_callbacks (
 }
 
 int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
-		ssize_t *result,
+		rrr_biglength *result,
 		void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		void *arg
 ) {
 	if (arg != NULL) {
@@ -503,11 +502,18 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	*result = 0;
 
+	if (data_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Message target length too long in rrr_read_common_get_session_target_length_from_message_and_checksum_raw (%llu>%llu)\n",
+			(unsigned long long) data_size,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
+
 	rrr_length target_size = 0;
 	int ret = rrr_msg_get_target_size_and_check_checksum(
 			&target_size,
 			(struct rrr_msg *) data,
-			data_size
+			(rrr_length) data_size
 	);
 
 	if (ret != 0) {
@@ -516,15 +522,6 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		}
 		goto out;
 	}
-
-#if RRR_LENGTH_MAX > SSIZE_MAX
-	if (target_size > SSIZE_MAX) {
-		RRR_MSG_0("Target size exceeded in rrr_read_common_get_session_target_length_from_message_and_checksum_raw: %" PRIrrrl ">%ld",
-				target_size, SSIZE_MAX);
-		ret = RRR_READ_SOFT_ERROR;
-		goto out;
-	}
-#endif
 
 	*result = target_size;
 
@@ -573,15 +570,20 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 
 	const char *pos_max = (data->message_max_size != 0 ? read_session->rx_buf_ptr + data->message_max_size : NULL);
 	char *pos = read_session->rx_buf_ptr;
-	rrr_slength wpos = read_session->rx_buf_wpos;
 
-//	printf ("Array wpos: %li\n", wpos);
+	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Array data too long in rrr_read_common_get_session_target_length_from_array_tree (%llu>%llu)\n",
+			(unsigned long long) read_session->rx_buf_ptr,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
 
-	ssize_t import_length = 0;
+	const rrr_length wpos = (rrr_length) read_session->rx_buf_wpos;
+	rrr_length import_length = 0;
 
 	while (wpos > 0) {
 		if (pos_max != NULL && pos > pos_max) {
-			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%u)\n",
+			RRR_DBG_1("Received array data exceeds maximum size, is a delimeter missing? (%" PRIrrrl ">%u)\n",
 					wpos, data->message_max_size);
 			return RRR_READ_SOFT_ERROR;
 		}
@@ -596,7 +598,7 @@ int rrr_read_common_get_session_target_length_from_array_tree (
 		);
 
 		if (ret == 0) {
-			if (import_length <= 0) {
+			if (import_length == 0) {
 				RRR_MSG_0("Warning: Array definition produced a length of zero, possible configuration error. Check REWIND usage.\n");
 				return RRR_READ_SOFT_ERROR;
 			}

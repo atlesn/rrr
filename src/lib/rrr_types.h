@@ -140,15 +140,48 @@ static inline void rrr_length_mul_bug (rrr_length *a, rrr_length b) {
 	*a = (rrr_length) r;
 }
 
-static inline rrr_length rrr_length_from_ptr_sub_bug (const void *a, const void *b) {
+static inline rrr_length rrr_length_from_ptr_sub_bug_const (const void *a, const void *b) {
 	if (b > a) {
-		RRR_BUG("Underflow in rrr_length_from_ptr_sub_bug\n");
+		RRR_BUG("Underflow in rrr_length_from_ptr_sub_bug_const\n");
 	}
 	uintptr_t r = (uintptr_t) a - (uintptr_t) b;
 	if (r > RRR_LENGTH_MAX) {
-		RRR_BUG("Overflow in rrr_length_from_ptr_sub_bug\n");
+		RRR_BUG("Overflow in rrr_length_from_ptr_sub_bug_const\n");
 	}
 	return (rrr_length) r;
+}
+
+static inline rrr_length rrr_length_from_slength_sub_bug_const (rrr_slength a, rrr_slength b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_length_from_slength_sub_bug_const\n");
+	}
+	rrr_slength r = a - b;
+	if (r > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_slength_sub_bug_const\n");
+	}
+	return (rrr_length) r;
+}
+
+static inline rrr_length rrr_length_from_slength_bug_const (rrr_slength a) {
+	if (a > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_slength_sub_bug\n");
+	}
+	if (a < 0) {
+		RRR_BUG("Underflow in rrr_length_from_slength_sub_bug\n");
+	}
+	return (rrr_length) a;
+}
+
+static inline void rrr_length_dec_bug (rrr_length *a) {
+	if ((*a) == 0) {
+		RRR_BUG("Bug: Underflow in rrr_length_dec_bug\n");
+	}
+}
+
+static inline rrr_length rrr_length_dec_bug_const (const rrr_length a) {
+	rrr_length r = a;
+	rrr_length_dec_bug(&r);
+	return r;
 }
 
 static inline void rrr_length_inc_bug (rrr_length *a) {
@@ -173,7 +206,7 @@ static inline rrr_length rrr_length_inc_bug_old_value (rrr_length *a) {
 	return *a - 1;
 }
 
-static inline rrr_length rrr_length_from_size_t_bug (size_t a) {
+static inline rrr_length rrr_length_from_size_t_bug_const (size_t a) {
 	if (a > RRR_LENGTH_MAX) {
 		RRR_BUG("Overflow in rrr_length_from_size_t_bug\n");
 	}

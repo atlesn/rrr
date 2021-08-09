@@ -231,11 +231,12 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 
 	struct rrr_parse_pos pos;
 
-	rrr_parse_pos_init(&pos, target_str_tmp, rrr_length_from_size_t_bug(strlen(target_str_tmp)));
+	rrr_parse_pos_init(&pos, target_str_tmp, rrr_length_from_size_t_bug_const(strlen(target_str_tmp)));
 	rrr_parse_ignore_space_and_tab(&pos);
 
 	if (rrr_parse_match_word(&pos, "{")) {
-		rrr_length start, end;
+		rrr_length start;
+		rrr_slength end;
 		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_LETTERS | RRR_PARSE_MATCH_NUMBERS);
 		rrr_parse_ignore_space_and_tab(&pos);
 		if (rrr_parse_match_word(&pos, "}") && end > start) {
@@ -246,7 +247,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 				goto out;
 			}
 
-			rrr_parse_str_extract(&array_tree_name_tmp, &pos, start, end);
+			rrr_parse_str_extract(&array_tree_name_tmp, &pos, start, rrr_length_from_slength_bug_const(end));
 
 			const struct rrr_array_tree *array_tree = rrr_array_tree_list_get_tree_by_name (
 					config->global_array_trees,
@@ -272,7 +273,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		}
 	}
 
-	rrr_length definition_length = rrr_length_from_size_t_bug(strlen(target_str_tmp));
+	rrr_length definition_length = rrr_length_from_size_t_bug_const(strlen(target_str_tmp));
 
 	// Replace terminating \0 with semicolon. We don't actually use the \0 to
 	// figure out where the end is when parsing the array. This adding of ;
@@ -380,7 +381,7 @@ int rrr_instance_config_parse_optional_utf8 (
 		ret = 0;
 	}
 	else {
-		if (rrr_utf8_validate(*target, rrr_length_from_size_t_bug(strlen(*target))) != 0) {
+		if (rrr_utf8_validate(*target, rrr_length_from_size_t_bug_const(strlen(*target))) != 0) {
 			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);
 			ret = 1;
 			goto out;

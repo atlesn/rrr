@@ -59,7 +59,7 @@ static int __rrr_config_parse_setting (
 
 	char c;
 	rrr_length name_begin;
-	rrr_length name_end;
+	rrr_slength name_end;
 
 	char *name = NULL;
 	char *value = NULL;
@@ -126,7 +126,7 @@ static int __rrr_config_parse_setting (
 	}
 
 	rrr_length value_begin;
-	rrr_length value_end;
+	rrr_slength value_end;
 	rrr_parse_non_newline(pos, &value_begin, &value_end);
 
 	// Ignore trailing spaces
@@ -140,8 +140,8 @@ static int __rrr_config_parse_setting (
 		goto out;
 	}
 
-	rrr_length name_length = name_end - name_begin + 1;
-	rrr_length value_length = value_end - value_begin + 1;
+	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const (name_end, name_begin));
+	rrr_length value_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const (value_end, value_begin));
 
 	if (rrr_parse_str_extract(&name, pos, name_begin, name_length) != 0) {
 		RRR_MSG_0("Could not extract name of setting\n");
@@ -241,7 +241,7 @@ static int __rrr_config_parse_block (
 	}
 
 	void *block = NULL;
-	if ((ret = new_block_callback (&block, config, pos->data + begin, (size_t) length, callback_arg)) != 0) {
+	if ((ret = new_block_callback (&block, config, pos->data + begin, length, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -289,7 +289,7 @@ static int __rrr_config_interpret_array_tree (
 	}
 
 	rrr_length start;
-	rrr_length end;
+	rrr_slength end;
 
 	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS);
 
@@ -303,7 +303,7 @@ static int __rrr_config_interpret_array_tree (
 	}
 	rrr_length_inc_bug(&pos->pos);
 
-	rrr_length name_length = end - start + 1;
+	rrr_length name_length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
 	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
 		goto out_failed_alloc;
 	}
