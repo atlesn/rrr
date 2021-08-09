@@ -167,7 +167,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
-		int debuglevel_tmp;
+		long int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
 			debuglevel_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
@@ -185,12 +185,12 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			ret = EXIT_FAILURE;
 			goto out;
 		}
-		debuglevel = debuglevel_tmp;
+		debuglevel = (unsigned int) debuglevel_tmp;
 	}
 
 	const char *debuglevel_on_exit_string = cmd_get_value(cmd, "debuglevel-on-exit", 0);
 	if (debuglevel_on_exit_string != NULL) {
-		int debuglevel_on_exit_tmp;
+		long int debuglevel_on_exit_tmp;
 		if (strcmp(debuglevel_on_exit_string, "all") == 0) {
 			debuglevel_on_exit_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
@@ -208,7 +208,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			ret = EXIT_FAILURE;
 			goto out;
 		}
-		debuglevel_on_exit = debuglevel_on_exit_tmp;
+		debuglevel_on_exit = (unsigned int) debuglevel_on_exit_tmp;
 	}
 
 	if (cmd_exists(cmd, "no-watchdog-timers", 0)) {
@@ -239,7 +239,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	SETENV_STR(RRR_ENV_RUN_DIRECTORY,	run_directory);
 
 #ifdef HAVE_JOURNALD
-	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env);
+	unsigned int do_journald_output = __rrr_main_check_do_journald_logging(env) != 0;
 #else
 	(void)(env);
 	unsigned int do_journald_output = 0;
