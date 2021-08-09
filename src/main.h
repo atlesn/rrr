@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct cmd_data;
 struct rrr_thread_collection;
 struct rrr_instance_collection;
-struct rrr_config;
+struct rrr_instance_config_collection;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_fork_handler;
@@ -42,7 +42,7 @@ struct rrr_fork_handler;
 int rrr_main_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection,
 		struct rrr_instance_collection *instances,
-		struct rrr_config *global_config,
+		struct rrr_instance_config_collection *config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,

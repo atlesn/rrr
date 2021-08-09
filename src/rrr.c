@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
-#include "lib/configuration.h"
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
@@ -237,7 +236,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 struct main_loop_event_callback_data {
 	struct rrr_thread_collection **collection;
 	struct rrr_instance_collection *instances;
-	struct rrr_config *config;
+	struct rrr_instance_config_collection *config;
 	struct cmd_data *cmd;
 	struct stats_data *stats_data;
 	struct rrr_message_broker *message_broker;
@@ -373,7 +372,7 @@ static int main_loop (
 	struct rrr_message_broker *message_broker = NULL;
 	struct rrr_event_queue *queue = NULL;
 
-	struct rrr_config *config = NULL;
+	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_instance_collection instances = {0};
 	struct rrr_thread_collection *collection = NULL;
 
@@ -384,17 +383,17 @@ static int main_loop (
 		goto out;
 	}
 
-	if (rrr_config_parse_file(&config, config_file) != 0) {
+	if (rrr_instance_config_parse_file(&config, config_file) != 0) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out_destroy_events;
 	}
 
 	RRR_DBG_1("RRR found %d instances in configuration file '%s'\n",
-			config->module_count, config_file);
+			rrr_instance_config_collection_count(config), config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
-		if (config != NULL && rrr_config_dump(config) != 0) {
+		if (config != NULL && rrr_instance_config_dump(config) != 0) {
 			ret = EXIT_FAILURE;
 			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
@@ -402,7 +401,7 @@ static int main_loop (
 	}
 
 	rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
-	if (rrr_instance_create_from_config(&instances, config, module_library_paths) != 0) {
+	if (rrr_instances_create_from_config(&instances, config, module_library_paths) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
 	}
@@ -470,7 +469,7 @@ static int main_loop (
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 		rrr_instance_collection_clear(&instances);
 	out_destroy_config:
-		rrr_config_destroy(config);
+		rrr_instance_config_collection_destroy(config);
 	out_destroy_events:
 		rrr_event_queue_destroy(queue);
 	out:

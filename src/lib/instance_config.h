@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCE_CONFIG_H
 
 #include "settings.h"
+#include "util/linked_list.h"
 
 #define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)															\
 	do { const char *__prefix = prefix; char *config_string = NULL
@@ -99,9 +100,15 @@ struct rrr_array_tree;
 struct rrr_map;
 
 struct rrr_instance_config_data {
+	RRR_LL_NODE(struct rrr_instance_config_data);
 	char *name;
 	struct rrr_instance_settings *settings;
 	const struct rrr_array_tree_list *global_array_trees;
+};
+
+struct rrr_instance_config_collection {
+	RRR_LL_HEAD(struct rrr_instance_config_data);
+	struct rrr_config *config;
 };
 
 static inline int rrr_instance_config_setting_exists (
@@ -160,10 +167,10 @@ static inline int rrr_instance_config_split_commas_to_array (
 	return rrr_settings_split_commas_to_array (target, source->settings, name);
 }
 
-static inline int rrr_instance_config_dump (
-		struct rrr_instance_config_data *source
+static inline int rrr_instance_config_collection_count (
+		struct rrr_instance_config_collection *collection
 ) {
-	return rrr_settings_dump (source->settings);
+	return RRR_LL_COUNT(collection);
 }
 
 int rrr_instance_config_string_set (
@@ -172,14 +179,8 @@ int rrr_instance_config_string_set (
 		const char *name,
 		const char *suffix
 );
-void rrr_instance_config_destroy (
-		struct rrr_instance_config_data *config
-);
-struct rrr_instance_config_data *rrr_instance_config_new (
-		const char *name_begin,
-		const int name_length,
-		const int max_settings,
-		const struct rrr_array_tree_list *global_array_trees
+void rrr_instance_config_collection_destroy (
+		struct rrr_instance_config_collection *configs
 );
 int rrr_instance_config_read_port_number (
 		rrr_setting_uint *target,
@@ -210,6 +211,13 @@ int rrr_instance_config_parse_optional_utf8 (
 		struct rrr_instance_config_data *config,
 		const char *string,
 		const char *def
+);
+int rrr_instance_config_dump (
+		struct rrr_instance_config_collection *collection
+);
+int rrr_instance_config_parse_file (
+		struct rrr_instance_config_collection **result,
+		const char *filename
 );
 
 #endif /* RRR_INSTANCE_CONFIG_H */

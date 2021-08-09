@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
+#include "../lib/array.h"
 #include "../lib/event/event.h"
 #include "../lib/event/event_collection.h"
 #include "../lib/messages/msg_msg.h"

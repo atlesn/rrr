@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_INSTANCES_H
 
 #include "modules.h"
-#include "configuration.h"
 #include "instance_friends.h"
 #include "threads.h"
 #include "poll_helper.h"
@@ -40,6 +39,7 @@ struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_mqtt_topic_token;
+struct rrr_instance_config_collection;
 
 struct rrr_instance {
 	RRR_LL_NODE(struct rrr_instance);
@@ -99,7 +99,7 @@ struct rrr_instance_runtime_init_data {
 
 	// Shortcuts to other structures
 	struct rrr_instance_config_data *instance_config;
-	struct rrr_config *global_config;
+	struct rrr_instance_config_collection *global_config;
 	struct rrr_instance_module_data *module;
 	struct rrr_instance_friend_collection *senders;
 	struct rrr_stats_engine *stats;
@@ -190,15 +190,15 @@ struct rrr_instance_runtime_data *rrr_instance_runtime_data_new (
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
-		struct rrr_config *global_config,
+		struct rrr_instance_config_collection *config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
 );
-int rrr_instance_create_from_config (
+int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
-		struct rrr_config *config,
+		struct rrr_instance_config_collection *config,
 		const char **library_paths
 );
 int rrr_instance_count_receivers_of_self (

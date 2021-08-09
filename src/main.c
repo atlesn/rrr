@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_main_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
-		struct rrr_config *global_config,
+		struct rrr_instance_config_collection *config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
@@ -51,7 +51,7 @@ int rrr_main_create_and_start_threads (
 	return rrr_instances_create_and_start_threads (
 			thread_collection_target,
 			instances,
-			global_config,
+			config,
 			cmd,
 			stats,
 			message_broker,

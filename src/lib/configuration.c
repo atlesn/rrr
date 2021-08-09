@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,84 +33,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "allocator.h"
 #include "socket/rrr_socket.h"
 
-#include "instance_config.h"
+int rrr_config_new (struct rrr_config **result) {
+	struct rrr_config *config = NULL;
 
-static struct rrr_config *__rrr_config_new (void) {
-	struct rrr_config *ret = rrr_allocate(sizeof(*ret));
+	*result = NULL;
 
-	if (ret == NULL) {
-		RRR_MSG_0("Could not allocate memory for rrr_config struct\n");
-		return NULL;
-	}
-
-	memset(ret, '\0', sizeof(*ret));
-
-	return ret;
-}
-
-static int __rrr_config_expand (
-		struct rrr_config *target
-) {
-	int old_size = target->module_count_max * sizeof(*target->configs);
-	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
-	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
-
-	struct rrr_instance_config_data **configs_new = rrr_reallocate(target->configs, old_size, new_size);
-
-	if (configs_new == NULL) {
-		RRR_MSG_0("Could not reallocate memory for rrr_instance_config struct\n");
+	if ((config = rrr_allocate_zero(sizeof(*config))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_config_new\n");
 		return 1;
 	}
 
-	target->configs = configs_new;
-	target->module_count_max = new_max;
-
-	return 0;
-}
-
-static struct rrr_instance_config_data *__rrr_config_find_instance (
-		struct rrr_config *source,
-		const char *name
-) {
-	struct rrr_instance_config_data *ret = NULL;
-
-	for (int i = 0; i < source->module_count; i++) {
-		struct rrr_instance_config_data *test = source->configs[i];
-		if (strcmp(test->name, name) == 0) {
-			ret = test;
-			break;
-		}
-	}
-
-	return ret;
-}
-
-static int __rrr_config_push (
-		struct rrr_config *target,
-		struct rrr_instance_config_data *instance_config
-) {
-	if (__rrr_config_find_instance (target, instance_config->name) != NULL) {
-		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
-		return 1;
-	}
-
-	if (target->module_count == target->module_count_max) {
-		if (__rrr_config_expand(target) != 0) {
-			RRR_MSG_0("Could not push new config struct\n");
-			return 1;
-		}
-	}
-
-	target->configs[target->module_count] = instance_config;
-	target->module_count++;
+	*result = config;
 
 	return 0;
 }
 
 static int __rrr_config_parse_setting (
 		struct rrr_parse_pos *pos,
-		struct rrr_instance_settings *settings,
-		int *did_parse
+		int *did_parse,
+		void *block,
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -212,8 +155,7 @@ static int __rrr_config_parse_setting (
 		goto out;
 	}
 
-	if (rrr_settings_add_string(settings, name, value) != 0) {
-		ret = 1;
+	if ((ret = new_setting_callback(block, name, value, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -230,10 +172,13 @@ static int __rrr_config_parse_setting (
 	return ret;
 }
 
-static int __rrr_config_parse_instance (
+static int __rrr_config_parse_block (
 		struct rrr_config *config,
 		struct rrr_parse_pos *pos,
-		int *did_parse
+		int *did_parse,
+		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = 0;
 	*did_parse = 0;
@@ -295,20 +240,19 @@ static int __rrr_config_parse_instance (
 		goto out;
 	}
 
-	struct rrr_instance_config_data *instance_config = rrr_instance_config_new (
-			pos->data + begin,
-			length,
-			RRR_CONFIG_MAX_SETTINGS,
-			&config->array_trees
-	);
-	if (instance_config == NULL) {
-		RRR_MSG_0("Instance config creation result was NULL\n");
-		ret = 1;
+	void *block = NULL;
+	if ((ret = new_block_callback (&block, config, pos->data + begin, length, callback_arg)) != 0) {
 		goto out;
 	}
 
 	int did_parse_setting;
-	while ((ret = __rrr_config_parse_setting(pos, instance_config->settings, &did_parse_setting)) == 0) {
+	while ((ret = __rrr_config_parse_setting (
+			pos,
+			&did_parse_setting,
+			block,
+			new_setting_callback,
+			callback_arg
+	)) == 0) {
 		if (did_parse_setting != 1) {
 			break;
 		}
@@ -318,23 +262,12 @@ static int __rrr_config_parse_instance (
 	}
 
 	if (ret == 1) {
-		RRR_MSG_0("Settings parsing failed for instance %s at line %d\n", instance_config->name, pos->line);
+		RRR_MSG_0("Settings parsing failed at line %d\n", pos->line);
 		*did_parse = 0;
 	}
 
 	if (ret == 0) {
 		*did_parse = 1;
-	}
-
-	if (ret == 0) {
-		ret = __rrr_config_push(config, instance_config);
-		if (ret != 0) {
-			RRR_MSG_0("Could not save instance %s to global config\n", instance_config->name);
-		}
-	}
-
-	if (ret != 0) {
-		rrr_instance_config_destroy(instance_config);
 	}
 
 	out:
@@ -417,7 +350,10 @@ static int __rrr_config_interpret_array_tree (
 
 static int __rrr_config_parse_any (
 		struct rrr_config *config,
-		struct rrr_parse_pos *pos
+		struct rrr_parse_pos *pos,
+		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -439,7 +375,14 @@ static int __rrr_config_parse_any (
 		}
 		else if (c == '[') {
 			int did_parse;
-			ret = __rrr_config_parse_instance(config, pos, &did_parse);
+			ret = __rrr_config_parse_block (
+					config,
+					pos,
+					&did_parse,
+					new_block_callback,
+					new_setting_callback,
+					callback_arg
+			);
 			if (did_parse == 0 && ret == 0) {
 				// XXX : Do we ever end up here?
 				// No more instances, no errors
@@ -463,7 +406,11 @@ static int __rrr_config_parse_any (
 
 static int __rrr_config_parse_file (
 		struct rrr_config *config,
-		const void *data, const int size
+		const void *data,
+		const int size,
+		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -472,7 +419,13 @@ static int __rrr_config_parse_file (
 	rrr_parse_pos_init(&pos, data, size);
 
 	while (!RRR_PARSE_CHECK_EOF(&pos)) {
-		ret = __rrr_config_parse_any(config, &pos);
+		ret = __rrr_config_parse_any (
+				config,
+				&pos,
+				new_block_callback,
+				new_setting_callback,
+				callback_arg
+		);
 		if (ret != 0) {
 			break;
 		}
@@ -489,29 +442,20 @@ static int __rrr_config_parse_file (
 void rrr_config_destroy (
 		struct rrr_config *target
 ) {
-	for (int i = 0; i < target->module_count; i++) {
-		rrr_instance_config_destroy(target->configs[i]);
-	}
 	rrr_array_tree_list_clear(&target->array_trees);
-	rrr_free(target->configs);
 	rrr_free(target);
 }
 
 int rrr_config_parse_file (
-		struct rrr_config **target,
-		const char *filename
+		struct rrr_config *config,
+		const char *filename,
+		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 ) {
 	int ret = 0;
 
-	*target = NULL;
-
 	char *file_data = NULL;
-
-	struct rrr_config *result = __rrr_config_new();
-	if (result == NULL) {
-		ret = 1;
-		goto out;
-	}
 
 	ssize_t file_size = 0;
 	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, filename, O_RDONLY, 0)) != 0) {
@@ -532,40 +476,26 @@ int rrr_config_parse_file (
 
 		RRR_DBG_1("Read %lli bytes from configuration file '%s'\n", (long long int) file_size, filename);
 
-		if ((ret = __rrr_config_parse_file(result, file_data, file_size)) != 0) {
+		if ((ret = __rrr_config_parse_file (
+				config,
+				file_data,
+				file_size,
+				new_block_callback,
+				new_setting_callback,
+				callback_arg
+		)) != 0) {
 			RRR_MSG_0("Error while parsing configuration file '%s'\n", filename);
 			goto out;
 		}
 	}
 
-	*target = result;
-	result = NULL;
-
 	out:
 	RRR_FREE_IF_NOT_NULL(file_data);
-	if (result != NULL) {
-		rrr_config_destroy(result);
-	}
 	return ret;
 }
 
-int rrr_config_dump (struct rrr_config *config) {
-	int ret = 0;
-	for (int i = 0; i < config->module_count; i++) {
-		struct rrr_instance_config_data *instance_config = config->configs[i];
-
-		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", instance_config->name);
-
-		if (rrr_instance_config_dump(instance_config) != 0) {
-			ret = 1;
-		}
-
-		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", instance_config->name);
-	}
-
-	if (ret != 0) {
-		printf ("Warning: Some error(s) occurred while dumping the configuration, some settings could possibly not be converted to strings\n");
-	}
-
-	return ret;
+const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
+		struct rrr_config *config
+) {
+	return &config->array_trees;
 }

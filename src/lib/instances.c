@@ -837,7 +837,7 @@ static int __rrr_instance_collection_start_threads_check_wait_for_callback (
 int rrr_instances_create_and_start_threads (
 		struct rrr_thread_collection **thread_collection_target,
 		struct rrr_instance_collection *instances,
-		struct rrr_config *global_config,
+		struct rrr_instance_config_collection *config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
 		struct rrr_message_broker *message_broker,
@@ -874,7 +874,7 @@ int rrr_instances_create_and_start_threads (
 		init_data.module = instance->module_data;
 		init_data.senders = &instance->senders;
 		init_data.cmd_data = cmd;
-		init_data.global_config = global_config;
+		init_data.global_config = config;
 		init_data.instance_config = instance->config;
 		init_data.stats = stats;
 		init_data.message_broker = message_broker;
@@ -949,23 +949,24 @@ int rrr_instances_create_and_start_threads (
 		return ret;
 }
 
-int rrr_instance_create_from_config (
+int rrr_instances_create_from_config (
 		struct rrr_instance_collection *instances,
-		struct rrr_config *config,
+		struct rrr_instance_config_collection *config,
 		const char **library_paths
 ) {
 	int ret = 0;
-	for (int i = 0; i < config->module_count; i++) {
-		ret = rrr_instance_load_and_save(instances, config->configs[i], library_paths);
+
+	RRR_LL_ITERATE_BEGIN(config, struct rrr_instance_config_data);
+		ret = rrr_instance_load_and_save(instances, node, library_paths);
 		if (ret != 0) {
 			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",
-					config->configs[i]->name);
+					node->name);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {
 				RRR_MSG_0("-> %s\n", library_paths[j]);
 			}
 			goto out;
 		}
-	}
+	RRR_LL_ITERATE_END();
 
 	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
 		struct rrr_instance *instance = node;
