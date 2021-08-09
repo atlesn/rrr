@@ -202,21 +202,39 @@ static int __rrr_passwd_openssl_encrypt (
 		ret = 1;
 		goto out;
 	}
+	if (salt_bin_length > INT_MAX) {
+		RRR_MSG_0("Salt too long in __rrr_passwd_openssl_encrypt (%llu%llu)\n",
+			(unsigned long long) salt_bin_length,
+			(unsigned long long) INT_MAX
+		);
+		ret = 1;
+		goto out;
+	}
 
 	if (salt_bin_length < RRR_PASSWD_SALT_BYTES) {
 		RRR_BUG("BUG:Salt too short in __rrr_passwd_openssl_encrypt\n");
 	}
 
+	size_t password_plain_length = strlen(password_plain);
+	if (password_plain_length > INT_MAX) {
+		RRR_MSG_0("Password too long in __rrr_passwd_openssl_encrypt (%llu%llu)\n",
+			(unsigned long long) password_plain_length,
+			(unsigned long long) INT_MAX
+		);
+		ret = 1;
+		goto out;
+	}
+
 	if (PKCS5_PBKDF2_HMAC (
-			password_plain, strlen(password_plain),
-			salt_bin, salt_bin_length,
+			password_plain, (int) password_plain_length,
+			salt_bin, (int) salt_bin_length,
 			RRR_PASSWD_HASH_ITERATIONS,
 			EVP_sha256(),
 			RRR_PASSWD_HASH_KEY_LENGTH,
 			tmp
 	) != 1) {
 		ERR_error_string_n(ERR_get_error(), (char *) tmp, RRR_PASSWD_HASH_MAX_LENGTH + 1);
-		RRR_MSG_0("Could not encrypt password in rrr_passwd_encrypt: %s\n", tmp);
+		RRR_MSG_0("Could not encrypt password in __rrr_passwd_openssl_encrypt: %s\n", tmp);
 		ret = 1;
 		goto out;
 	}
@@ -278,7 +296,7 @@ struct passwd_check_callback_data {
 
 static int __rrr_passwd_check_callback (
 		const char *elements[],
-		size_t elements_count,
+		rrr_length elements_count,
 		void *arg
 ) {
 	// Default is 1, not authenticated
@@ -438,7 +456,7 @@ struct rrr_passwd_iterate_lines_split_callback_data {
 			const char *username,
 			const char *hash_tmp,
 			const char *permissions[],
-			size_t permissions_count,
+			rrr_length permissions_count,
 			void *arg
 	);
 	void *line_callback_arg;
@@ -451,7 +469,7 @@ struct rrr_passwd_iterate_lines_split_callback_data {
 
 static int __rrr_passwd_iterate_lines_split_permissions_callback (
 		const char *elements[],
-		size_t elements_count,
+		rrr_length elements_count,
 		void *arg
 ) {
 	struct rrr_passwd_iterate_lines_split_callback_data *callback_data = arg;
@@ -468,7 +486,7 @@ static int __rrr_passwd_iterate_lines_split_permissions_callback (
 
 static int __rrr_passwd_iterate_lines_split_columns_callback (
 		const char *elements[],
-		size_t elements_count,
+		rrr_length elements_count,
 		void *arg
 ) {
 	struct rrr_passwd_iterate_lines_split_callback_data *callback_data = arg;
@@ -493,13 +511,13 @@ static int __rrr_passwd_iterate_lines_split_columns_callback (
 
 int rrr_passwd_iterate_lines (
 		const char *input_data,
-		ssize_t input_data_size,
+		rrr_length input_data_size,
 		int (*line_callback) (
 				const char *line,
 				const char *username,
 				const char *hash_tmp,
 				const char *permissions[],
-				size_t permissions_count,
+				rrr_length permissions_count,
 				void *arg
 		),
 		void *line_callback_arg
@@ -522,8 +540,8 @@ int rrr_passwd_iterate_lines (
 	};
 
 	while (!RRR_PARSE_CHECK_EOF(&parse_pos)) {
-		int line_start = 0;
-		int line_end = 0;
+		rrr_length line_start = 0;
+		rrr_slength line_end = 0;
 
 		rrr_parse_ignore_spaces_and_increment_line(&parse_pos);
 		rrr_parse_non_newline (&parse_pos, &line_start, &line_end);
@@ -534,7 +552,12 @@ int rrr_passwd_iterate_lines (
 		}
 
 		RRR_FREE_IF_NOT_NULL(line_tmp);
-		if (rrr_parse_str_extract(&line_tmp, &parse_pos, line_start, (line_end - line_start) + 1) != 0) {
+		if (rrr_parse_str_extract (
+				&line_tmp,
+				&parse_pos,
+				line_start,
+				rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(line_end, line_start))
+		) != 0) {
 			RRR_MSG_0("Could not allocate memory for line in process()\n");
 			ret = 1;
 			goto out;
@@ -579,7 +602,7 @@ static int __rrr_passwd_authenticate_callback (
 		const char *username,
 		const char *hash_tmp,
 		const char *permissions[],
-		size_t permissions_count,
+		rrr_length permissions_count,
 		void *arg
 ) {
 	struct rrr_passwd_authenticate_callback_data *callback_data = arg;
@@ -662,6 +685,11 @@ int rrr_passwd_authenticate (
 		ret = 1;
 		goto out;
 	}
+	if (passwd_file_size > RRR_LENGTH_MAX) {
+		RRR_DBG_1("Password file '%s' too big (was %lli bytes), access denied\n", filename, (long long int) passwd_file_size);
+		ret = 1;
+		goto out;
+	}
 
 	struct rrr_passwd_authenticate_callback_data callback_data = {
 			username,
@@ -674,7 +702,7 @@ int rrr_passwd_authenticate (
 
 	if ((ret = rrr_passwd_iterate_lines (
 			passwd_file_contents,
-			passwd_file_size,
+			rrr_length_from_ssize_bug_const (passwd_file_size),
 			__rrr_passwd_authenticate_callback,
 			&callback_data
 	)) != 0) {
@@ -720,7 +748,7 @@ int rrr_passwd_authenticate (
 	out:
 	// Don't let hashes hang around in memory
 	if (passwd_file_contents != NULL) {
-		memset(passwd_file_contents, '\0', passwd_file_size);
+		memset(passwd_file_contents, '\0', (size_t) passwd_file_size);
 	}
 	RRR_FREE_IF_NOT_NULL(passwd_file_contents);
 	return ret;
@@ -737,7 +765,7 @@ static int __rrr_passwd_read_password_from_terminal_prompt (
 	printf ("%s", msg);
 
 	while (1) {
-		unsigned char c = fgetc(stdin);
+		unsigned char c = (unsigned char) fgetc(stdin);
 		if (password_length + 1 >= RRR_PASSWD_MAX_INPUT_LENGTH) {
 			printf("\n");
 			RRR_MSG_0("Password was too long, max is %i characters\n", RRR_PASSWD_MAX_INPUT_LENGTH - 1);
@@ -748,7 +776,7 @@ static int __rrr_passwd_read_password_from_terminal_prompt (
 			break;
 		}
 
-		buf[password_length] = c;
+		buf[password_length] = (char) c;
 		buf[password_length + 1] = '\0';
 
 		password_length++;
@@ -783,7 +811,7 @@ int rrr_passwd_read_password_from_terminal (
 	}
 
 	t = t_orig;
-	t.c_lflag &= ~(ECHO);
+	t.c_lflag &= (unsigned int) ~(ECHO);
 	if (tcsetattr(STDIN_FILENO, TCSANOW, &t) != 0) {
 		RRR_MSG_0("Could not set terminal properties in read_password_stdin: %s\n", rrr_strerror(errno));
 		ret = 1;

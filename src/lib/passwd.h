@@ -24,8 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_PASSWD_MAX_INPUT_LENGTH 1024
 
-#include <stdio.h>
-
+#include "rrr_types.h"
 #include "util/linked_list.h"
 
 struct rrr_passwd_permission {
@@ -66,13 +65,13 @@ int rrr_passwd_encrypt (
 
 int rrr_passwd_iterate_lines (
 		const char *input_data,
-		ssize_t input_data_size,
+		rrr_length input_data_size,
 		int (*line_callback) (
 				const char *line,
 				const char *username,
 				const char *hash_tmp,
 				const char *permissions[],
-				size_t permissions_count,
+				rrr_length permissions_count,
 				void *arg
 		),
 		void *line_callback_arg

@@ -172,6 +172,16 @@ static inline rrr_length rrr_length_from_slength_bug_const (rrr_slength a) {
 	return (rrr_length) a;
 }
 
+static inline rrr_length rrr_length_from_ssize_bug_const (ssize_t a) {
+	if (a > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_ssize_sub_bug\n");
+	}
+	if (a < 0) {
+		RRR_BUG("Underflow in rrr_length_from_ssize_sub_bug\n");
+	}
+	return (rrr_length) a;
+}
+
 static inline void rrr_length_dec_bug (rrr_length *a) {
 	if ((*a) == 0) {
 		RRR_BUG("Bug: Underflow in rrr_length_dec_bug\n");
