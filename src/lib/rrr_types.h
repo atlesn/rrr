@@ -80,6 +80,7 @@ typedef int64_t rrr_slength;
 
 #define RRR_SLENGTH_MAX INT64_MAX
 #define RRR_LENGTH_MAX 0xffffffff // 8 f's
+#define RRR_BIGLENGTH_MAX 0xffffffffffffffff // 16 f's
 
 static inline void __rrr_types_asserts (void) {
 	RRR_ASSERT(sizeof(size_t) <= sizeof(rrr_biglength),unsafe_platform_size_t_is_too_big);
@@ -108,6 +109,14 @@ static inline void rrr_length_sub_bug (rrr_length *a, rrr_length b) {
 	*a = r;
 }
 
+static inline rrr_length rrr_length_sub_bug_const (rrr_length a, rrr_length b) {
+	rrr_length r = a - b;
+	if (r > a) {
+		RRR_BUG("Bug: Underflow in rrr_length_sub_bug_const input was %" PRIrrrl " and %" PRIrrrl "\n", a, b);
+	}
+	return r;
+}
+
 static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
 	rrr_length r = *a + b;
 	if (r < *a) {
@@ -122,6 +131,14 @@ static inline void rrr_length_add_bug (rrr_length *a, rrr_length b) {
 	if (rrr_length_add_err(a, b) != 0) {
 		RRR_BUG("Bugtrap\n");
 	}
+}
+
+static inline rrr_length rrr_length_add_bug_const (rrr_length a, rrr_length b) {
+	rrr_length tmp = a;
+	if (rrr_length_add_err(&tmp, b) != 0) {
+		RRR_BUG("Bugtrap\n");
+	}
+	return tmp;
 }
 
 static inline int rrr_length_inc_err (rrr_length *a) {
@@ -162,6 +179,17 @@ static inline rrr_length rrr_length_from_slength_sub_bug_const (rrr_slength a, r
 	return (rrr_length) r;
 }
 
+static inline rrr_length rrr_length_from_biglength_sub_bug_const (rrr_biglength a, rrr_biglength b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_length_from_biglength_sub_bug_const\n");
+	}
+	rrr_biglength r = a - b;
+	if (r > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_biglength_sub_bug_const\n");
+	}
+	return (rrr_length) r;
+}
+
 static inline rrr_length rrr_length_from_slength_bug_const (rrr_slength a) {
 	if (a > RRR_LENGTH_MAX) {
 		RRR_BUG("Overflow in rrr_length_from_slength_sub_bug\n");
@@ -180,6 +208,24 @@ static inline rrr_length rrr_length_from_ssize_bug_const (ssize_t a) {
 		RRR_BUG("Underflow in rrr_length_from_ssize_sub_bug\n");
 	}
 	return (rrr_length) a;
+}
+
+static inline rrr_length rrr_length_from_biglength_bug_const (rrr_biglength a) {
+	if (a > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_biglength_sub_bug\n");
+	}
+	return (rrr_length) a;
+}
+
+static inline rrr_biglength rrr_biglength_from_ptr_sub_bug_const (const void *a, const void *b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_biglength_from_ptr_sub_bug_const\n");
+	}
+	uintptr_t r = (uintptr_t) a - (uintptr_t) b;
+	if (r > RRR_BIGLENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_biglength_from_ptr_sub_bug_const\n");
+	}
+	return (rrr_length) r;
 }
 
 static inline void rrr_length_dec_bug (rrr_length *a) {

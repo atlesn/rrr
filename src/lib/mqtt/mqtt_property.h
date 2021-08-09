@@ -25,6 +25,7 @@ along with this program.  If not
 #include <inttypes.h>
 #include <stdio.h>
 
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 
 #define RRR_MQTT_PROPERTY_DATA_TYPE_ONE 1
@@ -94,8 +95,8 @@ struct rrr_mqtt_property {
 	struct rrr_mqtt_property *sibling;
 	const struct rrr_mqtt_property_definition *definition;
 	uint8_t internal_data_type;
-	ssize_t length;
-	ssize_t length_orig;
+	rrr_length length;
+	rrr_length length_orig;
 	char *data;
 };
 
@@ -140,7 +141,7 @@ uint32_t rrr_mqtt_property_get_uint32 (
 );
 const char *rrr_mqtt_property_get_blob (
 		const struct rrr_mqtt_property *property,
-		ssize_t *length
+		rrr_length *length
 );
 int rrr_mqtt_property_get_blob_as_str (
 		char **result,
@@ -180,11 +181,11 @@ void rrr_mqtt_property_collection_dump (
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t type_id,
-		ssize_t index
+		rrr_length index
 );
 int rrr_mqtt_property_collection_calculate_size (
-		ssize_t *size,
-		ssize_t *count,
+		rrr_length *size,
+		rrr_length *count,
 		const struct rrr_mqtt_property_collection *collection
 );
 void rrr_mqtt_property_collection_clear (

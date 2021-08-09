@@ -48,7 +48,7 @@ struct rrr_mqtt_broker_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
 
-	int max_clients;
+	rrr_length max_clients;
 	uint16_t max_keep_alive;
 
 	uint32_t client_serial;
@@ -86,7 +86,7 @@ int rrr_mqtt_broker_new (
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
 		const struct rrr_net_transport_config *net_transport_config,
-		int port
+		unsigned int port
 );
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,

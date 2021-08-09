@@ -72,7 +72,7 @@ static void __rrr_mqtt_p_payload_destroy (void *arg) {
 int rrr_mqtt_p_payload_set_data (
 		struct rrr_mqtt_p_payload *target,
 		const char *data,
-		ssize_t size
+		rrr_length size
 ) {
 	int ret = 0;
 
@@ -132,7 +132,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 		struct rrr_mqtt_p_payload **target,
 		char **packet_start,
 		const char *payload_start,
-		ssize_t payload_length
+		rrr_length payload_length
 ) {
 	if (*target != NULL) {
 		RRR_BUG("BUG: Target was not NULL in rrr_mqtt_p_payload_new_with_allocated_payload\n");
@@ -419,8 +419,7 @@ int rrr_mqtt_p_new_publish (
 			goto out_free;
 		}
 
-		ssize_t ssize_data_size = data_size;
-		if (rrr_mqtt_p_payload_set_data(publish->payload, data, ssize_data_size)) {
+		if (rrr_mqtt_p_payload_set_data(publish->payload, data, data_size)) {
 			RRR_MSG_0("Could not set payload data in rrr_mqtt_p_new_publish\n");
 			ret = 1;
 			goto out_free;

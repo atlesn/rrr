@@ -63,9 +63,6 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
 			result = node;
-			// Lock prior to releasing collection lock to prevent race conditions
-			// with anyone calling close(). Closers will try to lock this lock
-			// prior to destruction.
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
@@ -94,7 +91,7 @@ static int __rrr_net_transport_handle_create_and_push (
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	if ((new_handle = rrr_allocate(sizeof(*new_handle))) == NULL) {
-		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_create_and_push_return_locked\n");
+		RRR_MSG_0("Could not allocate handle rrr_net_transport_handle_create_and_push\n");
 		ret = 1;
 		goto out;
 	}
@@ -102,8 +99,6 @@ static int __rrr_net_transport_handle_create_and_push (
 	memset(new_handle, '\0', sizeof(*new_handle));
 
 	new_handle->transport = transport;
-
-	// NOTE : These shallow members may be accessed with only collection lock held
 	new_handle->handle = handle;
 	new_handle->mode = mode;
 
@@ -230,9 +225,6 @@ int rrr_net_transport_handle_close (
 	int did_destroy = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		// We are allowed to read the handle integer without handle lock
-		// held. When the handle integer is written, the collection lock
-		// is held. We should also be the same thread as the one who wrote it.
 		if (node->handle == transport_handle) {
 			ret = __rrr_net_transport_handle_destroy(node);
 			did_destroy = 1;
@@ -954,7 +946,7 @@ int rrr_net_transport_iterate_with_callback (
 					if (ret == 0) {
 						__rrr_net_transport_handle_destroy(node);
 						RRR_LL_ITERATE_SET_DESTROY();
-						RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
+						RRR_LL_ITERATE_NEXT();
 					}
 				}
 				else {
@@ -1011,11 +1003,22 @@ void rrr_net_transport_common_cleanup (
 }
 
 void rrr_net_transport_stats_get (
-		int *handle_count,
+		rrr_length *listening_count,
+		rrr_length *connected_count,
 		struct rrr_net_transport *transport
 ) {
+	*listening_count = 0;
+	*connected_count = 0;
+
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
-	*handle_count = RRR_LL_COUNT(collection);
+	RRR_LL_ITERATE_BEGIN(&transport->handles, struct rrr_net_transport_handle);
+		if (node->mode == RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+			rrr_length_inc_bug(listening_count);
+		}
+		else {
+			rrr_length_inc_bug(connected_count);
+		}
+	RRR_LL_ITERATE_END();
 }
 
 static int __rrr_net_transport_new (

@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_types.h"
 #include "net_transport_ctx.h"
 
+#include "../rrr_types.h"
 #include "../event/event.h"
 #include "../read.h"
 #include "../read_constants.h"
@@ -169,7 +170,8 @@ void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
 );
 void rrr_net_transport_stats_get (
-		int *handle_count,
+		rrr_length *listening_count,
+		rrr_length *connected_count,
 		struct rrr_net_transport *transport
 );
 int rrr_net_transport_new (

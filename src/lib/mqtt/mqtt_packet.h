@@ -128,13 +128,13 @@ struct rrr_mqtt_p_type_properties {
 	const char *name;
 	uint8_t has_reserved_flags;
 	uint8_t flags;
-	ssize_t packet_size;
+	rrr_length packet_size;
 
 	struct rrr_mqtt_p *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
 
 	// We do not use function argument macros for these two to avoid including the header files
 	int (*parse)(struct rrr_mqtt_parse_session *session);
-	int (*assemble)(char **target, ssize_t *size, struct rrr_mqtt_p *packet);
+	int (*assemble)(char **target, rrr_length *size, struct rrr_mqtt_p *packet);
 
 	// DO NOT use the free-functions directly, ALWAYS use the RRR_MQTT_P_DECREF-macro
 	void (*destroy)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
@@ -170,7 +170,7 @@ struct rrr_mqtt_p_payload {
 
 	// Pointer to where payload starts
 	const char *payload_start;
-	ssize_t length;
+	rrr_length length;
 };
 
 // Assembled data is either generated when sending a newly created packet,
@@ -205,8 +205,8 @@ struct rrr_mqtt_p_payload {
     void *release_packet_id_arg2;                              \
     uint64_t create_time;                                      \
     char *_assembled_data;                                     \
-    ssize_t assembled_data_size;                               \
-    ssize_t received_size;                                     \
+    rrr_length assembled_data_size;                            \
+    rrr_length received_size;                                  \
     struct rrr_mqtt_p_payload *payload;                        \
     const struct rrr_mqtt_p_protocol_version *protocol_version;\
     const struct rrr_mqtt_p_type_properties *type_properties   \
@@ -544,7 +544,7 @@ static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_prope
 int rrr_mqtt_p_payload_set_data (
 		struct rrr_mqtt_p_payload *target,
 		const char *data,
-		ssize_t size
+		rrr_length size
 );
 int rrr_mqtt_p_payload_new (
 		struct rrr_mqtt_p_payload **target
@@ -553,7 +553,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 		struct rrr_mqtt_p_payload **target,
 		char **packet_start,
 		const char *payload_start,
-		ssize_t payload_length
+		rrr_length payload_length
 );
 
 static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (

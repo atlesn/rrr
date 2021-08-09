@@ -76,7 +76,7 @@ int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
 		const struct rrr_net_transport_config *net_transport_config
 );
-int rrr_mqtt_transport_client_count_get (
+rrr_length rrr_mqtt_transport_client_count_get (
 		struct rrr_mqtt_transport *transport
 );
 int rrr_mqtt_transport_connect (

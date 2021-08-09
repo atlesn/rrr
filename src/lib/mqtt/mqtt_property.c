@@ -31,34 +31,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 
 const struct rrr_mqtt_property_definition property_definitions[] = {
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x01, "Payload format indicator"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x02, "Message expiry interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x03, "Content type"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x08, "Response topic"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,	0x09, "Correlation data"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_VINT,	0x0B, "Subscription identifier"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x11, "Session expiry interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x12, "Assigned client identifier"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x13, "Server keep-alive"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x15, "Authentication method"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,	0x16, "Authentication data"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x17, "Request problem information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x18, "Will delay interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x19, "Request response information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1A, "Response information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1C, "Server reference"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1F, "Reason string"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x21, "Receive maximum"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x22, "Topic alias maximum"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x23, "Topic alias"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x24, "Maximum QoS"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x25, "Retain available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8,	0x26, "User property"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x27, "Maximum packet size"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x28, "Wildcard subscription available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x29, "Subscription identifier available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x2A, "Shared subscription available"},
-		{0, 0, NULL}
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x01, "Payload format indicator"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,    0x02, "Message expiry interval"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x03, "Content type"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x08, "Response topic"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,    0x09, "Correlation data"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_VINT,    0x0B, "Subscription identifier"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,    0x11, "Session expiry interval"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x12, "Assigned client identifier"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_TWO,     0x13, "Server keep-alive"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x15, "Authentication method"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,    0x16, "Authentication data"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x17, "Request problem information"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,    0x18, "Will delay interval"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x19, "Request response information"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x1A, "Response information"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x1C, "Server reference"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,    0x1F, "Reason string"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_TWO,     0x21, "Receive maximum"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_TWO,     0x22, "Topic alias maximum"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_TWO,     0x23, "Topic alias"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x24, "Maximum QoS"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x25, "Retain available"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8,   0x26, "User property"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,    0x27, "Maximum packet size"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x28, "Wildcard subscription available"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x29, "Subscription identifier available"},
+        {RRR_MQTT_PROPERTY_DATA_TYPE_ONE,     0x2A, "Shared subscription available"},
+        {0, 0, NULL}
 };
 
 const struct rrr_mqtt_property_definition *rrr_mqtt_property_get_definition(uint8_t id) {
@@ -220,7 +220,7 @@ uint32_t rrr_mqtt_property_get_uint32 (
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32) {
 		RRR_BUG("Property was not UINT32 in rrr_mqtt_property_get_uint32\n");
 	}
-	if (property->length < (ssize_t) sizeof(uint32_t)) {
+	if (property->length < sizeof(uint32_t)) {
 		RRR_BUG("Length of property was <4 in rrr_mqtt_property_get_uint32\n");
 	}
 	return *((uint32_t*) property->data);
@@ -228,7 +228,7 @@ uint32_t rrr_mqtt_property_get_uint32 (
 
 const char *rrr_mqtt_property_get_blob (
 		const struct rrr_mqtt_property *property,
-		ssize_t *length
+		rrr_length *length
 ) {
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB) {
 		RRR_BUG("Property was not BLOB in rrr_mqtt_property_get_blob\n");
@@ -250,7 +250,7 @@ int rrr_mqtt_property_get_blob_as_str (
 
 	char *tmp = NULL;
 
-	ssize_t length;
+	rrr_length length;
 	const char *data = rrr_mqtt_property_get_blob(property, &length);
 
 	if ((tmp = rrr_allocate(length + 1)) == NULL) {
@@ -530,9 +530,9 @@ void rrr_mqtt_property_collection_dump (
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t identifier,
-		ssize_t index
+		rrr_length index
 ) {
-	int match_count = 0;
+	rrr_length match_count = 0;
 
 	struct rrr_mqtt_property *ret = NULL;
 
@@ -550,8 +550,8 @@ struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 }
 
 int rrr_mqtt_property_collection_calculate_size (
-		ssize_t *size,
-		ssize_t *count,
+		rrr_length *size,
+		rrr_length *count,
 		const struct rrr_mqtt_property_collection *collection
 ) {
 	int ret = 0;
@@ -559,8 +559,8 @@ int rrr_mqtt_property_collection_calculate_size (
 	*count = 0;
 	*size = 0;
 
-	ssize_t result = 0;
-	ssize_t result_count = 0;
+	rrr_slength result = 0;
+	rrr_length result_count = 0;
 	uint32_t tmp = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
@@ -573,7 +573,7 @@ int rrr_mqtt_property_collection_calculate_size (
 				result += 4; break;
 			case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
 				tmp = *((uint32_t*)(node->data));
-				if ((tmp & ~0xfffffff) != 0) {
+				if ((tmp & (uint32_t) ~0xfffffff) != 0) {
 					RRR_BUG("VINT was too long in rrr_mqtt_property_collection_calculate_size\n");
 				}
 				do {
@@ -595,18 +595,15 @@ int rrr_mqtt_property_collection_calculate_size (
 			default:
 				RRR_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->internal_data_type);
 		};
-		result_count++;
-		if (result < 0) {
-			RRR_MSG_0("Size overflow in rrr_mqtt_property_collection_calculate_size\n");
-			ret = 1;
-			goto out;
+		if (result < 0 || result > RRR_LENGTH_MAX) {
+			RRR_BUG("Bug: Size overflow in rrr_mqtt_property_collection_calculate_size\n");
 		}
+		result_count++;
 	RRR_LL_ITERATE_END();
 
-	*size = result;
+	*size = (rrr_length) result;
 	*count = result_count;
 
-	out:
 	return ret;
 }
 
