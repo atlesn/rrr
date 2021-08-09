@@ -32,68 +32,68 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
-#define RRR_MQTT_VERSION_3_1		3
-#define RRR_MQTT_VERSION_3_1_1		4
-#define RRR_MQTT_VERSION_5			5
+#define RRR_MQTT_VERSION_3_1          3
+#define RRR_MQTT_VERSION_3_1_1        4
+#define RRR_MQTT_VERSION_5            5
 
-#define RRR_MQTT_P_31_REASON_OK							0
-#define RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION		1
-#define RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED			2
-#define RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE			3
-#define RRR_MQTT_P_31_REASON_BAD_CREDENTIALS			4
-#define RRR_MQTT_P_31_REASON_NOT_AUTHORIZED				5
-#define RRR_MQTT_P_31_REASON_MAX						5
+#define RRR_MQTT_P_31_REASON_OK                            0
+#define RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION          1
+#define RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED            2
+#define RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE            3
+#define RRR_MQTT_P_31_REASON_BAD_CREDENTIALS               4
+#define RRR_MQTT_P_31_REASON_NOT_AUTHORIZED                5
+#define RRR_MQTT_P_31_REASON_MAX                           5
 
 // Used if a V5 reason cannot be understood with any V5 reasons. No
 // CONNACK is sent for these reasons, the socket is simply closed.
-#define RRR_MQTT_P_31_REASON_NO_CONNACK						254
+#define RRR_MQTT_P_31_REASON_NO_CONNACK                         254
 
 // Used for DISCONNECT-only packets, they have no reason code in V3.1
-#define RRR_MQTT_P_31_REASON_NA								255
+#define RRR_MQTT_P_31_REASON_NA                                 255
 
-#define RRR_MQTT_P_5_REASON_OK								0x00
-#define RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL			0x04
+#define RRR_MQTT_P_5_REASON_OK                                 0x00
+#define RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL               0x04
 
-#define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS			0x10
-#define RRR_MQTT_P_5_REASON_NO_SUBSCRIPTION_EXISTED			0x11
+#define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS            0x10
+#define RRR_MQTT_P_5_REASON_NO_SUBSCRIPTION_EXISTED            0x11
 
-#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR				0x80
-#define RRR_MQTT_P_5_REASON_MALFORMED_PACKET				0x81
-#define RRR_MQTT_P_5_REASON_PROTOCOL_ERROR					0x82
-#define RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR				0x83
-#define RRR_MQTT_P_5_REASON_BAD_PROTOCOL_VERSION			0x84
-#define RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED				0x85
-#define RRR_MQTT_P_5_REASON_BAD_CREDENTIALS					0x86
-#define RRR_MQTT_P_5_REASON_NOT_AUTHORIZED					0x87
-#define RRR_MQTT_P_5_REASON_SERVER_UNAVAILABLE				0x88
-#define RRR_MQTT_P_5_REASON_SERVER_BUSY						0x89
-#define RRR_MQTT_P_5_REASON_BANNED							0x8A
-#define RRR_MQTT_P_5_REASON_SERVER_SHUTTING_DOWN			0x8B
-#define RRR_MQTT_P_5_REASON_BAD_AUTH_METHOD					0x8C
-#define RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT				0x8D
-#define RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER				0x8E
-#define RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID			0x8F
+#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR                  0x80
+#define RRR_MQTT_P_5_REASON_MALFORMED_PACKET                   0x81
+#define RRR_MQTT_P_5_REASON_PROTOCOL_ERROR                     0x82
+#define RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR                0x83
+#define RRR_MQTT_P_5_REASON_BAD_PROTOCOL_VERSION               0x84
+#define RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED                 0x85
+#define RRR_MQTT_P_5_REASON_BAD_CREDENTIALS                    0x86
+#define RRR_MQTT_P_5_REASON_NOT_AUTHORIZED                     0x87
+#define RRR_MQTT_P_5_REASON_SERVER_UNAVAILABLE                 0x88
+#define RRR_MQTT_P_5_REASON_SERVER_BUSY                        0x89
+#define RRR_MQTT_P_5_REASON_BANNED                             0x8A
+#define RRR_MQTT_P_5_REASON_SERVER_SHUTTING_DOWN               0x8B
+#define RRR_MQTT_P_5_REASON_BAD_AUTH_METHOD                    0x8C
+#define RRR_MQTT_P_5_REASON_KEEP_ALIVE_TIMEOUT                 0x8D
+#define RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER                 0x8E
+#define RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID               0x8F
 
-#define RRR_MQTT_P_5_REASON_TOPIC_NAME_INVALID				0x90
-#define RRR_MQTT_P_5_REASON_PACKET_IDENTIFIER_IN_USE		0x91
-#define RRR_MQTT_P_5_REASON_PACKET_IDENTIFIER_NOT_FOUND		0x92
-#define RRR_MQTT_P_5_REASON_RECEIVE_MAX_EXCEEDED			0x93
-#define RRR_MQTT_P_5_REASON_TOPIC_ALIAS_INVALID				0x94
-#define RRR_MQTT_P_5_REASON_PACKET_TOO_LARGE				0x95
-#define RRR_MQTT_P_5_REASON_MESSAGE_RATE_TOO_LARGE			0x96
-#define RRR_MQTT_P_5_REASON_QUOTA_EXCEEDED					0x97
-#define RRR_MQTT_P_5_REASON_ADMINISTRATIVE_ACTION			0x98
-#define RRR_MQTT_P_5_REASON_PAYLOAD_FORMAT_INVALID			0x99
-#define RRR_MQTT_P_5_REASON_RETAIN_NOT_SUPPORTED			0x9A
-#define RRR_MQTT_P_5_REASON_QOS_NOT_SUPPORTED				0x9B
-#define RRR_MQTT_P_5_REASON_USE_ANOTHER_SERVER				0x9C
-#define RRR_MQTT_P_5_REASON_SERVER_MOVED					0x9D
-#define RRR_MQTT_P_5_REASON_NO_SHARED_SUBSCRIPTIONS			0x9E
-#define RRR_MQTT_P_5_REASON_CONNECTION_RATE_EXCEEDED		0x9F
+#define RRR_MQTT_P_5_REASON_TOPIC_NAME_INVALID                 0x90
+#define RRR_MQTT_P_5_REASON_PACKET_IDENTIFIER_IN_USE           0x91
+#define RRR_MQTT_P_5_REASON_PACKET_IDENTIFIER_NOT_FOUND        0x92
+#define RRR_MQTT_P_5_REASON_RECEIVE_MAX_EXCEEDED               0x93
+#define RRR_MQTT_P_5_REASON_TOPIC_ALIAS_INVALID                0x94
+#define RRR_MQTT_P_5_REASON_PACKET_TOO_LARGE                   0x95
+#define RRR_MQTT_P_5_REASON_MESSAGE_RATE_TOO_LARGE             0x96
+#define RRR_MQTT_P_5_REASON_QUOTA_EXCEEDED                     0x97
+#define RRR_MQTT_P_5_REASON_ADMINISTRATIVE_ACTION              0x98
+#define RRR_MQTT_P_5_REASON_PAYLOAD_FORMAT_INVALID             0x99
+#define RRR_MQTT_P_5_REASON_RETAIN_NOT_SUPPORTED               0x9A
+#define RRR_MQTT_P_5_REASON_QOS_NOT_SUPPORTED                  0x9B
+#define RRR_MQTT_P_5_REASON_USE_ANOTHER_SERVER                 0x9C
+#define RRR_MQTT_P_5_REASON_SERVER_MOVED                       0x9D
+#define RRR_MQTT_P_5_REASON_NO_SHARED_SUBSCRIPTIONS            0x9E
+#define RRR_MQTT_P_5_REASON_CONNECTION_RATE_EXCEEDED           0x9F
 
-#define RRR_MQTT_P_5_REASON_MAXIMUM_CONNECT_TIME			0xA0
-#define RRR_MQTT_P_5_REASON_SUB_IDENTIFIERS_NOT_SUPPORTED	0xA1
-#define RRR_MQTT_P_5_REASON_WILDCARD_SUBS_NOT_SUPPORTED		0xA2
+#define RRR_MQTT_P_5_REASON_MAXIMUM_CONNECT_TIME               0xA0
+#define RRR_MQTT_P_5_REASON_SUB_IDENTIFIERS_NOT_SUPPORTED      0xA1
+#define RRR_MQTT_P_5_REASON_WILDCARD_SUBS_NOT_SUPPORTED        0xA2
 
 struct rrr_mqtt_p;
 struct rrr_mqtt_conn;
@@ -104,8 +104,8 @@ struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_subscription_collection;
 struct rrr_mqtt_topic_token;
 
-#define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
-		const struct rrr_mqtt_p_type_properties *type_properties, \
+#define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION                                 \
+		const struct rrr_mqtt_p_type_properties *type_properties,   \
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 
 #define RRR_MQTT_P_TYPE_FREE_DEFINITION \
@@ -154,8 +154,8 @@ struct rrr_mqtt_p_reason {
 	const char *description;
 };
 
-#define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER					\
-	int users;													\
+#define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER  \
+    int users;                                   \
 	void (*destroy)(void *arg)
 
 struct rrr_mqtt_p_standarized_usercount {
@@ -189,85 +189,85 @@ struct rrr_mqtt_p_payload {
 
 // Keep values used during iteration together at the top
 
-#define RRR_MQTT_P_PACKET_HEADER										\
-	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
-	uint8_t type_flags;													\
-	uint8_t is_outbound;												\
-	uint16_t packet_identifier;											\
-	uint64_t last_attempt;												\
-	uint64_t planned_expiry_time;										\
-	uint8_t reason_v5;													\
-	uint8_t dup;														\
-	RRR_LL_NODE(struct rrr_mqtt_p);										\
-	const struct rrr_mqtt_p_reason *reason;								\
-	int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id);	\
-	void *release_packet_id_arg1;										\
-	void *release_packet_id_arg2;										\
-	uint64_t create_time;												\
-	char *_assembled_data;												\
-	ssize_t assembled_data_size;										\
-	ssize_t received_size;												\
-	struct rrr_mqtt_p_payload *payload;									\
-	const struct rrr_mqtt_p_protocol_version *protocol_version;			\
-	const struct rrr_mqtt_p_type_properties *type_properties
+#define RRR_MQTT_P_PACKET_HEADER                               \
+    RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;                   \
+    uint8_t type_flags;                                        \
+    uint8_t is_outbound;                                       \
+    uint16_t packet_identifier;                                \
+    uint64_t last_attempt;                                     \
+    uint64_t planned_expiry_time;                              \
+    uint8_t reason_v5;                                         \
+    uint8_t dup;                                               \
+    RRR_LL_NODE(struct rrr_mqtt_p);                            \
+    const struct rrr_mqtt_p_reason *reason;                    \
+    int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id); \
+    void *release_packet_id_arg1;                              \
+    void *release_packet_id_arg2;                              \
+    uint64_t create_time;                                      \
+    char *_assembled_data;                                     \
+    ssize_t assembled_data_size;                               \
+    ssize_t received_size;                                     \
+    struct rrr_mqtt_p_payload *payload;                        \
+    const struct rrr_mqtt_p_protocol_version *protocol_version;\
+    const struct rrr_mqtt_p_type_properties *type_properties   \
 
 struct rrr_mqtt_p {
 	RRR_MQTT_P_PACKET_HEADER;
 };
 
-#define RRR_MQTT_P_GET_REASON_V5(p)			((p)->reason_v5)
-#define RRR_MQTT_P_GET_TYPE(p)				((p)->type_properties->type_id)
-#define RRR_MQTT_P_GET_TYPE_FLAGS(p)		((p)->type_flags)
-#define RRR_MQTT_P_GET_TYPE_AND_FLAGS(p)	((p)->type_properties->type_id << 4 | (p)->type_flags)
-#define RRR_MQTT_P_GET_IDENTIFIER(p)		((p)->packet_identifier)
-#define RRR_MQTT_P_GET_TYPE_NAME(p)			((p)->type_properties->name)
-#define RRR_MQTT_P_GET_SIZE(p)				((p)->type_properties->packet_size)
-#define RRR_MQTT_P_GET_RECEIVED_SIZE(p)		((p)->type_properties->received_size)
-#define RRR_MQTT_P_GET_PROP_FLAGS(p)		((p)->type_properties->flags)
-#define RRR_MQTT_P_GET_PARSER(p)			((p)->type_properties->parse)
-#define RRR_MQTT_P_GET_ASSEMBLER(p)			((p)->type_properties->assemble)
-#define RRR_MQTT_P_GET_FREE(p)				((p)->type_properties->free)
-#define RRR_MQTT_P_IS_RESERVED_FLAGS(p)		((p)->type_properties->has_reserved_flags)
-#define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->is_ack != 0)
-#define RRR_MQTT_P_IS_V5(p)					((p)->protocol_version->id == 5)
+#define RRR_MQTT_P_GET_REASON_V5(p)            ((p)->reason_v5)
+#define RRR_MQTT_P_GET_TYPE(p)                 ((p)->type_properties->type_id)
+#define RRR_MQTT_P_GET_TYPE_FLAGS(p)           ((p)->type_flags)
+#define RRR_MQTT_P_GET_TYPE_AND_FLAGS(p)       ((p)->type_properties->type_id << 4 | (p)->type_flags)
+#define RRR_MQTT_P_GET_IDENTIFIER(p)           ((p)->packet_identifier)
+#define RRR_MQTT_P_GET_TYPE_NAME(p)            ((p)->type_properties->name)
+#define RRR_MQTT_P_GET_SIZE(p)                 ((p)->type_properties->packet_size)
+#define RRR_MQTT_P_GET_RECEIVED_SIZE(p)        ((p)->type_properties->received_size)
+#define RRR_MQTT_P_GET_PROP_FLAGS(p)           ((p)->type_properties->flags)
+#define RRR_MQTT_P_GET_PARSER(p)               ((p)->type_properties->parse)
+#define RRR_MQTT_P_GET_ASSEMBLER(p)            ((p)->type_properties->assemble)
+#define RRR_MQTT_P_GET_FREE(p)                 ((p)->type_properties->free)
+#define RRR_MQTT_P_IS_RESERVED_FLAGS(p)        ((p)->type_properties->has_reserved_flags)
+#define RRR_MQTT_P_IS_ACK(p)                   ((p)->type_properties->is_ack != 0)
+#define RRR_MQTT_P_IS_V5(p)                    ((p)->protocol_version->id == 5)
 
-#define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->destroy(p))
+#define RRR_MQTT_P_CALL_FREE(p)                ((p)->type_properties->destroy(p))
 
-#define RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER(p,id,release_func,arg1,arg2)		\
-	do {																		\
-		(p)->packet_identifier = (id);											\
-		(p)->release_packet_id_func = release_func;								\
-		(p)->release_packet_id_arg1 = (arg1);									\
-		(p)->release_packet_id_arg2 = (arg2);									\
-	} while (0)
+#define RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER(p,id,release_func,arg1,arg2)\
+    do {                                                       \
+        (p)->packet_identifier = (id);                         \
+        (p)->release_packet_id_func = release_func;            \
+        (p)->release_packet_id_arg1 = (arg1);                  \
+        (p)->release_packet_id_arg2 = (arg2);                  \
+    } while (0)                                                \
 
-#define RRR_MQTT_P_ASSIGN_NEW_POOL_ID(p,pool,on_error)				\
-	do {uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(pool);	\
-	if (packet_identifier == 0) {									\
-		on_error;													\
-	}																\
-	RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (						\
-			p,														\
-			packet_identifier,										\
-			rrr_mqtt_id_pool_release_id_void,						\
-			&session->ram_data->id_pool								\
-	);} while(0)
+#define RRR_MQTT_P_ASSIGN_NEW_POOL_ID(p,pool,on_error)         \
+    do {uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(pool); \
+    if (packet_identifier == 0) {                              \
+        on_error;                                              \
+    }                                                          \
+    RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (                   \
+            p,                                                 \
+            packet_identifier,                                 \
+            rrr_mqtt_id_pool_release_id_void,                  \
+            &session->ram_data->id_pool                        \
+    );} while(0)                                               \
 
-#define RRR_MQTT_P_CLEAR_POOL_ID(p)					\
-	do {											\
-		(p)->release_packet_id_func = NULL;			\
-		(p)->release_packet_id_arg1 = NULL;			\
-		(p)->release_packet_id_arg2 = NULL;			\
-	} while(0)
+#define RRR_MQTT_P_CLEAR_POOL_ID(p)                            \
+    do {                                                       \
+        (p)->release_packet_id_func = NULL;                    \
+        (p)->release_packet_id_arg1 = NULL;                    \
+        (p)->release_packet_id_arg2 = NULL;                    \
+    } while(0)                                                 \
 
-#define RRR_MQTT_P_RELEASE_POOL_ID(p)				\
-	do {if ((p)->release_packet_id_func != NULL) {	\
-		(p)->release_packet_id_func (				\
-			(p)->release_packet_id_arg1,			\
-			(p)->release_packet_id_arg2,			\
-			(p)->packet_identifier					\
-		);											\
-	}} while (0)
+#define RRR_MQTT_P_RELEASE_POOL_ID(p)                          \
+    do {if ((p)->release_packet_id_func != NULL) {             \
+        (p)->release_packet_id_func (                          \
+            (p)->release_packet_id_arg1,                       \
+            (p)->release_packet_id_arg2,                       \
+            (p)->packet_identifier                             \
+        );                                                     \
+    }} while (0)                                               \
 
 static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
@@ -331,17 +331,16 @@ struct rrr_mqtt_p_connect {
 	char *password;
 };
 
-#define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			(((1<<0) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags))
-#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 1)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL(p)				(((1<<2) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 2)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)			((((1<<4)|(1<<3)) &	((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 3)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)		(((1<<5) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 5)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)         (((1<<0) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags))
+#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)      (((1<<1) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 1)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL(p)             (((1<<2) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 2)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)        ((((1<<4)|(1<<3)) &    ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 3)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)      (((1<<5) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 5)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p)         (((1<<6) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)        (((1<<7) &            ((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
-#define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p) 		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
-#define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
-
+#define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p)         (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)        (((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
 
 struct rrr_mqtt_p_connack {
 	RRR_MQTT_P_PACKET_HEADER;
@@ -354,8 +353,8 @@ struct rrr_mqtt_p_connack {
 	struct rrr_mqtt_property_collection properties;
 };
 
-#define RRR_MQTT_P_CONNACK_GET_FLAG_SESSION_PRESENT(p)	(((1<<0) &			((struct rrr_mqtt_p_connack *)(p))->ack_flags))
-#define RRR_MQTT_P_CONNACK_GET_FLAG_RESERVED(p)			(((0x7f<<1) &		((struct rrr_mqtt_p_connack *)(p))->ack_flags))
+#define RRR_MQTT_P_CONNACK_GET_FLAG_SESSION_PRESENT(p)    (((1<<0) &        ((struct rrr_mqtt_p_connack *)(p))->ack_flags))
+#define RRR_MQTT_P_CONNACK_GET_FLAG_RESERVED(p)        (((0x7f<<1) &        ((struct rrr_mqtt_p_connack *)(p))->ack_flags))
 
 #define RRR_MQTT_P_PACKET_PUBACK_PROPERTIES \
 		struct rrr_mqtt_property_collection properties
@@ -417,32 +416,32 @@ struct rrr_mqtt_p_publish {
 	uint32_t will_delay_interval;
 };
 
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)    (((p)->type_flags & 1))
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)       (((p)->type_flags & (3<<1)) >> 1)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)       (((p)->type_flags & (1<<3)) >> 3)
 
 #define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p,new_retain,new_qos,new_dup) \
-	(p)->type_flags = new_retain|(new_qos << 1)|(new_dup << 3)
+	(p)->type_flags = ((uint8_t)(new_retain|(new_qos << 1)|(new_dup << 3)))
 
 #define RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p,new_qos) \
-	(p)->type_flags = ((p)->type_flags & 1)|(new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
+	(p)->type_flags = ((uint8_t)(((p)->type_flags & 1)|(new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)))
 
 #define RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(p,new_dup) \
-	(p)->type_flags = (((p)->type_flags & 1))|((((p)->type_flags & (3<<1)) >> 1) << 1)|(new_dup << 3)
+	(p)->type_flags = ((uint8_t)((((p)->type_flags & 1))|((((p)->type_flags & (3<<1)) >> 1) << 1)|(new_dup << 3)))
 
 #define RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(p,new_retain) \
-	(p)->type_flags = new_retain|((((p)->type_flags & (3<<1)) >> 1) << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
+	(p)->type_flags = ((uint8_t)(new_retain|((((p)->type_flags & (3<<1)) >> 1) << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)))
 
 struct rrr_mqtt_p_suback_unsuback;
 struct rrr_mqtt_p_suback;
 struct rrr_mqtt_p_unsuback;
 
-#define RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS					\
-		RRR_MQTT_P_PACKET_HEADER;								\
-		char *data_tmp;											\
-		int max_qos;											\
-		struct rrr_mqtt_property_collection properties;			\
-		struct rrr_mqtt_subscription_collection *subscriptions
+#define RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS                \
+        RRR_MQTT_P_PACKET_HEADER;                              \
+        char *data_tmp;                                        \
+        int max_qos;                                           \
+        struct rrr_mqtt_property_collection properties;        \
+        struct rrr_mqtt_subscription_collection *subscriptions \
 
 // These three must be --equal-- except for the last pointer name
 struct rrr_mqtt_p_sub_usub {
@@ -458,14 +457,14 @@ struct rrr_mqtt_p_unsubscribe {
 	struct rrr_mqtt_p_unsuback *unsuback;
 };
 
-#define RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS											\
-	RRR_MQTT_P_PACKET_HEADER;														\
-	struct rrr_mqtt_property_collection properties;									\
-	/* Used only when assembling */													\
-	struct rrr_mqtt_subscription_collection *subscriptions_;						\
-	/* Used only when parsing/handling */											\
-	const uint8_t *acknowledgements;												\
-	ssize_t acknowledgements_size
+#define RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS                      \
+    RRR_MQTT_P_PACKET_HEADER;                                  \
+    struct rrr_mqtt_property_collection properties;            \
+    /* Used only when assembling */                            \
+    struct rrr_mqtt_subscription_collection *subscriptions_;   \
+    /* Used only when parsing/handling */                      \
+    const uint8_t *acknowledgements;                           \
+    rrr_biglength acknowledgements_size
 
 // These three must be --equal-- except for the last pointer name
 struct rrr_mqtt_p_suback_unsuback {
@@ -512,22 +511,22 @@ struct rrr_mqtt_p_queue {
 	struct rrr_fifo buffer;
 };
 
-#define RRR_MQTT_P_TYPE_RESERVED	0
-#define RRR_MQTT_P_TYPE_CONNECT		1
-#define RRR_MQTT_P_TYPE_CONNACK		2
-#define RRR_MQTT_P_TYPE_PUBLISH		3
-#define RRR_MQTT_P_TYPE_PUBACK		4
-#define RRR_MQTT_P_TYPE_PUBREC		5
-#define RRR_MQTT_P_TYPE_PUBREL		6
-#define RRR_MQTT_P_TYPE_PUBCOMP		7
-#define RRR_MQTT_P_TYPE_SUBSCRIBE	8
-#define RRR_MQTT_P_TYPE_SUBACK		9
-#define RRR_MQTT_P_TYPE_UNSUBSCRIBE	10
-#define RRR_MQTT_P_TYPE_UNSUBACK	11
-#define RRR_MQTT_P_TYPE_PINGREQ		12
-#define RRR_MQTT_P_TYPE_PINGRESP	13
-#define RRR_MQTT_P_TYPE_DISCONNECT	14
-#define RRR_MQTT_P_TYPE_AUTH		15
+#define RRR_MQTT_P_TYPE_RESERVED       0
+#define RRR_MQTT_P_TYPE_CONNECT        1
+#define RRR_MQTT_P_TYPE_CONNACK        2
+#define RRR_MQTT_P_TYPE_PUBLISH        3
+#define RRR_MQTT_P_TYPE_PUBACK         4
+#define RRR_MQTT_P_TYPE_PUBREC         5
+#define RRR_MQTT_P_TYPE_PUBREL         6
+#define RRR_MQTT_P_TYPE_PUBCOMP        7
+#define RRR_MQTT_P_TYPE_SUBSCRIBE      8
+#define RRR_MQTT_P_TYPE_SUBACK         9
+#define RRR_MQTT_P_TYPE_UNSUBSCRIBE   10
+#define RRR_MQTT_P_TYPE_UNSUBACK      11
+#define RRR_MQTT_P_TYPE_PINGREQ       12
+#define RRR_MQTT_P_TYPE_PINGRESP      13
+#define RRR_MQTT_P_TYPE_DISCONNECT    14
+#define RRR_MQTT_P_TYPE_AUTH          15
 
 const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8_t id);
 
