@@ -56,11 +56,16 @@ static int __rrr_environment_file_parse (
 		}
 
 		rrr_length line_start;
-		rrr_length line_end;
+		rrr_slength line_end;
 		rrr_parse_non_newline(pos, &line_start, &line_end);
 
 		RRR_FREE_IF_NOT_NULL(line_tmp);
-		if ((ret = rrr_parse_str_extract(&line_tmp, pos, line_start, line_end - line_start + 1)) != 0) {
+		if ((ret = rrr_parse_str_extract (
+				&line_tmp,
+				pos,
+				line_start,
+				rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(line_end, line_start))
+		)) != 0) {
 			goto out;
 		}
 		pos->pos = line_start;
@@ -91,7 +96,12 @@ static int __rrr_environment_file_parse (
 			}
 
 			RRR_FREE_IF_NOT_NULL(val_tmp);
-			if ((ret = rrr_parse_str_extract(&val_tmp, pos, pos->pos, line_end - pos->pos + 1)) != 0) {
+			if ((ret = rrr_parse_str_extract (
+					&val_tmp,
+					pos,
+					pos->pos,
+					rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(line_end, pos->pos))
+			)) != 0) {
 				goto out;
 			}
 			rrr_parse_str_trim(val_tmp);
@@ -101,7 +111,7 @@ static int __rrr_environment_file_parse (
 			}
 		}
 
-		pos->pos = line_end + 1;
+		pos->pos = rrr_length_from_slength_bug_const(line_end + 1);
 	}
 
 	out:

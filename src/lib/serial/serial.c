@@ -151,11 +151,11 @@ int rrr_serial_raw_set (int fd) {
 	// cfmakeraw(&termios_p);
 
 	// Copied from termios man page
-    termios_p.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-    termios_p.c_oflag &= ~OPOST;
-    termios_p.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    termios_p.c_cflag &= ~(CSIZE | PARENB);
-    termios_p.c_cflag |= CS8;
+	termios_p.c_iflag &= (unsigned int) ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+	termios_p.c_oflag &= (unsigned int) ~OPOST;
+	termios_p.c_lflag &= (unsigned int) ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+	termios_p.c_cflag &= (unsigned int) ~(CSIZE | PARENB);
+	termios_p.c_cflag |= CS8;
 
 	RRR_SERIAL_SET_ATTR();
 
@@ -186,10 +186,10 @@ int rrr_serial_stop_bit_set (int fd, int is_two) {
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();
 
 	if (is_two) {
-		termios_p.c_cflag |= CSTOPB;
+		termios_p.c_cflag |= (unsigned int) CSTOPB;
 	}
 	else {
-		termios_p.c_cflag &= ~(CSTOPB);
+		termios_p.c_cflag &= (unsigned int) ~(CSTOPB);
 	}
 
 	RRR_SERIAL_SET_ATTR();
@@ -203,7 +203,7 @@ int rrr_serial_parity_unset (int fd) {
 
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();
 
-	termios_p.c_cflag &= ~(PARENB|PARODD);
+	termios_p.c_cflag &= (unsigned int) ~(PARENB|PARODD);
 
 	RRR_SERIAL_SET_ATTR();
 
