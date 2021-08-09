@@ -69,19 +69,19 @@ struct rrr_instance_settings {
 	pthread_mutex_t mutex;
 	int initialized;
 
-	unsigned int settings_count;
-	unsigned int settings_max;
+	rrr_length settings_count;
+	rrr_length settings_max;
 	struct rrr_setting *settings;
 };
 
 struct rrr_settings_list {
 	char *data;
 	char **list;
-	unsigned int length;
+	rrr_length length;
 };
 
 struct rrr_instance_settings *rrr_settings_new (
-		const int count
+		const rrr_length count
 );
 void rrr_settings_destroy (
 		struct rrr_instance_settings *target
@@ -184,7 +184,7 @@ int rrr_settings_iterate_packed (
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,
-		int was_used,
+		rrr_u32 was_used,
 		int (*iterator)(
 				struct rrr_instance_settings *settings,
 				int (*callback)(struct rrr_setting *settings, void *callback_args),

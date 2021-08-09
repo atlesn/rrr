@@ -46,7 +46,7 @@ static void __rrr_settings_list_destroy (
 
 static int __rrr_settings_init (
 		struct rrr_instance_settings *target,
-		const int count
+		const rrr_length count
 ) {
 	int ret = 0;
 
@@ -77,7 +77,7 @@ static int __rrr_settings_init (
 }
 
 struct rrr_instance_settings *rrr_settings_new (
-		const int count
+		const rrr_length count
 ) {
 	struct rrr_instance_settings *ret = rrr_allocate(sizeof(*ret));
 
@@ -184,10 +184,7 @@ static struct rrr_setting *__rrr_settings_reserve_nolock (
 		return NULL;
 	}
 
-	int pos = target->settings_count;
-	target->settings_count++;
-
-	ret = &target->settings[pos];
+	ret = &target->settings[rrr_length_inc_bug_old_value(&target->settings_count)];
 
 	return ret;
 }
@@ -210,7 +207,7 @@ static int __rrr_settings_add_raw (
 		struct rrr_instance_settings *target,
 		const char *name,
 		const void *old_data,
-		const int size,
+		const rrr_length size,
 		rrr_u32 type,
 		int replace_existing
 ) {
@@ -435,7 +432,13 @@ int rrr_settings_split_commas_to_array (
 		goto out;
 	}
 
-	int length = strlen(value);
+	size_t length = strlen(value);
+
+	if (length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Value too long ing rrr_settings_split_commas_to_array (%llu)\n", (long long unsigned) length);
+		ret = 1;
+		goto out;
+	}
 
 	target->data = rrr_allocate(length + 1);
 	if (target->data == NULL) {
@@ -444,10 +447,13 @@ int rrr_settings_split_commas_to_array (
 		goto out;
 	}
 
-	int elements = 1;
-	for (int i = 0; i < length; i++) {
+	rrr_length elements = 1;
+	for (rrr_length i = 0; i < length; i++) {
 		if (value[i] == ',') {
-			elements++;
+			if ((ret = rrr_length_inc_err(&elements)) != 0) {
+				RRR_MSG_0("Too many elements in rrr_settings_split_commas_to_array\n");
+				goto out;
+			}
 		}
 	}
 
@@ -460,15 +466,15 @@ int rrr_settings_split_commas_to_array (
 
 	strcpy(target->data, value);
 
-	int pos = 0;
+	rrr_length pos = 0;
 	target->list[pos] = target->data;
-	pos++;
+	rrr_length_inc_bug(&pos);
 
-	for (int i = 0; i < length; i++) {
+	for (rrr_length i = 0; i < length; i++) {
 		if (target->data[i] == ',') {
 			target->data[i] = '\0';
 			if (i + 1 < length && target->data[i + 1] != '\0') {
-				target->list[pos++] = target->data + i + 1;
+				target->list[rrr_length_inc_bug_old_value(&pos)] = target->data + i + 1;
 			}
 		}
 	}
@@ -490,15 +496,31 @@ int rrr_settings_split_commas_to_array (
 	return ret;
 }
 
+static int __rrr_settings_replace_or_add_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value,
+		int do_replace
+) {
+	const void *data = value;
+	size_t length = strlen(value);
+
+	if (length > RRR_LENGTH_MAX - 1) {
+		RRR_MSG_0("Value too long in rrr_settings_replace_or_add_string\n");
+		return 1;
+	}
+
+	rrr_length size = (rrr_length) length + 1;
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, do_replace);
+}
+
 int rrr_settings_replace_string (
 		struct rrr_instance_settings *target,
 		const char *name,
 		const char *value
 ) {
-	const void *data = value;
-	int size = strlen(value) + 1;
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 1);
+	return __rrr_settings_replace_or_add_string(target, name, value, 1 /* Do replace */);
 }
 
 int rrr_settings_add_string (
@@ -506,10 +528,7 @@ int rrr_settings_add_string (
 		const char *name,
 		const char *value
 ) {
-	const void *data = value;
-	int size = strlen(value) + 1;
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 0);
+	return __rrr_settings_replace_or_add_string(target, name, value, 0 /* Do not replace */);
 }
 
 int rrr_settings_replace_unsigned_integer (
@@ -517,10 +536,7 @@ int rrr_settings_replace_unsigned_integer (
 		const char *name,
 		rrr_setting_uint value
 ) {
-	const void *data = &value;
-	int size = sizeof(rrr_setting_uint);
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 1);
+	return __rrr_settings_add_raw(target, name, &value, sizeof(value), RRR_SETTINGS_TYPE_UINT, 1);
 }
 
 int rrr_settings_add_unsigned_integer (
@@ -528,10 +544,7 @@ int rrr_settings_add_unsigned_integer (
 		const char *name,
 		rrr_setting_uint value
 ) {
-	const void *data = &value;
-	int size = sizeof(rrr_setting_uint);
-
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 0);
+	return __rrr_settings_add_raw(target, name, &value, sizeof(value), RRR_SETTINGS_TYPE_UINT, 0);
 }
 
 int rrr_settings_setting_to_string_nolock (
@@ -787,7 +800,7 @@ int rrr_settings_iterate (
 
 struct rrr_settings_update_used_callback_data {
 	const char *name;
-	int was_used;
+	rrr_u32 was_used;
 	int did_update;
 };
 
@@ -811,7 +824,7 @@ static int __rrr_settings_update_used_callback (
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,
-		int was_used,
+		rrr_u32 was_used,
 		int (*iterator)(
 				struct rrr_instance_settings *settings,
 				int (*callback)(struct rrr_setting *settings, void *callback_args),

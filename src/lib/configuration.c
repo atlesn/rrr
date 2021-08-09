@@ -365,7 +365,7 @@ static int __rrr_config_parse_any (
 
 	const char c = pos->data[pos->pos];
 
-	if (rrr_length_inc_bug(&pos->pos) < pos->size) {
+	if (rrr_length_inc_bug_new_value(&pos->pos) < pos->size) {
 		if (c == '#') {
 			rrr_parse_comment(pos);
 		}
