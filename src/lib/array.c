@@ -902,7 +902,7 @@ int rrr_array_new_message_from_collection (
 			MSG_DATA_PTR(message),
 			&found_tags,
 			&written_bytes_total,
-			MSG_DATA_LENGTH(message),
+			(rrr_length) MSG_DATA_LENGTH(message),
 			definition,
 			NULL, // Process all elements
 			__rrr_array_collection_pack_callback

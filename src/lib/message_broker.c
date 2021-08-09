@@ -559,7 +559,7 @@ static int __rrr_message_broker_write_notifications_send_random (
 	}
 
 	if (max > 0) {
-		rrr_biglength target = rrr_rand();
+		rrr_biglength target = (rrr_biglength) rrr_rand();
 		target = target % max;
 		return __rrr_message_broker_write_notifications_send_final (
 				costumer->write_notify_listeners[target],
@@ -589,7 +589,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	const struct sockaddr *addr;
 	socklen_t socklen;
 	int protocol;
-	uint16_t entries_written;
+	uint8_t entries_written;
 	int (*callback)(struct rrr_msg_holder *new_entry, void *arg);
 	void *callback_arg;
 	int (*check_cancel_callback)(void *arg);
@@ -672,7 +672,7 @@ static int __rrr_message_broker_write_entry_slot_intermediate (
 		callback_data->entries_written++;
 	}
 
-	if (callback_data->entries_written == 0xffff) {
+	if (callback_data->entries_written == 0xff) {
 		*do_again = 0;
 	}
 
@@ -737,7 +737,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_PROTECTED_WRI
 		goto out;
 	}
 
-	if ((++callback_data->entries_written) == 0xffff) {
+	if ((++callback_data->entries_written) == 0xff) {
 		ret &= ~(RRR_FIFO_PROTECTED_WRITE_AGAIN);
 	}
 
@@ -1082,7 +1082,7 @@ int rrr_message_broker_write_entries_from_collection_unsafe (
 		else {
 			ret = __rrr_message_broker_write_notifications_send (
 					costumer,
-					written_entries,
+					(uint8_t) written_entries,
 					check_cancel_callback,
 					check_cancel_callback_arg
 			);

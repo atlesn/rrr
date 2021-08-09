@@ -118,6 +118,12 @@ static inline int rrr_length_add_err (rrr_length *a, rrr_length b) {
 	return 0;
 }
 
+static inline void rrr_length_add_bug (rrr_length *a, rrr_length b) {
+	if (rrr_length_add_err(a, b) != 0) {
+		RRR_BUG("Bugtrap\n");
+	}
+}
+
 static inline int rrr_length_inc_err (rrr_length *a) {
 	if (++(*a) == 0) {
 		RRR_MSG_0("Error: Overflow in rrr_length_inc_err\n");
@@ -126,10 +132,35 @@ static inline int rrr_length_inc_err (rrr_length *a) {
 	return 0;
 }
 
+static inline void rrr_length_mul_bug (rrr_length *a, rrr_length b) {
+	rrr_biglength r = *a * b;
+	if (r > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_mul_bug\n");
+	}
+	*a = (rrr_length) r;
+}
+
+static inline rrr_length rrr_length_from_ptr_sub_bug (const void *a, const void *b) {
+	if (b > a) {
+		RRR_BUG("Underflow in rrr_length_from_ptr_sub_bug\n");
+	}
+	uintptr_t r = (uintptr_t) a - (uintptr_t) b;
+	if (r > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_ptr_sub_bug\n");
+	}
+	return (rrr_length) r;
+}
+
 static inline void rrr_length_inc_bug (rrr_length *a) {
 	if (++(*a) == 0) {
 		RRR_BUG("Bug: Overflow in rrr_length_inc_bug\n");
 	}
+}
+
+static inline rrr_length rrr_length_inc_bug_const (const rrr_length a) {
+	rrr_length r = a;
+	rrr_length_inc_bug(&r);
+	return r;
 }
 
 static inline rrr_length rrr_length_inc_bug_new_value (rrr_length *a) {
@@ -140,6 +171,13 @@ static inline rrr_length rrr_length_inc_bug_new_value (rrr_length *a) {
 static inline rrr_length rrr_length_inc_bug_old_value (rrr_length *a) {
 	rrr_length_inc_bug(a);
 	return *a - 1;
+}
+
+static inline rrr_length rrr_length_from_size_t_bug (size_t a) {
+	if (a > RRR_LENGTH_MAX) {
+		RRR_BUG("Overflow in rrr_length_from_size_t_bug\n");
+	}
+	return (rrr_length) a;
 }
 
 #define RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(name)				\

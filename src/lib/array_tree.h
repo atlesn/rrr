@@ -96,7 +96,7 @@ int rrr_array_tree_interpret (
 int rrr_array_tree_interpret_raw (
 		struct rrr_array_tree **target,
 		const char *data,
-		int data_length,
+		rrr_length data_length,
 		const char *name
 );
 void rrr_array_tree_dump (

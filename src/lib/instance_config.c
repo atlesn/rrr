@@ -62,8 +62,8 @@ static void __rrr_instance_config_destroy (
 static int __rrr_instance_config_new (
 		struct rrr_instance_config_data **result,
 		const char *name_begin,
-		size_t name_length,
-		const int max_settings,
+		const rrr_length name_length,
+		const rrr_length max_settings,
 		const struct rrr_array_tree_list *global_array_trees
 ) {
 	int ret = 0;
@@ -231,11 +231,11 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 
 	struct rrr_parse_pos pos;
 
-	rrr_parse_pos_init(&pos, target_str_tmp, strlen(target_str_tmp));
+	rrr_parse_pos_init(&pos, target_str_tmp, rrr_length_from_size_t_bug(strlen(target_str_tmp)));
 	rrr_parse_ignore_space_and_tab(&pos);
 
 	if (rrr_parse_match_word(&pos, "{")) {
-		int start, end;
+		rrr_length start, end;
 		rrr_parse_match_letters(&pos, &start, &end, RRR_PARSE_MATCH_LETTERS | RRR_PARSE_MATCH_NUMBERS);
 		rrr_parse_ignore_space_and_tab(&pos);
 		if (rrr_parse_match_word(&pos, "}") && end > start) {
@@ -272,7 +272,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 		}
 	}
 
-	size_t definition_length = strlen(target_str_tmp);
+	rrr_length definition_length = rrr_length_from_size_t_bug(strlen(target_str_tmp));
 
 	// Replace terminating \0 with semicolon. We don't actually use the \0 to
 	// figure out where the end is when parsing the array. This adding of ;
@@ -282,7 +282,7 @@ int rrr_instance_config_parse_array_tree_definition_from_config_silent_fail (
 	if (rrr_array_tree_interpret_raw (
 			&new_tree,
 			target_str_tmp,
-			definition_length + 1, // DO NOT use strlen here, string no longer has \0
+			rrr_length_inc_bug_const(definition_length),  // DO NOT use strlen here, string no longer has \0
 			"-"
 	)) {
 		RRR_MSG_0("Error while parsing array tree in setting %s in instance %s\n", cmd_key, config->name);
@@ -380,7 +380,7 @@ int rrr_instance_config_parse_optional_utf8 (
 		ret = 0;
 	}
 	else {
-		if (rrr_utf8_validate(*target, strlen(*target)) != 0) {
+		if (rrr_utf8_validate(*target, rrr_length_from_size_t_bug(strlen(*target))) != 0) {
 			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);
 			ret = 1;
 			goto out;
