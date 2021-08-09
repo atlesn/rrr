@@ -188,7 +188,7 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	if (snprintf (
 			msg_text,
 			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
-			"RRR running with %u instances",
+			"RRR running with %i instances",
 			rrr_instance_collection_count(instances)
 	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
 		RRR_BUG("Statistics message too long in main\n");

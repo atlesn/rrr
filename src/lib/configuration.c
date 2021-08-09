@@ -58,8 +58,8 @@ static int __rrr_config_parse_setting (
 	int ret = 0;
 
 	char c;
-	int name_begin;
-	int name_end;
+	rrr_length name_begin;
+	rrr_length name_end;
 
 	char *name = NULL;
 	char *value = NULL;
@@ -97,36 +97,36 @@ static int __rrr_config_parse_setting (
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of file after setting name at line %d\n", pos->line);
+		RRR_MSG_0("Unexpected end of file after setting name at line %" PRIrrrl "\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	c = pos->data[pos->pos];
 	if (c != '=') {
-		RRR_MSG_0("Expected = after setting name at line %d, found %c\n", pos->line, c);
+		RRR_MSG_0("Expected = after setting name at line %" PRIrrrl ", found %c\n", pos->line, c);
 		ret = 1;
 		goto out;
 	}
 
-	int line_orig = pos->line;
+	rrr_length line_orig = pos->line;
 
-	pos->pos++;
+	rrr_length_inc_bug(&pos->pos);
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of file after = at line %d\n", pos->line);
+		RRR_MSG_0("Unexpected end of file after = at line %" PRIrrrl "\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	if (pos->line != line_orig) {
-		RRR_MSG_0("Unexpected newline after = at line %d, parameter value missing\n", pos->line);
+		RRR_MSG_0("Unexpected newline after = at line %" PRIrrrl ", parameter value missing\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
-	int value_begin;
-	int value_end;
+	rrr_length value_begin;
+	rrr_length value_end;
 	rrr_parse_non_newline(pos, &value_begin, &value_end);
 
 	// Ignore trailing spaces
@@ -135,13 +135,13 @@ static int __rrr_config_parse_setting (
 	}
 
 	if (value_end < value_begin) {
-		RRR_MSG_0("Expected value after = at line %d\n", pos->line);
+		RRR_MSG_0("Expected value after = at line %" PRIrrrl "\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
-	int name_length = name_end - name_begin + 1;
-	int value_length = value_end - value_begin + 1;
+	rrr_length name_length = name_end - name_begin + 1;
+	rrr_length value_length = value_end - value_begin + 1;
 
 	if (rrr_parse_str_extract(&name, pos, name_begin, name_length) != 0) {
 		RRR_MSG_0("Could not extract name of setting\n");
@@ -189,10 +189,10 @@ static int __rrr_config_parse_block (
 		goto out;
 	}
 
-	int begin = pos->pos;
+	rrr_length begin = pos->pos;
 
 	if (pos->pos >= pos->size) {
-		RRR_MSG_0("Unexpected end of instance definition at line %d\n", pos->line);
+		RRR_MSG_0("Unexpected end of instance definition at line %" PRIrrrl "\n", pos->line);
 		return 1;
 	}
 
@@ -202,12 +202,12 @@ static int __rrr_config_parse_block (
 			// These are ok
 		}
 		else {
-			RRR_MSG_0("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);
+			RRR_MSG_0("Unexpected character '%c' in instance definition in line %" PRIrrrl "\n", c, pos->line);
 			ret = 1;
 			goto out;
 		}
 
-		pos->pos++;
+		rrr_length_inc_bug(&pos->pos);
 
 		if (pos->pos >= pos->size) {
 			break;
@@ -217,31 +217,31 @@ static int __rrr_config_parse_block (
 	}
 
 	if (RRR_PARSE_CHECK_EOF(pos)) {
-		RRR_MSG_0("Unexpected end of instance definition in line %d\n", pos->line);
+		RRR_MSG_0("Unexpected end of instance definition in line %" PRIrrrl "\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	c = pos->data[pos->pos];
 	if (c != ']') {
-		RRR_MSG_0("Syntax error in instance definition in line %d, possibly missing ]\n", pos->line);
+		RRR_MSG_0("Syntax error in instance definition in line %" PRIrrrl ", possibly missing ]\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
-	int end = pos->pos - 1;
-	int length = end - begin + 1;
+	rrr_length end = pos->pos - 1;
+	rrr_length length = end - begin + 1;
 
-	pos->pos++;
+	rrr_length_inc_bug(&pos->pos);
 
 	if (end < begin) {
-		RRR_MSG_0("Instance name at line %d was too short\n", pos->line);
+		RRR_MSG_0("Instance name at line %" PRIrrrl " was too short\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	void *block = NULL;
-	if ((ret = new_block_callback (&block, config, pos->data + begin, length, callback_arg)) != 0) {
+	if ((ret = new_block_callback (&block, config, pos->data + begin, (size_t) length, callback_arg)) != 0) {
 		goto out;
 	}
 
@@ -262,7 +262,7 @@ static int __rrr_config_parse_block (
 	}
 
 	if (ret == 1) {
-		RRR_MSG_0("Settings parsing failed at line %d\n", pos->line);
+		RRR_MSG_0("Settings parsing failed at line %" PRIrrrl "\n", pos->line);
 		*did_parse = 0;
 	}
 
@@ -288,8 +288,8 @@ static int __rrr_config_interpret_array_tree (
 		goto out_missing_name;
 	}
 
-	int start;
-	int end;
+	rrr_length start;
+	rrr_length end;
 
 	rrr_parse_match_letters(pos, &start, &end, RRR_PARSE_MATCH_LETTERS);
 
@@ -301,9 +301,9 @@ static int __rrr_config_interpret_array_tree (
 	if (RRR_PARSE_CHECK_EOF(pos) || *(pos->data + pos->pos) != '}') {
 		goto out_missing_end_curly;
 	}
-	pos->pos++;
+	rrr_length_inc_bug(&pos->pos);
 
-	size_t name_length = end - start + 1;
+	rrr_length name_length = end - start + 1;
 	if ((name_tmp = rrr_allocate(name_length + 1)) == NULL) {
 		goto out_failed_alloc;
 	}
@@ -359,14 +359,13 @@ static int __rrr_config_parse_any (
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
-
 	if (RRR_PARSE_CHECK_EOF(pos)) {
 		return 0;
 	}
 
 	const char c = pos->data[pos->pos];
 
-	if (++pos->pos < pos->size) {
+	if (rrr_length_inc_bug(&pos->pos) < pos->size) {
 		if (c == '#') {
 			rrr_parse_comment(pos);
 		}
@@ -392,12 +391,12 @@ static int __rrr_config_parse_any (
 			}
 		}
 		else {
-			RRR_MSG_0("Syntax error in config file at line %d, unexpected '%c'\n", pos->line, c);
+			RRR_MSG_0("Syntax error in config file at line %" PRIrrrl ", unexpected '%c'\n", pos->line, c);
 			ret = 1;
 		}
 	}
 	else {
-		RRR_MSG_0("Syntax error at end of file (line %d)\n", pos->line);
+		RRR_MSG_0("Syntax error at end of file (line %" PRIrrrl ")\n", pos->line);
 		ret = 1;
 	}
 
@@ -407,7 +406,7 @@ static int __rrr_config_parse_any (
 static int __rrr_config_parse_file (
 		struct rrr_config *config,
 		const void *data,
-		const int size,
+		const rrr_length size,
 		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
 		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
 		void *callback_arg
@@ -432,7 +431,7 @@ static int __rrr_config_parse_file (
 	}
 
 	if (ret != 0) {
-		RRR_MSG_0("Parsing of configuration file failed at line %i position %i\n",
+		RRR_MSG_0("Parsing of configuration file failed at line %" PRIrrrl " position %" PRIrrrl "\n",
 				pos.line, pos.pos - pos.line_begin_pos + 1);
 	}
 
@@ -467,11 +466,14 @@ int rrr_config_parse_file (
 		RRR_DBG_1("Configuration file '%s' was empty\n", filename);
 	}
 	else {
-		if (file_size > INT_MAX) {
-			RRR_MSG_0("Size of configuration file '%s' too long (%lli>%lli)\n",
-					filename, (long long int) file_size, (long long int) INT_MAX);
+		if (file_size > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Size of configuration file '%s' too long (%llu>%llu)\n",
+					filename, (long long unsigned) file_size, (long long unsigned) RRR_LENGTH_MAX);
 			ret = 1;
 			goto out;
+		}
+		if (file_size < 0) {
+			RRR_BUG("File size was <0 in rrr_config_parse_file\n");
 		}
 
 		RRR_DBG_1("Read %lli bytes from configuration file '%s'\n", (long long int) file_size, filename);
@@ -479,7 +481,7 @@ int rrr_config_parse_file (
 		if ((ret = __rrr_config_parse_file (
 				config,
 				file_data,
-				file_size,
+				(rrr_length) file_size,
 				new_block_callback,
 				new_setting_callback,
 				callback_arg

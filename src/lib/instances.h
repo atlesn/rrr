@@ -178,7 +178,7 @@ struct rrr_instance *rrr_instance_find (
 		struct rrr_instance_collection *target,
 		const char *name
 );
-unsigned int rrr_instance_collection_count (
+int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 );
 void rrr_instance_runtime_data_destroy_hard (

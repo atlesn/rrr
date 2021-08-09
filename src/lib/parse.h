@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PARSE_H
 #define RRR_PARSE_H
 
+#include "rrr_types.h"
+
 #define RRR_PARSE_MATCH_SPACE_TAB	(1<<0)
 #define RRR_PARSE_MATCH_COMMAS		(1<<1)
 #define RRR_PARSE_MATCH_LETTERS		(1<<2)
@@ -57,16 +59,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_parse_pos {
 	const char *data;
-	int pos;
-	int size;
-	int line;
-	int line_begin_pos;
+	rrr_length pos;
+	rrr_length size;
+	rrr_length line;
+	rrr_length line_begin_pos;
 };
 
 void rrr_parse_pos_init (
 		struct rrr_parse_pos *target,
 		const char *data,
-		int size
+		rrr_length size
 );
 void rrr_parse_ignore_space_and_tab (
 		struct rrr_parse_pos *pos
@@ -90,37 +92,37 @@ int rrr_parse_match_letters_simple (
 );
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end,
-		int flags
+		rrr_length *start,
+		rrr_length *end,
+		rrr_length flags
 );
 void rrr_parse_match_until (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end,
-		int flags
+		rrr_length *start,
+		rrr_length *end,
+		rrr_length flags
 );
 void rrr_parse_non_newline (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end
+		rrr_length *start,
+		rrr_length *end
 );
 int rrr_parse_str_extract (
 		char **target,
 		struct rrr_parse_pos *pos,
-		const int begin,
-		const int length
+		const rrr_length begin,
+		const rrr_length length
 );
 int rrr_parse_str_split (
 		const char *str,
 		char chr,
-		size_t elements_max,
-		int (*callback)(const char *elements[], size_t elements_count, void *arg),
+		rrr_length elements_max,
+		int (*callback)(const char *elements[], rrr_length elements_count, void *arg),
 		void *callback_arg
 );
 int rrr_parse_str_extract_until (
 		char **result,
-		size_t *result_length,
+		rrr_length *result_length,
 		const char *str,
 		char end_char
 );

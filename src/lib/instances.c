@@ -456,7 +456,7 @@ void rrr_instance_collection_clear (
 	RRR_LL_DESTROY(target, struct rrr_instance, __rrr_instance_destroy(node));
 }
 
-unsigned int rrr_instance_collection_count (
+int rrr_instance_collection_count (
 		struct rrr_instance_collection *collection
 ) {
 	if (RRR_LL_COUNT(collection) < 0) {

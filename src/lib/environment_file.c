@@ -40,7 +40,7 @@ static int __rrr_environment_file_parse (
 	char *line_tmp = NULL;
 
 	char *var_tmp = NULL;
-	size_t var_length_tmp;
+	rrr_length var_length_tmp;
 
 	char *val_tmp = NULL;
 
@@ -55,8 +55,8 @@ static int __rrr_environment_file_parse (
 			continue;
 		}
 
-		int line_start;
-		int line_end;
+		rrr_length line_start;
+		rrr_length line_end;
 		rrr_parse_non_newline(pos, &line_start, &line_end);
 
 		RRR_FREE_IF_NOT_NULL(line_tmp);
@@ -139,14 +139,14 @@ int rrr_environment_file_parse (
 	}
 
 	// Protection before storing to int type in rrr_parse_pos struct
-	if (env_data_size > 0xfffffff) { // Seven f's
+	if (env_data_size > RRR_LENGTH_MAX) { // Seven f's
 		RRR_MSG_0("Environment file '%s' too big (was %" PRIrrrbl " bytes)", environment_file, env_data_size);
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_parse_pos pos = {0};
-	rrr_parse_pos_init(&pos, env_data, env_data_size);
+	rrr_parse_pos_init(&pos, env_data, (rrr_length) env_data_size);
 
 	if ((ret = __rrr_environment_file_parse(target, &pos)) != 0) {
 		RRR_MSG_0("Parsing of environment file '%s' failed\n", environment_file);

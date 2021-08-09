@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_parse_pos_init (
 		struct rrr_parse_pos *target,
 		const char *data,
-		int size
+		rrr_length size
 ) {
 	target->data = data;
 	target->pos = 0;
@@ -121,7 +121,7 @@ int rrr_parse_match_word_case (
 	int ret = 0;
 
 	const char *word_pos = word;
-	int pos_orig = pos->pos;
+	rrr_length pos_orig = pos->pos;
 
 	while (*word_pos != '\0' && pos->pos < pos->size) {
 		char c = pos->data[pos->pos];
@@ -160,7 +160,7 @@ int rrr_parse_match_word (
 	int ret = 0;
 
 	const char *word_pos = word;
-	int pos_orig = pos->pos;
+	rrr_length pos_orig = pos->pos;
 
 	while (*word_pos != '\0' && pos->pos < pos->size) {
 		char c = pos->data[pos->pos];
@@ -202,9 +202,9 @@ int rrr_parse_match_letters_simple (
 
 void rrr_parse_match_letters (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end,
-		int flags
+		rrr_length *start,
+		rrr_length *end,
+		rrr_length flags
 ) {
 	*start = pos->pos;
 	*end = pos->pos;
@@ -237,14 +237,14 @@ void rrr_parse_match_letters (
 
 void rrr_parse_match_until (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end,
-		int flags
+		rrr_length *start,
+		rrr_length *end,
+		rrr_length flags
 ) {
 	*start = pos->pos;
 	*end = pos->pos;
 
-	int pos_orig = pos->pos;
+	rrr_length pos_orig = pos->pos;
 
 	int found = 0;
 	char c = pos->data[pos->pos];
@@ -281,8 +281,8 @@ void rrr_parse_match_until (
 
 void rrr_parse_non_newline (
 		struct rrr_parse_pos *pos,
-		int *start,
-		int *end
+		rrr_length *start,
+		rrr_length *end
 ) {
 	*start = pos->pos;
 	*end = pos->pos;
@@ -306,23 +306,23 @@ void rrr_parse_non_newline (
 int rrr_parse_str_extract (
 		char **target,
 		struct rrr_parse_pos *pos,
-		const int begin,
-		const int length
+		const rrr_length begin,
+		const rrr_length length
 ) {
 	*target = NULL;
 
 	if (length == 0) {
-		RRR_BUG("BUG: length was 0 in __rrr_config_extract_string\n");
+		RRR_BUG("BUG: length was 0 in rrr_parse_str_extract\n");
 	}
 
-	char *bytes = rrr_allocate(length + 1);
+	char *bytes = rrr_allocate((size_t) length + 1);
 
 	if (bytes == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_config_extract_string\n");
+		RRR_MSG_0("Could not allocate memory in rrr_parse_str_extract\n");
 		return 1;
 	}
 
-	memcpy(bytes, pos->data + begin, length);
+	memcpy(bytes, pos->data + begin, (size_t) length);
 
 	bytes[length] = '\0';
 
@@ -334,13 +334,13 @@ int rrr_parse_str_extract (
 int rrr_parse_str_split (
 		const char *str,
 		char chr,
-		size_t elements_max,
-		int (*callback)(const char *elements[], size_t elements_count, void *arg),
+		rrr_length elements_max,
+		int (*callback)(const char *elements[], rrr_length elements_count, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	size_t elements_count = 0;
+	rrr_length elements_count = 0;
 	const char *elements[elements_max];
 
 	char *tmp = NULL;
@@ -363,9 +363,8 @@ int rrr_parse_str_split (
 	const char *element = tmp;
 	int zero_found = 0;
 	while (!zero_found) {
-
 		if (elements_count == elements_max) {
-			RRR_MSG_0("Too many elements while splitting string (more than %lu)\n", elements_max);
+			RRR_MSG_0("Too many elements while splitting string (more than %" PRIrrrl ")\n", elements_max);
 			ret = 1;
 			goto out;
 		}
@@ -377,7 +376,11 @@ int rrr_parse_str_split (
 
 			*pos = '\0';
 
-			elements[elements_count++] = element;
+			elements[elements_count] = element;
+
+			if ((ret = rrr_length_inc_err(&elements_count)) != 0) {
+				goto out;
+			}
 
 			element = pos + 1;
 		}
@@ -394,7 +397,7 @@ int rrr_parse_str_split (
 
 int rrr_parse_str_extract_until (
 		char **result,
-		size_t *result_length,
+		rrr_length *result_length,
 		const char *str,
 		char end_char
 ) {
@@ -408,11 +411,11 @@ int rrr_parse_str_extract_until (
 		return 0;
 	}
 
-	size_t length = end - pos;
+	rrr_length length = (rrr_length) (end - pos);
 
 	char *match = rrr_allocate(length + 1);
 	if (match == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_parse_extract_until\n");
+		RRR_MSG_0("Could not allocate memory in rrr_parse_str_extract_until\n");
 		return 1;
 	}
 

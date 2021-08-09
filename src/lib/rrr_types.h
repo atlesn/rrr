@@ -126,10 +126,11 @@ static inline int rrr_length_inc_err (rrr_length *a) {
 	return 0;
 }
 
-static inline void rrr_length_inc_bug (rrr_length *a) {
+static inline rrr_length rrr_length_inc_bug (rrr_length *a) {
 	if (++(*a) == 0) {
 		RRR_BUG("Bug: Overflow in rrr_length_inc_bug\n");
 	}
+	return *a;
 }
 
 #define RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(name)				\
