@@ -24,13 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
-#define RRR_MQTT_PARSE_STATUS_NONE						0
-#define RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE			(1<<0)
-#define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE		(1<<1)
-#define RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE				(1<<2)
-#define RRR_MQTT_PARSE_STATUS_COMPLETE					(1<<3)
-#define RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET	(1<<4)
-#define RRR_MQTT_PARSE_STATUS_ERR						(1<<15)
+#define RRR_MQTT_PARSE_STATUS_NONE                           0
+#define RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE          (1<<0)
+#define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE       (1<<1)
+#define RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE               (1<<2)
+#define RRR_MQTT_PARSE_STATUS_COMPLETE                   (1<<3)
+#define RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET     (1<<4)
+#define RRR_MQTT_PARSE_STATUS_ERR                        (1<<15)
 
 #define RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(s) \
 	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) != 0)

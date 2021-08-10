@@ -33,16 +33,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBSCRIPTION_MISMATCH          RRR_READ_INCOMPLETE
 #define RRR_MQTT_SUBSCRIPTION_REFUSED           RRR_READ_INCOMPLETE
 
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_OK				0
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR	(1<<0)
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY			(1<<1)
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_STOP				(1<<2)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_OK                  0
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR      (1<<0)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY             (1<<1)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_STOP                (1<<2)
 
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(flags)			((flags & (1<<0|1<<1)))
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(flags)			((flags & (1<<2)) >> 2)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(flags)			((flags & (1<<3)) >> 3)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(flags)		((flags & (1<<4|1<<5)) >> 4)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)		((flags & (1<<6|1<<7)) >> 6)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(flags)           ((flags & (1<<0|1<<1)))
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(flags)            ((flags & (1<<2)) >> 2)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(flags)           ((flags & (1<<3)) >> 3)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(flags)        ((flags & (1<<4|1<<5)) >> 4)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)      ((flags & (1<<6|1<<7)) >> 6)
 
 struct rrr_mqtt_p_publish;
 struct rrr_mqtt_topic_token;

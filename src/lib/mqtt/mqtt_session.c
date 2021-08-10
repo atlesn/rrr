@@ -51,16 +51,16 @@ void rrr_mqtt_session_properties_clear (
 	memset(target, '\0', sizeof(*target));
 }
 
-#define RRR_MQTT_SESSION_PROPERTIES_UPDATE_IF_NOT_NULL(name)			\
-	do {if (source->name != NULL) {										\
-		rrr_mqtt_property_destroy(target->name);						\
-		ret |= rrr_mqtt_property_clone(&target->name, source->name);	\
-	}} while(0)
+#define RRR_MQTT_SESSION_PROPERTIES_UPDATE_IF_NOT_NULL(name)            \
+    do {if (source->name != NULL) {                                     \
+        rrr_mqtt_property_destroy(target->name);                        \
+        ret |= rrr_mqtt_property_clone(&target->name, source->name);    \
+    }} while(0)
 
-#define RRR_MQTT_SESSION_PROPERTIES_UPDATE_NUMBER_IF_DEFINED(name)				\
-		do {if (numbers_to_update == NULL || numbers_to_update->name != 0) {	\
-			target->numbers.name = source->numbers.name;						\
-		}} while(0)
+#define RRR_MQTT_SESSION_PROPERTIES_UPDATE_NUMBER_IF_DEFINED(name)              \
+        do {if (numbers_to_update == NULL || numbers_to_update->name != 0) {    \
+            target->numbers.name = source->numbers.name;                        \
+        }} while(0)
 
 int rrr_mqtt_session_properties_update (
 		struct rrr_mqtt_session_properties *target,
