@@ -456,23 +456,34 @@ static int mqttclient_data_init (
 static int mqttclient_parse_sub_topic (const char *topic_str, void *arg) {
 	struct mqtt_client_data *data = arg;
 
+	int ret = 0;
+
 	if (rrr_mqtt_topic_filter_validate_name(topic_str) != 0) {
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
-	if (rrr_mqtt_subscription_collection_push_unique_str (
+	if ((ret = rrr_mqtt_subscription_collection_push_unique_str (
 			data->requested_subscriptions,
 			topic_str,
 			0,
 			0,
 			0,
 			data->qos
-	) != 0) {
-		RRR_MSG_0("Could not add topic '%s' to subscription collection\n", topic_str);
-		return 1;
+	)) != 0) {
+		if (ret == RRR_MQTT_SUBSCRIPTION_REFUSED) {
+			rrr_length subscription_count = rrr_mqtt_subscription_collection_count(data->requested_subscriptions);
+			RRR_MSG_0("Subscription add refused, collection is possibly full. Entry count is %" PRIrrrl ".\n",
+				subscription_count);
+		}
+		RRR_MSG_0("Could not add topic '%s' to subscription collection int mqtt client instance %s\n",
+			topic_str, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
 	}
 
-	return 0;
+	out:
+	return ret;
 }
 
 static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {

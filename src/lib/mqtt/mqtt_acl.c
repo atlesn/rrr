@@ -160,8 +160,8 @@ static void __rrr_mqtt_acl_parse_spaces_and_comments (
 static int __rrr_mqtt_acl_parse_require_newline_or_eof (
 		struct rrr_parse_pos *pos
 ) {
-	int pos_orig = pos->pos;
-	int line_orig = pos->line;
+	rrr_length pos_orig = pos->pos;
+	rrr_length line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 	// OK, end of file reached after value
@@ -191,8 +191,8 @@ static int __rrr_mqtt_acl_parse_require_space_then_non_newline (
 ) {
 	int ret = 0;
 
-	int pos_orig = pos->pos;
-	int line_orig = pos->line;
+	rrr_length pos_orig = pos->pos;
+	rrr_length line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (pos_orig == pos->pos || line_orig != pos->line) {
 		RRR_MSG_0("Syntax error at line %i: Expected whitespace and then string after keyword\n", pos->line);
@@ -265,8 +265,8 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 ) {
 	int ret = 0;
 
-	int username_start = 0;
-	int username_end = 0;
+	rrr_length username_start = 0;
+	rrr_slength username_end = 0;
 
 	int action = 0;
 	char *username_tmp = NULL;
@@ -285,7 +285,12 @@ static int __rrr_mqtt_acl_parse_keyword_user (
 		goto out;
 	}
 
-	if ((ret = rrr_parse_str_extract(&username_tmp, pos, username_start, (username_end - username_start) + 1)) != 0) {
+	if ((ret = rrr_parse_str_extract (
+			&username_tmp,
+			pos,
+			username_start,
+			rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(username_end, username_start))
+	)) != 0) {
 		RRR_MSG_0("Could not extract username in __rrr_mqtt_acl_parse_keyword_user\n");
 		goto out;
 	}
@@ -323,7 +328,7 @@ static int __rrr_mqtt_acl_parse_topic_block_body (
 	int ret = 0;
 
 	while (!RRR_PARSE_CHECK_EOF(pos)) {
-		int pos_orig = pos->pos;
+		rrr_length pos_orig = pos->pos;
 
 		__rrr_mqtt_acl_parse_spaces_and_comments(pos);
 
@@ -392,8 +397,8 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 			goto out;
 		}
 
-		int topic_start = 0;
-		int topic_end = 0;
+		rrr_length topic_start = 0;
+		rrr_slength topic_end = 0;
 
 		rrr_parse_non_newline(pos, &topic_start, &topic_end);
 
@@ -404,7 +409,12 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 		}
 
 		RRR_FREE_IF_NOT_NULL(topic_tmp);
-		if (rrr_parse_str_extract(&topic_tmp, pos, topic_start, (topic_end - topic_start) + 1) != 0) {
+		if (rrr_parse_str_extract (
+				&topic_tmp,
+				pos,
+				topic_start,
+				rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(topic_end, topic_start))
+		) != 0) {
 			RRR_MSG_0("Parsing failed at line %i\n", pos->line);
 			ret = 1;
 			goto out;
@@ -470,13 +480,13 @@ int rrr_mqtt_acl_entry_collection_populate_from_file (
 		goto out;
 	}
 
-	if (contents == NULL) {
+	if (contents == NULL || bytes <= 0) {
 		RRR_MSG_0("Warning: MQTT ACL file '%s' was empty\n", filename);
 		goto out;
 	}
 
 	struct rrr_parse_pos parse_pos;
-	rrr_parse_pos_init(&parse_pos, contents, bytes);
+	rrr_parse_pos_init(&parse_pos, contents, rrr_length_from_ssize_bug_const(bytes));
 
 	if ((ret = __rrr_mqtt_acl_parse_topic_blocks(collection, &parse_pos)) != 0) {
 		RRR_MSG_0("Error while parsing MQTT ACL file '%s'\n", filename);

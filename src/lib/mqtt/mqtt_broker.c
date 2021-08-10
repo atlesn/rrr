@@ -716,7 +716,7 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	suback->subscriptions_ = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -769,7 +769,7 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 	unsuback->subscriptions_ = unsubscribe->subscriptions;
 	unsubscribe->subscriptions = NULL;
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(

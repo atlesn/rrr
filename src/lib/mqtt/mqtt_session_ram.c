@@ -188,7 +188,7 @@ static inline void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct
 	data->stats.total_deleted++;
 }
 
-static inline void __rrr_mqtt_session_collection_ram_stats_notify_forwarded (struct rrr_mqtt_session_collection_ram_data *data, int num) {
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_forwarded (struct rrr_mqtt_session_collection_ram_data *data, unsigned int num) {
 	data->stats.total_publish_forwarded += num;
 }
 
@@ -578,14 +578,14 @@ static int __rrr_mqtt_session_collection_ram_iterate_retain_callback (
 		RRR_BUG("BUG: Publish with NULL payload in __rrr_mqtt_session_collection_ram_iterate_retain_callback\n");
 	}
 
-	int match_count = 0;
+	rrr_length match_count_dummy = 0;
 
 	ret = rrr_mqtt_subscription_collection_match_publish_with_callback (
 			callback_data->subscriptions,
 			publish,
 			callback_data->match_callback,
 			callback_data->match_callback_arg,
-			&match_count
+			&match_count_dummy
 	);
 
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
@@ -910,7 +910,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 		struct rrr_mqtt_session_ram *ram_session,
 		const struct rrr_mqtt_p_publish *publish,
-		int *match_count
+		rrr_length *match_count
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -951,12 +951,12 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 	RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, 0);
 	publish->dup = 0;
 
-	int total_match_count = 0;
+	rrr_length total_match_count = 0;
 
 	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
 		RRR_MQTT_P_INCREF(publish);
 
-		int match_count = 0;
+		rrr_length match_count = 0;
 		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish, &match_count);
 		total_match_count += match_count;
 
@@ -1820,7 +1820,7 @@ static int __rrr_mqtt_session_ram_remove_subscriptions (
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
-	int removed_count = 0;
+	rrr_length removed_count = 0;
 
 	ret = rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 			ram_session->subscriptions,
@@ -1836,10 +1836,12 @@ static int __rrr_mqtt_session_ram_remove_subscriptions (
 		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
 	}
 
-	if (RRR_LL_COUNT(unsubscribe->subscriptions) != removed_count) {
-		RRR_MSG_0("MQTT %i of %i subscriptions were not removed from the session as requested\n",
-				RRR_LL_COUNT(unsubscribe->subscriptions) - removed_count,
-				RRR_LL_COUNT(unsubscribe->subscriptions)
+	const rrr_length count = rrr_mqtt_subscription_collection_count(unsubscribe->subscriptions);
+
+	if (rrr_mqtt_subscription_collection_count(unsubscribe->subscriptions) != removed_count) {
+		RRR_MSG_0("MQTT %" PRIrrrl " of %" PRIrrrl " subscriptions were not removed from the session as requested\n",
+				count - removed_count,
+				count
 		);
 	}
 
@@ -1856,15 +1858,15 @@ static int __rrr_mqtt_session_ram_receive_suback (
 		RRR_BUG("orig_subscribe not set for SUBACK in __rrr_mqtt_session_ram_receive_suback\n");
 	}
 
-	int orig_count = rrr_mqtt_subscription_collection_count(suback->orig_subscribe->subscriptions);
-	int new_count = suback->acknowledgements_size;
+	const rrr_length orig_count = rrr_mqtt_subscription_collection_count(suback->orig_subscribe->subscriptions);
+	const rrr_length new_count = suback->acknowledgements_size;
 
 	if (orig_count != new_count) {
 		RRR_MSG_0("Topic count in received SUBACK did not match the original SUBSCRIBE, broker error\n");
 		return 1;
 	}
 
-	for (int i = 0; i < new_count; i++) {
+	for (rrr_length i = 0; i < new_count; i++) {
 		const struct rrr_mqtt_subscription *subscription;
 		subscription = rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
 				suback->orig_subscribe->subscriptions,
@@ -1912,7 +1914,7 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
-	int removed_count = 0;
+	rrr_length removed_count = 0;
 
 	if (unsuback->orig_unsubscribe == NULL) {
 		RRR_BUG("orig_unsubscribe not set for UNSUBACK in __rrr_mqtt_session_ram_receive_unsuback\n");
@@ -1926,8 +1928,8 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 		goto out;
 	}
 
-	int orig_count = rrr_mqtt_subscription_collection_count(orig_collection);
-	int new_count = unsuback->acknowledgements_size;
+	const rrr_length orig_count = rrr_mqtt_subscription_collection_count(orig_collection);
+	const rrr_length new_count = unsuback->acknowledgements_size;
 
 	if (RRR_MQTT_P_IS_V5(unsuback) && orig_count != new_count) {
 		RRR_MSG_0("Topic count in received SUBACK did not match the original SUBSCRIBE, broker error\n");
@@ -1936,7 +1938,7 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 	}
 
 	if (RRR_MQTT_P_IS_V5(unsuback)) {
-		for (int i = 0; i < unsuback->acknowledgements_size; i++) {
+		for (rrr_length i = 0; i < unsuback->acknowledgements_size; i++) {
 			const struct rrr_mqtt_subscription *subscription;
 			subscription = rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
 					orig_collection,
@@ -1962,7 +1964,7 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 					goto out;
 				}
 
-				removed_count++;
+				rrr_length_inc_bug(&removed_count);
 			}
 			else {
 				RRR_DBG_1("MQTT unsubscription of topic '%s' failed as it was rejected by the broker with reason %u\n",
@@ -1988,7 +1990,7 @@ static int __rrr_mqtt_session_ram_receive_unsuback (
 		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
 	}
 
-	if (RRR_LL_COUNT(orig_collection) != removed_count) {
+	if (rrr_mqtt_subscription_collection_count(orig_collection) != removed_count) {
 		RRR_MSG_0("Warning: Removed subscription count upon UNSUBACK did not match topic count in UNSUBSCRIBE\n");
 	}
 
@@ -2845,7 +2847,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 }
 
 static int __rrr_mqtt_session_ram_send_packet (
-		int *total_send_queue_count,
+		rrr_length *total_send_queue_count,
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p *packet,

@@ -464,7 +464,7 @@ struct rrr_mqtt_p_unsubscribe {
     struct rrr_mqtt_subscription_collection *subscriptions_;   \
     /* Used only when parsing/handling */                      \
     const uint8_t *acknowledgements;                           \
-    rrr_biglength acknowledgements_size
+    rrr_length acknowledgements_size
 
 // These three must be --equal-- except for the last pointer name
 struct rrr_mqtt_p_suback_unsuback {

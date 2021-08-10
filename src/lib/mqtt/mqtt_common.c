@@ -903,7 +903,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		// NOTE : Connection subsystem will notify session system when ACK is successfully
 		//        sent.
 
-		int send_queue_count_dummy = 0;
+		rrr_length send_queue_count_dummy = 0;
 
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -1053,7 +1053,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	next_ack->reason_v5 = reason_v5;
 	next_ack->packet_identifier = packet->packet_identifier;
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet (
