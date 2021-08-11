@@ -86,7 +86,7 @@ int rrr_mqtt_broker_new (
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
 		const struct rrr_net_transport_config *net_transport_config,
-		unsigned int port
+		uint16_t port
 );
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,

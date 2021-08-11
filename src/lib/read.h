@@ -182,7 +182,7 @@ struct rrr_read_common_get_session_target_length_from_array_tree_data {
 	const struct rrr_array_tree *tree;
 	struct rrr_array *array_final;
 	int do_byte_by_byte_sync;
-	unsigned int message_max_size;
+	rrr_length message_max_size;
 };
 int rrr_read_common_get_session_target_length_from_array_tree (
 		struct rrr_read_session *read_session,

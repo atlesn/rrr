@@ -61,8 +61,8 @@ struct mqtt_broker_data {
 	struct rrr_instance_runtime_data *thread_data;
 	struct rrr_fifo local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
-	rrr_setting_uint server_port_plain;
-	rrr_setting_uint server_port_tls;
+	uint16_t server_port_plain;
+	uint16_t server_port_tls;
 	rrr_setting_uint max_keep_alive;
 	rrr_setting_uint retry_interval;
 	rrr_setting_uint close_wait_time;
@@ -117,8 +117,29 @@ static int mqttbroker_data_init (
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_TLS);
+	if ((ret = rrr_instance_config_read_optional_port_number (
+			&data->server_port_plain,
+			config,
+			"mqtt_broker_port"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		goto out;
+	}
+	if ((ret = rrr_instance_config_read_optional_port_number (
+			&data->server_port_tls,
+			config,
+			"mqtt_broker_port_tls"
+	)) != 0) {
+		RRR_MSG_0("Failed to parse port number in mqtt broker instance %s\n", config->name);
+		goto out;
+	}
+
+	if (data->server_port_plain == 0) {
+		data->server_port_plain = RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN;
+	}
+	if (data->server_port_tls == 0) {
+		data->server_port_plain = RRR_MQTT_DEFAULT_SERVER_PORT_TLS;
+	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
 	if (data->max_keep_alive > 0xffff) {
@@ -334,7 +355,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			&data->mqtt_broker_data,
 			&init_data,
 			INSTANCE_D_EVENTS(thread_data),
-			data->max_keep_alive,
+			(uint16_t) data->max_keep_alive,
 			data->password_file,
 			data->permission_name,
 			&data->acl,

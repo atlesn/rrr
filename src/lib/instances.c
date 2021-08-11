@@ -20,7 +20,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <unistd.h>
-
 #include <stdlib.h>
 
 #include "log.h"
@@ -672,7 +671,45 @@ static void __rrr_instance_thread_stats_instance_cleanup (
 	pthread_mutex_unlock(&thread->mutex);
 }
 
-#include "fork.h"
+struct rrr_instance_count_receivers_of_self_callback_data {
+	struct rrr_instance *self;
+	rrr_length count;
+};
+
+static int __rrr_instance_count_receivers_of_self_callback (
+		struct rrr_instance *instance,
+		void *arg
+) {
+	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
+	if (instance == callback_data->self) {
+		rrr_length_inc_bug(&callback_data->count);
+	}
+	return 0;
+}
+
+static rrr_length __rrr_instance_count_receivers_of_self (
+		struct rrr_instance *self
+) {
+	struct rrr_instance_collection *instances = self->module_data->all_instances;
+
+	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
+			self,
+			0
+	};
+
+	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
+		struct rrr_instance *instance = node;
+		if (instance != self) {
+			rrr_instance_friend_collection_iterate (
+					&instance->senders,
+					__rrr_instance_count_receivers_of_self_callback,
+					&callback_data
+			);
+		}
+	RRR_LL_ITERATE_END();
+
+	return callback_data.count;
+}
 
 static void *__rrr_instance_thread_entry_intermediate (
 		struct rrr_thread *thread
@@ -740,9 +777,9 @@ static int __rrr_instance_thread_preload_enable_duplication_as_needed (
 	int ret = 0;
 
 	if (INSTANCE_D_FLAGS(thread_data) & RRR_INSTANCE_MISC_OPTIONS_DUPLICATE) {
-		int slots = rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
+		rrr_length slots = __rrr_instance_count_receivers_of_self(INSTANCE_D_INSTANCE(thread_data));
 
-		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %i readers detected\n",
+		RRR_DBG_1("%s instance %s setting up duplicated output buffer, %" PRIrrrl " readers detected\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), slots);
 
 		if ((ret = rrr_message_broker_setup_split_output_buffer (
@@ -998,46 +1035,6 @@ int rrr_instances_create_from_config (
 
 	out:
 	return ret;
-}
-
-struct rrr_instance_count_receivers_of_self_callback_data {
-	struct rrr_instance *self;
-	int count;
-};
-
-static int __rrr_instance_count_receivers_of_self_callback (
-		struct rrr_instance *instance,
-		void *arg
-) {
-	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
-	if (instance == callback_data->self) {
-		callback_data->count++;
-	}
-	return 0;
-}
-
-int rrr_instance_count_receivers_of_self (
-		struct rrr_instance *self
-) {
-	struct rrr_instance_collection *instances = self->module_data->all_instances;
-
-	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
-			self,
-			0
-	};
-
-	RRR_LL_ITERATE_BEGIN(instances, struct rrr_instance);
-		struct rrr_instance *instance = node;
-		if (instance != self) {
-			rrr_instance_friend_collection_iterate (
-					&instance->senders,
-					__rrr_instance_count_receivers_of_self_callback,
-					&callback_data
-			);
-		}
-	RRR_LL_ITERATE_END();
-
-	return callback_data.count;
 }
 
 int rrr_instance_default_set_output_buffer_ratelimit_when_needed (

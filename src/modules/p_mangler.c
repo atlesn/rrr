@@ -52,7 +52,7 @@ struct mangler_data {
 	struct rrr_type_conversion_collection *conversions;
 
 	char *topic;
-	size_t topic_length;
+	uint16_t topic_length;
 
 	int do_non_array_passthrough;
 	int do_convert_tolerant_blobs;
@@ -197,7 +197,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				? data->topic
 				: MSG_TOPIC_PTR((const struct rrr_msg_msg *) entry->message),
 			data->topic != NULL
-				? (rrr_u16) data->topic_length
+				? data->topic_length
 				: MSG_TOPIC_LENGTH((const struct rrr_msg_msg *) entry->message)
 	)) != 0) {
 		RRR_MSG_0("Failed to create array message in mangler_poll_callback\n");
@@ -211,7 +211,7 @@ static int mangler_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	goto out_write;
 	out_set_topic:
 		if (data->topic != NULL) {
-			if ((ret = rrr_msg_msg_topic_set((struct rrr_msg_msg **) &entry->message, data->topic, (ssize_t) data->topic_length)) != 0) {
+			if ((ret = rrr_msg_msg_topic_set((struct rrr_msg_msg **) &entry->message, data->topic, data->topic_length)) != 0) {
 				RRR_MSG_0("Failed to set message of topic in mangler_poll_callback\n");
 				goto out_drop;
 			}
@@ -240,18 +240,13 @@ static int mangler_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 static int mangler_parse_config (struct mangler_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mangler_topic", topic);
-
-	if (data->topic != NULL && *(data->topic) != '\0') {
-		if ((data->topic_length = strlen(data->topic)) > RRR_MSG_TOPIC_MAX) {
-			RRR_MSG_0("Length of topic in 'mangler_topic' exceeds maximum length (%llu>%i) in mangler instance %s\n",
-				(unsigned long long int) data->topic_length,
-				RRR_MSG_TOPIC_MAX,
-				config->name
-			);
-			ret = 1;
-			goto out;
-		}
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_length,
+			config,
+			"mangler_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mangler_non_array_passthrough", do_non_array_passthrough, 0);

@@ -48,6 +48,7 @@ struct exploder_data {
 		int do_preserve_topic;
 		int do_topic_append_tag;
 		char *topic;
+		uint16_t topic_len;
 };
 
 static void exploder_data_init(struct exploder_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -112,13 +113,24 @@ static int exploder_process_value (
 	}
 
 	{
+		const rrr_biglength topic_length = rrr_string_builder_length(topic_to_use);
+		if (topic_length > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Topic became too long in exploder instance %s (%" PRIrrrbl ">%llu)\n",
+				INSTANCE_D_NAME(data->thread_data),
+				topic_length,
+				(unsigned long long) RRR_MSG_TOPIC_MAX
+			);
+			ret = 1;
+			goto out;
+		}
+
 		struct rrr_msg_msg *msg_new = NULL;
 		if ((ret = rrr_array_new_message_from_collection (
 				&msg_new,
 				&array_new,
 				timestamp,
 				rrr_string_builder_buf(topic_to_use),
-				rrr_string_builder_length(topic_to_use)
+				(rrr_u16) topic_length
 		)) != 0) {
 			goto out;
 		}
@@ -243,7 +255,15 @@ static int exploder_parse_config (struct exploder_data *data, struct rrr_instanc
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_timestamp", do_preserve_timestamp, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_preserve_topic", do_preserve_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("exploder_topic_append_tag", do_topic_append_tag, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("exploder_topic", topic);
+
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_len,
+			config,
+			"exploder_topic"
+	)) != 0) {
+		goto out;
+	}
 
 	out:
 	return ret;

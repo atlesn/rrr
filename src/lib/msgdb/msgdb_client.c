@@ -231,7 +231,7 @@ int rrr_msgdb_client_await_msg_with_wait_callback (
 static int __rrr_msgdb_client_send_callback (
 		int fd,
 		void **data,
-		ssize_t data_size,
+		rrr_length data_size,
 		void *arg
 ) {
 	(void)(arg);
@@ -285,18 +285,17 @@ static int __rrr_msgdb_client_send_empty (
 		goto out;
 	}
 
-	const size_t topic_len = strlen(topic);
-
-	if (topic_len > SSIZE_MAX) {
+	rrr_length topic_len = 0;
+	if ((ret = rrr_length_from_size_t_err(&topic_len, strlen(topic))) != 0 || topic_len > UINT16_MAX) {
 		RRR_MSG_0("Topic exceeds maximum length in rrr_msgdb_client_send_empty (%llu>%llu)\n",
 			(unsigned long long) topic_len,
-			(unsigned long long) SSIZE_MAX
+			(unsigned long long) UINT16_MAX
 		);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, (ssize_t) topic_len)) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, (uint16_t) topic_len)) != 0) {
 		goto out;
 	}
 

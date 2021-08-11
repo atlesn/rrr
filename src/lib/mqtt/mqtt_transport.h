@@ -82,7 +82,7 @@ rrr_length rrr_mqtt_transport_client_count_get (
 int rrr_mqtt_transport_connect (
 		int *new_transport_handle,
 		struct rrr_mqtt_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*new_connection_callback)(
 				struct rrr_net_transport_handle *handle,

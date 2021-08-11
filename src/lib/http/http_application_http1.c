@@ -175,7 +175,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 
 static int __rrr_http_application_http1_send_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
@@ -187,7 +187,7 @@ static int __rrr_http_application_http1_send_callback (
 }
 
 static int __rrr_http_application_http1_response_send_response_code_callback (
-		int response_code,
+		unsigned int response_code,
 		enum rrr_http_version protocol_version,
 		void *arg
 ) {
@@ -295,7 +295,7 @@ static int __rrr_http_application_http1_response_send (
 struct rrr_http_application_http1_receive_data {
 	struct rrr_net_transport_handle *handle;
 	struct rrr_http_application_http1 *http1;
-	ssize_t received_bytes; // Used only for stall timeout and sleeping
+	rrr_biglength received_bytes; // Used only for stall timeout and sleeping
 	struct rrr_http_application **upgraded_application;
 	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
@@ -324,7 +324,7 @@ static int __rrr_http_application_http1_websocket_make_accept_string (
 
 	rrr_SHA1Context sha1_ctx = {0};
 	rrr_SHA1Reset(&sha1_ctx);
-	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
+	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, (unsigned int) strlen(accept_str_tmp));
 
 	if (!rrr_SHA1Result(&sha1_ctx) || sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
 		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_websocket_make_accept_string (Corrupt: %i - Computed: %i)\n",
@@ -502,12 +502,21 @@ static int __rrr_http_application_http1_response_receive_callback (
 				goto out;
 			}
 
+			if (read_session->rx_overshoot_size > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Overshoot too big while upgrading response to HTTP2 (%llu>%llu)\n",
+					(unsigned long long) read_session->rx_overshoot_size,
+					(unsigned long long) RRR_LENGTH_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
 			// Pass any extra data received to http2 session for processing there. Overshoot pointer will
 			// be set to NULL if http2_session takes control of the pointer.
 			ret = rrr_http_application_http2_new_from_upgrade (
 					receive_data->upgraded_application,
 					(void **) &read_session->rx_overshoot,
-					read_session->rx_overshoot_size,
+					rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 					transaction,
 					0 // Is not server
 			);
@@ -745,10 +754,19 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		goto out;
 	}
 
+	if (read_session->rx_overshoot_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Overshoot too big while upgrading request to HTTP2 (%llu>%llu)\n",
+				(unsigned long long) read_session->rx_overshoot_size,
+				(unsigned long long) RRR_LENGTH_MAX
+			 );
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
 	ret = rrr_http_application_http2_new_from_upgrade (
 			&http2,
 			(void **) &read_session->rx_overshoot,
-			read_session->rx_overshoot_size,
+			rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 			transaction,
 			1 // Is server
 	);
@@ -1103,12 +1121,21 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
 				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1) == 0
 		) {
+			if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Preliminary data too big during plain HTTP2 initialization (%llu>%llu)\n",
+					(unsigned long long) read_session->rx_buf_wpos,
+					(unsigned long long) RRR_LENGTH_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
 			RRR_DBG_3("HTTP2 magic found, upgrading to native HTTP2 with %llu bytes read so far\n", (long long int) read_session->rx_buf_wpos);
 			if ((ret = rrr_http_application_http2_new (
 					receive_data->upgraded_application,
 					1, // Is server
 					(void **) &read_session->rx_buf_ptr,
-					read_session->rx_buf_wpos
+					rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 			)) != 0) {
 				goto out;
 			}
@@ -1223,7 +1250,7 @@ static int __rrr_http_application_http1_websocket_responses_get (
 	int ret = 0;
 
 	void *response_data = NULL;
-	ssize_t response_data_len = 0;
+	rrr_biglength response_data_len = 0;
 	int response_is_binary = 0;
 
 	do {
@@ -1258,9 +1285,9 @@ static int __rrr_http_application_http1_websocket_responses_get (
 static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
-		int ping_interval_s,
-		int timeout_s,
+		rrr_biglength read_max_size,
+		rrr_length ping_interval_s,
+		rrr_length timeout_s,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),

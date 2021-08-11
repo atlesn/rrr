@@ -84,7 +84,7 @@ static int __rrr_msg_head_validate (
 	if (RRR_MSG_IS_CTRL(message)) {
 		// Clear all known control flags
 		rrr_u16 type = message->msg_type;
-		type = type & ~(RRR_MSG_CTRL_F_ALL);
+		type = type & (rrr_u16) ~(RRR_MSG_CTRL_F_ALL);
 		if (type != 0) {
 			RRR_MSG_0("Unknown control flags in message: %u\n", type);
 			ret = 1;

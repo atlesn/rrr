@@ -456,7 +456,7 @@ int rrr_config_parse_file (
 
 	char *file_data = NULL;
 
-	ssize_t file_size = 0;
+	rrr_biglength file_size = 0;
 	if ((ret = rrr_socket_open_and_read_file(&file_data, &file_size, filename, O_RDONLY, 0)) != 0) {
 		RRR_MSG_0("Error while reading configuration file '%s'\n", filename);
 		goto out;
@@ -465,23 +465,19 @@ int rrr_config_parse_file (
 	if (file_data == NULL) {
 		RRR_DBG_1("Configuration file '%s' was empty\n", filename);
 	}
+	else if (file_size > RRR_LENGTH_MAX) {
+		RRR_DBG_1("Configuration file '%s' was too big (%llu>%llu)\n",
+			filename, (long long unsigned) file_size, (long long unsigned) RRR_LENGTH_MAX);
+		ret = 1;
+		goto out;
+	}
 	else {
-		if (file_size > RRR_LENGTH_MAX) {
-			RRR_MSG_0("Size of configuration file '%s' too long (%llu>%llu)\n",
-					filename, (long long unsigned) file_size, (long long unsigned) RRR_LENGTH_MAX);
-			ret = 1;
-			goto out;
-		}
-		if (file_size < 0) {
-			RRR_BUG("File size was <0 in rrr_config_parse_file\n");
-		}
-
-		RRR_DBG_1("Read %lli bytes from configuration file '%s'\n", (long long int) file_size, filename);
+		RRR_DBG_1("Read %" PRIrrrl " bytes from configuration file '%s'\n", file_size, filename);
 
 		if ((ret = __rrr_config_parse_file (
 				config,
 				file_data,
-				(rrr_length) file_size,
+				rrr_length_from_biglength_bug_const(file_size),
 				new_block_callback,
 				new_setting_callback,
 				callback_arg

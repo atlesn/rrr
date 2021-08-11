@@ -23,7 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_HOLDER_SLOT_H
 
 #include <sys/socket.h>
-#include <stdint.h>
+
+#include "../rrr_types.h"
 
 struct rrr_msg_holder;
 struct rrr_msg_holder_slot;
@@ -34,7 +35,7 @@ int rrr_msg_holder_slot_new (
 );
 int rrr_msg_holder_slot_reader_count_set (
 		struct rrr_msg_holder_slot *slot,
-		int reader_count
+		rrr_length reader_count
 );
 void rrr_msg_holder_slot_destroy (
 		struct rrr_msg_holder_slot *slot
@@ -62,7 +63,7 @@ int rrr_msg_holder_slot_write (
 		struct rrr_msg_holder_slot *slot,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(int *do_drop, int *do_again, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),

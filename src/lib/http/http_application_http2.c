@@ -56,10 +56,10 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
 	if (http2->http2_session != NULL) {
-		int streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
+		uint32_t streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
 		if (streams > 0) {
-			RRR_DBG_2("HTTP2 destroys application with %i active transactions\n", streams);
-		}
+			RRR_DBG_2("HTTP2 destroys application with %" PRIu32 " active transactions\n", streams);
+		} 
 	}
 
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
@@ -375,7 +375,14 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		transaction->response_part->response_code = status->value_unsigned;
+		if (status->value_unsigned > 999) {
+			RRR_MSG_0("Field :status contains invalid value %llu in HTTP2 response header\n",
+					status->value_unsigned);
+			ret = RRR_HTTP2_SOFT_ERROR;
+			goto out;
+		}
+
+		transaction->response_part->response_code = (unsigned int) status->value_unsigned;
 
 		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
 		if (content_length != NULL && content_length->value_unsigned != data_size) {
@@ -544,7 +551,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 static int __rrr_http_application_http2_data_source_truncated_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	uint8_t *buf = arg;
@@ -573,18 +580,19 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
+	rrr_nullsafe_len bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
+
 	if (bytes_to_send > buf_size) {
 		bytes_to_send = buf_size;
 	}
 
-	RRR_DBG_3("http2 source %" PRIrrrl "/%" PRIrrrl " bytes to send\n",
+	RRR_DBG_3("http2 source %" PRIrrr_nullsafe_len "/%" PRIrrr_nullsafe_len " bytes to send\n",
 			rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos, rrr_nullsafe_str_len(transaction->send_body));
 
 	if ((ret = rrr_nullsafe_str_with_raw_truncated_do (
 			transaction->send_body,
 			transaction->send_body_pos,
-			bytes_to_send,
+			(rrr_nullsafe_len) bytes_to_send,
 			__rrr_http_application_http2_data_source_truncated_callback,
 			buf
 	)) != 0) {
@@ -605,7 +613,7 @@ static int __rrr_http_application_http2_data_source_callback (
 }
 
 static int __rrr_http_application_http2_streams_iterate_callback (
-		uint32_t stream_id,
+		int32_t stream_id,
 		void *application_data,
 		void *arg
 ) {
@@ -741,7 +749,7 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 static int __rrr_http_application_http2_new (
 		struct rrr_http_application_http2 **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		int is_server
 ) {
 	struct rrr_http_application_http2 *result = NULL;
@@ -780,7 +788,7 @@ int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
 		void **initial_receive_data,
-		size_t initial_receive_data_len
+		rrr_length initial_receive_data_len
 ) {
 	int ret = 0;
 
@@ -801,7 +809,7 @@ int rrr_http_application_http2_new (
 
 static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback (
 		const void *str,
-		rrr_length len,
+		rrr_biglength len,
 		void *arg
 ) {
 	size_t *result_len = arg;
@@ -859,7 +867,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_application **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
 		int is_server
 ) {
@@ -900,7 +908,7 @@ int rrr_http_application_http2_new_from_upgrade (
 
 
 static int __rrr_http_application_http2_response_submit_response_code_callback (
-	int response_code,
+	unsigned int response_code,
 	enum rrr_http_version protocol_version,
 	void *arg
 ) {

@@ -661,11 +661,11 @@ static void __rrr_fifo_protected_do_ratelimit(struct rrr_fifo_protected *buffer)
 	if (++(ratelimit->burst_counter) == 10) {
 		ratelimit->burst_counter = 0;
 
-		int do_usleep = 0;
+		size_t do_usleep = 0;
 
 		/* If we know how long the spinlock lasts, sleep half the period */
 		if (ratelimit->spins_per_us > 0) {
-			do_usleep = (int) (spin_time / 2 / ratelimit->spins_per_us);
+			do_usleep = (size_t) (spin_time / 2 / ratelimit->spins_per_us);
 
 			if (do_usleep < 50) {
 				do_usleep = 0;
@@ -686,7 +686,8 @@ static void __rrr_fifo_protected_do_ratelimit(struct rrr_fifo_protected *buffer)
 		uint64_t time_end = rrr_time_get_64();
 		uint64_t time_diff = (time_end - time_start) + 1; // +1 to prevent division by zero
 		if (do_usleep) {
-			rrr_posix_usleep(do_usleep);
+			// Max 1s
+			rrr_posix_usleep(do_usleep > 1000000 ? 1000000 : 0);
 		}
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
 

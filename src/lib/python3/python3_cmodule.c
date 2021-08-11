@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "util/rrr_time.h"
+#include "../util/rrr_time.h"
 
 #include <string.h>
 #include <fcntl.h>
@@ -152,7 +152,7 @@ static int __rrr_py_get_rrr_objects (
 	int ret = 0;
 
 	// FIX IMPORT PATHS AND IMPORT STUFF. INITIALIZE GLOBAL OBJECTS.
-	int module_paths_total_size = 0;
+	size_t module_paths_total_size = 0;
 	for (int i = 0; i < module_paths_length; i++) {
 		module_paths_total_size += strlen(extra_module_paths[i]) + strlen("sys.path.append('')\n");
 	}

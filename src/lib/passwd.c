@@ -662,7 +662,7 @@ int rrr_passwd_authenticate (
 ) {
 	int ret = 0;
 
-	ssize_t passwd_file_size = 0;
+	rrr_biglength passwd_file_size = 0;
 	char *passwd_file_contents = NULL;
 
 	if (filename == NULL || *filename == '\0') {
@@ -685,8 +685,8 @@ int rrr_passwd_authenticate (
 		ret = 1;
 		goto out;
 	}
-	if (passwd_file_size > RRR_LENGTH_MAX) {
-		RRR_DBG_1("Password file '%s' too big (was %lli bytes), access denied\n", filename, (long long int) passwd_file_size);
+	else if (passwd_file_size > RRR_LENGTH_MAX) {
+		RRR_DBG_1("Password file '%s' was too long, access denied\n", filename);
 		ret = 1;
 		goto out;
 	}
@@ -702,7 +702,7 @@ int rrr_passwd_authenticate (
 
 	if ((ret = rrr_passwd_iterate_lines (
 			passwd_file_contents,
-			rrr_length_from_ssize_bug_const (passwd_file_size),
+			rrr_length_from_biglength_bug_const(passwd_file_size),
 			__rrr_passwd_authenticate_callback,
 			&callback_data
 	)) != 0) {

@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
+#define RRR_HTTP_SERVER_READ_MAX 1 * 1024 * 1024 // 1 MB
+
 void rrr_http_server_destroy (struct rrr_http_server *server) {
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
@@ -346,13 +348,12 @@ static int __rrr_http_server_read_callback (
 
 	int ret = 0;
 
-	ssize_t received_bytes = 0;
-
 	for (int i = 0; i < 1; i++) {
+		rrr_biglength received_bytes_dummy = 0;
 		if ((ret = rrr_http_session_transport_ctx_tick_server (
-				&received_bytes,
+				&received_bytes_dummy,
 				handle,
-				1 * 1024 * 1024, // 1 MB
+				RRR_HTTP_SERVER_READ_MAX,
 				http_server->callbacks.unique_id_generator_callback,
 				http_server->callbacks.unique_id_generator_callback_arg,
 				__rrr_http_server_upgrade_verify_callback,
@@ -406,7 +407,7 @@ struct rrr_http_server_start_alpn_protos_callback_data {
 	const uint64_t first_read_timeout_ms;
 	const uint64_t hard_timeout_ms;
 	const uint64_t ping_timeout_ms;
-	const int send_chunk_count_limit;
+	const rrr_length send_chunk_count_limit;
 };
 
 static int __rrr_http_server_start_alpn_protos_callback (
@@ -439,7 +440,7 @@ static int __rrr_http_server_start (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config,
 		int net_transport_flags
 ) {
@@ -515,7 +516,7 @@ int rrr_http_server_start_plain (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit
+		rrr_length send_chunk_count_limit
 ) {
 	int ret = 0;
 
@@ -550,7 +551,7 @@ int rrr_http_server_start_tls (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 ) {

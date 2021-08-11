@@ -62,6 +62,7 @@ struct averager_data {
 	rrr_setting_uint interval_s;
 
 	char *msg_topic;
+	uint16_t msg_topic_length;
 };
 
 // In seconds, keep x seconds of readings in the buffer
@@ -104,7 +105,7 @@ static int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 			if (averager_data->msg_topic != NULL) {
 				// This will re-allocate the message
-				if (rrr_msg_msg_topic_set(&dup_message, averager_data->msg_topic, (ssize_t) strlen(averager_data->msg_topic)) != 0) {
+				if (rrr_msg_msg_topic_set(&dup_message, averager_data->msg_topic, averager_data->msg_topic_length) != 0) {
 					RRR_MSG_0("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
@@ -276,7 +277,7 @@ static int averager_spawn_message_callback (struct rrr_msg_holder *new_entry, vo
 			callback_data->array_tmp,
 			rrr_time_get_64(),
 			callback_data->data->msg_topic,
-			(callback_data->data->msg_topic != NULL ? (rrr_u16) strlen(callback_data->data->msg_topic) : 0)
+			callback_data->data->msg_topic_length
 	) != 0) {
 		RRR_MSG_0 ("Could not create message in averager_spawn_message of instance %s\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data));
@@ -480,11 +481,12 @@ static int averager_data_init(struct averager_data *data, struct rrr_instance_ru
 static int averager_parse_config (struct averager_data *data, struct rrr_instance_config_data *config) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("avg_message_topic", msg_topic);
-	if (data->msg_topic != NULL && strlen(data->msg_topic) > RRR_MSG_TOPIC_MAX) {
-		RRR_MSG_0("Parameter avg_message_topic exceeds maximum length of %u in averager instance %s\n",
-				RRR_MSG_TOPIC_MAX, config->name);
-		ret = 1;
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->msg_topic,
+			&data->msg_topic_length,
+			config,
+			"avg_message_topic"
+	)) != 0) {
 		goto out;
 	}
 

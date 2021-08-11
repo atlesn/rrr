@@ -72,7 +72,7 @@ int rrr_message_broker_costumer_register (
 );
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
-		int slots
+		rrr_length slots
 );
 int rrr_message_broker_get_next_unique_id (
 		uint64_t *result,
@@ -82,7 +82,7 @@ int rrr_message_broker_write_entry (
 		struct rrr_message_broker_costumer *costumer,
 		const struct sockaddr *addr,
 		socklen_t socklen,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),

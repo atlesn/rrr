@@ -33,10 +33,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 ) {
 	int ret = 0;
 
@@ -45,7 +45,7 @@ int rrr_msg_holder_util_new_with_empty_message (
 
 	// XXX : Callers treat this function as message_data_length is an absolute value
 
-	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
+	rrr_biglength message_size = sizeof(*message) - 1 + message_data_length;
 
 	message = rrr_allocate(message_size);
 	if (message == NULL) {
@@ -84,11 +84,7 @@ int rrr_msg_holder_util_clone_no_locking (
 		const struct rrr_msg_holder *source
 ) {
 	// Note : Do calculation correctly, not incorrect
-	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
-
-	if (message_data_length < 0) {
-		RRR_BUG("Message too small in rrr_msg_msg_holder_clone_no_locking\n");
-	}
+	rrr_biglength message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
 
 	int ret = rrr_msg_holder_util_new_with_empty_message (
 			result,

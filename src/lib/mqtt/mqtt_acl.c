@@ -466,7 +466,7 @@ int rrr_mqtt_acl_entry_collection_populate_from_file (
 	int ret = 0;
 
 	char *contents = NULL;
-	ssize_t bytes = 0;
+	rrr_biglength bytes = 0;
 
 	if ((ret = rrr_socket_open_and_read_file (
 			&contents,
@@ -484,9 +484,14 @@ int rrr_mqtt_acl_entry_collection_populate_from_file (
 		RRR_MSG_0("Warning: MQTT ACL file '%s' was empty\n", filename);
 		goto out;
 	}
+	else if (bytes > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Error: MQTT ACL file '%s' was too big\n", filename);
+		ret = 1;
+		goto out;
+	}
 
 	struct rrr_parse_pos parse_pos;
-	rrr_parse_pos_init(&parse_pos, contents, rrr_length_from_ssize_bug_const(bytes));
+	rrr_parse_pos_init(&parse_pos, contents, rrr_length_from_biglength_bug_const(bytes));
 
 	if ((ret = __rrr_mqtt_acl_parse_topic_blocks(collection, &parse_pos)) != 0) {
 		RRR_MSG_0("Error while parsing MQTT ACL file '%s'\n", filename);

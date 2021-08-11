@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <stdlib.h>
 
+#include "serial.h"
 #include "../log.h"
 #include "../allocator.h"
 #include "../util/macro_utils.h"
@@ -64,7 +65,7 @@ int rrr_serial_check (int *is_serial, int fd) {
 	*target = RRR_PASTE(B,speed);		\
 	break
 
-static int __rrr_serial_speed_convert (speed_t *target, unsigned int speed) {
+static int __rrr_serial_speed_convert (speed_t *target, unsigned long long speed) {
 	switch (speed) {
 		RRR_SERIAL_SPEED_CASE(0);
 		RRR_SERIAL_SPEED_CASE(50);
@@ -91,7 +92,7 @@ static int __rrr_serial_speed_convert (speed_t *target, unsigned int speed) {
 	return 0;
 }
 
-int rrr_serial_speed_check (unsigned int speed) {
+int rrr_serial_speed_check (unsigned long long speed) {
 	speed_t dummy;
 	return __rrr_serial_speed_convert(&dummy, speed);
 }
@@ -111,7 +112,7 @@ int rrr_serial_speed_check (unsigned int speed) {
 		goto out;																				\
 	}} while(0)
 
-int rrr_serial_speed_set (int fd, unsigned int speed_bps) {
+int rrr_serial_speed_set (int fd, unsigned long long speed_bps) {
 	int ret = 0;
 
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();

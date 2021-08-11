@@ -904,7 +904,12 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	rrr_fixp fixp = 0;
 	const char *endptr = NULL;
 
-	if ((ret = rrr_fixp_str_to_fixp(&fixp, start, end - start, &endptr)) != 0) {
+	if ((ret = rrr_fixp_str_to_fixp (
+			&fixp,
+			start,
+			rrr_length_from_ptr_sub_bug_const (end, start),
+			&endptr
+	)) != 0) {
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 

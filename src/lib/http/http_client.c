@@ -603,10 +603,13 @@ static int __rrr_http_client_read_callback (
 		goto out;
 	}
 
-	if (again_max-- && (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0)) {
+	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
 		// This usually only happens at most one time unless there is some error condition,
 		// after which we break out after a few rounds.
-		goto again;
+		if (again_max--) {
+			goto again;
+		}
+		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:

@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read_constants.h"
 
+// Limits for HTTP1 only
+#define RRR_HTTP_PARSE_HEADROOM_LIMIT_KB 1024
+#define RRR_HTTP_PARSE_HEADER_LIMIT_KB 64
+
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_USER_AGENT "RRR/" PACKAGE_VERSION
 

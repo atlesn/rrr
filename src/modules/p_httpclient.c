@@ -345,18 +345,26 @@ static int httpclient_create_array_message (
 }
 
 struct httpclient_create_message_from_response_data_nullsafe_callback_data {
+	struct httpclient_data *httpclient_data;
 	struct rrr_msg_holder *new_entry;
 	const struct httpclient_transaction_data *transaction_data;
 };
 
 static int httpclient_create_message_from_response_data_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_biglength len,
 		void *arg
 ) {
 	struct httpclient_create_message_from_response_data_nullsafe_callback_data *callback_data = arg;
 
 	int ret = 0;
+
+	if (len > UINT32_MAX) {
+		RRR_MSG_0("Data size overflow while creating message from HTTP response data in httpclient instance %s (%llu>%llu).\n",
+			(unsigned long long) len, (unsigned long long) UINT32_MAX, INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		ret = 1;
+		goto out;
+	}
 
 	if ((ret = rrr_msg_msg_new_with_data (
 			(struct rrr_msg_msg **) &callback_data->new_entry->message,
@@ -366,7 +374,7 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 			callback_data->transaction_data->msg_topic,
 			(callback_data->transaction_data->msg_topic != NULL ? (rrr_u16) strlen(callback_data->transaction_data->msg_topic) : 0),
 			str,
-			len
+			(rrr_u32) len
 	)) != 0) {
 		goto out;
 	}
@@ -431,6 +439,7 @@ static int httpclient_create_message_from_response_data_callback (
 	}
 	else {
 		struct httpclient_create_message_from_response_data_nullsafe_callback_data nullsafe_callback_data = {
+				callback_data->httpclient_data,
 				new_entry,
 				callback_data->transaction_data
 		};
@@ -570,9 +579,16 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 
 	int ret = 0;
 
+	if (len > UINT32_MAX) {
+		RRR_MSG_0("Data size overflow while creating message from HTTP json response data in httpclient instance %s (%llu>%llu).\n",
+			(unsigned long long) len, (unsigned long long) UINT32_MAX, INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	if ((ret = rrr_json_to_arrays (
 			str,
-			len,
+			(rrr_u32) len,
 			RRR_HTTPCLIENT_JSON_MAX_LEVELS,
 			httpclient_create_message_from_json_array_callback,
 			callback_data
@@ -590,6 +606,7 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 		}
 	}
 
+	out:
 	return ret;
 }
 
@@ -1198,7 +1215,7 @@ static int httpclient_overrides_server_and_port_get_from_message (
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
-		*port_override = port;
+		*port_override = (uint16_t) port;
 	}
 
 	*server_override = server_to_free;
@@ -1436,11 +1453,24 @@ static int httpclient_session_query_prepare_callback (
 	RRR_MAP_ITERATE_BEGIN(&data->http_client_config.fields);
 		RRR_DBG_3("HTTP add field value with tag '%s' value '%s'\n",
 				node_tag, node_value != NULL ? node_value : "(no value)");
+
+		const size_t node_value_length = strlen(node_value);
+		if (node_value_length > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Length of fixed query field with tag '%s' exceeds maximum in httpclient instance %s (%llu>%llu).\n",
+				node_tag,
+				INSTANCE_D_NAME(data->thread_data),
+				(unsigned long long) node_value_length,
+				(unsigned long long) RRR_LENGTH_MAX
+			);
+			ret = 1;
+			goto out;
+		}
+
 		if ((ret = rrr_http_transaction_query_field_add (
 				transaction,
 				node_tag,
 				node_value,
-				strlen(node_value),
+				rrr_length_from_size_t_bug_const (strlen(node_value)),
 				"text/plain",
 				NULL
 		)) != RRR_HTTP_OK) {

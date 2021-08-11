@@ -322,16 +322,22 @@ struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data {
 
 static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data *callback_data = arg;
+
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Value too long while pushing to array (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (unsigned long long) RRR_LENGTH_MAX);
+		return 1;
+	}
 
 	return __rrr_array_push_value_x_with_tag_with_size (
 			callback_data->collection,
 			callback_data->tag,
 			str,
-			len,
+			(rrr_length) len,
 			callback_data->definition
 	);
 }

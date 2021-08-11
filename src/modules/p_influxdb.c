@@ -292,11 +292,20 @@ static void influxdb_send_data_callback (
 
 	// TODO : Better distinguishing of soft/hard errors from HTTP layer
 
+	const rrr_biglength length = rrr_http_query_builder_wpos_get(&query_builder);
+
+	if (length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Query size overflow in influxdb instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	if ((ret = rrr_http_transaction_query_field_add (
 			transaction,
 			NULL,
 			rrr_http_query_builder_buf_get(&query_builder),
-			rrr_http_query_builder_wpos_get(&query_builder),
+			(rrr_length) length,
 			NULL, // <-- No content-type
 			NULL  // <-- No original value
 	)) != 0) {
@@ -324,7 +333,7 @@ static void influxdb_send_data_callback (
 			data, 0
 	};
 
-	ssize_t received_bytes = 0;
+	rrr_biglength received_bytes = 0;
 
 	do {
 		if ((ret = rrr_http_session_transport_ctx_tick_client (
@@ -378,7 +387,7 @@ static int influxdb_send_data (
 
 	ret |= rrr_net_transport_connect_and_close_after_callback (
 			data->transport,
-			(unsigned int) data->http_client_config.server_port,
+			data->http_client_config.server_port,
 			data->http_client_config.server,
 			influxdb_send_data_callback,
 			&callback_data

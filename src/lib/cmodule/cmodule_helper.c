@@ -87,7 +87,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_holder *entr
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
 			(struct sockaddr *) &callback_data->addr_message.addr,
-			RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message),
+			(socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message),
 			callback_data->addr_message.protocol
 	);
 	message_new = NULL;
@@ -184,7 +184,7 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	if (node->addr_len > 0) {
 		memcpy(&addr_msg.addr, &node->addr, sizeof(addr_msg.addr));
 		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, node->addr_len);
-		addr_msg.protocol = node->protocol;
+		addr_msg.protocol = (uint8_t) node->protocol;
 	}
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) node->message;

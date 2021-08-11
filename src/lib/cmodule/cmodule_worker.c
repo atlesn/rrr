@@ -139,8 +139,8 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 
 static void __rrr_cmodule_worker_log_hook (
 		uint8_t *amount_written,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg

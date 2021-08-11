@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <sys/stat.h>
 
 #include "../log.h"
@@ -237,8 +238,14 @@ int __rrr_readdir_foreach_path_is_self_or_parent (
 ) {
 	int dot_count = 0;
 
+	size_t length = strlen(path);
+
+	if (length - 1 > SSIZE_MAX) {
+		RRR_BUG("Bug: Path too long in __rrr_readdir_foreach_path_is_self_or_parent\n");
+	}
+
 	// Note : Must be signed
-	for (ssize_t i = strlen(path) - 1; i >= 0; i--) {
+	for (ssize_t i = (ssize_t) length - 1; i >= 0; i--) {
 		char chr = *(path + i);
 		if (chr == '.') {
 			dot_count++;

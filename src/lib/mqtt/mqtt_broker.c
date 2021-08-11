@@ -60,7 +60,7 @@ void __rrr_mqtt_broker_listen_ipv4_and_ipv6_callback (
 
 static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_net_transport *transport,
-		unsigned int port
+		uint16_t port
 ) {
 	int ret = 0;
 
@@ -82,7 +82,7 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
 		const struct rrr_net_transport_config *net_transport_config,
-		unsigned int port
+		uint16_t port
 ) {
 	int ret = 0;
 

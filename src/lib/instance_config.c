@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "configuration.h"
 #include "util/gnu.h"
 #include "util/linked_list.h"
+#include "mqtt/mqtt_topic.h"
 			
 #define RRR_INSTANCE_CONFIG_MAX_SETTINGS 32
 
@@ -146,10 +147,12 @@ static int __rrr_instance_config_collection_new (
 		return ret;
 }
 
-int rrr_instance_config_read_port_number (
-		rrr_setting_uint *target,
+static int __rrr_instance_config_read_port_number (
+		uint16_t *target,
 		struct rrr_instance_config_data *source,
-		const char *name
+		const char *name,
+		int do_allow_zero,
+		int do_allow_not_found
 ) {
 	int ret = 0;
 
@@ -163,8 +166,7 @@ int rrr_instance_config_read_port_number (
 			char *tmp_string;
 
 			rrr_settings_read_string (&tmp_string, source->settings, name); // Ignore error
-			RRR_MSG_0 (
-					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
+			RRR_MSG_0("Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
 
@@ -173,11 +175,14 @@ int rrr_instance_config_read_port_number (
 			ret = 1;
 			goto out;
 		}
+		else if (ret == RRR_SETTING_NOT_FOUND && do_allow_not_found) {
+			ret = 0;
+			goto out;
+		}
 	}
 	else {
-		if (tmp_uint < 1 || tmp_uint > 65535) {
-			RRR_MSG_0 (
-					"port setting %s out of range, must be 1-65535 but was %" PRIrrrbl ".\n",
+		if ((!do_allow_zero && tmp_uint < 1) || tmp_uint > 65535) {
+			RRR_MSG_0 ("port setting %s out of range, must be 1-65535 but was %" PRIrrrbl ".\n",
 					name, tmp_uint
 			);
 			ret = 1;
@@ -185,10 +190,26 @@ int rrr_instance_config_read_port_number (
 		}
 	}
 
-	*target = tmp_uint;
+	*target = (uint16_t) tmp_uint;
 
 	out:
 	return ret;
+}
+
+int rrr_instance_config_read_optional_port_number (
+		uint16_t *target,
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	return __rrr_instance_config_read_port_number(target, source, name, 1, 1);
+}
+
+int rrr_instance_config_read_port_number (
+		uint16_t *target,
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	return __rrr_instance_config_read_port_number(target, source, name, 0, 0);
 }
 
 int rrr_instance_config_check_all_settings_used (
@@ -389,6 +410,53 @@ int rrr_instance_config_parse_optional_utf8 (
 	}
 
 	out:
+	return ret;
+}
+
+int rrr_instance_config_parse_topic_and_length (
+		char **target,
+		uint16_t *target_length,
+		struct rrr_instance_config_data *config,
+		const char *string
+) {
+	int ret = 0;
+
+	char *topic = NULL;
+	size_t topic_length = 0;
+
+	if ((ret = rrr_instance_config_parse_optional_utf8 (&topic, config, string, NULL)) != 0) {
+		goto out;
+	}
+
+	if (topic != NULL && *(topic) != '\0') {
+		topic_length = strlen(topic);
+		if (topic_length > 0xffff) {
+			RRR_MSG_0("Length of MQTT topic parameter %s exceeds maximum length (%llu>%i) in instance %s\n",
+				string,
+				(unsigned long long int) topic_length,
+				0xffff,
+				config->name
+			);
+			ret = 1;
+			goto out;
+		}
+		if (rrr_mqtt_topic_validate_name(topic) != 0) {
+			RRR_MSG_0("Validation of MQTT topic parameter %s with value '%s' failed in instance %s\n",
+				string,
+				topic,
+				config->name
+			);
+			ret = 1;
+			goto out;
+		 }
+	}
+
+	*target_length = (uint16_t) topic_length;
+	*target = topic;
+	topic = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(topic);
 	return ret;
 }
 

@@ -44,7 +44,7 @@ void rrr_udpstream_asd_destroy (
 int rrr_udpstream_asd_new (
 		struct rrr_udpstream_asd **target,
 		struct rrr_event_queue *queue,
-		unsigned int local_port,
+		uint16_t local_port,
 		const char *remote_host,
 		const char *remote_port,
 		uint32_t client_id,

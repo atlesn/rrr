@@ -319,11 +319,11 @@ void rrr_udpstream_close (
 );
 int rrr_udpstream_bind_v6_priority (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 );
 int rrr_udpstream_bind_v4_only (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 );
 int rrr_udpstream_connect_raw (
 		uint32_t *connect_handle,

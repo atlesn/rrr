@@ -39,10 +39,10 @@ struct rrr_msg_holder {
 	int lock_recursion_count;
 #endif
 	int usercount;
-	ssize_t data_length;
+	rrr_biglength data_length;
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
-	int protocol;
+	uint8_t protocol;
 	const void *source;
 	void *message;
 
@@ -53,8 +53,8 @@ struct rrr_msg_holder {
 	uint64_t send_time;
 
 	// Used by higher levels to control partial sends
-	ssize_t bytes_sent;
-	ssize_t bytes_to_send;
+	rrr_biglength bytes_sent;
+	rrr_biglength bytes_to_send;
 	int endian_indicator;
 
 	// Available for modules

@@ -85,12 +85,18 @@ int rrr_http_field_new_no_value_raw (
 
 static int __rrr_http_field_new_no_value_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_field **target = arg;
 
-	return rrr_http_field_new_no_value_raw(target, str, len);
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP field too long to save (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (long long unsigned) RRR_LENGTH_MAX);
+		return 1;
+	}
+
+	return rrr_http_field_new_no_value_raw(target, str, (rrr_length) len);
 }
 
 int rrr_http_field_new_no_value (
@@ -154,7 +160,7 @@ int rrr_http_field_collection_iterate_const (
 
 static int __rrr_http_field_collection_dump_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	(void)(arg);
@@ -284,7 +290,7 @@ int rrr_http_field_collection_add (
 	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, len)) != 0) { goto out; }} while(0)
 
 #define REPLACE_STR_OR_OUT(target,str) \
-	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, strlen(str))) != 0) { goto out; }} while(0)
+	do {if ((ret = rrr_nullsafe_str_new_or_replace_raw(&(target), str, rrr_length_from_biglength_bug_const(strlen(str)))) != 0) { goto out; }} while(0)
 
 static int __rrr_http_field_value_to_strings (
 		const struct rrr_type_value *value,
@@ -562,7 +568,9 @@ int rrr_http_field_collection_to_json (
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw_allocated(target, (void **) &json_tmp, strlen(json_tmp))) != 0) {
+	size_t json_length = strlen(json_tmp);
+
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw_allocated(target, (void **) &json_tmp, (rrr_nullsafe_len) json_length)) != 0) {
 		goto out;
 	}
 

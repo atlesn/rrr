@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../allocator.h"
 #include "http2.h"
-#include "../rrr_inttypes.h"
+#include "../rrr_types.h"
 #include "../net_transport/net_transport.h"
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
@@ -79,7 +79,7 @@ struct rrr_http2_callback_data {
 struct rrr_http2_session {
 	nghttp2_session *session;
 	void *initial_receive_data;
-	ssize_t initial_receive_data_len;
+	rrr_length initial_receive_data_len;
 	struct rrr_http2_stream_collection streams;
 	short no_more_streams;
 	// Must be updated on every tick
@@ -288,7 +288,7 @@ static ssize_t __rrr_http2_send_callback (
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
-	return length;
+	return (ssize_t) length;
 }
 
 static ssize_t __rrr_http2_recv_callback (
@@ -555,7 +555,7 @@ static int __rrr_http2_on_header_callback (
 
 	RRR_DBG_3("Received HTTP2 header %s=%s\n", name, value);
 
-	ssize_t parsed_bytes = 0;
+	rrr_length parsed_bytes = 0;
 	if (rrr_http_header_field_parse_value(&stream->headers, &parsed_bytes, (const char *) name, (const char *) value) != 0) {
 		RRR_MSG_0("HTTP2 header field parsing of field '%s' failed, parsed %lli of %llu bytes\n",
 				name, (long long int) parsed_bytes, (unsigned long long int) valuelen);
@@ -612,7 +612,7 @@ static ssize_t __rrr_http2_data_source_read_callback (
 	(void)(nghttp2_session);
 	(void)(source);
 
-	rrr_length bytes_written = 0;
+	rrr_biglength bytes_written = 0;
 	*data_flags = 0;
 
 	int done = 0;
@@ -627,17 +627,22 @@ static ssize_t __rrr_http2_data_source_read_callback (
 		return NGHTTP2_ERR_CALLBACK_FAILURE;
 	}
 
+	if (bytes_written > SSIZE_MAX) {
+		RRR_BUG("Bug: Size overflow in __rrr_http2_data_source_read_callback: %" PRIrrrbl ">%llu\n",
+			bytes_written, (unsigned long long) SSIZE_MAX);
+	}
+
 	if (done) {
 		*data_flags = NGHTTP2_DATA_FLAG_EOF;
 	}
 
-	return bytes_written;
+	return (ssize_t) bytes_written;
 }
 
 static int __rrr_http2_data_submit_if_needed (
 		struct rrr_http2_session *session,
 		struct rrr_http2_stream *stream,
-		uint32_t stream_id
+		int32_t stream_id
 ) {
 	int ret = 0;
 
@@ -696,7 +701,7 @@ static int __rrr_http2_before_frame_send_callback (
 int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		int is_server
 ) {
 	int ret = 0;
@@ -757,11 +762,13 @@ int rrr_http2_session_new_or_reset (
 	}
 
 	if (initial_receive_data != NULL && *initial_receive_data != NULL) {
+#if RRR_LENGTH_MAX > SSIZE_MAX
 		if (initial_receive_data_len > SSIZE_MAX) {
 			RRR_MSG_0("Initial receive data exceeds maximum in rrr_http2_session_new_or_reset\n");
 			ret = 1;
 			goto out_free;
 		}
+#endif
 
 		result->initial_receive_data = *initial_receive_data;
 		result->initial_receive_data_len = initial_receive_data_len;
@@ -889,7 +896,7 @@ static int __rrr_http2_session_stream_headers_submit (
 
 	nghttp2_nv *headers = NULL;
 
-	const int header_count = RRR_MAP_COUNT(&stream->headers_to_send);
+	const rrr_length header_count = (rrr_length) RRR_MAP_COUNT(&stream->headers_to_send);
 
 	if (header_count == 0) {
 		goto out;
@@ -1004,7 +1011,7 @@ int rrr_http2_request_start (
 		goto out;
 	}
 
-	*stream_id = stream_id_tmp;
+	*stream_id = (int32_t) stream_id_tmp;
 
 	out:
 	return ret;
@@ -1110,7 +1117,7 @@ int rrr_http2_data_submission_request_set (
 
 int rrr_http2_transport_ctx_streams_iterate (
 		struct rrr_http2_session *session,
-		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
+		int (*callback)(int32_t stream_id, void *application_data, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -1127,7 +1134,7 @@ int rrr_http2_transport_ctx_streams_iterate (
 	return ret;
 }
 
-int rrr_http2_streams_count_and_maintain (
+uint32_t rrr_http2_streams_count_and_maintain (
 		struct rrr_http2_session *session
 ) {
 	 __rrr_http2_streams_maintain (session);
@@ -1172,12 +1179,12 @@ int rrr_http2_transport_ctx_tick (
 
 	// Parse any overshoot data from HTTP/1.1 parsing
 	if (session->initial_receive_data != NULL) {
-		ssize_t send_bytes = session->initial_receive_data_len;
+		rrr_length send_bytes = session->initial_receive_data_len;
 		const void *send_pos = session->initial_receive_data;
 		while (send_bytes) {
 			ssize_t bytes = nghttp2_session_mem_recv(session->session, send_pos, send_bytes);
 			if (bytes < 0) {
-				RRR_MSG_0("Error from nghttp2_session_mem_recv in rrr_http2_tick: %s\n", nghttp2_strerror(bytes));
+				RRR_MSG_0("Error from nghttp2_session_mem_recv in rrr_http2_tick: %s\n", nghttp2_strerror((int) bytes));
 				ret = RRR_HTTP2_HARD_ERROR;
 				goto out;
 			}
@@ -1186,7 +1193,7 @@ int rrr_http2_transport_ctx_tick (
 				ret = RRR_HTTP2_HARD_ERROR;
 				goto out;
 			}
-			send_bytes -= bytes;
+			send_bytes -= (rrr_length) bytes;
 			send_pos += bytes;
 		}
 		RRR_FREE_IF_NOT_NULL(session->initial_receive_data);
@@ -1276,7 +1283,11 @@ int rrr_http2_upgrade_request_settings_pack (
 	}
 
 	size_t result_length = 0;
-	unsigned char *result = rrr_base64url_encode((unsigned char *) payload, payload_size, &result_length);
+	unsigned char *result = rrr_base64url_encode (
+			(unsigned char *) payload,
+			rrr_length_from_ssize_bug_const(payload_size),
+			&result_length
+	);
 
 	if (result == NULL) {
 		RRR_MSG_0("Base64url encoding failed in rrr_http2_pack_upgrade_request_settings\n");

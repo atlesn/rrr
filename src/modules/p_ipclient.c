@@ -85,7 +85,7 @@ struct ipclient_data {
 
 	int (*queue_method)(struct rrr_msg_holder *entry, struct ipclient_data *data);
 
-	rrr_setting_uint src_port;
+	uint16_t src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
 
 	int need_network_restart;
@@ -152,9 +152,8 @@ static int ipclient_parse_config (struct ipclient_data *data, struct rrr_instanc
 		}
 	}
 
-	rrr_setting_uint src_port;
-	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
-		data->src_port = src_port;
+	if ((ret = rrr_instance_config_read_port_number(&data->src_port, config, "ipclient_src_port")) == 0) {
+		// OK
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND) {
 		data->src_port = RRR_IPCLIENT_DEFAULT_PORT;
@@ -392,7 +391,7 @@ static int ipclient_asd_reconnect (struct ipclient_data *data) {
 	if ((ret = rrr_udpstream_asd_new (
 			&data->udpstream_asd,
 			INSTANCE_D_EVENTS(data->thread_data),
-			(unsigned int) data->src_port,
+			data->src_port,
 			data->ip_default_remote,
 			data->ip_default_remote_port,
 			data->client_number,

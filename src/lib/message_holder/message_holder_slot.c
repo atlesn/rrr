@@ -45,7 +45,7 @@ struct rrr_msg_holder_slot {
 	pthread_cond_t cond;
 	pthread_mutex_t lock;
 
-	int reader_count;
+	rrr_length reader_count;
 	const void **readers;
 	uint8_t *reader_has_read;
 
@@ -94,7 +94,7 @@ int rrr_msg_holder_slot_new (
 
 int rrr_msg_holder_slot_reader_count_set (
 		struct rrr_msg_holder_slot *slot,
-		int reader_count
+		rrr_length reader_count
 ) {
 	int ret = 0;
 
@@ -167,7 +167,7 @@ unsigned int rrr_msg_holder_slot_count (
 
 	count++;
 
-	for (int i = 0; i < slot->reader_count; i++) {
+	for (rrr_length i = 0; i < slot->reader_count; i++) {
 		if (slot->reader_has_read[i] == 0) {
 			count++;
 		}
@@ -178,7 +178,7 @@ unsigned int rrr_msg_holder_slot_count (
 	return count;
 }
 
-static int __rrr_msg_holder_slot_reader_index_get_unlocked (
+static rrr_slength __rrr_msg_holder_slot_reader_index_get_unlocked (
 		struct rrr_msg_holder_slot *slot,
 		const void *self
 ) {
@@ -186,9 +186,9 @@ static int __rrr_msg_holder_slot_reader_index_get_unlocked (
 		return -1;
 	}
 
-	int self_index = -1;
+	rrr_slength self_index = -1;
 
-	for (int i = 0; i < slot->reader_count; i++) {
+	for (rrr_length i = 0; i < slot->reader_count; i++) {
 		if (slot->readers[i] == (void *) self) {
 			self_index = i;
 			break;
@@ -223,7 +223,7 @@ int rrr_msg_holder_slot_read (
 		goto out;
 	}
 
-	int self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot, self);
+	rrr_slength self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot, self);
 	if (self_index >= 0 && slot->reader_has_read[self_index]) {
 		goto out;
 	}
@@ -254,11 +254,11 @@ int rrr_msg_holder_slot_read (
 	}
 
 	if (!do_keep) {
-		int done_count = 0;
+		rrr_length done_count = 0;
 
 		if (self_index >= 0) {
 			slot->reader_has_read[self_index] = 1;
-			for (int i = 0; i < slot->reader_count; i++) {
+			for (rrr_length i = 0; i < slot->reader_count; i++) {
 				if (slot->reader_has_read[i]) {
 					done_count++;
 				}
@@ -358,7 +358,7 @@ static void __rrr_msg_holder_slot_unlock_void (void *arg) {
     do {if ((ret = __rrr_msg_holder_slot_write_wait(slot, check_cancel_callback, check_cancel_callback_arg)) != 0) goto out; } while (0)
 
 #define WRITE_AND_RESET()                                                                                                      \
-    do {for (int i = 0; i < slot->reader_count; i++) {                                                                         \
+    do {for (rrr_length i = 0; i < slot->reader_count; i++) {                                                                  \
         slot->reader_has_read[i] = 0;                                                                                          \
     }                                                                                                                          \
     slot->entry = entry_new;                                                                                                   \
@@ -377,7 +377,7 @@ int rrr_msg_holder_slot_write (
 		struct rrr_msg_holder_slot *slot,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(int *do_drop, int *do_again, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),

@@ -473,7 +473,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 // will read from us, if not we will give a BUG()
 int rrr_message_broker_setup_split_output_buffer (
 		struct rrr_message_broker_costumer *costumer,
-		int slots
+		rrr_length slots
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -588,7 +588,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	struct rrr_message_broker_costumer *costumer;
 	const struct sockaddr *addr;
 	socklen_t socklen;
-	int protocol;
+	uint8_t protocol;
 	uint8_t entries_written;
 	int (*callback)(struct rrr_msg_holder *new_entry, void *arg);
 	void *callback_arg;
@@ -821,7 +821,7 @@ int rrr_message_broker_write_entry (
 		struct rrr_message_broker_costumer *costumer,
 		const struct sockaddr *addr,
 		socklen_t socklen,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(struct rrr_msg_holder *new_entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),

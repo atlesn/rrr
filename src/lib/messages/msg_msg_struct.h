@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_TYPE(message)             ((message)->type_and_class & 0x0f)
 #define MSG_CLASS(message)            (((message)->type_and_class & 0xf0) >> 4)
 
-#define MSG_SET_TYPE(message,n)       (message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
+#define MSG_SET_TYPE(message,n)       (message)->type_and_class = (rrr_u8) (((message)->type_and_class & 0xf0) | (n & 0x0f))
 #define MSG_SET_CLASS(message,n)      (message)->type_and_class = (rrr_u8) (((message)->type_and_class & 0x0f) | (n << 4))
 
 #define MSG_IS_MSG(message)           (MSG_TYPE(message) == MSG_TYPE_MSG)
@@ -78,11 +78,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_IS_MSG_DATA(message)      (MSG_IS_MSG(message) && MSG_IS_DATA(message))
 #define MSG_IS_MSG_ARRAY(message)     (MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
-#define MSG_MIN_SIZE(message)         (sizeof(*(message))-1)
+#define MSG_MIN_SIZE(message)         ((rrr_u32) sizeof(*(message))-1)
 #define MSG_TOTAL_SIZE(message)       ((message)->msg_size)
 #define MSG_TOPIC_LENGTH(message)     ((message)->topic_length)
 #define MSG_TOPIC_PTR(message)        ((message)->data + 0)
-#define MSG_DATA_LENGTH(message)      ((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
+#define MSG_DATA_LENGTH(message)      ((message)->msg_size - ((rrr_u32) sizeof(*message) - 1) - (message)->topic_length)
 #define MSG_DATA_PTR(message)         ((message)->data + (message)->topic_length)
 
 #define MSG_TOPIC_IS(message,topic)   (rrr_msg_msg_topic_equals(message,topic))

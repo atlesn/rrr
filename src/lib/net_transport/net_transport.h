@@ -48,11 +48,6 @@ struct rrr_event_queue;
     struct rrr_net_transport_handle *handle,                   \
     void *arg
 
-#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS        \
-    void **submodule_private_ptr,                              \
-    int *submodule_fd,                                         \
-    void *arg
-
 #define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS           \
     struct rrr_net_transport_handle *handle,                   \
     const struct sockaddr *sockaddr,                           \
@@ -81,7 +76,7 @@ struct rrr_event_queue;
     uint64_t first_read_timeout_ms;                                         \
     uint64_t soft_read_timeout_ms;                                          \
     uint64_t hard_read_timeout_ms;                                          \
-    int send_chunk_count_limit;                                             \
+    rrr_length send_chunk_count_limit;                                      \
     struct timeval first_read_timeout_tv;                                   \
     struct timeval soft_read_timeout_tv;                                    \
     struct timeval hard_read_timeout_tv;                                    \
@@ -93,11 +88,17 @@ struct rrr_event_queue;
     void *read_callback_arg
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
+
+#define RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS               \
+    void **submodule_private_ptr,                              \
+    int *submodule_fd,                                         \
+    void *arg
+
 int rrr_net_transport_handle_allocate_and_add (
 		rrr_net_transport_handle *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		int (*submodule_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_ARGS),
+		int (*submodule_callback)(RRR_NET_TRANSPORT_ALLOCATE_CALLBACK_ARGS),
 		void *submodule_callback_arg
 );
 #endif
@@ -108,14 +109,14 @@ int rrr_net_transport_handle_close (
 );
 int rrr_net_transport_connect_and_close_after_callback (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
 );
 int rrr_net_transport_connect (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		const char *host,
 		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
 		void *callback_arg
@@ -137,7 +138,7 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 );
 int rrr_net_transport_bind_and_listen_dualstack (
 		struct rrr_net_transport *transport,
-		unsigned int port,
+		uint16_t port,
 		void (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),
 		void *arg
 );
@@ -184,7 +185,7 @@ int rrr_net_transport_new (
 		uint64_t first_read_timeout_ms,
 		uint64_t soft_read_timeout_ms,
 		uint64_t hard_read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		void (*accept_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),
 		void *accept_callback_arg,
 		void (*handshake_complete_callback)(RRR_NET_TRANSPORT_HANDSHAKE_COMPLETE_CALLBACK_ARGS),

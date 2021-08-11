@@ -51,7 +51,7 @@ static inline void rrr_msg_addr_prepare_for_network (struct rrr_msg_addr *msg) {
 }
 
 int rrr_msg_addr_to_host (struct rrr_msg_addr *msg);
-void rrr_msg_addr_init_head (struct rrr_msg_addr *target, uint64_t addr_len);
+void rrr_msg_addr_init_head (struct rrr_msg_addr *target, rrr_u32 addr_len);
 void rrr_msg_addr_init (struct rrr_msg_addr *target);
 int rrr_msg_addr_new (struct rrr_msg_addr **target);
 int rrr_msg_addr_clone (
@@ -60,7 +60,7 @@ int rrr_msg_addr_clone (
 );
 void rrr_msg_addr_to_str (
 		char *target,
-		size_t target_size,
+		rrr_biglength target_size,
 		const struct rrr_msg_addr *msg
 );
 

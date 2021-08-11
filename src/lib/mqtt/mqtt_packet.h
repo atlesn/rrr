@@ -424,7 +424,7 @@ struct rrr_mqtt_p_publish {
 	(p)->type_flags = ((uint8_t)(new_retain|(new_qos << 1)|(new_dup << 3)))
 
 #define RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p,new_qos) \
-	(p)->type_flags = ((uint8_t)(((p)->type_flags & 1)|(new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)))
+	(p)->type_flags = ((uint8_t)(((p)->type_flags & 1)|((uint8_t) new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)))
 
 #define RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(p,new_dup) \
 	(p)->type_flags = ((uint8_t)((((p)->type_flags & 1))|((((p)->type_flags & (3<<1)) >> 1) << 1)|(new_dup << 3)))

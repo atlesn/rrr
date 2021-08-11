@@ -131,8 +131,8 @@ struct rrr_udpstream_asd_control_msg {
 static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
 	struct rrr_udpstream_asd_control_msg result;
 
-	result.flags = application_data >> 32;
-	result.message_id = application_data & 0xffffffff;
+	result.flags = (uint32_t) (application_data >> 32);
+	result.message_id = (uint32_t) (application_data & 0xffffffff);
 
 	return result;
 }
@@ -1172,7 +1172,7 @@ static void __rrr_udpstream_asd_event_periodic (
 int rrr_udpstream_asd_new (
 		struct rrr_udpstream_asd **target,
 		struct rrr_event_queue *queue,
-		unsigned int local_port,
+		uint16_t local_port,
 		const char *remote_host,
 		const char *remote_port,
 		uint32_t client_id,

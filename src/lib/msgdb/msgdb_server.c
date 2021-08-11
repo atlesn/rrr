@@ -62,8 +62,8 @@ void rrr_msgdb_server_destroy_void (
 struct rrr_msgdb_server_client {
 	int fd;
 	char *send_data;
-	size_t send_data_size;
-	size_t send_data_pos;
+	rrr_length send_data_size;
+	rrr_length send_data_pos;
 };
 
 static int __rrr_msgdb_server_client_new (
@@ -267,14 +267,14 @@ static int __rrr_msgdb_server_del (
 static int __rrr_msgdb_server_send_callback (
 		int fd,
 		void **data,
-		ssize_t data_size,
+		rrr_length data_size,
 		void *arg
 ) {
 	struct rrr_msgdb_server *server = arg;
 
 	int ret = 0;
 
-	int send_chunk_count = 0;
+	rrr_length send_chunk_count = 0;
 	if ((ret = rrr_socket_client_collection_send_push (
 			&send_chunk_count,
 			server->clients,
@@ -380,17 +380,28 @@ static int __rrr_msgdb_server_idx_make_index (
 	return ret;
 }
 
-static int __rrr_msgdb_server_quick_topic_get (
-		struct rrr_string_builder *topic,
-		const char *str
+static int __rrr_msgdb_server_open_and_read_file (
+		struct rrr_msg_msg **target,
+		const char *str,
+		int do_head_only,
+		const char *topic_to_verify
 ) {
 	int ret = 0;
-	struct rrr_msg *msg_tmp  = NULL;
 
-	ssize_t file_size = 0;
+	struct rrr_msg *msg_tmp = NULL;
 
-	// Max read size is max size of topic + header
-	if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, RRR_MSG_TOPIC_MAX + sizeof(struct rrr_msg_msg) - 1) != 0) {
+	rrr_biglength total_read;
+	rrr_biglength file_size;
+	if (rrr_socket_open_and_read_file_head (
+			(char **) &msg_tmp,
+			&total_read,
+			&file_size,
+			str,
+			0,
+			O_RDONLY,
+			// Max read size for header only is max size of topic + header
+			(rrr_biglength) (do_head_only ? RRR_MSG_TOPIC_MAX + sizeof(struct rrr_msg_msg) - 1 : 0)
+	) != 0) {
 		if (errno != EEXIST && errno != ENOENT) {
 			RRR_MSG_0("Could not read file '%s' in message db server\n",
 				str);
@@ -399,14 +410,44 @@ static int __rrr_msgdb_server_quick_topic_get (
 		goto out;
 	}
 
-	if (file_size < (ssize_t) sizeof(*msg_tmp)) {
+	if (file_size < sizeof(*msg_tmp)) {
 		RRR_MSG_0("Empty or too small file '%s' found in message db server directory\n", str);
 		ret = RRR_MSGDB_SOFT_ERROR;
 		goto out;
 	}
 
+	if (file_size > UINT32_MAX) {
+		RRR_MSG_0("File '%s' was too big in message db server directory (%llu>%llu)\n",
+			str, (unsigned long long) file_size, (unsigned long long) UINT32_MAX);
+		ret = RRR_MSGDB_SOFT_ERROR;
+		goto out;
+	}
+
+	if (!do_head_only) {
+		rrr_length target_size_control = 0;
+		if (rrr_msg_get_target_size_and_check_checksum (
+				&target_size_control,
+				msg_tmp,
+				sizeof(*msg_tmp)
+		) != 0) {
+			RRR_MSG_0("Head verification step 1/4 of '%s' failed in message db server (checksum error)\n", str);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+
+		if ((rrr_length) file_size != target_size_control) {
+			RRR_MSG_0("Head verification step 2/4 of '%s' failed in message db server (actual size was %llu while %llu was excpected)\n",
+					str,
+					(unsigned long long) file_size,
+					(unsigned long long) target_size_control
+			);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+		}
+	}
+
 	if (rrr_msg_head_to_host_and_verify(msg_tmp, (rrr_length) file_size) != 0) {
-		RRR_MSG_0("Head verification step 1/2 of '%s' failed in message db server (possible invalid field values)\n", str);
+		RRR_MSG_0("Head verification step 3/4 of '%s' failed in message db server (possible invalid field values)\n", str);
 		ret = RRR_MSGDB_SOFT_ERROR;
 		goto out;
 	}
@@ -418,7 +459,7 @@ static int __rrr_msgdb_server_quick_topic_get (
 	}
 
 	if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
-		RRR_MSG_0("Head verification step 2/2 of '%s' failed in message db server\n", str);
+		RRR_MSG_0("Head verification step 4/4 of '%s' failed in message db server\n", str);
 		ret = RRR_MSGDB_SOFT_ERROR;
 		goto out;
 	}
@@ -431,10 +472,46 @@ static int __rrr_msgdb_server_quick_topic_get (
 		goto out;
 	}
 
+	if (topic_to_verify != NULL) {
+		if ( MSG_TOPIC_LENGTH((struct rrr_msg_msg *) msg_tmp) != strlen(topic_to_verify) ||
+		     memcmp(MSG_TOPIC_PTR((struct rrr_msg_msg *) msg_tmp), topic_to_verify, MSG_TOPIC_LENGTH((struct rrr_msg_msg *) msg_tmp)) != 0
+		) {
+			RRR_MSG_0("Warning: Hash error, collition or topic error for '%s' in message db server, requsted topic was '%s'",
+				       str, topic_to_verify);
+			ret = RRR_MSGDB_SOFT_ERROR;
+			goto out;
+
+		}
+	}
+
+	*target = (struct rrr_msg_msg *) msg_tmp;
+	msg_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp);
+	return ret;
+}
+
+static int __rrr_msgdb_server_quick_topic_get (
+		struct rrr_string_builder *topic,
+		const char *str
+) {
+	int ret = 0;
+	struct rrr_msg_msg *msg_tmp  = NULL;
+
+	if ((ret = __rrr_msgdb_server_open_and_read_file (
+			&msg_tmp,
+			str,
+			1 /* Head only */,
+			NULL /* No topic to verify */
+	)) != 0) {
+		goto out;
+	}
+
 	if ((ret = rrr_string_builder_append_raw (
 			topic,
-			MSG_TOPIC_PTR((struct rrr_msg_msg *) msg_tmp),
-			MSG_TOPIC_LENGTH((struct rrr_msg_msg *) msg_tmp
+			MSG_TOPIC_PTR(msg_tmp),
+			MSG_TOPIC_LENGTH(msg_tmp
 	))) != 0) {
 		goto out;
 	}
@@ -514,13 +591,11 @@ static int __rrr_msgdb_server_get (
 		int response_fd
 ) {
 	int ret = 0;
-	struct rrr_msg *msg_tmp  = NULL;
+	struct rrr_msg_msg *msg_tmp  = NULL;
 
 	if ((ret = __rrr_msgdb_server_chdir_base(server)) != 0) {
 		goto out;
 	}
-
-	ssize_t file_size = 0;
 
 	// Note that successful return is an error
 	if (__rrr_msgdb_server_chdir(str, 1) == 0) {
@@ -530,68 +605,13 @@ static int __rrr_msgdb_server_get (
 		goto out;
 	}
 
-	if (rrr_socket_open_and_read_file((char **) &msg_tmp, &file_size, str, O_RDONLY, 0) != 0) {
-		if (errno != EEXIST && errno != ENOENT) {
-			RRR_MSG_0("Could not read file '%s' in message db server\n",
-				str);
-		}
-		ret = RRR_MSGDB_SOFT_ERROR;
+	if ((ret = __rrr_msgdb_server_open_and_read_file (
+			&msg_tmp,
+			str,
+			0 /* While file */,
+			topic
+	)) != 0) {
 		goto out;
-	}
-
-	if (file_size < (ssize_t) sizeof(*msg_tmp)) {
-		RRR_MSG_0("Empty or too small file '%s' found in message db server directory\n", str);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	rrr_length target_size_control = 0;
-	if (rrr_msg_get_target_size_and_check_checksum (
-			&target_size_control,
-			msg_tmp,
-			sizeof(*msg_tmp)
-	) != 0) {
-		RRR_MSG_0("Head verification step 1/4 of '%s' failed in message db server (checksum error)\n", str);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_msg_head_to_host_and_verify(msg_tmp, (rrr_length) file_size) != 0) {
-		RRR_MSG_0("Head verification step 2/4 of '%s' failed in message db server (possible invalid field values)\n", str);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	if ((rrr_length) file_size != target_size_control) {
-		RRR_MSG_0("Head verification step 3/4 of '%s' failed in message db server (actual size was %llu while %llu was excpected)\n",
-				str,
-				(unsigned long long) file_size,
-				(unsigned long long) target_size_control
-		);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	if (!RRR_MSG_IS_RRR_MESSAGE(msg_tmp)) {
-		RRR_MSG_0("Message type of '%u' was not RRR message in message db server\n", msg_tmp->msg_type);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	if (rrr_msg_msg_to_host_and_verify((struct rrr_msg_msg *) msg_tmp, (rrr_biglength) file_size) != 0) {
-		RRR_MSG_0("Head verification step 4/4 of '%s' failed in message db server\n", str);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-	}
-
-	if ( MSG_TOPIC_LENGTH((struct rrr_msg_msg *) msg_tmp) != strlen(topic) ||
-	     memcmp(MSG_TOPIC_PTR((struct rrr_msg_msg *) msg_tmp), topic, MSG_TOPIC_LENGTH((struct rrr_msg_msg *) msg_tmp)) != 0
-	) {
-		RRR_MSG_0("Warning: Hash error, collition or topic error for '%s' in message db server, requsted topic was '%s'",
-			       str, topic);
-		ret = RRR_MSGDB_SOFT_ERROR;
-		goto out;
-
 	}
 
 	RRR_DBG_3("msgdb fd %i read from '%s' topic '%s' size %llu\n", response_fd, str, topic, (long long unsigned) MSG_TOTAL_SIZE(msg_tmp));
@@ -654,50 +674,21 @@ static int __rrr_msgdb_server_tidy (
 			goto out;
 		}
 
-		ssize_t msg_bytes_read = 0;
-		ssize_t msg_size = 0;
-		if (rrr_socket_open_and_read_file_head (
-				&msg_tmp,
-				&msg_bytes_read,
-				&msg_size,
+		if ((ret = __rrr_msgdb_server_open_and_read_file (
+				(struct rrr_msg_msg **) &msg_tmp,
 				path_tmp,
-				O_RDONLY,
-				0,
-				sizeof(struct rrr_msg_msg)
-		) != 0 || msg_bytes_read < (ssize_t) sizeof(struct rrr_msg_msg)) {
-			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy (size %lli < %lli): %s. Deleting file.\n",
+				1, /* Head only */
+				NULL /* No topic to verify */
+		)) != 0) {
+			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy. Deleting file.\n",
 					path_tmp,
-					msg_bytes_read,
-					(ssize_t) sizeof(struct rrr_msg_msg),
 					rrr_strerror(errno)
 			);
+			ret = 0;
 			goto delete;
 		}
 
-		struct rrr_msg_msg *msg = (struct rrr_msg_msg *) msg_tmp;
-
-		rrr_length target_size_control = 0;
-		if (rrr_msg_get_target_size_and_check_checksum (
-				&target_size_control,
-				(const struct rrr_msg *) msg,
-				sizeof(struct rrr_msg)
-		) != 0) {
-			RRR_MSG_0("Warning: msgdb header checksum failed for '%s' during tidy, deleting file.\n",
-					path_tmp);
-			goto delete;
-		}
-
-		if ( rrr_msg_head_to_host_and_verify((struct rrr_msg *) msg, (rrr_length) msg_size) != 0 ||
-		     rrr_msg_msg_to_host_and_verify(msg, (rrr_biglength) msg_size) != 0
-		) {
-			RRR_MSG_0("Warning: msgdb head verification failed for '%s' during tidy, deleting file.\n",
-				path_tmp);
-			goto delete;
-		}
-
-		// Do not perform checksum test, only the message head has been read in
-
-		if (!rrr_msg_msg_ttl_ok(msg, max_age_us)) {
+		if (!rrr_msg_msg_ttl_ok((struct rrr_msg_msg *) msg_tmp, max_age_us)) {
 			RRR_DBG_3("msgdb del '%s' (tidy)\n",
 					path_tmp
 			);
