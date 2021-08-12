@@ -159,9 +159,10 @@ static int __rrr_json_to_array_recurse (
 	const enum json_type type = json_object_get_type(object);
 
 	if (type == json_type_array) {
-		const int length = json_object_array_length(object);
-		for (int i = 0; i < length; i++) {
-			RRR_DBG_3("[%i/%i] JSON ARRAY IDX %i\n", cur_level, max_levels, i);
+		// Function might have int return value in old version of, ignore this
+		size_t length = (size_t) json_object_array_length(object);
+		for (size_t i = 0; i < length; i++) {
+			RRR_DBG_3("[%i/%i] JSON ARRAY IDX %llu\n", cur_level, max_levels, (long long unsigned) i);
 			if ((ret = __rrr_json_to_array_recurse (
 					json_object_array_get_idx(object, i),
 					max_levels,

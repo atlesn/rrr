@@ -75,7 +75,7 @@ int rrr_readfile_read (
 
 	rrr_biglength size = (rrr_biglength) size_signed;
 	if (max_size != 0 && size > max_size) {
-		RRR_MSG_0("File %s was too big (%" PRIrrrbl " > %" PRIrrrbl ")\n",
+		RRR_MSG_0("File %s was too big (%" PRIrrrbl " > %llu)\n",
 			filename, size, (unsigned long long) max_size);
 		ret = 1;
 		goto out_close;
