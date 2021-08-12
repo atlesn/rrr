@@ -70,8 +70,8 @@ static inline void *rrr_memcpy(void *dest, const void *src, rrr_biglength n) {
 	return memcpy(dest, src, (size_t) n);
 }
 
-static inline void *rrr_memset(void *dest, const void *src, rrr_biglength n) {
-	return memset(dest, src, (size_t) n);
+static inline void *rrr_memset(void *s, int c, rrr_biglength n) {
+	return memset(s, c, (size_t) n);
 }
 
 static inline int rrr_memcmp(const void *s1, const void *s2, rrr_biglength n) {
