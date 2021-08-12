@@ -72,11 +72,11 @@ struct rrr_msg_stats_packed {
 int rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
 		const struct rrr_msg_stats_packed *source,
-		size_t expected_size
+		rrr_length expected_size
 );
 void rrr_msg_stats_pack_and_flip (
 		struct rrr_msg_stats_packed *target,
-		size_t *total_size,
+		rrr_length *total_size,
 		const struct rrr_msg_stats *source
 );
 

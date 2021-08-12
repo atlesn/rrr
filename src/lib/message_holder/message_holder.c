@@ -206,10 +206,10 @@ void rrr_msg_holder_decref_void (
 
 int rrr_msg_holder_new (
 		struct rrr_msg_holder **result,
-		ssize_t data_length,
+		rrr_biglength data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		void *message
 ) {
 	int ret = 0;
@@ -218,7 +218,7 @@ int rrr_msg_holder_new (
 
 	struct rrr_msg_holder *entry = rrr_allocate_group(sizeof(*entry), RRR_ALLOCATOR_GROUP_MSG_HOLDER);
 	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_msg_holder_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -299,7 +299,7 @@ int rrr_msg_holder_clone_no_data (
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length
+		rrr_biglength message_data_length
 ) {
 	RRR_FREE_IF_NOT_NULL(target->message);
 	target->message = message;
@@ -309,10 +309,10 @@ void rrr_msg_holder_set_data_unlocked (
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 ) {
 	rrr_msg_holder_set_data_unlocked (target, message, message_data_length);
 	memcpy(&target->addr, addr, addr_len);

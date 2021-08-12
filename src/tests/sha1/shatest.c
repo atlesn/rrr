@@ -26,7 +26,7 @@
 #include <string.h>
 #include "../../lib/sha1/sha1.h"
 
-#include "../lib/rrr_config.h"
+#include "../../lib/rrr_config.h"
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("sha");
 
 /*

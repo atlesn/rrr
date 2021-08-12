@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <limits.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -183,7 +184,8 @@ int rrr_nullsafe_str_append_asprintf (
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append_asprintf\n");
 		goto out;
 	}
-	ret = rrr_nullsafe_str_append_raw(nullsafe, new_str, ret);
+
+	ret = rrr_nullsafe_str_append_raw(nullsafe, new_str, (rrr_nullsafe_len) ret);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(new_str);
@@ -281,7 +283,7 @@ int rrr_nullsafe_str_prepend_asprintf (
 		goto out;
 	}
 
-	ret = rrr_nullsafe_str_prepend_raw(nullsafe, new_str, ret);
+	ret = rrr_nullsafe_str_prepend_raw(nullsafe, new_str, (rrr_nullsafe_len) ret);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(new_str);
@@ -328,7 +330,7 @@ int rrr_nullsafe_str_set (
 int rrr_nullsafe_str_chr (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
-		int (*callback)(const void *start, size_t len_remaining, void *arg),
+		int (*callback)(const void *start, rrr_nullsafe_len len_remaining, void *arg),
 		void *callback_arg
 ) {
 	if (nullsafe == NULL) {
@@ -348,7 +350,7 @@ int rrr_nullsafe_str_chr (
 int rrr_nullsafe_str_split_raw (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
-		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
+		int (*callback)(const void *start, rrr_nullsafe_len chunk_size, int is_last, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -383,7 +385,7 @@ struct rrr_nullsafe_str_split_callback_data {
 
 static int __rrr_nullsafe_str_split_callback (
 	const void *data,
-	size_t len,
+	rrr_nullsafe_len len,
 	int is_last,
 	void *arg
 ) {
@@ -444,17 +446,53 @@ int rrr_nullsafe_str_str (
 		) {
 			const struct rrr_nullsafe_str tmp_at_needle = {
 					(void *) start, // Cast away const OK
-					end - start
+					rrr_length_from_ptr_sub_bug_const (end, start)
 			};
 			const struct rrr_nullsafe_str tmp_after_needle = {
 					(void *) start + needle->len, // Cast away const OK
-					end - start - needle->len
+					rrr_length_from_ptr_sub_bug_const(end, start) - needle->len
 			};
 			if ((ret = callback(haystack, needle, &tmp_at_needle, &tmp_after_needle, callback_arg)) != 0) {
 				goto out;
 			}
 		}
 		start++;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_nullsafe_str_check_likely_binary (
+		const struct rrr_nullsafe_str *nullsafe
+) {
+	int ret = 0; // 0 = probably text
+
+	const double treshold = 0.3;
+	const rrr_nullsafe_len test_length = 512;
+
+	if (nullsafe == NULL) {
+		goto out;
+	}
+
+	double count_non_ascii = 0.0;
+	double count_total = 0.0;
+
+	for (rrr_nullsafe_len i = 0; i < nullsafe->len && i < test_length; i++) {
+		unsigned char chr = *((unsigned char *) nullsafe->str + i);
+		if (chr == '\0') {
+			ret = 1;
+			goto out;
+		}
+		if (chr > 0x7f) {
+			count_non_ascii++;
+		}
+		count_total++;
+	}
+
+	if (count_non_ascii / count_total >= treshold) {
+		ret = 1; // 1 = probably binary
+		goto out;
 	}
 
 	out:
@@ -518,7 +556,7 @@ void rrr_nullsafe_str_tolower (
 	}
 	for (rrr_nullsafe_len i = 0; i < nullsafe->len; i++) {
 		char *pos = nullsafe->str + i;
-		*pos = tolower(*pos);
+		*pos = (char) tolower(*pos);
 	}
 }
 
@@ -536,7 +574,9 @@ int rrr_nullsafe_str_cmpto_case (
 		return 1;
 	}
 
-	const rrr_nullsafe_len str_len = strlen(str);
+	const rrr_biglength str_biglen = strlen(str);
+
+	const rrr_nullsafe_len str_len = (rrr_nullsafe_len) str_biglen;
 	if (nullsafe->len == 0 && str_len == 0) {
 		return 0;
 	}
@@ -544,8 +584,8 @@ int rrr_nullsafe_str_cmpto_case (
 		return 1;
 	}
 	for (rrr_nullsafe_len i = 0; i < str_len; i++) {
-		char a = tolower(*((const char *) nullsafe->str + i));
-		char b = tolower(*(str + i));
+		char a = (char) tolower(*((const char *) nullsafe->str + i));
+		char b = (char) tolower(*(str + i));
 		if (a != b) {
 			return 1;
 		}
@@ -560,7 +600,10 @@ int rrr_nullsafe_str_cmpto (
 	if (nullsafe == NULL) {
 		return 1;
 	}
-	rrr_nullsafe_len str_len = strlen(str);
+
+	const rrr_biglength str_biglen = strlen(str);
+
+	rrr_nullsafe_len str_len = (rrr_nullsafe_len) str_biglen;
 	if (nullsafe->len == 0 && str_len == 0) {
 		return 0;
 	}

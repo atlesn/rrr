@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_config_data.h"
 #include "../event/event.h"
 #include "../fork.h"
-#include "../rrr_mmap.h"
 #include "../mmap_channel.h"
 #include "../util/posix.h"
 
@@ -111,16 +110,6 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 	worker->pid = 0;
 }
 
-static int __rrr_cmodule_main_mmap_ensure (
-		struct rrr_cmodule *cmodule
-) {
-	if (cmodule->mmap_ == NULL && rrr_mmap_new(&cmodule->mmap_, RRR_CMODULE_CHANNEL_SIZE, 1 /* Is shared */) != 0) {
-		RRR_MSG_0("Could not allocate mmap in __rrr_cmodule_main_mmap_ensure\n");
-		return 1;
-	}
-	return 0;
-}
-
 int rrr_cmodule_main_worker_fork_start (
 		struct rrr_cmodule *cmodule,
 		const char *name,
@@ -143,11 +132,6 @@ int rrr_cmodule_main_worker_fork_start (
 		RRR_BUG("BUG: Maximum worker count exceeded in rrr_cmodule_main_worker_fork_start\n");
 	}
 
-	if ((ret = __rrr_cmodule_main_mmap_ensure (cmodule)) != 0) {
-		RRR_MSG_0("Failed to create mmap in rrr_cmodule_main_worker_fork_start\n");
-		goto out_parent;
-	}
-
 	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
 
 	struct rrr_event_queue *worker_queue = NULL;
@@ -163,7 +147,6 @@ int rrr_cmodule_main_worker_fork_start (
 			notify_queue,
 			worker_queue,
 			cmodule->fork_handler,
-			cmodule->mmap_,
 			cmodule->config_data.worker_spawn_interval_us,
 			cmodule->config_data.worker_sleep_time_us,
 			cmodule->config_data.worker_nothing_happened_limit,
@@ -219,7 +202,6 @@ int rrr_cmodule_main_worker_fork_start (
 
 	exit(ret);
 
-	goto out_parent;
 	out_parent_cleanup_worker:
 		rrr_cmodule_worker_cleanup(worker);
 		cmodule->worker_count--;
@@ -252,10 +234,7 @@ void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	__rrr_cmodule_main_workers_stop(cmodule);
-	if (cmodule->mmap_ != NULL) {
-		rrr_mmap_destroy(cmodule->mmap_);
-		cmodule->mmap_ = NULL;
-	}
+	rrr_msg_holder_collection_clear(&cmodule->input_queue);
 	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
 	rrr_free(cmodule->name);
 	rrr_free(cmodule);
@@ -309,11 +288,8 @@ int rrr_cmodule_new (
 }
 
 static void __rrr_cmodule_main_worker_maintain (struct rrr_cmodule_worker *worker) {
-	// Speed up memory access. Sorting is usually only performed
-	// when the first few thousand messages are received, after that
-	// no sorting is needed.
-	rrr_cmodule_channel_bubblesort(worker->channel_to_fork);
-	rrr_cmodule_channel_bubblesort(worker->channel_to_parent);
+	rrr_cmodule_channel_maintenance(worker->channel_to_fork);
+	rrr_cmodule_channel_maintenance(worker->channel_to_parent);
 }
 
 // Call once in a while, like every second

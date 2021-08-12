@@ -345,7 +345,7 @@ int rrr_mqtt_common_data_init (
                 RRR_MSG_0(error_msg "\n");                                  \
                 goto out_reason_protocol_error;                             \
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint8_t) tmp_u32;                                   \
             break
 
 #define HANDLE_PROPERTY_U32_ON_OFF_TO_U8(target,id,error_msg)               \
@@ -355,7 +355,7 @@ int rrr_mqtt_common_data_init (
                 RRR_MSG_0(error_msg "\n");                                  \
                 goto out_reason_protocol_error;                             \
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint8_t) tmp_u32;                                   \
             break
 
 #define HANDLE_PROPERTY_U32_TO_U8(target,id)                                \
@@ -373,7 +373,7 @@ int rrr_mqtt_common_data_init (
             if (tmp_u32 > 0xffff) {                                         \
                 RRR_BUG("U16 property overflow in HANDLE_PROPERTY_U32_TO_U8\n");\
             }                                                               \
-            (target) = tmp_u32;                                             \
+            (target) = (uint16_t) tmp_u32;                                  \
             break
 
 #define HANDLE_PROPERTY_TO_COLLECTION(target,id)                                                    \
@@ -903,7 +903,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		// NOTE : Connection subsystem will notify session system when ACK is successfully
 		//        sent.
 
-		int send_queue_count_dummy = 0;
+		rrr_length send_queue_count_dummy = 0;
 
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet(
@@ -1053,7 +1053,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	next_ack->reason_v5 = reason_v5;
 	next_ack->packet_identifier = packet->packet_identifier;
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->send_packet (

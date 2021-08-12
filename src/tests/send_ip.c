@@ -57,14 +57,14 @@ int main (int argc, char **argv) {
 	}
 
 	char buf[1024];
-	int bytes = read(STDIN_FILENO, buf, 1024);
-	if (bytes == 0) {
+	ssize_t bytes = read(STDIN_FILENO, buf, 1024);
+	if (bytes <= 0) {
 		fprintf(stderr, "No data on stdin to send_ip\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (bytes == sizeof(buf)) {
+	if (bytes >= (ssize_t) sizeof(buf)) {
 		fprintf (stderr, "Too many bytes read in send_ip\n");
 		ret = 1;
 		goto out;
@@ -75,9 +75,9 @@ int main (int argc, char **argv) {
 
 	sockaddr.sin_family = AF_INET;
 	sockaddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	sockaddr.sin_port = htons(port);
+	sockaddr.sin_port = htons((uint16_t) port);
 
-	if (sendto(fd, buf, bytes, 0, (struct sockaddr *) &sockaddr, socklen) != bytes) {
+	if (sendto(fd, buf, (size_t) bytes, 0, (struct sockaddr *) &sockaddr, socklen) != bytes) {
 		fprintf (stderr, "Could not send all bytes in send_ip: %s", strerror(errno));
 		ret = 1;
 		goto out;

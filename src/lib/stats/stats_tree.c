@@ -120,7 +120,7 @@ static void __rrr_stats_get_first_path_level (
 		return;
 	}
 
-	strncpy(first_level, begin, end - begin);
+	strncpy(first_level, begin, rrr_length_from_ptr_sub_bug_const (end, begin));
 	first_level[end - begin] = '\0';
 
 	if (end >= max) {

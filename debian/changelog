@@ -1,8 +1,20 @@
-rrr (1.17-1hirsute1) focal; urgency=medium
+rrr (1.17-1focal1) focal; urgency=medium
 
   * Ubuntu release 
 
  -- Atle Solbakken <atle@goliathdns.no>  Fri, 09 Apr 2021 16:15:40 +0200
+
+rrr (1.18-3) buster; urgency=medium
+
+  * Development release (update)
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 15 May 2021 09:09:48 +0200
+
+rrr (1.18-2) buster; urgency=medium
+
+  * Development release (update) 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 21:49:53 +0200
 
 rrr (1.17-1) buster; urgency=medium
 
@@ -24,7 +36,7 @@ rrr (1.17-1) buster; urgency=medium
   * Fix broken build when JSON-C was disabled
   * Fix. misc build issues with optional libraries
  
-   -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 19:57:17 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 28 Apr 2021 19:57:17 +0200
 
 rrr (1.17-0) buster; urgency=medium
 

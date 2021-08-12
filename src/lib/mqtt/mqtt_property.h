@@ -22,9 +22,7 @@ along with this program.  If not
 #ifndef RRR_MQTT_PROPERTY_H
 #define RRR_MQTT_PROPERTY_H
 
-#include <inttypes.h>
-#include <stdio.h>
-
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 
 #define RRR_MQTT_PROPERTY_DATA_TYPE_ONE 1
@@ -38,33 +36,33 @@ along with this program.  If not
 #define RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32 1
 #define RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB 2
 
-#define RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR	0x01
-#define RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL	0x02
-#define RRR_MQTT_PROPERTY_CONTENT_TYPE				0x03
-#define RRR_MQTT_PROPERTY_RESPONSE_TOPIC			0x08
-#define RRR_MQTT_PROPERTY_CORRELATION_DATA			0x09
-#define RRR_MQTT_PROPERTY_SUBSCRIPTION_ID			0x0B
-#define RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL	0x11
-#define RRR_MQTT_PROPERTY_ASSIGNED_CLIENT_ID		0x12
-#define RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE			0x13
-#define RRR_MQTT_PROPERTY_AUTH_METHOD				0x15
-#define RRR_MQTT_PROPERTY_AUTH_DATA					0x16
-#define RRR_MQTT_PROPERTY_REQUEST_PROBLEM_INFO		0x17
-#define RRR_MQTT_PROPERTY_WILL_DELAY_INTERVAL		0x18
-#define RRR_MQTT_PROPERTY_REQUEST_RESPONSE_INFO		0x19
-#define RRR_MQTT_PROPERTY_RESPONSE_INFO				0x1A
-#define RRR_MQTT_PROPERTY_SERVER_REFERENCE			0x1C
-#define RRR_MQTT_PROPERTY_REASON_STRING				0x1F
-#define RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM			0x21
-#define RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM		0x22
-#define RRR_MQTT_PROPERTY_TOPIC_ALIAS				0x23
-#define RRR_MQTT_PROPERTY_MAXIMUM_QOS				0x24
-#define RRR_MQTT_PROPERTY_RETAIN_AVAILABLE			0x25
-#define RRR_MQTT_PROPERTY_USER_PROPERTY				0x26
-#define RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE		0x27
-#define RRR_MQTT_PROPERTY_WILDCARD_SUB_AVAILBABLE	0x28
-#define RRR_MQTT_PROPERTY_SUBSCRIPTION_ID_AVAILABLE	0x29
-#define RRR_MQTT_PROPERTY_SHARED_SUB_AVAILABLE		0x2A
+#define RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR    0x01
+#define RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL     0x02
+#define RRR_MQTT_PROPERTY_CONTENT_TYPE                0x03
+#define RRR_MQTT_PROPERTY_RESPONSE_TOPIC              0x08
+#define RRR_MQTT_PROPERTY_CORRELATION_DATA            0x09
+#define RRR_MQTT_PROPERTY_SUBSCRIPTION_ID             0x0B
+#define RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL     0x11
+#define RRR_MQTT_PROPERTY_ASSIGNED_CLIENT_ID          0x12
+#define RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE           0x13
+#define RRR_MQTT_PROPERTY_AUTH_METHOD                 0x15
+#define RRR_MQTT_PROPERTY_AUTH_DATA                   0x16
+#define RRR_MQTT_PROPERTY_REQUEST_PROBLEM_INFO        0x17
+#define RRR_MQTT_PROPERTY_WILL_DELAY_INTERVAL         0x18
+#define RRR_MQTT_PROPERTY_REQUEST_RESPONSE_INFO       0x19
+#define RRR_MQTT_PROPERTY_RESPONSE_INFO               0x1A
+#define RRR_MQTT_PROPERTY_SERVER_REFERENCE            0x1C
+#define RRR_MQTT_PROPERTY_REASON_STRING               0x1F
+#define RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM             0x21
+#define RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM         0x22
+#define RRR_MQTT_PROPERTY_TOPIC_ALIAS                 0x23
+#define RRR_MQTT_PROPERTY_MAXIMUM_QOS                 0x24
+#define RRR_MQTT_PROPERTY_RETAIN_AVAILABLE            0x25
+#define RRR_MQTT_PROPERTY_USER_PROPERTY               0x26
+#define RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE         0x27
+#define RRR_MQTT_PROPERTY_WILDCARD_SUB_AVAILBABLE     0x28
+#define RRR_MQTT_PROPERTY_SUBSCRIPTION_ID_AVAILABLE   0x29
+#define RRR_MQTT_PROPERTY_SHARED_SUB_AVAILABLE        0x2A
 
 const struct rrr_mqtt_property_definition *rrr_mqtt_property_get_definition(uint8_t id);
 
@@ -94,8 +92,8 @@ struct rrr_mqtt_property {
 	struct rrr_mqtt_property *sibling;
 	const struct rrr_mqtt_property_definition *definition;
 	uint8_t internal_data_type;
-	ssize_t length;
-	ssize_t length_orig;
+	rrr_length length;
+	rrr_length length_orig;
 	char *data;
 };
 
@@ -140,7 +138,7 @@ uint32_t rrr_mqtt_property_get_uint32 (
 );
 const char *rrr_mqtt_property_get_blob (
 		const struct rrr_mqtt_property *property,
-		ssize_t *length
+		rrr_length *length
 );
 int rrr_mqtt_property_get_blob_as_str (
 		char **result,
@@ -180,11 +178,11 @@ void rrr_mqtt_property_collection_dump (
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t type_id,
-		ssize_t index
+		rrr_length index
 );
 int rrr_mqtt_property_collection_calculate_size (
-		ssize_t *size,
-		ssize_t *count,
+		rrr_length *size,
+		rrr_length *count,
 		const struct rrr_mqtt_property_collection *collection
 );
 void rrr_mqtt_property_collection_clear (

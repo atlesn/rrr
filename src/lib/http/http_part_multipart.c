@@ -49,15 +49,23 @@ static int __rrr_http_part_multipart_process_part_find_end_callback (
 	(void)(needle_orig);
 	(void)(pos_after_needle);
 
-	callback_data->part_length = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_at_needle);
+	const rrr_nullsafe_len part_length = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_at_needle);
+
+	if (part_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP part too long while processing multipart (%" PRIrrr_nullsafe_len ">%llu)\n",
+			part_length, (long long unsigned) RRR_LENGTH_MAX);
+		return 1;
+	}
+
+	callback_data->part_length = (rrr_length) part_length;
 
 	return RRR_HTTP_PARSE_EOF;
 }
 
 struct rrr_http_part_multipart_process_part_callback_data {
 	struct rrr_http_part *parent;
-	int max_parts;
-	size_t *parsed_bytes;
+	rrr_length max_parts;
+	rrr_biglength *parsed_bytes;
 	const struct rrr_nullsafe_str *boundary_with_dashes_end;
 	const char *data_ptr;
 };
@@ -76,7 +84,7 @@ static int __rrr_http_part_multipart_process_part_callback (
 	struct rrr_http_part *new_part = NULL;
 	int end_boundary_found = 0;
 
-	if (RRR_LL_COUNT(callback_data->parent) >= callback_data->max_parts) {
+	if ((rrr_biglength) RRR_LL_COUNT(callback_data->parent) >= callback_data->max_parts) {
 		RRR_MSG_0("Too many parts in HTTP multipart, max is %i\n", callback_data->max_parts);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -117,9 +125,9 @@ static int __rrr_http_part_multipart_process_part_callback (
 			goto out;
 		}
 
-		*(callback_data->parsed_bytes) =	rrr_nullsafe_str_len(haystack_orig) -
-											rrr_nullsafe_str_len(pos_at_needle) +
-											find_end_callback_data.part_length;
+		*(callback_data->parsed_bytes) =  rrr_nullsafe_str_len(haystack_orig) -
+		                                  rrr_nullsafe_str_len(pos_at_needle) +
+                                                  find_end_callback_data.part_length;
 
 		end_boundary_found = 1;
 	}
@@ -190,18 +198,27 @@ static int __rrr_http_part_multipart_process_part_callback (
 
 static int __rrr_http_part_multipart_process_parts (
 		struct rrr_http_part *parent,
-		int max_parts,
-		size_t *parsed_bytes,
-		const char *start,
-		const char *end,
+		rrr_length max_parts,
+		rrr_biglength *parsed_bytes,
+		const char * const start,
+		const char * const end,
 		const struct rrr_nullsafe_str *boundary
 ) {
 	int ret = RRR_HTTP_PARSE_INCOMPLETE;
 
-	*parsed_bytes = 0;
-
 	struct rrr_nullsafe_str *boundary_with_dashes = NULL;
 	struct rrr_nullsafe_str *boundary_with_dashes_end = NULL;
+
+	*parsed_bytes = 0;
+
+	if (end - start > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Part was too long while parsing HTTP multipart (%llu>%llu)\n",
+			(unsigned long long) (end - start),
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
 
 	if ((ret = rrr_nullsafe_str_dup (&boundary_with_dashes, boundary)) != 0) {
 		goto out;
@@ -237,7 +254,7 @@ static int __rrr_http_part_multipart_process_parts (
 
 	if ((ret = rrr_nullsafe_str_str_raw (
 			start,
-			end - start,
+			rrr_length_from_ptr_sub_bug_const (end, start),
 			boundary_with_dashes,
 			__rrr_http_part_multipart_process_part_callback,
 			&callback_data
@@ -376,7 +393,11 @@ static int __rrr_http_part_multipart_form_data_make_field_callback (
 		goto out;
 	}
 
-	rrr_nullsafe_str_set_allocated(body_buf_nullsafe, (void**) &body_buf, strlen(body_buf));
+	rrr_nullsafe_str_set_allocated (
+			body_buf_nullsafe,
+			(void**) &body_buf,
+			rrr_length_from_size_t_bug_const(strlen(body_buf))
+	);
 
 	if ((ret = callback_data->chunk_callback (body_buf_nullsafe, callback_data->chunk_callback_arg)) != 0) {
 		RRR_MSG_0("Could not send form part of HTTP request in __rrr_http_part_multipart_field_make A\n");
