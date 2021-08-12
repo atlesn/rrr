@@ -781,7 +781,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	data->write_pos += written_bytes;
 	data->written_bytes_total += written_bytes;
 
-	RRR_DBG_3("array export type %s size %" PRIrrrl " total size %li\n",
+	RRR_DBG_3("array export type %s size %" PRIrrrl " total size %" PRIrrrbl "\n",
 			node->definition->identifier, written_bytes, data->written_bytes_total);
 
 	if (written_bytes < node->total_stored_length) {
@@ -947,8 +947,8 @@ int rrr_array_new_message_from_collection (
 	}
 
 	if (written_bytes_total != total_data_length) {
-		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
-				written_bytes_total, MSG_DATA_LENGTH(message));
+		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %" PRIrrrbl "<>%llu\n",
+				written_bytes_total, (long long unsigned) MSG_DATA_LENGTH(message));
 	}
 
 	*final_message = (struct rrr_msg_msg *) message;
@@ -1000,8 +1000,8 @@ int rrr_array_message_iterate (
 		rrr_length elements = rrr_be32toh(data_packed->elements);
 
 		if (pos + tag_length + total_length > end) {
-			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
-					type, i, total_length, end - pos);
+			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %lli)\n",
+					type, i, total_length, (long long int) (end - pos));
 			ret = 1;
 			goto out;
 		}

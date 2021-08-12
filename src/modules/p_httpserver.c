@@ -277,7 +277,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 				RRR_HTTPSERVER_IDLE_TIMEOUT_MS,
 				RRR_HTTPSERVER_SEND_CHUNK_COUNT_LIMIT
 		)) != 0) {
-			RRR_MSG_0("Could not start listening in plain mode on port %" PRIrrrbl " in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in plain mode on port %u in httpserver instance %s\n",
 					data->port_plain, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -298,7 +298,7 @@ static int httpserver_start_listening (struct httpserver_data *data) {
 				&data->net_transport_config,
 				0
 		)) != 0) {
-			RRR_MSG_0("Could not start listening in TLS mode on port %" PRIrrrbl " in httpserver instance %s\n",
+			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
 					data->port_tls, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
@@ -1224,7 +1224,7 @@ static int httpserver_receive_raw_broker_callback (
 
 		entry_new->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry_new->message);
 
-		RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %" PRIrrrl " topic %s\n",
+		RRR_DBG_3("httpserver instance %s created raw httpserver data message with data size %" PRIrrr_nullsafe_len " topic %s\n",
 				INSTANCE_D_NAME(write_callback_data->httpserver_data->thread_data),
 				rrr_nullsafe_str_len(write_callback_data->data),
 				write_callback_data->topic
@@ -1257,8 +1257,10 @@ static int httpserver_websocket_handshake_callback (
 	RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(request_uri, transaction->request_part->request_uri_nullsafe);
 
 	if (rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe) > sizeof(request_uri) - 1) {
-		RRR_MSG_0("Received request URI for websocket request was too long (%" PRIrrrl " > %ld)",
-				rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe), (unsigned long) sizeof(request_uri) - 1);
+		RRR_MSG_0("Received request URI for websocket request was too long (%" PRIrrr_nullsafe_len " > %ld)",
+				rrr_nullsafe_str_len(transaction->request_part->request_uri_nullsafe),
+				(unsigned long) sizeof(request_uri) - 1
+		);
 		goto out_bad_request;
 	}
 
@@ -1344,8 +1346,11 @@ static int httpserver_websocket_get_response_callback_extract_data (
 	struct rrr_msg_msg *msg = entry->message;
 
 	if (MSG_DATA_LENGTH(msg) > RRR_LENGTH_MAX) {
-		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%li\n",
-				unique_id, (uint64_t) MSG_DATA_LENGTH(msg), (uint64_t) RRR_LENGTH_MAX);
+		RRR_MSG_0("Received websocket response from other module for unique id %" PRIu64 " exceeds maximum size %" PRIu64 ">%" PRIu64 "\n",
+				unique_id,
+				(uint64_t) MSG_DATA_LENGTH(msg),
+				(uint64_t) RRR_LENGTH_MAX
+		);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out_unlock;
 	}

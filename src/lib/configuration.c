@@ -472,7 +472,7 @@ int rrr_config_parse_file (
 		goto out;
 	}
 	else {
-		RRR_DBG_1("Read %" PRIrrrl " bytes from configuration file '%s'\n", file_size, filename);
+		RRR_DBG_1("Read %" PRIrrrbl " bytes from configuration file '%s'\n", file_size, filename);
 
 		if ((ret = __rrr_config_parse_file (
 				config,

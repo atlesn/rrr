@@ -192,7 +192,7 @@ static int httpclient_transaction_data_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	if ((result->msg_topic = rrr_allocate(topic_len + 1)) == NULL) {
+	if ((result->msg_topic = rrr_allocate(topic_len + (rrr_biglength) 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for topic in rrr_httpclient_transaction_data_new\n");
 		ret = 1;
 		goto out_free;
@@ -361,7 +361,10 @@ static int httpclient_create_message_from_response_data_nullsafe_callback (
 
 	if (len > UINT32_MAX) {
 		RRR_MSG_0("Data size overflow while creating message from HTTP response data in httpclient instance %s (%llu>%llu).\n",
-			(unsigned long long) len, (unsigned long long) UINT32_MAX, INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data),
+			(unsigned long long) len,
+			(unsigned long long) UINT32_MAX
+		);
 		ret = 1;
 		goto out;
 	}
@@ -581,7 +584,10 @@ static int httpclient_create_message_from_json_nullsafe_callback (
 
 	if (len > UINT32_MAX) {
 		RRR_MSG_0("Data size overflow while creating message from HTTP json response data in httpclient instance %s (%llu>%llu).\n",
-			(unsigned long long) len, (unsigned long long) UINT32_MAX, INSTANCE_D_NAME(callback_data->httpclient_data->thread_data));
+			INSTANCE_D_NAME(callback_data->httpclient_data->thread_data),
+			(unsigned long long) len,
+			(unsigned long long) UINT32_MAX
+		);
 		ret = 1;
 		goto out;
 	}
@@ -864,7 +870,7 @@ static int httpclient_final_callback (
 
 	struct rrr_array structured_data = {0};
 
-	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrrl " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
+	RRR_DBG_3("HTTP response %i from server in httpclient instance %s: data size %" PRIrrr_nullsafe_len " transaction age %" PRIu64 " ms transaction endpoint str %s\n",
 			transaction->response_part->response_code,
 			INSTANCE_D_NAME(httpclient_data->thread_data),
 			rrr_nullsafe_str_len(response_data),

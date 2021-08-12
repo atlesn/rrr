@@ -158,10 +158,10 @@ static void averager_maintain_buffer(struct averager_data *data) {
 
 struct averager_calculation {
 	struct averager_data *data;
-	unsigned long int max;
-	unsigned long int min;
-	unsigned long int sum;
-	unsigned long int entries;
+	uint64_t max;
+	uint64_t min;
+	uint64_t sum;
+	uint64_t entries;
 
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
@@ -383,8 +383,8 @@ static int averager_calculate_average(struct averager_data *data) {
 		return ret;
 	}
 
-	unsigned long int average = calculation.sum/calculation.entries;
-	RRR_DBG_2 ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
+	uint64_t average = calculation.sum / calculation.entries;
+	RRR_DBG_2 ("Average: %" PRIu64 ", Max: %" PRIu64 ", Min: %" PRIu64 ", Entries: %" PRIu64 "\n", average, calculation.max, calculation.min, calculation.entries);
 
 	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
 	// without newer timestamps getting written before older ones.

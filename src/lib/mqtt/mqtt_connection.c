@@ -994,9 +994,9 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 	header.type = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
 
-	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
+	rrr_biglength total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
 
-	RRR_DBG_3("Sending packet %p of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li, id: %u, urgent: %i\n",
+	RRR_DBG_3("Sending packet %p of type %s flen: 1, vlen: %" PRIrrrl ", alen: %" PRIrrrl ", plen: %" PRIrrrl ", total: %" PRIrrrbl ", id: %u, urgent: %i\n",
 			packet,
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			variable_int_length,

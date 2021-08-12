@@ -165,7 +165,7 @@ static int __rrr_net_transport_openssl_alpn_select_cb (
 	int server_index = 0;
 	for (unsigned int i = 0; i < alpn->length;/* increment at loop end */) {
 		const char *i_text = alpn->protos + i + 1;
-		unsigned char i_text_length = alpn->protos[i];
+		unsigned char i_text_length = (unsigned char) alpn->protos[i];
 
 		if (i + i_text_length >= alpn->length) {
 			RRR_BUG("BUG: Invalid size in self-created ALPN vector in __rrr_net_transport_openssl_alpn_select_cb\n");
@@ -189,11 +189,11 @@ static int __rrr_net_transport_openssl_alpn_select_cb (
 				goto out;
 			}
 
-			j += j_text_length + 1;
+			j += (unsigned int) j_text_length + 1;
 		}
 
 		server_index++;
-		i += i_text_length + 1;
+		i += (unsigned int) i_text_length + 1;
 	}
 
 	RRR_DBG_3("TLS ALPN no protocol selected\n");
@@ -244,7 +244,7 @@ static int __rrr_net_transport_openssl_new_ctx (
 		min_version = TLS1_1_VERSION;
 	}
 
-	if (SSL_CTX_set_min_proto_version(ctx, min_version) != 1) {
+	if (SSL_CTX_set_min_proto_version(ctx, (long int) min_version) != 1) {
 		RRR_SSL_ERR("Could not set minimum protocol version to TLSv1.2");
 		ret = 1;
 		goto out_destroy;
@@ -529,7 +529,7 @@ static int __rrr_net_transport_openssl_connect (
 
 struct rrr_net_transport_openssl_bind_and_listen_callback_data {
 	struct rrr_net_transport_tls *tls;
-	unsigned int port;
+	uint16_t port;
 	int do_ipv6;
 };
 
@@ -777,7 +777,11 @@ static int __rrr_net_transport_openssl_read_raw (
 ) {
 	int ret = RRR_READ_OK;
 
-	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
+	if (read_step_max_size > INT_MAX) {
+		read_step_max_size = INT_MAX;
+	}
+
+	ssize_t result = BIO_read(ssl_data->web, buf, (int) read_step_max_size);
 	if (result <= 0) {
 		if (BIO_should_retry(ssl_data->web) == 0) {
 //			int reason = BIO_get_retry_reason(ssl_data->web);
@@ -880,15 +884,7 @@ static int __rrr_net_transport_openssl_read (
 		goto out;
 	}
 
-	rrr_biglength bytes_read_s = 0;
-
-	ret = __rrr_net_transport_openssl_read_raw(buf, &bytes_read_s, handle->submodule_private_ptr, buf_size);
-
-	if (bytes_read_s < 0) {
-		RRR_BUG("BUG: Negative bytes read value in __rrr_net_transport_openssl_read\n");
-	}
-
-	*bytes_read = bytes_read_s;
+	ret = __rrr_net_transport_openssl_read_raw(buf, bytes_read, handle->submodule_private_ptr, buf_size);
 
 	out:
 	return ret;
@@ -901,8 +897,12 @@ static int __rrr_net_transport_openssl_send (
 
 	*bytes_written = 0;
 
+	if (size > INT_MAX) {
+		size = INT_MAX;
+	}
+
 	ssize_t bytes_written_tmp;
-	if ((bytes_written_tmp = BIO_write(ssl_data->web, data, size)) <= 0) {
+	if ((bytes_written_tmp = BIO_write(ssl_data->web, data, (int) size)) <= 0) {
 		if (BIO_should_retry(ssl_data->web)) {
 			return RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 		}

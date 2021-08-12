@@ -399,7 +399,7 @@ static int __rrr_http_part_parse_chunk (
 			start_pos + parsed_bytes_previous_chunk,
 			end
 	)) == 0 && new_chunk != NULL) { // != NULL check due to false positive warning about use of NULL from scan-build
-		RRR_DBG_3("Found new HTTP chunk start %li length %li\n", new_chunk->start, new_chunk->length);
+		RRR_DBG_3("Found new HTTP chunk start %" PRIrrrbl " length %" PRIrrrbl "\n", new_chunk->start, new_chunk->length);
 		RRR_LL_APPEND(chunks, new_chunk);
 
 		// All of the bytes in the previous chunk (if any) have been read
@@ -700,7 +700,7 @@ int rrr_http_part_parse (
 		part->data_length = content_length->value_unsigned;
 		*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
 
-		RRR_DBG_3("HTTP 'Content-Length' found in response: %llu (plus response %li and header %li) target size is %li\n",
+		RRR_DBG_3("HTTP 'Content-Length' found in response: %llu (plus response %" PRIrrrbl " and header %" PRIrrrbl ") target size is %" PRIrrrbl "\n",
 				content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
 
 		ret = RRR_HTTP_PARSE_OK;

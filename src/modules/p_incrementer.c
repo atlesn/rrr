@@ -362,7 +362,7 @@ static int incrementer_process_subject (
 
 		if (topic_new_length > RRR_MSG_TOPIC_MAX) {
 			RRR_MSG_0("Generated topic exceeds maximum length in incrementer instance %s (%" PRIrrrbl ">%llu)\n",
-				INSTANCE_D_NAME(data->thread_data), topic_new_length, RRR_MSG_TOPIC_MAX);
+				INSTANCE_D_NAME(data->thread_data), topic_new_length, (unsigned long long) RRR_MSG_TOPIC_MAX);
 			ret = 1;
 			goto out;
 		}

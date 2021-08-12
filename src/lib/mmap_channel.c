@@ -277,7 +277,8 @@ int rrr_mmap_channel_write_using_callback (
 
 	block->size_data = data_size;
 
-	RRR_MMAP_DBG("mmap channel %p %s wr blk %i size %li\n", target, target->name, target->wpos, data_size);
+	RRR_MMAP_DBG("mmap channel %p %s wr blk %i size %llu\n",
+		target, target->name, target->wpos, (long long unsigned) data_size);
 
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
@@ -386,7 +387,8 @@ int rrr_mmap_channel_read_with_callback (
 		goto out_unlock;
 	}
 
-	RRR_MMAP_DBG("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
+	RRR_MMAP_DBG("mmap channel %p %s rd blk %i size %llu\n",
+		source, source->name, source->rpos, (long long unsigned) block->size_data);
 
 	if (block->shmid != 0) {
 		const char *data_pointer = NULL;

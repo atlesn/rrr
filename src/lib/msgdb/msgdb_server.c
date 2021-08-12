@@ -681,8 +681,7 @@ static int __rrr_msgdb_server_tidy (
 				NULL /* No topic to verify */
 		)) != 0) {
 			RRR_MSG_0("Warning: msgdb failed to read header of '%s' during tidy. Deleting file.\n",
-					path_tmp,
-					rrr_strerror(errno)
+					path_tmp
 			);
 			ret = 0;
 			goto delete;

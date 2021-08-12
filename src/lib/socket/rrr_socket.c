@@ -942,8 +942,8 @@ int rrr_socket_unix_create_bind_and_listen (
 	int fd = 0;
 
 	if (strlen(filename_orig) > sizeof(addr.sun_path) - 1) {
-		RRR_MSG_0("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %li\n",
-				sizeof(addr.sun_path) - 1);
+		RRR_MSG_0("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %llu\n",
+				(unsigned long long) (sizeof(addr.sun_path) - 1));
 		ret = 1;
 		goto out;
 	}
@@ -1365,7 +1365,7 @@ int rrr_socket_sendto_blocking (
 	rrr_biglength written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("fd %i blocking send loop writing %li bytes (where of %li is complete)\n",
+		RRR_DBG_7("fd %i blocking send loop writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete)\n",
 				fd, size, written_bytes_total);
 
 		if ((ret = rrr_socket_sendto_nonblock_check_retry (
@@ -1382,7 +1382,7 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_7("fd %i blocking send loop written bytes total is %li (this round was %li)\n",
+		RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",
 				fd, written_bytes_total, written_bytes);
 	}
 
@@ -1393,7 +1393,7 @@ int rrr_socket_sendto_blocking (
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
-		size_t size
+		rrr_biglength size
 ) {
 	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
 }

@@ -152,7 +152,7 @@ static int __rrr_passwd_check_base64 (
 	// Default is 1, not authenticated
 	int ret = 1;
 
-	size_t base64_tmp_length = 0;
+	rrr_biglength base64_tmp_length = 0;
 	unsigned char *base64_tmp = NULL;
 
 	if (strlen(password) > RRR_PASSWD_HASH_KEY_LENGTH) {
@@ -195,7 +195,7 @@ static int __rrr_passwd_openssl_encrypt (
 		RRR_BUG("BUG: Empty salt to __rrr_passwd_openssl_encrypt\n");
 	}
 
-	size_t salt_bin_length = 0;
+	rrr_biglength salt_bin_length = 0;
 	unsigned char *salt_bin = rrr_base64_decode(salt_base64, strlen((const char *) salt_base64), &salt_bin_length);
 	if (salt_bin == NULL) {
 		RRR_MSG_0("base64 decode of salt failed in __rrr_passwd_openssl_encrypt\n");
@@ -257,8 +257,8 @@ static int __rrr_passwd_check_openssl (
 
 	unsigned char tmp[RRR_PASSWD_HASH_MAX_LENGTH + 1];
 	unsigned char *hash_raw = NULL;
-	size_t hash_raw_length = 0;
 
+	rrr_biglength hash_raw_length = 0;
 	if ((hash_raw = rrr_base64_decode((unsigned char *) hash, strlen(hash), &hash_raw_length)) == NULL) {
 		RRR_MSG_0("Hash decoding failed in __rrr_passwd_check_openssl\n");
 		goto out;
@@ -374,7 +374,7 @@ int rrr_passwd_encrypt (
 		const char *password
 ) {
 	unsigned char *base64_tmp = NULL;
-	size_t base64_tmp_length = 0;
+	rrr_biglength base64_tmp_length = 0;
 
 	int ret = 0;
 
@@ -492,7 +492,7 @@ static int __rrr_passwd_iterate_lines_split_columns_callback (
 	struct rrr_passwd_iterate_lines_split_callback_data *callback_data = arg;
 
 	if (elements_count != 3) {
-		RRR_MSG_0("%lu elements found in password file, 3 expected.\n", elements_count);
+		RRR_MSG_0("%" PRIrrrl " elements found in password file, 3 expected.\n", elements_count);
 		return RRR_PASSWD_ITERATE_ERR;
 	}
 

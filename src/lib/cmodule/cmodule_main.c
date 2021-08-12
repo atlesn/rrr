@@ -131,6 +131,9 @@ int rrr_cmodule_main_worker_fork_start (
 	if (cmodule->worker_count == RRR_CMODULE_WORKER_MAX_WORKER_COUNT) {
 		RRR_BUG("BUG: Maximum worker count exceeded in rrr_cmodule_main_worker_fork_start\n");
 	}
+	if (cmodule->worker_count == 0) {
+		RRR_BUG("BUG: Maximum worker count was zero in rrr_cmodule_main_worker_fork_start\n");
+	}
 
 	struct rrr_cmodule_worker *worker = &cmodule->workers[cmodule->worker_count++];
 
@@ -158,7 +161,7 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent_destroy_event_queue;
 	}
 
-	worker->index = cmodule->worker_count - 1;
+	worker->index = (uint8_t) (cmodule->worker_count - 1);
 
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,

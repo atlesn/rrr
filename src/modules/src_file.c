@@ -709,12 +709,12 @@ static int file_read_all_to_message_write_callback_simple (
 		memcpy(MSG_TOPIC_PTR(reading), file_data->topic, file_data->topic_len);
 	}
 
-	memcpy(MSG_DATA_PTR(reading), read_session->rx_buf_ptr, read_session->rx_buf_wpos);
+	rrr_memcpy(MSG_DATA_PTR(reading), read_session->rx_buf_ptr, read_session->rx_buf_wpos);
 
 	entry->message = reading;
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
-	RRR_DBG_2("file instance %s created message with raw file_data of size %lu and timestamp %" PRIu64 "\n",
+	RRR_DBG_2("file instance %s created message with raw file_data of size %" PRIrrrbl " and timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(file_data->thread_data), read_session->rx_buf_wpos, time);
 
 	out:
@@ -802,7 +802,7 @@ static int file_read_all_to_message_write_callback_structured (
 	entry->message = reading;
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
-	RRR_DBG_2("file instance %s created message with structured raw file_data of size %lu and timestamp %" PRIu64 "\n",
+	RRR_DBG_2("file instance %s created message with structured raw file_data of size %" PRIrrrbl " and timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(file_data->thread_data), read_session->rx_buf_wpos, time);
 
 	out:

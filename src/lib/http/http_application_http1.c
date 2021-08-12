@@ -335,7 +335,7 @@ static int __rrr_http_application_http1_websocket_make_accept_string (
 
 	rrr_SHA1toBE(&sha1_ctx);
 
-	size_t accept_base64_length = 0;
+	rrr_biglength accept_base64_length = 0;
 	if ((accept_base64_tmp = (char *) rrr_base64_encode (
 			(const unsigned char *) sha1_ctx.Message_Digest,
 			sizeof(sha1_ctx.Message_Digest),
@@ -423,7 +423,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li using protocol %s header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %" PRIrrrbl " response length is %" PRIrrrbl " using protocol %s header length is %" PRIrrrbl "\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
 			RRR_HTTP_VERSION_TO_STR(transaction->response_part->parsed_version),
@@ -496,7 +496,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 			}
 
 #ifdef RRR_WITH_NGHTTP2
-			RRR_DBG_3("Upgrade to HTTP2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+			RRR_DBG_3("Upgrade to HTTP2 size is %" PRIrrrbl " overshoot is %" PRIrrrbl "\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 
 			if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
 				goto out;
@@ -630,7 +630,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 	}
 
 	if (rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe) != 16) {
-		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrrl "\n",
+		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrr_nullsafe_len "\n",
 				rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe));
 		goto out_bad_request;
 	}
@@ -877,7 +877,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		rrr_http_part_header_dump(transaction->request_part);
 	}
 
-	RRR_DBG_3("HTTP request reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP request reading complete, data length is %" PRIrrrbl " response length is %" PRIrrrbl " header length is %" PRIrrrbl "\n",
 			transaction->request_part->data_length,
 			transaction->request_part->headroom_length,
 			transaction->request_part->header_length
@@ -1061,8 +1061,8 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
-	size_t target_size;
-	size_t parsed_bytes = 0;
+	rrr_biglength target_size;
+	rrr_biglength parsed_bytes = 0;
 
 	struct rrr_http_part *part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
@@ -1187,12 +1187,14 @@ static int __rrr_http_application_http1_receive_get_target_size (
 			}
 		}
 
-		if (target_size > SSIZE_MAX) {
-			RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
-					target_size, SSIZE_MAX);
+#if RRR_BIGLENGTH_MAX > SIZE_MAX
+		if (target_size > SIZE_MAX) {
+			RRR_MSG_0("Target size %" PRIrrrbl " exceeds maximum value of %llu while parsing HTTP part\n",
+					target_size, (long long unsigned) SIZE_MAX);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 			goto out;
 		}
+#endif
 
 		read_session->eof_ok_now = 1;
 		read_session->target_size = target_size;

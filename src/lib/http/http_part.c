@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../util/gnu.h"
+#include "../util/posix.h"
 
 int __rrr_http_part_content_type_equals (
 		struct rrr_http_part *part,
@@ -577,20 +578,24 @@ int rrr_http_part_chunks_merge (
 ) {
 	int ret = RRR_HTTP_OK;
 
+	char *data_new = NULL;
+
 	if (part->is_chunked == 0) {
 		goto out;
 	}
 
 	*result_data = NULL;
 
-	char *data_new = NULL;
-	const size_t top_length = RRR_HTTP_PART_TOP_LENGTH(part);
-	size_t new_buf_size = 0;
-
-	new_buf_size += top_length;
+	const rrr_biglength top_length = RRR_HTTP_PART_TOP_LENGTH(part);
+	rrr_biglength new_buf_size = top_length;
 
 	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
 		new_buf_size += node->length;
+		if (new_buf_size < node->length) {
+			RRR_MSG_0("Overflow while merging HTTP chunks\n");
+			ret = 1;
+			goto out;
+		}
 	RRR_LL_ITERATE_END();
 
 	if ((data_new = rrr_allocate(new_buf_size)) == NULL) {
@@ -599,14 +604,21 @@ int rrr_http_part_chunks_merge (
 		goto out;
 	}
 
-	size_t wpos = 0;
+	rrr_biglength wpos = 0;
 
-	memcpy(data_new, data_ptr, top_length);
+	RRR_SIZE_CHECK(top_length,"Merge HTTP chunks",ret = 1; goto out);
+
+	rrr_memcpy(data_new, data_ptr, top_length);
 	wpos += top_length;
 
 	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
-		memcpy(data_new + wpos, data_ptr + node->start, node->length);
+		RRR_SIZE_CHECK(node->length,"Merge HTTP chunk node",ret = 1; goto out);
+		rrr_memcpy(data_new + wpos, data_ptr + node->start, node->length);
 		wpos += node->length;
+		if (wpos < node->length) {
+			// Should discover this during allocation loop
+			RRR_BUG("Overflow while merging HTTP chunk\n");
+		}
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->chunks, 0; rrr_free(node));
 
@@ -614,10 +626,10 @@ int rrr_http_part_chunks_merge (
 	part->data_length = wpos;
 
 	*result_data = data_new;
+	data_new = NULL;
 
-	// goto out; out_free:
-	// RRR_FREE_IF_NOT_NULL(data_new); -- Enable if needed
 	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
 	return ret;
 }
 

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "util/linked_list.h"
 #include "rrr_shm.h"
+#include "rrr_types.h"
 
 // Maximum number of memory maps in a collection
 #define RRR_MMAP_COLLECTION_MAX 128
@@ -58,7 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // and clean mmaps.
 #define RRR_MMAP_COLLECTION_FLAG_BAD (1<<0)
 
-typedef uint64_t rrr_mmap_handle;
+typedef rrr_biglength rrr_mmap_handle;
 
 struct rrr_mmap_stats;
 struct rrr_mmap_collection;
@@ -105,21 +106,21 @@ void rrr_mmap_collection_private_datas_init (
 );
 void *rrr_mmap_collection_allocate (
 		struct rrr_mmap_collection *collection,
-		uint64_t bytes,
-		uint64_t min_mmap_size
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
 );
 void *rrr_mmap_collections_allocate (
 		struct rrr_mmap_collection *collections,
 		size_t index,
-		uint64_t bytes,
-		uint64_t min_mmap_size
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
 );
 void *rrr_mmap_collection_allocate_with_handles (
 		rrr_shm_handle *shm_handle,
 		rrr_mmap_handle *mmap_handle,
 		struct rrr_mmap_collection *collection,
-		uint64_t bytes,
-		uint64_t min_mmap_size
+		rrr_biglength bytes,
+		rrr_biglength min_mmap_size
 );
 int rrr_mmap_collections_free (
 		struct rrr_mmap_collection_private_data *private_datas,

@@ -1231,8 +1231,8 @@ static int ip_push_message (
 	// freed after this function.
 	if (ip_data->do_send_rrr_msg_msg != 0) {
 		if (entry->data_length < (long int) sizeof(*message) - 1) {
-			RRR_MSG_0("ip instance %s had send_rrr_msg_msg set but received a message which was too short (%li<%li), dropping it\n",
-					INSTANCE_D_NAME(thread_data), entry->data_length, (long int) sizeof(*message));
+			RRR_MSG_0("ip instance %s had send_rrr_msg_msg set but received a message which was too short (%llu<%llu), dropping it\n",
+					INSTANCE_D_NAME(thread_data), (long long unsigned) entry->data_length, (long long unsigned) sizeof(*message));
 			goto out;
 		}
 
@@ -1240,13 +1240,13 @@ static int ip_push_message (
 
 		// Check for message already in network order (second send attempt)
 		if (entry->endian_indicator != 0) {
-			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
+			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %" PRIrrrl "\n",
 					INSTANCE_D_NAME(thread_data), rrr_be64toh(message->timestamp), final_size);
 		}
 		else {
 			entry->data_length = final_size = MSG_TOTAL_SIZE(message);
 
-			RRR_DBG_3 ("ip instance %s sends packet with rrr message timestamp from %" PRIu64 " size %li\n",
+			RRR_DBG_3 ("ip instance %s sends packet with rrr message timestamp from %" PRIu64 " size %" PRIrrrl "\n",
 					INSTANCE_D_NAME(thread_data), message->timestamp, final_size);
 
 			rrr_msg_msg_prepare_for_network(message);
@@ -1309,7 +1309,7 @@ static int ip_push_message (
 			goto out;
 		}
 
-		RRR_DBG_3 ("ip instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %li\n",
+		RRR_DBG_3 ("ip instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %" PRIrrrbl "\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp, found_tags, target_size);
 
 		send_data = tmp_data;

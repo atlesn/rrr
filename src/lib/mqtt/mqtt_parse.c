@@ -402,7 +402,7 @@ static int __rrr_mqtt_parse_blob (
 	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
 	*blob_length = rrr_be16toh(*((uint16_t *) start));
 
-	*target = rrr_allocate((*blob_length) + 1);
+	*target = rrr_allocate(((rrr_biglength) *blob_length) + 1);
 	if (*target == NULL){
 		RRR_MSG_0("Could not allocate memory for UTF8 in __rrr_mqtt_parse_utf8\n");
 		return RRR_MQTT_INTERNAL_ERROR;
@@ -1158,7 +1158,7 @@ static int __rrr_mqtt_parse_suback_unsuback (
 			// This will also catch invalid QoS
 			reason_struct = rrr_mqtt_p_reason_get_v5(reason);
 			if (reason_struct == NULL) {
-				RRR_MSG_0("Unknown v5 reason %u for subscription index %li in SUBACK message\n",
+				RRR_MSG_0("Unknown v5 reason %u for subscription index %" PRIrrrbl " in SUBACK message\n",
 						reason, i);
 				return RRR_MQTT_SOFT_ERROR;
 			}
@@ -1169,11 +1169,11 @@ static int __rrr_mqtt_parse_suback_unsuback (
 			uint8_t reserved = RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback_unsuback,i);
 
 			if (reserved != 0) {
-				RRR_MSG_0("Reserved bits in v31 reason for subscription index %li in SUBACK message was not 0\n", i);
+				RRR_MSG_0("Reserved bits in v31 reason for subscription index %" PRIrrrbl " in SUBACK message was not 0\n", i);
 				return RRR_MQTT_SOFT_ERROR;
 			}
 			if (reason == 1 && qos != 0) {
-				RRR_MSG_0("Failure was set for subscription index %li in v31 SUBACK but QoS was not 0\n", i);
+				RRR_MSG_0("Failure was set for subscription index %" PRIrrrbl " in v31 SUBACK but QoS was not 0\n", i);
 				return RRR_MQTT_SOFT_ERROR;
 			}
 
@@ -1191,7 +1191,7 @@ static int __rrr_mqtt_parse_suback_unsuback (
 		if (	(RRR_MQTT_P_GET_TYPE(suback_unsuback) == RRR_MQTT_P_TYPE_SUBACK && reason_struct->for_suback == 0) ||
 				(RRR_MQTT_P_GET_TYPE(suback_unsuback) == RRR_MQTT_P_TYPE_UNSUBACK && reason_struct->for_unsuback == 0)
 		) {
-			RRR_MSG_0("Received unknown reason '%s' in %s (un)subscription acknowledgment with index %li\n",
+			RRR_MSG_0("Received unknown reason '%s' in %s (un)subscription acknowledgment with index %" PRIrrrbl "\n",
 					reason_struct->description,
 					RRR_MQTT_P_GET_TYPE_NAME(suback_unsuback),
 					i
@@ -1265,7 +1265,7 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 	if (session->protocol_version->id < 5) {
 		// Non-zero length NOT allowed for V3.1
 		if (session->target_size - session->variable_header_pos != 0) {
-			RRR_MSG_0("Received MQTT V3.1 DISCONNECT packet with non-zero remaining length %li\n",
+			RRR_MSG_0("Received MQTT V3.1 DISCONNECT packet with non-zero remaining length %" PRIrrrbl "\n",
 					session->target_size - session->variable_header_pos);
 			return RRR_MQTT_SOFT_ERROR;
 		}
@@ -1380,12 +1380,12 @@ void rrr_mqtt_packet_parse (
 		session->type_properties = properties;
 
 		if (session->target_size <= 0) {
-			RRR_MSG_1("Invalid target size %li while parsing packet\n", session->target_size);
+			RRR_MSG_1("Invalid target size %" PRIrrrbl " while parsing packet\n", session->target_size);
 			RRR_MQTT_PARSE_STATUS_SET_ERR(session);
 			goto out;
 		}
 
-		RRR_DBG_3 ("parsed a packet fixed header of type %s total bytes received %li/%li\n",
+		RRR_DBG_3 ("parsed a packet fixed header of type %s total bytes received %" PRIrrrbl "/%" PRIrrrbl "\n",
 				properties->name, session->buf_wpos, session->target_size);
 
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE);
