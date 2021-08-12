@@ -113,7 +113,7 @@ int rrr_fixp_to_ldouble (
 	uint64_t whole_number = (uint64_t) source >> RRR_FIXED_POINT_BASE2_EXPONENT;
 	uint64_t decimals = source & 0xFFFFFF;
 
-	result += whole_number;
+	result += (long double) whole_number;
 
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		unsigned int bit = (unsigned int) ((((uint64_t) 1) << (23 - i)) & decimals);
