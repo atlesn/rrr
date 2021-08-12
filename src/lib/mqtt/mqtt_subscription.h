@@ -22,26 +22,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_SUBSCRIPTION_H
 #define RRR_MQTT_SUBSCRIPTION_H
 
-#include <stdio.h>
-
+#include "mqtt_common.h"
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 
-#define RRR_MQTT_SUBSCRIPTION_OK				0
-#define RRR_MQTT_SUBSCRIPTION_MATCH				0
-#define RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR	1
-#define RRR_MQTT_SUBSCRIPTION_REPLACED			3
-#define RRR_MQTT_SUBSCRIPTION_MISMATCH			4
+#define RRR_MQTT_SUBSCRIPTION_OK                RRR_MQTT_OK
+#define RRR_MQTT_SUBSCRIPTION_MATCH             RRR_MQTT_OK
+#define RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR    RRR_MQTT_INTERNAL_ERROR
+#define RRR_MQTT_SUBSCRIPTION_REPLACED          RRR_READ_PERFORMED
+#define RRR_MQTT_SUBSCRIPTION_MISMATCH          RRR_READ_INCOMPLETE
+#define RRR_MQTT_SUBSCRIPTION_REFUSED           RRR_READ_INCOMPLETE
 
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_OK				0
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR	(1<<0)
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY			(1<<1)
-#define RRR_MQTT_SUBSCRIPTION_ITERATE_STOP				(1<<2)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_OK                  0
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR      (1<<0)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY             (1<<1)
+#define RRR_MQTT_SUBSCRIPTION_ITERATE_STOP                (1<<2)
 
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(flags)			((flags & (1<<0|1<<1)))
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(flags)			((flags & (1<<2)) >> 2)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(flags)			((flags & (1<<3)) >> 3)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(flags)		((flags & (1<<4|1<<5)) >> 4)
-#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)		((flags & (1<<6|1<<7)) >> 6)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(flags)           ((flags & (1<<0|1<<1)))
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(flags)            ((flags & (1<<2)) >> 2)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(flags)           ((flags & (1<<3)) >> 3)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(flags)        ((flags & (1<<4|1<<5)) >> 4)
+#define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)      ((flags & (1<<6|1<<7)) >> 6)
 
 struct rrr_mqtt_p_publish;
 struct rrr_mqtt_topic_token;
@@ -86,13 +87,13 @@ int rrr_mqtt_subscription_collection_match_publish_with_callback (
 				void *callback_arg
 		),
 		void *callback_arg,
-		int *match_count_final
+		rrr_length *match_count_final
 );
 int rrr_mqtt_subscription_collection_match_publish (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish
 );
-int rrr_mqtt_subscription_collection_count (
+rrr_length rrr_mqtt_subscription_collection_count (
 		const struct rrr_mqtt_subscription_collection *target
 );
 void rrr_mqtt_subscription_collection_dump (
@@ -123,11 +124,11 @@ int rrr_mqtt_subscription_collection_add_unique (
 );
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
 		const struct rrr_mqtt_subscription_collection *target,
-		ssize_t idx
+		rrr_length idx
 );
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
 		const struct rrr_mqtt_subscription_collection *target,
-		ssize_t idx
+		rrr_length idx
 );
 int rrr_mqtt_subscription_collection_remove_topic (
 		int *did_remove,
@@ -152,7 +153,7 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription_collection *source,
-		int *removed_count
+		rrr_length *removed_count
 );
 
 #endif /* RRR_MQTT_SUBSCRIPTION_H */

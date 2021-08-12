@@ -101,11 +101,11 @@ int rrr_http_application_transport_ctx_need_tick (
 }
 
 int rrr_http_application_transport_ctx_tick (
-		ssize_t *received_bytes,
+		rrr_biglength *received_bytes,
 		struct rrr_http_application **upgraded_app,
 		struct rrr_http_application *app,
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
+		rrr_biglength read_max_size,
 		int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS),
 		void *unique_id_generator_callback_arg,
 		int (*upgrade_verify_callback)(RRR_HTTP_APPLICATION_UPGRADE_VERIFY_CALLBACK_ARGS),
@@ -118,6 +118,8 @@ int rrr_http_application_transport_ctx_tick (
 		void *frame_callback_arg,
 		int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg,
+		int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS),
+		void *failure_callback_arg,
 		int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS),
 		void *async_response_get_callback_arg
 ) {
@@ -139,6 +141,8 @@ int rrr_http_application_transport_ctx_tick (
 			frame_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	);

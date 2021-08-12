@@ -215,7 +215,7 @@ static int __rrr_stats_parse_config (
 		data->do_print_journal = 1;
 	}
 
-	int i = 0;
+	cmd_arg_count i = 0;
 	while (cmd_exists(cmd, "socket", i)) {
 		const char *path = NULL;
 		if ((path = cmd_get_value(cmd, "socket", i)) != NULL) {
@@ -440,7 +440,7 @@ static int __rrr_stats_send_message (
 		const struct rrr_msg_stats *message
 ) {
 	struct rrr_msg_stats_packed message_packed;
-	size_t total_size;
+	rrr_length total_size;
 
 	rrr_msg_stats_pack_and_flip (
 			&message_packed,
@@ -452,7 +452,7 @@ static int __rrr_stats_send_message (
 			(struct rrr_msg *) &message_packed,
 			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
-			message->timestamp
+			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
 
 	rrr_msg_checksum_and_to_network_endian (
@@ -465,7 +465,7 @@ static int __rrr_stats_send_message (
 			message->path
 	);
 
-	int send_chunk_count_dummy = 0;
+	rrr_length send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
 			&send_chunk_count_dummy,
 			data->connections,

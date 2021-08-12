@@ -198,7 +198,7 @@ void rrr_http_util_print_where_message (
 
 	rrr_length bytes_to_copy = max;
 	if (start + bytes_to_copy >= end) {
-		bytes_to_copy = end - start;
+		bytes_to_copy = rrr_length_from_ptr_sub_bug_const(end, start);
 	}
 
 	if (bytes_to_copy > max) {
@@ -225,7 +225,7 @@ void rrr_http_util_print_where_message (
 }
 
 static int __rrr_http_util_decode_urlencoded_string_callback (
-		rrr_length *len,
+		rrr_nullsafe_len *len,
 		void *str,
 		void *arg
 ) {
@@ -238,7 +238,7 @@ static int __rrr_http_util_decode_urlencoded_string_callback (
 
 	unsigned char *target = str;
 
-	rrr_length wpos = 0;
+	rrr_nullsafe_len wpos = 0;
 
 	while (start < end) {
 		unsigned char c = *start;
@@ -264,7 +264,7 @@ static int __rrr_http_util_decode_urlencoded_string_callback (
 				RRR_BUG("Result after converting %%-sequence too big in __rrr_http_util_decode_urlencoded_string_callback\n");
 			}
 
-			c = result;
+			c = (unsigned char) result;
 			start += 2; // One more ++ at the end of the loop
 		}
 
@@ -288,7 +288,7 @@ int rrr_http_util_urlencoded_string_decode (
 int __rrr_http_util_uri_encode_foreach_byte_callback (char byte, void *arg) {
 	char **wpos = arg;
 
-	if (__rrr_http_util_is_alphanumeric(byte) || __rrr_http_util_is_uri_unreserved_rfc2396(byte)) {
+	if (__rrr_http_util_is_alphanumeric((unsigned char) byte) || __rrr_http_util_is_uri_unreserved_rfc2396((unsigned char) byte)) {
 		**wpos = byte;
 		(*wpos)++;
 	}
@@ -338,7 +338,11 @@ int rrr_http_util_uri_encode (
 			RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 		}
 
-		rrr_nullsafe_str_set_allocated(*target, (void **) &result, wpos - result);
+		rrr_nullsafe_str_set_allocated (
+				*target,
+				(void **) &result,
+				rrr_length_from_ptr_sub_bug_const(wpos, result)
+		);
 	}
 
 	out:
@@ -347,7 +351,7 @@ int rrr_http_util_uri_encode (
 }
 
 static int __rrr_http_util_unquote_string_callback (
-		rrr_length *len,
+		rrr_nullsafe_len *len,
 		void *str,
 		void *arg
 ) {
@@ -358,11 +362,11 @@ static int __rrr_http_util_unquote_string_callback (
 
 	unsigned char *target = str;
 
-	rrr_length wpos = 0;
+	rrr_nullsafe_len wpos = 0;
 
 	while (start < end) {
 		if (*start == '"' || *start == '(') {
-			char endquote = (*start == '"' ? '"' : ')');
+			unsigned char endquote = (*start == '"' ? '"' : ')');
 
 			// Skip past begin quote
 			start++;
@@ -374,7 +378,7 @@ static int __rrr_http_util_unquote_string_callback (
 			for (; start < end; start++) {
 				if (*start == '\\') {
 					if (start + 1 < end) {
-						char next = *(start + 1);
+						unsigned char next = *(start + 1);
 						if (next == endquote) {
 							// Write only the quote character
 							start++;
@@ -502,16 +506,22 @@ struct rrr_http_util_quote_header_value_nullsafe_callback_data {
 
 static char *__rrr_http_util_quote_header_value_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_util_quote_header_value_nullsafe_callback_data *callback_data = arg;
 
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP header value too long while quoting (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (unsigned long long) RRR_LENGTH_MAX);
+		return NULL;
+	}
+
 	return rrr_http_util_header_value_quote (
-				str,
-				len,
-				callback_data->delimeter_start,
-				callback_data->delimeter_end
+			str,
+			(rrr_length) len,
+			callback_data->delimeter_start,
+			callback_data->delimeter_end
 	);
 }
 
@@ -525,11 +535,15 @@ char *rrr_http_util_header_value_quote_nullsafe (
 	}
 
 	struct rrr_http_util_quote_header_value_nullsafe_callback_data callback_data = {
-			delimeter_start,
-			delimeter_end
+		delimeter_start,
+		delimeter_end
 	};
 
-	return rrr_nullsafe_str_with_raw_do_const_return_str(str, __rrr_http_util_quote_header_value_nullsafe_callback, &callback_data);
+	return rrr_nullsafe_str_with_raw_do_const_return_str (
+			str,
+			__rrr_http_util_quote_header_value_nullsafe_callback,
+			&callback_data
+	);
 }
 
 const char *rrr_http_util_find_crlf (
@@ -606,7 +620,7 @@ int rrr_http_util_strtoull_raw (
 		return 1;
 	}
 
-	memcpy(buf, start, numbers_end - start);
+	memcpy(buf, start, rrr_length_from_ptr_sub_bug_const(numbers_end, start));
 	buf[numbers_end - start] = '\0';
 
 	char *endptr;
@@ -616,11 +630,11 @@ int rrr_http_util_strtoull_raw (
 		RRR_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
 	}
 
-	rrr_biglength result_tmp = endptr - buf;
+	rrr_biglength result_tmp = rrr_length_from_ptr_sub_bug_const(endptr, buf);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_tmp, "__rrr_http_part_strtoull");
 
 	*result = number;
-	*result_len = result_tmp;
+	*result_len = rrr_length_from_biglength_bug_const(result_tmp);
 
 	return 0;
 }
@@ -632,7 +646,7 @@ struct rrr_http_util_strtoull_callback_data {
 
 static int __rrr_http_util_strtoull_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_util_strtoull_callback_data *callback_data = arg;
@@ -683,8 +697,8 @@ int rrr_http_util_strcasestr (
 
 	const char *needle_pos = needle;
 	for (const char *pos = start; pos < end; pos++) {
-		char a = tolower(*pos);
-		char b = tolower(*needle_pos);
+		char a = (char) tolower(*pos);
+		char b = (char) tolower(*needle_pos);
 
 		if (a == b) {
 			needle_pos++;
@@ -759,7 +773,7 @@ static int __rrr_http_util_uri_validate_characters_foreach_byte_callback (
 		char byte,
 		void *arg
 ) {
-	unsigned char *invalid = arg;
+	char *invalid = arg;
 
 	if (	(byte >= 'A' && byte <= 'Z') ||
 			(byte >= 'a' && byte <= 'z') ||
@@ -863,12 +877,19 @@ int rrr_http_util_uri_endpoint_prepend (
 
 static int __rrr_http_util_uri_parse_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_uri *uri_new = arg;
 
 	int ret = 0;
+
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP URI too long to be parsed (%" PRIrrrbl ">%llu)\n",
+			len, (unsigned long long) RRR_LENGTH_MAX);
+		ret = 1;
+		goto out;
+	}
 
 	const char *pos = str;
 	const char *end = str + len;
@@ -921,7 +942,7 @@ static int __rrr_http_util_uri_parse_callback (
 	if (uri_new->protocol != NULL) {
 		rrr_length result_len_tmp = 0;
 		while (pos < end) {
-			if (__rrr_http_util_is_alphanumeric(*pos)) {
+			if (__rrr_http_util_is_alphanumeric((unsigned char) *pos)) {
 				result_len_tmp++;
 			}
 			else if (*pos == '-') {
@@ -969,7 +990,7 @@ static int __rrr_http_util_uri_parse_callback (
 				goto out;
 			}
 
-			uri_new->port = port;
+			uri_new->port = (uint16_t) port;
 
 			pos += result_len_tmp;
 		}
@@ -980,13 +1001,13 @@ static int __rrr_http_util_uri_parse_callback (
 		rrr_length result_len_tmp = 0;
 		const char *endpoint_begin = pos;
 		while (pos < end) {
-			if (__rrr_http_util_is_alphanumeric(*pos)) {
+			if (__rrr_http_util_is_alphanumeric((unsigned char) *pos)) {
 				result_len_tmp++;
 			}
-			else if (__rrr_http_util_is_header_nonspecial_rfc7230(*pos)) {
+			else if (__rrr_http_util_is_header_nonspecial_rfc7230((unsigned char) *pos)) {
 				result_len_tmp++;
 			}
-			else if (__rrr_http_util_is_uri_reserved(*pos)) {
+			else if (__rrr_http_util_is_uri_reserved((unsigned char) *pos)) {
 				result_len_tmp++;
 			}
 			else {

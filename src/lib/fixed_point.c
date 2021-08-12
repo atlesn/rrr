@@ -83,14 +83,14 @@ int rrr_fixp_ldouble_to_fixp (
 		long double test_sum = running_sum + decimal_fractions_base2[i];
 		if (test_sum == fraction || test_sum < fraction) {
 			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
-			running_sum = test_sum;
+			running_sum = (double) test_sum;
 			if (test_sum == fraction) {
 				break;
 			}
 		}
 	}
 
-	uint64_t integer_u = integer;
+	uint64_t integer_u = (uint64_t) integer;
 	result |= integer_u << RRR_FIXED_POINT_BASE2_EXPONENT;
 
 	if (sign != 0) {
@@ -108,15 +108,15 @@ int rrr_fixp_to_ldouble (
 ) {
 	long double result = 0;
 	uint64_t sign = ((uint64_t) source) >> 63;
-	source &= ~(sign<<63);
+	source &= (rrr_fixp) ~(sign<<63);
 
-	uint64_t whole_number = source >> RRR_FIXED_POINT_BASE2_EXPONENT;
+	uint64_t whole_number = (uint64_t) source >> RRR_FIXED_POINT_BASE2_EXPONENT;
 	uint64_t decimals = source & 0xFFFFFF;
 
 	result += whole_number;
 
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
-		unsigned int bit = (((uint64_t) 1) << (23 - i)) & decimals;
+		unsigned int bit = (unsigned int) ((((uint64_t) 1) << (23 - i)) & decimals);
 		if (bit != 0) {
 			result += decimal_fractions_base2[i];
 		}
@@ -133,12 +133,12 @@ int rrr_fixp_to_ldouble (
 
 int rrr_fixp_to_str_16 (
 		char *target,
-		ssize_t target_size,
+		rrr_length target_size,
 		rrr_fixp source
 ) {
 	unsigned char buf[8];
 
-	source = rrr_htobe64(source);
+	source = (rrr_fixp) rrr_htobe64((uint64_t) source);
 	memcpy(buf, &source, sizeof(buf));
 
 	char tmp_b[32];
@@ -147,8 +147,8 @@ int rrr_fixp_to_str_16 (
 		unsigned char cur = buf[pos];
 		unsigned char h = (cur & 0xf0) >> 4;
 		unsigned char l = cur & 0x0f;
-		tmp_b[wpos++] = h + (h > 9 ? 'a' - 10 : '0');
-		tmp_b[wpos++] = l + (l > 9 ? 'a' - 10 : '0');
+		tmp_b[wpos++] = (char) (h + (h > 9 ? 'a' - 10 : '0'));
+		tmp_b[wpos++] = (char) (l + (l > 9 ? 'a' - 10 : '0'));
 		if (pos == 4) {
 			tmp_b[wpos++] = '.';
 		}
@@ -156,7 +156,7 @@ int rrr_fixp_to_str_16 (
 
 	tmp_b[wpos] = '\0';
 
-	ssize_t size = strlen("16#") + strlen(tmp_b) + 1;
+	size_t size = strlen("16#") + strlen(tmp_b) + 1;
 	if (size > target_size) {
 		return 1;
 	}
@@ -168,7 +168,7 @@ int rrr_fixp_to_str_16 (
 
 int rrr_fixp_to_str_double (
 		char *target,
-		ssize_t target_size,
+		rrr_length target_size,
 		rrr_fixp source
 ) {
 	char buf[512];
@@ -178,19 +178,18 @@ int rrr_fixp_to_str_double (
 		return 1;
 	}
 
-	int bytes = snprintf(buf, 511, "%.10Lf", intermediate);
-
+	rrr_slength bytes = snprintf(buf, 511, "%.10Lf", intermediate);
 	if (bytes <= 0) {
 		return 1;
 	}
 
-	if (bytes > 511 || bytes > target_size - 1) {
+	if (bytes > 511 || bytes > rrr_length_dec_bug_const(target_size)) {
 		return 1;
 	}
 
 	buf[bytes] = '\0';
 
-	memcpy(target, buf, bytes + 1);
+	memcpy(target, buf, (size_t) bytes + 1);
 
 	return 0;
 }
@@ -344,7 +343,7 @@ static int __rrr_fixp_str_preliminary_parse (
 int rrr_fixp_str_to_fixp (
 		rrr_fixp *target,
 		const char *str,
-		ssize_t str_length,
+		rrr_length str_length,
 		const char **endptr
 ) {
 	*target = 0;
@@ -412,7 +411,7 @@ int rrr_fixp_str_to_fixp (
 	factor = 1.0;
 	for (const char *pos = (dot != NULL ? dot - 1 : end - 1); pos >= start; pos--) {
 		char c = *pos;
-		result_integer += __rrr_fixp_convert_char(c) * factor;
+		result_integer += (uint64_t) (__rrr_fixp_convert_char(c) * factor);
 		factor *= base;
 	}
 

@@ -139,8 +139,8 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 
 static void __rrr_cmodule_worker_log_hook (
 		uint8_t *amount_written,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
@@ -203,7 +203,6 @@ static void __rrr_cmodule_worker_log_hook (
 	if (ret == RRR_MMAP_CHANNEL_FULL) {
 		RRR_MSG_0("Warning: mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s in log hook\n",
 				worker->name);
-		ret = 0;
 	}
 
 	out:
@@ -680,7 +679,7 @@ int rrr_cmodule_worker_main (
 	rrr_socket_close_all_except_array_no_unlink(event_fds, sizeof(event_fds)/sizeof(event_fds[0]));
 
 	int log_hook_handle;
-	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL);
+	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_log_hook, worker, NULL, NULL, NULL);
 
 	if ((ret = rrr_event_queue_reinit(worker->event_queue_worker)) != 0) {
 		RRR_MSG_0("Re-init of event queue failed in rrr_cmodule_worker_main\n");

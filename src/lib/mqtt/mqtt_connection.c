@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../ip/ip.h"
 #include "../ip/ip_accept_data.h"
-#include "../buffer.h"
+#include "../fifo.h"
 #include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
 #include "../util/macro_utils.h"
@@ -232,7 +232,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	RRR_DBG_2("Destroying connection %p, final destruction\n", connection);
 
-	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
+	rrr_fifo_clear(&connection->receive_queue.buffer);
 
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 
@@ -270,7 +270,7 @@ static int __rrr_mqtt_conn_new (
 
 	memset (res, '\0', sizeof(*res));
 
-	if ((ret = rrr_fifo_buffer_init_custom_free(&res->receive_queue.buffer,	rrr_mqtt_p_standardized_decref)) != 0) {
+	if ((ret = rrr_fifo_init_custom_free(&res->receive_queue.buffer,	rrr_mqtt_p_standardized_decref)) != 0) {
 		RRR_MSG_0("Could not initialize buffers in __rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_INTERNAL_ERROR;
 		goto out_free;
@@ -530,8 +530,8 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 	int ret = RRR_MQTT_OK;
 
 	if (connection->keep_alive > 0) {
-		uint64_t limit_ping = (double) connection->keep_alive;
-		uint64_t limit = (double) connection->keep_alive * 1.5;
+		uint64_t limit_ping = connection->keep_alive;
+		uint64_t limit = (uint64_t) ((double) connection->keep_alive * 1.5);
 
 		limit_ping *= 1000000;
 		limit *= 1000000;
@@ -747,7 +747,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 				&connection->parse_session.packet->payload,
 				&read_session->rx_buf_ptr, // Set to NULL if success
 				read_session->rx_buf_ptr + connection->parse_session.payload_pos,
-				read_session->rx_buf_wpos - connection->parse_session.payload_pos
+				rrr_length_from_biglength_sub_bug_const (read_session->rx_buf_wpos, connection->parse_session.payload_pos)
 		);
 
 		RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
@@ -791,7 +791,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
-		int read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
@@ -841,7 +841,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 static int __rrr_mqtt_conn_iterator_ctx_send_push (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t data_size
+		rrr_length data_size
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -860,7 +860,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_push (
 static int __rrr_mqtt_conn_iterator_ctx_send_push_urgent (
 		struct rrr_net_transport_handle *handle,
 		void **data,
-		ssize_t data_size
+		rrr_length data_size
 ) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -878,12 +878,12 @@ static int __rrr_mqtt_conn_iterator_ctx_send_push_urgent (
 
 int __rrr_mqtt_connection_create_variable_int (
 		uint8_t *target,
-		ssize_t *length,
-		uint32_t value
+		rrr_length *length,
+		rrr_biglength value
 ) {
 	*length = 1;
 
-	if (value > 0xfffffff) {
+	if (value > 0xfffffff) { // Seven f's
 		RRR_MSG_0("Integer value too large in __rrr_mqtt_connection_create_variable_int\n");
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
@@ -914,7 +914,7 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	struct rrr_mqtt_p_payload *payload = NULL;
 	char *network_data = NULL;
-	ssize_t network_size = 0;
+	rrr_length network_size = 0;
 	void *send_data = NULL;
 
 	if (!RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection) && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
@@ -977,8 +977,8 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 
 	struct rrr_mqtt_p_header header = {0};
-	ssize_t variable_int_length = 0;
-	ssize_t payload_length = 0;
+	rrr_length variable_int_length = 0;
+	rrr_length payload_length = 0;
 	payload = packet->payload;
 	if (payload != NULL) {
 		payload_length = packet->payload->length;
@@ -987,12 +987,12 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	if ((ret = __rrr_mqtt_connection_create_variable_int (
 			header.length,
 			&variable_int_length,
-			packet->assembled_data_size + payload_length
+			rrr_length_add_bug_const(packet->assembled_data_size, payload_length)
 	)) != 0) {
 		RRR_MSG_0("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
-	header.type = RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
+	header.type = (uint8_t) RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
 
 	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
 
@@ -1009,7 +1009,12 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	__rrr_mqtt_connection_update_last_write_time(connection);
 
-	const size_t send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
+	const rrr_biglength send_size = sizeof(header.type) + variable_int_length + packet->assembled_data_size + (payload != NULL ? payload->length : 0);
+	if (send_size > RRR_LENGTH_MAX) {
+		RRR_BUG("Bug: Send size overflow in rrr_mqtt_conn_iterator_ctx_send_packet (%llu>%llu)\n",
+			(unsigned long long) send_size, (unsigned long long) RRR_LENGTH_MAX);
+	}
+
 	if ((send_data = rrr_allocate(send_size)) == NULL) {
 		RRR_MSG_0("Failed to allocate send data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		ret = 1;
@@ -1039,13 +1044,13 @@ static int __rrr_mqtt_conn_iterator_ctx_send_packet (
 	int (*send_method)(
 			struct rrr_net_transport_handle *handle,
 			void **data,
-			ssize_t data_size
+			rrr_length data_size
 	) = (urgent
 		? __rrr_mqtt_conn_iterator_ctx_send_push_urgent
 		: __rrr_mqtt_conn_iterator_ctx_send_push
 	);
 
-	if ((ret = send_method (handle, &send_data, send_size)) != 0) {
+	if ((ret = send_method (handle, &send_data, (rrr_length) send_size)) != 0) {
 		RRR_MSG_0("Error while pushing data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}

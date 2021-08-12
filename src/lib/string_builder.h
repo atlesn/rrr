@@ -82,6 +82,9 @@ int rrr_string_builder_reserve (
 		struct rrr_string_builder *string_builder,
 		rrr_biglength bytes
 );
+void rrr_string_builder_truncate (
+		struct rrr_string_builder *string_builder
+);
 int rrr_string_builder_append_from (
 		struct rrr_string_builder *target,
 		const struct rrr_string_builder *source

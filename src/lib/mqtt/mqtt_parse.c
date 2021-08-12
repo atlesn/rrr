@@ -41,101 +41,101 @@ struct parse_state {
 	int ret;
 	const char *start;
 	const char *end;
-	ssize_t bytes_parsed;
+	rrr_biglength bytes_parsed;
 	uint16_t blob_length;
-	ssize_t payload_length;
+	rrr_length payload_length;
 };
 
-#define PARSE_CHECK_END_RAW(end,final_end)										\
-	((end) > (final_end))
+#define PARSE_CHECK_END_RAW(end,final_end)                     \
+    ((end) > (final_end))                                      \
 
-#define PARSE_CHECK_END_AND_RETURN_RAW(end,final_end)							\
-	do { if (PARSE_CHECK_END_RAW(end, final_end)) {								\
-		return RRR_MQTT_INCOMPLETE;												\
-	}} while (0)
+#define PARSE_CHECK_END_AND_RETURN_RAW(end,final_end)          \
+    do { if (PARSE_CHECK_END_RAW(end, final_end)) {            \
+        return RRR_MQTT_INCOMPLETE;                            \
+    }} while (0)                                               \
 
-#define PARSE_CHECK_TARGET_END()												\
-	PARSE_CHECK_END_RAW((parse_state->end)+1,(session)->buf+(session)->target_size)
+#define PARSE_CHECK_TARGET_END()                               \
+    PARSE_CHECK_END_RAW((parse_state->end)+1,(session)->buf+(session)->target_size) \
 
-#define PARSE_CHECK_END_AND_RETURN(end,session)									\
-	PARSE_CHECK_END_AND_RETURN_RAW((end),(session)->buf+(session)->buf_wpos)
+#define PARSE_CHECK_END_AND_RETURN(end,session)                \
+    PARSE_CHECK_END_AND_RETURN_RAW((end),(session)->buf+(session)->buf_wpos)        \
 
-#define PARSE_INIT(type)																\
-	struct parse_state parse_state_static = {											\
-			RRR_MQTT_OK,																\
-			NULL,																		\
-			NULL,																		\
-			0,																			\
-			0,																			\
-			0																			\
-	};																					\
-	struct parse_state *parse_state = &parse_state_static;								\
-	struct RRR_PASTE(rrr_mqtt_p_,type) *type = NULL
+#define PARSE_INIT(type)                                       \
+    struct parse_state parse_state_static = {                  \
+            RRR_MQTT_OK,                                       \
+            NULL,                                              \
+            NULL,                                              \
+            0,                                                 \
+            0,                                                 \
+            0                                                  \
+    };                                                         \
+    struct parse_state *parse_state = &parse_state_static;     \
+    struct RRR_PASTE(rrr_mqtt_p_,type) *type = NULL            \
 
-#define PARSE_BEGIN(type)																\
-	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {								\
-		RRR_BUG("rrr_mqtt_parse called for same packet again after payload was done\n");\
-	}																					\
-	if (RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(session)) {								\
-		goto parse_payload;																\
-	}																					\
-	parse_state->start = parse_state->end = session->buf + session->variable_header_pos
+#define PARSE_BEGIN(type)                                      \
+    if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {      \
+        RRR_BUG("rrr_mqtt_parse called for same packet again after payload was done\n");  \
+    }                                                          \
+    if (RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(session)) {     \
+        goto parse_payload;                                    \
+    }                                                          \
+    parse_state->start = parse_state->end = session->buf + session->variable_header_pos   \
 
-#define PARSE_REQUIRE_PROTOCOL_VERSION()												\
-	if (session->protocol_version == NULL) {											\
-		return RRR_MQTT_INCOMPLETE;														\
-	}
+#define PARSE_REQUIRE_PROTOCOL_VERSION()                       \
+    if (session->protocol_version == NULL) {                   \
+        return RRR_MQTT_INCOMPLETE;                            \
+    }                                                          \
 
-#define PARSE_ALLOCATE(type)															\
-	if (session->packet == NULL) {														\
-		session->packet = session->type_properties->allocate (							\
-			session->type_properties,													\
-			session->protocol_version													\
-		);																				\
-		if (session->packet == NULL) {													\
-			RRR_MSG_0("Could not allocate packet of type %s while parsing\n",			\
-				session->type_properties->name);										\
-			return RRR_MQTT_INTERNAL_ERROR;												\
-		}																				\
-	}																					\
-	type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type)
+#define PARSE_ALLOCATE(type)                                   \
+    if (session->packet == NULL) {                             \
+        session->packet = session->type_properties->allocate ( \
+            session->type_properties,                          \
+            session->protocol_version                          \
+        );                                                     \
+        if (session->packet == NULL) {                         \
+            RRR_MSG_0("Could not allocate packet of type %s while parsing\n",   \
+                session->type_properties->name);               \
+            return RRR_MQTT_INTERNAL_ERROR;                    \
+        }                                                      \
+    }                                                          \
+    type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type) \
 
-#define PARSE_PACKET_ID(target) 											\
-	do {parse_state->start = parse_state->end;								\
-	parse_state->end = parse_state->start + 2;								\
-	PARSE_CHECK_END_AND_RETURN(parse_state->end,session);					\
-	(target)->packet_identifier = rrr_be16toh(*((uint16_t *) parse_state->start));\
-	if ((target)->packet_identifier == 0) {									\
-		RRR_MSG_0("Packet ID was zero while parsing packet of type %s\n",	\
-			session->type_properties->name);								\
-		return RRR_MQTT_SOFT_ERROR;											\
-	}} while(0)																\
+#define PARSE_PACKET_ID(target)                                \
+    do {parse_state->start = parse_state->end;                 \
+    parse_state->end = parse_state->start + 2;                 \
+    PARSE_CHECK_END_AND_RETURN(parse_state->end,session);      \
+    (target)->packet_identifier = rrr_be16toh(*((uint16_t *) parse_state->start));  \
+    if ((target)->packet_identifier == 0) {                    \
+        RRR_MSG_0("Packet ID was zero while parsing packet of type %s\n",           \
+            session->type_properties->name);                   \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }} while(0)                                                \
 
 
-#define PARSE_PREPARE_RAW(start,end,bytes)			\
-		(start) = (end);							\
-		(end) = (start) + (bytes);					\
-		PARSE_CHECK_END_AND_RETURN(end,session)
+#define PARSE_PREPARE_RAW(start,end,bytes)                     \
+        (start) = (end);                                       \
+        (end) = (start) + (bytes);                             \
+        PARSE_CHECK_END_AND_RETURN(end,session)                \
 
-#define PARSE_PREPARE(bytes)						\
-	PARSE_PREPARE_RAW(parse_state->start,parse_state->end,bytes)
+#define PARSE_PREPARE(bytes)                                   \
+    PARSE_PREPARE_RAW(parse_state->start,parse_state->end,bytes)  \
 
-#define PARSE_U8_RAW(start,end,target)				\
-	PARSE_PREPARE_RAW(start,end,1);					\
-	(target) = *((uint8_t*) (start));
+#define PARSE_U8_RAW(start,end,target)                         \
+    PARSE_PREPARE_RAW(start,end,1);                            \
+    (target) = *((uint8_t*) (start));                          \
 
-#define PARSE_U16_RAW(start,end,target)				\
-	PARSE_PREPARE_RAW(start,end,2);					\
-	(target) = rrr_be16toh(*((uint16_t*) (start)));
+#define PARSE_U16_RAW(start,end,target)                        \
+    PARSE_PREPARE_RAW(start,end,2);                            \
+    (target) = rrr_be16toh(*((uint16_t*) (start)));            \
 
-#define PARSE_U8(type,target)						\
-	PARSE_U8_RAW(parse_state->start,parse_state->end,(type)->target)
+#define PARSE_U8(type,target)                                  \
+    PARSE_U8_RAW(parse_state->start,parse_state->end,(type)->target)\
 
-#define PARSE_U16(type,target)						\
-	PARSE_U16_RAW(parse_state->start,parse_state->end,(type)->target)
+#define PARSE_U16(type,target)                                 \
+    PARSE_U16_RAW(parse_state->start,parse_state->end,(type)->target)\
 
-#define PARSE_CHECK_V5(type)						\
-	((type)->protocol_version->id >= RRR_MQTT_VERSION_5)
+#define PARSE_CHECK_V5(type)                                   \
+    ((type)->protocol_version->id >= RRR_MQTT_VERSION_5)       \
 
 static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, uint8_t reason_v31_or_v5) {
 	int ret = RRR_MQTT_OK;
@@ -163,160 +163,156 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 	return ret;
 }
 
-#define PARSE_SAVE_AND_CHECK_REASON_STRUCT(packet,class,reason_v31_or_v5) do {	\
-	if (__rrr_mqtt_parse_save_and_check_reason (								\
-		(struct rrr_mqtt_p *) packet,											\
-		reason_v31_or_v5														\
-	) != RRR_MQTT_OK) {															\
-		return RRR_MQTT_SOFT_ERROR;												\
-	}																			\
-	if (packet->reason->RRR_PASTE(for_,class) == 0) {							\
-			RRR_MSG_0("Reason %u->%u '%s' is invalid for %s message\n",			\
-					reason_v31_or_v5, packet->reason->v5_reason,				\
-					packet->reason->description,								\
-				RRR_MQTT_P_GET_TYPE_NAME(packet));								\
-		return RRR_MQTT_SOFT_ERROR;												\
-	}} while(0)
+#define PARSE_SAVE_AND_CHECK_REASON_STRUCT(packet,class,reason_v31_or_v5) do {  \
+    if (__rrr_mqtt_parse_save_and_check_reason (               \
+        (struct rrr_mqtt_p *) packet,                          \
+        reason_v31_or_v5                                       \
+    ) != RRR_MQTT_OK) {                                        \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }                                                          \
+    if (packet->reason->RRR_PASTE(for_,class) == 0) {          \
+            RRR_MSG_0("Reason %u->%u '%s' is invalid for %s message\n",  \
+                    reason_v31_or_v5, packet->reason->v5_reason,\
+                    packet->reason->description,               \
+                RRR_MQTT_P_GET_TYPE_NAME(packet));             \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }} while(0)                                                \
 
-#define PARSE_VALIDATE_QOS(qos)													\
-	if ((qos) > 2) {															\
-		RRR_MSG_0("Invalid QoS flags %u in %s packet\n",						\
-			(qos), RRR_MQTT_P_GET_TYPE_NAME(session->packet));					\
-		return RRR_MQTT_SOFT_ERROR;												\
-	}
+#define PARSE_VALIDATE_QOS(qos)                                \
+    if ((qos) > 2) {                                           \
+        RRR_MSG_0("Invalid QoS flags %u in %s packet\n",       \
+            (qos), RRR_MQTT_P_GET_TYPE_NAME(session->packet)); \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }                                                          \
 
-#define PARSE_VALIDATE_RETAIN(retain)											\
-	if ((retain) > 2) {															\
-		RRR_MSG_0("Invalid retain flags %u in %s packet\n",						\
-			(retain), RRR_MQTT_P_GET_TYPE_NAME(session->packet));				\
-		return RRR_MQTT_SOFT_ERROR;												\
-	}
+#define PARSE_VALIDATE_RETAIN(retain)                          \
+    if ((retain) > 2) {                                        \
+        RRR_MSG_0("Invalid retain flags %u in %s packet\n",    \
+            (retain), RRR_MQTT_P_GET_TYPE_NAME(session->packet));  \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }                                                          \
 
-#define PARSE_VALIDATE_RESERVED(reserved, value)								\
-	if ((reserved) != value) {													\
-		RRR_MSG_0("Invalid reserved flags %u in %s packet, must be %u\n",		\
-			(reserved), RRR_MQTT_P_GET_TYPE_NAME(session->packet), (value));	\
-		return RRR_MQTT_SOFT_ERROR;												\
-	}
+#define PARSE_VALIDATE_RESERVED(reserved, value)               \
+    if ((reserved) != value) {                                 \
+        RRR_MSG_0("Invalid reserved flags %u in %s packet, must be %u\n",     \
+            (reserved), RRR_MQTT_P_GET_TYPE_NAME(session->packet), (value));  \
+        return RRR_MQTT_SOFT_ERROR;                            \
+    }                                                          \
 
-#define PARSE_VALIDATE_ZERO_RESERVED(reserved)									\
-		PARSE_VALIDATE_RESERVED(reserved, 0)
+#define PARSE_VALIDATE_ZERO_RESERVED(reserved)                 \
+        PARSE_VALIDATE_RESERVED(reserved, 0)                   \
 
-#define PARSE_PROPERTIES_IF_V5(type,target)														\
-	do {if (PARSE_CHECK_V5(type)) {																\
-		parse_state->start = parse_state->end;													\
-		parse_state->ret = __rrr_mqtt_parse_properties(&(type)->target, session, parse_state->start, &(parse_state->bytes_parsed));\
-		if (parse_state->ret != 0) {															\
-			if (parse_state->ret != RRR_MQTT_INCOMPLETE) {										\
-				RRR_MSG_0("Error while parsing properties of MQTT packet of type %s\n",			\
-					RRR_MQTT_P_GET_TYPE_NAME(type));											\
-			}																					\
-			return parse_state->ret;															\
-		}																						\
-		parse_state->end = parse_state->start + parse_state->bytes_parsed;						\
-	}} while (0)
+#define PARSE_PROPERTIES_IF_V5(type,target)                    \
+    do {if (PARSE_CHECK_V5(type)) {                            \
+        parse_state->start = parse_state->end;                 \
+        parse_state->ret = __rrr_mqtt_parse_properties(&(type)->target, session, parse_state->start, &(parse_state->bytes_parsed));  \
+        if (parse_state->ret != 0) {                           \
+            if (parse_state->ret != RRR_MQTT_INCOMPLETE) {     \
+                RRR_MSG_0("Error while parsing properties of MQTT packet of type %s\n",  \
+                    RRR_MQTT_P_GET_TYPE_NAME(type));           \
+            }                                                  \
+            return parse_state->ret;                           \
+        }                                                      \
+        parse_state->end = parse_state->start + parse_state->bytes_parsed;\
+    }} while (0)                                               \
 
-#define PARSE_UTF8(type,target,min_length,field_name)											\
-	parse_state->start = parse_state->end;														\
-	RRR_FREE_IF_NOT_NULL(type->target);															\
-	if ((parse_state->ret = __rrr_mqtt_parse_utf8 (												\
-			&type->target,																		\
-			parse_state->start,																	\
-			session->buf + session->buf_wpos,													\
-			&(parse_state->bytes_parsed),														\
-			min_length																			\
-	)) != 0) {																					\
-		if (parse_state->ret != RRR_MQTT_INCOMPLETE) {											\
-			RRR_MSG_0(	"Error while parsing UTF8 of MQTT message of type %s "					\
-						"in field '" RRR_QUOTE(field_name) "'\n",								\
-					RRR_MQTT_P_GET_TYPE_NAME(type));											\
-		}																						\
-		return parse_state->ret;																\
-	}																							\
-	parse_state->end = parse_state->start + parse_state->bytes_parsed
+#define PARSE_UTF8(type,target,min_length,field_name)          \
+    parse_state->start = parse_state->end;                     \
+    RRR_FREE_IF_NOT_NULL(type->target);                        \
+    if ((parse_state->ret = __rrr_mqtt_parse_utf8 (            \
+            &type->target,                                     \
+            parse_state->start,                                \
+            session->buf + session->buf_wpos,                  \
+            &(parse_state->bytes_parsed),                      \
+            min_length                                         \
+    )) != 0) {                                                 \
+        if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
+            RRR_MSG_0(    "Error while parsing UTF8 of MQTT message of type %s "  \
+                        "in field '" RRR_QUOTE(field_name) "'\n",\
+                    RRR_MQTT_P_GET_TYPE_NAME(type));           \
+        }                                                      \
+        return parse_state->ret;                               \
+    }                                                          \
+    parse_state->end = parse_state->start + parse_state->bytes_parsed\
 
-#define PARSE_BLOB(type,target)																	\
-	parse_state->start = parse_state->end;														\
-	RRR_FREE_IF_NOT_NULL(type->target);															\
-	if ((parse_state->ret = __rrr_mqtt_parse_blob (												\
-			&type->target,																		\
-			parse_state->start,																	\
-			session->buf + session->buf_wpos,													\
-			&(parse_state->bytes_parsed),														\
-			&(parse_state->blob_length)															\
-	)) != 0) {																					\
-		if (parse_state->ret != RRR_MQTT_INCOMPLETE) {											\
-			RRR_MSG_0("Error while parsing blob of MQTT message of type %s\n",					\
-					RRR_MQTT_P_GET_TYPE_NAME(type));											\
-		}																						\
-		return parse_state->ret;																\
-	}																							\
-	parse_state->end = parse_state->start + parse_state->bytes_parsed
+#define PARSE_BLOB(type,target)                                \
+    parse_state->start = parse_state->end;                     \
+    RRR_FREE_IF_NOT_NULL(type->target);                        \
+    if ((parse_state->ret = __rrr_mqtt_parse_blob (            \
+            &type->target,                                     \
+            parse_state->start,                                \
+            session->buf + session->buf_wpos,                  \
+            &(parse_state->bytes_parsed),                      \
+            &(parse_state->blob_length)                        \
+    )) != 0) {                                                 \
+        if (parse_state->ret != RRR_MQTT_INCOMPLETE) {         \
+            RRR_MSG_0("Error while parsing blob of MQTT message of type %s\n", \
+                    RRR_MQTT_P_GET_TYPE_NAME(type));           \
+        }                                                      \
+        return parse_state->ret;                               \
+    }                                                          \
+    parse_state->end = parse_state->start + parse_state->bytes_parsed          \
 
-#define PARSE_VARIABLE_INT_RAW(target)															\
-	start = end;																				\
-	if ((ret = __rrr_mqtt_parse_variable_int (													\
-			&target,																			\
-			start,																				\
-			session->buf + session->buf_wpos,													\
-			&bytes_parsed																		\
-	)) != 0) {																					\
-		if (ret != RRR_MQTT_OK && ret != RRR_MQTT_INCOMPLETE) {									\
-			RRR_MSG_0("Error while parsing VINT return was %i\n", ret);							\
-		}																						\
-		return ret;																				\
-	}																							\
-	end = start + bytes_parsed
+#define PARSE_VARIABLE_INT_RAW(target)                         \
+    start = end;                                               \
+    if ((ret = __rrr_mqtt_parse_variable_int (                 \
+            &target,                                           \
+            start,                                             \
+            session->buf + session->buf_wpos,                  \
+            &bytes_parsed                                      \
+    )) != 0) {                                                 \
+        if (ret != RRR_MQTT_OK && ret != RRR_MQTT_INCOMPLETE) {\
+            RRR_MSG_0("Error while parsing VINT return was %i\n", ret);        \
+        }                                                      \
+        return ret;                                            \
+    }                                                          \
+    end = start + bytes_parsed                                 \
 
-#define PARSE_PREV_PARSED_BYTES() \
-	(parse_state->bytes_parsed)
+#define PARSE_PREV_PARSED_BYTES()                              \
+    (parse_state->bytes_parsed)                                \
 
-#define PARSE_CHECK_ZERO_PAYLOAD()																\
-	do {parse_state->payload_length = session->target_size - session->payload_pos;				\
-	if (parse_state->payload_length < 0) {														\
-		RRR_BUG("Payload length was < 0 while parsing\n");										\
-	}																							\
-	if (parse_state->payload_length == 0) {														\
-		goto parse_done;																		\
-	}} while(0)
+#define PARSE_CHECK_ZERO_PAYLOAD()                             \
+    do {parse_state->payload_length = rrr_length_from_biglength_sub_bug_const (session->target_size, session->payload_pos);  \
+    if (parse_state->payload_length == 0) {                    \
+        goto parse_done;                                       \
+    }} while(0)                                                \
 
-#define PARSE_GET_PAYLOAD_SIZE()																\
-	(parse_state->payload_length = session->target_size - session->payload_pos)
+#define PARSE_GET_PAYLOAD_SIZE()                               \
+    (parse_state->payload_length = rrr_length_from_biglength_sub_bug_const (session->target_size, session->payload_pos))
 
-#define PARSE_CHECK_NO_MORE_DATA()																\
-	do {if (PARSE_CHECK_TARGET_END()) {															\
-		goto header_complete;																	\
-	}} while (0)
+#define PARSE_CHECK_NO_MORE_DATA()                             \
+    do {if (PARSE_CHECK_TARGET_END()) {                        \
+        goto header_complete;                                  \
+    }} while (0)                                               \
 
-#define PARSE_PAYLOAD_SAVE_CHECKPOINT()															\
-	session->payload_checkpoint = parse_state->end - session->buf
+#define PARSE_PAYLOAD_SAVE_CHECKPOINT()                        \
+    session->payload_checkpoint = rrr_length_from_ptr_sub_bug_const (parse_state->end, session->buf) \
 
-#define PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type)										\
-	goto header_complete;																		\
-	header_complete:																			\
-	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
-	PARSE_PAYLOAD_SAVE_CHECKPOINT();															\
-	session->payload_pos = parse_state->end - session->buf;										\
-	goto parse_payload;																			\
-	parse_payload:																				\
-	type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet;								\
-	parse_state->end = session->buf + session->payload_checkpoint
+#define PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type)     \
+    goto header_complete;                                      \
+    header_complete:                                           \
+    RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);  \
+    PARSE_PAYLOAD_SAVE_CHECKPOINT();                           \
+    session->payload_pos = rrr_length_from_ptr_sub_bug_const (parse_state->end, session->buf); \
+    goto parse_payload;                                        \
+    parse_payload:                                             \
+    type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet;  \
+    parse_state->end = session->buf + session->payload_checkpoint   \
 
-#define PARSE_END_PAYLOAD()																		\
-	goto parse_done;																			\
-	parse_done:																					\
-	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE);						\
-	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
-	return parse_state->ret
+#define PARSE_END_PAYLOAD()                                    \
+    goto parse_done;                                           \
+    parse_done:                                                \
+    RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE);          \
+    RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);  \
+    return parse_state->ret                                    \
 
-#define PARSE_END_NO_HEADER(type)																	\
-	if (!PARSE_CHECK_TARGET_END()) {																\
-		RRR_MSG_0("Data after fixed header in mqtt packet type %s which has no variable header\n",	\
-				session->type_properties->name);													\
-	}																								\
-	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type);												\
-	PARSE_END_PAYLOAD()
-
+#define PARSE_END_NO_HEADER(type)                              \
+    if (!PARSE_CHECK_TARGET_END()) {                           \
+        RRR_MSG_0("Data after fixed header in mqtt packet type %s which has no variable header\n", \
+                session->type_properties->name);               \
+    }                                                          \
+    PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type);        \
+    PARSE_END_PAYLOAD()                                        \
 
 void rrr_mqtt_parse_session_destroy (
 		struct rrr_mqtt_parse_session *session
@@ -341,7 +337,7 @@ void rrr_mqtt_parse_session_init (
 void rrr_mqtt_parse_session_update (
 		struct rrr_mqtt_parse_session *session,
 		const char *buf,
-		ssize_t buf_wpos,
+		rrr_biglength buf_wpos,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 ) {
 	session->buf = buf;
@@ -351,8 +347,8 @@ void rrr_mqtt_parse_session_update (
 	session->protocol_version = protocol_version;
 }
 
-static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, const char *final_end, ssize_t *bytes_parsed) {
-	ssize_t pos = 0;
+static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, const char *final_end, rrr_biglength *bytes_parsed) {
+	rrr_biglength pos = 0;
 	uint32_t result = 0;
 	uint32_t exponent = 1;
 	uint8_t carry = 1;
@@ -390,7 +386,11 @@ static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, c
 }
 
 static int __rrr_mqtt_parse_blob (
-		char **target, const char *start, const char *final_end, ssize_t *bytes_parsed, uint16_t *blob_length
+		char **target,
+		const char *start,
+		const char *final_end,
+		rrr_biglength *bytes_parsed,
+		uint16_t *blob_length
 ) {
 	if (*target != NULL) {
 		RRR_BUG ("target was not NULL in __rrr_mqtt_parse_blob\n");
@@ -447,7 +447,11 @@ static int __rrr_mqtt_parse_utf8_validate_callback (uint32_t character, void *ar
 }
 
 static int __rrr_mqtt_parse_utf8 (
-		char **target, const char *start, const char *final_end, ssize_t *bytes_parsed, uint16_t minimum_length
+		char **target,
+		const char *start,
+		const char *final_end,
+		rrr_biglength *bytes_parsed,
+		uint16_t minimum_length
 ) {
 	uint16_t utf8_length = 0;
 	int ret = __rrr_mqtt_parse_blob(target, start, final_end, bytes_parsed, &utf8_length);
@@ -474,9 +478,13 @@ static int __rrr_mqtt_parse_utf8 (
 
 #define RRR_PROPERTY_PARSER_DEFINITION \
 		struct rrr_mqtt_property *target, struct rrr_mqtt_parse_session *session, \
-		const char *start, ssize_t *bytes_parsed_final
+		const char *start, rrr_biglength *bytes_parsed_final
 
-static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, const char *start, ssize_t length) {
+static int __rrr_mqtt_parse_property_integer (
+		struct rrr_mqtt_property *target,
+		const char *start,
+		rrr_length length
+) {
 	int ret = RRR_MQTT_OK;
 
 	if (length > 4) {
@@ -490,8 +498,9 @@ static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, 
 
 	int_merged.result = 0;
 
-	int wpos = 3;
-	int rpos = length - 1;
+	// Use signed  !!
+	rrr_slength wpos = 3;
+	rrr_slength rpos = length - 1;
 	while (rpos >= 0) {
 		int_merged.bytes[wpos] = *((uint8_t *) (start + rpos));
 		wpos--;
@@ -575,7 +584,7 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = RRR_MQTT_OK;
 
 	uint16_t blob_length = 0;
-	ssize_t bytes_parsed = 0;
+	rrr_biglength bytes_parsed = 0;
 
 	if ((ret = __rrr_mqtt_parse_blob(&target->data, start, session->buf + session->buf_wpos, &bytes_parsed, &blob_length)) != 0) {
 		return ret;
@@ -598,7 +607,7 @@ static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 
 	ret = __rrr_mqtt_parse_utf8 (&target->data, start, session->buf + session->buf_wpos, bytes_parsed_final, 0);
 
-	target->length = target->length_orig = (*bytes_parsed_final) - sizeof(uint16_t);
+	target->length = target->length_orig = rrr_length_from_biglength_sub_bug_const ((*bytes_parsed_final), sizeof(uint16_t));
 	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
 
 	return ret;
@@ -607,7 +616,7 @@ static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 static int __rrr_mqtt_parse_property_2utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = 0;
 
-	ssize_t bytes_parsed = 0;
+	rrr_biglength bytes_parsed = 0;
 	*bytes_parsed_final = 0;
 
 	if ((ret = rrr_mqtt_property_new(&target->sibling, target->definition)) != 0) {
@@ -646,7 +655,7 @@ static int __rrr_mqtt_parse_properties (
 		struct rrr_mqtt_property_collection *target,
 		struct rrr_mqtt_parse_session *session,
 		const char *start,
-		ssize_t *bytes_parsed_final
+		rrr_biglength *bytes_parsed_final
 ) {
 	int ret = 0;
 	const char *end = start;
@@ -654,7 +663,7 @@ static int __rrr_mqtt_parse_properties (
 	*bytes_parsed_final = 0;
 
 	uint32_t property_length = 0;
-	ssize_t bytes_parsed = 0;
+	rrr_biglength bytes_parsed = 0;
 
 	struct rrr_mqtt_property *property_tmp = NULL;
 
@@ -701,7 +710,7 @@ static int __rrr_mqtt_parse_properties (
 		property_tmp = NULL;
 	}
 
-	*bytes_parsed_final = end - properties_length_start;
+	*bytes_parsed_final = rrr_biglength_from_ptr_sub_bug_const (end, properties_length_start);
 
 	out:
 	if (property_tmp != NULL) {
@@ -714,7 +723,12 @@ static int __rrr_mqtt_parse_protocol_version_validate_name (
 		const struct rrr_mqtt_p_protocol_version *protocol_version,
 		const char *string
 ) {
-	int len = strlen(string);
+	size_t len = strlen(string);
+
+	if (len > 16) {
+		RRR_BUG("Length overflow in __rrr_mqtt_parse_protocol_version_validate_name (%llu>%d)\n",
+			(unsigned long long) len, 16);
+	}
 
 	char uppercase[len + 1];
 	uppercase[len] = '\0';
@@ -722,7 +736,7 @@ static int __rrr_mqtt_parse_protocol_version_validate_name (
 	const char *input = string;
 	char *output = uppercase;
 	while (*input) {
-		*output = toupper(*input);
+		*output = (char) toupper(*input);
 		output++;
 		input++;
 	}
@@ -1135,7 +1149,7 @@ static int __rrr_mqtt_parse_suback_unsuback (
 		return RRR_MQTT_SOFT_ERROR;
 	}
 
-	for (ssize_t i = 0; i < suback_unsuback->acknowledgements_size; i++) {
+	for (rrr_biglength i = 0; i < suback_unsuback->acknowledgements_size; i++) {
 		const struct rrr_mqtt_p_reason *reason_struct = NULL;
 
 		if (PARSE_CHECK_V5(suback_unsuback)) {
@@ -1340,7 +1354,7 @@ void rrr_mqtt_packet_parse (
 		}
 
 		uint32_t remaining_length = 0;
-		ssize_t bytes_parsed = 0;
+		rrr_biglength bytes_parsed = 0;
 		if ((ret_tmp = __rrr_mqtt_parse_variable_int (
 				&remaining_length,
 				session->buf + (sizeof(header->type)),
@@ -1359,7 +1373,7 @@ void rrr_mqtt_packet_parse (
 			}
 		}
 
-		session->variable_header_pos = sizeof(header->type) + bytes_parsed;
+		session->variable_header_pos = rrr_length_from_biglength_bug_const (sizeof(header->type) + bytes_parsed);
 		session->target_size = sizeof(header->type) + bytes_parsed + remaining_length;
 		session->type = RRR_MQTT_PARSE_GET_TYPE(header);
 		session->type_flags = RRR_MQTT_PARSE_GET_TYPE_FLAGS(header);
@@ -1404,7 +1418,7 @@ void rrr_mqtt_packet_parse (
 	}
 
 	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
-		session->packet->received_size = session->target_size;
+		session->packet->received_size = rrr_length_from_biglength_bug_const(session->target_size);
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_COMPLETE);
 	}
 

@@ -127,7 +127,7 @@ struct file_data {
 	rrr_setting_uint timeout_s;
 
 	char *topic;
-	size_t topic_len;
+	uint16_t topic_len;
 
 	uint64_t message_count;
 
@@ -232,15 +232,13 @@ static int file_parse_config (struct file_data *data, struct rrr_instance_config
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("file_probe_interval_ms", probe_interval, RRR_FILE_DEFAULT_PROBE_INTERVAL_MS);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_prefix", prefix);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_topic", topic);
-	if (data->topic != NULL) {
-		data->topic_len = strlen(data->topic);
-		if (rrr_mqtt_topic_validate_name(data->topic) != 0) {
-			RRR_MSG_0("Validation of parameter file_topic with value '%s' failed in file instance %s\n",
-					data->topic, config->name);
-			ret = 1;
-			goto out;
-		}
+	if ((ret = rrr_instance_config_parse_topic_and_length (
+			&data->topic,
+			&data->topic_len,
+			config,
+			"file_topic"
+	)) != 0) {
+		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("file_directory", directory);
@@ -660,6 +658,23 @@ static int file_read_all_to_message_get_target_size_callback (
 	return RRR_READ_OK;
 }
 
+static int file_verify_wpos (
+		struct file_data *file_data,
+		const struct rrr_read_session *read_session
+) {
+	if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Too many bytes read in file instance %s (%" PRIrrrbl ">%llu)",
+			INSTANCE_D_NAME(file_data->thread_data),
+			read_session->rx_buf_wpos,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+		return 1;
+	}
+	return 0;
+}
+
+#define VERIFY_WPOS() do{ if((ret = file_verify_wpos(file_data, read_session)) != 0) goto out; } while(0)
+
 struct file_read_all_to_message_write_callback_data {
 	struct file_data *file_data;
 	struct file *file;
@@ -673,6 +688,8 @@ static int file_read_all_to_message_write_callback_simple (
 ) {
 	int ret = 0;
 
+	VERIFY_WPOS();
+
 	uint64_t time = rrr_time_get_64();
 
 	struct rrr_msg_msg *reading = NULL;
@@ -682,7 +699,7 @@ static int file_read_all_to_message_write_callback_simple (
 			MSG_CLASS_DATA,
 			time,
 			file_data->topic_len,
-			read_session->rx_buf_wpos
+			rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 	)) != 0) {
 		RRR_MSG_0("Could not create message in file_read_all_to_message_write_callback_simple\n");
 		goto out;
@@ -714,8 +731,13 @@ static int file_read_all_to_message_write_callback_structured (
 
 	struct rrr_array array_tmp = {0};
 
+	VERIFY_WPOS();
+
 	if ((ret = rrr_array_push_value_blob_with_tag_with_size (
-			&array_tmp, "data", read_session->rx_buf_ptr, read_session->rx_buf_wpos
+			&array_tmp,
+			"data",
+			read_session->rx_buf_ptr,
+			rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 	)) != 0) {
 		RRR_MSG_0("Failed to push file data to array in file_read_all_to_message_write_callback_structured\n");
 		goto out;
@@ -1029,7 +1051,7 @@ static void *thread_entry_file (struct rrr_thread *thread) {
 	uint64_t bytes_read_accumulator = 0;
 	uint64_t messages_count_prev = 0;
 
-	int ticks = 0;
+	uint64_t ticks = 0;
 	uint64_t messages_count_prev_stats = 0;
 
 	int consecutive_nothing_happened = 0;

@@ -153,9 +153,9 @@ static int incrementer_get_id_from_msgdb (
 }
 
 static int incrementer_get_id (
-	unsigned long long int *result_llu,
-	struct incrementer_data *data,
-	const char *tag
+		unsigned long long int *result_llu,
+		struct incrementer_data *data,
+		const char *tag
 ) {
 	int ret = 0;
 
@@ -228,6 +228,7 @@ struct incrementer_update_id_callback_data {
 	struct incrementer_data *data;
 	long long unsigned int id;
 	const char *tag;
+	uint16_t tag_length;
 };
 
 static int incrementer_update_id_callback (
@@ -254,7 +255,7 @@ static int incrementer_update_id_callback (
 			&array_tmp,
 			rrr_time_get_64(),
 			callback_data->tag,
-			strlen(callback_data->tag)
+			callback_data->tag_length
 	)) != 0) {
 		RRR_MSG_0("Failed create new message in incrementer_update_id_callback\n");
 		goto out;
@@ -280,6 +281,7 @@ static int incrementer_update_id_callback (
 static int incrementer_update_id (
 		struct incrementer_data *data,
 		const char *tag,
+		uint16_t tag_length,
 		unsigned long long id
 ) {
 	char buf[64];
@@ -288,7 +290,8 @@ static int incrementer_update_id (
 	struct incrementer_update_id_callback_data callback_data = {
 		data,
 		id,
-		tag
+		tag,
+		tag_length
 	};
 
 	// This structure ensures that ID is either updated in both map and msgdb
@@ -313,9 +316,14 @@ static int incrementer_process_subject (
 	uint64_t time_start = rrr_time_get_64();
 
 	char *topic_tmp = NULL;
+	uint16_t topic_tmp_length = 0;
 	struct rrr_string_builder topic_new = {0};
 
-	if ((ret = rrr_msg_msg_topic_get(&topic_tmp, (struct rrr_msg_msg *) entry->message)) != 0) {
+	if ((ret = rrr_msg_msg_topic_and_length_get (
+			&topic_tmp,
+			&topic_tmp_length,
+			(struct rrr_msg_msg *) entry->message
+	)) != 0) {
 		RRR_MSG_0("Failed to get topic in incrementer_process_subject\n");
 		goto out;
 	}
@@ -336,25 +344,47 @@ static int incrementer_process_subject (
 			INSTANCE_D_NAME(data->thread_data), topic_tmp);
 	}
 
-	unsigned long long new_id_llu = rrr_increment_mod(old_id_llu, data->id_modulus, data->id_min, data->id_max, data->id_position);
+	unsigned long long new_id_llu = rrr_increment_mod (
+			old_id_llu > UINT32_MAX ? UINT32_MAX : (uint32_t) old_id_llu,
+			(uint8_t) data->id_modulus,
+			(uint32_t) data->id_min,
+			(uint32_t) data->id_max,
+			(uint8_t) data->id_position
+	);
 
 	if ((ret = rrr_string_builder_append_format(&topic_new, "%s/%llu", topic_tmp, new_id_llu)) != 0) {
 		RRR_MSG_0("Failed to allocate new topic in incrementer_process_subject\n");
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set (
-			(struct rrr_msg_msg **) &entry->message,
-			rrr_string_builder_buf(&topic_new),
-			rrr_string_builder_length(&topic_new)
-	)) != 0) {
-		RRR_MSG_0("Failed to set topic of message in incrementer_process_subject\n");
-		goto out;
+	{
+		const rrr_biglength topic_new_length = rrr_string_builder_length(&topic_new);
+
+		if (topic_new_length > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Generated topic exceeds maximum length in incrementer instance %s (%" PRIrrrbl ">%llu)\n",
+				INSTANCE_D_NAME(data->thread_data), topic_new_length, RRR_MSG_TOPIC_MAX);
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret = rrr_msg_msg_topic_set (
+				(struct rrr_msg_msg **) &entry->message,
+				rrr_string_builder_buf(&topic_new),
+				(uint16_t) topic_new_length
+		)) != 0) {
+			RRR_MSG_0("Failed to set topic of message in incrementer_process_subject\n");
+			goto out;
+		}
+
+		entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
 	}
 
-	entry->data_length = MSG_TOTAL_SIZE((struct rrr_msg_msg *) entry->message);
-
-	if ((ret = incrementer_update_id(data, topic_tmp, new_id_llu)) != 0) {
+	if ((ret = incrementer_update_id (
+			data,
+			topic_tmp,
+			topic_tmp_length,
+			new_id_llu
+	)) != 0) {
 		RRR_MSG_0("Failed to store ID of message in incrementer_process_subject\n");
 		goto out;
 	}
@@ -436,7 +466,7 @@ static int incrementer_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	// We check stuff with the watchdog in case we are slow to process messages
 	if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data))) {
-		ret = RRR_FIFO_SEARCH_STOP;
+		ret = RRR_FIFO_PROTECTED_SEARCH_STOP;
 		goto out;
 	}
 	rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
@@ -487,7 +517,7 @@ static int incrementer_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 
-	return rrr_poll_do_poll_delete (amount, thread_data, incrementer_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, incrementer_poll_callback);
 }
 
 static int incrementer_event_periodic (void *arg) {

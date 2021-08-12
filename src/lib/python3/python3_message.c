@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 #include "../log.h"
 #include "../allocator.h"
@@ -78,15 +79,37 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 ) {
 	int ret = 0;
 
-	struct rrr_msg_msg *new_message = rrr_msg_msg_duplicate_no_data_with_size(data->message_dynamic, topic_length, data_length);
+	if (topic_length < 0 || data_length < 0) {
+		RRR_BUG("Bug: Negative topic and/or data length to __rrr_python3_rrr_message_set_topic_and_data\n");
+	}
+
+	if (topic_length > UINT16_MAX) {
+		RRR_MSG_0("Topic too long in __rrr_python3_rrr_message_set_topic_and_data (%lli>%lli)\n",
+			(long long int) topic_length, (long long int) UINT16_MAX);
+		ret = 1;
+		goto out;
+	}
+
+	if ((rrr_biglength) topic_length + (rrr_biglength) data_length > UINT32_MAX) {
+		RRR_MSG_0("Combined size of topic and message too long in __rrr_python3_rrr_message_set_topic_and_data (%lli>%lli)\n",
+			(long long int) topic_length + data_length, (long long int) UINT16_MAX);
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_msg_msg *new_message = rrr_msg_msg_duplicate_no_data_with_size (
+			data->message_dynamic,
+			(uint16_t) topic_length,
+			(uint32_t) data_length
+	);
 	if (new_message == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_python3_rrr_message_set_topic_and_data\n");
 		ret = 1;
 		goto out;
 	}
 
-	memcpy(MSG_TOPIC_PTR(new_message), topic_str, topic_length);
-	memcpy(MSG_DATA_PTR(new_message), data_str, data_length);
+	memcpy(MSG_TOPIC_PTR(new_message), topic_str, (size_t) topic_length);
+	memcpy(MSG_DATA_PTR(new_message), data_str, (size_t) data_length);
 
 	rrr_free(data->message_dynamic);
 	data->message_dynamic = new_message;
@@ -380,13 +403,13 @@ static int __rrr_python3_rrr_message_f_set_ip_extract_ip (char **target, PyObjec
 	Py_ssize_t ip_str_size = 0;
 	const char *ip_str_tmp = PyUnicode_AsUTF8AndSize(ip, &ip_str_size);
 
-	if (ip_str_size == 0) {
-		RRR_MSG_0("Error: IP given to rrr_message.set_ip() was empty\n");
+	if (ip_str_size <= 0 || (size_t) ip_str_size > SIZE_MAX - 1) {
+		RRR_MSG_0("Error: IP given to rrr_message.set_ip() was empty or too big\n");
 		ret = 1;
 		goto out;
 	}
 
-	const Py_ssize_t final_size = ip_str_size + 1;
+	const size_t final_size = (size_t) ip_str_size + 1;
 
 	char *result;
 	if ((result = rrr_allocate(final_size)) == NULL) {
@@ -396,7 +419,7 @@ static int __rrr_python3_rrr_message_f_set_ip_extract_ip (char **target, PyObjec
 	}
 
 	memset(result, '\0', final_size);
-	memcpy(result, ip_str_tmp, ip_str_size);
+	memcpy(result, ip_str_tmp, (size_t) ip_str_size);
 
 	*target = result;
 
@@ -494,7 +517,7 @@ static PyObject *rrr_python3_rrr_message_f_set_ip(PyObject *self, PyObject *args
 		if (af_protocol == AF_INET6) {
 			struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) &sockaddr_tmp;
 			in6->sin6_family = AF_INET6;
-			in6->sin6_port = htons(port_long);
+			in6->sin6_port = htons((uint16_t) port_long);
 			memcpy(&in6->sin6_addr, ip_bin_tmp, sizeof(in6->sin6_addr));
 
 			data->ip_addr_len = sizeof(*in6);
@@ -502,7 +525,7 @@ static PyObject *rrr_python3_rrr_message_f_set_ip(PyObject *self, PyObject *args
 		else {
 			struct sockaddr_in *in = (struct sockaddr_in *) &sockaddr_tmp;
 			in->sin_family = AF_INET6;
-			in->sin_port = htons(port_long);
+			in->sin_port = htons((uint16_t) port_long);
 			memcpy(&in->sin_addr, ip_bin_tmp, sizeof(in->sin_addr));
 
 			data->ip_addr_len = sizeof(*in);
@@ -748,23 +771,23 @@ PyTypeObject rrr_python3_rrr_message_type = {
     struct rrr_type_value **target,                            \
     uint8_t type,                                              \
     uint8_t type_flags,                                        \
-    ssize_t item_size,                                         \
+    rrr_length item_size,                                      \
     const char *tag,                                           \
     rrr_length tag_length,                                     \
-    ssize_t elements
+    rrr_length elements
 
 #define CONVERT_DEF                                            \
     struct rrr_type_value *target,                             \
     PyObject *item,                                            \
-    int index,                                                 \
-    ssize_t size
+    rrr_length index,                                          \
+    rrr_length size
 
 #define PRELIMINARY_CHECK_DEF                                  \
     int (**allocate_function)(ALLOCATE_DEF),                   \
     int (**convert_function)(CONVERT_DEF),                     \
     uint8_t *target_type,                                      \
     uint8_t *target_type_flags,                                \
-    ssize_t *size,                                             \
+    rrr_length *size,                                          \
     PyObject **new_subject,                                    \
     PyObject *subject
 
@@ -813,9 +836,9 @@ static int __allocate_blob (ALLOCATE_DEF) {
 void __convert_save_data (
 		struct rrr_type_value *target,
 		const void *data,
-		int index,
-		ssize_t allocated_size,
-		ssize_t new_size
+		rrr_length index,
+		rrr_length allocated_size,
+		rrr_length new_size
 ) {
 	char *pos = target->data + new_size * index;
 
@@ -842,15 +865,36 @@ static int __convert_long (CONVERT_DEF) {
 	return 0;
 }
 
-static int __convert_str (CONVERT_DEF) {
-	ssize_t new_size = 0;
-	const char *str = PyUnicode_AsUTF8AndSize(item, &new_size);
-	if (str == NULL) {
-		RRR_MSG_0("Could not convert string in  __convert_str\n");
+static int __convert_check_str (
+		rrr_length *new_size_final,
+		ssize_t new_size,
+		const char *str
+) {
+	if (str == NULL || new_size < 0) {
+		RRR_MSG_0("Could not convert string in  __convert_*\n");
+		return 1;
+	}
+	if (new_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("String too long in __convert_* (%lli>%lli)\n",
+			 (long long int) new_size, (long long int) RRR_LENGTH_MAX);
 		return 1;
 	}
 
-	__convert_save_data(target, str, index, size, new_size);
+	*new_size_final = (rrr_length) new_size;
+
+	return 0;
+}
+
+static int __convert_str (CONVERT_DEF) {
+	ssize_t new_size = 0;
+	const char *str = PyUnicode_AsUTF8AndSize(item, &new_size);
+
+	rrr_length new_size_final = 0;
+	if (__convert_check_str(&new_size_final, new_size, str) != 0) {
+		return 1;
+	}
+
+	__convert_save_data(target, str, index, size, new_size_final);
 
 	return 0;
 }
@@ -858,12 +902,13 @@ static int __convert_str (CONVERT_DEF) {
 static int __convert_blob (CONVERT_DEF) {
 	ssize_t new_size = PyByteArray_Size(item);
 	const char *str = PyByteArray_AsString(item);
-	if (str == NULL) {
-		RRR_MSG_0("Could not convert byte array to string in  __convert_blob\n");
+
+	rrr_length new_size_final = 0;
+	if (__convert_check_str(&new_size_final, new_size, str) != 0) {
 		return 1;
 	}
 
-	__convert_save_data(target, str, index, size, new_size);
+	__convert_save_data(target, str, index, size, new_size_final);
 
 	return 0;
 }
@@ -895,7 +940,7 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 		if (PyFloat_Check(subject)) {
 			test_d = PyFloat_AsDouble(subject);
 			if (test_d == -1.0 && PyErr_Occurred()) {
-				RRR_MSG_0("Error while converting double in __preliminary_check_long\n");
+				RRR_MSG_0("Error while converting double in __preliminary_check_fixp\n");
 				ret = 1;
 				goto out;
 			}
@@ -912,8 +957,18 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 				goto out;
 			}
 
+			Py_ssize_t length = PyUnicode_GetLength(subject);
+			if (length < 0) {
+				RRR_MSG_0("Negative result from GetLength in __preliminary_check_fixp\n");
+				ret = 1;
+				goto out;
+			}
+			else if (length > RRR_LENGTH_MAX) {
+				length = RRR_LENGTH_MAX;
+			}
+
 			const char *endptr;
-			if ((ret = rrr_fixp_str_to_fixp(&test_f, str, PyUnicode_GetLength(subject), &endptr)) != 0) {
+			if ((ret = rrr_fixp_str_to_fixp(&test_f, str, (rrr_length) length, &endptr)) != 0) {
 				RRR_MSG_0("Error while converting string to fixed pointer in __preliminary_check_fixp\n");
 				goto out;
 			}
@@ -965,7 +1020,8 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 			ret = 1;
 			goto out;
 		}
-		if (test_d > INT64_MAX || test_d < INT64_MIN) {
+		// Value of INT64_MAX as double
+		if (test_d > 9223372036854775807.0 || test_d < INT64_MIN) {
 			RRR_MSG_0("Double value was out of range in __preliminary_check_long\n");
 			ret = 1;
 			goto out;
@@ -1108,7 +1164,8 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 		if (replacement_subject == NULL) {
 			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __preliminary_check_stringish\n",
 					subject->ob_type->tp_name);
-			return 1;
+			ret = 1;
+			goto out;
 		}
 
 		if (new_size == 0) {
@@ -1118,9 +1175,17 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 
 	if (*size != 0 && *size != new_size) {
 		RRR_MSG_0("Size of strings in array was not of equal length, which is required.\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
+	if (new_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Size overflow in __preliminary_check_stringish (%lli>%lli)\n",
+			(long long int) new_size, (long long int) RRR_LENGTH_MAX);
+		ret = 1;
+		goto out;
+	}
+	
 	*new_subject = replacement_subject;
 	*allocate_function = __allocate_blob;
 	*convert_function = __convert_str;
@@ -1128,7 +1193,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 		*target_type = RRR_TYPE_STR;
 	}
 	*target_type_flags = 0;
-	*size = new_size;
+	*size = (rrr_length) new_size;
 
 	replacement_subject = NULL;
 
@@ -1159,8 +1224,8 @@ static int __preliminary_check_sep (PRELIMINARY_CHECK_DEF) {
 		return 1;
 	}
 
-	for (int i = 0; i < *size; i++) {
-		unsigned char c = str[i];
+	for (rrr_length i = 0; i < *size; i++) {
+		unsigned char c = (unsigned char) str[i];
 		if (!RRR_TYPE_CHAR_IS_SEP(c) && !RRR_TYPE_CHAR_IS_STX(c)) {
 			RRR_MSG_0("Found non-separator character 0x%02x in supposed separator string while converting\n", c);
 			ret = 1;
@@ -1175,22 +1240,32 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 	int ret = 0;
 
 	PyObject *replacement_subject = NULL;
-	ssize_t new_size = 0;
+	rrr_length new_size = 0;
 
 	if (PyByteArray_Check(subject)) {
-		new_size = PyByteArray_Size(subject);
+		new_size = (rrr_length) PyByteArray_Size(subject);
 	}
 	else {
 		if (PyBytes_Check(subject)) {
-			new_size = PyBytes_Size(subject);
+			new_size = (rrr_length) PyBytes_Size(subject);
 			replacement_subject = PyByteArray_FromObject(subject);
 		}
 		else if (PyUnicode_Check(subject)) {
-			const char *str = PyUnicode_AsUTF8AndSize(subject, &new_size);
+			Py_ssize_t py_new_size = 0;
+			const char *str = PyUnicode_AsUTF8AndSize(subject, &py_new_size);
 			if (str == NULL) {
 				RRR_MSG_0("Could not get string from unicode object in __preliminary_check_blob\n");
+				ret = 1;
+				goto out;
 			}
-			replacement_subject = PyByteArray_FromStringAndSize(str, new_size);
+			if (py_new_size < 0 || py_new_size > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Negative or too long size in __preliminary_check_blob (%lli vs %lli)\n",
+					(long long int) py_new_size, (long long int) (RRR_LENGTH_MAX));
+				ret = 1;
+				goto out;
+			}
+			replacement_subject = PyByteArray_FromStringAndSize(str, py_new_size);
+			new_size = (rrr_length) py_new_size;
 		}
 		else {
 			RRR_MSG_0("Could not convert type %s to bytearray in __preliminary_check_blob\n",
@@ -1250,12 +1325,25 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		void *arg
 ) {
 	struct rrr_array *target = arg;
+
+	int ret = 0;
+
 	struct rrr_type_value *new_value = NULL;
 
 	const char *tag_str = NULL;
-	ssize_t tag_length = 0;
+	rrr_length tag_length = 0;
 
-	int ret = 0;
+	rrr_length count = 0;
+	PyObject *first_item = PyList_GetItem(list, 0); // Borrowed reference
+
+	uint8_t target_type = 0;
+	uint8_t target_type_flags = 0;
+
+	rrr_length item_size = 0;
+
+	int (*preliminary_check_function)(PRELIMINARY_CHECK_DEF) = NULL;
+	int (*allocate_function)(ALLOCATE_DEF) = NULL;
+	int (*convert_function)(CONVERT_DEF) = NULL;
 
 	if (list == NULL) {
 		RRR_BUG("List was NULL in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
@@ -1274,34 +1362,37 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 			goto out;
 		}
 
-		if ((tag_str = PyUnicode_AsUTF8AndSize(tag, &tag_length)) == NULL) {
+		ssize_t tag_length_tmp;
+		if ((tag_str = PyUnicode_AsUTF8AndSize(tag, &tag_length_tmp)) == NULL) {
 			RRR_MSG_0("Could not convert tag object to string in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
 			ret = 1;
 			goto out;
 		}
+
+		if (tag_length_tmp > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Tag was too long itn __rrr_python3_array_rrr_message_get_message_store_array_node_callback (%lli>%lli)\n",
+				(long long int) tag_length_tmp, (long long int) RRR_LENGTH_MAX);
+			ret = 1;
+			goto out;
+		}
+
+		tag_length = (rrr_length) tag_length_tmp;
 	}
 
 	if (!PyList_Check(list)) {
 		RRR_BUG("Value was not a list in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
 	}
 
-	ssize_t count = PyList_GET_SIZE(list);
-	PyObject *first_item = PyList_GetItem(list, 0); // Borrowed reference
+	{
+		ssize_t count_tmp = PyList_GET_SIZE(list);
+		if (count_tmp < 1 || first_item == NULL || count_tmp > RRR_LENGTH_MAX) {
+			RRR_MSG_0("List of node had no value elements or list length overflow in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+			ret = 1;
+			goto out;
+		}
 
-	if (count < 1 || first_item == NULL) {
-		RRR_MSG_0("List of node had no value elements in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
-		ret = 1;
-		goto out;
+		count = (rrr_length) count_tmp;
 	}
-
-	uint8_t target_type = 0;
-	uint8_t target_type_flags = 0;
-
-	ssize_t item_size = 0;
-
-	int (*preliminary_check_function)(PRELIMINARY_CHECK_DEF) = NULL;
-	int (*allocate_function)(ALLOCATE_DEF) = NULL;
-	int (*convert_function)(CONVERT_DEF) = NULL;
 
 	// Attempt to use original type
 	if (type_orig > 0) {
@@ -1362,7 +1453,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		goto out;
 	}
 
-	for (int i = 0; i < count; i++) {
+	for (Py_ssize_t i = 0; i < count; i++) {
 		PyObject *item = PyList_GET_ITEM(list, i);
 		PyObject *replacement_item = NULL;
 
@@ -1387,6 +1478,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		if (convert_function == NULL) {
 			RRR_MSG_0("Could not convert item of type '%s' to type '%u' in array, item is not convertible to target type\n",
 					item->ob_type->tp_name, target_type);
+			ret = 1;
 			goto out;
 		}
 	}
@@ -1397,15 +1489,15 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 			target_type_flags,
 			item_size,
 			tag_str,
-			tag_length,
-			count
+			rrr_length_from_slength_bug_const(tag_length),
+			rrr_length_from_slength_bug_const(count)
 	)) != 0) {
 		RRR_MSG_0("Could not allocate memory for type %u in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n",
 				target_type);
 		goto out;
 	}
 
-	for (int i = 0; i < count; i++) {
+	for (rrr_length i = 0; i < count; i++) {
 		PyObject *item = PyList_GET_ITEM(list, i);
 		if ((ret = convert_function(new_value, item, i, item_size)) != 0) {
 			RRR_MSG_0("Error while converting value of type '%s' to %u\n",
@@ -1512,7 +1604,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	if (message_addr != NULL) {
 		memcpy(&ret->ip_addr, &message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
-		ret->ip_addr_len = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
+		ret->ip_addr_len = (socklen_t) RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
 		ret->ip_protocol = message_addr->protocol;
 	}
 	else {

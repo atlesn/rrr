@@ -40,7 +40,7 @@ void rrr_msg_populate_head (
 		struct rrr_msg *message,
 		rrr_u16 type,
 		rrr_u32 msg_size,
-		rrr_u64 value
+		rrr_u32 value
 ) {
 	if (msg_size < sizeof(*message)) {
 		RRR_BUG("Size was too small in rrr_msg_head_to_network\n");
@@ -54,7 +54,7 @@ void rrr_msg_populate_head (
 void rrr_msg_populate_control_msg (
 		struct rrr_msg *message,
 		rrr_u16 flags,
-		rrr_u64 value
+		rrr_u32 value
 ) {
 	if ((flags & RRR_MSG_CTRL_F_RESERVED) != 0) {
 		RRR_BUG("Reserved flags were set in rrr_msg_populate_control_msg\n");
@@ -84,7 +84,7 @@ static int __rrr_msg_head_validate (
 	if (RRR_MSG_IS_CTRL(message)) {
 		// Clear all known control flags
 		rrr_u16 type = message->msg_type;
-		type = type & ~(RRR_MSG_CTRL_F_ALL);
+		type = type & (rrr_u16) ~(RRR_MSG_CTRL_F_ALL);
 		if (type != 0) {
 			RRR_MSG_0("Unknown control flags in message: %u\n", type);
 			ret = 1;

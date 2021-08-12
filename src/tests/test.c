@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
-#include "../lib/configuration.h"
+#include "../lib/instance_config.h"
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
@@ -217,7 +217,7 @@ int main (int argc, const char **argv, const char **env) {
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker *message_broker = NULL;
-	struct rrr_config *config = NULL;
+	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct cmd_data cmd;
@@ -277,7 +277,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	TEST_BEGIN("configuration loading") {
-		ret = rrr_config_parse_file(&config, config_file);
+		ret = rrr_instance_config_parse_file(&config, config_file);
 	} TEST_RESULT(ret == 0);
 
 	if (config == NULL) {
@@ -292,7 +292,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (rrr_instance_create_from_config(&instances, config, library_paths) != 0) {
+		if (rrr_instances_create_from_config(&instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -354,7 +354,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	out_cleanup_config:
 		if (config != NULL) {
-			rrr_config_destroy(config);
+			rrr_instance_config_collection_destroy(config);
 		}
 
 	out_cleanup_cmd:

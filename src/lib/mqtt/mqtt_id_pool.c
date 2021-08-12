@@ -49,14 +49,13 @@ void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool) {
 	RRR_FREE_IF_NOT_NULL(pool->pool);
 }
 
-static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssize_t steps) {
-	ssize_t new_majors = pool->allocated_majors + steps;
+static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, rrr_length steps) {
+	rrr_length new_majors = pool->allocated_majors + steps;
 	if (new_majors > (ssize_t) RRR_MQTT_ID_POOL_SIZE_IN_32) {
 		return 1;
 	}
 
-//	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
-	ssize_t new_size = new_majors * sizeof(*(pool->pool));
+	rrr_length new_size = new_majors * sizeof(*(pool->pool));
 
 	uint32_t *new_pool = rrr_reallocate(pool->pool, pool->allocated_majors * sizeof(*(pool->pool)), new_size);
 	if (new_pool == NULL) {
@@ -93,10 +92,10 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 	return 0;
 }
 
-#define MIN_MAJ_MASK(id)						\
-		uint32_t min = (id - 1) % 32;			\
-		ssize_t maj = (id - 1 - min) / 32;		\
-		uint32_t mask = (1 << min)
+#define MIN_MAJ_MASK(id)                                                \
+		uint32_t min = (uint32_t) ((id - 1) % 32);              \
+		rrr_length maj = (rrr_length) ((id - 1 - min) / 32);    \
+		uint32_t mask = (uint32_t) (1 << min)
 
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	uint16_t ret = 0; // = no id available
@@ -124,10 +123,10 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	ret = 0;
 
 	retry:
-	for (int i = 0; i < pool->allocated_majors; i++) {
+	for (rrr_length i = 0; i < pool->allocated_majors; i++) {
 		uint16_t ret_tmp = __rrr_mqtt_id_pool_get_id_32 (&(pool->pool[i]));
 		if (ret_tmp > 0) {
-			ret = ret_tmp + 32 * i;
+			ret = (uint16_t) (ret_tmp + 32 * i);
 			RRR_DBG_3("Allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[i]);
 			goto out;
 		}

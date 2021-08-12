@@ -225,8 +225,9 @@ char *rrr_strdup (const char *str) {
 	return strdup(str);
 }
 
-void rrr_allocator_init (void) {
+int rrr_allocator_init (void) {
 	// Nothing to do
+	return 0;
 }
 
 void rrr_allocator_cleanup (void) {

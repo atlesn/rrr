@@ -24,13 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <inttypes.h>
-#include <stdio.h>
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_send_chunk.h"
 
+#include "../rrr_types.h"
 #include "../read.h"
 #include "../util/linked_list.h"
 
@@ -67,32 +66,32 @@ int rrr_socket_client_collection_count (
 );
 void rrr_socket_client_collection_send_chunk_iterate (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*callback)(int *do_remove, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 );
 void rrr_socket_client_collection_close_outbound_when_send_complete (
 		struct rrr_socket_client_collection *collection
 );
 void rrr_socket_client_collection_send_push_const_multicast (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const void *data,
-		ssize_t size,
-		int send_chunk_limit
+		rrr_biglength size,
+		rrr_length send_chunk_limit
 );
 int rrr_socket_client_collection_send_push (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		void **data,
-		ssize_t data_size
+		rrr_biglength data_size
 );
 int rrr_socket_client_collection_send_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const void *data,
-		ssize_t data_size
+		rrr_biglength data_size
 );
 void rrr_socket_client_collection_close_when_send_complete_by_address (
 		struct rrr_socket_client_collection *collection,
@@ -108,12 +107,12 @@ void rrr_socket_client_collection_close_when_send_complete_by_fd (
 		int fd
 );
 int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
@@ -121,11 +120,11 @@ int rrr_socket_client_collection_send_push_const_by_address_connect_as_needed (
 		void *connect_callback_data
 );
 int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_needed (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		const char *addr_string,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data),
@@ -140,13 +139,13 @@ int rrr_socket_client_collection_send_push_const_by_address_string_connect_as_ne
 		void *connect_callback_data
 );
 int rrr_socket_client_collection_sendto_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_client_collection *collection,
 		int fd,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		void (*chunk_private_data_new)(void **chunk_private_data, void *arg),
 		void *chunk_private_data_arg,
 		void (*chunk_private_data_destroy)(void *chunk_private_data)
@@ -162,7 +161,7 @@ int rrr_socket_client_collection_connected_fd_push (
 );
 void rrr_socket_client_collection_send_notify_setup (
 		struct rrr_socket_client_collection *collection,
-		void (*callback)(int was_sent, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *callback_arg),
+		void (*callback)(int was_sent, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *callback_arg),
 		void *callback_arg
 );
 void rrr_socket_client_collection_fd_close_notify_setup (
@@ -175,7 +174,7 @@ void rrr_socket_client_collection_event_setup (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_flags_socket,
 		RRR_MSG_TO_HOST_AND_VERIFY_CALLBACKS_COMMA,
 		void *callback_arg
@@ -185,7 +184,7 @@ void rrr_socket_client_collection_event_setup_raw (
 		int (*callback_private_data_new)(void **target, int fd, void *private_arg),
 		void (*callback_private_data_destroy)(void *private_data),
 		void *callback_private_data_arg,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -200,7 +199,7 @@ void rrr_socket_client_collection_event_setup_array_tree (
 		int read_flags_socket,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		unsigned int message_max_size,
 		int (*array_callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *private_data, void *arg),
 		void *array_callback_arg
