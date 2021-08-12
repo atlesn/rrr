@@ -137,7 +137,7 @@ static int main_stats_post_text_message (struct stats_data *stats_data, const ch
 			flags,
 			path,
 			text,
-			strlen(text) + 1
+			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
 	) != 0) {
 		RRR_BUG("Could not initialize main statistics message\n");
 	}
@@ -162,7 +162,7 @@ static int main_stats_post_unsigned_message (struct stats_data *stats_data, cons
 			flags,
 			path,
 			text,
-			strlen(text) + 1
+			rrr_u16_from_biglength_bug_const (strlen(text) + 1)
 	) != 0) {
 		RRR_BUG("Could not initialize main statistics message\n");
 	}
@@ -544,7 +544,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 	int ret = 0;
 
 	const char *config_string;
-	int config_i = 0;
+	cmd_arg_count config_i = 0;
 	while ((config_string = cmd_get_value(cmd, "config", config_i)) != NULL) {
 		if (*config_string == '\0') {
 			break;

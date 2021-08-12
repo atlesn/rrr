@@ -184,7 +184,7 @@ static int __rrr_test_msgdb_send_empty (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 
@@ -214,7 +214,7 @@ static int __rrr_test_msgdb_get_msg (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 
@@ -318,7 +318,7 @@ static int __rrr_test_msgdb_get_and_check_msg (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, (ssize_t) strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 

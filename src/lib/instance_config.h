@@ -25,67 +25,82 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "util/linked_list.h"
 
-#define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)															\
-	do { const char *__prefix = prefix; char *config_string = NULL
+#define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)                                                            \
+    do { const char *__prefix = prefix; char *config_string = NULL
 
 // Define the out: here to make sure we free upon errors, user must remove existing out: label
-#define RRR_INSTANCE_CONFIG_PREFIX_END()																	\
-	out:																									\
-	RRR_FREE_IF_NOT_NULL(config_string); } while(0)
+#define RRR_INSTANCE_CONFIG_PREFIX_END()                                                                    \
+    out:                                                                                                    \
+    RRR_FREE_IF_NOT_NULL(config_string); } while(0)
 
-#define RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name_,suffix)											\
-	do {if (rrr_instance_config_string_set(&config_string, __prefix, name_, suffix) != 0) {					\
-		RRR_MSG_0("Could not generate config string from prefix in instance %s\n", config->name);			\
-		ret = 1; goto out;																					\
-	}} while(0)
+#define RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name_,suffix)                                            \
+    do {if (rrr_instance_config_string_set(&config_string, __prefix, name_, suffix) != 0) {                 \
+        RRR_MSG_0("Could not generate config string from prefix in instance %s\n", config->name);           \
+        ret = 1; goto out;                                                                                  \
+    }} while(0)
 
-#define RRR_INSTANCE_CONFIG_STRING_SET(name)																\
-	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
+#define RRR_INSTANCE_CONFIG_STRING_SET(name)                                                                \
+    RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
 
-#define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)													\
-	do { if ( rrr_instance_config_setting_exists(config, string)) { then;									\
-	}} while (0)
+#define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)                                                    \
+    do { if ( rrr_instance_config_setting_exists(config, string)) { then;                                   \
+    }} while (0)
 
-#define RRR_INSTANCE_CONFIG_IF_NOT_EXISTS_THEN(string, then)												\
-	do { if (!rrr_instance_config_setting_exists(config, string)) { then;									\
-	}} while (0)
+#define RRR_INSTANCE_CONFIG_IF_NOT_EXISTS_THEN(string, then)                                                \
+    do { if (!rrr_instance_config_setting_exists(config, string)) { then;                                   \
+    }} while (0)
 
 #define RRR_INSTANCE_CONFIG_EXISTS(string) \
-	rrr_instance_config_setting_exists(config, string)
+    rrr_instance_config_setting_exists(config, string)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(string, target, default_yesno)								\
-do {int yesno = default_yesno;																				\
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\
-		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",						\
-				string, config->name);																		\
-			ret = 1; goto out;																				\
-		}																									\
-		ret = 0;																							\
-	} data->target = (yesno >= 0 ? yesno : default_yesno); } while(0)
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(string, target, default_yesno)                             \
+do {int yesno = default_yesno;                                                                              \
+    if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {                             \
+        if (ret != RRR_SETTING_NOT_FOUND) {                                                                 \
+            RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",                      \
+                string, config->name);                                                                      \
+            ret = 1; goto out;                                                                              \
+        }                                                                                                   \
+        ret = 0;                                                                                            \
+    } data->target = (yesno >= 0 ? yesno : default_yesno); } while(0)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, def)										\
-do {if ((ret = rrr_instance_config_parse_optional_utf8(&data->target, config, string, def)) != 0) {			\
-		goto out;																							\
-	}} while(0)
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, def)                                        \
+do {if ((ret = rrr_instance_config_parse_optional_utf8(&data->target, config, string, def)) != 0) {         \
+        goto out;                                                                                           \
+    }} while(0)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)								\
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, NULL)
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)                                \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, NULL)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, target, default_uint)							\
-do {rrr_setting_uint tmp_uint = (default_uint);																\
-	if ((ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, string)) != 0) {				\
-		if (ret == RRR_SETTING_NOT_FOUND) {																	\
-			tmp_uint = default_uint;																		\
-			ret = 0;																						\
-		} else {																							\
-			RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);					\
-			ret = 1; goto out;																				\
-		}																									\
-	} target = tmp_uint; } while(0)
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, target, default_uint)                       \
+do {rrr_setting_uint tmp_uint = (default_uint);                                                             \
+    if ((ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, string)) != 0) {                \
+        if (ret == RRR_SETTING_NOT_FOUND) {                                                                 \
+            tmp_uint = default_uint;                                                                        \
+            ret = 0;                                                                                        \
+        } else {                                                                                            \
+            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);                 \
+            ret = 1; goto out;                                                                              \
+        }                                                                                                   \
+    } target = tmp_uint; } while(0)
 
-#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)							\
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, data->target, default_uint)
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)                           \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED_RAW(string, data->target, default_uint)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, target, default_double)                       \
+do {rrr_setting_double tmp_double = (default_double);                                                       \
+    if ((ret = rrr_instance_config_read_double(&tmp_double, config, string)) != 0) {                        \
+        if (ret == RRR_SETTING_NOT_FOUND) {                                                                 \
+            tmp_double = default_double;                                                                    \
+            ret = 0;                                                                                        \
+        } else {                                                                                            \
+            RRR_MSG_0("Could not parse setting %s of instance %s\n", string, config->name);                 \
+            ret = 1; goto out;                                                                              \
+        }                                                                                                   \
+    } target = tmp_double; } while(0)
+
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE(string, target, default_double)                           \
+    RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_DOUBLE_RAW(string, data->target, default_double)
 
 struct rrr_array;
 struct rrr_array_tree;
@@ -132,6 +147,14 @@ static inline int rrr_instance_config_read_unsigned_integer (
 		const char *name
 ) {
 	return rrr_settings_read_unsigned_integer (target, source->settings, name);
+}
+
+static inline int rrr_instance_config_read_double (
+		rrr_setting_double *target,
+		struct rrr_instance_config_data *source,
+		const char *name
+) {
+	return rrr_settings_read_double (target, source->settings, name);
 }
 
 static inline int rrr_instance_config_check_yesno (

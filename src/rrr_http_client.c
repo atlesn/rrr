@@ -188,7 +188,12 @@ static int __rrr_http_client_parse_config (
 
 		sprintf(array_tree_tmp, "%s;", array_definition);
 
-		if (rrr_array_tree_interpret_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+		if (rrr_array_tree_interpret_raw (
+				&data->tree,
+				array_tree_tmp,
+				rrr_length_from_biglength_bug_const(strlen(array_tree_tmp)),
+				"-"
+		) != 0 || data->tree == NULL) {
 			RRR_MSG_0("Error while parsing array tree definition\n");
 			ret = 1;
 			goto out;
@@ -300,7 +305,7 @@ static int __rrr_http_client_parse_config (
 		ret = 1;
 		goto out;
 	}
-	request_data->http_port = port_tmp;
+	request_data->http_port = (uint16_t) port_tmp;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(array_tree_tmp);
@@ -309,7 +314,7 @@ static int __rrr_http_client_parse_config (
 
 static int __rrr_http_client_final_write_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	ssize_t *bytes = arg;
@@ -324,8 +329,8 @@ static int __rrr_http_client_final_callback (
 
 	int ret = 0;
 
-	rrr_length data_start = 0;
-	rrr_length data_size = rrr_nullsafe_str_len(response_data);
+	rrr_nullsafe_len data_start = 0;
+	rrr_nullsafe_len data_size = rrr_nullsafe_str_len(response_data);
 
 	if (data_size == 0) {
 		goto out;
@@ -369,8 +374,11 @@ static int __rrr_http_client_final_callback (
 			goto out;
 		}
 		else {
-			data_start += bytes;
-			data_size -= bytes;
+			data_start += (rrr_nullsafe_len) bytes;
+			data_size -= (rrr_nullsafe_len) bytes;
+			if (data_size > (rrr_nullsafe_len) bytes) {
+				RRR_BUG("BUG: Underflow in __rrr_http_client_final_callack\n");
+			}
 		}
 	}
 
@@ -452,7 +460,7 @@ static int __rrr_http_client_redirect_callback (
 
 struct rrr_http_client_send_websocket_frame_callback_data {
 	void **data;
-	ssize_t *data_len;
+	rrr_biglength *data_len;
 	int *is_binary;
 	struct rrr_http_client_data *http_client_data;
 };
@@ -536,7 +544,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 				goto out;
 			}
 
-			*data_len = (ssize_t) target_size;
+			*data_len = target_size;
 
 			*data = raw_tmp;
 			raw_tmp = NULL;
@@ -572,7 +580,7 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	(void)(arg);
@@ -593,7 +601,11 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 		printf ("- (binary data) -\n");
 	}
 	else {
-		rrr_nullsafe_str_with_raw_do_const(payload, __rrr_http_client_receive_websocket_frame_nullsafe_callback, NULL);
+		rrr_nullsafe_str_with_raw_do_const (
+				payload,
+				__rrr_http_client_receive_websocket_frame_nullsafe_callback,
+				NULL
+		);
 	}
 
 	return 0;

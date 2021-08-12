@@ -86,7 +86,7 @@ struct mysql_data {
 	char *mysql_db;
 	char *mysql_table;
 
-	unsigned int mysql_port;
+	uint16_t mysql_port;
 
 	int drop_unknown_messages;
 	int colplan;
@@ -858,11 +858,8 @@ static int mysql_parse_port (
 	int ret = 0;
 
 	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
-	rrr_setting_uint tmp_uint;
 
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "mysql_port");
-
-	if (ret != 0) {
+	if ((ret = rrr_instance_config_read_port_number (&data->mysql_port, config, "mysql_port")) != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_0("Could not parse mysql_port for instance %s\n", config->name);
 			ret = 1;

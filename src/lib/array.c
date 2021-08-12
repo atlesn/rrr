@@ -400,11 +400,12 @@ int rrr_array_push_value_str_with_tag (
 	);
 }
 
-int rrr_array_get_value_unsigned_64_by_tag (
-		uint64_t *result,
+static int __rrr_array_get_value_64_by_tag (
+		void *result,
 		struct rrr_array *array,
 		const char *tag,
-		unsigned int index
+		unsigned int index,
+		int do_signed
 ) {
 	int ret = 0;
 
@@ -416,8 +417,13 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		goto out;
 	}
 
-	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
+	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && !do_signed) {
 		RRR_MSG_0("Value '%s' in array was signed but unsigned value was expected\n", tag);
+		ret = 1;
+		goto out;
+	}
+	else if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && do_signed) {
+		RRR_MSG_0("Value '%s' in array was unsigned but signed value was expected\n", tag);
 		ret = 1;
 		goto out;
 	}
@@ -429,10 +435,33 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		goto out;
 	}
 
-	*result = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+	if (do_signed) {
+		*((int64_t *) result) = *((int64_t*) value->data + (sizeof(int64_t) * index));
+	}
+	else {
+		*((uint64_t *) result) = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+	}
 
 	out:
 	return ret;
+}
+
+int rrr_array_get_value_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		unsigned int index
+) {
+	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 0 /* Not signed */);
+}
+
+int rrr_array_get_value_signed_64_by_tag (
+		int64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		unsigned int index
+) {
+	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
 }
 
 void rrr_array_strip_type (

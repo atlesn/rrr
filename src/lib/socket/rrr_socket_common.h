@@ -47,7 +47,7 @@ int rrr_socket_common_receive_array_tree (
 		rrr_biglength read_step_max_size,
 		uint64_t ratelimit_interval_us,
 		rrr_biglength ratelimit_max_bytes,
-		unsigned int message_max_size,
+		rrr_length message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
 );

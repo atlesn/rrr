@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -556,7 +556,7 @@ int rrr_settings_setting_to_string_nolock (
 
 	char *value;
 	if (setting->type == RRR_SETTINGS_TYPE_STRING) {
-		if ((value = rrr_allocate(setting->data_size)) == NULL) {
+		if ((value = rrr_allocate(setting->data_size + 1)) == NULL) {
 			goto out_malloc_err;
 		}
 		sprintf(value, "%s", (char*) setting->data);
@@ -565,7 +565,15 @@ int rrr_settings_setting_to_string_nolock (
 		if ((value = rrr_allocate(RRR_SETTINGS_UINT_AS_TEXT_MAX)) == NULL) {
 			goto out_malloc_err;
 		}
-		sprintf(value, "%llu", *((unsigned long long *) setting->data));
+		snprintf(value, RRR_SETTINGS_UINT_AS_TEXT_MAX, "%llu", *((unsigned long long *) setting->data));
+		value[RRR_SETTINGS_UINT_AS_TEXT_MAX - 1] = '\0';
+	}
+	else if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if ((value = rrr_allocate(RRR_SETTINGS_LDBL_AS_TEXT_MAX)) == NULL) {
+			goto out_malloc_err;
+		}
+		snprintf(value, RRR_SETTINGS_LDBL_AS_TEXT_MAX, "%Lf", *((rrr_setting_double *) setting->data));
+		value[RRR_SETTINGS_LDBL_AS_TEXT_MAX - 1] = '\0';
 	}
 	else {
 		RRR_BUG("BUG: Could not convert setting of type %d to string\n", setting->type);
@@ -593,6 +601,12 @@ int rrr_settings_setting_to_uint_nolock (
 			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
 		}
 		*target = *((rrr_setting_uint*) setting->data);
+	}
+	if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if (sizeof(rrr_setting_double) != setting->data_size) {
+			RRR_BUG("BUG: Setting double size mismatch\n");
+		}
+		*target = (rrr_setting_uint) *((rrr_setting_double*) setting->data);
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
 		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
@@ -624,6 +638,66 @@ int rrr_settings_setting_to_uint_nolock (
 	}
 	else {
 		RRR_BUG("BUG: Could not convert setting of type %d to unsigned int\n", setting->type);
+	}
+
+	out:
+	if (tmp_string != NULL) {
+		rrr_free(tmp_string);
+	}
+
+	return ret;
+}
+
+int rrr_settings_setting_to_double_nolock (
+		rrr_setting_double *target,
+		struct rrr_setting *setting
+) {
+	int ret = 0;
+	char *tmp_string = NULL;
+	*target = 0;
+
+	if (setting->type == RRR_SETTINGS_TYPE_UINT) {
+		if (sizeof(rrr_setting_uint) != setting->data_size) {
+			RRR_BUG("BUG: Setting unsigned integer size mismatch\n");
+		}
+		*target = (rrr_setting_double) *((rrr_setting_uint*) setting->data);
+	}
+	if (setting->type == RRR_SETTINGS_TYPE_DOUBLE) {
+		if (sizeof(rrr_setting_double) != setting->data_size) {
+			RRR_BUG("BUG: Setting double size mismatch\n");
+		}
+		*target = *((rrr_setting_double*) setting->data);
+	}
+	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
+		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
+		if (ret != 0) {
+			RRR_MSG_0("Could not get string of '%s' while converting to double\n", setting->name);
+			goto out;
+		}
+
+		// strtoull will accept negative numbers, we need to check here first
+		for (unsigned const char *pos = (unsigned const char *) tmp_string; *pos != '\0'; pos++) {
+			if ((*pos < '0' || *pos > '9') && *pos != '.') {
+				RRR_MSG_0("Unknown character '%c' in supposed double '%s'\n",
+						*pos, tmp_string);
+				ret = 1;
+				goto out;
+			}
+		}
+
+		char *end;
+		rrr_setting_double tmp = strtod(tmp_string, &end);
+
+		if (*end != '\0') {
+			ret = RRR_SETTING_PARSE_ERROR;
+			RRR_MSG_0("Syntax error while converting setting '%s' with value '%s' to double\n", setting->name, tmp_string);
+			goto out;
+		}
+
+		*target = tmp;
+	}
+	else {
+		RRR_BUG("BUG: Could not convert setting of type %d to double\n", setting->type);
 	}
 
 	out:
@@ -675,6 +749,30 @@ int rrr_settings_read_unsigned_integer (
 	}
 
 	ret = rrr_settings_setting_to_uint_nolock (target, setting);
+
+	out_unlock:
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_read_double (
+		rrr_setting_double *target,
+		struct rrr_instance_settings *settings,
+		const char *name
+) {
+	int ret = 0;
+	*target = 0;
+
+	__rrr_settings_lock(settings);
+
+	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(settings, name);
+	if (setting == NULL) {
+		ret = RRR_SETTING_NOT_FOUND;
+		goto out_unlock;
+	}
+
+	ret = rrr_settings_setting_to_double_nolock (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);

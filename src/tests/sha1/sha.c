@@ -127,11 +127,11 @@ int main(int argc, char *argv[])
          */
         rrr_SHA1Reset(&sha);
 
-        c = fgetc(fp);
+        c = (char) fgetc(fp);
         while(!feof(fp))
         {
             rrr_SHA1Input(&sha, (const unsigned char *) &c, 1);
-            c = fgetc(fp);
+            c = (char) fgetc(fp);
         }
 
         if (!reading_stdin)

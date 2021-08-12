@@ -118,6 +118,12 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		const char *tag,
 		unsigned int index
 );
+int rrr_array_get_value_signed_64_by_tag (
+		int64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		unsigned int index
+);
 void rrr_array_strip_type (
 		struct rrr_array *collection,
 		const struct rrr_type_definition *definition

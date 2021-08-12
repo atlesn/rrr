@@ -178,7 +178,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		ret = 1;
 		goto out;
 	}
-	data->https_port = port_tmp;
+	data->https_port = (uint16_t) port_tmp;
 #endif
 
 	// HTTP port
@@ -204,7 +204,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		ret = 1;
 		goto out;
 	}
-	data->http_port = port_tmp;
+	data->http_port = (uint16_t) port_tmp;
 
 	out:
 	return ret;

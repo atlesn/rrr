@@ -1026,7 +1026,7 @@ Pushes a 64-bit integer. If the given number is unsigned, it will be stored as u
 .It $message->push_tag_fixp(tag, fixed_pointer)
 Pushes an RRR fixed pointer type. If a string is given, string notation like
 .B /^(10#|16#|)-?\\d+\\.\\d+$/
-is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given is stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
+is assumed.  If a double is given, it is converted directly from double to fixed point. If the value given will be stored as a 64-bit integer internally in perl, native fixed point will be assumed (this is difficult to control in a script).
 
 .It $message->push_tag(tag, value)
 Push a value or on array of values. The type will be identified automatically. Array values are passed by using a reference like 
@@ -2556,8 +2556,14 @@ or
 .B influxdb_fixed_fields .
 .SS voltmonitor (SA)
 Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
-and the measurement itself as an unsigned 64-bit integer with the tag
+and the measurement itself.
+
+The measurement will be stored as a signed 64-bit integer with the tag
 .B measurement.
+The time of the measurment in microseconds will be stored (duplicated) in
+.B timestamp_from
+and
+.B timestamp_to.
 .PP
 .Bl -tag -width -indent
 .It vm_calibration=FLOAT
