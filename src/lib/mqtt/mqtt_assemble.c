@@ -212,7 +212,7 @@ static int __rrr_mqtt_assemble_put_properties (
 
 	const char *end = session->wpos;
 
-	if (end - begin != total_size) {
+	if ((rrr_length) (end - begin) != total_size) {
 		RRR_BUG("Size mismatch in __rrr_mqtt_assemble_put_properties\n");
 	}
 

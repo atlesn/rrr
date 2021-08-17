@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../allocator.h"
+#include "../util/posix.h"
 
 #include "message_holder.h"
 #include "message_holder_util.h"
@@ -47,6 +48,12 @@ int rrr_msg_holder_util_new_with_empty_message (
 
 	rrr_biglength message_size = sizeof(*message) - 1 + message_data_length;
 
+	if (message_size < message_data_length) {
+		RRR_MSG_0("Overflow in while creating message holder with empty message\n");
+		ret = 1;
+		goto out;
+	}
+
 	message = rrr_allocate(message_size);
 	if (message == NULL) {
 		RRR_MSG_0("Could not allocate message in message_holder_new_with_message\n");
@@ -67,7 +74,7 @@ int rrr_msg_holder_util_new_with_empty_message (
 	}
 
 	rrr_msg_holder_lock(entry);
-	memset(message, '\0', message_size);
+	rrr_memset(message, '\0', message_size);
 	rrr_msg_holder_unlock(entry);
 
 	message = NULL;
@@ -98,7 +105,7 @@ int rrr_msg_holder_util_clone_no_locking (
 		rrr_msg_holder_lock(*result);
 		(*result)->buffer_time = source->buffer_time;
 		(*result)->send_time = source->send_time;
-		memcpy((*result)->message, source->message, source->data_length);
+		rrr_memcpy((*result)->message, source->message, source->data_length);
 		rrr_msg_holder_unlock(*result);
 	}
 

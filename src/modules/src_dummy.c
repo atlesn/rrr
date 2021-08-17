@@ -132,7 +132,7 @@ static int dummy_parse_config (struct dummy_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-	if ((rrr_biglength) data->random_payload_max_size > INT_MAX) {
+	if ((rrr_biglength) data->sleep_interval_us > INT_MAX) {
 		RRR_MSG_0("Parameter 'dummy_sleep_interval_us' exceeds maximum of %i in dummy instance %s\n",
 			INT_MAX,
 			config->name
@@ -253,7 +253,7 @@ static void dummy_event_write_entry (
 
 		if (average_time_us <= data->sleep_interval_us) {
 			// Config parser must check integer sizes
-			rrr_posix_usleep(data->sleep_interval_us);
+			rrr_posix_usleep(rrr_size_from_biglength_bug_const(data->sleep_interval_us));
 		}
 
 		uint64_t write_duration = rrr_time_get_64() - data->last_write_time;

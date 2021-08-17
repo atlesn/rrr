@@ -282,7 +282,7 @@ void rrr_log_printf_plain (
 );
 void rrr_log_printn_plain (
 		const char *value,
-		size_t value_size
+		unsigned long long value_size
 );
 void rrr_log_printf (
 		uint8_t loglevel,

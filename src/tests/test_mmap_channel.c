@@ -60,8 +60,8 @@ static int __rrr_test_mmap_channel(struct rrr_fork_handler *fork_handler) {
 
 	pid_t pid = rrr_fork(fork_handler, __rrr_test_mmap_channel_child_exit_notify, NULL);
 
-	const char *test_data = "abcdef";
-	const char *test_data_success = "123456";
+	const char test_data[] = "abcdef";
+	const char test_data_success[] = "123456";
 	char test_data_result[sizeof(test_data)] = "";
 
 	if (pid < 0) {

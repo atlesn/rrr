@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
+#include "lib/rrr_types.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
 #include "lib/messages/msg_msg.h"
@@ -318,7 +319,7 @@ static int __rrr_http_client_final_write_callback (
 		void *arg
 ) {
 	ssize_t *bytes = arg;
-	*bytes = write (STDOUT_FILENO, str, len);
+	*bytes = write (STDOUT_FILENO, str, rrr_size_from_biglength_bug_const (len));
 	return 0;
 }
 
@@ -355,7 +356,7 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
+	RRR_MSG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
@@ -584,7 +585,7 @@ static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
 		void *arg
 ) {
 	(void)(arg);
-	ssize_t bytes = write (STDOUT_FILENO, str, len);
+	ssize_t bytes = write (STDOUT_FILENO, str, rrr_size_from_biglength_bug_const(len));
 	RRR_DBG_3("%lli bytes printed\n", (long long int) bytes);
 	return 0;
 }

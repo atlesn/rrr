@@ -158,7 +158,7 @@ int rrr_cmodule_main_worker_fork_start (
 		goto out_parent_destroy_event_queue;
 	}
 
-	worker->index = cmodule->worker_count - 1;
+	worker->index = (uint8_t) (cmodule->worker_count - 1);
 
 	pid_t pid = rrr_fork (
 			cmodule->fork_handler,

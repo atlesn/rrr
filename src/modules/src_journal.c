@@ -318,9 +318,9 @@ static int journal_write_message_callback (struct rrr_msg_holder *entry, void *a
 	const size_t topic_length = strlen(topic_tmp_final);
 	if (topic_length > RRR_MSG_TOPIC_MAX) {
 		RRR_MSG_0("Topic size overflow in journal instance %s (%llu>%llu)\n",
+			INSTANCE_D_NAME(data->thread_data),
 			(unsigned long long) topic_length,
-			(unsigned long long) RRR_MSG_TOPIC_MAX,
-			INSTANCE_D_NAME(data->thread_data)
+			(unsigned long long) RRR_MSG_TOPIC_MAX
 		);
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;

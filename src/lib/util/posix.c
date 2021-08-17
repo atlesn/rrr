@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../rrr_strerror.h"
+#include "../rrr_types.h"
 #include "posix.h"
 
 int rrr_posix_usleep(size_t useconds) {

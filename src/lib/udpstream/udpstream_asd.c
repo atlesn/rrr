@@ -944,14 +944,8 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	int ret = 0;
 
-
-#if SSIZE_MAX > RRR_LENGTH_MAX
-	if ((rrr_slength) receive_data->data_size > (rrr_slength) RRR_LENGTH_MAX) {
-		RRR_MSG_0("Received message too big in __rrr_udpstream_asd_receive_messages_callback\n");
-		ret = RRR_UDPSTREAM_ASD_HARD_ERR;
-		goto out;
-	}
-#endif
+	// If assertion fails, length of data must be checked
+	RRR_ASSERT(sizeof(receive_data->data_size)==sizeof(rrr_length),__rrr_udpstream_asd_overflow_check_required);
 
 	struct rrr_asd_receive_messages_final_callback_data callback_data = {
 			session,
@@ -961,7 +955,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 
 	if ((ret = rrr_msg_to_host_and_verify_with_callback (
 			(struct rrr_msg **) joined_data,
-			(rrr_length) receive_data->data_size,
+			rrr_length_from_biglength_bug_const(receive_data->data_size),
 			__rrr_udpstream_asd_receive_messages_callback_final,
 			NULL,
 			NULL,

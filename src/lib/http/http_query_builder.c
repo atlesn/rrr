@@ -60,14 +60,15 @@ static int __rrr_http_query_builder_escape_field (
 		rrr_biglength length,
 		int add_double_quotes
 ) {
-	if (length > SIZE_MAX / 2 - 1 - 2) {
+	rrr_biglength new_size = length * 2 + 1 + 2;
+	if (new_size < length) {
 		RRR_MSG_0("Input too long in __rrr_http_query_builder_escape_field (%llu>%llu)\n",
 			(unsigned long long) length,
 			(unsigned long long) SIZE_MAX / 2 - 1 - 2);
 		return RRR_HTTP_SOFT_ERROR;
 	}
 
-	size_t new_size = length * 2 + 1 + 2;
+	RRR_SIZE_CHECK(new_size,"HTTP field to escape is too long\n",return RRR_HTTP_SOFT_ERROR);
 
 	*target = NULL;
 

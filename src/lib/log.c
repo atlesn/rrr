@@ -440,8 +440,11 @@ void rrr_log_printf_plain (
 
 void rrr_log_printn_plain (
 		const char *value,
-		size_t value_size
+		unsigned long long value_size
 ) {
+	if (value_size > INT_MAX) {
+		value_size = INT_MAX;
+	}
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
 		int ret = sd_journal_print(LOG_DEBUG, "%.*s", (int) value_size, value);

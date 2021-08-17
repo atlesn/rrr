@@ -159,10 +159,15 @@ static int __rrr_json_to_array_recurse (
 	const enum json_type type = json_object_get_type(object);
 
 	if (type == json_type_array) {
-		const size_t length = json_object_array_length(object);
-		for (size_t i = 0; i <  length; i++) {
+		// Function might have int return value in old version of library
+		size_t length = (size_t) json_object_array_length(object);
+		for (size_t i = 0; i < length; i++) {
 			RRR_DBG_3("[%i/%i] JSON ARRAY IDX %llu\n", cur_level, max_levels, (long long unsigned) i);
 			if ((ret = __rrr_json_to_array_recurse (
+					// This call produces a warning with old version of library as the
+					// index argument is of type int. The loop will in this situation never
+					// count past INT_MAX as the max length is derived from a function
+					// which also returns int event though we cast it to size_t.
 					json_object_array_get_idx(object, i),
 					max_levels,
 					cur_level + 1,
@@ -291,7 +296,7 @@ static int __rrr_json_type_to_object (
 					object_new = json_object_new_string(buf);
 				}
 				else {
-					object_new = json_object_new_int64(value_64);
+					object_new = json_object_new_int64((int64_t) value_64);
 				}
 #endif
 			}

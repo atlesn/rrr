@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../util/base64.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
@@ -246,7 +247,7 @@ static int __rrr_http_application_http2_request_send (
 		}
 	}
 
-	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrrl "\n",
+	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
@@ -555,7 +556,7 @@ static int __rrr_http_application_http2_data_source_truncated_callback (
 		void *arg
 ) {
 	uint8_t *buf = arg;
-	memcpy(buf, str, len);
+	rrr_memcpy(buf, str, len);
 	return 0;
 }
 
@@ -812,7 +813,7 @@ static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base6
 		rrr_biglength len,
 		void *arg
 ) {
-	size_t *result_len = arg;
+	rrr_biglength *result_len = arg;
 	return (char *) rrr_base64url_decode (
 			str,
 			len,
@@ -834,7 +835,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 		RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_application_http1_response_receive_callback\n");
 	}
 
-	size_t orig_http2_settings_length = 0;
+	rrr_biglength orig_http2_settings_length = 0;
 	if ((orig_http2_settings_tmp = rrr_nullsafe_str_with_raw_do_const_return_str (
 			orig_http2_settings->value,
 			__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback,
@@ -848,7 +849,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	if ((ret = rrr_http2_session_upgrade_postprocess (
 			app->http2_session,
 			orig_http2_settings_tmp,
-			orig_http2_settings_length,
+			rrr_size_from_biglength_bug_const (orig_http2_settings_length),
 			transaction->request_part->request_method
 	)) != 0) {
 		goto out;
@@ -958,7 +959,7 @@ int rrr_http_application_http2_response_submit (
 			stream_id
 	};
 
-	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrrl "\n",
+	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrr_nullsafe_len "\n",
 			transaction->response_part->response_code, rrr_nullsafe_str_len(transaction->send_body));
 
 	return rrr_http_transaction_response_prepare_wrapper (

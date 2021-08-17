@@ -82,7 +82,7 @@ int rrr_fixp_ldouble_to_fixp (
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		long double test_sum = running_sum + decimal_fractions_base2[i];
 		if (test_sum == fraction || test_sum < fraction) {
-			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
+			result |= (uint64_t) (((uint64_t) 1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i);
 			running_sum = (double) test_sum;
 			if (test_sum == fraction) {
 				break;
@@ -113,7 +113,7 @@ int rrr_fixp_to_ldouble (
 	uint64_t whole_number = (uint64_t) source >> RRR_FIXED_POINT_BASE2_EXPONENT;
 	uint64_t decimals = source & 0xFFFFFF;
 
-	result += whole_number;
+	result += (long double) whole_number;
 
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		unsigned int bit = (unsigned int) ((((uint64_t) 1) << (23 - i)) & decimals);
@@ -225,15 +225,15 @@ int rrr_fixp_to_new_str_double (
 
 static long double __rrr_fixp_convert_char (char c) {
 	if (c >= '0' && c <= '9') {
-		c -= '0';
+		c = (char) (c - '0');
 	}
 	else if (c >= 'a' && c <= 'f') {
-		c -= 'a';
-		c += 10;
+		c = (char) (c - 'a');
+		c = (char) (c + 10);
 	}
 	else if (c >= 'A' && c <= 'F') {
-		c -= 'A';
-		c += 10;
+		c = (char) (c - 'A');
+		c = (char) (c + 10);
 	}
 	else {
 		RRR_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
@@ -244,7 +244,7 @@ static long double __rrr_fixp_convert_char (char c) {
 
 static int __rrr_fixp_str_preliminary_parse (
 		const char *str,
-		ssize_t str_length,
+		rrr_length str_length,
 		const char **integer_pos,
 		const char **dot,
 		const char **endptr,
@@ -395,11 +395,11 @@ int rrr_fixp_str_to_fixp (
 		long double test_sum = running_sum + position_value;
 
 		if (test_sum < fraction) {
-			result_fraction |= 1 << (23 - i);
+			result_fraction |= (uint64_t) ((uint64_t) 1 << (23 - i));
 			running_sum += position_value;
 		}
 		else if (test_sum == fraction) {
-			result_fraction |= 1 << (23 - i);
+			result_fraction |= (uint64_t) ((uint64_t) 1 << (23 - i));
 			break;
 		}
 	}

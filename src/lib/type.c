@@ -165,8 +165,8 @@ static int __rrr_type_import_int (
 	}
 
 	if (node->import_length > (rrr_length) sizeof(uint64_t)) {
-		RRR_MSG_0("Import length of 64 type exceeds maximum of %lu bytes (was %" PRIrrrl ")",
-				sizeof(uint64_t), node->import_length);
+		RRR_MSG_0("Import length of 64 type exceeds maximum of %llu bytes (was %" PRIrrrl ")",
+				(unsigned long long) sizeof(uint64_t), node->import_length);
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 

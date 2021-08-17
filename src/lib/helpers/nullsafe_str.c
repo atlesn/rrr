@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "nullsafe_str.h"
 #include "../util/macro_utils.h"
 #include "../util/gnu.h"
+#include "../util/posix.h"
 
 struct rrr_nullsafe_str {
 	void *str;
@@ -78,6 +79,8 @@ int rrr_nullsafe_str_new_or_replace_raw (
 		RRR_BUG("BUG: len was not 0 but str was NULL in rrr_nullsafe_str_new\n");
 	}
 
+	RRR_SIZE_CHECK(len,"New nullsafe string",ret = 1; goto out);
+
 	struct rrr_nullsafe_str *new_str = *result;
 	if (new_str == NULL) {
 		if ((new_str = rrr_allocate(sizeof(*new_str))) == NULL) {
@@ -98,7 +101,7 @@ int rrr_nullsafe_str_new_or_replace_raw (
 			ret = 1;
 			goto out_free;
 		}
-		memcpy(new_str->str, str, len);
+		rrr_memcpy(new_str->str, str, len);
 	}
 
 	new_str->len = len;
@@ -153,16 +156,23 @@ int rrr_nullsafe_str_append_raw (
 ) {
 	VERIFY_NEW_LENGTH("appending");
 
-	// +1, always allocate at least 1 byte event when other numbers are zero
+	rrr_nullsafe_len new_size_a = len + nullsafe->len;
 
-	void *new_str = rrr_reallocate(nullsafe->str, nullsafe->len, nullsafe->len + len + 1);
+	// Always allocate at least 1 byte event when other numbers are zero
+	if (new_size_a == 0) {
+		new_size_a = 1;
+	}
+
+	RRR_SIZE_CHECK(len,"New nullsafe string append",return 1);
+
+	void *new_str = rrr_reallocate(nullsafe->str, nullsafe->len, new_size_a);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_append\n");
 		return 1;
 	}
 	nullsafe->str = new_str;
 
-	memcpy(nullsafe->str + nullsafe->len, str, len);
+	rrr_memcpy(nullsafe->str + nullsafe->len, str, len);
 	nullsafe->len += len;
 
 	return 0;
@@ -247,16 +257,25 @@ int rrr_nullsafe_str_prepend_raw (
 ) {
 	VERIFY_NEW_LENGTH("prepending");
 
-	void *new_str = rrr_allocate(nullsafe->len + len);
+	rrr_nullsafe_len new_size_a = len + nullsafe->len;
+
+	// Always allocate at least 1 byte event when other numbers are zero
+	if (new_size_a == 0) {
+		new_size_a = 1;
+	}
+
+	RRR_SIZE_CHECK(len,"New nullsafe string prepend",return 1);
+
+	void *new_str = rrr_allocate(new_size_a);
 	if (new_str == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_nullsafe_str_prepend\n");
 		return 1;
 	}
 
-	memcpy(new_str, str, len);
+	rrr_memcpy(new_str, str, len);
 
 	if (nullsafe->str != NULL) {
-		memcpy(new_str + len, nullsafe->str, nullsafe->len);
+		rrr_memcpy(new_str + len, nullsafe->str, nullsafe->len);
 		rrr_free(nullsafe->str);
 	}
 
@@ -317,11 +336,13 @@ int rrr_nullsafe_str_set (
 	RRR_FREE_IF_NOT_NULL(nullsafe->str);
 	nullsafe->len = len;
 
+	RRR_SIZE_CHECK(len,"Nullsafe set string",return 1);
+
 	if (len > 0) {
 		if ((nullsafe->str = rrr_allocate(len)) == NULL) {
 			return 1;
 		}
-		memcpy(nullsafe->str, src, len);
+		rrr_memcpy(nullsafe->str, src, len);
 	}
 
 	return 0;
@@ -442,7 +463,7 @@ int rrr_nullsafe_str_str (
 
 	while (start <= search_end) {
 		if (*((const char *) start) == *((const char *) needle->str) &&
-		    memcmp(start, needle->str, needle->len) == 0
+		    rrr_memcmp(start, needle->str, needle->len) == 0
 		) {
 			const struct rrr_nullsafe_str tmp_at_needle = {
 					(void *) start, // Cast away const OK
@@ -526,7 +547,7 @@ int rrr_nullsafe_str_begins_with (
 	if (str->len < substr->len) {
 		return 0;
 	}
-	return (memcmp (str->str, substr->str, substr->len) == 0);
+	return (rrr_memcmp (str->str, substr->str, substr->len) == 0);
 }
 
 int rrr_nullsafe_str_dup (
@@ -574,9 +595,8 @@ int rrr_nullsafe_str_cmpto_case (
 		return 1;
 	}
 
-	const rrr_biglength str_biglen = strlen(str);
+	const rrr_nullsafe_len str_len = strlen(str);
 
-	const rrr_nullsafe_len str_len = (rrr_nullsafe_len) str_biglen;
 	if (nullsafe->len == 0 && str_len == 0) {
 		return 0;
 	}
@@ -601,9 +621,7 @@ int rrr_nullsafe_str_cmpto (
 		return 1;
 	}
 
-	const rrr_biglength str_biglen = strlen(str);
-
-	rrr_nullsafe_len str_len = (rrr_nullsafe_len) str_biglen;
+	const rrr_nullsafe_len str_len = strlen(str);
 	if (nullsafe->len == 0 && str_len == 0) {
 		return 0;
 	}
@@ -637,7 +655,7 @@ void rrr_nullsafe_str_util_output_strip_null_append_null_trim_raw_null_ok (
 	}
 	buf[get_size] = '\0';
 	if (str) {
-		memcpy(buf, str, get_size);
+		rrr_memcpy(buf, str, get_size);
 	}
 	for (rrr_nullsafe_len i = 0; i < get_size; i++) {
 		buf[i] = (buf[i] == '\0' ? 'N' : buf[i]);
@@ -672,7 +690,7 @@ void rrr_nullsafe_str_copyto (
 	if (to_write > target_size) {
 		to_write = target_size;
 	}
-	memcpy(target, nullsafe->str, to_write);
+	rrr_memcpy(target, nullsafe->str, to_write);
 	*written_size = to_write;
 }
 
@@ -743,7 +761,7 @@ int rrr_nullsafe_str_with_raw_null_terminated_do (
 		goto out;
 	}
 
-	memcpy(tmp, nullsafe->str, nullsafe->len);
+	rrr_memcpy(tmp, nullsafe->str, nullsafe->len);
 
 	tmp[nullsafe->len] = '\0';
 

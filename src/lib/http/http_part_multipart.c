@@ -139,10 +139,10 @@ static int __rrr_http_part_multipart_process_part_callback (
 	}
 
 	{
-		size_t target_size = 0;
-		size_t parsed_bytes_tmp = 0;
+		rrr_biglength target_size = 0;
+		rrr_biglength parsed_bytes_tmp = 0;
 
-		size_t start_pos = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_after_needle);
+		rrr_nullsafe_len start_pos = rrr_nullsafe_str_len(haystack_orig) - rrr_nullsafe_str_len(pos_after_needle);
 
 		if ((ret = rrr_http_part_parse (
 				new_part,
@@ -211,6 +211,7 @@ static int __rrr_http_part_multipart_process_parts (
 
 	*parsed_bytes = 0;
 
+#if UINTPTR_MAX > RRR_LENGTH_MAX
 	if (end - start > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Part was too long while parsing HTTP multipart (%llu>%llu)\n",
 			(unsigned long long) (end - start),
@@ -219,6 +220,7 @@ static int __rrr_http_part_multipart_process_parts (
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
+#endif
 
 	if ((ret = rrr_nullsafe_str_dup (&boundary_with_dashes, boundary)) != 0) {
 		goto out;
@@ -300,7 +302,7 @@ int rrr_http_part_multipart_process (
 
 	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
 
-	size_t parsed_bytes_tmp = 0;
+	rrr_biglength parsed_bytes_tmp = 0;
 
 	if ((ret = (__rrr_http_part_multipart_process_parts (
 			part,

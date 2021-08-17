@@ -305,19 +305,22 @@ int rrr_http_util_uri_encode (
 		struct rrr_nullsafe_str **target,
 		const struct rrr_nullsafe_str *str
 ) {
+	int ret = 0;
+
+	char *result = NULL;
+
 	rrr_biglength result_max_length = (str != NULL ? rrr_nullsafe_str_len(str) * 3 : 0);
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_max_length,"rrr_http_util_encode_uri");
 
-	int ret = 0;
-
-	char *result = rrr_allocate(result_max_length + 1); // Allocate extra byte for 0 from sprintf
-	if (result == NULL) {
+	const rrr_biglength allocate_size = result_max_length + 1; // Allocate extra byte for 0 from sprintf
+	RRR_SIZE_CHECK(allocate_size,"While encoding HTTP URI", ret = 1; goto out);
+	if ((result = rrr_allocate(allocate_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_encode_uri\n");
 		ret = 1;
 		goto out;
 	}
 
-	memset(result, '\0', result_max_length + 1);
+	rrr_memset(result, '\0', allocate_size);
 
 	if (*target == NULL) {
 		if ((ret = rrr_nullsafe_str_new_or_replace_empty(target)) != 0) {
@@ -428,16 +431,19 @@ char *rrr_http_util_header_value_quote (
 
 	int err = 0;
 
+	char *result = NULL;
+
 	rrr_biglength result_size = length * 2 + 2 + 1;
 	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(length, "rrr_http_util_quote_header_value B");
 
-	char *result = rrr_allocate(result_size);
-	if (result == NULL) {
+	const rrr_biglength allocate_size = result_size + 1;
+	RRR_SIZE_CHECK(allocate_size,"While quoting HTTP header value", err = 1; goto out);
+	if ((result = rrr_allocate(allocate_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_quote_header_value\n");
 		err = 1;
 		goto out;
 	}
-	memset (result, '\0', result_size);
+	rrr_memset (result, '\0', result_size);
 
 	char *wpos = result;
 	char *wpos_max = result + result_size;
@@ -942,8 +948,8 @@ static int __rrr_http_util_uri_parse_callback (
 	if (uri_new->protocol != NULL) {
 		rrr_length result_len_tmp = 0;
 		while (pos < end) {
-			if (__rrr_http_util_is_alphanumeric((unsigned char) *pos)) {
-				result_len_tmp++;
+			if (__rrr_http_util_is_alphanumeric((unsigned char) *pos) || *pos == '.') {
+				// OK, increment result
 			}
 			else if (*pos == '-') {
 				if (result_len_tmp == 0) {
@@ -952,10 +958,7 @@ static int __rrr_http_util_uri_parse_callback (
 					ret = 1;
 					goto out;
 				}
-				result_len_tmp++;
-			}
-			else if (*pos == '.') {
-				result_len_tmp++;
+				// OK, increment result
 			}
 			else if (*pos == '/' || *pos == ':') {
 				break;
@@ -967,10 +970,21 @@ static int __rrr_http_util_uri_parse_callback (
 				goto out;
 			}
 
+			if (++result_len_tmp == 0) {
+				RRR_MSG_0("Length overflow while parsing HTTP URI\n");
+				ret = 1;
+				goto out;
+			}
+
 			pos++;
 		}
 
 		if (result_len_tmp > 0) {
+			if (result_len_tmp + 1 == 0) {
+				RRR_MSG_0("Allocation overflow while parsing HTTP URI\n");
+				ret = 1;
+				goto out;
+			}
 			if ((uri_new->host = rrr_allocate(result_len_tmp + 1)) == NULL) {
 				RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_util_uri_parse_callback\n");
 				ret = 1;

@@ -248,7 +248,7 @@ static int mqttclient_publish (
 		}
 
 		// NOTE : Locally freed variable. Memory error is printed further down if we fail.
-		char *topic_tmp = rrr_allocate (MSG_TOPIC_LENGTH(reading) + 1);
+		char *topic_tmp = rrr_allocate ((rrr_biglength) MSG_TOPIC_LENGTH(reading) + 1);
 		if (topic_tmp != NULL) {
 			memcpy (topic_tmp, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
 			*(topic_tmp + MSG_TOPIC_LENGTH(reading)) = '\0';
@@ -258,7 +258,7 @@ static int mqttclient_publish (
 	}
 	else {
 		if (MSG_TOPIC_LENGTH(reading) > 0 && data->do_force_publish_topic == 0) {
-			publish->topic = rrr_allocate (MSG_TOPIC_LENGTH(reading) + 1);
+			publish->topic = rrr_allocate ((rrr_biglength) MSG_TOPIC_LENGTH(reading) + 1);
 			if (publish->topic != NULL) {
 				memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
 				*(publish->topic + MSG_TOPIC_LENGTH(reading)) = '\0';
@@ -358,9 +358,9 @@ static int mqttclient_publish (
 
 			if (payload_size_tmp > UINT32_MAX) {
 				RRR_MSG_0("Payload was too long while exporting array data in MQTT client instance %s (%llu > %llu)\n",
+					INSTANCE_D_NAME(data->thread_data),
 					(unsigned long long) payload_size_tmp,
-					(unsigned long long) UINT32_MAX,
-					INSTANCE_D_NAME(data->thread_data)
+					(unsigned long long) UINT32_MAX
 				);
 				ret = 1;
 				goto out_free;
@@ -1096,7 +1096,7 @@ static int mqttclient_try_create_array_message_from_publish (
 			&callback_data
 	)) != 0) {
 		if (ret == RRR_ARRAY_SOFT_ERROR) {
-			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %li\n",
+			RRR_MSG_0("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %" PRIrrrl "\n",
 					INSTANCE_D_NAME(data->thread_data), publish->payload->length);
 			ret = 0;
 		}
@@ -1185,7 +1185,7 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
-	RRR_DBG_2 ("MQTT client %s: Receive PUBLISH payload length %li topic %s\n",
+	RRR_DBG_2 ("MQTT client %s: Receive PUBLISH payload length %" PRIrrrl " topic %s\n",
 			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0), (publish->topic));
 
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
@@ -1619,7 +1619,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, uint8_t clean
 	for (int i = i_first; i >= 0 && rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(data->thread_data)) == 0; i--) {
 		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(data->thread_data));
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%" PRIrrrbl "' username '%s' client-ID '%s' attempt %i/%i\n",
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%u' username '%s' client-ID '%s' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data),
 				data->server,
 				data->server_port,
@@ -1671,7 +1671,7 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, uint8_t clean
 					goto reconnect;
 				}
 
-				RRR_MSG_0("Could not connect to mqtt server '%s' port %" PRIrrrbl " in instance %s, restarting. Return was %i.\n",
+				RRR_MSG_0("Could not connect to mqtt server '%s' port '%u' in instance %s, restarting. Return was %i.\n",
 						data->server,
 						data->server_port,
 						INSTANCE_D_NAME(data->thread_data),

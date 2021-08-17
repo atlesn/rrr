@@ -73,9 +73,9 @@ struct rrr_python3_rrr_message_data {
 static int __rrr_python3_rrr_message_set_topic_and_data (
 		struct rrr_python3_rrr_message_data *data,
 		const char *topic_str,
-		Py_ssize_t topic_length,
+		rrr_slength topic_length,
 		const char *data_str,
-		Py_ssize_t data_length
+		rrr_slength data_length
 ) {
 	int ret = 0;
 
@@ -90,9 +90,17 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 		goto out;
 	}
 
+// Ideally, this should have been Py_SSIZE_T_MAX but it does not work in macros.
+// Assuming that Py_ssize_t maps to ssize_t
+#if SSIZE_MAX < UINT32_MAX
+	// 4-byte width
+	if ((rrr_biglength) topic_length + (rrr_biglength) data_length > (rrr_biglength) PY_SSIZE_T_MAX) {
+#else
+	// 8-byte width
 	if ((rrr_biglength) topic_length + (rrr_biglength) data_length > UINT32_MAX) {
-		RRR_MSG_0("Combined size of topic and message too long in __rrr_python3_rrr_message_set_topic_and_data (%lli>%lli)\n",
-			(long long int) topic_length + data_length, (long long int) UINT16_MAX);
+#endif
+		RRR_MSG_0("Combined size of topic and message too long in __rrr_python3_rrr_message_set_topic_and_data (%llu>%llu)\n",
+			(long long unsigned) topic_length + (long long unsigned) data_length, (long long unsigned) UINT16_MAX);
 		ret = 1;
 		goto out;
 	}
@@ -219,7 +227,8 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 	Py_ssize_t argc = PyTuple_Size(args);
 	if (argc != 0) {
 		if (argc != 1) {
-			RRR_MSG_0("Wrong number of parameters to rrr_messag init. Got %li but expected 1 or 0.\n", argc);
+			RRR_MSG_0("Wrong number of parameters to rrr_messag init. Got %lli but expected 1 or 0.\n",
+				(long long int) argc);
 			return 1;
 		}
 
@@ -250,7 +259,14 @@ static PyObject *rrr_python3_rrr_message_f_get_data(PyObject *self, PyObject *ar
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 	(void)(args);
 
-	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), MSG_DATA_LENGTH(data->message_dynamic));
+	const rrr_biglength msg_data_length = MSG_DATA_LENGTH(data->message_dynamic);
+
+	if (msg_data_length > SSIZE_MAX) {
+		RRR_MSG_0("Message size overflow while getting data in python3\n");
+		Py_RETURN_FALSE;
+	}	
+
+	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), (ssize_t) msg_data_length);
 
 	if (ret == NULL) {
 		RRR_MSG_0("Could not create bytearray object for topic in rrr_python3_rrr_message_f_get_data\n");
@@ -874,11 +890,14 @@ static int __convert_check_str (
 		RRR_MSG_0("Could not convert string in  __convert_*\n");
 		return 1;
 	}
+
+#if RRR_LENGTH_MAX < SSIZE_MAX
 	if (new_size > RRR_LENGTH_MAX) {
 		RRR_MSG_0("String too long in __convert_* (%lli>%lli)\n",
 			 (long long int) new_size, (long long int) RRR_LENGTH_MAX);
 		return 1;
 	}
+#endif
 
 	*new_size_final = (rrr_length) new_size;
 
@@ -963,9 +982,11 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 				ret = 1;
 				goto out;
 			}
+#if RRR_LENGTH_MAX < SSIZE_MAX
 			else if (length > RRR_LENGTH_MAX) {
 				length = RRR_LENGTH_MAX;
 			}
+#endif
 
 			const char *endptr;
 			if ((ret = rrr_fixp_str_to_fixp(&test_f, str, (rrr_length) length, &endptr)) != 0) {
@@ -1173,19 +1194,21 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 		}
 	}
 
-	if (*size != 0 && *size != new_size) {
-		RRR_MSG_0("Size of strings in array was not of equal length, which is required.\n");
-		ret = 1;
-		goto out;
-	}
-
+#if RRR_LENGTH_MAX < SSIZE_MAX
 	if (new_size > RRR_LENGTH_MAX) {
 		RRR_MSG_0("Size overflow in __preliminary_check_stringish (%lli>%lli)\n",
 			(long long int) new_size, (long long int) RRR_LENGTH_MAX);
 		ret = 1;
 		goto out;
 	}
-	
+#endif
+
+	if (*size != 0 && (rrr_slength) *size != (rrr_slength) new_size) {
+		RRR_MSG_0("Size of strings in array was not of equal length, which is required.\n");
+		ret = 1;
+		goto out;
+	}
+
 	*new_subject = replacement_subject;
 	*allocate_function = __allocate_blob;
 	*convert_function = __convert_str;
@@ -1258,7 +1281,11 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 				ret = 1;
 				goto out;
 			}
+#if RRR_LENGTH_MAX < SSIZE_MAX
 			if (py_new_size < 0 || py_new_size > RRR_LENGTH_MAX) {
+#else
+			if (py_new_size < 0) {
+#endif
 				RRR_MSG_0("Negative or too long size in __preliminary_check_blob (%lli vs %lli)\n",
 					(long long int) py_new_size, (long long int) (RRR_LENGTH_MAX));
 				ret = 1;
@@ -1333,7 +1360,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	const char *tag_str = NULL;
 	rrr_length tag_length = 0;
 
-	rrr_length count = 0;
+	ssize_t count = 0;
 	PyObject *first_item = PyList_GetItem(list, 0); // Borrowed reference
 
 	uint8_t target_type = 0;
@@ -1369,12 +1396,14 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 			goto out;
 		}
 
+#if RRR_LENGTH_MAX < SSIZE_MAX
 		if (tag_length_tmp > RRR_LENGTH_MAX) {
 			RRR_MSG_0("Tag was too long itn __rrr_python3_array_rrr_message_get_message_store_array_node_callback (%lli>%lli)\n",
 				(long long int) tag_length_tmp, (long long int) RRR_LENGTH_MAX);
 			ret = 1;
 			goto out;
 		}
+#endif
 
 		tag_length = (rrr_length) tag_length_tmp;
 	}
@@ -1384,14 +1413,16 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	}
 
 	{
-		ssize_t count_tmp = PyList_GET_SIZE(list);
-		if (count_tmp < 1 || first_item == NULL || count_tmp > RRR_LENGTH_MAX) {
+		count = PyList_GET_SIZE(list);
+#if RRR_LENGTH_MAX < SSIZE_MAX
+		if (count < 1 || first_item == NULL || count > RRR_LENGTH_MAX) {
+#else
+		if (count < 1 || first_item == NULL) {
+#endif
 			RRR_MSG_0("List of node had no value elements or list length overflow in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
 			ret = 1;
 			goto out;
 		}
-
-		count = (rrr_length) count_tmp;
 	}
 
 	// Attempt to use original type
@@ -1453,8 +1484,8 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		goto out;
 	}
 
-	for (Py_ssize_t i = 0; i < count; i++) {
-		PyObject *item = PyList_GET_ITEM(list, i);
+	for (ssize_t i = 0; i < count; i++) {
+		PyObject *item = PyList_GET_ITEM(list, (ssize_t) i);
 		PyObject *replacement_item = NULL;
 
 		if ((ret = preliminary_check_function (
@@ -1497,9 +1528,9 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		goto out;
 	}
 
-	for (rrr_length i = 0; i < count; i++) {
+	for (ssize_t i = 0; i < count; i++) {
 		PyObject *item = PyList_GET_ITEM(list, i);
-		if ((ret = convert_function(new_value, item, i, item_size)) != 0) {
+		if ((ret = convert_function(new_value, item, (rrr_length) i, item_size)) != 0) {
 			RRR_MSG_0("Error while converting value of type '%s' to %u\n",
 					item->ob_type->tp_name, target_type);
 			goto out;
@@ -1653,18 +1684,30 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			}
 		}
 
-		node_list = PyList_New(node->element_count);
+#if RRR_LENGTH_MAX > SSIZE_MAX
+		if (node->element_count > SSIZE_MAX) {
+			RRR_MSG_0("Too many elements in array field while importing to python3\n");
+			goto out_err;
+		}
+		if ((rrr_biglength) node->total_stored_length * node->element_count > SSIZE_MAX) {
+			RRR_MSG_0("Data too large in array field while importing to python3\n");
+			goto out_err;
+		}
+#endif
+		const ssize_t element_count = (ssize_t) node->element_count;
+
+		node_list = PyList_New(element_count);
 		if (node_list == NULL) {
 			RRR_MSG_0("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 
-		ssize_t element_size = node->total_stored_length / node->element_count;
-		if (node->total_stored_length != element_size * node->element_count) {
+		ssize_t element_size = (ssize_t) (node->total_stored_length / (rrr_length) element_count);
+		if (node->total_stored_length != (rrr_biglength) element_size * (rrr_biglength) element_count) {
 			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
-		for (rrr_length i = 0; i < node->element_count; i++) {
+		for (ssize_t i = 0; i < element_count; i++) {
 			const char *data_pos = node->data + element_size * i;
 
 			if (RRR_TYPE_IS_64(node->definition->type)) {
