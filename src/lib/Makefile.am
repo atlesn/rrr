@@ -194,4 +194,4 @@ libadd_all =                         \
     ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads
