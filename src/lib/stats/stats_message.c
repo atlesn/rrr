@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_msg_stats_unpack (
 		struct rrr_msg_stats *target,
 		const struct rrr_msg_stats_packed *source,
-		size_t expected_size
+		rrr_length expected_size
 ) {
 	int ret = 0;
 
@@ -56,7 +56,7 @@ int rrr_msg_stats_unpack (
 	uint32_t flags = rrr_be32toh(source->flags);
 	uint8_t type = source->type;
 
-	if ((flags & ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
+	if ((flags & (unsigned int) ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
 		RRR_MSG_0("Unknown flags %u in received statistics packet\n", flags);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -73,7 +73,7 @@ int rrr_msg_stats_unpack (
 			goto out;
 	};
 
-	size_t actual_path_and_data_size = expected_size - (sizeof(*source) - sizeof(source->path_and_data));
+	rrr_length actual_path_and_data_size = rrr_length_from_size_t_bug_const(expected_size - (sizeof(*source) - sizeof(source->path_and_data)));
 	if (path_size > actual_path_and_data_size) {
 		RRR_MSG_0("Path size in received statistics packet exceeds packet size\n");
 		ret = RRR_READ_SOFT_ERROR;
@@ -86,7 +86,7 @@ int rrr_msg_stats_unpack (
 	target->type = type;
 	target->timestamp = source->msg_value; // Already byte-swapped by socket framework
 
-	size_t data_size = actual_path_and_data_size - path_size;
+	rrr_length data_size = actual_path_and_data_size - path_size;
 	if (data_size > 0) {
 		memcpy(target->data, source->path_and_data + path_size, data_size);
 		target->data_size = data_size;
@@ -107,12 +107,15 @@ int rrr_msg_stats_unpack (
 
 void rrr_msg_stats_pack_and_flip (
 		struct rrr_msg_stats_packed *target,
-		size_t *total_size,
+		rrr_length *total_size,
 		const struct rrr_msg_stats *source
 ) {
-	uint16_t path_size = strlen(source->path) + 1;
-	size_t path_and_data_size = path_size + source->data_size;
+	rrr_length path_size = rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(source->path)));
+	rrr_length path_and_data_size = path_size + source->data_size;
 
+	if (path_size > RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 || path_size > 0xffff) {
+		RRR_BUG("BUG: path size exceeds maximum in rrr_msg_stats_pack_and_flip\n");
+	}
 	if (path_and_data_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE + RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1) {
 		RRR_BUG("BUG: path + data too long in rrr_msg_stats_pack_and_flip\n");
 	}
@@ -121,7 +124,7 @@ void rrr_msg_stats_pack_and_flip (
 
 	target->type = source->type;
 	target->flags = rrr_htobe32(source->flags);
-	target->path_size = rrr_htobe16(path_size);
+	target->path_size = rrr_htobe16((uint16_t) path_size);
 
 	memcpy(target->path_and_data, source->path, path_size);
 	memcpy(target->path_and_data + path_size, source->data, source->data_size);

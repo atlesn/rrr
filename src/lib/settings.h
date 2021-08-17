@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SETTINGS_H
 
 #include <pthread.h>
+#include <limits.h>
 
 #include "messages/msg.h"
 #include "util/utf8.h"
@@ -31,17 +32,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
-#define RRR_SETTINGS_TYPE_MAX 2
+#define RRR_SETTINGS_TYPE_DOUBLE 3
+#define RRR_SETTINGS_TYPE_MAX 3
 
 #define RRR_SETTING_IS_STRING(setting) ((setting)->type==RRR_SETTINGS_TYPE_STRING)
 #define RRR_SETTING_IS_UINT(setting) ((setting)->type==RRR_SETTINGS_TYPE_UINT)
 
 #define RRR_SETTINGS_UINT_AS_TEXT_MAX 64
+#define RRR_SETTINGS_LDBL_AS_TEXT_MAX 512
 
 #define RRR_SETTINGS_MAX_NAME_SIZE 244
 #define RRR_SETTINGS_MAX_DATA_SIZE 1024
 
 typedef rrr_biglength rrr_setting_uint;
+typedef long double rrr_setting_double;
 
 // Use bit flag compatible values
 #define RRR_SETTING_ERROR			RRR_READ_HARD_ERROR
@@ -69,19 +73,19 @@ struct rrr_instance_settings {
 	pthread_mutex_t mutex;
 	int initialized;
 
-	unsigned int settings_count;
-	unsigned int settings_max;
+	rrr_length settings_count;
+	rrr_length settings_max;
 	struct rrr_setting *settings;
 };
 
 struct rrr_settings_list {
 	char *data;
 	char **list;
-	unsigned int length;
+	rrr_length length;
 };
 
 struct rrr_instance_settings *rrr_settings_new (
-		const int count
+		const rrr_length count
 );
 void rrr_settings_destroy (
 		struct rrr_instance_settings *target
@@ -145,6 +149,10 @@ int rrr_settings_setting_to_uint_nolock (
 		rrr_setting_uint *target,
 		struct rrr_setting *setting
 );
+int rrr_settings_setting_to_double_nolock (
+		rrr_setting_double *target,
+		struct rrr_setting *setting
+);
 int rrr_settings_read_string (
 		char **target,
 		struct rrr_instance_settings *settings,
@@ -152,6 +160,11 @@ int rrr_settings_read_string (
 );
 int rrr_settings_read_unsigned_integer (
 		rrr_setting_uint *target,
+		struct rrr_instance_settings *settings,
+		const char *name
+);
+int rrr_settings_read_double (
+		rrr_setting_double *target,
 		struct rrr_instance_settings *settings,
 		const char *name
 );
@@ -184,7 +197,7 @@ int rrr_settings_iterate_packed (
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,
-		int was_used,
+		rrr_u32 was_used,
 		int (*iterator)(
 				struct rrr_instance_settings *settings,
 				int (*callback)(struct rrr_setting *settings, void *callback_args),

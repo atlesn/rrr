@@ -22,15 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_PARSE_H
 #define RRR_MQTT_PARSE_H
 
-#include <stdio.h>
+#include "../rrr_types.h"
 
-#define RRR_MQTT_PARSE_STATUS_NONE						0
-#define RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE			(1<<0)
-#define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE		(1<<1)
-#define RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE				(1<<2)
-#define RRR_MQTT_PARSE_STATUS_COMPLETE					(1<<3)
-#define RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET	(1<<4)
-#define RRR_MQTT_PARSE_STATUS_ERR						(1<<15)
+#define RRR_MQTT_PARSE_STATUS_NONE                           0
+#define RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE          (1<<0)
+#define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE       (1<<1)
+#define RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE               (1<<2)
+#define RRR_MQTT_PARSE_STATUS_COMPLETE                   (1<<3)
+#define RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET     (1<<4)
+#define RRR_MQTT_PARSE_STATUS_ERR                        (1<<15)
 
 #define RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(s) \
 	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) != 0)
@@ -70,14 +70,13 @@ struct rrr_mqtt_parse_session {
 
 	struct rrr_mqtt_p *packet;
 
-	ssize_t variable_header_pos;
-	ssize_t payload_pos;
+	rrr_length variable_header_pos;
+	rrr_length payload_pos;
 
-	ssize_t payload_checkpoint;
+	rrr_length payload_checkpoint;
 
-//	ssize_t buf_size;
-	ssize_t buf_wpos;
-	ssize_t target_size;
+	rrr_biglength buf_wpos;
+	rrr_biglength target_size;
 
 	uint8_t type;
 	uint8_t type_flags;
@@ -105,7 +104,7 @@ void rrr_mqtt_parse_session_init (
 void rrr_mqtt_parse_session_update (
 		struct rrr_mqtt_parse_session *session,
 		const char *buf,
-		ssize_t buf_wpos,
+		rrr_biglength buf_wpos,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 );
 void rrr_mqtt_packet_parse (

@@ -23,15 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_UTIL_H
 
 #include <sys/socket.h>
-#include <stdio.h>
+
+#include "../rrr_types.h"
 
 void rrr_ip_to_str (
-		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
+		char *dest, rrr_biglength dest_size, const struct sockaddr *addr, socklen_t addr_len
 );
 int rrr_ip_to_str_and_port (
 		uint16_t *target_port,
 		char *target_ip,
-		size_t target_ip_size,
+		socklen_t target_ip_size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );

@@ -23,10 +23,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_H
 
 #include <sys/socket.h>
-#include <stdint.h>
 
 #include "ip_defines.h"
 
+#include "../rrr_types.h"
 #include "../socket/rrr_socket.h"
 #include "../util/linked_list.h"
 
@@ -47,9 +47,12 @@ struct rrr_ip_send_packet_info {
 
 struct rrr_ip_data {
 	int fd;
-	unsigned int port;
+	uint16_t port;
 };
 
+void rrr_ip_network_reset_hard (
+		void *arg
+);
 void rrr_ip_network_cleanup (
 		void *arg
 );
@@ -62,12 +65,12 @@ int rrr_ip_network_start_udp (
 		int do_ipv6
 );
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
 		void *data,
-		ssize_t size
+		rrr_biglength size
 );
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		struct rrr_ip_accept_data **accept_data,
@@ -80,14 +83,14 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw_nonblock (
 		socklen_t addr_len
 );
 int rrr_ip_network_resolve_ipv4_or_ipv6_with_callback (
-		unsigned int port,
+		uint16_t port,
 		const char *host,
-		int (*callback)(const char *host, unsigned int port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
+		int (*callback)(const char *host, uint16_t port, const struct sockaddr *addr, socklen_t addr_len, void *arg),
 		void *callback_arg
 );
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		struct rrr_ip_accept_data **accept_data,
-		unsigned int port,
+		uint16_t port,
 		const char *host
 );
 int rrr_ip_network_start_tcp (

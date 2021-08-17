@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/buffer.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/event/event.h"
@@ -109,7 +108,7 @@ static int raw_event_broker_data_available (RRR_EVENT_FUNCTION_ARGS) {
 
 	RRR_POLL_HELPER_COUNTERS_UPDATE_BEFORE_POLL(data);
 
-	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback, 0);
+	return rrr_poll_do_poll_delete (amount, thread_data, raw_poll_callback);
 }
 
 static int raw_event_periodic (void *arg) {

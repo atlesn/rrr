@@ -179,18 +179,18 @@ int rrr_http_transaction_query_field_add (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type,
 		const struct rrr_type_value *value_orig
 ) {
 	return rrr_http_field_collection_add (
 			&transaction->request_part->fields,
 			name,
-			(name != NULL ? strlen(name) : 0),
+			(name != NULL ? rrr_length_from_size_t_bug_const (strlen(name)) : 0),
 			value,
 			value_size,
 			content_type,
-			(content_type != NULL ? strlen(content_type) : 0),
+			(content_type != NULL ? rrr_length_from_size_t_bug_const (strlen(content_type)) : 0),
 			value_orig
 	);
 }
@@ -285,7 +285,11 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_append_raw(result, transaction->endpoint_str, strlen(transaction->endpoint_str))) != 0) {
+	if ((ret = rrr_nullsafe_str_append_raw (
+			result,
+			transaction->endpoint_str,
+			rrr_length_from_size_t_bug_const (strlen(transaction->endpoint_str))
+	)) != 0) {
 		goto out;
 	}
 
@@ -405,14 +409,14 @@ static int __rrr_http_transaction_part_content_length_set (
 		struct rrr_http_part *part
 ) {
 	char content_length_str[64];
-	sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
+	sprintf(content_length_str, "%" PRIrrr_nullsafe_len, rrr_nullsafe_str_len(transaction->send_body));
 	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
 }
 
 static void __rrr_http_transaction_response_code_ensure (
 		struct rrr_http_transaction *transaction
 ) {
-	int response_code = transaction->response_part->response_code;
+	unsigned int response_code = transaction->response_part->response_code;
 
 	if (response_code < 100 || response_code > 599) {
 		response_code = rrr_nullsafe_str_len(transaction->send_body) > 0
@@ -442,12 +446,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 		goto out;
 	}
 
-	if ( rrr_nullsafe_str_len(transaction->send_body) > 0 ||
-	     ( transaction->response_part->response_code >= 200 &&
-	       transaction->response_part->response_code <= 299 &&
-	       transaction->response_part->response_code != 204
-	     )
-	) {
+	if (transaction->response_part->response_code != 204) {
 		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
 			goto out;
 		}
@@ -460,7 +459,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(int response_code, enum rrr_http_version protocol_version, void *arg),
+		int (*response_code_callback)(unsigned int response_code, enum rrr_http_version protocol_version, void *arg),
 		int (*final_callback)(
 				struct rrr_http_part *request_part,
 				struct rrr_http_part *response_part,

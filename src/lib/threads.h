@@ -68,7 +68,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_STATE_RUNNING_FORKED 5
 
 /* Thread may set this if it has to do a few cleanup operations before stopping, WD will
- * be more patient when waiting for STOPPED (KILLTIME_PAPATIENTT_LIMIT will be used). Thread must set
+ * be more patient when waiting for STOPPED (KILLTIME_PATIENT_LIMIT will be used). Thread must set
  * this within the ordinary KILLTIME_LIMIT */
 #define RRR_THREAD_STATE_STOPPING 6
 

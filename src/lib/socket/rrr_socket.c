@@ -531,12 +531,14 @@ int rrr_socket_open (
 	return fd;
 }
 
-int rrr_socket_open_and_read_file (
+int rrr_socket_open_and_read_file_head (
 		char **result,
-		ssize_t *result_bytes,
+		rrr_biglength *result_bytes,
+		rrr_biglength *file_size,
 		const char *filename,
 		int options,
-		int mode
+		int mode,
+		rrr_biglength bytes
 ) {
 	int ret = 0;
 
@@ -547,21 +549,25 @@ int rrr_socket_open_and_read_file (
 	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_file", 0);
 
 	if (fd <= 0) {
-		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
+		RRR_DBG_7("Could not open file '%s' for reading: %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
-	ssize_t bytes = lseek(fd, 0, SEEK_END);
-	if (bytes == 0) {
+	ssize_t bytes_total = lseek(fd, 0, SEEK_END);
+	if (bytes_total == 0) {
 		goto out;
 	}
-	else if (bytes < 0) {
+	else if (bytes_total < 0) {
 		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
 				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;
+	}
+
+	if (bytes <= 0 || bytes > (rrr_biglength) bytes_total) {
+		bytes = (rrr_biglength) bytes_total;
 	}
 
 	if (lseek(fd, 0, SEEK_SET) != 0) {
@@ -571,14 +577,14 @@ int rrr_socket_open_and_read_file (
 		goto out;
 	}
 
-	if ((contents_tmp = rrr_allocate(bytes + 1)) == NULL) {
+	if ((contents_tmp = rrr_allocate((size_t) bytes + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_file\n");
 		ret = 1;
 		goto out;
 	}
 
 	ssize_t bytes_read;
-	if ((bytes_read = read(fd, contents_tmp, bytes)) != bytes) {
+	if ((rrr_biglength) (bytes_read = read(fd, contents_tmp, (size_t) bytes)) != bytes) {
 		RRR_MSG_0("Could not read all bytes from file '%s', return was %lli: %s\n",
 				filename, (long long int) bytes_read, rrr_strerror(errno));
 		ret = 1;
@@ -590,6 +596,7 @@ int rrr_socket_open_and_read_file (
 
 	*result = contents_tmp;
 	*result_bytes = bytes;
+	*file_size = (rrr_biglength) bytes_total;
 	contents_tmp = NULL;
 
 	out:
@@ -599,6 +606,26 @@ int rrr_socket_open_and_read_file (
 	}
 	return ret;
 
+}
+
+int rrr_socket_open_and_read_file (
+		char **result,
+		rrr_biglength *result_bytes,
+		const char *filename,
+		int options,
+		int mode
+) {
+	rrr_biglength file_size_dummy;
+
+	return rrr_socket_open_and_read_file_head (
+			result,
+			result_bytes,
+			&file_size_dummy,
+			filename,
+			options,
+			mode,
+			0 /* 0 means whole file */
+	);
 }
 
 #ifdef RRR_HAVE_EVENTFD
@@ -915,8 +942,8 @@ int rrr_socket_unix_create_bind_and_listen (
 	int fd = 0;
 
 	if (strlen(filename_orig) > sizeof(addr.sun_path) - 1) {
-		RRR_MSG_0("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %li\n",
-				sizeof(addr.sun_path) - 1);
+		RRR_MSG_0("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %llu\n",
+				(unsigned long long) (sizeof(addr.sun_path) - 1));
 		ret = 1;
 		goto out;
 	}
@@ -1044,7 +1071,7 @@ static int __rrr_socket_send_check (
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
+			RRR_DBG_7("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -1186,23 +1213,26 @@ int rrr_socket_unix_connect (
 	return ret;
 }
 
+static size_t __rrr_socket_send_size_from_biglength (rrr_biglength a) {
+	return (size_t) (a > SIZE_MAX ? SIZE_MAX : a);
+}
+
 int rrr_socket_sendto_nonblock (
 		int *err,
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
-	struct rrr_socket_options options;
-
 	int ret = RRR_SOCKET_OK;
 
 	*err = 0;
 	*written_bytes = 0;
-	ssize_t done_bytes_total = 0;
+	rrr_biglength done_bytes_total = 0;
 
+	struct rrr_socket_options options;
 	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
 		RRR_MSG_0("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
 		ret = RRR_SOCKET_HARD_ERROR;
@@ -1227,18 +1257,21 @@ int rrr_socket_sendto_nonblock (
 		goto out;
 	}
 
-	RRR_DBG_7("fd %i nonblock send loop starting, writing %li bytes (where of %li is complete) address length %u\n",
+	RRR_DBG_7("fd %i nonblock send loop starting, writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete) address length %u\n",
 			fd, size, done_bytes_total, addr_len);
 
+	// Truncate to size_t
+	const size_t send_size = __rrr_socket_send_size_from_biglength(size);
+
 	if (addr == NULL || addr_len == 0) {
-		done_bytes = send(fd, data + done_bytes_total, size - done_bytes_total, flags);
+		done_bytes = send(fd, data + done_bytes_total, send_size, flags);
 	}
 	else {
-		done_bytes = sendto(fd, data + done_bytes_total, size - done_bytes_total, flags, addr, addr_len);
+		done_bytes = sendto(fd, data + done_bytes_total, send_size, flags, addr, addr_len);
 	}
 
 	if (done_bytes > 0) {
-		done_bytes_total += done_bytes;
+		rrr_biglength_add_bug(&done_bytes_total, (rrr_biglength) done_bytes);
 	}
 
 	if (done_bytes_total != size) {
@@ -1291,10 +1324,10 @@ int rrr_socket_sendto_nonblock (
 }
 
 int rrr_socket_sendto_nonblock_check_retry (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
@@ -1311,10 +1344,10 @@ int rrr_socket_sendto_nonblock_check_retry (
 }
 
 int rrr_socket_send_nonblock_check_retry (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size
+		rrr_biglength size
 ) {
 	return rrr_socket_sendto_nonblock_check_retry(written_bytes, fd, data, size, NULL, 0);
 }
@@ -1322,24 +1355,24 @@ int rrr_socket_send_nonblock_check_retry (
 int rrr_socket_sendto_blocking (
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	int ret = 0;
 
-	ssize_t written_bytes = 0;
-	ssize_t written_bytes_total = 0;
+	rrr_biglength written_bytes = 0;
+	rrr_biglength written_bytes_total = 0;
 
 	while (written_bytes_total < size) {
-		RRR_DBG_7("fd %i blocking send loop writing %li bytes (where of %li is complete)\n",
+		RRR_DBG_7("fd %i blocking send loop writing %" PRIrrrbl " bytes (where of %" PRIrrrbl " is complete)\n",
 				fd, size, written_bytes_total);
 
 		if ((ret = rrr_socket_sendto_nonblock_check_retry (
 				&written_bytes,
 				fd,
 				data + written_bytes_total,
-				size - written_bytes_total,
+				size,
 				addr,
 				addr_len
 		)) != 0) {
@@ -1349,43 +1382,8 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
-		RRR_DBG_7("fd %i blocking send loop written bytes total is %li (this round was %li)\n",
+		RRR_DBG_7("fd %i blocking send loop written bytes total is %" PRIrrrbl " (this round was %" PRIrrrbl ")\n",
 				fd, written_bytes_total, written_bytes);
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_socket_sendto_nonblock_fail_on_partial_write (
-		int *err,
-		int fd,
-		void *data,
-		ssize_t data_size,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen
-) {
-	int ret = 0;
-
-	*err = 0;
-
-	ssize_t written_bytes = 0;
-
-	ret = rrr_socket_sendto_nonblock (
-			err,
-			&written_bytes,
-			fd,
-			data,
-			data_size,
-			sockaddr,
-			addrlen
-	);
-
-	if (written_bytes != data_size) {
-		RRR_MSG_0("All bytes were not sent in rrr_socket_sendto_nonblock_fail_on_partial_write %li<%li\n",
-				written_bytes, data_size);
-		ret = RRR_SOCKET_HARD_ERROR;
-		goto out;
 	}
 
 	out:
@@ -1395,7 +1393,7 @@ int rrr_socket_sendto_nonblock_fail_on_partial_write (
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
-		ssize_t size
+		rrr_biglength size
 ) {
 	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
 }
@@ -1406,7 +1404,7 @@ int rrr_socket_check_alive (int fd) {
 	pollfd.fd = fd;
 	pollfd.events = POLLIN;
 
-	int ret_tmp = poll(&pollfd, 1, 10);
+	ssize_t ret_tmp = poll(&pollfd, 1, 10);
 
 	if (ret_tmp < 0 || pollfd.revents & (POLLHUP|POLLERR|POLLNVAL)) {
 		RRR_DBG_7("fd %i recv poll error in check alive: %s revents: %i\n", fd, rrr_strerror(errno), pollfd.revents);

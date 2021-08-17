@@ -185,7 +185,7 @@ static int __rrr_stats_instance_post_text (
 			(sticky != 0 ? RRR_STATS_MESSAGE_FLAGS_STICKY : 0),
 			path_postfix,
 			text,
-			strlen(text) + 1
+			rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const(strlen(text)))
 	) != 0) {
 		RRR_MSG_0("Could not initialize statistics message in rrr_msg_stats_post_text\n");
 		ret = 1;
@@ -234,18 +234,18 @@ int rrr_stats_instance_post_base10_text (
 
 int rrr_stats_instance_post_unsigned_base10_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
-		long long unsigned int value
+		rrr_biglength value
 ) {
 	char text[128];
 
-	RRR_ASSERT(sizeof(long long unsigned int) <= 64, long_long_is_lteq_64);
+	RRR_ASSERT(sizeof(rrr_biglength) <= 64, long_long_is_lteq_64);
 
 	if (instance->stats_handle == 0) {
 		// Not registered with statistics engine
 		return 0;
 	}
 
-	sprintf(text, "%llu", value);
+	sprintf(text, "%" PRIrrrbl, value);
 
 	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_BASE10_TEXT, text);
 }
@@ -270,7 +270,7 @@ int rrr_stats_instance_update_rate (
 		struct rrr_stats_instance *instance,
 		unsigned int id,
 		const char *name,
-		unsigned int count
+		rrr_biglength count
 ) {
 	if (instance->stats_handle == 0) {
 		// Not registered with statistics engine
@@ -292,7 +292,7 @@ int rrr_stats_instance_update_rate (
 	uint64_t time_now = rrr_time_get_64();
 	if (time_now - counter->prev_time > RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS * 1000) {
 		double second = 1 * 1000 * 1000;
-		double period = time_now - counter->prev_time;
+		double period = (double) (time_now - counter->prev_time);
 		double per_period = ((double) counter->accumulator * 1000.0 * 1000.0) / period;
 
 		double factor = ((double) second) / ((double) period);
@@ -311,7 +311,7 @@ int rrr_stats_instance_update_rate (
 		sprintf (path_buf, "%s/per_second", name);
 		ret |= rrr_stats_instance_post_double_text(instance, path_buf, 0, per_second);
 		sprintf (path_buf, "%s/total", name);
-		ret |= rrr_stats_instance_post_base10_text(instance, path_buf, 0, counter->accumulator_total);
+		ret |= rrr_stats_instance_post_unsigned_base10_text(instance, path_buf, 0, counter->accumulator_total);
 		sprintf (path_buf, "%s/class", name);
 		ret |= rrr_stats_instance_post_text(instance, path_buf, 0, "ratecounter");
 

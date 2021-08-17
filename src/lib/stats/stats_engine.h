@@ -57,6 +57,11 @@ struct rrr_stats_engine {
 	int log_hook_handle;
 	pthread_mutex_t main_lock;
 
+	// Errors occuring while logging. The log functions have no
+	// return values, we must store the return value and check
+	// in our periodic function.
+	int exit_now_ret;
+
 	// Access through macro only to update usercount
 	pthread_mutex_t journal_lock;
 	int journal_lock_usercount;
