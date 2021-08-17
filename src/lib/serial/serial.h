@@ -23,8 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SERIAL_H
 
 int rrr_serial_check (int *is_serial, int fd);
-int rrr_serial_speed_check (unsigned int speed);
-int rrr_serial_speed_set (int fd, unsigned int speed_bps);
+int rrr_serial_speed_check (unsigned long long speed);
+int rrr_serial_speed_set (int fd, unsigned long long speed_bps);
 int rrr_serial_raw_set (int fd);
 int rrr_serial_parity_set (int fd, int is_odd);
 int rrr_serial_stop_bit_set (int fd, int is_two);

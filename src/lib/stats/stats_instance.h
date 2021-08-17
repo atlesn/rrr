@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS 500
 
 #include <pthread.h>
-#include <stdint.h>
 
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 
 #define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
@@ -42,8 +42,8 @@ struct rrr_stats_instance_rate_counter {
 	RRR_LL_NODE(struct rrr_stats_instance_rate_counter);
 	unsigned int id;
 	char *name;
-	unsigned int accumulator;
-	unsigned int accumulator_total;
+	rrr_biglength accumulator;
+	rrr_biglength accumulator_total;
 	uint64_t prev_time;
 };
 
@@ -80,7 +80,7 @@ int rrr_stats_instance_post_base10_text (
 );
 int rrr_stats_instance_post_unsigned_base10_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
-		long long unsigned int value
+		rrr_biglength value
 );
 int rrr_stats_instance_post_default_stickies (
 		struct rrr_stats_instance *instance
@@ -89,7 +89,7 @@ int rrr_stats_instance_update_rate (
 		struct rrr_stats_instance *instance,
 		unsigned int id,
 		const char *name,
-		unsigned int count
+		rrr_biglength count
 );
 
 #endif /* RRR_STATS_INSTANCE_H */

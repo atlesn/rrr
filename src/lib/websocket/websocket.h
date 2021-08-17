@@ -22,8 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_WEBSOCKET_H
 #define RRR_WEBSOCKET_H
 
-#include <stdint.h>
-
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 
 // RFC6455
@@ -110,21 +109,21 @@ int rrr_websocket_frame_enqueue (
 );
 int rrr_websocket_check_timeout (
 		struct rrr_websocket_state *ws_state,
-		int timeout_s
+		rrr_length timeout_s
 );
 int rrr_websocket_enqueue_ping_if_needed (
 		struct rrr_websocket_state *ws_state,
-		int ping_interval_s
+		rrr_length ping_interval_s
 );
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_length read_attempts,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 );

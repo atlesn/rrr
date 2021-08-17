@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stddef.h>
 
+#include "rrr_types.h"
+
 #define RRR_ALLOCATOR_GROUP_MSG_HOLDER  0
 #define RRR_ALLOCATOR_GROUP_MSG         1
 #define RRR_ALLOCATOR_GROUP_MAX         1
@@ -32,12 +34,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mmap_stats;
 
-void *rrr_allocate (size_t bytes);
-void *rrr_allocate_group (size_t bytes, int group);
+void *rrr_allocate (rrr_biglength bytes);
+void *rrr_allocate_zero (rrr_biglength bytes);
+void *rrr_allocate_group (rrr_biglength bytes, size_t group);
 void rrr_free (void *ptr);
-void *rrr_reallocate (void *ptr_old, size_t bytes_old, size_t bytes_new);
-void *rrr_reallocate_group (void *ptr_old, size_t bytes_old, size_t bytes_new, int group);
+void *rrr_reallocate (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new);
+void *rrr_reallocate_group (void *ptr_old, rrr_biglength bytes_old, rrr_biglength bytes_new, size_t group);
 char *rrr_strdup (const char *str);
+int rrr_allocator_init (void);
 void rrr_allocator_cleanup (void);
 void rrr_allocator_maintenance (struct rrr_mmap_stats *stats);
 void rrr_allocator_maintenance_nostats (void);

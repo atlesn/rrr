@@ -105,7 +105,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	}
 
 
-	rrr_msg_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
+	rrr_msg_addr_init_head(&message_addr, (rrr_u32) RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
 
 	// socket_send always handles memory of message
 	if ((ret = rrr_python3_socket_send(self, message, &message_addr)) != 0) {

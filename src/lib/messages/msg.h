@@ -55,12 +55,12 @@ void rrr_msg_populate_head (
 		struct rrr_msg *message,
 		rrr_u16 type,
 		rrr_u32 msg_size,
-		rrr_u64 value
+		rrr_u32 value
 );
 void rrr_msg_populate_control_msg (
 		struct rrr_msg *message,
 		rrr_u16 flags,
-		rrr_u64 value
+		rrr_u32 value
 );
 void rrr_msg_checksum_and_to_network_endian (
 		struct rrr_msg *message

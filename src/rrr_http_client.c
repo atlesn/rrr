@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array_tree.h"
 #include "lib/map.h"
+#include "lib/rrr_types.h"
 #include "lib/event/event.h"
 #include "lib/event/event_collection.h"
 #include "lib/messages/msg_msg.h"
@@ -188,7 +189,12 @@ static int __rrr_http_client_parse_config (
 
 		sprintf(array_tree_tmp, "%s;", array_definition);
 
-		if (rrr_array_tree_interpret_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+		if (rrr_array_tree_interpret_raw (
+				&data->tree,
+				array_tree_tmp,
+				rrr_length_from_biglength_bug_const(strlen(array_tree_tmp)),
+				"-"
+		) != 0 || data->tree == NULL) {
 			RRR_MSG_0("Error while parsing array tree definition\n");
 			ret = 1;
 			goto out;
@@ -300,7 +306,7 @@ static int __rrr_http_client_parse_config (
 		ret = 1;
 		goto out;
 	}
-	request_data->http_port = port_tmp;
+	request_data->http_port = (uint16_t) port_tmp;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(array_tree_tmp);
@@ -309,11 +315,11 @@ static int __rrr_http_client_parse_config (
 
 static int __rrr_http_client_final_write_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	ssize_t *bytes = arg;
-	*bytes = write (STDOUT_FILENO, str, len);
+	*bytes = write (STDOUT_FILENO, str, rrr_size_from_biglength_bug_const (len));
 	return 0;
 }
 
@@ -324,8 +330,8 @@ static int __rrr_http_client_final_callback (
 
 	int ret = 0;
 
-	rrr_length data_start = 0;
-	rrr_length data_size = rrr_nullsafe_str_len(response_data);
+	rrr_nullsafe_len data_start = 0;
+	rrr_nullsafe_len data_size = rrr_nullsafe_str_len(response_data);
 
 	if (data_size == 0) {
 		goto out;
@@ -350,7 +356,7 @@ static int __rrr_http_client_final_callback (
 		goto out;
 	}
 
-	RRR_MSG_2("Received %" PRIrrrl " bytes of data from HTTP library\n", data_size);
+	RRR_MSG_2("Received %" PRIrrr_nullsafe_len " bytes of data from HTTP library\n", data_size);
 
 	while (data_size > 0) {
 		ssize_t bytes = 0;
@@ -369,13 +375,29 @@ static int __rrr_http_client_final_callback (
 			goto out;
 		}
 		else {
-			data_start += bytes;
-			data_size -= bytes;
+			data_start += (rrr_nullsafe_len) bytes;
+			data_size -= (rrr_nullsafe_len) bytes;
+			if (data_size > (rrr_nullsafe_len) bytes) {
+				RRR_BUG("BUG: Underflow in __rrr_http_client_final_callack\n");
+			}
 		}
 	}
 
 	out:
 	return ret;
+}
+
+static int __rrr_http_client_failure_callback (
+		RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client_data *http_client_data = arg;
+
+	(void)(transaction);
+	(void)(http_client_data);
+
+	RRR_MSG_0("Error while sending request: %s\n", error_msg);
+
+	return RRR_HTTP_SOFT_ERROR;
 }
 
 static int __rrr_http_client_unique_id_generator_callback (
@@ -439,7 +461,7 @@ static int __rrr_http_client_redirect_callback (
 
 struct rrr_http_client_send_websocket_frame_callback_data {
 	void **data;
-	ssize_t *data_len;
+	rrr_biglength *data_len;
 	int *is_binary;
 	struct rrr_http_client_data *http_client_data;
 };
@@ -507,10 +529,19 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 	if (rrr_array_count(&array)) {
 		if (RRR_LL_COUNT(&http_client_data->tags)) {
-			ssize_t target_size = 0;
+			rrr_biglength target_size = 0;
 			int found_tags = 0;
 			if ((ret = rrr_array_selected_tags_export(&raw_tmp, &target_size, &found_tags, &array, &http_client_data->tags)) != 0) {
 				RRR_MSG_0("Failed to get specified array tags from input data, return was %i\n", ret);
+				goto out;
+			}
+
+			if (target_size > SSIZE_MAX) {
+				RRR_MSG_0("Exported size of array exceeds maximum (%llu > %lli)\n",
+					(unsigned long long) target_size,
+					(long long int) SSIZE_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
 
@@ -550,11 +581,11 @@ static int __rrr_http_client_send_websocket_frame_callback (RRR_HTTP_CLIENT_WEBS
 
 static int __rrr_http_client_receive_websocket_frame_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	(void)(arg);
-	ssize_t bytes = write (STDOUT_FILENO, str, len);
+	ssize_t bytes = write (STDOUT_FILENO, str, rrr_size_from_biglength_bug_const(len));
 	RRR_DBG_3("%lli bytes printed\n", (long long int) bytes);
 	return 0;
 }
@@ -571,7 +602,11 @@ static int __rrr_http_client_receive_websocket_frame_callback (RRR_HTTP_CLIENT_W
 		printf ("- (binary data) -\n");
 	}
 	else {
-		rrr_nullsafe_str_with_raw_do_const(payload, __rrr_http_client_receive_websocket_frame_nullsafe_callback, NULL);
+		rrr_nullsafe_str_with_raw_do_const (
+				payload,
+				__rrr_http_client_receive_websocket_frame_nullsafe_callback,
+				NULL
+		);
 	}
 
 	return 0;
@@ -638,9 +673,15 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_signal_handler *signal_handler = NULL;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
 	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
+	}
+
 	rrr_strerror_init();
 	rrr_signal_default_signal_actions_register();
 	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
@@ -683,6 +724,8 @@ int main (int argc, const char **argv, const char **env) {
 
 	struct rrr_http_client_callbacks callbacks = {
 			__rrr_http_client_final_callback,
+			&data,
+			__rrr_http_client_failure_callback,
 			&data,
 			__rrr_http_client_redirect_callback,
 			&data,
@@ -775,7 +818,8 @@ int main (int argc, const char **argv, const char **env) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

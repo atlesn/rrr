@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_fields.h"
 
+#include "../rrr_types.h"
 #include "../util/linked_list.h"
 #include "../helpers/nullsafe_str.h"
 
@@ -74,7 +75,7 @@ void rrr_http_header_field_collection_clear (
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
-		ssize_t field_name_len
+		rrr_length field_name_len
 );
 int rrr_http_header_field_new_with_value (
 		struct rrr_http_header_field **result,
@@ -83,13 +84,13 @@ int rrr_http_header_field_new_with_value (
 );
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *name,
 		const char *value
 );
 int rrr_http_header_field_parse_name_and_value (
 		struct rrr_http_header_field_collection *target_list,
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *start_orig,
 		const char *end
 );

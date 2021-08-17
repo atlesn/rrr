@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_read.h"
 #include "../socket/rrr_socket_constants.h"
 #include "../util/rrr_time.h"
+#include "../util/posix.h"
 #include "../array.h"
 
 #define RRR_MSGDB_CLIENT_PING_INTERVAL_S (RRR_SOCKET_CLIENT_HARD_TIMEOUT_S / 2)
@@ -77,15 +78,18 @@ static int __rrr_msgdb_client_await_ack_callback (
 	return RRR_MSGDB_OK;
 }
 
-int rrr_msgdb_client_await_ack (
+static int __rrr_msgdb_client_await_ack (
 		int *positive_ack,
-		struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
 	*positive_ack = 0;
 
-	uint64_t bytes_read;
+	uint64_t bytes_read = 0;
+	uint64_t bytes_read_prev = 0;
 
 	retry:
 	if ((ret = rrr_socket_read_message_split_callbacks (
@@ -104,6 +108,15 @@ int rrr_msgdb_client_await_ack (
 			positive_ack
 	)) != 0) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			if (wait_callback) {
+				if ((ret = wait_callback(wait_callback_arg)) != 0) {
+					goto out;
+				}
+			}
+			else if (bytes_read == bytes_read_prev) {
+				rrr_posix_usleep(50); // 50 us (schedule)
+			}
+			bytes_read_prev = bytes_read;
 			goto retry;
 		}
 		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
@@ -112,6 +125,22 @@ int rrr_msgdb_client_await_ack (
 
 	out:
 	return ret;
+}
+
+int rrr_msgdb_client_await_ack (
+		int *positive_ack,
+		struct rrr_msgdb_client_conn *conn
+) {
+	return __rrr_msgdb_client_await_ack(positive_ack, conn, NULL, NULL);
+}
+
+int rrr_msgdb_client_await_ack_with_wait_callback (
+		int *positive_ack,
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
+) {
+	return __rrr_msgdb_client_await_ack(positive_ack, conn, wait_callback, wait_callback_arg);
 }
 
 static int __rrr_msgdb_client_await_msg_callback (
@@ -130,15 +159,18 @@ static int __rrr_msgdb_client_await_msg_callback (
 	return 0;
 }
 
-int rrr_msgdb_client_await_msg (
+static int __rrr_msgdb_client_await_msg (
 		struct rrr_msg_msg **result_msg,
-		struct rrr_msgdb_client_conn *conn
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
 	*result_msg = NULL;
 
-	uint64_t bytes_read;
+	uint64_t bytes_read = 0;
+	uint64_t bytes_read_prev = 0;
 
 	retry:
 	if ((ret = rrr_socket_read_message_split_callbacks (
@@ -157,6 +189,15 @@ int rrr_msgdb_client_await_msg (
 			result_msg
 	)) != 0) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			if (wait_callback) {
+				if ((ret = wait_callback(wait_callback_arg)) != 0) {
+					goto out;
+				}
+			}
+			else if (bytes_read == bytes_read_prev) {
+				rrr_posix_usleep(50); // 50 us (schedule)
+			}
+			bytes_read_prev = bytes_read;
 			goto retry;
 		}
 		RRR_MSG_0("msgdb fd %i Error %i while reading from message db server\n", conn->fd, ret);
@@ -171,10 +212,26 @@ int rrr_msgdb_client_await_msg (
 	return ret;
 }
 
+int rrr_msgdb_client_await_msg (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn
+) {
+	return __rrr_msgdb_client_await_msg(result_msg, conn, NULL, NULL);
+}
+
+int rrr_msgdb_client_await_msg_with_wait_callback (
+		struct rrr_msg_msg **result_msg,
+		struct rrr_msgdb_client_conn *conn,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
+) {
+	return __rrr_msgdb_client_await_msg(result_msg, conn, wait_callback, wait_callback_arg);
+}
+
 static int __rrr_msgdb_client_send_callback (
 		int fd,
 		void **data,
-		ssize_t data_size,
+		rrr_length data_size,
 		void *arg
 ) {
 	(void)(arg);
@@ -208,7 +265,7 @@ int rrr_msgdb_client_send (
 	return ret;
 }
 
-int rrr_msgdb_client_send_empty (
+static int __rrr_msgdb_client_send_empty (
 		struct rrr_msgdb_client_conn *conn,
 		rrr_u8 type,
 		const char *topic
@@ -228,7 +285,17 @@ int rrr_msgdb_client_send_empty (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	rrr_length topic_len = 0;
+	if ((ret = rrr_length_from_size_t_err(&topic_len, strlen(topic))) != 0 || topic_len > UINT16_MAX) {
+		RRR_MSG_0("Topic exceeds maximum length in rrr_msgdb_client_send_empty (%llu>%llu)\n",
+			(unsigned long long) topic_len,
+			(unsigned long long) UINT16_MAX
+		);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, (uint16_t) topic_len)) != 0) {
 		goto out;
 	}
 
@@ -243,22 +310,33 @@ int rrr_msgdb_client_send_empty (
 	return ret;
 }
 
-int rrr_msgdb_client_cmd_idx (
+static int __rrr_msgdb_client_wait_callback (
+		void *arg
+) {
+	(void)(arg);
+	rrr_posix_usleep(1 * 1000); // 1 ms
+	return 0;
+}
+
+int rrr_msgdb_client_cmd_idx_with_wait_callback (
 		struct rrr_array *target_paths,
 		struct rrr_msgdb_client_conn *conn,
-		const char *topic
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
 ) {
 	int ret = 0;
 
 	struct rrr_msg_msg *msg_tmp = NULL;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_IDX, "")) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_msgdb_client_await_msg (
+	if ((ret = rrr_msgdb_client_await_msg_with_wait_callback (
 		&msg_tmp,
-		conn
+		conn,
+		wait_callback,
+		wait_callback_arg
 	)) != 0 || msg_tmp == NULL) {
 		goto out;
 	}
@@ -273,6 +351,72 @@ int rrr_msgdb_client_cmd_idx (
 	return ret;
 }
 
+int rrr_msgdb_client_cmd_idx (
+		struct rrr_array *target_paths,
+		struct rrr_msgdb_client_conn *conn
+) {
+	return rrr_msgdb_client_cmd_idx_with_wait_callback(target_paths, conn, NULL, NULL);
+}
+
+static int __rrr_msgdb_client_cmd_tidy_with_wait_callback (
+		struct rrr_msgdb_client_conn *conn,
+		uint32_t max_age_s,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
+) {
+	int ret = 0;
+
+	if ((ret = rrr_msgdb_common_ctrl_msg_send_tidy (
+			conn->fd,
+			max_age_s,
+			__rrr_msgdb_client_send_callback,
+			NULL
+	)) != 0) {
+		goto out;
+	}
+
+	int positive_ack;
+	if ((ret = rrr_msgdb_client_await_ack_with_wait_callback (
+			&positive_ack,
+			conn,
+			wait_callback,
+			wait_callback_arg
+	)) != 0) {
+		goto out;
+	}
+
+	ret = positive_ack ? 0 : 1;
+
+	out:
+	return ret;
+}
+
+int rrr_msgdb_client_cmd_tidy (
+		struct rrr_msgdb_client_conn *conn,
+		uint32_t max_age_s
+) {
+	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
+			conn,
+			max_age_s,
+			__rrr_msgdb_client_wait_callback, /* Use default callback which sleeps to prevent spinning */
+			NULL
+	);
+}
+
+int rrr_msgdb_client_cmd_tidy_with_wait_callback (
+		struct rrr_msgdb_client_conn *conn,
+		uint32_t max_age_s,
+		int (*wait_callback)(void *arg),
+		void *wait_callback_arg
+) {
+	return __rrr_msgdb_client_cmd_tidy_with_wait_callback (
+			conn,
+			max_age_s,
+			wait_callback,
+			wait_callback_arg
+	);
+}
+
 int rrr_msgdb_client_cmd_get (
 		struct rrr_msg_msg **target,
 		struct rrr_msgdb_client_conn *conn,
@@ -280,7 +424,7 @@ int rrr_msgdb_client_cmd_get (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_GET, topic)) != 0) {
 		goto out;
 	}
 
@@ -301,7 +445,7 @@ int rrr_msgdb_client_cmd_del (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
+	if ((ret = __rrr_msgdb_client_send_empty(conn, MSG_TYPE_DEL, topic)) != 0) {
 		goto out;
 	}
 
@@ -331,9 +475,8 @@ static void __rrr_msgdb_client_event_periodic (
 
 	RRR_DBG_3("msgdb fd %i send PING\n", conn->fd);
 
-	if (rrr_msgdb_common_ctrl_msg_send (
+	if (rrr_msgdb_common_ctrl_msg_send_ping (
 			conn->fd,
-			RRR_MSG_CTRL_F_PING,
 			__rrr_msgdb_client_send_callback,
 			NULL
 	) != 0) {
@@ -364,7 +507,7 @@ int rrr_msgdb_client_open (
 		goto out;
 	}
 
-	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 0)) != 0) {
+	if ((ret = rrr_socket_unix_connect (&conn->fd, "msgdb_client", path, 1 /* Non-block */)) != 0) {
 		goto out;
 	}
 
