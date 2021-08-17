@@ -314,7 +314,7 @@ struct rrr_net_transport_openssl_connect_callback_data {
 };
 
 const char *__rrr_net_transport_openssl_ssl_version_to_str (
-	int version
+	long int version
 ) {
 	const char *result = "";
 	switch (version) {
@@ -444,10 +444,10 @@ int __rrr_net_transport_openssl_connect_callback (
 	if (RRR_DEBUGLEVEL_1) {
 		__rrr_net_transport_openssl_dump_enabled_ciphers(ssl);
 
-		int max_version = SSL_get_max_proto_version(ssl);
-		int min_version = SSL_get_min_proto_version(ssl);
+		long int max_version = SSL_get_max_proto_version(ssl);
+		long int min_version = SSL_get_min_proto_version(ssl);
 
-		RRR_MSG_1("SSL max/min protocol verison: %s(%i) >= x <= %s(%i)\n",
+		RRR_MSG_1("SSL max/min protocol verison: %s(%li) >= x <= %s(%li)\n",
 			__rrr_net_transport_openssl_ssl_version_to_str(max_version), max_version,
 			__rrr_net_transport_openssl_ssl_version_to_str(min_version), min_version
 		);
@@ -790,7 +790,7 @@ static int __rrr_net_transport_openssl_read_raw (
 			ret = RRR_READ_EOF;
 			goto out;
 		}
-		ret = rrr_socket_check_alive(BIO_get_fd(ssl_data->web, NULL));
+		ret = rrr_socket_check_alive((int) BIO_get_fd(ssl_data->web, NULL));
 		goto out;
 	}
 	else if (ERR_peek_error() != 0) {
@@ -928,7 +928,7 @@ static int __rrr_net_transport_openssl_poll (
 ) {
 	struct rrr_net_transport_tls_data *ssl_data = handle->submodule_private_ptr;
 
-	int fd = BIO_get_fd(ssl_data->web, NULL);
+	int fd = (int) BIO_get_fd(ssl_data->web, NULL);
 	if (fd < 0) {
 		return RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 	}
