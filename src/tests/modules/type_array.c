@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instances.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/modules.h"
-#include "../../lib/buffer.h"
 #include "../../lib/message_holder/message_holder.h"
 #include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages/msg_msg.h"
@@ -107,11 +106,11 @@ struct test_final_data {
 
 	struct rrr_msg_msg msg;
 };
+		
+#define TEST_POLL_CALLBACK_SIGNATURE \
+	struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data
 
-int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
+int test_anything_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
@@ -124,51 +123,51 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
+struct test_poll_callback_intermediate_callback_data {
+		int (*callback)(struct rrr_msg_holder *entry, struct rrr_test_callback_data *callback_data);
+		struct rrr_test_callback_data *callback_data;
+};
+
+int test_poll_callback_intermediate (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct test_poll_callback_intermediate_callback_data *callback_data = arg;
+	return callback_data->callback(entry, callback_data->callback_data);
+}
+
 int test_do_poll_loop (
-		struct rrr_instance *self,
-		struct rrr_message_broker *broker,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(TEST_POLL_CALLBACK_SIGNATURE),
 		struct rrr_test_callback_data *callback_data
 ) {
 	int ret = 0;
 
 	struct rrr_test_result *test_result = callback_data->test_result;
 
-	struct rrr_message_broker_costumer *handle_self = NULL;
-
-	uint64_t limit = rrr_time_get_64() + 2000000; // 2 seconds (6 zeros)
-
-	while (rrr_time_get_64() < limit && (handle_self == NULL)) {
-		handle_self = rrr_message_broker_costumer_find_by_name(broker, INSTANCE_M_NAME(self));
-		rrr_posix_usleep(50000);
-	}
-
-	if (handle_self == NULL) {
-		TEST_MSG("Could not find message broker handle for self after 2 seconds in test_do_poll_loop\n");
-		ret = 1;
-		goto out;
-	}
+	struct test_poll_callback_intermediate_callback_data callback_data_intermediate = {
+		callback,
+		callback_data
+	};
 
 	// Poll from output
 	for (int i = 1; i <= RRR_TEST_TYPE_ARRAY_LOOP_COUNT && test_result->result != 2; i++) {
-		if (rrr_thread_signal_encourage_stop_check(self->thread) != 0) {
+		if (rrr_thread_signal_encourage_stop_check(INSTANCE_D_THREAD(thread_data)) != 0) {
 			break;
 		}
 
-		rrr_thread_watchdog_time_update(self->thread);
+		rrr_thread_watchdog_time_update(INSTANCE_D_THREAD(thread_data));
 
 		TEST_MSG("Test result polling try: %i of %i\n",
 				i, RRR_TEST_TYPE_ARRAY_LOOP_COUNT);
 
 		uint16_t amount = 100;
-		ret = rrr_message_broker_poll_delete (
-				&amount,
-				handle_self,
-				0,
-				callback,
-				callback_data,
-				150
+
+
+		ret = rrr_poll_do_poll_delete_custom_arg (
+			&amount,
+			thread_data,
+			test_poll_callback_intermediate,
+			&callback_data_intermediate
 		);
+
 
 		if (ret != 0) {
 			TEST_MSG("Error from poll_delete function in test_type_array\n");
@@ -185,6 +184,8 @@ int test_do_poll_loop (
 			TEST_MSG("Result of polling: %i\n",
 					test_result->result);
 		}
+
+		rrr_posix_usleep(100 * 1000); // 100ms
 	}
 
 	out:
@@ -193,7 +194,7 @@ int test_do_poll_loop (
 
 int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance *socket_metadata) {
 	char *socket_path = NULL;
-	int ret = 0;
+	ssize_t ret = 0;
 	int socket_fd = 0;
 
 	ret = rrr_instance_config_get_string_noconvert (&socket_path, socket_metadata->config, "socket_path");
@@ -219,8 +220,8 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 	else if (ret >= 0 && ret != sizeof(*data) - 1) {
-		TEST_MSG("Only %i of %llu bytes written in test_type_array_write_to_socket\n",
-				ret, (long long unsigned) sizeof(*data) - 1);
+		TEST_MSG("Only %lli of %llu bytes written in test_type_array_write_to_socket\n",
+				(long long int) ret, (long long unsigned) sizeof(*data) - 1);
 		ret = 1;
 		goto out;
 	}
@@ -233,13 +234,10 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		rrr_socket_close(socket_fd);
 	}
 	RRR_FREE_IF_NOT_NULL(socket_path);
-	return ret;
+	return (int) ret;
 }
 
-int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
+int test_averager_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *result = callback_data->test_result;
 
 	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
@@ -326,12 +324,13 @@ int test_averager (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_averager_callback,
 			&callback_data
 	);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
+
+	ret |= (test_result.result == 2 ? 0 : 1);
 
 	return ret;
 }
@@ -346,12 +345,9 @@ struct rrr_test_type_array_callback_data {
  *  The main output receives an identical message_1 as the one we sent in,
  *  we check for correct endianess among other things
  */
-int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int test_type_array_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct rrr_test_callback_data *callback_data = arg;
 	struct rrr_test_result *result = callback_data->test_result;
 	struct rrr_test_type_array_callback_data *array_callback_data = callback_data->private_data;
 	const struct rrr_test_function_data *config = array_callback_data->config;
@@ -665,8 +661,7 @@ int test_array (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_type_array_callback,
 			&callback_data
 	);
@@ -697,8 +692,7 @@ int test_anything (
 
 	// Poll from first output
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_anything_callback,
 			&callback_data
 	);
@@ -715,8 +709,7 @@ int test_anything (
 }
 
 #ifdef RRR_WITH_MYSQL
-int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct rrr_test_callback_data *callback_data = arg;
+int test_type_array_mysql_and_network_callback (TEST_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_result *test_result = callback_data->test_result;
 
 	int ret = 0;
@@ -739,7 +732,7 @@ struct test_type_array_mysql_data {
 	char *mysql_user;
 	char *mysql_password;
 	char *mysql_db;
-	unsigned int mysql_port;
+	uint16_t mysql_port;
 };
 
 int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) {
@@ -820,11 +813,11 @@ int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, 
 	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_password, mysql->config, "mysql_password");
 	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_db, mysql->config, "mysql_db");
 
-	rrr_setting_uint port;
-	if (rrr_instance_config_read_port_number (&port, mysql->config, "mysql_port") == RRR_SETTING_ERROR) {
+	if (rrr_instance_config_read_port_number (&data->mysql_port, mysql->config, "mysql_port") == RRR_SETTING_ERROR) {
 		ret |= 1;
 	}
-	else if (data->mysql_port == 0) {
+
+	if (data->mysql_port == 0) {
 		data->mysql_port = 5506;
 	}
 
@@ -884,8 +877,7 @@ int test_type_array_mysql (
 
 	TEST_MSG("Polling MySQL\n");
 	ret |= test_do_poll_loop(
-			INSTANCE_D_INSTANCE(self_thread_data),
-			INSTANCE_D_BROKER(self_thread_data),
+			self_thread_data,
 			test_type_array_mysql_and_network_callback,
 			&callback_data
 	);

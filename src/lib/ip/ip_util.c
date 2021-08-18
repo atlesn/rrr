@@ -32,13 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_util.h"
 #include "../rrr_strerror.h"
 
-void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
+void rrr_ip_to_str (char *dest, rrr_biglength dest_size, const struct sockaddr *addr, socklen_t addr_len) {
 	const char *result = NULL;
 
 	*dest = '\0';
 
+	if (sizeof(rrr_biglength) > sizeof(size_t) && dest_size > SIZE_MAX) {
+		dest_size = SIZE_MAX;
+	}
+
 	if (addr == NULL || addr_len == 0) {
-		snprintf(dest, dest_size, "[null]");
+		snprintf(dest, (size_t) dest_size, "[null]");
 	}
 	else {
 		const void *addr_final = NULL;
@@ -55,7 +59,7 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 			port_final = in6_addr->sin6_port;
 		}
 		else {
-			snprintf(dest, dest_size, "[Unknown address family %i]", addr->sa_family);
+			snprintf(dest, (size_t) dest_size, "[Unknown address family %i]", addr->sa_family);
 			goto out;
 		}
 
@@ -65,11 +69,11 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 		buf[256 - 1] = '\0';
 
 		if (result == NULL) {
-			snprintf(dest, dest_size, "[Unknown address of length %i]", addr_len);
+			snprintf(dest, (size_t) dest_size, "[Unknown address of length %i]", addr_len);
 			goto out;
 		}
 
-		snprintf(dest, dest_size, "[%s:%u]", buf, ntohs(port_final));
+		snprintf(dest, (size_t) dest_size, "[%s:%u]", buf, ntohs(port_final));
 	}
 
 	out:
@@ -79,7 +83,7 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 int rrr_ip_to_str_and_port (
 		uint16_t *target_port,
 		char *target_ip,
-		size_t target_ip_size,
+		socklen_t target_ip_size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {

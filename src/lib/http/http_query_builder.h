@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_QUERY_BUILDER_H
 #define RRR_HTTP_QUERY_BUILDER_H
 
-#include <stdio.h>
+#include "../rrr_types.h"
 
 struct rrr_string_builder;
 struct rrr_map;
@@ -66,7 +66,7 @@ int rrr_http_query_builder_append_raw (
 const char *rrr_http_query_builder_buf_get (
 		struct rrr_http_query_builder *query_builder
 );
-ssize_t rrr_http_query_builder_wpos_get (
+rrr_biglength rrr_http_query_builder_wpos_get (
 		struct rrr_http_query_builder *query_builder
 );
 void rrr_http_query_builder_buf_takeover (

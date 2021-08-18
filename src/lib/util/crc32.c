@@ -103,14 +103,14 @@ static uint32_t crc_32_tab[] = { /* CRC polynomial 0xedb88320 */
 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
-#define UPDC32(octet, crc) (crc_32_tab[((crc) ^ (octet)) & 0xff] ^ ((crc) >> 8))
+#define UPDC32(octet, crc) (crc_32_tab[((uint32_t) (crc) ^ (uint32_t) (octet)) & 0xff] ^ (uint32_t) ((crc) >> 8))
 
 // Returns checksum
 uint32_t rrr_crc32buf (const char *buf, rrr_biglength len) {
       uint32_t crc32 = 0xFFFFFFFF;
 
       for (rrr_biglength i = 0; i < len; i++) {
-    	  crc32 = UPDC32(*(buf + i), crc32);
+    	  crc32 = (UPDC32(*(buf + i), crc32));
 //    	  printf ("CRC: %" PRIu32 "\n", crc32);
       }
 

@@ -81,12 +81,13 @@ websocket = websocket/websocket.c
 cmodule = cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
           cmodule/cmodule_ext.c cmodule/cmodule_worker.c
 
-net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
+net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c \
+                net_transport/net_transport_ctx.c
 
 # posix.c and gnu.c is in libadd further down
 util = util/base64.c util/crc32.c util/rrr_time.c util/rrr_endian.c \
        util/slow_noop.c util/utf8.c util/readfile.c util/hex.c \
-       util/increment.c
+       util/increment.c util/sha256.c
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
@@ -113,10 +114,10 @@ endif
 
 librrr_la_CFLAGS = ${TLS_CFLAGS} ${AM_CFLAGS}
 librrr_la_LDFLAGS = ${TLS_LDFLAGS} ${perl5_extra_ld} ${jsonc_extra_ld} ${nghttp2_extra_ld} ${python3_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
+librrr_la_SOURCES = fifo.c fifo_protected.c threads.c cmdlineparser/cmdline.c rrr_config.c \
                     version.c configuration.c parse.c settings.c instance_config.c common.c \
                     message_broker.c map.c array.c array_tree.c \
-                    read.c mmap_channel.c \
+                    read.c mmap_channel.c rrr_shm.c \
                     instances.c instance_friends.c poll_helper.c modules.c \
                     string_builder.c random.c condition.c \
                     fixed_point.c passwd.c environment_file.c \
@@ -193,4 +194,4 @@ libadd_all =                         \
     ${libadd_rrr_allocator}
 
 noinst_LTLIBRARIES = ${libadd_all}
-librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} -lpthread -ldl -lm -levent -levent_pthreads
+librrr_la_LIBADD = ${libadd_all} ${TLS_LIBADD} ${JOURNALD_LIBS} ${LIBRT_LIBADD} -lpthread -ldl -lm -levent -levent_pthreads

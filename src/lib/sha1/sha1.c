@@ -386,14 +386,14 @@ void rrr_SHA1PadMessage(rrr_SHA1Context *context)
     /*
      *  Store the message length as the last 8 octets
      */
-    context->Message_Block[56] = (context->Length_High >> 24) & 0xFF;
-    context->Message_Block[57] = (context->Length_High >> 16) & 0xFF;
-    context->Message_Block[58] = (context->Length_High >> 8) & 0xFF;
-    context->Message_Block[59] = (context->Length_High) & 0xFF;
-    context->Message_Block[60] = (context->Length_Low >> 24) & 0xFF;
-    context->Message_Block[61] = (context->Length_Low >> 16) & 0xFF;
-    context->Message_Block[62] = (context->Length_Low >> 8) & 0xFF;
-    context->Message_Block[63] = (context->Length_Low) & 0xFF;
+    context->Message_Block[56] = (unsigned char) ((context->Length_High >> 24) & 0xFF);
+    context->Message_Block[57] = (unsigned char) ((context->Length_High >> 16) & 0xFF);
+    context->Message_Block[58] = (unsigned char) ((context->Length_High >> 8) & 0xFF);
+    context->Message_Block[59] = (unsigned char) ((context->Length_High) & 0xFF);
+    context->Message_Block[60] = (unsigned char) ((context->Length_Low >> 24) & 0xFF);
+    context->Message_Block[61] = (unsigned char) ((context->Length_Low >> 16) & 0xFF);
+    context->Message_Block[62] = (unsigned char) ((context->Length_Low >> 8) & 0xFF);
+    context->Message_Block[63] = (unsigned char) ((context->Length_Low) & 0xFF);
 
     rrr_SHA1ProcessMessageBlock(context);
 }

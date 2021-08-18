@@ -114,10 +114,10 @@ static int __rrr_http_header_parse_single_string_value (RRR_HTTP_HEADER_FIELD_PA
 
 static char *__rrr_http_header_parse_base64_value_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
-	size_t *result_len = arg;
+	rrr_biglength *result_len = arg;
 	return (char *) rrr_base64_decode (
 			str,
 			len,
@@ -129,7 +129,7 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 	int ret = 0;
 
 	void *base64_data = NULL;
-	size_t base64_len = 0;
+	rrr_biglength base64_len = 0;
 
 	if ((ret = __rrr_http_header_parse_single_string_value(field)) != 0) {
 		goto out;
@@ -156,7 +156,17 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 		goto out;
 	}
 
-	rrr_nullsafe_str_set_allocated(field->binary_value_nullsafe, &base64_data, base64_len);
+	rrr_length base64_len_final;
+	if (rrr_length_from_biglength_err (&base64_len_final, base64_len) != 0) {
+		RRR_MSG_0("Base64 decoding failed for a field, value too long (%llu>%llu)\n",
+			(unsigned long long) base64_len,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
+	rrr_nullsafe_str_set_allocated(field->binary_value_nullsafe, &base64_data, base64_len_final);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(base64_data);
@@ -326,7 +336,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 
 static const struct rrr_http_header_field_definition *__rrr_http_header_field_definition_get (
 		const char *field,
-		ssize_t field_len
+		rrr_length field_len
 ) {
 	for (int i = 0; 1; i++) {
 		const struct rrr_http_header_field_definition *def = &definitions[i];
@@ -346,7 +356,7 @@ static const struct rrr_http_header_field_definition *__rrr_http_header_field_de
 				def->name_lowercase
 			) == 0 &&
 			result == field &&
-			field_len == (ssize_t) strlen(def->name_lowercase)
+			field_len == rrr_length_from_size_t_bug_const(strlen(def->name_lowercase))
 		) {
 			return def;
 		}
@@ -374,7 +384,7 @@ void rrr_http_header_field_collection_clear (
 int rrr_http_header_field_new_raw (
 		struct rrr_http_header_field **result,
 		const char *field_name,
-		ssize_t field_name_len
+		rrr_length field_name_len
 ) {
 	int ret = 0;
 
@@ -411,12 +421,18 @@ int rrr_http_header_field_new_raw (
 
 static int __rrr_http_header_field_new_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_http_header_field **result = arg;
 
-	return rrr_http_header_field_new_raw (result, str, len);
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP header field too long to be stored (%" PRIrrrbl ">%llu)\n",
+			len, (unsigned long long) RRR_LENGTH_MAX);
+		return 1;
+	}
+
+	return rrr_http_header_field_new_raw (result, str, (rrr_length) len);
 }
 
 int rrr_http_header_field_new (
@@ -435,12 +451,12 @@ int rrr_http_header_field_new_with_value (
 
 	struct rrr_http_header_field *field = NULL;
 
-	if ((ret = rrr_http_header_field_new_raw(&field, name, strlen(name))) != 0) {
+	if ((ret = rrr_http_header_field_new_raw(&field, name, rrr_length_from_size_t_bug_const (strlen(name)))) != 0) {
 		RRR_MSG_0("Could not create header field in rrr_http_header_field_new\n");
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, strlen(value))) != 0) {
+	if ((ret = rrr_nullsafe_str_new_or_replace_raw(&field->value, value, rrr_length_from_size_t_bug_const (strlen(value)))) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in rrr_http_header_field_new\n");
 		goto out_destroy;
 	}
@@ -498,25 +514,34 @@ static int __rrr_http_header_field_line_end_find (
 	return RRR_HTTP_OK;
 }
 
-#define FIND_LINE_END()																					\
-	do {if ((ret = __rrr_http_header_field_line_end_find(&line_end,start,end,line_end_mode)) != 0) {	\
-		goto out;																						\
+#define FIND_LINE_END()                                                                                 \
+    do {if ((ret = __rrr_http_header_field_line_end_find(&line_end,start,end,line_end_mode)) != 0) {    \
+        goto out;                                                                                       \
+    }} while(0)
+
+#define SIZE_CHECK()                                                                      \
+	do {if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {                       \
+		RRR_MSG_0("Data too long while parsing HTTP header fields\n");            \
+		ret = RRR_HTTP_PARSE_SOFT_ERR;                                            \
+		goto out;                                                                 \
 	}} while(0)
 
 static int __rrr_http_header_field_parse_subvalue (
 		struct rrr_http_field_collection *target_list,
-		ssize_t *parsed_bytes,
-		const char *start_orig,
-		const char *end,
+		rrr_length *parsed_bytes,
+		const char * const start_orig,
+		const char * const end,
 		enum rrr_http_header_field_parse_line_end_mode line_end_mode,
 		int field_flags,
 		int no_whitespace_check
 ) {
 	int ret = 0;
 
+	struct rrr_http_field *subvalue = NULL;
+
 	*parsed_bytes = 0;
 
-	struct rrr_http_field *subvalue = NULL;
+	SIZE_CHECK();
 
 	const char *start = start_orig;
 
@@ -526,10 +551,10 @@ static int __rrr_http_header_field_parse_subvalue (
 
 	// New value always begins with spaces, except for in bad implementations
 	if (!no_whitespace_check) {
-		ssize_t whitespace_count = rrr_http_util_count_whsp(start, end);
+		rrr_length whitespace_count = rrr_http_util_count_whsp(start, end);
 		if (whitespace_count == 0) {
 			// No more values
-			*parsed_bytes = start - start_orig;
+			*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 			ret = RRR_HTTP_PARSE_OK;
 			goto out;
 		}
@@ -578,7 +603,7 @@ static int __rrr_http_header_field_parse_subvalue (
 		name_end =  __rrr_http_header_field_parse_get_first_position(comma, semicolon, equal, line_end);
 	}
 
-	ssize_t name_length = name_end - start;
+	rrr_length name_length = rrr_length_from_ptr_sub_bug_const(name_end, start);
 	if (name_length <= 0) {
 		RRR_MSG_0("No name found while parsing subvalues of HTTP header field\n");
 		rrr_http_util_print_where_message(start, end);
@@ -618,7 +643,7 @@ static int __rrr_http_header_field_parse_subvalue (
 	// TODO : This method to find value end is naive, need to parse quoted values correctly
 
 	const char *value_end = __rrr_http_header_field_parse_get_first_position(comma, semicolon, NULL, line_end);
-	ssize_t value_length = value_end - start;
+	rrr_length value_length = rrr_length_from_ptr_sub_bug_const (value_end, start);
 
 	if (rrr_http_field_value_set(subvalue, start, value_length) != 0) {
 		RRR_MSG_0("Could not allocate memory for value in __rrr_http_header_field_subvalue_parse\n");
@@ -638,7 +663,7 @@ static int __rrr_http_header_field_parse_subvalue (
 	subvalue = NULL;
 
 	// Don't parse the last character, needs to be checked by caller
-	*parsed_bytes = (start - start_orig);
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 
 	out:
 	if (subvalue != NULL) {
@@ -648,27 +673,28 @@ static int __rrr_http_header_field_parse_subvalue (
 }
 
 static int __rrr_http_header_field_parse_subvalues (
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		int *comma_found_do_duplicate_field,
 		struct rrr_http_header_field *field,
-		const char *start,
-		const char *end,
+		const char * const start_orig,
+		const char * const end,
 		enum rrr_http_header_field_parse_line_end_mode line_end_mode,
 		int bad_client_missing_space_after_comma
 ) {
 	int ret = 0;
 
-	const char *start_orig = start;
-
 	*parsed_bytes = 0;
 	*comma_found_do_duplicate_field = 0;
 
-	int prev_subvalue_count = 0;
+	SIZE_CHECK();
 
+	const char *start = start_orig;
+
+	int prev_subvalue_count = 0;
 	do {
 		prev_subvalue_count = RRR_LL_COUNT(&field->fields);
 
-		ssize_t parsed_bytes_tmp = 0;
+		rrr_length parsed_bytes_tmp = 0;
 		//RRR_DBG_3("subvalue start: %c bad client: %i\n", *start, bad_client_missing_space_after_comma);
 		if ((ret = __rrr_http_header_field_parse_subvalue (
 				&field->fields,
@@ -679,20 +705,22 @@ static int __rrr_http_header_field_parse_subvalues (
 				(field->definition != NULL ? field->definition->flags : 0),
 				bad_client_missing_space_after_comma
 		)) != 0) {
-			return ret;
+			goto out;
 		}
 		start += parsed_bytes_tmp;
 
 		bad_client_missing_space_after_comma = 0;
 
 		if (start >= end) {
-			return (line_end_mode == RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_CRLF ? RRR_HTTP_PARSE_INCOMPLETE : RRR_HTTP_PARSE_OK);
+			ret = (line_end_mode == RRR_HTTP_HEADER_FIELD_PARSE_LINE_END_MODE_CRLF ? RRR_HTTP_PARSE_INCOMPLETE : RRR_HTTP_PARSE_OK);
+			goto out;
 		}
 
 		if (*start == ';') {
 			const char *next = start + 1;
 			if (next >= end) {
-				return RRR_HTTP_PARSE_INCOMPLETE;
+				ret = RRR_HTTP_PARSE_INCOMPLETE;
+				goto out;
 			}
 			if (*next != ' ' && *next != '\t' && *next != '\r') {
 				bad_client_missing_space_after_comma = 1;
@@ -712,44 +740,48 @@ static int __rrr_http_header_field_parse_subvalues (
 		}
 	} while (prev_subvalue_count != RRR_LL_COUNT(&field->fields));
 
-	*parsed_bytes = start - start_orig;
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 
+	out:
 	return ret;
 }
 
-#define CALLBACK_ARGS 										\
-	ssize_t *parsed_bytes,									\
-	const char *start,										\
-	const char *end,										\
-	struct rrr_http_header_field **field,					\
-	struct rrr_http_header_field_collection *fields_tmp,	\
-	int *missing_space_after_comma,							\
-	void *arg
+#define CALLBACK_ARGS                                          \
+    rrr_length *parsed_bytes,                                  \
+    const char * const start_orig,                             \
+    const char * const end,                                    \
+    struct rrr_http_header_field **field,                      \
+    struct rrr_http_header_field_collection *fields_tmp,       \
+    int *missing_space_after_comma,                            \
+    void *arg                                                  \
 
-#define CALL_CALLBACK(name)																		\
-	do {ssize_t parsed_bytes = 0;																\
-		if ((ret = name(&parsed_bytes, start, end, &field, &fields_tmp, &missing_space_after_comma, callback_arg)) != 0) { \
-			goto out;																			\
-		}																						\
-		start += parsed_bytes;																	\
-	} while(0)
+#define CALL_CALLBACK(name)                                                                      \
+    do {rrr_length parsed_bytes = 0;                                                             \
+        if ((ret = name(&parsed_bytes, start, end, &field, &fields_tmp, &missing_space_after_comma, callback_arg)) != 0) { \
+            goto out;                                                                            \
+        }                                                                                        \
+        start += parsed_bytes;                                                                   \
+    } while(0)
 
 static int __rrr_http_header_field_parse (
 		struct rrr_http_header_field_collection *target_list,
-		ssize_t *parsed_bytes,
-		const char *start,
-		const char *end,
+		rrr_length *parsed_bytes,
+		const char * const start_orig,
+		const char * const end,
 		enum rrr_http_header_field_parse_line_end_mode line_end_mode,
 		int (*field_create_callback)(CALLBACK_ARGS),
 		int (*whitespace_check_callback)(CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
-	const char *start_orig = start;
 	struct rrr_http_header_field_collection fields_tmp = {0};
 	struct rrr_http_header_field *field = NULL;
 
 	*parsed_bytes = 0;
+
+	SIZE_CHECK();
+
+	const char *start = start_orig;
 
 	int missing_space_after_comma = 0;
 	int more_fields = 1;
@@ -767,7 +799,7 @@ static int __rrr_http_header_field_parse (
 
 		CALL_CALLBACK(whitespace_check_callback);
 
-		ssize_t subvalues_parsed_bytes = 0;
+		rrr_length subvalues_parsed_bytes = 0;
 		if ((ret = __rrr_http_header_field_parse_subvalues (
 				&subvalues_parsed_bytes,
 				&more_fields,
@@ -799,7 +831,7 @@ static int __rrr_http_header_field_parse (
 	}
 
 	RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target_list, &fields_tmp);
-	*parsed_bytes = (start - start_orig);
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 
 	out:
 	if (field != NULL) {
@@ -816,13 +848,17 @@ struct rrr_http_header_field_parse_value_callback_data {
 static int __rrr_http_header_field_parse_value_field_create_callback (CALLBACK_ARGS) {
 	struct rrr_http_header_field_parse_value_callback_data *callback_data = arg;
 
-	(void)(start);
-	(void)(end);
 	(void)(parsed_bytes);
 	(void)(missing_space_after_comma);
 
+	const char *start = start_orig;
+
 	if (RRR_LL_COUNT(fields_tmp) == 0) {
-		if (rrr_http_header_field_new_raw(field, callback_data->name, strlen(callback_data->name)) != 0) {
+		if (rrr_http_header_field_new_raw (
+				field,
+				callback_data->name,
+				rrr_length_from_size_t_bug_const (strlen(callback_data->name))
+		) != 0) {
 			return RRR_HTTP_PARSE_HARD_ERR;
 		}
 	}
@@ -851,7 +887,7 @@ static int __rrr_http_header_field_parse_value_whitespace_check_callback (CALLBA
 	(void)(parsed_bytes);
 	(void)(field);
 	(void)(fields_tmp);
-	(void)(start);
+	(void)(start_orig);
 	(void)(end);
 
 	*missing_space_after_comma = 1;
@@ -861,7 +897,7 @@ static int __rrr_http_header_field_parse_value_whitespace_check_callback (CALLBA
 
 int rrr_http_header_field_parse_value (
 		struct rrr_http_header_field_collection *target_list,
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *name,
 		const char *value
 ) {
@@ -885,7 +921,7 @@ static int __rrr_http_header_field_parse_name_and_value_field_create_callback (C
 	(void)(missing_space_after_comma);
 	(void)(arg);
 
-	const char *start_orig = start;
+	const char *start = start_orig;
 
 	const char *crlf = rrr_http_util_find_crlf(start, end);
 	if (crlf == NULL) {
@@ -905,7 +941,11 @@ static int __rrr_http_header_field_parse_name_and_value_field_create_callback (C
 			return RRR_HTTP_PARSE_SOFT_ERR;
 		}
 
-		if (rrr_http_header_field_new_raw(field, start, colon - start) != 0) {
+		if (rrr_http_header_field_new_raw (
+				field,
+				start,
+				rrr_length_from_ptr_sub_bug_const (colon, start)
+		) != 0) {
 			return RRR_HTTP_PARSE_HARD_ERR;
 		}
 
@@ -926,7 +966,7 @@ static int __rrr_http_header_field_parse_name_and_value_field_create_callback (C
 		}
 	}
 
-	*parsed_bytes = start - start_orig;
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 
 	return RRR_HTTP_PARSE_OK;
 }
@@ -936,14 +976,14 @@ static int __rrr_http_header_field_parse_name_and_value_whitespace_check_callbac
 	(void)(fields_tmp);
 	(void)(arg);
 
-	const char *start_orig = start;
+	const char *start = start_orig;
 
 	const char *crlf = rrr_http_util_find_crlf(start, end);
 	if (crlf == NULL) {
 		return RRR_HTTP_PARSE_INCOMPLETE;
 	}
 
-	ssize_t whitespace_count = rrr_http_util_count_whsp(start, crlf);
+	rrr_length whitespace_count = rrr_http_util_count_whsp(start, crlf);
 	if (start + whitespace_count == crlf) {
 		// Continue on next line
 		start = crlf + 2;
@@ -962,17 +1002,25 @@ static int __rrr_http_header_field_parse_name_and_value_whitespace_check_callbac
 		return RRR_HTTP_PARSE_INCOMPLETE;
 	}
 
-	*parsed_bytes = start - start_orig;
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
 
 	return RRR_HTTP_PARSE_OK;
 }
 
 int rrr_http_header_field_parse_name_and_value (
 		struct rrr_http_header_field_collection *target_list,
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *start_orig,
 		const char *end
 ) {
+	if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {
+		RRR_MSG_0("HTTP header too long to be parsed (%llu>%llu)\n",
+			(unsigned long long) (end - start_orig),
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+		return RRR_HTTP_SOFT_ERROR;
+	}
+
 	return __rrr_http_header_field_parse (
 			target_list,
 			parsed_bytes,

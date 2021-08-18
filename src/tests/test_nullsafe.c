@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static int __rrr_test_nullsafe_split_callback (
 		const void *start,
-		size_t chunk_len,
+		rrr_nullsafe_len chunk_len,
 		int is_last,
 		void *arg
 ) {

@@ -26,11 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../rrr_types.h"
 
-typedef rrr_length rrr_nullsafe_len;
+typedef rrr_biglength rrr_nullsafe_len;
 
-#define PRIrrr_nullsafe_len PRIrrrl
-
-#define RRR_NULLSAFE_LEN_MAX rrr_nullsafe_len_MAX
+#define PRIrrr_nullsafe_len PRIrrrbl
 
 struct rrr_nullsafe_str;
 
@@ -108,13 +106,13 @@ int rrr_nullsafe_str_set (
 int rrr_nullsafe_str_chr (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
-		int (*callback)(const void *start, size_t len_remaining, void *arg),
+		int (*callback)(const void *start, rrr_nullsafe_len len_remaining, void *arg),
 		void *callback_arg
 );
 int rrr_nullsafe_str_split_raw (
 		const struct rrr_nullsafe_str *nullsafe,
 		char c,
-		int (*callback)(const void *start, size_t chunk_size, int is_last, void *arg),
+		int (*callback)(const void *start, rrr_nullsafe_len chunk_size, int is_last, void *arg),
 		void *callback_arg
 );
 int rrr_nullsafe_str_split (
@@ -134,6 +132,9 @@ int rrr_nullsafe_str_str (
 				void *arg
 		),
 		void *callback_arg
+);
+int rrr_nullsafe_str_check_likely_binary (
+		const struct rrr_nullsafe_str *nullsafe
 );
 int rrr_nullsafe_str_str_raw (
 		const void *haystack_str,

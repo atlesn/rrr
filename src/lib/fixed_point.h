@@ -46,12 +46,12 @@ int rrr_fixp_to_ldouble (
 );
 int rrr_fixp_to_str_16 (
 		char *target,
-		ssize_t target_size,
+		rrr_length target_size,
 		rrr_fixp source
 );
 int rrr_fixp_to_str_double (
 		char *target,
-		ssize_t target_size,
+		rrr_length target_size,
 		rrr_fixp source
 );
 int rrr_fixp_to_new_str_double (
@@ -61,7 +61,7 @@ int rrr_fixp_to_new_str_double (
 int rrr_fixp_str_to_fixp (
 		rrr_fixp *target,
 		const char *str,
-		ssize_t str_length,
+		rrr_length str_length,
 		const char **endptr
 );
 

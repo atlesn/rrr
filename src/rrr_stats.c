@@ -215,7 +215,7 @@ static int __rrr_stats_parse_config (
 		data->do_print_journal = 1;
 	}
 
-	int i = 0;
+	cmd_arg_count i = 0;
 	while (cmd_exists(cmd, "socket", i)) {
 		const char *path = NULL;
 		if ((path = cmd_get_value(cmd, "socket", i)) != NULL) {
@@ -440,7 +440,7 @@ static int __rrr_stats_send_message (
 		const struct rrr_msg_stats *message
 ) {
 	struct rrr_msg_stats_packed message_packed;
-	size_t total_size;
+	rrr_length total_size;
 
 	rrr_msg_stats_pack_and_flip (
 			&message_packed,
@@ -452,20 +452,20 @@ static int __rrr_stats_send_message (
 			(struct rrr_msg *) &message_packed,
 			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
-			message->timestamp
+			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
 
 	rrr_msg_checksum_and_to_network_endian (
 			(struct rrr_msg *) &message_packed
 	);
 
-	RRR_DBG_3("TX size %lu sticky %i path %s\n",
+	RRR_DBG_3("TX size %" PRIrrrl " sticky %i path %s\n",
 			total_size,
 			RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message),
 			message->path
 	);
 
-	int send_chunk_count_dummy = 0;
+	rrr_length send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
 			&send_chunk_count_dummy,
 			data->connections,
@@ -647,8 +647,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -739,7 +744,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
 		rrr_socket_close_all();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -42,7 +42,7 @@ struct rrr_http_client_config {
 	char *body_format_str;
 	enum rrr_http_body_format body_format;
 
-	rrr_setting_uint server_port;
+	uint16_t server_port;
 	rrr_setting_uint concurrent_connections;
 
 	struct rrr_map tags;
