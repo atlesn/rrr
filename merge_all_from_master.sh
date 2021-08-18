@@ -20,10 +20,9 @@ merge development-voidlinux
 merge freebsd
 merge voidlinux
 merge ubuntu
+merge ubuntu-hirsute
+merge ubuntu-development
 merge debian-testing
-merge rrr-mysql-5.7
-merge rrr-mysql-8.0
 merge alpine
 
 git checkout master || exit 1
-
