@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../helpers/nullsafe_str.h"
 #include "../util/base64.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_http_application_http2 {
 	RRR_HTTP_APPLICATION_HEAD;
@@ -56,10 +57,10 @@ static void __rrr_http_application_http2_destroy (struct rrr_http_application *a
 	struct rrr_http_application_http2 *http2 = (struct rrr_http_application_http2 *) app;
 
 	if (http2->http2_session != NULL) {
-		int streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
+		uint32_t streams = rrr_http2_streams_count_and_maintain(http2->http2_session);
 		if (streams > 0) {
-			RRR_DBG_2("HTTP2 destroys application with %i active transactions\n", streams);
-		}
+			RRR_DBG_2("HTTP2 destroys application with %" PRIu32 " active transactions\n", streams);
+		} 
 	}
 
 	rrr_http2_session_destroy_if_not_null(&http2->http2_session);
@@ -246,7 +247,7 @@ static int __rrr_http_application_http2_request_send (
 		}
 	}
 
-	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrrl "\n",
+	RRR_DBG_7("http2 request submit method %s send data length %" PRIrrr_nullsafe_len "\n",
 			RRR_HTTP_METHOD_TO_STR_CONFORMING(transaction->method),
 			rrr_nullsafe_str_len(transaction->send_body));
 
@@ -312,6 +313,8 @@ struct rrr_http_application_http2_callback_data {
 	void *unique_id_generator_callback_arg;
 	int (*callback)(RRR_HTTP_APPLICATION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
+	int (*failure_callback)(RRR_HTTP_APPLICATION_FAILURE_CALLBACK_ARGS);
+	void *failure_callback_arg;
 	int (*async_response_get_callback)(RRR_HTTP_APPLICATION_ASYNC_RESPONSE_GET_CALLBACK_ARGS);
 	void *async_response_get_callback_arg;
 };
@@ -322,7 +325,6 @@ static int __rrr_http_application_http2_data_receive_callback (
 	struct rrr_http_application_http2_callback_data *callback_data = callback_arg;
 
 	(void)(session);
-	(void)(is_header_end);
 
 	int ret = 0;
 
@@ -331,14 +333,33 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 	// NOTE ! Callback can be reach two times (after headers and after data)
 
-	// TODO : Create separate functions for client and server
+	if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR) {
+		if (callback_data->failure_callback == NULL) {
+			if (callback_data->unique_id_generator_callback == NULL) {
+				// Is client
+				RRR_MSG_0("HTTP2 request failed and no failure delivery defined, data is lost\n");
+			}
+			else {
+				RRR_DBG_3("http2 stream error from client: %s\n", stream_error_msg);
+			}
+			goto out;
+		}
+
+		ret = callback_data->failure_callback (
+				callback_data->handle,
+				transaction,
+				stream_error_msg,
+				callback_data->failure_callback_arg
+		);
+		goto out;
+	}
 
 	if (callback_data->unique_id_generator_callback == NULL) {
 		// Is client
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->response_part->headers, headers);
 
-		if (!is_stream_close) {
+		if (!(flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE)) {
 			// Wait for any data
 			goto out;
 		}
@@ -355,7 +376,14 @@ static int __rrr_http_application_http2_data_receive_callback (
 			goto out;
 		}
 
-		transaction->response_part->response_code = status->value_unsigned;
+		if (status->value_unsigned > 999) {
+			RRR_MSG_0("Field :status contains invalid value %llu in HTTP2 response header\n",
+					status->value_unsigned);
+			ret = RRR_HTTP2_SOFT_ERROR;
+			goto out;
+		}
+
+		transaction->response_part->response_code = (unsigned int) status->value_unsigned;
 
 		const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(transaction->response_part, "content-length");
 		if (content_length != NULL && content_length->value_unsigned != data_size) {
@@ -372,7 +400,7 @@ static int __rrr_http_application_http2_data_receive_callback (
 	else {
 		// Is server
 
-		if (is_stream_close) {
+		if (flags & RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE) {
 			goto out;
 		}
 
@@ -398,26 +426,33 @@ static int __rrr_http_application_http2_data_receive_callback (
 			transaction = transaction_to_destroy;
 		}
 
-		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
+		// All flags are ORed in to the persistent transaction flag variable. We
+		// can both check for flags which have been received in earlier frames or
+		// flags which arrived in this particular frame.
+		rrr_http_transaction_stream_flags_add(transaction, flags);
 
-		const struct rrr_http_header_field *post = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "POST");
-		const struct rrr_http_header_field *put = rrr_http_part_header_field_get_with_value_case(transaction->request_part, ":method", "PUT");
+		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&transaction->request_part->headers, headers);
 
 		const struct rrr_http_header_field *path = rrr_http_part_header_field_get(transaction->request_part, ":path");
 		const struct rrr_http_header_field *method = rrr_http_part_header_field_get(transaction->request_part, ":method");
 
-		if (method == NULL) {
-			RRR_DBG_3("http2 field :method missing in request\n");
-			goto out_send_response_bad_request;
-		}
+		if (rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END)) {
+			if (!rrr_http_transaction_stream_flags_has(transaction, RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END)) {
+				// Possible CONTINUATION frame
+				goto out;
+			}
+			if (method == NULL) {
+				RRR_DBG_3("http2 field :method missing in request\n");
+				goto out_send_response_bad_request;
+			}
 
-		if (path == NULL) {
-			RRR_DBG_3("http2 field :path missing in request\n");
-			goto out_send_response_bad_request;
+			if (path == NULL) {
+				RRR_DBG_3("http2 field :path missing in request\n");
+				goto out_send_response_bad_request;
+			}
 		}
-
-		if ((post || put) && (!is_data_end)) {
-			// Wait for DATA frames and END DATA
+		else {
+			// Wait for any DATA frames and END DATA
 			goto out;
 		}
 
@@ -517,11 +552,11 @@ static int __rrr_http_application_http2_data_receive_callback (
 
 static int __rrr_http_application_http2_data_source_truncated_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	uint8_t *buf = arg;
-	memcpy(buf, str, len);
+	rrr_memcpy(buf, str, len);
 	return 0;
 }
 
@@ -546,18 +581,19 @@ static int __rrr_http_application_http2_data_source_callback (
 		goto out;
 	}
 
-	rrr_length bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
+	rrr_nullsafe_len bytes_to_send = rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos;
+
 	if (bytes_to_send > buf_size) {
 		bytes_to_send = buf_size;
 	}
 
-	RRR_DBG_3("http2 source %" PRIrrrl "/%" PRIrrrl " bytes to send\n",
+	RRR_DBG_3("http2 source %" PRIrrr_nullsafe_len "/%" PRIrrr_nullsafe_len " bytes to send\n",
 			rrr_nullsafe_str_len(transaction->send_body) - transaction->send_body_pos, rrr_nullsafe_str_len(transaction->send_body));
 
 	if ((ret = rrr_nullsafe_str_with_raw_truncated_do (
 			transaction->send_body,
 			transaction->send_body_pos,
-			bytes_to_send,
+			(rrr_nullsafe_len) bytes_to_send,
 			__rrr_http_application_http2_data_source_truncated_callback,
 			buf
 	)) != 0) {
@@ -578,7 +614,7 @@ static int __rrr_http_application_http2_data_source_callback (
 }
 
 static int __rrr_http_application_http2_streams_iterate_callback (
-		uint32_t stream_id,
+		int32_t stream_id,
 		void *application_data,
 		void *arg
 ) {
@@ -587,7 +623,7 @@ static int __rrr_http_application_http2_streams_iterate_callback (
 
 	int ret = 0;
 
-	if (transaction->need_response) {
+	if (transaction && transaction->need_response) {
 		if ((ret = callback_data->async_response_get_callback(transaction, callback_data->async_response_get_callback_arg)) != 0) {
 			ret &= ~(RRR_HTTP_NO_RESULT);
 			goto out;
@@ -628,6 +664,8 @@ static int __rrr_http_application_http2_tick (
 			unique_id_generator_callback_arg,
 			callback,
 			callback_arg,
+			failure_callback,
+			failure_callback_arg,
 			async_response_get_callback,
 			async_response_get_callback_arg
 	};
@@ -712,7 +750,7 @@ static const struct rrr_http_application_constants rrr_http_application_http2_co
 static int __rrr_http_application_http2_new (
 		struct rrr_http_application_http2 **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		int is_server
 ) {
 	struct rrr_http_application_http2 *result = NULL;
@@ -751,7 +789,7 @@ int rrr_http_application_http2_new (
 		struct rrr_http_application **target,
 		int is_server,
 		void **initial_receive_data,
-		size_t initial_receive_data_len
+		rrr_length initial_receive_data_len
 ) {
 	int ret = 0;
 
@@ -772,10 +810,10 @@ int rrr_http_application_http2_new (
 
 static char *__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback (
 		const void *str,
-		rrr_length len,
+		rrr_biglength len,
 		void *arg
 ) {
-	size_t *result_len = arg;
+	rrr_biglength *result_len = arg;
 	return (char *) rrr_base64url_decode (
 			str,
 			len,
@@ -797,7 +835,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 		RRR_BUG("BUG: Original HTTP2-Settings field not present in request upon upgrade in __rrr_application_http1_response_receive_callback\n");
 	}
 
-	size_t orig_http2_settings_length = 0;
+	rrr_biglength orig_http2_settings_length = 0;
 	if ((orig_http2_settings_tmp = rrr_nullsafe_str_with_raw_do_const_return_str (
 			orig_http2_settings->value,
 			__rrr_http_application_http2_upgrade_postprocess_header_parse_base64_value_callback,
@@ -811,7 +849,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 	if ((ret = rrr_http2_session_upgrade_postprocess (
 			app->http2_session,
 			orig_http2_settings_tmp,
-			orig_http2_settings_length,
+			rrr_size_from_biglength_bug_const (orig_http2_settings_length),
 			transaction->request_part->request_method
 	)) != 0) {
 		goto out;
@@ -830,7 +868,7 @@ static int __rrr_http_application_http2_upgrade_postprocess (
 int rrr_http_application_http2_new_from_upgrade (
 		struct rrr_http_application **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		struct rrr_http_transaction *transaction,
 		int is_server
 ) {
@@ -871,7 +909,7 @@ int rrr_http_application_http2_new_from_upgrade (
 
 
 static int __rrr_http_application_http2_response_submit_response_code_callback (
-	int response_code,
+	unsigned int response_code,
 	enum rrr_http_version protocol_version,
 	void *arg
 ) {
@@ -921,7 +959,7 @@ int rrr_http_application_http2_response_submit (
 			stream_id
 	};
 
-	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrrl "\n",
+	RRR_DBG_7("http2 response submit status %i send data length %" PRIrrr_nullsafe_len "\n",
 			transaction->response_part->response_code, rrr_nullsafe_str_len(transaction->send_body));
 
 	return rrr_http_transaction_response_prepare_wrapper (

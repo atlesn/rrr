@@ -39,6 +39,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     const struct rrr_nullsafe_str *response_data,              \
     void *arg
 
+#define RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS                  \
+    const struct rrr_http_transaction *transaction,            \
+    const char *error_msg,                                     \
+    void *arg
+
 #define RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS                 \
     const struct rrr_http_transaction *transaction,            \
     const struct rrr_http_uri *uri,                            \
@@ -81,6 +86,9 @@ struct rrr_net_transport;
 struct rrr_http_client_callbacks {
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
+
+	int (*failure_callback)(RRR_HTTP_CLIENT_FAILURE_CALLBACK_ARGS);
+	void *failure_callback_arg;
 
 	int (*redirect_callback)(RRR_HTTP_CLIENT_REDIRECT_CALLBACK_ARGS);
 	void *redirect_callback_arg;
@@ -132,7 +140,7 @@ int rrr_http_client_new (
 		struct rrr_http_client **target,
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_http_client_callbacks *callbacks
 );
 void rrr_http_client_destroy (

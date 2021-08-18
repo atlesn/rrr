@@ -22,25 +22,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_BASE64_H
 #define RRR_BASE64_H
 
+#include "../rrr_types.h"
+
 unsigned char *rrr_base64_encode (
 		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+		rrr_biglength len,
+		rrr_biglength *out_len
 );
 unsigned char *rrr_base64_decode (
 		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+		rrr_biglength len,
+		rrr_biglength *out_len
 );
 unsigned char *rrr_base64url_encode (
 		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+		rrr_biglength len,
+		rrr_biglength *out_len
 );
 unsigned char *rrr_base64url_decode (
 		const unsigned char *src,
-		size_t len,
-		size_t *out_len
+		rrr_biglength len,
+		rrr_biglength *out_len
 );
 
 #endif /* RRR_BASE64_H */

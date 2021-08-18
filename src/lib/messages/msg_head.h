@@ -55,7 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 					  RRR_MSG_CTRL_F_NACK |      \
 					  0xF000)
 #define RRR_MSG_CTRL_F_HAS(msg,flag)    (((msg)->msg_type & (flag)) == (flag))
-#define RRR_MSG_CTRL_F_CLEAR(msg,flag)  ((msg)->msg_type &= ~(flag))
+#define RRR_MSG_CTRL_F_CLEAR(msg,flag)  ((msg)->msg_type &= (rrr_u16) ~(flag))
 #define RRR_MSG_CTRL_FLAGS(msg)         ((msg)->msg_type & RRR_MSG_CTRL_F_ALL)
 
 // The control messages contain flags in the type field

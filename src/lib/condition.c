@@ -130,7 +130,7 @@ int __rrr_condition_shunting_yard_carrier_new (
 		struct rrr_condition_shunting_yard_carrier **target,
 		const struct rrr_condition_op *op,
 		const char *value,
-		size_t value_length
+		rrr_length value_length
 ) {
 	int ret = RRR_CONDITION_OK;
 
@@ -141,7 +141,7 @@ int __rrr_condition_shunting_yard_carrier_new (
 	}
 
 	if (value_length > sizeof(result->value) - 1) {
-		RRR_MSG_0("Value in condition was too long, max is %lu bytes\n", sizeof(result->value) - 1);
+		RRR_MSG_0("Value in condition was too long, max is %llu bytes\n", (long long unsigned) sizeof(result->value) - 1);
 		ret = RRR_CONDITION_SOFT_ERROR;
 		goto out_free;
 	}
@@ -220,7 +220,7 @@ int rrr_condition_clone (
 }
 
 static const struct rrr_condition_op *__rrr_condition_parse_op (struct rrr_parse_pos *pos) {
-	size_t i = 0;
+	rrr_length i = 0;
 
 	do {
 		const struct rrr_condition_op *op = &operators[i];
@@ -325,7 +325,7 @@ static int __rrr_condition_shunting_yard_shunt_op (
 static int __rrr_condition_shunting_yard_shunt_value (
 		struct rrr_condition_shunting_yard *shunting_yard,
 		const char *value,
-		size_t size
+		rrr_length size
 ) {
 	int ret = 0;
 
@@ -419,8 +419,8 @@ int rrr_condition_interpret (
 				break;
 			}
 
-			int start;
-			int end;
+			rrr_length start;
+			rrr_slength end;
 
 			// If there is 1 character, start will be equal to end.
 			// If there are no matches, end minus start will be negative
@@ -467,7 +467,11 @@ int rrr_condition_interpret (
 				}
 			}
 
-			if ((ret = __rrr_condition_shunting_yard_shunt_value(shunting_yard, pos->data + start, end - start + 1)) != 0) {
+			if ((ret = __rrr_condition_shunting_yard_shunt_value (
+					shunting_yard,
+					pos->data + start,
+					rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start))
+			)) != 0) {
 				goto out_clear;
 			}
 		}
@@ -485,7 +489,7 @@ int rrr_condition_interpret (
 		if ((ret = __rrr_condition_shunting_yard_shunt_value (
 				shunting_yard,
 				rrr_condition_str_false,
-				strlen(rrr_condition_str_false)
+				rrr_length_from_size_t_bug_const(strlen(rrr_condition_str_false))
 	)) != 0) {
 			goto out_clear;
 		}
@@ -509,7 +513,7 @@ int rrr_condition_interpret (
 int rrr_condition_interpret_raw (
 		struct rrr_condition *target,
 		const char *buf,
-		size_t buf_length
+		rrr_length buf_length
 ) {
 	struct rrr_parse_pos pos;
 	rrr_parse_pos_init(&pos, buf, buf_length);
@@ -655,7 +659,7 @@ static int64_t __rrr_condition_evalute_ensure_signed (
 		signed_result = *((int64_t*) &result->result);
 	}
 	else {
-		signed_result = result->result;
+		signed_result = (int64_t) result->result;
 	}
 
 	return signed_result;
@@ -666,12 +670,12 @@ static void __rrr_condition_evaluate_op (
 		const struct rrr_condition_op *op,
 		struct rrr_condition_running_result *position,
 		struct rrr_condition_running_result *results,
-		ssize_t results_pos
+		rrr_length results_pos
 ) {
 	struct rrr_condition_running_result *result_a = NULL;
 	struct rrr_condition_running_result *result_b = NULL;
 
-	for (ssize_t j = results_pos - 1; j >= 0; j--) {
+	for (rrr_slength j = results_pos - 1; j >= 0; j--) {
 		struct rrr_condition_running_result *result_find = &results[j];
 		if (result_find->is_evaluated) {
 			if (result_b == NULL) {
@@ -763,8 +767,8 @@ static int __rrr_condition_evalute_value (
 			goto out;
 		}
 
-		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%lx%s\n",
-				tag_to_pass, position->result, (position->is_signed ? " (signed)" : ""));
+		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%llx%s\n",
+				tag_to_pass, (long long unsigned) position->result, (position->is_signed ? " (signed)" : ""));
 	}
 	else if (	strlen(position->carrier->value) >= 2 &&
 				rrr_posix_strncasecmp(position->carrier->value, "0x", 2) == 0
@@ -826,12 +830,12 @@ int rrr_condition_evaluate (
 	struct rrr_condition_running_result results[RRR_LL_COUNT(&condition->shunting_yard)];
 	memset(results, '\0', sizeof(results));
 
-	ssize_t element_count = 0;
+	rrr_length element_count = 0;
 	RRR_LL_ITERATE_BEGIN(&condition->shunting_yard, const struct rrr_condition_shunting_yard_carrier);
-		results[element_count++].carrier = node;
+		results[rrr_length_inc_bug_old_value(&element_count)].carrier = node;
 	RRR_LL_ITERATE_END();
 
-	for (ssize_t i = 0; i < element_count; i++) {
+	for (rrr_length i = 0; i < element_count; i++) {
 		struct rrr_condition_running_result *position = &results[i];
 		const struct rrr_condition_op *op = position->carrier->op;
 

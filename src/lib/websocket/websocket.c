@@ -83,8 +83,8 @@ int rrr_websocket_state_get_key_base64 (
 		}
 	}
 
-	size_t out_len = 0;
-	if ((base64 = rrr_base64_encode((const unsigned char *) ws_state->websocket_key_8, sizeof(ws_state->websocket_key_8), &out_len)) == NULL) {
+	rrr_biglength out_len_dummy = 0;
+	if ((base64 = rrr_base64_encode((const unsigned char *) ws_state->websocket_key_8, sizeof(ws_state->websocket_key_8), &out_len_dummy)) == NULL) {
 		RRR_MSG_0("Failed to encode base64 in rrr_websocket_state_get_key_base64\n");
 		ret = 1;
 		goto out;
@@ -120,7 +120,7 @@ int rrr_websocket_frame_enqueue (
 	memset(frame, '\0', sizeof(*frame));
 
 	frame->header.opcode = opcode;
-	frame->header.mask = ws_state->do_mask_outgoing_frames;
+	frame->header.mask = ws_state->do_mask_outgoing_frames != 0;
 	frame->header.payload_len = payload_len;
 
 	if (payload != NULL && *payload != NULL) {
@@ -136,7 +136,7 @@ int rrr_websocket_frame_enqueue (
 
 int rrr_websocket_check_timeout (
 		struct rrr_websocket_state *ws_state,
-		int timeout_s
+		rrr_length timeout_s
 ) {
 	if (timeout_s == 0) {
 		return 0;
@@ -157,7 +157,7 @@ int rrr_websocket_check_timeout (
 
 int rrr_websocket_enqueue_ping_if_needed (
 		struct rrr_websocket_state *ws_state,
-		int ping_interval_s
+		rrr_length ping_interval_s
 ) {
 	if (ping_interval_s == 0) {
 		return 0;
@@ -187,7 +187,7 @@ int rrr_websocket_enqueue_ping_if_needed (
 
 static void __rrr_websocket_payload_mask_unmask (
 		uint8_t *payload,
-		ssize_t payload_size,
+		rrr_biglength payload_size,
 		uint32_t masking_key_h
 ) {
 	union {
@@ -196,10 +196,13 @@ static void __rrr_websocket_payload_mask_unmask (
 	} key;
 	key.key_32 = rrr_htobe32(masking_key_h);
 
-	for (ssize_t i = 0; i < payload_size; i++) {
+	for (rrr_biglength i = 0; i < payload_size; i++) {
 		payload[i] = payload[i] ^ key.key_8[i % 4];
 	}
 }
+
+#define INC_POSITION() \
+	do { pos = (uint8_t) (pos + sizeof(tmp)); } while(0)
 
 static int __rrr_websocket_transport_ctx_frame_send (
 		struct rrr_net_transport_handle *handle,
@@ -223,29 +226,29 @@ static int __rrr_websocket_transport_ctx_frame_send (
 		uint8_t mask_flag_shifted = (frame->header.mask ? 1 << 7 : 0);
 
 		if (frame->header.payload_len < 126) {
-			header[pos] = mask_flag_shifted | frame->header.payload_len;
+			header[pos] = (uint8_t) (mask_flag_shifted | frame->header.payload_len);
 			pos++;
 		}
 		else if (frame->header.payload_len <= 65535) {
 			header[pos] = mask_flag_shifted | 126;
 			pos++;
-			uint16_t tmp = rrr_htobe16(frame->header.payload_len);
+			uint16_t tmp = rrr_htobe16((uint16_t) frame->header.payload_len);
 			memcpy (header + pos, &tmp, sizeof(tmp));
-			pos += sizeof(tmp);
+			INC_POSITION();
 		}
 		else {
 			header[pos] = mask_flag_shifted | 127;
 			pos++;
 			uint64_t tmp = rrr_htobe64(frame->header.payload_len);
 			memcpy (header + pos, &tmp, sizeof(tmp));
-			pos += sizeof(tmp);
+			INC_POSITION();
 		}
 
 		if (frame->header.mask) {
 			frame->header.masking_key = (uint32_t) rrr_rand();
-			uint32_t masking_key_be = rrr_htobe32(frame->header.masking_key);
-			memcpy (header + pos, &masking_key_be, sizeof(masking_key_be));
-			pos += sizeof(masking_key_be);
+			uint32_t tmp = rrr_htobe32(frame->header.masking_key);
+			memcpy (header + pos, &tmp, sizeof(tmp));
+			INC_POSITION();
 		}
 
 		if (pos > sizeof(header)) {
@@ -298,9 +301,12 @@ struct rrr_websocket_callback_data {
 	 */
 
 #define CHECK_LENGTH()																\
-	do {if (read_session->rx_buf_wpos < (rrr_slength) header_new.header_len) {		\
-		ret = RRR_READ_INCOMPLETE; goto out;										\
+	do {if (read_session->rx_buf_wpos < header_new.header_len) {    \
+		ret = RRR_READ_INCOMPLETE; goto out;                    \
 	}} while (0)
+
+#define INC_LENGTH(num) \
+	do { header_new.header_len = (uint8_t) (header_new.header_len + num); } while(0)
 
 int __rrr_websocket_get_target_size (
 		struct rrr_read_session *read_session,
@@ -332,13 +338,13 @@ int __rrr_websocket_get_target_size (
 
 	if (payload_len == 126) {
 		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
-		header_new.header_len += 2;
+		INC_LENGTH(2);
 		CHECK_LENGTH();
 		header_new.payload_len = rrr_be16toh(*((uint16_t *) pos));
 	}
 	else if (payload_len == 127) {
 		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
-		header_new.header_len += 8;
+		INC_LENGTH(8);
 		CHECK_LENGTH();
 		header_new.payload_len = rrr_be64toh(*((uint64_t *) pos));
 	}
@@ -348,7 +354,7 @@ int __rrr_websocket_get_target_size (
 
 	if (header_new.mask) {
 		const char *pos = read_session->rx_buf_ptr + header_new.header_len;
-		header_new.header_len += 4;
+		INC_LENGTH(4);
 		CHECK_LENGTH();
 		header_new.masking_key = rrr_be32toh(*((uint32_t *) pos));
 	}
@@ -356,8 +362,8 @@ int __rrr_websocket_get_target_size (
 	rrr_biglength target_len = header_new.header_len + header_new.payload_len;
 
 	if (target_len > (rrr_biglength) SSIZE_MAX) {
-		RRR_MSG_0("Total specified length og websocket frame was too big (%" PRIrrrbl ">%li)\n",
-				target_len, SSIZE_MAX);
+		RRR_MSG_0("Total specified length og websocket frame was too big (%" PRIrrrbl ">%lli)\n",
+				target_len, (long long int) SSIZE_MAX);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -429,7 +435,7 @@ static int __rrr_websocket_receive_callback_fragmentation_step (
 		struct rrr_websocket_callback_data *callback_data,
 		uint8_t fin,
 		char *payload,
-		ssize_t payload_size
+		rrr_length payload_size
 ) {
 	struct rrr_websocket_state *ws_state = callback_data->ws_state;
 
@@ -445,7 +451,7 @@ static int __rrr_websocket_receive_callback_fragmentation_step (
 	if (ws_state->receive_state.fragment_buffer_nullsafe == NULL && fin) {
 		ret = rrr_nullsafe_str_with_tmp_str_do (
 				payload,
-				payload_size,
+				(rrr_length) payload_size,
 				__rrr_websocket_receive_callback_fragmentation_step_nullsafe_callback,
 				callback_data
 		);
@@ -490,14 +496,14 @@ int __rrr_websocket_receive_callback_interpret_step (
 	int ret = RRR_READ_OK;
 
 	uint8_t *payload = (uint8_t *) read_session->rx_buf_ptr + ws_state->receive_state.header.header_len;
-	const ssize_t payload_len = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
+	const rrr_biglength payload_len = read_session->rx_buf_wpos - ws_state->receive_state.header.header_len;
 
 	if (ws_state->receive_state.header.mask) {
 		__rrr_websocket_payload_mask_unmask(payload, payload_len, ws_state->receive_state.header.masking_key);
 	}
 
 	// Save these in case header is reset
-	const unsigned short int fin = ws_state->receive_state.header.fin;
+	const uint8_t fin = ws_state->receive_state.header.fin;
 	const uint8_t opcode = ws_state->receive_state.header.opcode;
 
 	// Zero opcode means CONTINUATION frame
@@ -538,11 +544,18 @@ int __rrr_websocket_receive_callback_interpret_step (
 		ws_state->last_receive_opcode = opcode;
 	}
 
+	if (payload_len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Received websocket frame exceeds maximum size (%llu>%llu)\n",
+			(long long unsigned) payload_len, (unsigned long long) RRR_LENGTH_MAX);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+
 	ret = __rrr_websocket_receive_callback_fragmentation_step (
 			callback_data,
 			fin,
 			(char *) payload,
-			payload_len
+			rrr_length_from_biglength_bug_const(payload_len)
 	);
 
 	out:
@@ -552,12 +565,12 @@ int __rrr_websocket_receive_callback_interpret_step (
 int rrr_websocket_transport_ctx_read_frames (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_websocket_state *ws_state,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		ssize_t read_max_size,
+		rrr_length read_attempts,
+		rrr_biglength read_step_initial,
+		rrr_biglength read_step_max_size,
+		rrr_biglength read_max_size,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
+		rrr_biglength ratelimit_max_bytes,
 		int (*callback)(RRR_WEBSOCKET_FRAME_CALLBACK_ARGS),
 		void *callback_arg
 ) {

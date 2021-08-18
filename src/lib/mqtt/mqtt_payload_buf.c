@@ -53,7 +53,7 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session) {
 
 	printf ("Dumping payload buffer wpos_max %p: ", (void*) (session->wpos_max - session->buf));
 	while (pos < end) {
-		uint8_t c = *pos;
+		uint8_t c = (uint8_t) *pos;
 		printf("0x");
 		printf("%02x ", c);
 		pos++;
@@ -61,7 +61,7 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session) {
 	printf("\n");
 }
 
-int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, ssize_t size) {
+int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, rrr_length size) {
 	if (size <= 0) {
 		RRR_BUG("size was <= 0 in rrr_mqtt_payload_buf_ensure\n");
 	}
@@ -70,13 +70,13 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 		return RRR_MQTT_PAYLOAD_BUF_OK;
 	}
 
-	ssize_t old_wpos_max = session->wpos_max - session->buf;
-	ssize_t old_wpos = session->wpos - session->buf;
-	ssize_t new_size = (session->wpos + size) - session->buf;
-	ssize_t size_diff = new_size - session->buf_size;
+	rrr_length old_wpos_max = rrr_length_from_ptr_sub_bug_const (session->wpos_max, session->buf);
+	rrr_length old_wpos = rrr_length_from_ptr_sub_bug_const (session->wpos, session->buf);
+	rrr_length new_size = rrr_length_from_ptr_sub_bug_const ((session->wpos + size), session->buf);
+	rrr_length size_diff = rrr_length_sub_bug_const(new_size, session->buf_size);
 
-	if (size_diff <= 0) {
-		RRR_BUG("size_diff was <= 0 in rrr_mqtt_payload_buf_ensure\n");
+	if (size_diff == 0) {
+		RRR_BUG("size_diff was 0 in rrr_mqtt_payload_buf_ensure\n");
 	}
 
 	if (size_diff < RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE) {
@@ -99,8 +99,8 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 	return RRR_MQTT_PAYLOAD_BUF_OK;
 }
 
-ssize_t rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_session *session) {
-	return session->wpos_max - session->buf;
+rrr_length rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_session *session) {
+	return rrr_length_from_ptr_sub_bug_const (session->wpos_max, session->buf);
 }
 
 char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *session) {
@@ -112,7 +112,7 @@ char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *
 int rrr_mqtt_payload_buf_put_raw (
 		struct rrr_mqtt_payload_buf_session *session,
 		const void *data,
-		ssize_t size
+		rrr_length size
 ) {
 	if (rrr_mqtt_payload_buf_ensure (session, size) != RRR_MQTT_PAYLOAD_BUF_OK) {
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
@@ -131,8 +131,8 @@ int rrr_mqtt_payload_buf_put_raw (
 int rrr_mqtt_payload_buf_put_raw_at_offset (
 		struct rrr_mqtt_payload_buf_session *session,
 		const void *data,
-		ssize_t size,
-		ssize_t offset
+		rrr_length size,
+		rrr_length offset
 ) {
 	char *old_wpos = session->wpos;
 	session->wpos = session->buf + offset;
@@ -154,7 +154,7 @@ int rrr_mqtt_payload_buf_put_variable_int (
 
 	uint8_t chunks[4];
 
-	ssize_t used_bytes = 0;
+	rrr_length used_bytes = 0;
 	for (int i = 0; i < 4; i++) {
 		used_bytes++;
 

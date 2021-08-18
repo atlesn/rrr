@@ -40,7 +40,7 @@ static int __rrr_environment_file_parse (
 	char *line_tmp = NULL;
 
 	char *var_tmp = NULL;
-	size_t var_length_tmp;
+	rrr_length var_length_tmp;
 
 	char *val_tmp = NULL;
 
@@ -55,12 +55,17 @@ static int __rrr_environment_file_parse (
 			continue;
 		}
 
-		int line_start;
-		int line_end;
+		rrr_length line_start;
+		rrr_slength line_end;
 		rrr_parse_non_newline(pos, &line_start, &line_end);
 
 		RRR_FREE_IF_NOT_NULL(line_tmp);
-		if ((ret = rrr_parse_str_extract(&line_tmp, pos, line_start, line_end - line_start + 1)) != 0) {
+		if ((ret = rrr_parse_str_extract (
+				&line_tmp,
+				pos,
+				line_start,
+				rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(line_end, line_start))
+		)) != 0) {
 			goto out;
 		}
 		pos->pos = line_start;
@@ -91,7 +96,12 @@ static int __rrr_environment_file_parse (
 			}
 
 			RRR_FREE_IF_NOT_NULL(val_tmp);
-			if ((ret = rrr_parse_str_extract(&val_tmp, pos, pos->pos, line_end - pos->pos + 1)) != 0) {
+			if ((ret = rrr_parse_str_extract (
+					&val_tmp,
+					pos,
+					pos->pos,
+					rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(line_end, pos->pos))
+			)) != 0) {
 				goto out;
 			}
 			rrr_parse_str_trim(val_tmp);
@@ -101,7 +111,7 @@ static int __rrr_environment_file_parse (
 			}
 		}
 
-		pos->pos = line_end + 1;
+		pos->pos = rrr_length_from_slength_bug_const(line_end + 1);
 	}
 
 	out:
@@ -139,14 +149,14 @@ int rrr_environment_file_parse (
 	}
 
 	// Protection before storing to int type in rrr_parse_pos struct
-	if (env_data_size > 0xfffffff) { // Seven f's
+	if (env_data_size > RRR_LENGTH_MAX) { // Seven f's
 		RRR_MSG_0("Environment file '%s' too big (was %" PRIrrrbl " bytes)", environment_file, env_data_size);
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_parse_pos pos = {0};
-	rrr_parse_pos_init(&pos, env_data, env_data_size);
+	rrr_parse_pos_init(&pos, env_data, (rrr_length) env_data_size);
 
 	if ((ret = __rrr_environment_file_parse(target, &pos)) != 0) {
 		RRR_MSG_0("Parsing of environment file '%s' failed\n", environment_file);

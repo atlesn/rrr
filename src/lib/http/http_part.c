@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 #include "../util/base64.h"
 #include "../util/gnu.h"
+#include "../util/posix.h"
 
 int __rrr_http_part_content_type_equals (
 		struct rrr_http_part *part,
@@ -173,8 +174,8 @@ const struct rrr_http_header_field *rrr_http_part_header_field_get_with_value_ca
 }
 
 struct rrr_http_chunk *rrr_http_part_chunk_new (
-		rrr_length chunk_start,
-		rrr_length chunk_length
+		rrr_biglength chunk_start,
+		rrr_biglength chunk_length
 ) {
 	struct rrr_http_chunk *new_chunk = rrr_allocate(sizeof(*new_chunk));
 	if (new_chunk == NULL) {
@@ -280,7 +281,14 @@ int rrr_http_part_chunks_iterate (
 	}
 
 	if (RRR_LL_COUNT(&part->chunks) == 0) {
-		ret = callback(0, 1, data_start, data_end - data_start, part->data_length, callback_arg);
+		ret = callback (
+				0,
+				1,
+				data_start,
+				rrr_biglength_from_ptr_sub_bug_const(data_end, data_start),
+				part->data_length,
+				callback_arg
+		);
 		goto out;
 	}
 
@@ -314,7 +322,7 @@ static int __rrr_http_part_query_string_parse (
 	int ret = 0;
 
 	char *buf = NULL;
-	size_t buf_pos = 0;
+	rrr_length buf_pos = 0;
 	struct rrr_http_field *field_tmp = NULL;
 	struct rrr_http_field *value_target = NULL;
 
@@ -326,7 +334,15 @@ static int __rrr_http_part_query_string_parse (
 		start++;
 	}
 
-	if ((buf = rrr_allocate((end - start) + 1)) == NULL) {
+	rrr_length to_allocate = 0;
+	// +1 to accomodate zero termination
+	if (rrr_length_from_ptr_sub_err(&to_allocate, end + 1, start) != 0) {
+		RRR_MSG_0("Data too long while parsing HTTP query string\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	if ((buf = rrr_allocate(to_allocate)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for buffer in __rrr_http_part_query_string_parse\n");
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
@@ -336,7 +352,7 @@ static int __rrr_http_part_query_string_parse (
 		int push_no_value = 0;
 		int end_is_near = 0;
 
-		unsigned char c = *start;
+		unsigned char c = (unsigned char) *start;
 
 		if (start + 1 >= end || c == ' ' || c == '\t' || c == '\r' || c == '\n') {
 			end_is_near = 1;
@@ -366,7 +382,7 @@ static int __rrr_http_part_query_string_parse (
 				RRR_BUG("Result after converting %%-sequence too big in __rrr_http_part_query_string_parse\n");
 			}
 
-			c = result;
+			c = (unsigned char) result;
 			start += 2; // One more ++ at the end of the loop
 
 			if (start + 1 >= end || *(start+1) == ' ' || *(start+1) == '\t' || *(start+1) == '\r' || *(start+1) == '\n') {
@@ -392,20 +408,15 @@ static int __rrr_http_part_query_string_parse (
 			}
 		}
 
-		if (end_is_near) {
-			buf[buf_pos++] = c;
-			buf[buf_pos] = '\0';
+		buf[rrr_length_inc_bug_old_value(&buf_pos)] = (char) c;
+		buf[buf_pos] = '\0';
 
+		if (end_is_near) {
 			if (value_target == NULL) {
 				goto push_new_field_no_value;
 			}
-			else {
-				goto store_value;
-			}
+			goto store_value;
 		}
-
-		buf[buf_pos++] = c;
-		buf[buf_pos] = '\0';
 
 		goto increment;
 
@@ -458,7 +469,7 @@ static int __rrr_http_part_query_string_parse (
 
 static int __rrr_http_part_query_fields_from_uri_extract_callback (
 		const void *start,
-		size_t len_remaining,
+		rrr_nullsafe_len len_remaining,
 		void *arg
 ) {
 	const char *query_start = start;
@@ -499,7 +510,6 @@ int rrr_http_part_fields_from_post_extract (
 
 	if (__rrr_http_part_content_type_equals(target, "application/x-www-form-urlencoded")) {
 		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
-
 		if ((ret = __rrr_http_part_query_string_parse (&target->fields, data_start, data_end)) != 0) {
 			RRR_MSG_0("Error while parsing query string in rrr_http_part_post_and_query_fields_extract\n");
 			goto out;
@@ -508,6 +518,13 @@ int rrr_http_part_fields_from_post_extract (
 	else if (__rrr_http_part_content_type_equals(target, "multipart/form-data")) {
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_http_part);
 			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node, data_ptr);
+
+			if (data_length > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Multipart form value too big, cannot be stored (%" PRIrrrbl ">%llu)\n",
+					data_length, (unsigned long long) RRR_LENGTH_MAX);
+				ret = RRR_HTTP_PARSE_SOFT_ERR;
+				goto out;
+			}
 
 			const struct rrr_http_field *field_name = __rrr_http_part_header_field_subvalue_get(node, "content-disposition", "name");
 			if (field_name == NULL || !rrr_nullsafe_str_isset(field_name->value)) {
@@ -520,8 +537,12 @@ int rrr_http_part_fields_from_post_extract (
 				goto out;
 			}
 
-			if (data_end - data_start > 0) {
-				if ((ret = rrr_http_field_value_set(field_tmp, data_start, data_end - data_start)) != 0) {
+			if (data_length > 0) {
+				if ((ret = rrr_http_field_value_set (
+						field_tmp,
+						data_start,
+						rrr_length_from_biglength_bug_const(data_length)
+				)) != 0) {
 					RRR_MSG_0("Could not set value of field in rrr_http_part_post_and_query_fields_extract\n");
 					goto out;
 				}
@@ -557,20 +578,24 @@ int rrr_http_part_chunks_merge (
 ) {
 	int ret = RRR_HTTP_OK;
 
+	char *data_new = NULL;
+
 	if (part->is_chunked == 0) {
 		goto out;
 	}
 
 	*result_data = NULL;
 
-	char *data_new = NULL;
-	const size_t top_length = RRR_HTTP_PART_TOP_LENGTH(part);
-	size_t new_buf_size = 0;
-
-	new_buf_size += top_length;
+	const rrr_biglength top_length = RRR_HTTP_PART_TOP_LENGTH(part);
+	rrr_biglength new_buf_size = top_length;
 
 	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
 		new_buf_size += node->length;
+		if (new_buf_size < node->length) {
+			RRR_MSG_0("Overflow while merging HTTP chunks\n");
+			ret = 1;
+			goto out;
+		}
 	RRR_LL_ITERATE_END();
 
 	if ((data_new = rrr_allocate(new_buf_size)) == NULL) {
@@ -579,14 +604,21 @@ int rrr_http_part_chunks_merge (
 		goto out;
 	}
 
-	size_t wpos = 0;
+	rrr_biglength wpos = 0;
 
-	memcpy(data_new, data_ptr, top_length);
+	RRR_SIZE_CHECK(top_length,"Merge HTTP chunks",ret = 1; goto out);
+
+	rrr_memcpy(data_new, data_ptr, top_length);
 	wpos += top_length;
 
 	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
-		memcpy(data_new + wpos, data_ptr + node->start, node->length);
+		RRR_SIZE_CHECK(node->length,"Merge HTTP chunk node",ret = 1; goto out);
+		rrr_memcpy(data_new + wpos, data_ptr + node->start, node->length);
 		wpos += node->length;
+		if (wpos < node->length) {
+			// Should discover this during allocation loop
+			RRR_BUG("Overflow while merging HTTP chunk\n");
+		}
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->chunks, 0; rrr_free(node));
 
@@ -594,10 +626,10 @@ int rrr_http_part_chunks_merge (
 	part->data_length = wpos;
 
 	*result_data = data_new;
+	data_new = NULL;
 
-	// goto out; out_free:
-	// RRR_FREE_IF_NOT_NULL(data_new); -- Enable if needed
 	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
 	return ret;
 }
 

@@ -104,7 +104,7 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transp
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -208,7 +208,7 @@ int rrr_mqtt_client_publish (
 
 	*send_discouraged = 0;
 
-	int send_queue_count = 0;
+	rrr_length send_queue_count = 0;
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
 					&send_queue_count,
@@ -238,14 +238,9 @@ int rrr_mqtt_client_subscribe (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+	if (rrr_mqtt_subscription_collection_count(subscriptions) == 0) {
 		goto out;
 	}
-	else if (ret < 0) {
-		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_subscribe\n", ret);
-	}
-	ret = 0;
 
 	if (data->protocol_version == NULL) {
 		RRR_MSG_0("Protocol version not set in rrr_mqtt_client_send_subscriptions\n");
@@ -274,7 +269,7 @@ int rrr_mqtt_client_subscribe (
 		goto out_decref;
 	}
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -305,13 +300,8 @@ int rrr_mqtt_client_unsubscribe (
 ) {
 	int ret = 0;
 
-	int ret_tmp = 0;
-	if ((ret_tmp = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+	if (rrr_mqtt_subscription_collection_count(subscriptions) == 0) {
 		goto out;
-	}
-	else if (ret_tmp < 0) {
-		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_unsubscribe\n", ret);
 	}
 
 	if (data->protocol_version == NULL) {
@@ -341,7 +331,7 @@ int rrr_mqtt_client_unsubscribe (
 		goto out_decref;
 	}
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -436,7 +426,8 @@ int rrr_mqtt_client_connect (
 		connect->connect_flags |= 1<<1;
 	}
 
-	connect->connect_flags |= (clean_start != 0)<<1;
+	int clean_start_flag = (clean_start != 0) << 1;
+	connect->connect_flags |= (uint8_t) clean_start_flag;
 	connect->keep_alive = keep_alive;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
@@ -698,7 +689,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 		if ((ret = rrr_mqtt_conn_set_data_from_connect_and_connack (
 				connection,
-				session_properties_tmp.numbers.server_keep_alive,
+				(uint16_t) session_properties_tmp.numbers.server_keep_alive,
 				connack->protocol_version,
 				connection->session,
 				NULL // Don't reset username upon CONNACK, will cause corruption

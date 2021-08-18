@@ -89,7 +89,6 @@ int rrr_cmodule_worker_init (
 		struct rrr_event_queue *event_queue_parent,
 		struct rrr_event_queue *event_queue_worker,
 		struct rrr_fork_handler *fork_handler,
-		struct rrr_mmap *mmap,
 		rrr_setting_uint spawn_interval_us,
 		rrr_setting_uint sleep_time_us,
 		rrr_setting_uint nothing_happened_limit,

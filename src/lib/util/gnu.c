@@ -40,7 +40,7 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 /*#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
 	ret = vasprintf(resultp, format, args);
 #else*/
-	ssize_t size = strlen(format) * 2;
+	size_t size = strlen(format) * 2;
 	char *buf = NULL;
 
 	*resultp = NULL;
@@ -60,22 +60,22 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	ret = vsnprintf(buf, size, format, args_tmp);
 	va_end(args_tmp);
 
-	if (ret >= size) {
+	if (ret < 0) {
+		RRR_MSG_0("Error returned from vsnprintf in rrr_asprintf\n");
+		ret = -1;
+		goto out;
+	}
+	else if ((size_t) ret >= size) {
 		if (++retry_count > 1) {
 			RRR_MSG_0("More than two attempts to format string in rrr_asprintf\n");
 			ret = -1;
 			goto out;
 		}
-		size = ret + 1;
+		size = (size_t) ret + 1;
 		goto retry;
 	}
-	else if (ret < 0) {
-		RRR_MSG_0("Error returned from vsnprintf in rrr_asprintf\n");
-		ret = -1;
-		goto out;
-	}
 
-	ret = strlen(buf);
+	ret = (int) strlen(buf);
 
 	*resultp = buf;
 	buf = NULL;

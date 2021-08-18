@@ -169,7 +169,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (ret != 0) {
-		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
+		ret = RRR_FIFO_PROTECTED_CALLBACK_ERR | RRR_FIFO_PROTECTED_SEARCH_STOP;
 	}
 
 	out:
@@ -342,8 +342,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	struct rrr_instance_runtime_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
-	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
-
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
@@ -366,8 +364,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
 	rrr_cmodule_helper_loop (
-			thread_data,
-			1 * 1000 * 1000 // 1 s
+			thread_data
 	);
 
 	out_message:
