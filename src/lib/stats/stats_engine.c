@@ -89,8 +89,8 @@ static void __rrr_stats_engine_journal_unlock_void (void *arg) {
 
 static void __rrr_stats_engine_log_listener (
 		uint8_t *write_amount,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
@@ -117,7 +117,7 @@ static void __rrr_stats_engine_log_listener (
 		goto out;
 	}
 
-	size_t msg_size = strlen(message) + 1;
+	rrr_length msg_size = rrr_length_inc_bug_const(rrr_length_from_size_t_bug_const (strlen(message)));
 
 	// Trim message if too long
 	if (msg_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
@@ -153,13 +153,13 @@ static int __rrr_stats_engine_message_pack (
 		const struct rrr_msg_stats *message,
 		int (*callback)(
 				struct rrr_msg *data,
-				size_t size,
+				rrr_length size,
 				void *callback_arg
 		),
 		void *callback_arg
 ) {
 	struct rrr_msg_stats_packed message_packed;
-	size_t total_size;
+	rrr_length total_size;
 
 	rrr_msg_stats_pack_and_flip (
 			&message_packed,
@@ -171,7 +171,7 @@ static int __rrr_stats_engine_message_pack (
 			(struct rrr_msg *) &message_packed,
 			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
-			message->timestamp
+			(rrr_u32) (message->timestamp / 1000 / 1000)
 	);
 
 	rrr_msg_checksum_and_to_network_endian (
@@ -191,12 +191,12 @@ static int __rrr_stats_engine_message_pack (
 
 int __rrr_stats_engine_multicast_send_intermediate (
 		struct rrr_msg *data,
-		size_t size,
+		rrr_length size,
 		void *callback_arg
 ) {
 	struct rrr_stats_engine *stats = callback_arg;
 
-	int send_chunk_count_dummy = 0;
+	rrr_length send_chunk_count_dummy = 0;
 	rrr_socket_client_collection_send_push_const_multicast (
 			&send_chunk_count_dummy,
 			stats->client_collection,
@@ -377,6 +377,11 @@ static void __rrr_stats_engine_event_periodic (
 	(void)(fd);
 	(void)(flags);
 
+	if (stats->exit_now_ret != 0) {
+		RRR_MSG_0("Error %i in statistics engine, exiting\n", stats->exit_now_ret);
+		rrr_event_dispatch_break(stats->queue);
+		return;
+	}
 	if ( __rrr_stats_engine_send_messages(stats)) {
 		RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
 		rrr_event_dispatch_break(stats->queue);
@@ -395,6 +400,21 @@ static int __rrr_stats_engine_read_callback (
 	// Only keepalive messages are received, no useful content
 
 	return 0;
+}
+
+static int __rrr_stats_engine_event_pass_retry_callback (
+		void *arg
+) {
+	struct rrr_stats_engine *stats = arg;
+
+ 	(void)(arg);
+
+	fprintf(stderr, "Error: Too many log events, a build-up has occured. This may happen if log messages are generated when sending data to statistics clients. Consider disconnecting statistics client or disabling some debug levels.\n");
+
+	// Checked in periodic functions
+	stats->exit_now_ret = RRR_EVENT_ERR;
+
+	return RRR_EVENT_ERR;
 }
 
 // To provide memory fence, this must be called prior to any thread starting or forking
@@ -476,7 +496,14 @@ int rrr_stats_engine_init (
 
 	EVENT_ADD(stats->event_periodic);
 
-	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats, queue);
+	rrr_log_hook_register (
+			&stats->log_hook_handle,
+			__rrr_stats_engine_log_listener,
+			stats,
+			queue,
+			__rrr_stats_engine_event_pass_retry_callback,
+			stats
+	);
 
 	rrr_event_function_set_with_arg (
 			queue,
@@ -674,7 +701,7 @@ int rrr_stats_engine_handle_obtain (
 	unsigned int iterations = 0;
 
 	do {
-		new_handle = rrr_rand();
+		new_handle = (unsigned int) rrr_rand();
 		if (++iterations % 100000 == 0) {
 			RRR_MSG_0("Warning: Huge number of handles in statistics engine (%i)\n", iterations);
 		}

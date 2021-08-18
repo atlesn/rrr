@@ -57,24 +57,24 @@ static volatile int rrr_post_abort = 0;
 static volatile int rrr_post_print_stats = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"socket",				"{RRR SOCKET}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array-definition",		"[-a|--array-definition[=]ARRAY DEFINITION]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'm',	"max-message-size",		"[-m|--max-message-size]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
-		{0,							's',	"sync",					"[-s|--sync]"},
-		{0,							'S',	"strip-separators",		"[-S|--strip-separators]"},
-		{0,							'q',	"quiet",				"[-q|--quiet]"},
-		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"environment-file",		"[-e|--environment-file[=]ENVIRONMENT FILE]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel-on-exit",	"[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+        {CMD_ARG_FLAG_NO_FLAG,        '\0',    "socket",               "{RRR SOCKET}"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'f',    "file",                 "[-f|--file[=]FILENAME|-]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT |
+         CMD_ARG_FLAG_SPLIT_COMMA,     'r',    "readings",             "[-r|--readings[=]reading1,reading2,...]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'a',    "array-definition",     "[-a|--array-definition[=]ARRAY DEFINITION]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'm',    "max-message-size",     "[-m|--max-message-size]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'c',    "count",                "[-c|--count[=]MAX FILE ELEMENTS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    't',    "topic",                "[-t|--topic[=]MQTT TOPIC]"},
+        {0,                            's',    "sync",                 "[-s|--sync]"},
+        {0,                            'S',    "strip-separators",     "[-S|--strip-separators]"},
+        {0,                            'q',    "quiet",                "[-q|--quiet]"},
+        {0,                            'l',    "loglevel-translation", "[-l|--loglevel-translation]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'e',    "environment-file",     "[-e|--environment-file[=]ENVIRONMENT FILE]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'd',    "debuglevel",           "[-d|--debuglevel[=]DEBUG FLAGS]"},
+        {CMD_ARG_FLAG_HAS_ARGUMENT,    'D',    "debuglevel-on-exit",   "[-D|--debuglevel-on-exit[=]DEBUG FLAGS]"},
+        {0,                            'h',    "help",                 "[-h|--help]"},
+        {0,                            'v',    "version",              "[-v|--version]"},
+        {0,                            '\0',    NULL,                   NULL}
 };
 
 struct rrr_post_reading {
@@ -140,10 +140,10 @@ static void __rrr_post_destroy_data (struct rrr_post_data *data) {
 }
 
 static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data *cmd) {
-	for (int i = 0; 1; i++) {
+	for (cmd_arg_count i = 0; 1; i++) {
 		const char *reading = cmd_get_value(cmd, "readings", i);
 		if (reading != NULL) {
-			for (int j = 0; 1; j++) {
+			for (cmd_arg_count j = 0; 1; j++) {
 				reading = cmd_get_subvalue(cmd, "readings", i, j);
 				if (reading != NULL) {
 					uint64_t value;
@@ -238,6 +238,13 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 	if (topic != NULL) {
+		if (strlen(data->topic) > RRR_MSG_TOPIC_MAX) {
+			RRR_MSG_0("Error: Specified topic too long (%llu>%llu)\n",
+				(long long unsigned) strlen(data->topic),
+				(long long unsigned) RRR_MSG_TOPIC_MAX);
+			ret = 1;
+			goto out;
+		}
 		data->topic = rrr_strdup(topic);
 		if (data->topic == NULL) {
 			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
@@ -282,7 +289,12 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 
 	sprintf(array_tree_tmp, "%s;", array_definition);
 
-	if (rrr_array_tree_interpret_raw(&data->tree, array_tree_tmp, strlen(array_tree_tmp), "-") != 0 || data->tree == NULL) {
+	if (rrr_array_tree_interpret_raw (
+			&data->tree,
+			array_tree_tmp,
+			rrr_length_from_size_t_bug_const(strlen(array_tree_tmp)),
+			"-"
+	) != 0 || data->tree == NULL) {
 		RRR_MSG_0("Error while parsing array tree definition\n");
 		ret = 1;
 		goto out;
@@ -385,7 +397,14 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 		goto out;
 	}
 
-	if (rrr_msg_msg_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
+	if (rrr_msg_msg_new_empty (
+			&message,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			rrr_time_get_64(),
+			0,
+			rrr_length_from_size_t_bug_const(strlen(text) + 1)
+	)) {
 		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
@@ -436,7 +455,7 @@ static int __rrr_post_read_callback (struct rrr_read_session *read_session, stru
 			array_final,
 			rrr_time_get_64(),
 			data->topic,
-			(data->topic != NULL ? strlen(data->topic) : 0)
+			(data->topic != NULL ? rrr_u16_from_biglength_bug_const(strlen(data->topic)) : 0)
 	)) != 0) {
 		RRR_MSG_0("Could not create or send message in __rrr_post_read_callback\n");
 		goto out;
@@ -508,7 +527,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				4096,
 				0, // No ratelimit interval
 				0, // No ratelimit max bytes
-				data->max_message_size,
+				data->max_message_size > RRR_LENGTH_MAX ? RRR_LENGTH_MAX : (rrr_length) data->max_message_size,
 				__rrr_post_read_callback,
 				&callback_data
 		);
@@ -543,8 +562,13 @@ int main (int argc, const char **argv, const char **env) {
 
 	int ret = EXIT_SUCCESS;
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -613,7 +637,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out_final:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

@@ -29,12 +29,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_send_chunk.h"
 #include "rrr_socket.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_socket_send_chunk {
 	RRR_LL_NODE(struct rrr_socket_send_chunk);
 	void *data;
-	ssize_t data_size;
-	ssize_t data_pos;
+	rrr_biglength data_size;
+	rrr_biglength data_pos;
 	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	void *private_data;
@@ -68,7 +69,7 @@ void rrr_socket_send_chunk_collection_clear (
 
 void rrr_socket_send_chunk_collection_clear_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,
-		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*callback)(const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 ) {
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();
@@ -79,33 +80,29 @@ void rrr_socket_send_chunk_collection_clear_with_callback (
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_END();
 }
 
-size_t rrr_socket_send_chunk_collection_count (
+rrr_length rrr_socket_send_chunk_collection_count (
 		struct rrr_socket_send_chunk_collection *chunks
 ) {
-	int count = 0;
+	rrr_length count = 0;
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();
-		count += RRR_LL_COUNT(list);
+		rrr_length_add_bug (&count, rrr_length_from_slength_bug_const(RRR_LL_COUNT(list)));
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_END();
 	return count;
 }
 
 static int __rrr_socket_send_chunk_collection_push (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void **data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
-
-	if (data_size < 0) {
-		RRR_BUG("BUG: Data size was < 0 in __rrr_socket_send_chunk_collection_push\n");
-	}
 
 	struct rrr_socket_send_chunk *new_chunk = NULL;
 
@@ -140,10 +137,10 @@ static int __rrr_socket_send_chunk_collection_push (
 }
 
 int rrr_socket_send_chunk_collection_push (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		void **data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority
 ) {
 	return __rrr_socket_send_chunk_collection_push (
@@ -161,27 +158,30 @@ int rrr_socket_send_chunk_collection_push (
 }
 
 static int __rrr_socket_send_chunk_collection_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t data_size,
-		int do_prepend,
+		rrr_biglength data_size,
+		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
 		void (*private_data_destroy)(void *private_data)
 ) {
 	int ret = 0;
 
-	void *data_copy = rrr_allocate(data_size);
-	if (data_copy == NULL) {
+	void *data_copy = NULL;
+
+	RRR_SIZE_CHECK(data_size,"While adding to send chunk collection",ret = 1; goto out);
+
+	if ((data_copy = rrr_allocate(data_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_socket_send_chunk_collection_push_const\n");
 		ret = 1;
 		goto out;
 	}
 
-	memcpy(data_copy, data, data_size);
+	rrr_memcpy(data_copy, data, data_size);
 
 	ret = __rrr_socket_send_chunk_collection_push (
 			send_chunk_count,
@@ -190,7 +190,7 @@ static int __rrr_socket_send_chunk_collection_push_const (
 			addr_len,
 			&data_copy,
 			data_size,
-			do_prepend,
+			priority,
 			private_data_new,
 			private_data_arg,
 			private_data_destroy
@@ -202,10 +202,10 @@ static int __rrr_socket_send_chunk_collection_push_const (
 }
 
 int rrr_socket_send_chunk_collection_push_const (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority
 ) {
 	return __rrr_socket_send_chunk_collection_push_const (
@@ -223,10 +223,10 @@ int rrr_socket_send_chunk_collection_push_const (
 }
 
 int rrr_socket_send_chunk_collection_push_const_with_private_data (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
@@ -247,12 +247,12 @@ int rrr_socket_send_chunk_collection_push_const_with_private_data (
 }
 
 int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
-		int *send_chunk_count,
+		rrr_length *send_chunk_count,
 		struct rrr_socket_send_chunk_collection *chunks,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		enum rrr_socket_send_chunk_priority priority,
 		void (*private_data_new)(void **private_data, void *arg),
 		void *private_data_arg,
@@ -275,7 +275,7 @@ int rrr_socket_send_chunk_collection_push_const_with_address_and_private_data (
 static int __rrr_socket_send_chunk_collection_send (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
-		void (*notify_callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*notify_callback)(const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *notify_callback_arg
 ) {
 	int ret = 0;
@@ -285,7 +285,7 @@ static int __rrr_socket_send_chunk_collection_send (
 			RRR_DBG_7("Chunk non-blocking send on fd %i, pos/size %lld/%lld\n",
 				fd,  (long long int) node->data_pos, (long long int) node->data_size);
 
-			ssize_t written_bytes = 0;
+			rrr_biglength written_bytes = 0;
 			if ((ret = rrr_socket_sendto_nonblock_check_retry (
 				&written_bytes,
 				fd,
@@ -325,7 +325,7 @@ int rrr_socket_send_chunk_collection_send (
 int rrr_socket_send_chunk_collection_send_and_notify (
 		struct rrr_socket_send_chunk_collection *chunks,
 		int fd,
-		void (*callback)(const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*callback)(const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 ) {
 	return __rrr_socket_send_chunk_collection_send (
@@ -338,7 +338,7 @@ int rrr_socket_send_chunk_collection_send_and_notify (
 
 int rrr_socket_send_chunk_collection_send_with_callback (
 		struct rrr_socket_send_chunk_collection *chunks,
-		int (*callback)(ssize_t *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, ssize_t data_size, void *arg),
+		int (*callback)(rrr_biglength *written_bytes, const struct sockaddr *addr, socklen_t addr_len, const void *data, rrr_biglength data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -349,7 +349,7 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 			RRR_DBG_7("Chunk send with callback pos/size %lld/%lld\n",
 				(long long int) node->data_pos, (long long int) node->data_size);
 
-			ssize_t written_bytes = 0;
+			rrr_biglength written_bytes = 0;
 
 			ret = callback (
 					&written_bytes,
@@ -379,7 +379,7 @@ int rrr_socket_send_chunk_collection_send_with_callback (
 
 void rrr_socket_send_chunk_collection_iterate (
 		struct rrr_socket_send_chunk_collection *chunks,
-		void (*callback)(int *do_remove, const void *data, ssize_t data_size, ssize_t data_pos, void *chunk_private_data, void *arg),
+		void (*callback)(int *do_remove, const void *data, rrr_biglength data_size, rrr_biglength data_pos, void *chunk_private_data, void *arg),
 		void *callback_arg
 ) {
 	RRR_SOCKET_SEND_CHUNK_LISTS_ITERATE_BEGIN();

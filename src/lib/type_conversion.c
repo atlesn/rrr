@@ -632,7 +632,10 @@ int rrr_type_conversion_collection_new_from_map (
 	struct rrr_type_conversion_collection *result = NULL;
 
 	const size_t elements = (size_t) RRR_MAP_COUNT(map);
-	const size_t new_size = sizeof(*result) + (sizeof(result->items) * (elements - 1));
+	const size_t new_size = elements > 0
+		? sizeof(*result) + (sizeof(result->items) * (elements - 1))
+		: sizeof(*result)
+	;
 
 	if ((result = rrr_allocate(new_size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_type_conversion_collection_new_from_map\n");
@@ -640,7 +643,7 @@ int rrr_type_conversion_collection_new_from_map (
 		goto out;
 	}
 
-	memset(result, '\0', sizeof(*result));
+	memset(result, '\0', new_size);
 
 	size_t wpos = 0;
 

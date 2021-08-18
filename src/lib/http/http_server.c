@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 
+#define RRR_HTTP_SERVER_READ_MAX 1 * 1024 * 1024 // 1 MB
+
 void rrr_http_server_destroy (struct rrr_http_server *server) {
 	if (server->transport_http != NULL) {
 		rrr_net_transport_destroy(server->transport_http);
@@ -97,30 +99,6 @@ int rrr_http_server_new (
 //		free(server);
 	out:
 		return ret;
-}
-
-struct rrr_http_server_start_alpn_protos_callback_data {
-	struct rrr_net_transport **result_transport;
-	const struct rrr_net_transport_config *net_transport_config;
-	int net_transport_flags;
-	struct rrr_event_queue *queue;
-};
-
-static int __rrr_http_server_start_alpn_protos_callback (
-		const char *alpn_protos,
-		unsigned int alpn_protos_length,
-		void *callback_arg
-) {
-	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
-
-	return rrr_net_transport_new (
-			callback_data->result_transport,
-			callback_data->net_transport_config,
-			callback_data->net_transport_flags,
-			callback_data->queue,
-			alpn_protos,
-			alpn_protos_length
-	);
 }
 
 static void __rrr_http_server_accept_callback (
@@ -270,11 +248,11 @@ static int __rrr_http_server_receive_callback (
 
 		if (overshoot_bytes > 0) {
 			if (transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_CLOSE) {
-				RRR_MSG_0("HTTP server %i %s has %li bytes overshoot while protocol version is HTTP/1.0 or 'Connection: close' is set, data will be lost\n",
+				RRR_MSG_0("HTTP server %i %s has %" PRIrrrbl " bytes overshoot while protocol version is HTTP/1.0 or 'Connection: close' is set, data will be lost\n",
 						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
 			}
 			else {
-				RRR_DBG_3("HTTP server %i %s has %li bytes overshoot, expecting another request\n",
+				RRR_DBG_3("HTTP server %i %s has %" PRIrrrbl " bytes overshoot, expecting another request\n",
 						RRR_NET_TRANSPORT_CTX_FD(handle), ip_buf, overshoot_bytes);
 			}
 		}
@@ -370,39 +348,39 @@ static int __rrr_http_server_read_callback (
 
 	int ret = 0;
 
-	ssize_t received_bytes = 0;
-
-	again:
-
-	if ((ret = rrr_http_session_transport_ctx_tick_server (
-			&received_bytes,
-			handle,
-			1 * 1024 * 1024, // 1 MB
-			http_server->callbacks.unique_id_generator_callback,
-			http_server->callbacks.unique_id_generator_callback_arg,
-			__rrr_http_server_upgrade_verify_callback,
-			http_server,
-			__rrr_http_server_websocket_handshake_callback,
-			http_server,
-			__rrr_http_server_receive_callback,
-			http_server,
-			http_server->callbacks.async_response_get_callback,
-			http_server->callbacks.async_response_get_callback_arg,
-			__rrr_http_server_websocket_get_response_callback,
-			http_server,
-			__rrr_http_server_websocket_frame_callback,
-			http_server
-	)) != 0) {
-		if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
-			RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
-					RRR_NET_TRANSPORT_CTX_FD(handle));
+	for (int i = 0; i < 1; i++) {
+		rrr_biglength received_bytes_dummy = 0;
+		if ((ret = rrr_http_session_transport_ctx_tick_server (
+				&received_bytes_dummy,
+				handle,
+				RRR_HTTP_SERVER_READ_MAX,
+				http_server->callbacks.unique_id_generator_callback,
+				http_server->callbacks.unique_id_generator_callback_arg,
+				__rrr_http_server_upgrade_verify_callback,
+				http_server,
+				__rrr_http_server_websocket_handshake_callback,
+				http_server,
+				__rrr_http_server_receive_callback,
+				http_server,
+				http_server->callbacks.async_response_get_callback,
+				http_server->callbacks.async_response_get_callback_arg,
+				__rrr_http_server_websocket_get_response_callback,
+				http_server,
+				__rrr_http_server_websocket_frame_callback,
+				http_server
+		)) != 0) {
+			if (ret != RRR_HTTP_SOFT_ERROR && ret != RRR_READ_INCOMPLETE && ret != RRR_READ_EOF) {
+				RRR_MSG_0("HTTP server %i: Hard error while working with client\n",
+						RRR_NET_TRANSPORT_CTX_FD(handle));
+			}
+			goto out;
 		}
-		goto out;
-	}
 
-	if (rrr_http_session_transport_ctx_need_tick(handle)) {
-		// This usually only happens at most one time
-		goto again;
+		if (!rrr_http_session_transport_ctx_need_tick(handle)) {
+			break;
+		}
+
+		// Need tick usually only happens at most one time (and we allow at most one)
 	}
 
 	// Clean up often to prevent huge number of HTTP2 streams waiting to be cleaned up
@@ -412,6 +390,49 @@ static int __rrr_http_server_read_callback (
 	return ret;
 }
 
+#define RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS                \
+    __rrr_http_server_accept_callback,                         \
+    http_server,                                               \
+    __rrr_http_server_handshake_complete_callback,             \
+    http_server,                                               \
+    __rrr_http_server_read_callback,                           \
+    http_server
+
+struct rrr_http_server_start_alpn_protos_callback_data {
+	struct rrr_http_server *server;
+	struct rrr_net_transport **result_transport;
+	const struct rrr_net_transport_config *net_transport_config;
+	const int net_transport_flags;
+	struct rrr_event_queue *queue;
+	const uint64_t first_read_timeout_ms;
+	const uint64_t hard_timeout_ms;
+	const uint64_t ping_timeout_ms;
+	const rrr_length send_chunk_count_limit;
+};
+
+static int __rrr_http_server_start_alpn_protos_callback (
+		const char *alpn_protos,
+		unsigned int alpn_protos_length,
+		void *callback_arg
+) {
+	struct rrr_http_server_start_alpn_protos_callback_data *callback_data = callback_arg;
+	struct rrr_http_server *http_server = callback_data->server;
+
+	return rrr_net_transport_new (
+			callback_data->result_transport,
+			callback_data->net_transport_config,
+			callback_data->net_transport_flags,
+			callback_data->queue,
+			alpn_protos,
+			alpn_protos_length,
+			callback_data->first_read_timeout_ms,
+			callback_data->ping_timeout_ms,
+			callback_data->hard_timeout_ms,
+			callback_data->send_chunk_count_limit,
+			RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
+	);
+}
+
 static int __rrr_http_server_start (
 		struct rrr_net_transport **result_transport,
 		struct rrr_http_server *http_server,
@@ -419,7 +440,7 @@ static int __rrr_http_server_start (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config,
 		int net_transport_flags
 ) {
@@ -429,12 +450,20 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
+	const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
+	const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
+
 	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
 		struct rrr_http_server_start_alpn_protos_callback_data callback_data = {
+				http_server,
 				result_transport,
 				net_transport_config,
 				net_transport_flags,
-				queue
+				queue,
+				first_read_timeout_ms,
+				hard_timeout_ms,
+				ping_timeout_ms,
+				send_chunk_count_limit
 		};
 
 		ret = rrr_http_application_alpn_protos_with_all_do (
@@ -449,7 +478,12 @@ static int __rrr_http_server_start (
 				net_transport_flags,
 				queue,
 				NULL,
-				0
+				0,
+				first_read_timeout_ms,
+				ping_timeout_ms,
+				hard_timeout_ms,
+				send_chunk_count_limit,
+				RRR_HTTP_SERVER_NET_TRANSPORT_CALLBACKS
 		);
 	}
 
@@ -460,24 +494,6 @@ static int __rrr_http_server_start (
 	}
 
 	if (queue != NULL) {
-		const uint64_t hard_timeout_ms = (read_timeout_ms < 1000 ? 1000 : read_timeout_ms);
-		const uint64_t ping_timeout_ms = hard_timeout_ms / 2;
-
-		if ((ret = rrr_net_transport_event_setup (
-				*result_transport,
-				first_read_timeout_ms,
-				ping_timeout_ms,
-				hard_timeout_ms,
-				send_chunk_count_limit,
-				__rrr_http_server_accept_callback,
-				http_server,
-				__rrr_http_server_handshake_complete_callback,
-				http_server,
-				__rrr_http_server_read_callback,
-				http_server
-		)) != 0) {
-			goto out;
-		}
 	}
 
 	if ((ret = rrr_net_transport_bind_and_listen_dualstack (
@@ -500,7 +516,7 @@ int rrr_http_server_start_plain (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit
+		rrr_length send_chunk_count_limit
 ) {
 	int ret = 0;
 
@@ -535,7 +551,7 @@ int rrr_http_server_start_tls (
 		uint16_t port,
 		uint64_t first_read_timeout_ms,
 		uint64_t read_timeout_ms,
-		int send_chunk_count_limit,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_net_transport_config *net_transport_config_template,
 		int net_transport_flags
 ) {

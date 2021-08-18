@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -40,19 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // client does not actually implement ASD. If a client chooses not to, it must
 // provide a dummy callback function to the API.
 
-// UDP-stream is thread-safe but is not optimized for threading in any particular
-// way as all API functions use the same lock. Many UDP-stream entries may however
-// be created and accessed at the same time as no static data is used anywhere (apart
-// from in the RRR socket API, but it has its own locking anyway).
-
-// Each UDP-stream instance has its own lock. Note that callbacks provided by API user to certain
-// functions needs to implement some form of locking if different UDP-streams are used by
-// multiple threads. If only one UDP-stream is used by multiple threads, no such locking is
-// needed as the callbacks will be protected by the UDP-stream lock.
-
-// Please note that no UDP-stream functions may be called from the callbacks, this will always
-// cause a deadlock.
-
 // Data sent to UDP-stream is copied, indicated by using const pointers. For data given to
 // back to the API user using the data callback function upon receival, it is expected that
 // the callback takes care of this memory or frees it, also on errors. If not, it will always
@@ -62,169 +49,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_H
 
 #include <inttypes.h>
-#include <pthread.h>
 
 #include "../read.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
+#include "../ip/ip.h"
 #include "../util/rrr_endian.h"
 #include "../util/linked_list.h"
-
-// Configuration
-#define RRR_UDPSTREAM_VERSION 2
-
-#define RRR_UDPSTREAM_BUFFER_LIMIT 1500
-
-#define RRR_UDPSTREAM_BURST_LIMIT_RECEIVE 100000
-#define RRR_UDPSTREAM_BURST_LIMIT_SEND 100
-
-#define RRR_UDPSTREAM_MESSAGE_SIZE_MAX 67584
-
-#define RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT 1024
-#define RRR_UDPSTREAM_FRAME_ID_LIMIT 4294967295
-
-#define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
-
-#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 240000
-#define RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS (RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS*2)
-
-#define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
-#define RRR_UDPSTREAM_RESEND_INTERVAL_ASD_ACK_MS 150
-#define RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT 5
-
-#define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_RESEND_ASD_ACK -10
-#define RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_BUFFER_HOLE -5
-#define RRR_UDPSTREAM_WINDOW_SIZE_GAIN_BUFFER_COMPLETE -5
-#define RRR_UDPSTREAM_WINDOW_SIZE_MIN 10
-#define RRR_UDPSTREAM_WINDOW_SIZE_MAX RRR_UDPSTREAM_BUFFER_LIMIT*2
-#define RRR_UDPSTREAM_WINDOW_SIZE_INITIAL RRR_UDPSTREAM_WINDOW_SIZE_MAX/4
-
-// Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
-// #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
+#include "../event/event_collection.h"
 
 #define RRR_UDPSTREAM_OK                  RRR_READ_OK
 #define RRR_UDPSTREAM_HARD_ERR            RRR_READ_HARD_ERROR
 #define RRR_UDPSTREAM_SOFT_ERR            RRR_READ_SOFT_ERROR
 #define RRR_UDPSTREAM_NOT_READY           RRR_READ_INCOMPLETE
 
-// Flags and type are stored together, 4 bits each. Lower 4 are for type.
-
-// Current frame is a message boundary (end of a message). Preceding frames
-// after previous boundary (if any) including boundary message are to be merged.
-#define RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY			(1<<0)
-
-// Regulate window size. Receiver sends this to tell a sender to slow down or
-// speed up. Any ACK packet may contain window size regulation.
-#define RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE		(1<<1)
-
-// Used to initiate connection stop. If the reset packet contains a frame id,
-// delivery of frames up to this point is completed before the connection
-// is closed. If frame id is zero, a hard reset is performed and sending should
-// stop immediately and a new stream must be used instead. This might happen
-// if a client restarts and gets ready again before the connection times out.
-#define RRR_UDPSTREAM_FRAME_TYPE_RESET				0
-
-// Used to initiate a new stream, both request and response
-#define RRR_UDPSTREAM_FRAME_TYPE_CONNECT			1
-
-// Used for data transmission
-#define RRR_UDPSTREAM_FRAME_TYPE_DATA				3
-
-// Used to acknowledge frames and to regulate window size
-#define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			4
-
-// Used for control packets with no data. The application_data field may be used
-// by the application to exchange control data. Delivery is not guaranteed like
-// with data packets, control packets are just sent immediately.
-#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			5
-
-#define RRR_UDPSTREAM_FRAME_TYPE(frame) \
-	((frame)->flags_and_type & 0x0f)
-#define RRR_UDPSTREAM_FRAME_FLAGS(frame) \
-	((frame)->flags_and_type >> 4)
-#define RRR_UDPSTREAM_FRAME_VERSION(frame) \
-	((frame)->version)
-
-// Every frame contains a CRC32 checksum. Upon mismatch, frames are dropped and must be re-sent.
-// This CRC32 verifies the header only and is used to make sure the data length specified in
-// a frame is valid.
-#define RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame) \
-	(rrr_be32toh((frame)->header_crc32))
-
-#define RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) \
-	(rrr_be16toh((frame)->data_size))
-#define RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame) \
-	(sizeof(*(frame)) - 1 + RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame))
-
-#define RRR_UDPSTREAM_FRAME_PACKED_DATA_PTR(frame) \
-	(&(frame)->data)
-
-#define RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame) \
-	((frame)->version)
-
-// Each stream has an ID which is chosen randomly. The sender IP/port is not
-// checked when frames are received, and it is not a problem if this changes
-// as long as the same stream ID is used and the connection does not time out.
-#define RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame) \
-	(rrr_be16toh((frame)->stream_id))
-
-// Number to identify each frame. Begins with 1 for each new stream. The IDs
-// may become exhausted if there are a lot of traffic or for long-lasting streams,
-// after which a new stream must be initiated.
-#define RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame) \
-	(rrr_be32toh((frame)->frame_id))
-
-// Identifier chosen randomly to match sent CONNECT frames with received ones. It
-// is possible to have collisions (although unlikely), and a client might reject
-// a connection if a connect handle is already taken.
-#define RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(frame) \
-	(rrr_be32toh((frame)->connect_handle))
-
-// Frame ACK messages contain an ACK range which specifies a low and high frame ID
-// for frames which are received. ACK frames are sent constantly for all messages
-// which are currently not delivered to the application. A single data frame may therefore
-// be "mentioned" in multiple ACK frames.
-
-// Each time a sender receives an ACK frame,
-// it increments the "unacknowledged counter" for frames which was not mentioned in the ACK.
-// If this counter reached a specific limit, the frame is re-sent. The way a client sends
-// ACK packets will therefore ensure that frames which are missing out (holes in the stream)
-// is re-sent.
-
-// If there are missing frames and holes in the receive buffer, a client will request the
-// window size to be reduced slightly. If there are no holes, the window size is carefully
-// increased.
-#define RRR_UDPSTREAM_FRAME_PACKED_ACK_FIRST(frame) \
-	(rrr_be32toh((frame)->ack_data.ack_id_first))
-#define RRR_UDPSTREAM_FRAME_PACKED_ACK_LAST(frame) \
-	(rrr_be32toh((frame)->ack_data.ack_id_last))
-
-#define RRR_UDPSTREAM_FRAME_PACKED_APPLICATION_DATA(frame) \
-	(rrr_be64toh((frame)->application_data))
-
-// After a full frame with data is received, this checksum is verified
-#define RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame) \
-	(rrr_be32toh((frame)->data_crc32))
-
-#define RRR_UDPSTREAM_FRAME_IS_BOUNDARY(frame) \
-	((RRR_UDPSTREAM_FRAME_FLAGS(frame) & RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY) != 0)
-#define RRR_UDPSTREAM_FRAME_HAS_WINDOW_SIZE(frame) \
-	((RRR_UDPSTREAM_FRAME_FLAGS(frame) & RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE) != 0)
-
-#define RRR_UDPSTREAM_FRAME_IS_CONNECT(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_CONNECT) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_FRAME_ACK(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_DATA(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_DATA) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_CONTROL(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_CONTROL) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_RESET(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
-
 #define RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS (1<<0)
 #define RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP (1<<1)
 #define RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE (1<<2)
+
+// These parameters are useful to upstream framework, it's tuning
+// parameters should derive from these values.
+
+#define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
+#define RRR_UDPSTREAM_BUFFER_LIMIT 750
+#define RRR_UDPSTREAM_WINDOW_SIZE_MAX RRR_UDPSTREAM_BUFFER_LIMIT*2
+#define RRR_UDPSTREAM_WINDOW_SIZE_INITIAL RRR_UDPSTREAM_WINDOW_SIZE_MAX/4
 
 #define RRR_UDPSTREAM_HEADER_FIELDS                            \
     uint8_t flags_and_type;                                    \
@@ -256,6 +105,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS                  \
     RRR_READ_COMMON_GET_TARGET_LENGTH_FROM_MSG_RAW_ARGS
+
+#define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS     \
+    void *arg
 
 #define RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS              \
     void **joined_data,                                        \
@@ -310,12 +162,23 @@ struct rrr_udpstream_stream {
 	uint32_t window_size_to_remote;
 	uint32_t window_size_from_remote;
 	int window_size_regulation_from_application;
-	int invalidated;
-	int hard_reset_received;
+	uint32_t last_ack_id;
+	short destroy_on_empty_buffers;
 };
 
 struct rrr_udpstream_stream_collection {
 	RRR_LL_HEAD(struct rrr_udpstream_stream);
+};
+
+// Used when data is delivered to the API user after receiving a full message
+struct rrr_udpstream_receive_data {
+	void *allocation_handle;
+	uint32_t data_size;
+	uint32_t connect_handle;
+	uint16_t stream_id;
+	uint64_t application_data;
+	const struct sockaddr *addr;
+	socklen_t addr_len;
 };
 
 // The API user must allocate this struct either statically or dynamically.
@@ -326,23 +189,31 @@ struct rrr_udpstream {
 	int flags;
 
 	struct rrr_udpstream_stream_collection streams;
-	struct rrr_read_session_collection read_sessions;
 
-	pthread_mutex_t lock;
+	struct rrr_event_queue *queue;
+	struct rrr_socket_client_collection *clients;
+
+	struct rrr_event_collection events;
+
+	rrr_event_handle event_deliver;
+	rrr_event_handle event_send;
+	rrr_event_handle event_periodic;
+
+	unsigned int event_read_current_timeout;
+
+	int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg);
+	void *upstream_control_frame_callback_arg;
+	int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS);
+	void *upstream_allocator_callback_arg;
+	int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS);
+	void *upstream_validator_callback_arg;
+	int (*upstream_final_receive_possible_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS);
+	void *upstream_final_receive_possible_callback_arg;
+	int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS);
+	void *upstream_final_callback_arg;
 
 	void *send_buffer;
 	ssize_t send_buffer_size;
-};
-
-// Used when data is delivered to the API user after receiving a full message
-struct rrr_udpstream_receive_data {
-	void *allocation_handle;
-	ssize_t data_size;
-	uint32_t connect_handle;
-	uint16_t stream_id;
-	uint64_t application_data;
-	const struct sockaddr *addr;
-	socklen_t addr_len;
 };
 
 struct rrr_udpstream_send_data {
@@ -364,7 +235,18 @@ void rrr_udpstream_clear (
 );
 int rrr_udpstream_init (
 		struct rrr_udpstream *stream,
-		int flags
+		struct rrr_event_queue *queue,
+		int flags,
+		int (*upstream_control_frame_callback)(uint32_t connect_handle, uint64_t application_data, void *arg),
+		void *upstream_control_frame_callback_arg,
+		int (*upstream_allocator_callback) (RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
+		void *upstream_allocator_callback_arg,
+		int (*upstream_validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
+		void *upstream_validator_callback_arg,
+		int (*upstream_final_receive_possible_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_POSSIBLE_ARGS),
+		void *upstream_final_receive_possible_callback_arg,
+		int (*upstream_final_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
+		void *upstream_final_callback_arg
 );
 
 // Change the flags after initialization, may be called at any time
@@ -392,41 +274,6 @@ int rrr_udpstream_default_allocator (
 		void *arg
 );
 */
-
-// This function will merge received frames back into the original messages. If the messages
-// themselves contain length information and CRC32, this should be checked in the
-// callback_validator-function. A length MUST be returned from this function. If it is not
-// possible to extract the message length from the data, a dummy function may be provided
-// which simply writes the data_size parameter into target_size.
-//
-// The callback function receives the actual message. It MUST ALWAYS take care of the memory
-// in the data pointer of the receive_data struct, also if there are errors. The actual struct
-// must not be freed, it is allocated on the stack.
-//
-// ACK messages are also sent from this function and window size regulation is performed.
-
-int rrr_udpstream_do_process_receive_buffers (
-		struct rrr_udpstream *data,
-		int (*allocator_callback)(RRR_UDPSTREAM_ALLOCATOR_CALLBACK_ARGS),
-		void *allocator_callback_arg,
-		int (*validator_callback)(RRR_UDPSTREAM_VALIDATOR_CALLBACK_ARGS),
-		void *validator_callback_arg,
-		int (*receive_callback)(RRR_UDPSTREAM_FINAL_RECEIVE_CALLBACK_ARGS),
-		void *receive_callback_arg
-);
-// This should be called on a regular basis to perform all reading from network. If a control frame
-// is received, the callback is called.
-int rrr_udpstream_do_read_tasks (
-		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
-		void *control_frame_listener_arg
-);
-
-// This should be called on a regular basis to perform any sending of data
-int rrr_udpstream_do_send_tasks (
-		int *send_count,
-		struct rrr_udpstream *data
-);
 
 // Check if a particular stream ID is registered
 int rrr_udpstream_stream_exists (
@@ -464,7 +311,7 @@ int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
 		const void *data,
-		ssize_t data_size,
+		rrr_biglength data_size,
 		uint64_t application_data
 );
 void rrr_udpstream_close (
@@ -472,11 +319,11 @@ void rrr_udpstream_close (
 );
 int rrr_udpstream_bind_v6_priority (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 );
 int rrr_udpstream_bind_v4_only (
 		struct rrr_udpstream *data,
-		unsigned int local_port
+		uint16_t local_port
 );
 int rrr_udpstream_connect_raw (
 		uint32_t *connect_handle,

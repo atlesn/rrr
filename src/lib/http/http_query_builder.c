@@ -57,10 +57,18 @@ void rrr_http_query_builder_cleanup (
 static int __rrr_http_query_builder_escape_field (
 		char **target,
 		const char *source,
-		ssize_t length,
+		rrr_biglength length,
 		int add_double_quotes
 ) {
-	ssize_t new_size = length * 2 + 1 + 2;
+	rrr_biglength new_size = length * 2 + 1 + 2;
+	if (new_size < length) {
+		RRR_MSG_0("Input too long in __rrr_http_query_builder_escape_field (%llu>%llu)\n",
+			(unsigned long long) length,
+			(unsigned long long) SIZE_MAX / 2 - 1 - 2);
+		return RRR_HTTP_SOFT_ERROR;
+	}
+
+	RRR_SIZE_CHECK(new_size,"HTTP field to escape is too long\n",return RRR_HTTP_SOFT_ERROR);
 
 	*target = NULL;
 
@@ -76,7 +84,7 @@ static int __rrr_http_query_builder_escape_field (
 		*(wpos++) = '"';
 	}
 
-	for (ssize_t i = 0; i < length; i++) {
+	for (rrr_biglength i = 0; i < length; i++) {
 		char c = *(source + i);
 		if (c == '"' || (add_double_quotes == 0 && (c == ',' || c == '=' || c == ' ' || c == '\t' || c == '\r' || c == '\n'))) {
 			*(wpos++) = '\\';
@@ -365,7 +373,7 @@ const char *rrr_http_query_builder_buf_get (
 	return query_builder->string_builder->buf;
 }
 
-ssize_t rrr_http_query_builder_wpos_get (
+rrr_biglength rrr_http_query_builder_wpos_get (
 		struct rrr_http_query_builder *query_builder
 ) {
 	return query_builder->string_builder->wpos;

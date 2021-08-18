@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_RANDOM_H
 #define RRR_RANDOM_H
 
+#include <stddef.h>
+
 int rrr_rand(void);
+void rrr_random_string(char *target, size_t target_size);
 
 #endif /* RRR_RANDOM_H */
