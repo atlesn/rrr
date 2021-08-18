@@ -957,7 +957,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	RRR_DBG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	RRR_DBG_1 ("mysql thread data is %p, size of private data: %llu\n", thread_data, (long long unsigned) sizeof(*data));
 
 	pthread_cleanup_push(mysql_stop, data);
 	pthread_cleanup_push(data_cleanup, data);

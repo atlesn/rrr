@@ -204,7 +204,7 @@ void rrr_http_field_collection_dump (
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			RRR_MSG_PLAIN(" (%" PRIrrrl " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
+			RRR_MSG_PLAIN(" (%" PRIrrr_nullsafe_len " bytes of type '%s') ", rrr_nullsafe_str_len(node->value), content_type);
 			rrr_nullsafe_str_with_raw_do_const (node->value, __rrr_http_field_collection_dump_callback, NULL);
 		}
 		else {

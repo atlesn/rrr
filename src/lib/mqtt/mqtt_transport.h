@@ -35,7 +35,7 @@ struct rrr_net_transport_config;
 struct rrr_mqtt_p;
 
 struct rrr_mqtt_transport {
-	ssize_t max;
+	unsigned int max;
 	uint64_t close_wait_time_usec;
 
 	struct rrr_net_transport *transports[RRR_MQTT_TRANSPORT_MAX];

@@ -335,8 +335,8 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 	EVENT_ADD(cmodule->input_queue_event);
 	EVENT_ACTIVATE(cmodule->input_queue_event);
 
-	uint16_t amount_new = (*amount > 32 ? 32 : *amount);
-	*amount -= amount_new;
+	uint16_t amount_new = (uint16_t) (*amount > 32 ? 32 : *amount);
+	*amount = (uint16_t) (*amount - amount_new);
 
 	int ret = rrr_poll_do_poll_delete (
 			&amount_new,
@@ -344,7 +344,7 @@ static int __rrr_cmodule_helper_event_message_broker_data_available (
 			__rrr_cmodule_helper_poll_callback
 	);
 
-	*amount += amount_new;
+	*amount = (uint16_t) (*amount + amount_new);
 
 	if (RRR_LL_COUNT(&cmodule->input_queue) > 0) {
 		EVENT_ACTIVATE(cmodule->input_queue_event);
@@ -390,8 +390,8 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %i+%lu != %lu\n",
-				callback_data->worker->name, MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
+		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %llu+%llu != %llu\n",
+				callback_data->worker->name, (unsigned long long) MSG_TOTAL_SIZE(msg), (unsigned long long) sizeof(*msg_addr), (unsigned long long) data_size);
 	}
 
 	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);

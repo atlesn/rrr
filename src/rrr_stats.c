@@ -459,7 +459,7 @@ static int __rrr_stats_send_message (
 			(struct rrr_msg *) &message_packed
 	);
 
-	RRR_DBG_3("TX size %lu sticky %i path %s\n",
+	RRR_DBG_3("TX size %" PRIrrrl " sticky %i path %s\n",
 			total_size,
 			RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message),
 			message->path

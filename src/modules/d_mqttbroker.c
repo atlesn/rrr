@@ -374,7 +374,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
 	if (data->do_transport_plain) {
-		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %" PRIrrrbl "\n",
+		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_plain);
 
 		// We're not allowed to pass in TLS parameters when starting plain mode,
@@ -400,7 +400,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	}
 
 	if (data->do_transport_tls) {
-		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %" PRIrrrbl "\n",
+		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %u\n",
 				INSTANCE_D_NAME(thread_data), data->server_port_tls);
 
 		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;

@@ -172,16 +172,14 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			debuglevel_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
-			RRR_MSG_0(
-					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
+			RRR_MSG_0 ("Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 		if (debuglevel_tmp < 0 || debuglevel_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_0(
-					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
-					__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
+			RRR_MSG_0 ("Debuglevel must be 0 <= debuglevel <= %i, %ld was given.\n",
+				__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
 			ret = EXIT_FAILURE;
 			goto out;
 		}
@@ -195,15 +193,13 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 			debuglevel_on_exit_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
-			RRR_MSG_0(
-					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
-					debuglevel_on_exit_string);
+			RRR_MSG_0 ("Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
+				debuglevel_on_exit_string);
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_0(
-					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
+			RRR_MSG_0 ("Debuglevel must be 0 <= debuglevel_on_exit <= %i, %ld was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
 			ret = EXIT_FAILURE;
 			goto out;
@@ -268,7 +264,7 @@ int rrr_main_parse_cmd_arguments_and_env (struct cmd_data *cmd, const char **env
 	);
 
 	// DBG-macros must be used after global debuglevel has been set
-	RRR_DBG_1("Global configuration: d:%u, doe:%u, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
+	RRR_DBG_1("Global configuration: d:%ld, doe:%ld, nwt:%u, ntr:%u, lt:%u, jo:%u\n",
 			debuglevel,
 			debuglevel_on_exit,
 			no_watchdog_timers,
@@ -316,7 +312,8 @@ int rrr_main_print_banner_help_and_version (
 	}
 
 	if (cmd_exists(cmd, "version", 0)) {
-		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
+		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %lli\n",
+			(long long int) RRR_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
 	}
 

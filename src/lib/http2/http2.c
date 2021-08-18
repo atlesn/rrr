@@ -445,7 +445,7 @@ static int __rrr_http2_on_frame_send_callback (
 	(void)(session);
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
+	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %llu\n", frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
 
 	return 0;
 }
@@ -460,7 +460,7 @@ static int __rrr_http2_on_frame_recv_callback (
 	(void)(session);
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 read frame type %" PRIu8 " stream %" PRIi32 " length %lu\n", frame->hd.type, frame->hd.stream_id, frame->hd.length);
+	RRR_DBG_7 ("http2 send frame type %" PRIu8 " stream %" PRIi32 " length %llu\n", frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length);
 
 	if (frame->hd.type == NGHTTP2_PING) {
 		session->last_ping_receive_time = rrr_time_get_64();
@@ -516,8 +516,8 @@ static int __rrr_http2_on_invalid_frame_recv_callback (
 	(void)(session);
 	(void)(nghttp2_session);
 
-	RRR_DBG_7 ("http2 read invalid frame type %" PRIu8 " stream %" PRIi32 " length %lu lib error %s\n",
-			frame->hd.type, frame->hd.stream_id, frame->hd.length, nghttp2_strerror(lib_error_code));
+	RRR_DBG_7 ("http2 read invalid frame type %" PRIu8 " stream %" PRIi32 " length %llu lib error %s\n",
+			frame->hd.type, frame->hd.stream_id, (unsigned long long) frame->hd.length, nghttp2_strerror(lib_error_code));
 
 	return 0;
 }
@@ -1188,7 +1188,7 @@ int rrr_http2_transport_ctx_tick (
 				ret = RRR_HTTP2_HARD_ERROR;
 				goto out;
 			}
-			if (bytes > send_bytes) {
+			if ((rrr_biglength) bytes > send_bytes) {
 				RRR_MSG_0("Value returned from nghttp2_session_mem_recv was too high in rrr_http2_tick, possible bug\n");
 				ret = RRR_HTTP2_HARD_ERROR;
 				goto out;
@@ -1278,11 +1278,11 @@ int rrr_http2_upgrade_request_settings_pack (
 	iv[1].value = NGHTTP2_INITIAL_CONNECTION_WINDOW_SIZE;
 
 	if ((payload_size = nghttp2_pack_settings_payload (payload, sizeof(payload), iv, sizeof(iv) / sizeof(*iv))) <= 0) {
-		RRR_MSG_0("Could not pack SETTINGS packet in rrr_http2_pack_upgrade_request_settings, return was %li\n", payload_size);
+		RRR_MSG_0("Could not pack SETTINGS packet in rrr_http2_pack_upgrade_request_settings, return was %lli\n", (long long int) payload_size);
 		return 1;
 	}
 
-	size_t result_length = 0;
+	rrr_biglength result_length = 0;
 	unsigned char *result = rrr_base64url_encode (
 			(unsigned char *) payload,
 			rrr_length_from_ssize_bug_const(payload_size),

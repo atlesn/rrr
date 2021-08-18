@@ -859,7 +859,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	if (session->session_properties.numbers.maximum_packet_size != 0 &&
 		publish->received_size > (int64_t) session->session_properties.numbers.maximum_packet_size) {
-		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%li>%u\n",
+		RRR_MSG_0("Not forwarding matching PUBLISH to client, packet size exceeds set maximum packet size%" PRIrrrl ">%u\n",
 				publish->received_size, session->session_properties.numbers.maximum_packet_size);
 		return RRR_MQTT_SESSION_OK;
 	}
@@ -2195,7 +2195,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 				NULL,
 				__rrr_mqtt_session_ram_find_qos2_publish_callback,
 				&callback_data,
-				publish->packet_identifier - 1
+				(uint64_t) publish->packet_identifier - 1
 		);
 		if (ret_tmp != 0) {
 			if ((ret_tmp & RRR_FIFO_CALLBACK_ERR) != 0) {

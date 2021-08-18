@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/rrr_endian.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"
+#include "../util/posix.h"
 #include "../helpers/nullsafe_str.h"
 #include "../mqtt/mqtt_topic.h"
 
@@ -84,7 +85,7 @@ int rrr_msg_msg_new_empty (
 		return 1;
 	}
 
-	memset(result, '\0', total_size);
+	rrr_memset(result, '\0', total_size);
 
 	rrr_msg_populate_head (
 			(struct rrr_msg *) result,
@@ -341,7 +342,7 @@ struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
 		return NULL;
 	}
 
-	memset(ret, '\0', new_total_size);
+	rrr_memset(ret, '\0', new_total_size);
 	memcpy(ret, message, sizeof(*ret) - 2);
 
 	ret->topic_length = topic_length;
@@ -408,7 +409,7 @@ int rrr_msg_msg_topic_and_length_get (
 ) {
 	*result = 0;
 
-	if ((*result = rrr_allocate(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
+	if ((*result = rrr_allocate((rrr_biglength) MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_topic_get\n");
 		return 1;
 	}

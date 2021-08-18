@@ -94,8 +94,8 @@ int parse_config (struct socket_data *data, struct rrr_instance_config_data *con
 
 	struct sockaddr_un addr;
 	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
-		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
-				config->name, sizeof(addr.sun_path) - 1);
+		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %llu bytes\n",
+				config->name, (long long unsigned) sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}

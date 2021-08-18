@@ -117,7 +117,7 @@ static char *__rrr_http_header_parse_base64_value_callback (
 		rrr_nullsafe_len len,
 		void *arg
 ) {
-	size_t *result_len = arg;
+	rrr_biglength *result_len = arg;
 	return (char *) rrr_base64_decode (
 			str,
 			len,
@@ -129,7 +129,7 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 	int ret = 0;
 
 	void *base64_data = NULL;
-	size_t base64_len = 0;
+	rrr_biglength base64_len = 0;
 
 	if ((ret = __rrr_http_header_parse_single_string_value(field)) != 0) {
 		goto out;
@@ -157,9 +157,8 @@ static int __rrr_http_header_parse_base64_value (RRR_HTTP_HEADER_FIELD_PARSER_DE
 	}
 
 	rrr_length base64_len_final;
-	if (rrr_length_from_size_t_err (&base64_len_final, base64_len) != 0) {
-		RRR_MSG_0("Base64 decoding failed for field '%s', value too long (%llu>%llu)\n",
-			field->name,
+	if (rrr_length_from_biglength_err (&base64_len_final, base64_len) != 0) {
+		RRR_MSG_0("Base64 decoding failed for a field, value too long (%llu>%llu)\n",
 			(unsigned long long) base64_len,
 			(unsigned long long) RRR_LENGTH_MAX
 		);
@@ -521,7 +520,7 @@ static int __rrr_http_header_field_line_end_find (
     }} while(0)
 
 #define SIZE_CHECK()                                                                      \
-	do {if (end - start_orig > RRR_LENGTH_MAX) {                                      \
+	do {if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {                       \
 		RRR_MSG_0("Data too long while parsing HTTP header fields\n");            \
 		ret = RRR_HTTP_PARSE_SOFT_ERR;                                            \
 		goto out;                                                                 \
@@ -552,7 +551,7 @@ static int __rrr_http_header_field_parse_subvalue (
 
 	// New value always begins with spaces, except for in bad implementations
 	if (!no_whitespace_check) {
-		ssize_t whitespace_count = rrr_http_util_count_whsp(start, end);
+		rrr_length whitespace_count = rrr_http_util_count_whsp(start, end);
 		if (whitespace_count == 0) {
 			// No more values
 			*parsed_bytes = rrr_length_from_ptr_sub_bug_const (start, start_orig);
@@ -984,7 +983,7 @@ static int __rrr_http_header_field_parse_name_and_value_whitespace_check_callbac
 		return RRR_HTTP_PARSE_INCOMPLETE;
 	}
 
-	ssize_t whitespace_count = rrr_http_util_count_whsp(start, crlf);
+	rrr_length whitespace_count = rrr_http_util_count_whsp(start, crlf);
 	if (start + whitespace_count == crlf) {
 		// Continue on next line
 		start = crlf + 2;
@@ -1014,7 +1013,7 @@ int rrr_http_header_field_parse_name_and_value (
 		const char *start_orig,
 		const char *end
 ) {
-	if (end - start_orig > RRR_LENGTH_MAX) {
+	if ((rrr_length) (end - start_orig) > RRR_LENGTH_MAX) {
 		RRR_MSG_0("HTTP header too long to be parsed (%llu>%llu)\n",
 			(unsigned long long) (end - start_orig),
 			(unsigned long long) RRR_LENGTH_MAX

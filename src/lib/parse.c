@@ -128,10 +128,10 @@ int rrr_parse_match_word_case (
 		char c_case = '\0';
 
 		if (c >= 'a' && c <= 'z') {
-			c_case = c - 32;
+			c_case = (char) (c - 32);
 		}
 		else if (c >= 'A' && c <= 'Z') {
-			c_case = c + 32;
+			c_case = (char) (c + 32);
 		}
 
 		if (*word_pos != c && *word_pos != c_case) {

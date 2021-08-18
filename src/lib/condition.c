@@ -141,7 +141,7 @@ int __rrr_condition_shunting_yard_carrier_new (
 	}
 
 	if (value_length > sizeof(result->value) - 1) {
-		RRR_MSG_0("Value in condition was too long, max is %lu bytes\n", sizeof(result->value) - 1);
+		RRR_MSG_0("Value in condition was too long, max is %llu bytes\n", (long long unsigned) sizeof(result->value) - 1);
 		ret = RRR_CONDITION_SOFT_ERROR;
 		goto out_free;
 	}
@@ -675,7 +675,7 @@ static void __rrr_condition_evaluate_op (
 	struct rrr_condition_running_result *result_a = NULL;
 	struct rrr_condition_running_result *result_b = NULL;
 
-	for (ssize_t j = results_pos - 1; j >= 0; j--) {
+	for (rrr_slength j = results_pos - 1; j >= 0; j--) {
 		struct rrr_condition_running_result *result_find = &results[j];
 		if (result_find->is_evaluated) {
 			if (result_b == NULL) {
@@ -767,8 +767,8 @@ static int __rrr_condition_evalute_value (
 			goto out;
 		}
 
-		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%lx%s\n",
-				tag_to_pass, position->result, (position->is_signed ? " (signed)" : ""));
+		RRR_DBG_3("Array tree condition tag name evaluation %s->0x%llx%s\n",
+				tag_to_pass, (long long unsigned) position->result, (position->is_signed ? " (signed)" : ""));
 	}
 	else if (	strlen(position->carrier->value) >= 2 &&
 				rrr_posix_strncasecmp(position->carrier->value, "0x", 2) == 0

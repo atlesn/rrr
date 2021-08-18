@@ -120,19 +120,19 @@ int rrr_serial_speed_set (int fd, unsigned long long speed_bps) {
 	speed_t speed = B0;
 
 	if ((ret = __rrr_serial_speed_convert(&speed, speed_bps)) != 0) {
-		RRR_BUG("Invalid speed %u to rrr_serial_set_speed, caller must check speed with rrr_serial_speed_check first\n", speed_bps);
+		RRR_BUG("Invalid speed %llu to rrr_serial_set_speed, caller must check speed with rrr_serial_speed_check first\n", (long long unsigned) speed_bps);
 	}
 
 	if (cfsetospeed (&termios_p, speed) != 0) {
-		RRR_MSG_0("cfsetospeed on fd %i failed, speed was %u: %s\n",
-				fd, speed_bps, rrr_strerror(errno));
+		RRR_MSG_0("cfsetospeed on fd %i failed, speed was %llu: %s\n",
+				fd, (long long unsigned) speed_bps, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	if (cfsetispeed (&termios_p, speed) != 0) {
-		RRR_MSG_0("cfsetispeed on fd %i failed, speed was %u: %s\n",
-				fd, speed_bps, rrr_strerror(errno));
+		RRR_MSG_0("cfsetispeed on fd %i failed, speed was %llu: %s\n",
+				fd, (long long unsigned) speed_bps, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}

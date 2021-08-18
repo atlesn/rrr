@@ -51,7 +51,7 @@ void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool) {
 
 static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, rrr_length steps) {
 	rrr_length new_majors = pool->allocated_majors + steps;
-	if (new_majors > (ssize_t) RRR_MQTT_ID_POOL_SIZE_IN_32) {
+	if (new_majors > RRR_MQTT_ID_POOL_SIZE_IN_32) {
 		return 1;
 	}
 
@@ -63,7 +63,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, rrr_
 		return 1;
 	}
 
-	for (ssize_t i = pool->allocated_majors; i < new_majors; i++) {
+	for (rrr_length i = pool->allocated_majors; i < new_majors; i++) {
 		new_pool[i] = 0;
 	}
 
@@ -81,8 +81,8 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 	uint32_t tmp = *source;
 	for (uint16_t i = 0; i < 32; i++) {
 		if ((tmp & 1) == 0) {
-			*source |= 1 << i;
-			return i + 1;
+			*source |= (uint32_t) (1 << i);
+			return (uint16_t) (i + 1);
 		}
 		tmp >>= 1;
 	}
@@ -94,7 +94,7 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 
 #define MIN_MAJ_MASK(id)                                                \
 		uint32_t min = (uint32_t) ((id - 1) % 32);              \
-		rrr_length maj = (rrr_length) ((id - 1 - min) / 32);    \
+		rrr_length maj = (rrr_length) ((rrr_length) ((rrr_slength) id - 1 - min) / 32);    \
 		uint32_t mask = (uint32_t) (1 << min)
 
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
@@ -106,7 +106,7 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	}
 	MIN_MAJ_MASK(ret);
 
-	RRR_DBG_3("Get ID, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+	RRR_DBG_3("Get ID, min %" PRIu32 ", maj %" PRIrrrl ", mask %" PRIu32 ", size %" PRIrrrl ", pool block %" PRIu32 "\n",
 			min,
 			maj,
 			mask,
@@ -148,7 +148,7 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 	MIN_MAJ_MASK(id);
 
-	RRR_DBG_3("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+	RRR_DBG_3("Release ID %u, min %" PRIu32 ", maj %" PRIrrrl ", mask %" PRIu32 ", size %" PRIrrrl ", pool block %" PRIu32 "\n",
 			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
 
 	if (maj >= pool->allocated_majors) {

@@ -340,10 +340,10 @@ static void __rrr_udpstream_frame_packed_dump (
 		const struct rrr_udpstream_frame_packed *frame
 ) {
 	struct rrr_string_builder string_builder = {0};
-	RRR_DBG ("-- UDP-stream packed frame size %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("-- UDP-stream packed frame size %llu\n", (unsigned long long) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Header CRC32 : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame));
 	RRR_DBG ("Data CRC32   : %" PRIu32 "\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame));
-	RRR_DBG ("Total size   : %lu\n", RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
+	RRR_DBG ("Total size   : %llu\n", (unsigned long long) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame));
 	RRR_DBG ("Data size    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame));
 	RRR_DBG ("Flags        : %u\n", RRR_UDPSTREAM_FRAME_FLAGS(frame));
 	RRR_DBG ("Type         : %u\n", RRR_UDPSTREAM_FRAME_TYPE(frame));
@@ -780,7 +780,8 @@ static int __rrr_udpstream_read_get_target_size (
 	rrr_biglength total_size = RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame);
 
 	if (RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) {
-		RRR_MSG_0("UDP-stream received data size exceeded maximum (%li > %i)\n", total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
+		RRR_MSG_0("UDP-stream received data size exceeded maximum (%" PRIrrrbl " > %i)\n",
+			total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
