@@ -65,6 +65,12 @@ The `.md` files contain the examples, and the source scripts and configuration f
 
 ## NEWS
 
+### v1.19
+- New module **cacher** to store messages for later use
+
+### v1.17
+- True event driven modules for reduced latency
+
 ### v1.16
 - Support for **HTTP/2** in both the RRR HTTP server and client.
 - Improved and simplified backend handling of HTTP requests
@@ -115,21 +121,28 @@ forking the GitHub repository.
 
 Some systems have customized branches, choose one of the following if appropriate:
 
+	$ git checkout debian-buster
+	$ git checkout voidlinux
+	$ git checkout alpine
 	$ git checkout freebsd
-	$ git checkout ubuntu
+	$ git checkout ubuntu (Current LTS release)
+	$ git checkout ubuntu-hirsute
 
 The RRR source tree contains packages for Debian-based systems, RedHat-based systems and ArchLinux.
 
 See the *COMPILE* section below for further information.
 
-#### Pre-compiled package for Debian Buster amd64/i386/armhf using APT
+#### Pre-compiled package for Debian Bullseye amd64/armhf using APT
 
 	$ su -
 	# apt install curl gnupg
 	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
-	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# curl -s https://apt.goliathdns.no/debian/bullseye.list > /etc/apt/sources.list.d/goliathdns.list
 	# apt update
 	# apt install rrr
+
+To use Debian Buster, replace "bullseye.list" with "buster.list".
+The i386 platform is available for Buster.
 
 #### Pre-compiled package for Ubuntu Focal amd64 using APT
 
@@ -137,6 +150,8 @@ See the *COMPILE* section below for further information.
 	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
 	$ sudo apt update
 	$ sudo apt install rrr
+
+To use Ubuntu Hirsute, replace "focal.list" with "hirsute.list".
 
 #### Pre-compiled Fedora package using yum
 
@@ -166,20 +181,6 @@ on the Ubuntu branch (`git checkout ubuntu`).
 
 Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
 built from the `debian-testing` branch.
-
-#### Pre-compiled development packages for Debian Buster using APT
-
-	$ su -
-	# apt install curl gnupg
-	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
-	# curl -s https://apt.goliathdns.no/debian-dev/buster.list > /etc/apt/sources.list.d/goliathdns-dev.list
-	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
-	# apt update
-	# apt install rrr
-
-The development version contains the latest functionallity. Packages are built when new functionallity is considered OK to use.
-
-Not all platforms are guaranteed to be built every time. The commands above will also add the default mirror which ensures updates when a new full release is made.
 
 ### COMPILE
 
