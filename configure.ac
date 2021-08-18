@@ -85,7 +85,7 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-# RRR_DEVELOPMENT_WARNINGS="-Wconversion"
+RRR_DEVELOPMENT_WARNINGS="-Wconversion"
 
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration $RRR_DEVELOPMENT_WARNINGS -D_XOPEN_SOURCE=700"
 AM_LDFLAGS=""
