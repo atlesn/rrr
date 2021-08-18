@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/condition.h"
 #include "../lib/array_tree.h"
 #include "../lib/parse.h"
@@ -36,7 +37,7 @@ do {if (tree != NULL) {				\
 }} while(0)
 
 #define TREE_INTERPRET(name)																								\
-	do {if (rrr_array_tree_interpret_raw(&tree, name, strlen(name), RRR_QUOTE(name))) {	\
+	do {if (rrr_array_tree_interpret_raw(&tree, name, (rrr_length) strlen(name), RRR_QUOTE(name))) {	\
 		TEST_MSG("Array tree parsing failed\n");																			\
 		ret |= 1;																											\
 	}}while(0)
@@ -48,7 +49,7 @@ static int __rrr_test_condition_parsing (void) {
 		struct rrr_condition condition = {0};
 
 		static const char *condition_a = "(1 & {tag} OR 2 == 2 AND (3 == 3 OR 3 & 0x1))";
-		if (rrr_condition_interpret_raw(&condition, condition_a, strlen(condition_a))) {
+		if (rrr_condition_interpret_raw(&condition, condition_a, (rrr_length) strlen(condition_a))) {
 			TEST_MSG("Condition parse test failed for expression '%s'\n", condition_a);
 			ret |= 1;
 		}
@@ -94,12 +95,12 @@ static int __rrr_test_condition_parsing (void) {
 static int __rrr_test_condition_misc_values_import (
 		struct rrr_array_tree *definition,
 		const char *input,
-		ssize_t input_length,
+		rrr_length input_length,
 		int (*callback)(struct rrr_array *array, void *arg)
 ) {
 	int ret = 0;
 
-	ssize_t parsed_bytes;
+	rrr_length parsed_bytes;
 	int ret_tmp;
 	if ((ret_tmp = rrr_array_tree_import_from_buffer (
 			&parsed_bytes,

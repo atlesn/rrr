@@ -22,8 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_H
 #define RRR_SOCKET_H
 
-#include "../../../config.h"
-
 // Allow SOCK_NONBLOCK on BSD
 #define __BSD_VISIBLE 1
 #include <sys/socket.h>
@@ -99,9 +97,18 @@ int rrr_socket_open (
 		const char *creator,
 		int register_for_unlink
 );
+int rrr_socket_open_and_read_file_head (
+		char **result,
+		rrr_biglength *result_bytes,
+		rrr_biglength *file_size,
+		const char *filename,
+		int options,
+		int mode,
+		rrr_biglength bytes
+);
 int rrr_socket_open_and_read_file (
 		char **result,
-		ssize_t *result_bytes,
+		rrr_biglength *result_bytes,
 		const char *filename,
 		int options,
 		int mode
@@ -169,46 +176,38 @@ int rrr_socket_unix_connect (
 );
 int rrr_socket_sendto_nonblock (
 		int *err,
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size_big,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_sendto_nonblock_check_retry (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength send_size,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
 int rrr_socket_send_nonblock_check_retry (
-		ssize_t *written_bytes,
+		rrr_biglength *written_bytes,
 		int fd,
 		const void *data,
-		ssize_t size
+		rrr_biglength send_size
 );
 int rrr_socket_sendto_blocking (
 		int fd,
 		const void *data,
-		ssize_t size,
+		rrr_biglength size,
 		struct sockaddr *addr,
 		socklen_t addr_len
-);
-int rrr_socket_sendto_nonblock_fail_on_partial_write (
-		int *err,
-		int fd,
-		void *data,
-		ssize_t data_size,
-		const struct sockaddr *sockaddr,
-		socklen_t addrlen
 );
 int rrr_socket_send_blocking (
 		int fd,
 		void *data,
-		ssize_t size
+		rrr_biglength send_size
 );
 int rrr_socket_check_alive (int fd);
 

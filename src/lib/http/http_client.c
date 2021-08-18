@@ -23,8 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
-#include "../../../config.h"
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_client.h"
 #include "http_common.h"
@@ -52,6 +52,7 @@ struct rrr_http_client {
 	struct rrr_event_queue *events;
 
 	uint64_t idle_timeout_ms;
+	rrr_length send_chunk_count_limit;
 
 	struct rrr_net_transport *transport_keepalive_plain;
 	struct rrr_net_transport *transport_keepalive_tls;
@@ -65,11 +66,12 @@ int rrr_http_client_new (
 		struct rrr_http_client **target,
 		struct rrr_event_queue *events,
 		uint64_t idle_timeout_ms,
+		rrr_length send_chunk_count_limit,
 		const struct rrr_http_client_callbacks *callbacks
 ) {
 	int ret = 0;
 
-	struct rrr_http_client *client = malloc(sizeof(*client));
+	struct rrr_http_client *client = rrr_allocate(sizeof(*client));
 
 	if (client == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_client_new\n");
@@ -82,6 +84,7 @@ int rrr_http_client_new (
 	client->events = events;
 	client->idle_timeout_ms = idle_timeout_ms;
 	client->callbacks = *callbacks;
+	client->send_chunk_count_limit = send_chunk_count_limit;
 
 	*target = client;
 
@@ -102,7 +105,7 @@ void rrr_http_client_destroy (
 		rrr_net_transport_destroy(client->transport_keepalive_tls);
 	}
 	rrr_http_redirect_collection_clear(&client->redirects);
-	free(client);
+	rrr_free(client);
 }
 
 static int __rrr_http_client_active_transaction_count_get_callback (
@@ -112,7 +115,7 @@ static int __rrr_http_client_active_transaction_count_get_callback (
 	uint64_t *result_accumulator = arg;
 
 	if (RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle) != NULL) {
-		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get(handle);
+		*result_accumulator += rrr_http_session_transport_ctx_active_transaction_count_get_and_maintain(handle);
 	}
 
 	return 0;
@@ -141,7 +144,7 @@ uint64_t rrr_http_client_active_transaction_count_get (
 		);
 	}
 
-	return result_accumulator + RRR_LL_COUNT(&http_client->redirects);;
+	return result_accumulator + (unsigned long) RRR_LL_COUNT(&http_client->redirects);;
 }
 
 static int __rrr_http_client_websocket_response_available_notify_callback (
@@ -197,7 +200,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (server != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->server);
-		if ((data->server = strdup(server)) == NULL) {
+		if ((data->server = rrr_strdup(server)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for server in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -206,7 +209,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (endpoint != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
-		if ((data->endpoint = strdup(endpoint)) == NULL) {
+		if ((data->endpoint = rrr_strdup(endpoint)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -215,7 +218,7 @@ static int __rrr_http_client_request_data_strings_reset (
 
 	if (user_agent != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->user_agent);
-		if ((data->user_agent = strdup(user_agent)) == NULL) {
+		if ((data->user_agent = rrr_strdup(user_agent)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for user_agent in __rrr_http_client_request_data_strings_reset\n");
 			ret = 1;
 			goto out;
@@ -253,6 +256,7 @@ int rrr_http_client_request_data_reset (
 		enum rrr_http_method method,
 		enum rrr_http_body_format body_format,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		int do_plain_http2,
 		const char *user_agent
 ) {
@@ -265,6 +269,7 @@ int rrr_http_client_request_data_reset (
 	data->method = method;
 	data->body_format = body_format;
 	data->upgrade_mode = upgrade_mode;
+	data->protocol_version = protocol_version;
 	data->transport_force = transport_force;
 	data->do_plain_http2 = do_plain_http2;
 
@@ -290,8 +295,8 @@ int rrr_http_client_request_data_reset_from_config (
 		RRR_BUG("BUG: Concurrent connection parameter out of range in rrr_http_client_request_data_reset_from_config\n");
 	}
 
-	data->http_port = config->server_port;
-	data->concurrent_connections = config->concurrent_connections;
+	data->http_port = rrr_u16_from_biglength_bug_const(config->server_port);
+	data->concurrent_connections = rrr_u16_from_biglength_bug_const(config->concurrent_connections);
 
 	out:
 	return ret;
@@ -369,7 +374,17 @@ static int __rrr_http_client_chunks_iterate_callback (
 	(void)(chunk_total);
 	(void)(chunk_idx);
 
-	return rrr_nullsafe_str_append_raw(chunks_merged, data_start, chunk_data_size);
+	if (chunk_data_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Chunk too large in HTTP client (%" PRIrrrbl ">%llu)\n",
+			chunk_data_size, (unsigned long long) RRR_LENGTH_MAX);
+		return RRR_HTTP_SOFT_ERROR;
+	}
+
+	return rrr_nullsafe_str_append_raw (
+			chunks_merged,
+			data_start,
+			rrr_length_from_biglength_bug_const(chunk_data_size)
+	);
 }
 
 static int __rrr_http_client_receive_http_part_callback (
@@ -379,7 +394,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	(void)(handle);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 
 	int ret = RRR_HTTP_OK;
 
@@ -441,6 +456,23 @@ static int __rrr_http_client_receive_http_part_callback (
 	return ret;
 }
 
+static int __rrr_http_client_request_failure_callback (
+		RRR_HTTP_SESSION_FAILURE_CALLBACK_ARGS
+) {
+	struct rrr_http_client *http_client = arg;
+
+	(void)(handle);
+
+	return http_client->callbacks.failure_callback != NULL
+		? http_client->callbacks.failure_callback (
+				transaction,
+				error_msg,
+				http_client->callbacks.failure_callback_arg
+		)
+		: 0
+	;
+}
+
 static int __rrr_http_client_websocket_handshake_callback (
 		RRR_HTTP_SESSION_WEBSOCKET_HANDSHAKE_CALLBACK_ARGS
 ) {
@@ -449,7 +481,7 @@ static int __rrr_http_client_websocket_handshake_callback (
 	(void)(transaction);
 	(void)(data_ptr);
 	(void)(overshoot_bytes);
-	(void)(next_protocol_version);
+	(void)(next_application_type);
 	(void)(application_topic);
 
 	int ret = 0;
@@ -524,11 +556,16 @@ static int __rrr_http_client_redirect_callback (
 static int __rrr_http_client_read_callback (
 		RRR_NET_TRANSPORT_READ_CALLBACK_FINAL_ARGS
 ) {
-	struct rrr_http_client *http_client = arg;
-
+	struct rrr_http_client *http_client = arg
+;
 	int ret = 0;
+	int ret_done = 0;
 
-	ssize_t received_bytes_dummy = 0;
+	rrr_biglength received_bytes_dummy = 0;
+
+	int again_max = 5;
+
+	again:
 
 	if ((ret = rrr_http_session_transport_ctx_tick_client (
 			&received_bytes_dummy,
@@ -538,12 +575,19 @@ static int __rrr_http_client_read_callback (
 			NULL,
 			__rrr_http_client_receive_http_part_callback,
 			http_client,
+			__rrr_http_client_request_failure_callback,
+			http_client,
 			http_client->callbacks.get_response_callback,
 			http_client->callbacks.get_response_callback_arg,
 			http_client->callbacks.frame_callback,
 			http_client->callbacks.frame_callback_arg
 	)) != 0) {
-		goto out;
+		if (ret == RRR_HTTP_DONE) {
+			ret_done = RRR_HTTP_DONE;
+		}
+		else {
+			goto out;
+		}
 	}
 
 	struct rrr_http_client_redirect_callback_data redirect_callback_data = {
@@ -560,11 +604,16 @@ static int __rrr_http_client_read_callback (
 	}
 
 	if (rrr_http_session_transport_ctx_need_tick(handle) || RRR_LL_COUNT(&http_client->redirects) > 0) {
+		// This usually only happens at most one time unless there is some error condition,
+		// after which we break out after a few rounds.
+		if (again_max--) {
+			goto again;
+		}
 		rrr_net_transport_ctx_notify_read(handle);
 	}
 
 	out:
-	return ret;
+	return ret != 0 ? ret : ret_done;
 }
 
 static int __rrr_http_client_request_send_final_transport_ctx_callback (
@@ -581,11 +630,18 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 
 	struct rrr_http_application *upgraded_app = NULL;
 
+	enum rrr_http_version protocol_version = callback_data->data->protocol_version;
 	enum rrr_http_upgrade_mode upgrade_mode = callback_data->data->upgrade_mode;
 
 	// Upgrade to HTTP2 only possibly with GET requests in plain mode or with all request methods in TLS mode
 	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_HTTP2 && callback_data->data->method != RRR_HTTP_METHOD_GET && !rrr_net_transport_ctx_is_tls(handle)) {
 		upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
+	}
+
+	// Usage of HTTP/1.0 causes connection closure after response, don't use while upgrading. The
+	// protocol version is ignored when HTTP/2 is used.
+	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE && protocol_version == RRR_HTTP_VERSION_10) {
+		protocol_version = RRR_HTTP_VERSION_11;
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_client_new_or_clean (
@@ -641,7 +697,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 		else {
 			RRR_FREE_IF_NOT_NULL(endpoint_to_free);
-			if ((endpoint_to_free = strdup("/")) == NULL) {
+			if ((endpoint_to_free = rrr_strdup("/")) == NULL) {
 				RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_request_send_callback\n");
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
@@ -667,7 +723,7 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 		}
 	}
 	else {
-		if ((endpoint_and_query_to_free = strdup(endpoint_to_use)) == NULL) {
+		if ((endpoint_and_query_to_free = rrr_strdup(endpoint_to_use)) == NULL) {
 			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_request_send_callback\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
@@ -689,9 +745,12 @@ static int __rrr_http_client_request_send_final_transport_ctx_callback (
 			handle,
 			callback_data->request_header_host,
 			callback_data->transaction,
-			upgrade_mode
+			upgrade_mode,
+			protocol_version
 	)) != 0) {
-		RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		if (ret != RRR_HTTP_BUSY) {
+			RRR_MSG_0("Could not send request in __rrr_http_client_request_send_callback, return was %i\n", ret);
+		}
 		goto out;
 	}
 
@@ -730,7 +789,7 @@ uint64_t __rrr_http_client_request_send_net_transport_match_data_make (
 		const uint16_t port,
 		const uint16_t index
 ) {
-	return (port << 16 ) | index;
+	return (uint64_t) ((port << 16 ) | index);
 }
 
 static int __rrr_http_client_request_send_intermediate_connect (
@@ -745,7 +804,7 @@ static int __rrr_http_client_request_send_intermediate_connect (
 	do {
 		const uint64_t match_data = __rrr_http_client_request_send_net_transport_match_data_make(port_to_use, concurrent_index);
 	
-		int keepalive_handle = rrr_net_transport_handle_get_by_match (
+		rrr_net_transport_handle keepalive_handle = rrr_net_transport_handle_get_by_match (
 				transport_keepalive,
 				server_to_use,
 				match_data
@@ -776,6 +835,9 @@ static int __rrr_http_client_request_send_intermediate_connect (
 			}
 
 		}
+
+		// Make sure connection does not time out just after request has been sent
+		rrr_net_transport_handle_touch(transport_keepalive, keepalive_handle);
 
 		if ((ret = rrr_net_transport_check_handshake_complete(transport_keepalive, keepalive_handle)) != 0) {
 			goto out;
@@ -823,24 +885,6 @@ static int __rrr_http_client_request_send_transport_keepalive_select (
 	return ret;
 }
 
-static int __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-		struct rrr_http_client *http_client,
-		struct rrr_net_transport *transport
-) {
-	return rrr_net_transport_event_setup (
-			transport,
-			0,
-			0,
-			http_client->idle_timeout_ms,
-			NULL,
-			NULL,
-			NULL,
-			NULL,
-			__rrr_http_client_read_callback,
-			http_client
-	);
-}
-
 static int __rrr_http_client_request_send_transport_keepalive_ensure (
 		struct rrr_http_client *http_client,
 		const struct rrr_net_transport_config *net_transport_config,
@@ -872,17 +916,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				tls_flags,
 				http_client->events,
 				alpn_protos,
-				alpn_protos_length
+				alpn_protos_length,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create TLS transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_tls
-		)) != 0) {
 			goto out;
 		}
 	}
@@ -907,17 +954,20 @@ static int __rrr_http_client_request_send_transport_keepalive_ensure (
 				0,
 				http_client->events,
 				NULL,
-				0
+				0,
+				0,
+				0,
+				http_client->idle_timeout_ms,
+				http_client->send_chunk_count_limit,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				__rrr_http_client_read_callback,
+				http_client
 		) != 0) {
 			RRR_MSG_0("Could not create plain transport in __rrr_http_client_request_send_transport_keepalive_ensure\n");
 			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		if ((ret = __rrr_http_client_request_send_transport_keepalive_ensure_event_setup (
-				http_client,
-				http_client->transport_keepalive_plain
-		)) != 0) {
 			goto out;
 		}
 	}
@@ -1034,6 +1084,11 @@ int rrr_http_client_request_send (
 	if (data->do_plain_http2 && transport_code != RRR_HTTP_TRANSPORT_HTTPS) {
 		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
 	}
+
+	// Must try HTTP2 first because ALPN upgrade is always sent, downgrade to HTTP/1.1 will occur if negotiation fails
+	if (data->upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE && transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
+		callback_data.application_type = RRR_HTTP_APPLICATION_HTTP2;
+	}
 #endif /* RRR_WITH_NGHTTP2 */
 
 	if (method_prepare_callback != NULL) {
@@ -1048,13 +1103,14 @@ int rrr_http_client_request_send (
 		}
 	}
 
-	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' upgrade mode '%s'\n",
+	RRR_DBG_3("HTTP client request using server %s port %u transport %s method '%s' format '%s' application '%s' version '%s' upgrade mode '%s'\n",
 			server_to_use,
 			port_to_use,
 			RRR_HTTP_TRANSPORT_TO_STR(transport_code),
 			RRR_HTTP_METHOD_TO_STR(transaction->method),
 			RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format),
 			RRR_HTTP_APPLICATION_TO_STR(callback_data.application_type),
+			RRR_HTTP_VERSION_TO_STR(data->protocol_version),
 			RRR_HTTP_UPGRADE_MODE_TO_STR(data->upgrade_mode)
 	);
 

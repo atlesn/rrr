@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "json.h"
 #include "../array.h"
 #include "../fixed_point.h"
@@ -73,16 +74,8 @@ static int __rrr_json_to_array_recurse_object (
 
 			RRR_DBG_3("        => STRING %s\n", value);
 
-			// Note : Zero length strings not possible in RRR arrays
-			if (*value == '\0') {
-				if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, key, 0)) != 0) {
-					goto out;
-				}
-			}
-			else {
-				if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
-					goto out;
-				}
+			if ((ret = rrr_array_push_value_str_with_tag(&array_tmp, key, value)) != 0) {
+				goto out;
 			}
 		}
 		else if (type == json_type_int) {
@@ -116,12 +109,12 @@ static int __rrr_json_to_array_recurse_object (
 			RRR_DBG_3("        => BOOL %s\n", (value ? "TRUE" : "FALSE"));
 
 			// Note : unsigned is used for bools
-			if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, key, value)) != 0) {
+			if ((ret = rrr_array_push_value_u64_with_tag(&array_tmp, key, value != 0)) != 0) {
 				goto out;
 			}
 		}
 		else if (type == json_type_null) {
-			RRR_DBG_3("        => NULL\n", cur_level, max_levels);
+			RRR_DBG_3("        => NULL\n");
 
 			if ((ret = rrr_array_push_value_vain_with_tag(&array_tmp, key)) != 0) {
 				goto out;
@@ -166,10 +159,15 @@ static int __rrr_json_to_array_recurse (
 	const enum json_type type = json_object_get_type(object);
 
 	if (type == json_type_array) {
-		const size_t length = json_object_array_length(object);
-		for (size_t i = 0; i <  length; i++) {
+		// Function might have int return value in old version of library
+		size_t length = (size_t) json_object_array_length(object);
+		for (size_t i = 0; i < length; i++) {
 			RRR_DBG_3("[%i/%i] JSON ARRAY IDX %llu\n", cur_level, max_levels, (long long unsigned) i);
 			if ((ret = __rrr_json_to_array_recurse (
+					// This call produces a warning with old version of library as the
+					// index argument is of type int. The loop will in this situation never
+					// count past INT_MAX as the max length is derived from a function
+					// which also returns int event though we cast it to size_t.
 					json_object_array_get_idx(object, i),
 					max_levels,
 					cur_level + 1,
@@ -209,7 +207,7 @@ static int __rrr_json_to_array_recurse (
  * will not have any information about it's child or vice versa. */
 int rrr_json_to_arrays (
 		const char *data,
-		size_t data_size,
+		rrr_length data_size,
 		const int max_levels,
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
@@ -219,13 +217,20 @@ int rrr_json_to_arrays (
 	json_tokener *tokener = NULL;
 	json_object *object = NULL;
 
+	if (sizeof(rrr_length) >= sizeof(int) && data_size > INT_MAX) {
+		RRR_MSG_0("Input data too long while parsing JSON (%" PRIrrrl ">%i)\n",
+			data_size, INT_MAX);
+		ret = RRR_JSON_PARSE_ERROR;
+		goto out;
+	}
+
 	if ((tokener = json_tokener_new()) == NULL) {
 		RRR_MSG_0("Could not allocate tokener in rrr_json_to_array\n");
 		ret = RRR_JSON_HARD_ERROR;
 		goto out;
 	}
 
-	if ((object = json_tokener_parse_ex(tokener, data, data_size)) == NULL) {
+	if ((object = json_tokener_parse_ex(tokener, data, (int) data_size)) == NULL) {
 		enum json_tokener_error err = json_tokener_get_error(tokener);
 		if (err == json_tokener_continue) {
 			ret = RRR_JSON_PARSE_INCOMPLETE;
@@ -291,13 +296,19 @@ static int __rrr_json_type_to_object (
 					object_new = json_object_new_string(buf);
 				}
 				else {
-					object_new = json_object_new_int64(value_64);
+					object_new = json_object_new_int64((int64_t) value_64);
 				}
 #endif
 			}
 		}
 		else {
-			object_new = json_object_new_string_len(value->data, value->total_stored_length);
+			if (value->total_stored_length > INT_MAX) {
+				RRR_MSG_0("Cannot convery array value to JSON string, data too long (%llu>%llu)\n",
+					(unsigned long long) value->total_stored_length, (unsigned long long) INT_MAX);
+				ret = 1;
+				goto out;
+			}
+			object_new = json_object_new_string_len(value->data, (int) value->total_stored_length);
 		}
 
 		if (object_new == NULL) {
@@ -326,7 +337,8 @@ static int __rrr_json_object_add (
 	json_object_object_add(target, key, *value);
 #else
 	if ((ret = json_object_object_add(target, key, *value)) != 0) {
-		RRR_MSG_0("Failed to add value to JSON object in __rrr_json_object_add: %s\n", json_tokener_error_desc(ret));
+		RRR_MSG_0("Failed to add value to JSON object in __rrr_json_object_add: %s\n",
+			json_tokener_error_desc((enum json_tokener_error) ret));
 		ret = 1;
 		goto out;
 	}
@@ -337,7 +349,9 @@ static int __rrr_json_object_add (
 		RRR_DBG_3("Note: Overwrote already existing value '%s' in JSON object\n", key);
 	}
 
+#ifndef RRR_HAVE_JSONC_OBJECT_ADD_VOID
 	out:
+#endif
 	return ret;
 }
 
@@ -348,7 +362,8 @@ static int __rrr_json_array_add (
 	int ret = 0;
 
 	if ((ret = json_object_array_add(target, *value)) != 0) {
-		RRR_MSG_0("Failed to add value to JSON array in __rrr_json_array_add: %s\n", json_tokener_error_desc(ret));
+		RRR_MSG_0("Failed to add value to JSON array in __rrr_json_array_add: %s\n",
+			json_tokener_error_desc((enum json_tokener_error) ret));
 		ret = 1;
 		goto out;
 	}
@@ -375,7 +390,7 @@ static int __rrr_json_from_array_callback (
 	char *tag_tmp = NULL;
 	json_object *object_new = NULL;
 
-	if ((tag_tmp = malloc(node_orig->tag_length + 1)) == NULL) {
+	if ((tag_tmp = rrr_allocate(node_orig->tag_length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_json_from_array_callback\n");
 		ret = 1;
 		goto out;
@@ -459,7 +474,7 @@ int rrr_json_from_array (
 
 	const char *json_str = json_object_to_json_string_ext(base, JSON_C_TO_STRING_PLAIN);
 
-	if ((*target = strdup(json_str)) == NULL) {
+	if ((*target = rrr_strdup(json_str)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_json_from_array\n");
 		ret = 1;
 		goto out;

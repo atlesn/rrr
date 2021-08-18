@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_module_common.h"
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../type.h"
 #include "../util/linked_list.h"
 
@@ -80,21 +81,21 @@ void rrr_python3_array_value_set_list (struct rrr_python3_array_value_data *node
 }
 
 static int __rrr_python3_array_value_set_type (struct rrr_python3_array_value_data *data, long int id) {
-	if (id < 0) {
-		RRR_MSG_0("Negative integer provided to rrr_array_value.set_type()\n");
+	if (id < 0 || id > 255) {
+		RRR_MSG_0("Negative or out of range integer provided to rrr_array_value.set_type()\n");
 		return 1;
 	}
 
 	if (id > 0) {
 		// Note : It is possible to set other types than those provided in the constants
-		const struct rrr_type_definition *type_def = rrr_type_get_from_id (id);
+		const struct rrr_type_definition *type_def = rrr_type_get_from_id ((uint8_t) id);
 		if (type_def == NULL) {
 			RRR_MSG_0("Invalid type ID provided to rrr_array_value.set_type(), please utilize the constants provided in the object\n");
 			return 1;
 		}
 	}
 
-	data->type_orig = id;
+	data->type_orig = (uint8_t) id;
 
 	return 0;
 }
@@ -545,7 +546,7 @@ int rrr_python3_array_iterate (
 
 static struct rrr_python3_array_value_data *__rrr_python3_array_get_node_by_index (
 		struct rrr_python3_array_data *data,
-		int index
+		Py_ssize_t index
 ) {
 	return (struct rrr_python3_array_value_data *) PyList_GetItem(data->list, index);
 }
@@ -825,7 +826,7 @@ PyTypeObject rrr_python3_array_type = {
 };
 
 
-int rrr_python3_array_count (struct rrr_python3_array_data *data) {
+Py_ssize_t rrr_python3_array_count (struct rrr_python3_array_data *data) {
 	return PyList_GET_SIZE(data->list);
 }
 

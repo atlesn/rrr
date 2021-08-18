@@ -22,8 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_ARRAY_TREE_H
 #define RRR_ARRAY_TREE_H
 
-#include <stdio.h>
-
 #include "array.h"
 #include "util/linked_list.h"
 #include "type.h"
@@ -96,7 +94,7 @@ int rrr_array_tree_interpret (
 int rrr_array_tree_interpret_raw (
 		struct rrr_array_tree **target,
 		const char *data,
-		int data_length,
+		rrr_length data_length,
 		const char *name
 );
 void rrr_array_tree_dump (
@@ -104,19 +102,19 @@ void rrr_array_tree_dump (
 );
 int rrr_array_tree_get_import_length_from_buffer (
 		struct rrr_array *final_array,
-		ssize_t *import_length,
+		rrr_length *import_length,
 		const struct rrr_array_tree *tree,
 		const char *buf,
-		ssize_t buf_length
+		rrr_length buf_length
 );
 int rrr_array_tree_clone_without_data (
 		struct rrr_array_tree **target,
 		const struct rrr_array_tree *source
 );
 int rrr_array_tree_import_from_buffer (
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *buf,
-		ssize_t buf_len,
+		rrr_length buf_len,
 		const struct rrr_array_tree *tree,
 		int (*callback)(struct rrr_array *array, void *arg),
 		void *callback_arg

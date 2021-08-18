@@ -27,7 +27,7 @@ my $id = 0;
 sub source {
 	my $message = shift;
 
-	if ($id > 200) {
+	if ($id > 20) {
 		return 1;
 	}
 

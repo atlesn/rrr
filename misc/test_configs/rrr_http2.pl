@@ -3,6 +3,7 @@
 package main;
 
 use Socket qw(:DEFAULT :crlf inet_ntop);
+use Time::HiRes qw(usleep nanosleep);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;

@@ -19,8 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../../../config.h"
-
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -28,9 +26,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "../rrr_strerror.h"
 #include "rrr_socket_eventfd.h"
 #include "rrr_socket.h"
+
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+#	include <sys/mman.h>
+#	include "../util/posix.h"
+#endif
 
 #ifdef RRR_HAVE_EVENTFD
 #	include <sys/eventfd.h>
@@ -39,6 +43,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_socket_eventfd_cleanup (
 		struct rrr_socket_eventfd *eventfd
 ) {
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	if (eventfd->lock != NULL) {
+		pthread_mutex_destroy(eventfd->lock);
+		munmap(eventfd->lock, sizeof(*eventfd->lock));
+	}
+	if (eventfd->count != NULL) {
+		munmap(eventfd->count, sizeof(*eventfd->count));
+	}
+#endif
 #ifdef RRR_HAVE_EVENTFD
 	if (eventfd->fd > 0) {
 		rrr_socket_close(eventfd->fd);
@@ -81,6 +94,12 @@ int rrr_socket_eventfd_init (
 	memcpy(eventfd->fds, fds, sizeof(fds));
 #endif
 
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	eventfd->lock = rrr_posix_mmap(sizeof(*eventfd->lock), 1);
+	eventfd->count = rrr_posix_mmap(sizeof(*eventfd->count), 1);
+	rrr_posix_mutex_init (eventfd->lock, RRR_POSIX_MUTEX_IS_PSHARED);
+#endif
+
 	out:
 	return ret;
 }
@@ -110,16 +129,21 @@ static int __rrr_socket_eventfd_notify (
 
 int rrr_socket_eventfd_write (
 		struct rrr_socket_eventfd *eventfd,
-		uint64_t count
+		uint8_t count
 ) {
 	int ret = RRR_SOCKET_OK;
+
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	pthread_mutex_lock(eventfd->lock);
+#endif
 
 	if (!RRR_SOCKET_EVENTFD_INITIALIZED(eventfd)) {
 		RRR_BUG("BUG: Not initialized in rrr_socket_eventfd_write\n");
 	}
 
 #ifdef RRR_HAVE_EVENTFD
-	if (write(eventfd->fd, &count, sizeof(count)) != sizeof(count)) {
+	uint64_t count_64 = count;
+	if (write(eventfd->fd, &count_64, sizeof(count_64)) != sizeof(count_64)) {
 		if (errno == EAGAIN) {
 			ret = RRR_SOCKET_NOT_READY;
 			goto out;
@@ -135,7 +159,15 @@ int rrr_socket_eventfd_write (
 	}
 #endif
 
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	*eventfd->count += count;
+	// printf("Count %p inc to %" PRIi64 "\n", eventfd, *eventfd->count);
+#endif
+
 	out:
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	pthread_mutex_unlock(eventfd->lock);
+#endif
 	return ret;
 }
 
@@ -147,6 +179,12 @@ int rrr_socket_eventfd_read (
 
 	*count = 0;
 	errno = 0;
+
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	pthread_mutex_lock(eventfd->lock);
+	// printf("Count %p before dec %" PRIi64 "\n", eventfd, *eventfd->count);
+#endif
+
 
 #ifdef RRR_HAVE_EVENTFD
 
@@ -193,7 +231,26 @@ int rrr_socket_eventfd_read (
 	*count = count_tmp;
 #endif
 
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	*eventfd->count -= *count;
+//	printf("Count %p dec by %" PRIu64 " to %" PRIi64 "\n", eventfd, *count, *eventfd->count);
+	rrr_posix_usleep(0);
+#endif
+
 	out:
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+	pthread_mutex_unlock(eventfd->lock);
+#endif
 	return ret;
 }
 
+#ifdef RRR_SOCKET_EVENTFD_DEBUG
+void rrr_socket_eventfd_count (
+		int64_t *target,
+		struct rrr_socket_eventfd *eventfd
+) {
+	pthread_mutex_lock(eventfd->lock);
+	*target = *eventfd->count;
+	pthread_mutex_unlock(eventfd->lock);
+}
+#endif

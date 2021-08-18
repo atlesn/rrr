@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_common.h"
 #include "http_transaction.h"
 #include "http_part.h"
@@ -52,7 +53,7 @@ int rrr_http_transaction_new (
 
 	struct rrr_http_transaction *result = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory for transaction in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out;
@@ -68,7 +69,7 @@ int rrr_http_transaction_new (
 		goto out_free_request;
 	}
 
-	if ((result->endpoint_str = strdup("/")) == NULL) {
+	if ((result->endpoint_str = rrr_strdup("/")) == NULL) {
 		RRR_MSG_0("Could not allocate memory for URI in rrr_http_transaction_new\n");
 		ret = 1;
 		goto out_free_response;
@@ -100,7 +101,7 @@ int rrr_http_transaction_new (
 	out_free_request:
 		rrr_http_part_destroy(result->request_part);
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -155,7 +156,7 @@ void rrr_http_transaction_decref_if_not_null (
 	if (transaction->application_data != NULL) {
 		transaction->application_data_destroy(transaction->application_data);
 	}
-	free(transaction);
+	rrr_free(transaction);
 }
 
 void rrr_http_transaction_decref_if_not_null_void (
@@ -178,18 +179,18 @@ int rrr_http_transaction_query_field_add (
 		struct rrr_http_transaction *transaction,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type,
 		const struct rrr_type_value *value_orig
 ) {
 	return rrr_http_field_collection_add (
 			&transaction->request_part->fields,
 			name,
-			(name != NULL ? strlen(name) : 0),
+			(name != NULL ? rrr_length_from_size_t_bug_const (strlen(name)) : 0),
 			value,
 			value_size,
 			content_type,
-			(content_type != NULL ? strlen(content_type) : 0),
+			(content_type != NULL ? rrr_length_from_size_t_bug_const (strlen(content_type)) : 0),
 			value_orig
 	);
 }
@@ -198,21 +199,6 @@ void rrr_http_transaction_query_fields_dump (
 		struct rrr_http_transaction *transaction
 ) {
 	rrr_http_field_collection_dump(&transaction->request_part->fields);
-}
-
-int rrr_http_transaction_keepalive_set (
-		struct rrr_http_transaction *transaction,
-		int set
-) {
-	int ret = 0;
-
-	rrr_http_part_header_field_remove(transaction->request_part, "Connection");
-
-	if (set) {
-		ret = rrr_http_part_header_field_push(transaction->request_part, "Connection", "keep-alive");
-	}
-
-	return ret;
 }
 
 void rrr_http_transaction_method_set (
@@ -229,10 +215,10 @@ int rrr_http_transaction_endpoint_set (
 	RRR_FREE_IF_NOT_NULL(transaction->endpoint_str);
 
 	if (endpoint != NULL && *endpoint != '\0') {
-		transaction->endpoint_str = strdup(endpoint);
+		transaction->endpoint_str = rrr_strdup(endpoint);
 	}
 	else {
-		transaction->endpoint_str = strdup("/");
+		transaction->endpoint_str = rrr_strdup("/");
 	}
 
 	if (transaction->endpoint_str == NULL) {
@@ -258,7 +244,7 @@ int rrr_http_transaction_endpoint_path_get (
 
 	*result = NULL;
 
-	char *tmp = strdup(transaction->endpoint_str);
+	char *tmp = rrr_strdup(transaction->endpoint_str);
 	if (tmp == NULL) {
 		RRR_MSG_0("Could not allocate memory in  rrr_http_transaction_endpoint_path_get\n");
 		ret = 1;
@@ -299,7 +285,11 @@ int rrr_http_transaction_endpoint_with_query_string_create (
 		goto out;
 	}
 
-	if ((ret = rrr_nullsafe_str_append_raw(result, transaction->endpoint_str, strlen(transaction->endpoint_str))) != 0) {
+	if ((ret = rrr_nullsafe_str_append_raw (
+			result,
+			transaction->endpoint_str,
+			rrr_length_from_size_t_bug_const (strlen(transaction->endpoint_str))
+	)) != 0) {
 		goto out;
 	}
 
@@ -370,9 +360,13 @@ int rrr_http_transaction_form_data_generate_if_needed (
 		}
 	}
 	else if (transaction->request_body_format == RRR_HTTP_BODY_FORMAT_JSON) {
+#ifdef RRR_WITH_JSONC
 		if ((ret = rrr_http_part_json_make(transaction->request_part, __rrr_http_transaction_form_data_make_if_needed_chunk_callback, transaction)) != 0) {
 			goto out;
 		}
+#else
+		RRR_BUG("BUG: JSON format requested in rrr_http_transaction_form_data_generate_if_needed but JSON suppurt is not compiled, caller must check for this.\n");
+#endif
 	}
 	else {
 		RRR_MSG_0("Unknown HTTP request body format %s for request with fields set\n", RRR_HTTP_BODY_FORMAT_TO_STR(transaction->request_body_format));
@@ -415,14 +409,14 @@ static int __rrr_http_transaction_part_content_length_set (
 		struct rrr_http_part *part
 ) {
 	char content_length_str[64];
-	sprintf(content_length_str, "%u", rrr_nullsafe_str_len(transaction->send_body));
+	sprintf(content_length_str, "%" PRIrrr_nullsafe_len, rrr_nullsafe_str_len(transaction->send_body));
 	return rrr_http_part_header_field_push_and_replace (part, "content-length", content_length_str);
 }
 
 static void __rrr_http_transaction_response_code_ensure (
 		struct rrr_http_transaction *transaction
 ) {
-	int response_code = transaction->response_part->response_code;
+	unsigned int response_code = transaction->response_part->response_code;
 
 	if (response_code < 100 || response_code > 599) {
 		response_code = rrr_nullsafe_str_len(transaction->send_body) > 0
@@ -452,12 +446,7 @@ static int __rrr_http_transaction_response_content_length_ensure (
 		goto out;
 	}
 
-	if ( rrr_nullsafe_str_len(transaction->send_body) > 0 ||
-	     ( transaction->response_part->response_code >= 200 &&
-	       transaction->response_part->response_code <= 299 &&
-	       transaction->response_part->response_code != 204
-	     )
-	) {
+	if (transaction->response_part->response_code != 204) {
 		if ((ret = __rrr_http_transaction_part_content_length_set(transaction, transaction->response_part)) != 0) {
 			goto out;
 		}
@@ -470,8 +459,13 @@ static int __rrr_http_transaction_response_content_length_ensure (
 int rrr_http_transaction_response_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		int (*header_field_callback)(struct rrr_http_header_field *field, void *arg),
-		int (*response_code_callback)(int response_code, void *arg),
-		int (*final_callback)(struct rrr_http_part *response_part, const struct rrr_nullsafe_str *send_data, void *arg),
+		int (*response_code_callback)(unsigned int response_code, enum rrr_http_version protocol_version, void *arg),
+		int (*final_callback)(
+				struct rrr_http_part *request_part,
+				struct rrr_http_part *response_part,
+				const struct rrr_nullsafe_str *send_data,
+				void *arg
+		),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -485,7 +479,8 @@ int rrr_http_transaction_response_prepare_wrapper (
 	}
 
 	if ((ret = response_code_callback (
-			transaction->response_part->response_code, callback_arg)) != 0) {
+			transaction->response_part->response_code, transaction->request_part->parsed_version, callback_arg
+	)) != 0) {
 		goto out;
 	}
 
@@ -497,7 +492,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = final_callback(transaction->response_part, transaction->send_body, callback_arg)) != 0) {
+	if ((ret = final_callback (
+			transaction->request_part,
+			transaction->response_part,
+			transaction->send_body,
+			callback_arg
+	)) != 0) {
 		goto out;
 	}
 
@@ -508,10 +508,12 @@ int rrr_http_transaction_response_prepare_wrapper (
 int rrr_http_transaction_request_prepare_wrapper (
 		struct rrr_http_transaction *transaction,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		const char *user_agent,
 		int (*preliminary_callback)(
 			enum rrr_http_method method,
 			enum rrr_http_upgrade_mode upgrade_mode,
+			enum rrr_http_version protocol_version,
 			struct rrr_http_part *request_part,
 			const struct rrr_nullsafe_str *request,
 			void *arg
@@ -528,7 +530,7 @@ int rrr_http_transaction_request_prepare_wrapper (
 		goto out;
 	}
 
-	if ((ret = preliminary_callback(transaction->method, upgrade_mode, transaction->request_part, request_nullsafe, callback_arg)) != 0) {
+	if ((ret = preliminary_callback(transaction->method, upgrade_mode, protocol_version, transaction->request_part, request_nullsafe, callback_arg)) != 0) {
 		goto out;
 	}
 

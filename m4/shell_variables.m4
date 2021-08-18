@@ -17,23 +17,24 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
 dnl  
 
+dnl Use /bin/echo to avoid problems with -e flag
 
 # SHELL_VARS_INIT(FILENAME)
 # --------------
 AC_DEFUN([SHELL_VARS_INIT], [
 	shell_vars_in_reset () {
-		echo -e "#!/bin/sh\n\n# DO NOT DELETE THIS FILE\n" > $1.in
+		/bin/echo -e "#!/bin/sh\n\n# DO NOT DELETE THIS FILE\n" > $1.in
 	}
 	SHELL_VARS_FILENAME=$1
-	echo -e "#!/bin/sh\n\nSHELL_VARS_SET=1\n" > $SHELL_VARS_FILENAME.in
+	/bin/echo -e "#!/bin/sh\n\nSHELL_VARS_SET=1\n" > $SHELL_VARS_FILENAME.in
 ])
 
 # SHELL_VARS_EXPORT(VARIABLE, VALUE)
 # --------------
 AC_DEFUN([SHELL_VARS_EXPORT], [
-	echo -n $1 >> $SHELL_VARS_FILENAME.in
-	echo -n "=" >> $SHELL_VARS_FILENAME.in
-	echo $2 >> $SHELL_VARS_FILENAME.in
+	/bin/echo -n $1 >> $SHELL_VARS_FILENAME.in
+	/bin/echo -n "=" >> $SHELL_VARS_FILENAME.in
+	/bin/echo $2 >> $SHELL_VARS_FILENAME.in
 ])
 
 # SHELL_VARS_OUTPUT()

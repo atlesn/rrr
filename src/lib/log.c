@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "log.h"
+#include "allocator.h"
 #include "event/event.h"
 #include "event/event_functions.h"
 #include "util/gnu.h"
@@ -121,15 +122,17 @@ static void __rrr_log_hook_unlock_void (void *arg) {
 
 struct rrr_log_hook {
 	void (*log)(
-			uint16_t *write_amount,
-			unsigned short loglevel_translated,
-			unsigned short loglevel_orig,
+			uint8_t *write_amount,
+			uint8_t loglevel_translated,
+			uint8_t loglevel_orig,
 			const char *prefix,
 			const char *message,
 			void *private_arg
 	);
 	void *private_arg;
 	struct rrr_event_queue *notify_queue;
+	int (*event_pass_retry_callback)(void *arg);
+	void *event_pass_retry_callback_arg;
 	int handle;
 };
 
@@ -140,15 +143,17 @@ static struct rrr_log_hook rrr_log_hooks[RRR_LOG_HOOK_MAX];
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_amount,
-				unsigned short loglevel_translated,
-				unsigned short loglevel_orig,
+				uint8_t *write_amount,
+				uint8_t loglevel_translated,
+				uint8_t loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue
+		struct rrr_event_queue *notify_queue,
+		int (*event_pass_retry_callback)(void *arg),
+		void *event_pass_retry_callback_arg
 ) {
 	*handle = 0;
 
@@ -163,6 +168,8 @@ void rrr_log_hook_register (
 		 log,
 		 private_arg,
 		 notify_queue,
+		 event_pass_retry_callback,
+		 event_pass_retry_callback_arg,
 		 rrr_log_hook_handle_pos
 	};
 
@@ -211,8 +218,8 @@ void rrr_log_hook_unregister (
 }
 
 void rrr_log_hooks_call_raw (
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
 ) {
@@ -220,7 +227,7 @@ void rrr_log_hooks_call_raw (
 	LOCK_HOOK_BEGIN;
 
 	for (int i = 0; i < rrr_log_hook_count; i++) {
-		uint16_t write_amount = 0;
+		uint8_t write_amount = 0;
 		struct rrr_log_hook *hook = &rrr_log_hooks[i];
 		hook->log (
 				&write_amount,
@@ -232,7 +239,13 @@ void rrr_log_hooks_call_raw (
 		);
 
 		if (hook->notify_queue && write_amount > 0) {
-			rrr_event_pass(hook->notify_queue, RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE, write_amount);
+			rrr_event_pass (
+					hook->notify_queue,
+					RRR_EVENT_FUNCTION_LOG_HOOK_DATA_AVAILABLE,
+					write_amount,
+					hook->event_pass_retry_callback,
+					hook->event_pass_retry_callback_arg
+			);
 		}
 	}
 
@@ -240,8 +253,8 @@ void rrr_log_hooks_call_raw (
 }
 
 static void __rrr_log_hooks_call (
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *__restrict __format,
 		va_list args
@@ -267,7 +280,7 @@ static void __rrr_log_hooks_call (
 	wpos += size;
 
 	// Output may be trimmed
-	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - size, __format, args);
+	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - (size_t) size, __format, args);
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
 	rrr_log_hooks_call_raw (
@@ -278,10 +291,10 @@ static void __rrr_log_hooks_call (
 	);
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
-		unsigned short loglevel
+static uint8_t __rrr_log_translate_loglevel_rfc5424_stdout (
+		uint8_t loglevel
 ) {
-	unsigned short result = 0;
+	uint8_t result = 0;
 
 	switch (loglevel) {
 		case __RRR_LOG_PREFIX_0:
@@ -302,8 +315,8 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (
 	return result;
 }
 
-static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (
-		unsigned short loglevel
+static uint8_t __rrr_log_translate_loglevel_rfc5424_stderr (
+		uint8_t loglevel
 ) {
 	(void)(loglevel);
 	return RRR_RFC5424_LOGLEVEL_ERROR;
@@ -362,7 +375,7 @@ static void __rrr_log_sd_journal_sendv (
 #endif
 
 void rrr_log_printf_nolock (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -427,8 +440,11 @@ void rrr_log_printf_plain (
 
 void rrr_log_printn_plain (
 		const char *value,
-		size_t value_size
+		unsigned long long value_size
 ) {
+	if (value_size > INT_MAX) {
+		value_size = INT_MAX;
+	}
 #ifdef HAVE_JOURNALD
 	if (rrr_config_global.do_journald_output) {
 		int ret = sd_journal_print(LOG_DEBUG, "%.*s", (int) value_size, value);
@@ -451,7 +467,7 @@ void rrr_log_printn_plain (
 }
 
 void rrr_log_printf (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -462,7 +478,7 @@ void rrr_log_printf (
 	va_start(args, __format);
 	va_copy(args_copy, args);
 
-	unsigned int loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
+	uint8_t loglevel_translated = RRR_LOG_TRANSLATE_LOGLEVEL(__rrr_log_translate_loglevel_rfc5424_stdout);
 
 #ifndef RRR_LOG_DISABLE_PRINT
 
@@ -499,7 +515,7 @@ void rrr_log_printf (
 
 void rrr_log_fprintf (
 		FILE *file,
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -510,13 +526,15 @@ void rrr_log_fprintf (
 	va_start(args, __format);
 	va_copy(args_copy, args);
 
-	unsigned int loglevel_translated = 0;
+	uint8_t loglevel_translated = 0;
 
-	if (file == stderr) {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
-	}
-	else {
-		loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+	if (rrr_config_global.rfc5424_loglevel_output) {
+		if (file == stderr) {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stderr(loglevel);
+		}
+		else {
+			loglevel_translated = __rrr_log_translate_loglevel_rfc5424_stdout(loglevel);
+		}
 	}
 
 #ifndef RRR_LOG_DISABLE_PRINT

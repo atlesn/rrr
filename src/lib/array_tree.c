@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "parse.h"
 #include "string_builder.h"
+#include "allocator.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
 
@@ -44,7 +45,7 @@ static void __rrr_array_branch_destroy (
 	if (branch->tree_else != NULL) {
 		rrr_array_tree_destroy(branch->tree_else);
 	}
-	free(branch);
+	rrr_free(branch);
 }
 
 static void __rrr_array_node_destroy (
@@ -54,7 +55,7 @@ static void __rrr_array_node_destroy (
 	if (node->branch_if != NULL) {
 		__rrr_array_branch_destroy(node->branch_if);
 	}
-	free(node);
+	rrr_free(node);
 }
 
 void rrr_array_tree_clear (
@@ -68,7 +69,7 @@ void rrr_array_tree_destroy (
 		struct rrr_array_tree *tree
 ) {
 	 rrr_array_tree_clear(tree);
-	free(tree);
+	rrr_free(tree);
 }
 
 int rrr_array_tree_new (
@@ -77,7 +78,7 @@ int rrr_array_tree_new (
 ) {
 	int ret = 0;
 
-	struct rrr_array_tree *new_tree = malloc(sizeof(*new_tree));
+	struct rrr_array_tree *new_tree = rrr_allocate(sizeof(*new_tree));
 	if (new_tree == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
@@ -86,7 +87,7 @@ int rrr_array_tree_new (
 
 	memset(new_tree, '\0', sizeof(*new_tree));
 
-	if ((new_tree->name = strdup(name != NULL ? name : "-")) == NULL) {
+	if ((new_tree->name = rrr_strdup(name != NULL ? name : "-")) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_tree_new\n");
 		ret = 1;
 		goto out;
@@ -97,7 +98,7 @@ int rrr_array_tree_new (
 
 	out:
 	if (new_tree != NULL) {
-		free(new_tree);
+		rrr_free(new_tree);
 	}
 	return ret;
 }
@@ -121,7 +122,7 @@ const struct rrr_array_tree *rrr_array_tree_list_get_tree_by_name (
 }
 
 static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
-	struct rrr_array_branch *branch = malloc(sizeof(*branch));
+	struct rrr_array_branch *branch = rrr_allocate(sizeof(*branch));
 	if (branch == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_array_branch_allocate\n");
 		return NULL;
@@ -131,7 +132,7 @@ static struct rrr_array_branch *__rrr_array_branch_allocate (void) {
 }
 
 static struct rrr_array_node *__rrr_array_node_allocate (void) {
-	struct rrr_array_node *node = malloc(sizeof(*node));
+	struct rrr_array_node *node = rrr_allocate(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_array_node_allocate\n");
 		return NULL;
@@ -325,7 +326,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 		(*start)++;
 	}
 
-	size_t length = (*start) - tag_begin;
+	rrr_length length = rrr_length_from_ptr_sub_bug_const(*start,  tag_begin);
 	if (length == 0) {
 		RRR_MSG_0("Missing tag name after { in defintion\n");
 		ret = RRR_ARRAY_TREE_SOFT_ERROR;
@@ -341,7 +342,7 @@ static int __rrr_array_tree_interpret_identifier_and_size_tag (
 	(*parsed_bytes)++;
 	(*start)++;
 
-	if ((result = malloc(length + 1)) == NULL) {
+	if ((result = rrr_allocate(length + 1)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for ref tag in __rrr_array_parse_identifier_and_size\n");
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
 		goto out;
@@ -375,9 +376,9 @@ static int __rrr_array_tree_interpret_unsigned_integer_10(const char **end, unsi
 
 static int __rrr_array_tree_interpret_identifier_and_size (
 		const struct rrr_type_definition **type_return,
-		unsigned int *length_return,
+		rrr_length *length_return,
 		char **length_ref_return,
-		unsigned int *item_count_return,
+		rrr_length *item_count_return,
 		char **item_count_ref_return,
 		rrr_type_flags *flags_return,
 		rrr_length *bytes_parsed_return,
@@ -441,7 +442,7 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 				goto out_err;
 			}
 
-			parsed_bytes += integer_end - start;
+			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug_const (integer_end, start));
 			start = integer_end;
 
 			if (length <= 0) {
@@ -511,7 +512,7 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 				goto out_err;
 			}
 
-			parsed_bytes += integer_end - start;
+			rrr_length_add_bug (&parsed_bytes, rrr_length_from_ptr_sub_bug_const (integer_end, start));
 		}
 
 		// start = integer_end; - Enable if more parsing is to be performed
@@ -542,10 +543,17 @@ static int __rrr_array_tree_interpret_identifier_and_size (
 	}
 
 	out_ok:
+		if (length > RRR_LENGTH_MAX || item_count > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Length or item count overflow in __rrr_array_tree_interpret_identifier_and_size\n");
+			ret = RRR_ARRAY_TREE_SOFT_ERROR;
+			goto out_err;
+		}
+
+		*length_return = (rrr_length) length;
+		*item_count_return = (rrr_length) item_count;
+
 		*type_return = type;
 		*length_ref_return = length_ref;
-		*length_return = length;
-		*item_count_return = item_count;
 		*item_count_ref_return = item_count_ref;
 		*flags_return = flags;
 		*bytes_parsed_return = parsed_bytes;
@@ -658,7 +666,7 @@ static int __rrr_array_tree_interpret_single_definition (
 }
 
 #define CHECK_KEYWORDS                                         \
-    do {int pos_orig = pos->pos;                               \
+    do {rrr_length pos_orig = pos->pos;                        \
     if (rrr_parse_match_word(pos, "IF") ||                     \
         rrr_parse_match_word(pos, "ELSIF") ||                  \
         rrr_parse_match_word(pos, "ELSE") ||                   \
@@ -747,8 +755,8 @@ static int __rrr_array_tree_interpret_node (
 			break;
 		}
 
-		int start;
-		int end;
+		rrr_length start;
+		rrr_slength end;
 
 		rrr_parse_match_until (
 				pos,
@@ -771,13 +779,13 @@ static int __rrr_array_tree_interpret_node (
 			goto out_destroy;
 		}
 
-		size_t length = end - start + 1; // +1 here is not for the \0
+		rrr_length length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start)); // +1 here is not for the \0
 
 		char tmp[length + 1];
 		memcpy(tmp, pos->data + start, length);
 		tmp[length] = '\0';
 
-		int i; // DO NOT use unsigned
+		rrr_slength i; // DO NOT use unsigned
 		for (i = length - 1; i >= 0; i--) {
 			if (tmp[i] == ' ' || tmp[i] == '\t' || tmp[i] == '\n' || tmp[i] == '\r') {
 				tmp[i] = '\0';
@@ -833,8 +841,8 @@ int __rrr_array_tree_interpret_rewind (
 
 	struct rrr_array_node *node = NULL;
 
-	int start;
-	int end;
+	rrr_length start;
+	rrr_slength end;
 
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (RRR_PARSE_CHECK_EOF(pos)) {
@@ -851,7 +859,7 @@ int __rrr_array_tree_interpret_rewind (
 		goto out;
 	}
 
-	rrr_length length = end - start + 1;
+	rrr_length length = rrr_length_inc_bug_const(rrr_length_from_slength_sub_bug_const(end, start));
 
 	if (length > 12) {
 		RRR_MSG_0("Count after REWIND keyword too long in array tree\n");
@@ -864,7 +872,7 @@ int __rrr_array_tree_interpret_rewind (
 	tmp[length] = '\0';
 
 	char *endptr;
-	rrr_length count = strtoul(tmp, &endptr, 10);
+	rrr_length count = rrr_length_from_size_t_bug_const(strtoul(tmp, &endptr, 10));
 
 	if ((node = __rrr_array_node_allocate()) == NULL) {
 		ret = RRR_ARRAY_TREE_HARD_ERROR;
@@ -968,7 +976,7 @@ int rrr_array_tree_interpret (
 int rrr_array_tree_interpret_raw (
 		struct rrr_array_tree **target,
 		const char *data,
-		int data_length,
+		rrr_length data_length,
 		const char *name
 ) {
 	int ret = 0;
@@ -1254,8 +1262,12 @@ int __rrr_array_tree_import_rewind_callback (
 		// Note : Local variable 'value' must be freed at loop end
 		struct rrr_type_value *value = RRR_LL_POP(&callback_data->array);
 
-		callback_data->pos -= value->import_length * value->element_count;
-		total_length += value->import_length * value->element_count;
+		rrr_length length_tmp = value->import_length;
+		rrr_length_mul_bug(&length_tmp, value->element_count);
+
+		callback_data->pos -= length_tmp;
+
+		rrr_length_add_bug(&total_length, length_tmp);
 
 		if (callback_data->pos < callback_data->start) {
 			RRR_BUG("BUG: REWIND past beginning of buffer occured in __rrr_array_tree_import_rewind_callback\n");
@@ -1284,7 +1296,7 @@ int __rrr_array_tree_import_value_resolve_ref (
 				return RRR_ARRAY_TREE_SOFT_ERROR;
 			}
 
-			*result = result_tmp;
+			*result = (rrr_length) result_tmp;
 
 			return RRR_ARRAY_TREE_OK;
 		}
@@ -1487,9 +1499,9 @@ int rrr_array_tree_clone_without_data (
 }
 
 int rrr_array_tree_import_from_buffer (
-		ssize_t *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *buf,
-		ssize_t buf_len,
+		rrr_length buf_len,
 		const struct rrr_array_tree *tree,
 		int (*callback)(struct rrr_array *array, void *arg),
 		void *callback_arg
@@ -1521,7 +1533,7 @@ int rrr_array_tree_import_from_buffer (
 		goto out;
 	}
 
-	*parsed_bytes = callback_data.pos - buf;
+	*parsed_bytes = rrr_length_from_ptr_sub_bug_const (callback_data.pos, buf);
 
 	out:
 	rrr_array_clear(&callback_data.array);

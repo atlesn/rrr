@@ -23,7 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <stdlib.h>
 
+#include "serial.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "../util/macro_utils.h"
 #include "../rrr_strerror.h"
 
@@ -63,7 +65,7 @@ int rrr_serial_check (int *is_serial, int fd) {
 	*target = RRR_PASTE(B,speed);		\
 	break
 
-static int __rrr_serial_speed_convert (speed_t *target, unsigned int speed) {
+static int __rrr_serial_speed_convert (speed_t *target, unsigned long long speed) {
 	switch (speed) {
 		RRR_SERIAL_SPEED_CASE(0);
 		RRR_SERIAL_SPEED_CASE(50);
@@ -90,7 +92,7 @@ static int __rrr_serial_speed_convert (speed_t *target, unsigned int speed) {
 	return 0;
 }
 
-int rrr_serial_speed_check (unsigned int speed) {
+int rrr_serial_speed_check (unsigned long long speed) {
 	speed_t dummy;
 	return __rrr_serial_speed_convert(&dummy, speed);
 }
@@ -110,7 +112,7 @@ int rrr_serial_speed_check (unsigned int speed) {
 		goto out;																				\
 	}} while(0)
 
-int rrr_serial_speed_set (int fd, unsigned int speed_bps) {
+int rrr_serial_speed_set (int fd, unsigned long long speed_bps) {
 	int ret = 0;
 
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();
@@ -118,19 +120,19 @@ int rrr_serial_speed_set (int fd, unsigned int speed_bps) {
 	speed_t speed = B0;
 
 	if ((ret = __rrr_serial_speed_convert(&speed, speed_bps)) != 0) {
-		RRR_BUG("Invalid speed %u to rrr_serial_set_speed, caller must check speed with rrr_serial_speed_check first\n", speed_bps);
+		RRR_BUG("Invalid speed %llu to rrr_serial_set_speed, caller must check speed with rrr_serial_speed_check first\n", (long long unsigned) speed_bps);
 	}
 
 	if (cfsetospeed (&termios_p, speed) != 0) {
-		RRR_MSG_0("cfsetospeed on fd %i failed, speed was %u: %s\n",
-				fd, speed_bps, rrr_strerror(errno));
+		RRR_MSG_0("cfsetospeed on fd %i failed, speed was %llu: %s\n",
+				fd, (long long unsigned) speed_bps, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	if (cfsetispeed (&termios_p, speed) != 0) {
-		RRR_MSG_0("cfsetispeed on fd %i failed, speed was %u: %s\n",
-				fd, speed_bps, rrr_strerror(errno));
+		RRR_MSG_0("cfsetispeed on fd %i failed, speed was %llu: %s\n",
+				fd, (long long unsigned) speed_bps, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -150,11 +152,11 @@ int rrr_serial_raw_set (int fd) {
 	// cfmakeraw(&termios_p);
 
 	// Copied from termios man page
-    termios_p.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-    termios_p.c_oflag &= ~OPOST;
-    termios_p.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-    termios_p.c_cflag &= ~(CSIZE | PARENB);
-    termios_p.c_cflag |= CS8;
+	termios_p.c_iflag &= (unsigned int) ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+	termios_p.c_oflag &= (unsigned int) ~OPOST;
+	termios_p.c_lflag &= (unsigned int) ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+	termios_p.c_cflag &= (unsigned int) ~(CSIZE | PARENB);
+	termios_p.c_cflag |= CS8;
 
 	RRR_SERIAL_SET_ATTR();
 
@@ -185,10 +187,10 @@ int rrr_serial_stop_bit_set (int fd, int is_two) {
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();
 
 	if (is_two) {
-		termios_p.c_cflag |= CSTOPB;
+		termios_p.c_cflag |= (unsigned int) CSTOPB;
 	}
 	else {
-		termios_p.c_cflag &= ~(CSTOPB);
+		termios_p.c_cflag &= (unsigned int) ~(CSTOPB);
 	}
 
 	RRR_SERIAL_SET_ATTR();
@@ -202,7 +204,7 @@ int rrr_serial_parity_unset (int fd) {
 
 	RRR_SERIAL_DEFINE_AND_GET_ATTR();
 
-	termios_p.c_cflag &= ~(PARENB|PARODD);
+	termios_p.c_cflag &= (unsigned int) ~(PARENB|PARODD);
 
 	RRR_SERIAL_SET_ATTR();
 

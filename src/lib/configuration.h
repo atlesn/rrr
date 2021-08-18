@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,24 +27,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
 #define RRR_CONFIG_MAX_SIZE 16*1024*1024
-#define RRR_CONFIG_MAX_SETTINGS 32
 #define RRR_CONFIG_ALLOCATION_INTERVAL 4
+		
+#define RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS     void **block, \
+                                               struct rrr_config *config, \
+                                               const void *name, \
+                                               rrr_length name_length, \
+					       void *callback_arg
+#define RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS   void *block, const char *name, const char *value, void *callback_arg
 
 struct rrr_config {
-	int module_count;
-	int module_count_max;
-	struct rrr_instance_config_data **configs;
 	struct rrr_array_tree_list array_trees;
 };
 
+int rrr_config_new (
+		struct rrr_config **result
+);
 void rrr_config_destroy (
 		struct rrr_config *target
 );
 int rrr_config_parse_file (
-		struct rrr_config **target,
-		const char *filename
+		struct rrr_config *config,
+		const char *filename,
+		int (*new_block_callback)(RRR_CONFIG_NEW_BLOCK_CALLBACK_ARGS),
+		int (*new_setting_callback)(RRR_CONFIG_NEW_SETTING_CALLBACK_ARGS),
+		void *callback_arg
 );
-int rrr_config_dump (
+const struct rrr_array_tree_list *rrr_config_get_array_tree_list (
 		struct rrr_config *config
 );
 

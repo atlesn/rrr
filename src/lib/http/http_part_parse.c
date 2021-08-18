@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "http_part.h"
 #include "http_part_parse.h"
 #include "http_common.h"
@@ -30,10 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static int __rrr_http_part_parse_response_code (
 		struct rrr_http_part *result,
-		size_t *parsed_bytes,
-		const char *buf,
-		size_t start_pos,
-		const char *end
+		rrr_biglength *parsed_bytes,
+		const char * const buf,
+		const rrr_biglength start_pos,
+		const char * const end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
 
@@ -53,7 +54,7 @@ static int __rrr_http_part_parse_response_code (
 		goto out;
 	}
 
-	if (crlf - start < (ssize_t) strlen("HTTP/1.1 200")) {
+	if (crlf - start < (ssize_t) strlen("HTTP/1.x 200")) {
 		ret = RRR_HTTP_PARSE_INCOMPLETE;
 		goto out;
 	}
@@ -62,9 +63,16 @@ static int __rrr_http_part_parse_response_code (
 
 	rrr_length tmp_len = 0;
 	if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1") != 0 || start != start_orig) {
-		RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
+		start = start_orig;
+		if (rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.0") != 0 || start != start_orig) {
+			RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+		result->parsed_version = RRR_HTTP_VERSION_10;
+	}
+	else {
+		result->parsed_version = RRR_HTTP_VERSION_11;
 	}
 
 	start += tmp_len;
@@ -76,7 +84,7 @@ static int __rrr_http_part_parse_response_code (
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
-	result->response_code = response_code;
+	result->response_code = (unsigned int) response_code;
 
 	start += tmp_len;
 	start += rrr_http_util_count_whsp(start, end);
@@ -90,9 +98,9 @@ static int __rrr_http_part_parse_response_code (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
+	result->parsed_application_type = RRR_HTTP_APPLICATION_HTTP1;
 
-	*parsed_bytes = (crlf - (buf + start_pos) + 2);
+	*parsed_bytes = rrr_biglength_from_ptr_sub_bug_const(crlf + 2, buf + start_pos);
 
 	out:
 	return ret;
@@ -100,9 +108,9 @@ static int __rrr_http_part_parse_response_code (
 
 static int __rrr_http_part_parse_request (
 		struct rrr_http_part *result,
-		size_t *parsed_bytes,
+		rrr_biglength *parsed_bytes,
 		const char *buf,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
@@ -132,16 +140,20 @@ static int __rrr_http_part_parse_request (
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_method_str_nullsafe, start, space - start) != 0) {
-		RRR_MSG_0("Could not allocate string for request method in __rrr_http_parse_request \n");
-		ret = RRR_HTTP_PARSE_HARD_ERR;
+	rrr_length request_method_length;
+	if ( rrr_length_from_ptr_sub_err(&request_method_length, space, start) != 0 ||
+	     request_method_length > 10 ||
+	     request_method_length == 0
+	) {
+		RRR_MSG_0("Invalid request method in HTTP request\n");
+		rrr_http_util_print_where_message(start, end);
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_len(result->request_method_str_nullsafe) == 0) {
-		RRR_MSG_0("Request method missing in HTTP request\n");
-		rrr_http_util_print_where_message(start, end);
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
+	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_method_str_nullsafe, start, request_method_length) != 0) {
+		RRR_MSG_0("Could not allocate string for request method in __rrr_http_parse_request \n");
+		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
 
@@ -149,13 +161,20 @@ static int __rrr_http_part_parse_request (
 	start += rrr_http_util_count_whsp(start, end);
 
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
-		RRR_MSG_0("Whitespace missing after request uri in HTTP request\n");
+		RRR_MSG_0("Whitespace missing after request URI in HTTP request\n");
 		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 
-	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_uri_nullsafe, start, space - start) != 0) {
+	rrr_length request_uri_length;
+	if (rrr_length_from_ptr_sub_err (&request_uri_length, space, start) != 0) {
+		RRR_MSG_0("Length overflow in HTTP request URI\n");
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
+		goto out;
+	}
+
+	if (rrr_nullsafe_str_new_or_replace_raw(&result->request_uri_nullsafe, start, request_uri_length) != 0) {
 		RRR_MSG_0("Could not allocate string for uri in __rrr_http_parse_request \n");
 		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_HARD_ERR;
@@ -169,9 +188,16 @@ static int __rrr_http_part_parse_request (
 
 	rrr_length protocol_length = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
-		ret = RRR_HTTP_PARSE_SOFT_ERR;
-		goto out;
+		start = start_orig;
+		if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start_orig, crlf, "HTTP/1.0")) != 0 || start != start_orig) {
+			RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
+			ret = RRR_HTTP_PARSE_SOFT_ERR;
+			goto out;
+		}
+		result->parsed_version = RRR_HTTP_VERSION_10;
+	}
+	else {
+		result->parsed_version = RRR_HTTP_VERSION_11;
 	}
 
 	if (start_orig + protocol_length != crlf) {
@@ -182,9 +208,9 @@ static int __rrr_http_part_parse_request (
 	}
 
 	// Must be set when everything is complete
-	result->parsed_protocol_version = RRR_HTTP_APPLICATION_HTTP1;
+	result->parsed_application_type = RRR_HTTP_APPLICATION_HTTP1;
 
-	*parsed_bytes = (crlf - (buf + start_pos) + 2);
+	*parsed_bytes = rrr_biglength_from_ptr_sub_bug_const(crlf + 2, buf + start_pos);
 
 	out:
 	return ret;
@@ -192,9 +218,9 @@ static int __rrr_http_part_parse_request (
 
 static int __rrr_http_part_parse_chunk_header (
 		struct rrr_http_chunk **result_chunk,
-		size_t *parsed_bytes,
+		rrr_biglength *parsed_bytes,
 		const char *buf,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
@@ -269,7 +295,7 @@ static int __rrr_http_part_parse_chunk_header (
 	}
 
 	struct rrr_http_chunk *new_chunk = NULL;
-	rrr_length chunk_start = pos - buf;
+	rrr_biglength chunk_start = rrr_biglength_from_ptr_sub_bug_const (pos, buf);
 
 //		printf ("First character in chunk: %i\n", *(buf + chunk_start));
 
@@ -278,7 +304,7 @@ static int __rrr_http_part_parse_chunk_header (
 		goto out;
 	}
 
-	*parsed_bytes = pos - start;
+	*parsed_bytes = rrr_biglength_from_ptr_sub_bug_const (pos, start);
 	*result_chunk = new_chunk;
 
 	out:
@@ -287,9 +313,9 @@ static int __rrr_http_part_parse_chunk_header (
 
 static int __rrr_http_part_header_fields_parse (
 		struct rrr_http_header_field_collection *target,
-		size_t *parsed_bytes,
+		rrr_biglength *parsed_bytes,
 		const char *buf,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
@@ -298,8 +324,7 @@ static int __rrr_http_part_header_fields_parse (
 
 	*parsed_bytes = 0;
 
-	ssize_t parsed_bytes_total = 0;
-	ssize_t parsed_bytes_tmp = 0;
+	rrr_biglength parsed_bytes_total = 0;
 
 //	static int run_count_loop = 0;
 	while (1) {
@@ -317,6 +342,7 @@ static int __rrr_http_part_header_fields_parse (
 			break;
 		}
 
+		rrr_length parsed_bytes_tmp = 0;
 		if ((ret = rrr_http_header_field_parse_name_and_value(target, &parsed_bytes_tmp, pos, end)) != 0) {
 			goto out;
 		}
@@ -337,9 +363,9 @@ static int __rrr_http_part_header_fields_parse (
 
 static int __rrr_http_part_parse_chunk (
 		struct rrr_http_chunks *chunks,
-		size_t *parsed_bytes,
+		rrr_biglength *parsed_bytes,
 		const char *buf,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end
 ) {
 	int ret = 0;
@@ -348,8 +374,8 @@ static int __rrr_http_part_parse_chunk (
 
 	const struct rrr_http_chunk *last_chunk = RRR_LL_LAST(chunks);
 
-	size_t parsed_bytes_total = 0;
-	size_t parsed_bytes_previous_chunk = 0;
+	rrr_biglength parsed_bytes_total = 0;
+	rrr_biglength parsed_bytes_previous_chunk = 0;
 
 	if (last_chunk != NULL) {
 		if (buf + last_chunk->start + last_chunk->length > end) {
@@ -373,7 +399,7 @@ static int __rrr_http_part_parse_chunk (
 			start_pos + parsed_bytes_previous_chunk,
 			end
 	)) == 0 && new_chunk != NULL) { // != NULL check due to false positive warning about use of NULL from scan-build
-		RRR_DBG_3("Found new HTTP chunk start %li length %li\n", new_chunk->start, new_chunk->length);
+		RRR_DBG_3("Found new HTTP chunk start %" PRIrrrbl " length %" PRIrrrbl "\n", new_chunk->start, new_chunk->length);
 		RRR_LL_APPEND(chunks, new_chunk);
 
 		// All of the bytes in the previous chunk (if any) have been read
@@ -448,9 +474,11 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/x-www-form-urlencoded") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_URLENCODED;
 		}
+#ifdef RRR_WITH_JSONC
 		else if (rrr_nullsafe_str_cmpto_case(content_type->value, "application/json") == 0) {
 			*body_format = RRR_HTTP_BODY_FORMAT_JSON;
 		}
+#endif
 	}
 
 	out:
@@ -459,10 +487,10 @@ static int __rrr_http_part_request_method_and_format_to_enum (
 
 static int __rrr_http_part_parse_chunked (
 		struct rrr_http_part *part,
-		size_t *target_size,
-		size_t *parsed_bytes,
+		rrr_biglength *target_size,
+		rrr_biglength *parsed_bytes,
 		const char *data_ptr,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 ) {
@@ -471,7 +499,7 @@ static int __rrr_http_part_parse_chunked (
 	*target_size = 0;
 	*parsed_bytes = 0;
 
-	size_t parsed_bytes_tmp = 0;
+	rrr_biglength parsed_bytes_tmp = 0;
 
 	if (parse_type == RRR_HTTP_PARSE_MULTIPART) {
 		RRR_MSG_0("Chunked transfer encoding found in HTTP multipart body, this is not allowed\n");
@@ -507,10 +535,10 @@ static int __rrr_http_part_parse_chunked (
 
 int rrr_http_part_parse (
 		struct rrr_http_part *part,
-		size_t *target_size,
-		size_t *parsed_bytes,
+		rrr_biglength *target_size,
+		rrr_biglength *parsed_bytes,
 		const char *data_ptr,
-		size_t start_pos,
+		rrr_biglength start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 ) {
@@ -522,15 +550,15 @@ int rrr_http_part_parse (
 	*target_size = 0;
 	*parsed_bytes = 0;
 
-	size_t parsed_bytes_tmp = 0;
-	size_t parsed_bytes_total = 0;
+	rrr_biglength parsed_bytes_tmp = 0;
+	rrr_biglength parsed_bytes_total = 0;
 
 	if (part->is_chunked == 1) {
 		// This is merely a shortcut to skip already checked conditions
 		goto out_parse_chunked;
 	}
 
-	if (part->parsed_protocol_version == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
+	if (part->parsed_application_type == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
 		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
 			ret = __rrr_http_part_parse_request (
 					part,
@@ -555,25 +583,36 @@ int rrr_http_part_parse (
 
 		parsed_bytes_total += parsed_bytes_tmp;
 
-		if (ret == RRR_HTTP_PARSE_INCOMPLETE && end - data_ptr > 65536) {
-			RRR_MSG_0("HTTP1 request or response line not found in the first 64K bytes, triggering soft error.\n");
+		if (ret == RRR_HTTP_PARSE_INCOMPLETE && end - data_ptr > RRR_HTTP_PARSE_HEADROOM_LIMIT_KB * 1024) {
+			RRR_MSG_0("HTTP1 request or response line not found in the first %llu kB, triggering soft error.\n",
+				(long long unsigned) RRR_HTTP_PARSE_HEADER_LIMIT_KB
+			);
 			ret = RRR_HTTP_SOFT_ERROR;
 			goto out;
 		}
 		else if (ret != RRR_HTTP_PARSE_OK) {
-			if (part->parsed_protocol_version != 0) {
-				RRR_BUG("BUG: Protocol version was set prior to complete response/request parsing in rrr_http_part_parse\n");
+			if (part->parsed_application_type != 0) {
+				RRR_BUG("BUG: Application type was set prior to complete response/request parsing in rrr_http_part_parse\n");
 			}
 			goto out;
 		}
-		else if (part->parsed_protocol_version == 0) {
-			RRR_BUG("BUG: Protocol version not set after complete response/request parsing in rrr_http_part_parse\n");
+		else if (part->parsed_application_type == 0) {
+			RRR_BUG("BUG: Application type not set after complete response/request parsing in rrr_http_part_parse\n");
 		}
 
 		part->headroom_length = parsed_bytes_tmp;
 	}
 
 	if (part->header_complete) {
+		goto out;
+	}
+
+	if (start_pos + parsed_bytes_total - part->headroom_length> RRR_HTTP_PARSE_HEADER_LIMIT_KB * 1024) {
+		RRR_MSG_0("Received too long HTTP header (fixed limit) (%llu>%llu)\n",
+			(unsigned long long) start_pos + parsed_bytes_total - part->headroom_length,
+			(unsigned long long) RRR_HTTP_PARSE_HEADER_LIMIT_KB * 1024
+		);
+		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 
@@ -622,6 +661,38 @@ int rrr_http_part_parse (
 		RRR_DBG_3("HTTP response header parse complete, response was %i\n", part->response_code);
 	}
 
+	const struct rrr_http_header_field *connection = rrr_http_part_header_field_get(part, "connection");
+
+	if (connection != NULL) {
+		if (rrr_nullsafe_str_cmpto_case(connection->value, "close") == 0) {
+			RRR_DBG_3("HTTP 'Connection: close' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "keep-alive") == 0) {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' header found\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+		else if (rrr_nullsafe_str_cmpto_case(connection->value, "upgrade") == 0) {
+			RRR_DBG_3("HTTP 'Connection: upgrade' header found, implies keep-alive\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+		else {
+			RRR_HTTP_UTIL_SET_TMP_NAME_FROM_NULLSAFE(tmp, connection->value);
+			RRR_DBG_3("HTTP unknown value '%s' for 'Connection' header ignored\n", tmp);
+		}
+	}
+
+	if (part->parsed_connection == 0) {
+		if (part->parsed_version == RRR_HTTP_VERSION_10) {
+			RRR_DBG_3("HTTP 'Connection: close' implied by protocol version HTTP/1.0\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_CLOSE;
+		}
+		else {
+			RRR_DBG_3("HTTP 'Connection: keep-alive' implied by protocol version HTTP/1.1\n");
+			part->parsed_connection = RRR_HTTP_CONNECTION_KEEPALIVE;
+		}
+	}
+
 	const struct rrr_http_header_field *content_length = rrr_http_part_header_field_get(part, "content-length");
 	const struct rrr_http_header_field *transfer_encoding = rrr_http_part_header_field_get(part, "transfer-encoding");
 
@@ -629,7 +700,7 @@ int rrr_http_part_parse (
 		part->data_length = content_length->value_unsigned;
 		*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
 
-		RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
+		RRR_DBG_3("HTTP 'Content-Length' found in response: %llu (plus response %" PRIrrrbl " and header %" PRIrrrbl ") target size is %" PRIrrrbl "\n",
 				content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
 
 		ret = RRR_HTTP_PARSE_OK;
@@ -637,6 +708,7 @@ int rrr_http_part_parse (
 		goto out;
 	}
 	else if (transfer_encoding != NULL && rrr_nullsafe_str_cmpto_case(transfer_encoding->value, "chunked") == 0) {
+		RRR_DBG_3("HTTP 'Transfer-Encoding: chunked' found in response\n");
 		goto out_parse_chunked;
 	}
 	else if (	parse_type == RRR_HTTP_PARSE_REQUEST ||
@@ -680,8 +752,9 @@ int rrr_http_part_parse (
 // Set all required request data without parsing
 int rrr_http_part_parse_request_data_set (
 		struct rrr_http_part *part,
-		size_t data_length,
-		enum rrr_http_application_type protocol_version,
+		rrr_biglength data_length,
+		enum rrr_http_application_type application_type,
+		enum rrr_http_version version,
 		const struct rrr_nullsafe_str *request_method,
 		const struct rrr_nullsafe_str *uri
 ) {
@@ -699,7 +772,8 @@ int rrr_http_part_parse_request_data_set (
 		return 1;
 	}
 
-	part->parsed_protocol_version = protocol_version;
+	part->parsed_application_type = application_type;
+	part->parsed_version = version;
 	part->data_length = data_length;
 	part->header_complete = 1;
 	part->parse_complete = 1;
@@ -710,7 +784,7 @@ int rrr_http_part_parse_request_data_set (
 // Set all required response data without parsing
 int rrr_http_part_parse_response_data_set (
 		struct rrr_http_part *part,
-		size_t data_length
+		rrr_biglength data_length
 ) {
 	part->data_length = data_length;
 	part->header_complete = 1;

@@ -30,6 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
+#include "read_constants.h"
+
 #include "util/posix.h"
 #include "util/linked_list.h"
 #include "util/rrr_time.h"
@@ -66,7 +68,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_STATE_RUNNING_FORKED 5
 
 /* Thread may set this if it has to do a few cleanup operations before stopping, WD will
- * be more patient when waiting for STOPPED (KILLTIME_PAPATIENTT_LIMIT will be used). Thread must set
+ * be more patient when waiting for STOPPED (KILLTIME_PATIENT_LIMIT will be used). Thread must set
  * this within the ordinary KILLTIME_LIMIT */
 #define RRR_THREAD_STATE_STOPPING 6
 
@@ -75,6 +77,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_WATCHDOG_KILLTIME_PATIENT_LIMIT 5000
 
 #define RRR_THREAD_NAME_MAX_LENGTH 64
+
+#define RRR_THREAD_OK     RRR_READ_OK
+#define RRR_THREAD_STOP   RRR_READ_EOF
 
 struct rrr_thread_ghost_data {
 	struct rrr_thread_ghost_data *next;
@@ -175,7 +180,7 @@ static inline int rrr_thread_signal_encourage_stop_check(struct rrr_thread *thre
 	rrr_thread_lock(thread);
 	signal = thread->signal;
 	rrr_thread_unlock(thread);
-	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) != 0) ? RRR_THREAD_STOP : 0;
 }
 
 static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer(struct rrr_thread *thread) {
@@ -184,7 +189,7 @@ static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_tim
 	thread->watchdog_time = rrr_time_get_64();
 	signal = thread->signal;
 	rrr_thread_unlock(thread);
-	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) != 0);
+	return ((signal & (RRR_THREAD_SIGNAL_ENCOURAGE_STOP)) != 0) ? RRR_THREAD_STOP : 0;
 }
 
 static inline int rrr_thread_signal_encourage_stop_check_and_update_watchdog_timer_void(void *arg) {

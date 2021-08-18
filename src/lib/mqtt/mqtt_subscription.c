@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_subscription.h"
 #include "mqtt_packet.h"
@@ -31,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
+
+#define RRR_MQTT_SUBSCRIPTION_COLLECTION_MAX 65536
 
 // On new data fields, remember to also update rrr_mqtt_subscription_replace_and_destroy
 int rrr_mqtt_subscription_destroy (
@@ -65,7 +68,7 @@ int rrr_mqtt_subscription_new (
 		RRR_BUG("BUG: Invalid topic filter passed to rrr_mqtt_subscription_new. Caller should check for this.\n");
 	}
 
-	struct rrr_mqtt_subscription *sub = malloc(sizeof(*sub));
+	struct rrr_mqtt_subscription *sub = rrr_allocate(sizeof(*sub));
 	if (sub == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
 		ret = 1;
@@ -81,7 +84,7 @@ int rrr_mqtt_subscription_new (
 
 
 	else {
-		sub->topic_filter = malloc(strlen(topic_filter) + 1);
+		sub->topic_filter = rrr_allocate(strlen(topic_filter) + 1);
 		if (sub == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_subscription_new_subscriptionB\n");
 			ret = 1;
@@ -108,9 +111,9 @@ int rrr_mqtt_subscription_new (
 	goto out;
 
 	out_free_topic_filter:
-		free(sub->topic_filter);
+		rrr_free(sub->topic_filter);
 	out_free_subscription:
-		free(sub);
+		rrr_free(sub);
 	out:
 		return ret;
 }
@@ -205,13 +208,12 @@ int rrr_mqtt_subscription_collection_match_publish_with_callback (
 				void *callback_arg
 		),
 		void *callback_arg,
-		int *match_count_final
+		rrr_length *match_count_final
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
 	*match_count_final = 0;
 
-	int match_count = 0;
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
@@ -222,7 +224,7 @@ int rrr_mqtt_subscription_collection_match_publish_with_callback (
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 				RRR_LL_ITERATE_LAST();
 			}
-			match_count++;
+			rrr_length_inc_bug(match_count_final);
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
 			RRR_MSG_0("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
@@ -233,8 +235,6 @@ int rrr_mqtt_subscription_collection_match_publish_with_callback (
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
 	RRR_LL_ITERATE_END();
-
-	*match_count_final = match_count;
 
 	return ret;
 }
@@ -260,10 +260,10 @@ int rrr_mqtt_subscription_collection_match_publish (
 	return ret;
 }
 
-int rrr_mqtt_subscription_collection_count (
+rrr_length rrr_mqtt_subscription_collection_count (
 		const struct rrr_mqtt_subscription_collection *target
 ) {
-	return target->node_count;
+	return rrr_length_from_slength_bug_const (RRR_LL_COUNT(target));
 }
 
 void rrr_mqtt_subscription_collection_dump (
@@ -291,7 +291,7 @@ void rrr_mqtt_subscription_collection_destroy (
 		return;
 	}
 	rrr_mqtt_subscription_collection_clear(target);
-	free(target);
+	rrr_free(target);
 }
 
 int rrr_mqtt_subscription_collection_new (
@@ -301,7 +301,7 @@ int rrr_mqtt_subscription_collection_new (
 
 	*target = NULL;
 
-	struct rrr_mqtt_subscription_collection *res = malloc(sizeof(*res));
+	struct rrr_mqtt_subscription_collection *res = rrr_allocate(sizeof(*res));
 	if (res == NULL) {
 		RRR_MSG_0("Could not allocate subscription in rrr_mqtt_subscription_collection_new\n");
 		return RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
@@ -368,6 +368,15 @@ int rrr_mqtt_subscription_collection_clone (
 		return ret;
 }
 
+int rrr_mqtt_subscription_collection_check_full (
+		const struct rrr_mqtt_subscription_collection *collection
+) {
+	if (RRR_LL_COUNT(collection) >= RRR_MQTT_SUBSCRIPTION_COLLECTION_MAX) {
+		return RRR_MQTT_SUBSCRIPTION_REFUSED;
+	}
+	return RRR_MQTT_SUBSCRIPTION_OK;
+}
+
 int rrr_mqtt_subscription_collection_iterate (
 		struct rrr_mqtt_subscription_collection *collection,
 		int (*callback)(struct rrr_mqtt_subscription *sub, void *arg),
@@ -376,6 +385,7 @@ int rrr_mqtt_subscription_collection_iterate (
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mqtt_subscription);
+		// Only internal error propagates
 		int ret_tmp = callback(node, callback_arg);
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR) != 0) {
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
@@ -412,7 +422,7 @@ static int __rrr_mqtt_subscription_collection_push_unique_callback (
 	return ret;
 }
 
-// NOTE : Check for REPLACED return value when calling.
+// NOTE : Check for REPLACED and REFUSED return value when calling.
 // NOTE : Should set subscription to NULL and take ownership or
 //        destroy, but might not set NULL if there are errors.
 //        Caller must check for this and free if needed, usually
@@ -450,6 +460,10 @@ int rrr_mqtt_subscription_collection_add_unique (
 		ret = RRR_MQTT_SUBSCRIPTION_REPLACED;
 	}
 	else {
+		if ((ret = rrr_mqtt_subscription_collection_check_full (target)) != 0) {
+			// Refused, collection full
+			goto out;
+		}
 		if (put_at_end == 1) {
 			RRR_LL_APPEND(target, *subscription);
 		}
@@ -465,15 +479,15 @@ int rrr_mqtt_subscription_collection_add_unique (
 
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
 		const struct rrr_mqtt_subscription_collection *target,
-		ssize_t idx
+		rrr_length idx
 ) {
-	if (idx > target->node_count - 1) {
+	if ((rrr_slength) idx > target->node_count - 1) {
 		RRR_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
 	}
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
-		if (i == idx) {
+		if (i == (rrr_slength) idx) {
 			return node;
 		}
 		i++;
@@ -484,15 +498,15 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
 		const struct rrr_mqtt_subscription_collection *target,
-		ssize_t idx
+		rrr_length idx
 ) {
-	if (idx > target->node_count - 1) {
+	if ((rrr_slength) idx > target->node_count - 1) {
 		RRR_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
 	}
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
-		if (i == idx) {
+		if (i == (rrr_slength) idx) {
 			return node;
 		}
 		i++;
@@ -559,6 +573,9 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 		if (ret == RRR_MQTT_SUBSCRIPTION_REPLACED) {
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
+		else if (ret == RRR_MQTT_SUBSCRIPTION_REFUSED) {
+			goto out;
+		}
 		else {
 			RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
 			ret = 1;
@@ -621,16 +638,14 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription_collection *source,
-		int *removed_count
+		rrr_length *removed_count
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
 	*removed_count = 0;
 
-	int did_remove;
-
 	RRR_LL_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
-		did_remove = 0;
+		int did_remove = 0;
 
 		if (node->qos_or_reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 			RRR_MSG_0("MQTT not removing topic '%s' due to reason %u set\n",
@@ -656,7 +671,7 @@ int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 		}
 		else {
 			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_OK;
-			(*removed_count)++;
+			rrr_length_inc_bug(removed_count);
 		}
 	RRR_LL_ITERATE_END();
 

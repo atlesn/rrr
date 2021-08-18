@@ -248,28 +248,30 @@ void rrr_log_cleanup(void);
 void rrr_log_hook_register (
 		int *handle,
 		void (*log)(
-				uint16_t *write_count,
-				unsigned short loglevel_translated,
-				unsigned short loglevel_orig,
+				uint8_t *write_count,
+				uint8_t loglevel_translated,
+				uint8_t loglevel_orig,
 				const char *prefix,
 				const char *message,
 				void *private_arg
 		),
 		void *private_arg,
-		struct rrr_event_queue *notify_queue
+		struct rrr_event_queue *notify_queue,
+		int (*event_pass_retry_callback)(void *arg),
+		void *event_pass_retry_callback_arg
 );
 void rrr_log_hook_unregister_all_after_fork (void);
 void rrr_log_hook_unregister (
 		int handle
 );
 void rrr_log_hooks_call_raw (
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message
 );
 void rrr_log_printf_nolock (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
@@ -280,17 +282,17 @@ void rrr_log_printf_plain (
 );
 void rrr_log_printn_plain (
 		const char *value,
-		size_t value_size
+		unsigned long long value_size
 );
 void rrr_log_printf (
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...
 );
 void rrr_log_fprintf (
 		FILE *file,
-		unsigned short loglevel,
+		uint8_t loglevel,
 		const char *prefix,
 		const char *__restrict __format,
 		...

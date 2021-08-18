@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
@@ -89,7 +90,7 @@ static int journal_queue_entry_new (struct journal_queue_entry **target) {
 
 	*target = NULL;
 
-	if ((node = malloc(sizeof(*node))) == NULL) {
+	if ((node = rrr_allocate(sizeof(*node))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in journal_queue_entry_new\n");
 		return 1;
 	}
@@ -103,7 +104,7 @@ static int journal_queue_entry_new (struct journal_queue_entry **target) {
 
 static void journal_queue_entry_destroy (struct journal_queue_entry *node) {
 	rrr_array_clear(&node->array);
-	free(node);
+	rrr_free(node);
 }
 
 static int journal_data_init(struct journal_data *data, struct rrr_instance_runtime_data *thread_data) {
@@ -144,7 +145,7 @@ static int journal_parse_config (struct journal_data *data, struct rrr_instance_
 		}
 
 		RRR_FREE_IF_NOT_NULL(data->hostname);
-		if ((data->hostname = strdup(hostname)) == NULL) {
+		if ((data->hostname = rrr_strdup(hostname)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for hostname in journal_parse_config\n");
 			ret = 1;
 			goto out;
@@ -176,9 +177,9 @@ static int journal_preload (struct rrr_thread *thread) {
 
 // Note : Context here is ANY thread
 static void journal_log_hook (
-		uint16_t *amount_written,
-		unsigned short loglevel_translated,
-		unsigned short loglevel_orig,
+		uint8_t *amount_written,
+		uint8_t loglevel_translated,
+		uint8_t loglevel_orig,
 		const char *prefix,
 		const char *message,
 		void *private_arg
@@ -314,14 +315,23 @@ static int journal_write_message_callback (struct rrr_msg_holder *entry, void *a
 		goto out;
 	}
 
-//	printf ("topic: %s\n", topic_tmp_final);
+	const size_t topic_length = strlen(topic_tmp_final);
+	if (topic_length > RRR_MSG_TOPIC_MAX) {
+		RRR_MSG_0("Topic size overflow in journal instance %s (%llu>%llu)\n",
+			INSTANCE_D_NAME(data->thread_data),
+			(unsigned long long) topic_length,
+			(unsigned long long) RRR_MSG_TOPIC_MAX
+		);
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
 
 	if (rrr_array_new_message_from_collection (
 				&reading,
 				&queue_entry->array,
 				queue_entry->timestamp,
 				topic_tmp_final,
-				strlen(topic_tmp_final)
+				(uint16_t) topic_length
 	) != 0) {
 		RRR_MSG_0("Could create new message in journal_write_message_callback\n");
 		ret = RRR_MESSAGE_BROKER_ERR;
@@ -390,7 +400,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data, NULL);
+	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data, NULL, NULL, NULL);
 
 	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
@@ -446,10 +456,10 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 		}
 
 		if (time_now - time_start > 1000000) {
-			int output_buffer_count = 0;
+			unsigned int output_buffer_count = 0;
 			int delivery_ratelimit_active = 0;
 			uint64_t delivery_queue_sleep_event_count = 0;
-			int delivery_queue_count = 0;
+			unsigned int delivery_queue_count = 0;
 
 			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 					&output_buffer_count,
@@ -463,7 +473,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 			pthread_mutex_lock(&data->delivery_lock);
 			delivery_queue_sleep_event_count = data->delivery_queue_sleep_event_count;
-			delivery_queue_count = RRR_LL_COUNT(&data->delivery_queue);
+			delivery_queue_count = (unsigned int) RRR_LL_COUNT(&data->delivery_queue);
 			pthread_mutex_unlock(&data->delivery_lock);
 
 			time_start = time_now;

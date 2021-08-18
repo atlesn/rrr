@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "ip.h"
 #include "ip_accept_data.h"
 
@@ -31,7 +32,7 @@ void rrr_ip_accept_data_close_and_destroy (struct rrr_ip_accept_data *accept_dat
 	if (accept_data->ip_data.fd != 0) {
 		rrr_ip_close(&accept_data->ip_data);
 	}
-	free(accept_data);
+	rrr_free(accept_data);
 }
 
 void rrr_ip_accept_data_close_and_destroy_void (void *accept_data) {

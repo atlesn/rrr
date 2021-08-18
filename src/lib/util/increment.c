@@ -78,7 +78,7 @@ uint32_t rrr_increment_basic (
 		value_tmp = min;
 	}
 
-	return value_tmp;
+	return (uint32_t) value_tmp;
 }
 
 uint32_t rrr_increment_mod (
@@ -96,5 +96,5 @@ uint32_t rrr_increment_mod (
 		}
 	}
 
-	return value_tmp;
+	return (uint32_t) value_tmp;
 }

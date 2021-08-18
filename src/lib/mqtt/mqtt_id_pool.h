@@ -22,8 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_ID_POOL_H
 #define RRR_MQTT_ID_POOL_H
 
-#include <stdint.h>
-#include <stdio.h>
+#include "../rrr_types.h"
 
 // Set small number for stress testing
 
@@ -40,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_id_pool {
 	uint32_t *pool;
-	ssize_t allocated_majors;
+	rrr_length allocated_majors;
 	uint16_t last_allocated_id;
 };
 

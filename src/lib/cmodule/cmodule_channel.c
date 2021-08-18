@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
@@ -31,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
 #include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_cmodule_mmap_channel_write_simple_callback_data {
 	const struct rrr_msg *message;
@@ -51,7 +53,9 @@ int rrr_cmodule_channel_count (
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = 0;
 
@@ -63,10 +67,10 @@ int rrr_cmodule_channel_send_message_simple (
 			channel,
 			notify_queue,
 			sizeof(*message),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
 			__rrr_cmodule_mmap_channel_write_simple_callback,
-			&callback_data
+			&callback_data,
+			check_cancel_callback,
+			check_cancel_callback_arg
 	)) != 0) {
 		goto out;
 	}
@@ -96,7 +100,11 @@ int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr
+		const struct rrr_msg_addr *message_addr,
+		unsigned int full_wait_time_us,
+		int wait_attempts_max,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 ) {
 	int ret = 0;
 
@@ -109,21 +117,29 @@ int rrr_cmodule_channel_send_message_and_address (
 		message
 	};
 
-	if ((ret = rrr_mmap_channel_write_using_callback (
-			channel,
-			notify_queue,
-			MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-			RRR_CMODULE_CHANNEL_WAIT_TIME_US,
-			RRR_CMODULE_CHANNEL_WAIT_RETRIES,
-			__rrr_cmodule_mmap_channel_write_callback,
-			&callback_data
-	)) != 0) {
-		if (ret == RRR_MMAP_CHANNEL_FULL) {
+	while (wait_attempts_max--) {
+		if ((ret = rrr_mmap_channel_write_using_callback (
+				channel,
+				notify_queue,
+				MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
+				__rrr_cmodule_mmap_channel_write_callback,
+				&callback_data,
+				check_cancel_callback,
+				check_cancel_callback_arg
+		)) == 0) {
+			break;
+		}
+		else if (ret == RRR_MMAP_CHANNEL_FULL) {
+			// OK, retry
+		}
+		else {
+			RRR_MSG_0("Could not send address message on mmap channel in rrr_cmodule_channel_send_message_and_addres return was %i\n", ret);
 			goto out;
 		}
-		RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
-		ret = 1;
-		goto out;
+
+		if (full_wait_time_us > 0) {
+			rrr_posix_usleep(full_wait_time_us);
+		}
 	}
 
 	out:
@@ -133,40 +149,31 @@ int rrr_cmodule_channel_send_message_and_address (
 int rrr_cmodule_channel_receive_messages (
 		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
-		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	int retry_sleep_start = 90;
+	int did_read = 0;
 	int max = 100;
-
 	do {
-		// TODO : Remove sleeping
-		int did_read = 0;
+		did_read = 0;
 		ret = rrr_mmap_channel_read_with_callback (
 				&did_read,
 				channel,
-				(--retry_sleep_start > 0 ? 0 : empty_wait_time_us),
 				callback,
 				callback_arg
 		);
 		if (did_read) {
 			(*amount)--;
 		}
-	} while (--max >= 0 && *amount > 0 && ret == 0);
+	} while (--max >= 0 && *amount > 0 && ret == 0 && did_read);
 
 	return ret;
 }
 
-void rrr_cmodule_channel_bubblesort (
+void rrr_cmodule_channel_maintenance (
 		struct rrr_mmap_channel *channel
 ) {
-	int was_sorted = 0;
-	int max_rounds = 100;
-
-	do {
-		rrr_mmap_channel_bubblesort_pointers (channel, &was_sorted);
-	} while (was_sorted == 0 && --max_rounds > 0);
+	rrr_mmap_channel_maintenance(channel);
 }

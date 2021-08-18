@@ -29,22 +29,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include <time.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <limits.h>
 
-#include "log.h"
+#include "../log.h"
 #include "../rrr_strerror.h"
+#include "../rrr_types.h"
 #include "posix.h"
 
-int rrr_posix_usleep(int useconds) {
-	long part_useconds = (useconds % 1000000);
-	long part_seconds =  (useconds - part_useconds) / 1000000;
+int rrr_posix_usleep(size_t useconds) {
+	size_t part_useconds = (useconds % 1000000);
+	size_t part_seconds =  (useconds - part_useconds) / 1000000;
 
 	struct timespec req = {
-		part_seconds,
-		part_useconds * 1000
+		(long) part_seconds,
+		(long) part_useconds * 1000
 	};
 
 	struct timespec rem = {0};
@@ -52,13 +55,24 @@ int rrr_posix_usleep(int useconds) {
 	return nanosleep(&req, &rem);
 }
 
-void *rrr_posix_mmap (size_t size) {
-    return mmap (
-    		NULL,
+void *rrr_posix_mmap (size_t size, int is_shared) {
+	return mmap (
+			NULL,
 			size,
 			PROT_READ | PROT_WRITE,
-			MAP_SHARED | MAP_ANONYMOUS,
+			(is_shared ? MAP_SHARED : MAP_PRIVATE) | MAP_ANONYMOUS,
 			-1,
+			0
+	);
+}
+
+void *rrr_posix_mmap_with_fd (int fd, size_t size) {
+	return mmap (
+			NULL,
+			size,
+			PROT_READ | PROT_WRITE,
+			MAP_SHARED,
+			fd,
 			0
 	);
 }

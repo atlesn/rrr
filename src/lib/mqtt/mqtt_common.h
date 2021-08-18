@@ -192,7 +192,7 @@ struct rrr_mqtt_common_init_data {
 	const char *client_name;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
-	unsigned int max_socket_connections;
+	rrr_length max_socket_connections;
 };
 
 struct rrr_mqtt_send_from_sessions_callback_data {
@@ -321,7 +321,7 @@ int rrr_mqtt_common_read_parse_single_handle (
 		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_data *data,
 		struct rrr_net_transport_handle *handle,
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *callback_arg
 );
 int rrr_mqtt_common_iterate_and_clear_local_delivery (

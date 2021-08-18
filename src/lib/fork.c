@@ -55,7 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}} while (0)
 
 #define RRR_FORK_HANDLER_ALLOCATION_SIZE \
-	(sizeof(struct rrr_fork_handler) + sysconf(_SC_PAGESIZE))
+	(sizeof(struct rrr_fork_handler) + (size_t) sysconf(_SC_PAGESIZE))
 
 
 static void __rrr_fork_handler_lock (
@@ -85,7 +85,7 @@ int rrr_fork_handler_new (
 
 	*result = NULL;
 
-	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
+	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE, 1 /* Is shared */)) == MAP_FAILED) {
 		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new\n");
 		ret = 1;
 		goto out;

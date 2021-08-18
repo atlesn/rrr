@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 
 #include "lib/log.h"
+#include "lib/allocator.h"
 #include "lib/common.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -63,6 +64,9 @@ int rrr_signal_handler(int s, void *arg) {
 
 int rrr_msgdb_periodic (void *arg) {
 	(void)(arg);
+
+	rrr_allocator_maintenance_nostats();
+
 	return main_running ? 0 : RRR_READ_EOF;
 }
 
@@ -74,8 +78,12 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	int ret = EXIT_SUCCESS;
 
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_final;
+	}
 	if (rrr_log_init() != 0) {
-		goto out;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -145,6 +153,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 		cmd_destroy(&cmd);
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out:
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

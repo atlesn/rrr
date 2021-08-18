@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
-#include "../buffer.h"
+#include "../fifo.h"
 #include "../read_constants.h"
 #include "../ip/ip.h"
 #include "../util/linked_list.h"
@@ -35,39 +35,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONN_TYPE_IPV4 4
 #define RRR_MQTT_CONN_TYPE_IPV6 6
 
-//#define RRR_MQTT_CONN_INTERNAL_ERROR		(1<<0)
-//#define RRR_MQTT_CONN_DESTROY_CONNECTION	(1<<1)
-//#define RRR_MQTT_CONN_SOFT_ERROR			(1<<1)
-//#define RRR_MQTT_CONN_BUSY					(1<<3)
-//#define RRR_MQTT_CONN_STEP_LIMIT			(1<<4)
-//#define RRR_MQTT_CONN_ITERATE_STOP			(1<<5)
-
-#define RRR_MQTT_CONN_STATE_NEW							(0)			//    0
-#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED		(1<<0)		//    1
-#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)		//    2
-#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)		//    4
-#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)		//    8
+#define RRR_MQTT_CONN_STATE_NEW                            (0)
+#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED        (1<<0)
+#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED     (1<<1)
+#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED            (1<<2)
+#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED         (1<<3)
 // After disconnecting, we wait a bit before close()-ing to let the client close first. The
 // broker sets the timeout for this, the client sets it to 0.
-#define RRR_MQTT_CONN_STATE_CLOSE_WAIT					(1<<5)		//   32
+#define RRR_MQTT_CONN_STATE_CLOSE_WAIT                  (1<<5)
 // When close wait timer has started, state will transition into CLOSED. When timer is
 // complete, the connection is destroyed.
-#define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)		//   64
+#define RRR_MQTT_CONN_STATE_CLOSED                      (1<<6)
 
-#define RRR_MQTT_CONN_EVENT_DISCONNECT		1
-#define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
+#define RRR_MQTT_CONN_EVENT_DISCONNECT     1
+#define RRR_MQTT_CONN_EVENT_PACKET_PARSED  2
 
-#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR								\
-		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
-		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {	\
-			return RRR_MQTT_OK;															\
-		}} while (0)
+#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR                             \
+        struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);   \
+        do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {             \
+            return RRR_MQTT_OK;                                                         \
+        }} while (0)
 
-#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
-		struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle); \
-		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
-			return RRR_MQTT_SOFT_ERROR;																								\
-		}} while (0)
+#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK                                                                        \
+        struct rrr_mqtt_conn *connection = RRR_NET_TRANSPORT_CTX_PRIVATE_PTR(handle);                                     \
+        do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {    \
+            return RRR_MQTT_SOFT_ERROR;                                                                                   \
+        }} while (0)
 
 struct rrr_mqtt_session;
 struct rrr_net_transport_handle;
@@ -140,11 +133,11 @@ struct rrr_mqtt_conn {
 #define RRR_MQTT_CONN_STATE_OR(c) \
 	(c)->state_flags |= c
 
-#define RRR_MQTT_CONN_STATE_SEND_IS_BUSY_CLIENT_ID(c)						\
-	(((c)->state_flags & (	RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED |		\
-							RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED |	\
-							RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED |			\
-							RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			\
+#define RRR_MQTT_CONN_STATE_SEND_IS_BUSY_CLIENT_ID(c)                              \
+	(((c)->state_flags & (    RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED |       \
+	                          RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED |    \
+	                          RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED |           \
+	                          RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED          \
 	)) != 0)
 
 #define RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(c) \
@@ -193,13 +186,10 @@ int rrr_mqtt_conn_set_will_data_from_connect (
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_p_connect *connect
 );
-struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);
-		void *callback_arg;
-};
-int rrr_mqtt_conn_housekeeping (
-		struct rrr_mqtt_conn *connection,
-		void *rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data
+int rrr_mqtt_conn_iterator_ctx_housekeeping (
+		struct rrr_net_transport_handle *handle,
+		int (*exceeded_keep_alive_callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *callback_arg
 );
 void rrr_mqtt_conn_accept_and_connect_callback (
 		struct rrr_net_transport_handle *handle,
@@ -214,7 +204,7 @@ int rrr_mqtt_conn_iterator_ctx_check_alive (
 );
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
-		int read_step_max_size,
+		rrr_biglength read_step_max_size,
 		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
@@ -226,6 +216,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 // No reference counting of packet performed, but event handlers might
 // INCREF if they add the packet to a buffer
 int rrr_mqtt_conn_iterator_ctx_send_packet (
+		int *do_stop,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet
 );

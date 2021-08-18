@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_application.h"
 #include "http_application_http1.h"
@@ -74,7 +75,7 @@ static void __rrr_http_application_http1_destroy (struct rrr_http_application *a
 	RRR_FREE_IF_NOT_NULL(http1->application_websocket_topic);
 	rrr_websocket_state_clear_all(&http1->ws_state);
 	rrr_http_transaction_decref_if_not_null(http1->active_transaction);
-	free(http1);
+	rrr_free(http1);
 }
 
 static uint64_t __rrr_http_application_http1_active_transaction_count_get (
@@ -162,7 +163,7 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, string_builder.buf, string_builder.wpos)) != 0) {
 		RRR_DBG_1("Error: Send failed in __rrr_http_application_http1_send_header_field_callback\n");
 		goto out;
 	}
@@ -174,11 +175,11 @@ static int __rrr_http_application_http1_response_send_header_field_callback (str
 
 static int __rrr_http_application_http1_send_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_net_transport_handle *handle = arg;
-	return rrr_net_transport_ctx_send_push (
+	return rrr_net_transport_ctx_send_push_const (
 			handle,
 			str,
 			len
@@ -186,7 +187,8 @@ static int __rrr_http_application_http1_send_callback (
 }
 
 static int __rrr_http_application_http1_response_send_response_code_callback (
-		int response_code,
+		unsigned int response_code,
+		enum rrr_http_version protocol_version,
 		void *arg
 ) {
 	struct rrr_http_application_http1_response_send_callback_data *callback_data = arg;
@@ -197,7 +199,8 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 
 	if (rrr_asprintf (
 			&response_str_tmp,
-			"HTTP/1.1 %u %s\r\n",
+			"%s %u %s\r\n",
+			(protocol_version == RRR_HTTP_VERSION_10 ? "HTTP/1.0" : "HTTP/1.1"),
 			response_code,
 			rrr_http_util_iana_response_phrase_from_status_code(response_code)
 	) <= 0) {
@@ -206,7 +209,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, response_str_tmp, strlen(response_str_tmp))) != 0) {
 		goto out;
 	}
 
@@ -216,6 +219,7 @@ static int __rrr_http_application_http1_response_send_response_code_callback (
 }
 
 static int __rrr_http_application_http1_response_send_final (
+	struct rrr_http_part *request_part,
 	struct rrr_http_part *response_part,
 	const struct rrr_nullsafe_str *send_data,
 	void *arg
@@ -226,7 +230,7 @@ static int __rrr_http_application_http1_response_send_final (
 
 	int ret = 0;
 
-	if ((ret = rrr_net_transport_ctx_send_push(callback_data->handle, "\r\n", 2)) != 0 ) {
+	if ((ret = rrr_net_transport_ctx_send_push_const(callback_data->handle, "\r\n", 2)) != 0 ) {
 		goto out;
 	}
 
@@ -241,6 +245,10 @@ static int __rrr_http_application_http1_response_send_final (
 		}
 	}
 
+	if (request_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE) {
+		rrr_net_transport_ctx_close_when_send_complete_set(callback_data->handle);
+	}
+
 	out:
 	return ret;
 }
@@ -251,6 +259,17 @@ static int __rrr_http_application_http1_response_send (
 		struct rrr_http_transaction *transaction
 ) {
 	int ret = 0;
+
+	if ((ret = rrr_http_part_header_field_push (
+			transaction->response_part,
+			"connection",
+			transaction->request_part->parsed_connection == RRR_HTTP_CONNECTION_KEEPALIVE
+				? "keep-alive"
+				: "close"
+	)) != 0) {
+		RRR_MSG_0("Failed to push connection header in __rrr_http_application_http1_response_send\n");
+		goto out;
+	}
 
 	struct rrr_http_application_http1_response_send_callback_data callback_data = {
 			handle
@@ -276,7 +295,7 @@ static int __rrr_http_application_http1_response_send (
 struct rrr_http_application_http1_receive_data {
 	struct rrr_net_transport_handle *handle;
 	struct rrr_http_application_http1 *http1;
-	ssize_t received_bytes; // Used only for stall timeout and sleeping
+	rrr_biglength received_bytes; // Used only for stall timeout and sleeping
 	struct rrr_http_application **upgraded_application;
 	int (*unique_id_generator_callback)(RRR_HTTP_APPLICATION_UNIQUE_ID_GENERATOR_CALLBACK_ARGS);
 	void *unique_id_generator_callback_arg;
@@ -305,7 +324,7 @@ static int __rrr_http_application_http1_websocket_make_accept_string (
 
 	rrr_SHA1Context sha1_ctx = {0};
 	rrr_SHA1Reset(&sha1_ctx);
-	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, strlen(accept_str_tmp));
+	rrr_SHA1Input(&sha1_ctx, (const unsigned char *) accept_str_tmp, (unsigned int) strlen(accept_str_tmp));
 
 	if (!rrr_SHA1Result(&sha1_ctx) || sha1_ctx.Corrupted != 0 || sha1_ctx.Computed != 1) {
 		RRR_MSG_0("Computation of SHA1 failed in __rrr_http_session_websocket_make_accept_string (Corrupt: %i - Computed: %i)\n",
@@ -316,7 +335,7 @@ static int __rrr_http_application_http1_websocket_make_accept_string (
 
 	rrr_SHA1toBE(&sha1_ctx);
 
-	size_t accept_base64_length = 0;
+	rrr_biglength accept_base64_length = 0;
 	if ((accept_base64_tmp = (char *) rrr_base64_encode (
 			(const unsigned char *) sha1_ctx.Message_Digest,
 			sizeof(sha1_ctx.Message_Digest),
@@ -404,9 +423,10 @@ static int __rrr_http_application_http1_response_receive_callback (
 		rrr_http_part_header_dump(transaction->response_part);
 	}
 
-	RRR_DBG_3("HTTP response reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP response reading complete, data length is %" PRIrrrbl " response length is %" PRIrrrbl " using protocol %s header length is %" PRIrrrbl "\n",
 			transaction->response_part->data_length,
 			transaction->response_part->headroom_length,
+			RRR_HTTP_VERSION_TO_STR(transaction->response_part->parsed_version),
 			transaction->response_part->header_length
 	);
 
@@ -449,7 +469,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 					transaction,
 					read_session->rx_buf_ptr,
 					read_session->rx_overshoot_size,
-					transaction->response_part->parsed_protocol_version,
+					transaction->response_part->parsed_application_type,
 					receive_data->websocket_callback_arg
 			))) {
 				goto out;
@@ -476,9 +496,18 @@ static int __rrr_http_application_http1_response_receive_callback (
 			}
 
 #ifdef RRR_WITH_NGHTTP2
-			RRR_DBG_3("Upgrade to HTTP2 size is %li overshoot is %li\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+			RRR_DBG_3("Upgrade to HTTP2 size is %" PRIrrrbl " overshoot is %" PRIrrrbl "\n", read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 
 			if ((ret = rrr_http_transaction_response_reset(transaction)) != 0) {
+				goto out;
+			}
+
+			if (read_session->rx_overshoot_size > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Overshoot too big while upgrading response to HTTP2 (%llu>%llu)\n",
+					(unsigned long long) read_session->rx_overshoot_size,
+					(unsigned long long) RRR_LENGTH_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
 				goto out;
 			}
 
@@ -487,7 +516,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 			ret = rrr_http_application_http2_new_from_upgrade (
 					receive_data->upgraded_application,
 					(void **) &read_session->rx_overshoot,
-					read_session->rx_overshoot_size,
+					rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 					transaction,
 					0 // Is not server
 			);
@@ -520,7 +549,7 @@ static int __rrr_http_application_http1_response_receive_callback (
 				transaction,
 				read_session->rx_buf_ptr,
 				read_session->rx_overshoot_size,
-				transaction->response_part->parsed_protocol_version,
+				transaction->response_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != 0) {
 			goto out;
@@ -531,6 +560,11 @@ static int __rrr_http_application_http1_response_receive_callback (
 	receive_data->http1->upgrade_active = upgrade_mode;
 
 	out:
+	if (ret == RRR_HTTP_OK) {
+		if (transaction->response_part->parsed_connection != RRR_HTTP_CONNECTION_KEEPALIVE && upgrade_mode == RRR_HTTP_UPGRADE_MODE_NONE) {
+			ret = RRR_HTTP_DONE;
+		}
+	}
 	__rrr_http_application_http1_transaction_clear(receive_data->http1);
 	RRR_FREE_IF_NOT_NULL(orig_http2_settings_tmp);
 	return ret;
@@ -596,7 +630,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 	}
 
 	if (rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe) != 16) {
-		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrrl "\n",
+		RRR_DBG_1("Incorrect length for Sec-WebSocket-Key header field in HTTP request with WebSocket upgrade. 16 bytes are required but got %" PRIrrr_nullsafe_len "\n",
 				rrr_nullsafe_str_len(sec_websocket_key->binary_value_nullsafe));
 		goto out_bad_request;
 	}
@@ -624,7 +658,7 @@ static int __rrr_http_application_http1_request_upgrade_try_websocket (
 			transaction,
 			data_to_use,
 			read_session->rx_overshoot_size,
-			transaction->response_part->parsed_protocol_version,
+			transaction->response_part->parsed_application_type,
 			receive_data->websocket_callback_arg
 	)) != RRR_HTTP_OK || transaction->response_part->response_code != 0) {
 		goto out;
@@ -720,10 +754,19 @@ static int __rrr_http_application_http1_request_upgrade_try_http2 (
 		goto out;
 	}
 
+	if (read_session->rx_overshoot_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Overshoot too big while upgrading request to HTTP2 (%llu>%llu)\n",
+				(unsigned long long) read_session->rx_overshoot_size,
+				(unsigned long long) RRR_LENGTH_MAX
+			 );
+		ret = RRR_HTTP_SOFT_ERROR;
+		goto out;
+	}
+
 	ret = rrr_http_application_http2_new_from_upgrade (
 			&http2,
 			(void **) &read_session->rx_overshoot,
-			read_session->rx_overshoot_size,
+			rrr_length_from_biglength_bug_const(read_session->rx_overshoot_size),
 			transaction,
 			1 // Is server
 	);
@@ -819,6 +862,11 @@ static int __rrr_http_application_http1_request_receive_callback (
 
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
+	if (*(receive_data->upgraded_application) != NULL) {
+		// Upgrade was performed in get target size function, nothing to do
+		goto out;
+	}
+
 	if (transaction->request_part->request_method == 0) {
 		RRR_DBG_2("Request parsing was incomplete in HTTP final callback, sending bad request to client.\n");
 		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
@@ -829,12 +877,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 		rrr_http_part_header_dump(transaction->request_part);
 	}
 
-	// Upgrade was performed in get target size function, nothing to do
-	if (*(receive_data->upgraded_application) != 0) {
-		goto out;
-	}
-
-	RRR_DBG_3("HTTP request reading complete, data length is %li response length is %li header length is %li\n",
+	RRR_DBG_3("HTTP request reading complete, data length is %" PRIrrrbl " response length is %" PRIrrrbl " header length is %" PRIrrrbl "\n",
 			transaction->request_part->data_length,
 			transaction->request_part->headroom_length,
 			transaction->request_part->header_length
@@ -863,29 +906,31 @@ static int __rrr_http_application_http1_request_receive_callback (
 	}
 
 	enum rrr_http_upgrade_mode upgrade_mode = RRR_HTTP_UPGRADE_MODE_NONE;
-	if ((ret = __rrr_http_application_http1_request_upgrade_try (
-			&upgrade_mode,
-			receive_data,
-			read_session,
-			data_to_use
-	)) != 0) {
-		goto out;
-	}
-
-	if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
-		RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
-		transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-		goto out_send_response;
-	}
-
-	if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
-		if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
-			RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
-			receive_data->http1->upgrade_active = upgrade_mode;
+	if (transaction->request_part->parsed_version != RRR_HTTP_VERSION_10) {
+		if ((ret = __rrr_http_application_http1_request_upgrade_try (
+				&upgrade_mode,
+				receive_data,
+				read_session,
+				data_to_use
+		)) != 0) {
+			goto out;
 		}
-		else {
-			RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
-					RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+
+		if (upgrade_mode == RRR_HTTP_UPGRADE_MODE_WEBSOCKET && receive_data->websocket_callback == NULL) {
+			RRR_MSG_1("Warning: Received HTTP request with WebSocket update, but no WebSocket callback is set in configuration\n");
+			transaction->response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+			goto out_send_response;
+		}
+
+		if (upgrade_mode != RRR_HTTP_UPGRADE_MODE_NONE) {
+			if (transaction->response_part->response_code == RRR_HTTP_RESPONSE_CODE_SWITCHING_PROTOCOLS) {
+				RRR_DBG_3("Upgrading HTTP connection to %s\n", RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode));
+				receive_data->http1->upgrade_active = upgrade_mode;
+			}
+			else {
+				RRR_DBG_3("Note: Upgrade HTTP connection to %s failed, response is now %i\n",
+						RRR_HTTP_UPGRADE_MODE_TO_STR(upgrade_mode), transaction->response_part->response_code);
+			}
 		}
 	}
 
@@ -930,7 +975,6 @@ static int __rrr_http_application_http1_request_receive_callback (
 			);
 		}
 
-
 		// HTTP2 application will send the actual response during the next tick (unless an error occured)
 		goto out;
 	}
@@ -941,7 +985,7 @@ static int __rrr_http_application_http1_request_receive_callback (
 				transaction,
 				data_to_use,
 				read_session->rx_overshoot_size,
-				transaction->request_part->parsed_protocol_version,
+				transaction->request_part->parsed_application_type,
 				receive_data->callback_arg
 		)) != RRR_HTTP_OK) {
 			if (ret == RRR_HTTP_NO_RESULT) {
@@ -1017,11 +1061,18 @@ static int __rrr_http_application_http1_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
-	size_t target_size;
-	size_t parsed_bytes = 0;
+	rrr_biglength target_size;
+	rrr_biglength parsed_bytes = 0;
 
 	struct rrr_http_part *part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
+
+	if (rrr_net_transport_ctx_close_when_send_complete_get(receive_data->handle)) {
+		// Data received after completed parse of HTTP/1.0 request, drop data as
+		// connection is to be closed.
+		ret = RRR_HTTP_PARSE_INCOMPLETE;
+		goto out;
+	}
 
 	if (receive_data->unique_id_generator_callback == NULL) {
 		// Is client
@@ -1070,12 +1121,21 @@ static int __rrr_http_application_http1_receive_get_target_size (
 		if (	(rrr_biglength) read_session->rx_buf_wpos >= (rrr_biglength) sizeof(http2_magic) - 1 &&
 				memcmp(read_session->rx_buf_ptr, http2_magic, sizeof(http2_magic) - 1) == 0
 		) {
+			if (read_session->rx_buf_wpos > RRR_LENGTH_MAX) {
+				RRR_MSG_0("Preliminary data too big during plain HTTP2 initialization (%llu>%llu)\n",
+					(unsigned long long) read_session->rx_buf_wpos,
+					(unsigned long long) RRR_LENGTH_MAX
+				);
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
+
 			RRR_DBG_3("HTTP2 magic found, upgrading to native HTTP2 with %llu bytes read so far\n", (long long int) read_session->rx_buf_wpos);
 			if ((ret = rrr_http_application_http2_new (
 					receive_data->upgraded_application,
 					1, // Is server
 					(void **) &read_session->rx_buf_ptr,
-					read_session->rx_buf_wpos
+					rrr_length_from_biglength_bug_const(read_session->rx_buf_wpos)
 			)) != 0) {
 				goto out;
 			}
@@ -1127,12 +1187,14 @@ static int __rrr_http_application_http1_receive_get_target_size (
 			}
 		}
 
-		if (target_size > SSIZE_MAX) {
-			RRR_MSG_0("Target size %lu exceeds maximum value of %li while parsing HTTP part\n",
-					target_size, SSIZE_MAX);
+#if RRR_BIGLENGTH_MAX > SIZE_MAX
+		if (target_size > SIZE_MAX) {
+			RRR_MSG_0("Target size %" PRIrrrbl " exceeds maximum value of %llu while parsing HTTP part\n",
+					target_size, (long long unsigned) SIZE_MAX);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 			goto out;
 		}
+#endif
 
 		read_session->eof_ok_now = 1;
 		read_session->target_size = target_size;
@@ -1190,7 +1252,7 @@ static int __rrr_http_application_http1_websocket_responses_get (
 	int ret = 0;
 
 	void *response_data = NULL;
-	ssize_t response_data_len = 0;
+	rrr_biglength response_data_len = 0;
 	int response_is_binary = 0;
 
 	do {
@@ -1225,9 +1287,9 @@ static int __rrr_http_application_http1_websocket_responses_get (
 static int __rrr_http_application_http1_transport_ctx_tick_websocket (
 		struct rrr_http_application_http1 *http1,
 		struct rrr_net_transport_handle *handle,
-		ssize_t read_max_size,
-		int ping_interval_s,
-		int timeout_s,
+		rrr_biglength read_max_size,
+		rrr_length ping_interval_s,
+		rrr_length timeout_s,
 		int (*callback)(RRR_HTTP_APPLICATION_WEBSOCKET_RESPONSE_GET_CALLBACK_ARGS),
 		void *get_response_callback_arg,
 		int (*frame_callback)(RRR_HTTP_APPLICATION_WEBSOCKET_FRAME_CALLBACK_ARGS),
@@ -1305,6 +1367,7 @@ struct rrr_http_application_http1_request_send_callback_data {
 static int __rrr_http_application_http1_request_send_preliminary_callback (
 		enum rrr_http_method method,
 		enum rrr_http_upgrade_mode upgrade_mode,
+		enum rrr_http_version protocol_version,
 		struct rrr_http_part *request_part,
 		const struct rrr_nullsafe_str *request,
 		void *arg
@@ -1371,6 +1434,17 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 		RRR_MSG_3("Note: HTTP client attempted to send request with upgrade to HTTP2, but RRR is not built with NGHTTP2. Proceeding using HTTP/1.1.\n");
 #endif /* RRR_WITH_NGHTTP2 */
 	}
+	else {
+		if ((ret = rrr_http_part_header_field_push (
+				request_part,
+				"connection",
+				protocol_version == RRR_HTTP_VERSION_10
+					? "close"
+					: "keep-alive"
+		)) != 0) {
+			goto out;
+		}
+	}
 
 	// Prepend "GET " etc. before endpoint
 	if ((ret = rrr_nullsafe_str_prepend_asprintf (
@@ -1384,9 +1458,10 @@ static int __rrr_http_application_http1_request_send_preliminary_callback (
 	}
 
 	// Append the rest of the header after endpoint
+	// Caller should check that version 1.0 is not used together with upgrades as this might cause connection to close after the first response
 	if ((ret = rrr_nullsafe_str_append_asprintf (
 			request_tmp,
-			" HTTP/1.1\r\n"
+			(protocol_version == RRR_HTTP_VERSION_10 ? " HTTP/1.0\r\n" : " HTTP/1.1\r\n")
 	)) < 0) {
 		RRR_MSG_0("Error while making request string in rrr_http_application_http1_request_send return was %i\n", ret);
 		ret = 1;
@@ -1425,13 +1500,13 @@ static int __rrr_http_application_http1_request_send_final_callback (
 	int ret = 0;
 
 	if (rrr_string_builder_length(callback_data->header_builder) > 0) {
-		if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, callback_data->header_builder->buf, callback_data->header_builder->wpos)) != 0) {
 			RRR_MSG_0("Could not send second part of HTTP request header in __rrr_http_application_http1_request_send_final_callback\n");
 			goto out;
 		}
 	}
 
-	if ((ret = rrr_net_transport_ctx_send_push (callback_data->handle, "\r\n", 2)) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_push_const (callback_data->handle, "\r\n", 2)) != 0) {
 		RRR_MSG_0("Could not send HTTP header end in __rrr_http_application_http1_request_send_final_callback\n");
 		goto out;
 	}
@@ -1471,8 +1546,10 @@ static int __rrr_http_application_http1_request_send (
 
 	pthread_cleanup_push(rrr_string_builder_clear_void, &header_builder);
 
-	if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
-		goto out;
+	if (protocol_version != RRR_HTTP_VERSION_10) {
+		if ((ret = rrr_http_part_header_field_push(transaction->request_part, "host", host)) != 0) {
+			goto out;
+		}
 	}
 
 	struct rrr_http_application_http1_request_send_callback_data callback_data = {
@@ -1484,6 +1561,7 @@ static int __rrr_http_application_http1_request_send (
 	if ((ret = rrr_http_transaction_request_prepare_wrapper (
 			transaction,
 			upgrade_mode,
+			protocol_version,
 			user_agent,
 			__rrr_http_application_http1_request_send_preliminary_callback,
 			__rrr_http_application_http1_request_send_make_headers_callback,
@@ -1503,12 +1581,15 @@ static int __rrr_http_application_http1_tick (
 ) {
 	struct rrr_http_application_http1 *http1 = (struct rrr_http_application_http1 *) app;
 
+	// Async failure callback not implemented for HTTP1
+	(void)(failure_callback);
+	(void)(failure_callback_arg);
+
 	int ret = RRR_HTTP_OK;
 
 	*upgraded_app = NULL;
 
 	if (rrr_net_transport_ctx_send_waiting_chunk_count(handle) > 0) {
-		printf("Send waiting in __rrr_http_application_http1_tick\n");
 		goto out;
 	}
 
@@ -1616,7 +1697,7 @@ int rrr_http_application_http1_new (
 
 	struct rrr_http_application_http1 *result = NULL;
 
-	if ((result = malloc(sizeof(*result))) == NULL) {
+	if ((result = rrr_allocate(sizeof(*result))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_application_http1_new\n");
 		ret = 1;
 		goto out;

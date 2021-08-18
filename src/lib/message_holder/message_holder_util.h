@@ -22,17 +22,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_HOLDER_UTIL_H
 #define RRR_MESSAGE_HOLDER_UTIL_H
 
-#include <stdio.h>
 #include <sys/socket.h>
+
+#include "../rrr_types.h"
 
 struct rrr_msg_holder;
 
 int rrr_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_holder **result,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 );
 int rrr_msg_holder_util_clone_no_locking (
 		struct rrr_msg_holder **result,

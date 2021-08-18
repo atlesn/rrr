@@ -27,28 +27,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../rrr_types.h"
 
+// Blocks of 64, maximum number of concurrent streams
+#define RRR_HTTP2_STREAM_BLOCKS 3
+#define RRR_HTTP2_STREAM_MAX (RRR_HTTP2_STREAM_BLOCKS * 64)
+
 #define RRR_HTTP2_OK            RRR_READ_OK
 #define RRR_HTTP2_SOFT_ERROR    RRR_READ_SOFT_ERROR
 #define RRR_HTTP2_HARD_ERROR    RRR_READ_HARD_ERROR
 #define RRR_HTTP2_DONE          RRR_READ_EOF
+#define RRR_HTTP2_BUSY          RRR_READ_INCOMPLETE
+
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_HEADERS_END   (1<<0)
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_DATA_END      (1<<1)
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_CLOSE  (1<<2)
+#define RRR_HTTP2_DATA_RECEIVE_FLAG_IS_STREAM_ERROR  (1<<3)
 
 #define RRR_HTTP2_DATA_RECEIVE_CALLBACK_ARGS                   \
     struct rrr_http2_session *session,                         \
     struct rrr_http_header_field_collection *headers,          \
     int32_t stream_id,                                         \
-    int is_header_end,                                         \
-    int is_data_end,                                           \
-    int is_stream_close,                                       \
+    int flags,                                                 \
+    const char *stream_error_msg,                              \
     void *data,                                                \
-    size_t data_size,                                          \
+    rrr_biglength data_size,                                   \
     void *stream_application_data,                             \
     void *callback_arg
 
 #define RRR_HTTP2_DATA_SOURCE_CALLBACK_ARGS                    \
     int *done,                                                 \
-    rrr_length *written_bytes,                                 \
+    rrr_biglength *written_bytes,                              \
     uint8_t *buf,                                              \
-    size_t buf_size,                                           \
+    rrr_biglength buf_size,                                    \
     int32_t stream_id,                                         \
     void *callback_arg
 
@@ -60,7 +69,7 @@ struct rrr_http2_session;
 int rrr_http2_session_new_or_reset (
 		struct rrr_http2_session **target,
 		void **initial_receive_data,
-		size_t initial_receive_data_len,
+		rrr_length initial_receive_data_len,
 		int is_server
 );
 void rrr_http2_session_destroy_if_not_null (
@@ -114,10 +123,10 @@ int rrr_http2_data_submission_request_set (
 );
 int rrr_http2_transport_ctx_streams_iterate (
 		struct rrr_http2_session *session,
-		int (*callback)(uint32_t stream_id, void *application_data, void *arg),
+		int (*callback)(int32_t stream_id, void *application_data, void *arg),
 		void *callback_arg
 );
-int rrr_http2_streams_count (
+uint32_t rrr_http2_streams_count_and_maintain (
 		struct rrr_http2_session *session
 );
 int rrr_http2_need_tick (

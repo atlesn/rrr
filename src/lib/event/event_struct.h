@@ -36,23 +36,25 @@ struct rrr_event_function {
 	struct rrr_socket_eventfd eventfd;
 	struct event *signal_event;
 	struct rrr_event_queue *queue;
+	unsigned short index;
 };
 
 struct rrr_event_queue {
 	struct event_base *event_base;
 
-	pthread_mutex_t lock;
-
 	struct rrr_event_function functions[RRR_EVENT_FUNCTION_MAX + 1];
+	uint64_t deferred_amount[RRR_EVENT_FUNCTION_MAX + 1];
 
 	struct event *periodic_event;
+	struct event *unpause_event;
 
-	void (*callback_pause)(int *do_pause, void *callback_arg);
+	int is_paused;
+	void (*callback_pause)(int *do_pause, int is_paused, void *callback_arg);
 	void *callback_pause_arg;
 
 	int (*callback_periodic)(RRR_EVENT_FUNCTION_PERIODIC_ARGS);
 	void *callback_arg;
-	int callback_periodic_ret;
+	int callback_ret;
 };
 
 #endif /* RRR_EVENT_STRUCT_H */

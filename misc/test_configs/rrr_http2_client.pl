@@ -48,6 +48,8 @@ sub source {
 
 	$message->send();
 
+	$debug->msg(1, "Send message $count\n");
+
 	$count++;
 
 	# Return 1 for success and 0 for error

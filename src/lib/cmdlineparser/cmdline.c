@@ -2,7 +2,7 @@
 
 Command Line Parser
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "cmdline.h"
+#include "../allocator.h"
 #include "../../lib/util/macro_utils.h"
 #include "../../lib/log.h"
 
@@ -36,7 +37,7 @@ static const char *cmd_blank_argument = "";
 
 static void __cmd_arg_value_destroy(struct cmd_arg_value *value) {
 	RRR_FREE_IF_NOT_NULL(value->value);
-	free(value);
+	rrr_free(value);
 }
 
 static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value_str) {
@@ -44,7 +45,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 	*target = NULL;
 
-	struct cmd_arg_value *value = malloc(sizeof(*value));
+	struct cmd_arg_value *value = rrr_allocate(sizeof(*value));
 	if (value == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 		ret = 1;
@@ -53,7 +54,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 	memset(value, '\0', sizeof(*value));
 
 	if (value_str != NULL) {
-		if ((value->value = strdup(value_str)) == NULL) {
+		if ((value->value = rrr_strdup(value_str)) == NULL) {
 			RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 			ret = 1;
 			goto out;
@@ -72,7 +73,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 static void __cmd_arg_pair_destroy(struct cmd_arg_pair *pair) {
 	RRR_LL_DESTROY(pair, struct cmd_arg_value, __cmd_arg_value_destroy(node));
-	free(pair);
+	rrr_free(pair);
 }
 
 static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_arg_rule *rule) {
@@ -80,7 +81,7 @@ static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_ar
 
 	*target = NULL;
 
-	struct cmd_arg_pair *pair = malloc(sizeof(*pair));
+	struct cmd_arg_pair *pair = rrr_allocate(sizeof(*pair));
 	if (pair == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_pair_new\n");
 		ret = 1;
@@ -118,7 +119,7 @@ void cmd_destroy(struct cmd_data *data) {
 
 void cmd_init(struct cmd_data *data, const struct cmd_arg_rule *rules, int argc, const char *argv[]) {
 	memset (data, '\0', sizeof(*data));
-	data->argc = argc;
+	data->argc = (cmd_arg_count) argc;
 	data->argv = argv;
 	data->rules = rules;
 }
@@ -154,7 +155,7 @@ int cmd_convert_hex_byte(const char *value, char *result) {
 		return 1;
 	}
 
-	*result = intermediate;
+	*result = (char) intermediate;
 
 	return 0;
 }
@@ -183,7 +184,7 @@ int cmd_convert_uint64_10(const char *value, uint64_t *result) {
 	return 0;
 }
 
-int cmd_convert_integer_10(const char *value, int *result) {
+int cmd_convert_integer_10(const char *value, long int *result) {
 	char *err;
 	*result = strtol(value, &err, 10);
 
@@ -209,7 +210,7 @@ void cmd_print_usage(struct cmd_data *data) {
 	const char *usage_format = "Usage: %s ";
 	printf(usage_format, data->program);
 
-	ssize_t spaces_length = strlen(usage_format) + strlen(data->program) - 1;
+	size_t spaces_length = strlen(usage_format) + strlen(data->program) - 1;
 	char spaces[spaces_length];
 	memset(spaces, ' ', sizeof(spaces) - 1);
 	spaces[spaces_length - 1] = '\0';
@@ -263,24 +264,20 @@ int cmd_iterate_subvalues_if_exists (
 		int (*callback)(const char *value, void *arg),
 		void *callback_arg
 ) {
-	for (int i = 0; 1; i++) {
+	for (cmd_arg_count i = 0; 1; i++) {
 		const char *str = cmd_get_value(data, key, i);
-		if (str != NULL) {
-			for (int j = 0; 1; j++) {
-				str = cmd_get_subvalue(data, key, i, j);
-				if (str != NULL) {
-					int ret_tmp = callback(str, callback_arg);
-					if (ret_tmp != 0) {
-						return ret_tmp;
-					}
-				}
-				else {
-					break;
-				}
-			}
-		}
-		else {
+		if (str == NULL) {
 			break;
+		}
+		for (cmd_arg_count j = 0; 1; j++) {
+			str = cmd_get_subvalue(data, key, i, j);
+			if (str == NULL) {
+				break;
+			}
+			int ret_tmp = callback(str, callback_arg);
+			if (ret_tmp != 0) {
+				return ret_tmp;
+			}
 		}
 	}
 	return 0;
@@ -304,10 +301,10 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	RRR_LL_DANGEROUS_CLEAR_HEAD(pair);
 
 	const char *pos = value->value;
-	const char *end = pos + strlen(pos);
+	const size_t length = strlen(pos);
+	const char *end = pos + length;
 
-	buf = malloc(end - pos + 1);
-	if (buf == NULL) {
+	if ((buf = rrr_allocate(length + 1)) == NULL) {
 		RRR_MSG_0("Error: Could not allocate memory A in __cmd_pair_split_comma\n");
 		ret = 1;
 		goto out;
@@ -318,7 +315,7 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 		if (comma_pos == NULL) {
 			comma_pos = end;
 		}
-		cmd_arg_size length = comma_pos - pos;
+		cmd_arg_size length = (cmd_arg_size) (comma_pos - pos);
 
 		memcpy(buf, pos, length);
 		buf[length] = '\0';
@@ -341,16 +338,16 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
-	struct cmd_argv_copy *ret = malloc(sizeof(*ret));
+	struct cmd_argv_copy *ret = rrr_allocate(sizeof(*ret));
 
 	*target = NULL;
 
-	ret->argv = malloc(sizeof(char*) * (data->argc + 1));
+	ret->argv = rrr_allocate(sizeof(char*) * ((size_t) data->argc + 1));
 	ret->argc = data->argc;
 
-	int i;
-	for (i = 0; i < data->argc; i++) {
-		ret->argv[i] = malloc(strlen(data->argv[i]) + 1);
+	cmd_arg_count i = 0;
+	for (; i < data->argc; i++) {
+		ret->argv[i] = rrr_allocate(strlen(data->argv[i]) + 1);
 		strcpy(ret->argv[i], data->argv[i]);
 	}
 	ret->argv[i] = NULL;
@@ -363,11 +360,11 @@ void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
 		return;
 	}
 	// We always have an extra pointer to hold NULL, hence the <=
-	for (int i = 0; i <= target->argc; i++) {
-		free(target->argv[i]);
+	for (cmd_arg_count i = 0; i <= target->argc; i++) {
+		rrr_free(target->argv[i]);
 	}
-	free(target->argv);
-	free(target);
+	rrr_free(target->argv);
+	rrr_free(target);
 }
 
 static const struct cmd_arg_rule *__cmd_get_rule_noflag (const struct cmd_arg_rule *rules, cmd_arg_count pos) {
@@ -444,9 +441,9 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 	}
 
 	int end_of_options_found = 0; // Two dashes -- is end of arguments
-	for (int i = argc_begin; i < data->argc; i++) {
+	for (cmd_arg_count i = argc_begin; i < data->argc; i++) {
 		const char *pos = data->argv[i];
-		ssize_t key_length = 0;
+		size_t key_length = 0;
 		const char *pos_equal = NULL;
 		const struct cmd_arg_rule *rule = NULL;
 		int dash_count = 0;
@@ -462,10 +459,10 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			}
 
 			if (dash_count > 0 && (pos_equal = strstr(pos, "=")) != NULL) {
-				key_length = pos_equal - pos;
+				key_length = (size_t) (pos_equal - pos);
 				if (key_length == 0) {
-					fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n",
-							i, data->argv[i]);
+					fprintf (stderr, "Error: Syntax error with = syntax in argument %llu ('%s'), use key=value\n",
+							(unsigned long long) i, data->argv[i]);
 					return 1;
 				}
 			}
@@ -477,7 +474,7 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 						continue;
 					}
 
-					fprintf (stderr, "Error: Argument index %i was empty\n", i);
+					fprintf (stderr, "Error: Argument index %llu was empty\n", (unsigned long long) i);
 					return 1;
 				}
 			}
@@ -495,7 +492,7 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			}
 		}
 		else if (dash_count == 1) {
-			for (int j = 0; j < key_length; j++) {
+			for (cmd_arg_count j = 0; j < key_length; j++) {
 				rule = __cmd_get_rule_by_shortname(data->rules, *(pos+j));
 				if (rule == NULL) {
 					fprintf (stderr, "Error: Argument '%c' is unknown\n", *(pos+j));

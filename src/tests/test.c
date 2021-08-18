@@ -27,10 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "../main.h"
 #include "../../build_timestamp.h"
+#include "../lib/allocator.h"
 #include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
-#include "../lib/configuration.h"
+#include "../lib/instance_config.h"
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
@@ -44,11 +45,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test_usleep.h"
 #include "test_fixp.h"
 #include "test_inet.h"
-#include "test_json.h"
+#ifdef RRR_WITH_JSONC
+#	include "test_json.h"
+#endif
 #include "test_conversion.h"
 #include "test_msgdb.h"
 #include "test_nullsafe.h"
 #include "test_increment.h"
+#include "test_allocator.h"
+#include "test_mmap_channel.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -118,6 +123,18 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	// OR all the return values, don't stop if a test fails
 
+	TEST_BEGIN("rrr_allocator") {
+		ret_tmp = rrr_test_allocator(fork_handler);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("rrr_mmap_channel") {
+		ret_tmp = rrr_test_mmap_channel(fork_handler);
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	TEST_BEGIN("rrr_condition") {
 		ret_tmp = rrr_test_condition();
 	} TEST_RESULT(ret_tmp == 0);
@@ -142,11 +159,13 @@ int rrr_test_library_functions (struct rrr_fork_handler *fork_handler) {
 
 	ret |= ret_tmp;
 
+#ifdef RRR_WITH_JSONC
 	TEST_BEGIN("JSON parsing") {
 		ret_tmp = rrr_test_json();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
+#endif
 
 	TEST_BEGIN("type conversion") {
 		ret_tmp = rrr_test_conversion();
@@ -185,15 +204,20 @@ int main (int argc, const char **argv, const char **env) {
 		exit(EXIT_FAILURE);
 	}
 
-	if (rrr_log_init() != 0) {
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
 		goto out_final;
+	}
+	if (rrr_log_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker *message_broker = NULL;
-	struct rrr_config *config = NULL;
+	struct rrr_instance_config_collection *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct cmd_data cmd;
@@ -253,7 +277,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	TEST_BEGIN("configuration loading") {
-		ret = rrr_config_parse_file(&config, config_file);
+		ret = rrr_instance_config_parse_file(&config, config_file);
 	} TEST_RESULT(ret == 0);
 
 	if (config == NULL) {
@@ -268,7 +292,7 @@ int main (int argc, const char **argv, const char **env) {
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (rrr_instance_create_from_config(&instances, config, library_paths) != 0) {
+		if (rrr_instances_create_from_config(&instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -330,7 +354,7 @@ int main (int argc, const char **argv, const char **env) {
 
 	out_cleanup_config:
 		if (config != NULL) {
-			rrr_config_destroy(config);
+			rrr_instance_config_collection_destroy(config);
 		}
 
 	out_cleanup_cmd:
@@ -350,6 +374,8 @@ int main (int argc, const char **argv, const char **env) {
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
+	out_cleanup_allocator:
+		rrr_allocator_cleanup();
 	out_final:
 		return ret;
 }

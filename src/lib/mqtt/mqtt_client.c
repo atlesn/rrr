@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "mqtt_client.h"
 #include "mqtt_common.h"
@@ -42,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_MAX_SOCKETS                  100
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT                125
 #define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME    2
-#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT      10000
+#define RRR_MQTT_CLIENT_SEND_DISCOURAGE_LIMIT       5000
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -79,7 +80,17 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_net_tran
 	return ret;
 }
 
-static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
+static int __rrr_mqtt_client_send_now_callback (
+				struct rrr_mqtt_p *packet,
+				void *arg
+) {
+	struct rrr_net_transport_handle *handle = arg;
+	return rrr_mqtt_conn_iterator_ctx_send_packet_urgent(handle, packet);
+}
+
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
 	int ret = RRR_MQTT_OK;
 
 	struct rrr_mqtt_client_data *data = arg;
@@ -93,7 +104,7 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -102,8 +113,8 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 					&connection->session,
 					(struct rrr_mqtt_p *) pingreq,
 					0,
-					NULL,
-					NULL
+					__rrr_mqtt_client_send_now_callback,
+					handle
 			),
 			goto out,
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
@@ -197,7 +208,7 @@ int rrr_mqtt_client_publish (
 
 	*send_discouraged = 0;
 
-	int send_queue_count = 0;
+	rrr_length send_queue_count = 0;
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
 					&send_queue_count,
@@ -227,14 +238,9 @@ int rrr_mqtt_client_subscribe (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+	if (rrr_mqtt_subscription_collection_count(subscriptions) == 0) {
 		goto out;
 	}
-	else if (ret < 0) {
-		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_subscribe\n", ret);
-	}
-	ret = 0;
 
 	if (data->protocol_version == NULL) {
 		RRR_MSG_0("Protocol version not set in rrr_mqtt_client_send_subscriptions\n");
@@ -263,7 +269,7 @@ int rrr_mqtt_client_subscribe (
 		goto out_decref;
 	}
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -294,14 +300,9 @@ int rrr_mqtt_client_unsubscribe (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+	if (rrr_mqtt_subscription_collection_count(subscriptions) == 0) {
 		goto out;
 	}
-	else if (ret < 0) {
-		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_unsubscribe\n", ret);
-	}
-	ret = 0;
 
 	if (data->protocol_version == NULL) {
 		RRR_MSG_0("Protocol version not set in rrr_mqtt_client_unsubscribe\n");
@@ -330,7 +331,7 @@ int rrr_mqtt_client_unsubscribe (
 		goto out_decref;
 	}
 
-	int send_queue_count_dummy = 0;
+	rrr_length send_queue_count_dummy = 0;
 
 	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
 			data->mqtt_data.sessions->methods->send_packet (
@@ -414,7 +415,7 @@ int rrr_mqtt_client_connect (
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
 
 	if (data->mqtt_data.client_name != NULL && *(data->mqtt_data.client_name) != '\0') {
-		if ((connect->client_identifier = strdup(data->mqtt_data.client_name)) == NULL) {
+		if ((connect->client_identifier = rrr_strdup(data->mqtt_data.client_name)) == NULL) {
 			RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -425,14 +426,15 @@ int rrr_mqtt_client_connect (
 		connect->connect_flags |= 1<<1;
 	}
 
-	connect->connect_flags |= (clean_start != 0)<<1;
+	int clean_start_flag = (clean_start != 0) << 1;
+	connect->connect_flags |= (uint8_t) clean_start_flag;
 	connect->keep_alive = keep_alive;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
 
 	if (username != NULL) {
 		RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(connect);
-		if ((connect->username = strdup(username)) == NULL) {
+		if ((connect->username = rrr_strdup(username)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -443,7 +445,7 @@ int rrr_mqtt_client_connect (
 			RRR_BUG("BUG: Password given without username in rrr_mqtt_client_connect\n");
 		}
 		RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(connect);
-		if ((connect->password = strdup(password)) == NULL) {
+		if ((connect->password = rrr_strdup(password)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for password in rrr_mqtt_client_connect\n");
 			ret = 1;
 			goto out;
@@ -549,7 +551,7 @@ int rrr_mqtt_client_connect (
 				data->mqtt_data.transport,
 				*transport_handle,
 				(struct rrr_mqtt_p *) connect,
-				rrr_mqtt_conn_iterator_ctx_send_packet
+				rrr_mqtt_conn_iterator_ctx_send_packet_urgent
 		) != 0) {
 			RRR_MSG_0("Could not send CONNECT packet in rrr_mqtt_client_connect");
 			ret = 1;
@@ -687,7 +689,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 		if ((ret = rrr_mqtt_conn_set_data_from_connect_and_connack (
 				connection,
-				session_properties_tmp.numbers.server_keep_alive,
+				(uint16_t) session_properties_tmp.numbers.server_keep_alive,
 				connack->protocol_version,
 				connection->session,
 				NULL // Don't reset username upon CONNACK, will cause corruption
@@ -842,7 +844,7 @@ static int __rrr_mqtt_client_acl_handler (
 
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	rrr_mqtt_common_data_destroy(&client->mqtt_data);
-	free(client);
+	rrr_free(client);
 }
 
 void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client) {
@@ -909,7 +911,7 @@ int rrr_mqtt_client_new (
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_client_data *result = malloc(sizeof(*result));
+	struct rrr_mqtt_client_data *result = rrr_allocate(sizeof(*result));
 
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_new\n");
@@ -952,7 +954,7 @@ int rrr_mqtt_client_new (
 
 	goto out;
 	out_free:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -973,7 +975,7 @@ int rrr_mqtt_client_late_set_client_identifier (
 
 	RRR_FREE_IF_NOT_NULL(data->client_name);
 
-	if ((data->client_name = strdup(client_identifier)) == NULL) {
+	if ((data->client_name = rrr_strdup(client_identifier)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_set_client_identifier\n");
 		return 1;
 	}

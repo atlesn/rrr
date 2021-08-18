@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "msg_checksum.h"
 #include "msg_head.h"
@@ -44,7 +45,7 @@ void rrr_msg_checksum_and_to_network_endian (
 	message->data_crc32 = 0;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	ssize_t data_size = message->msg_size - sizeof(*message);
+	rrr_length data_size = message->msg_size - (rrr_length) sizeof(*message);
 
 	if (data_size > 0) {
 		message->data_crc32 = rrr_crc32buf(data_begin, data_size);
@@ -58,7 +59,7 @@ void rrr_msg_checksum_and_to_network_endian (
 	message->data_crc32 = rrr_htobe32(message->data_crc32);
 
 	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
-	ssize_t head_size = sizeof(*message) - sizeof(message->header_crc32);
+	rrr_length head_size = (rrr_length) sizeof(*message) - (rrr_length) sizeof(message->header_crc32);
 
 	message->header_crc32 = rrr_htobe32(rrr_crc32buf(head_begin, head_size));
 }

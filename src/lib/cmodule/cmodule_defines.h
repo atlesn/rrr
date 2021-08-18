@@ -34,14 +34,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_CHANNEL_FULL         RRR_READ_SOFT_ERROR
 #define RRR_CMODULE_CHANNEL_EMPTY        RRR_READ_SOFT_ERROR
 
-#define RRR_CMODULE_DEFERRED_QUEUE_MAX   1000
+#define RRR_CMODULE_INPUT_QUEUE_MAX      250
 
 #define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS            50
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT   250
 #define RRR_CMODULE_WORKER_DEFAULT_WORKER_COUNT             1
 #define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS        1000
+#define RRR_CMODULE_WORKER_FORK_PONG_TIMEOUT_S              10
 
-// This value may not exceed 256 due to limits in event queue flags
 #define RRR_CMODULE_WORKER_MAX_WORKER_COUNT                 16
 
 #define RRR_CMODULE_CHANNEL_SIZE             (1024*1024*2*RRR_CMODULE_WORKER_MAX_WORKER_COUNT)

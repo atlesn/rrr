@@ -29,25 +29,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
-#include "../../../config.h"
 #include "../log.h"
+#include "../allocator.h"
 #include "gnu.h"
 #include "macro_utils.h"
 
 int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	int ret = 0;
 
-#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
+/*#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
 	ret = vasprintf(resultp, format, args);
-#else
-	ssize_t size = strlen(format) * 2;
+#else*/
+	size_t size = strlen(format) * 2;
 	char *buf = NULL;
 
 	*resultp = NULL;
 
 	retry:
 	RRR_FREE_IF_NOT_NULL(buf);
-	if ((buf = malloc(size)) == NULL) {
+	if ((buf = rrr_allocate(size)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_vasprintf\n");
 		ret = -1;
 		goto out;
@@ -60,29 +60,29 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	ret = vsnprintf(buf, size, format, args_tmp);
 	va_end(args_tmp);
 
-	if (ret >= size) {
+	if (ret < 0) {
+		RRR_MSG_0("Error returned from vsnprintf in rrr_asprintf\n");
+		ret = -1;
+		goto out;
+	}
+	else if ((size_t) ret >= size) {
 		if (++retry_count > 1) {
 			RRR_MSG_0("More than two attempts to format string in rrr_asprintf\n");
 			ret = -1;
 			goto out;
 		}
-		size = ret + 1;
+		size = (size_t) ret + 1;
 		goto retry;
 	}
-	else if (ret < 0) {
-		RRR_MSG_0("Error returned from vsnprintf in rrr_asprintf\n");
-		ret = -1;
-		goto out;
-	}
 
-	ret = strlen(buf);
+	ret = (int) strlen(buf);
 
 	*resultp = buf;
 	buf = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf);
-#endif
+//#endif
 	return ret;
 }
 

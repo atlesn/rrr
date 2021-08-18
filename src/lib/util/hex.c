@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "hex.h"
 #include "../rrr_types.h"
 
@@ -40,7 +41,7 @@ int rrr_hex_bin_to_hex (
 	const rrr_biglength output_size = source_size * 2 + 1;
 
 	// Valgrind complains about invalid writes for some reason, allocate at least 32 bytes
-	char *result = malloc(output_size < 32 ? 32 : output_size);
+	char *result = rrr_allocate(output_size < 32 ? 32 : output_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_hex_bin_to_\n");
 		return 1;

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "test.h"
 #include "test_conversion.h"
 #include "../lib/array.h"
@@ -82,7 +83,7 @@ static int __rrr_test_conversion_push_field_h (
 		goto out;
 	}
 
-	if ((value_new->data = malloc(sizeof(*values) * values_count)) == NULL) {
+	if ((value_new->data = rrr_allocate(sizeof(*values) * values_count)) == NULL) {
 		TEST_MSG("Creation of data memory failed in rrr_test_conversion\n");
 		goto out;
 	}
@@ -117,7 +118,7 @@ static int __rrr_test_conversion_push_field_str (
 			NULL,
 			1,
 			NULL,
-			strlen(str)
+			rrr_length_from_size_t_bug_const(strlen(str))
 	)) != 0) {
 		goto out;
 	}
@@ -229,7 +230,7 @@ int rrr_test_conversion(void) {
 		if ((ret = __rrr_test_conversion_validate_str (
 				node,
 				expected_results[i],
-				strlen(expected_results[i])
+				rrr_length_from_size_t_bug_const(strlen(expected_results[i]))
 		)) != 0) {
 			goto out;
 		}

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/wait.h>
 
 #include "../lib/log.h"
+#include "../lib/allocator.h"
 #include "../lib/msgdb/msgdb_client.h"
 #include "../lib/util/rrr_time.h"
 #include "../lib/util/macro_utils.h"
@@ -183,7 +184,7 @@ static int __rrr_test_msgdb_send_empty (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 
@@ -213,7 +214,7 @@ static int __rrr_test_msgdb_get_msg (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 
@@ -237,7 +238,6 @@ static int __rrr_test_msgdb_get_msg (
 
 static int __rrr_test_msgdb_get_index (
 		struct rrr_msgdb_client_conn *conn,
-		const char *path,
 		int expected_paths_length
 ) {
 	int ret = 0;
@@ -251,10 +251,6 @@ static int __rrr_test_msgdb_get_index (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, path, strlen(path))) != 0) {
-		goto out;
-	}
-
 	MSG_SET_TYPE(msg, MSG_TYPE_IDX);
 
 	if ((ret = rrr_msgdb_client_send(conn, msg)) != 0) {
@@ -263,6 +259,12 @@ static int __rrr_test_msgdb_get_index (
 
 	if ((ret = rrr_msgdb_client_await_msg(&result_msg, conn)) != 0) {
 		TEST_MSG("Non-zero return %i from await msg\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	if (result_msg == NULL) {
+		TEST_MSG("No index returned from msgdb\n");
 		ret = 1;
 		goto out;
 	}
@@ -316,7 +318,7 @@ static int __rrr_test_msgdb_get_and_check_msg (
 		goto out;
 	}
 
-	if ((ret = rrr_msg_msg_topic_set(&msg, topic, strlen(topic))) != 0) {
+	if ((ret = rrr_msg_msg_topic_set(&msg, topic, rrr_u16_from_biglength_bug_const (strlen(topic)))) != 0) {
 		goto out;
 	}
 
@@ -364,7 +366,7 @@ static int __rrr_test_msgdb_send_and_get_array (
 		goto out;
 	}
 
-	if ((ret = rrr_array_new_message_from_collection (&msg, &array_tmp, rrr_time_get_64(), topic, strlen(topic))) != 0) {
+	if ((ret = rrr_array_new_message_from_collection (&msg, &array_tmp, rrr_time_get_64(), topic, (rrr_u16) strlen(topic))) != 0) {
 		goto out;
 	}
 
@@ -412,36 +414,29 @@ static int __rrr_test_msgdb(void) {
 
 	struct rrr_msgdb_client_conn conn = {0};
 
-	if ((ret = rrr_msgdb_client_open(&conn, MSGDB_SOCKET)) != 0) {
+	if ((ret = rrr_msgdb_client_open_simple(&conn, MSGDB_SOCKET)) != 0) {
 		goto out;
 	}
 
-	// Cleanup, ignore result
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/c", ACK_MODE_ANY)) != 0) {
-		goto out;
-	}
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b/d", ACK_MODE_ANY)) != 0) {
-		goto out;
-	}
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_ANY)) != 0) {
-		goto out;
-	}
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a", ACK_MODE_ANY)) != 0) {
+	// Tidy everything
+	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 0)) != 0) {
 		goto out;
 	}
 
-	// Illegal path
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "../b", ACK_MODE_NOT_OK)) != 0) {
+	// Since filenames are hashed, any path is valid
+
+	// Strange path
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "../b", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
-	// Illegal path
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "/../.b", ACK_MODE_NOT_OK)) != 0) {
+	// Strange path
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "/../.b", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
-	// Illegal path
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/.b", ACK_MODE_NOT_OK)) != 0) {
+	// Strange path
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/.b", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
@@ -460,31 +455,17 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	if ((ret = __rrr_test_msgdb_get_index (&conn, "/a/b/d", 1)) != 0) {
+	if ((ret = __rrr_test_msgdb_get_index (&conn, 5)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_test_msgdb_get_index (&conn, "/", 4)) != 0) {
-		goto out;
-	}
-
-	// Invalid, GET on directory
+	// Invalid GET
 	if ((ret = __rrr_test_msgdb_get_and_check_msg (&conn, "a/b", NULL)) != 0) {
 		goto out;
 	}
 
-	// Invalid, path has no filename 
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b/", ACK_MODE_NOT_OK)) != 0) {
-		goto out;
-	}
-
-	// Invalid, path collides with previous created "directory"
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b", ACK_MODE_NOT_OK)) != 0) {
-		goto out;
-	}
-
-	// Invalid, delete "directory"
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_NOT_OK)) != 0) {
+	// Invalid DELETE, but returns OK
+	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
@@ -498,18 +479,28 @@ static int __rrr_test_msgdb(void) {
 		goto out;
 	}
 
-	// Valid, previous directory "b" has been deleted
+	// Valid
 	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_PUT, "a/b", ACK_MODE_OK)) != 0) {
 		goto out;
 	}
 
-	// Valid
-	if ((ret = __rrr_test_msgdb_send_empty(&conn, MSG_TYPE_DEL, "a/b", ACK_MODE_OK)) != 0) {
+	// Tidy everything older than 10 seconds (no messages should be tidied)
+	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 10)) != 0) {
 		goto out;
 	}
 
-	// Valid, a should have been deleted when b was deleted
+	// Valid
 	if ((ret = __rrr_test_msgdb_send_and_get_array (&conn, "a")) != 0) {
+		goto out;
+	}
+
+	// Tidy everything
+	if ((ret = rrr_msgdb_client_cmd_tidy(&conn, 0)) != 0) {
+		goto out;
+	}
+
+	// Invalid GET, should be tidied
+	if ((ret = __rrr_test_msgdb_get_and_check_msg (&conn, "a/b/c", NULL)) != 0) {
 		goto out;
 	}
 

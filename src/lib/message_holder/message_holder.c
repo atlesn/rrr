@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,8 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "message_holder.h"
 #include "message_holder_struct.h"
+#include "../allocator.h"
 #include "../mqtt/mqtt_topic.h"
 #include "../util/macro_utils.h"
 #include "../util/posix.h"
@@ -107,6 +109,28 @@ void rrr_msg_holder_unlock_void (
 	rrr_msg_holder_unlock(entry);
 }
 
+void rrr_msg_holder_private_data_clear (
+		struct rrr_msg_holder *entry
+) {
+	if (entry->private_data && entry->private_data_destroy) {
+		entry->private_data_destroy(entry->private_data);
+	}
+
+	entry->private_data = NULL;
+	entry->private_data_destroy = NULL;
+}
+
+void rrr_msg_holder_private_data_set (
+		struct rrr_msg_holder *entry,
+		void *private_data,
+		void (*private_data_destroy)(void *private_data)
+) {
+	rrr_msg_holder_private_data_clear(entry);
+
+	entry->private_data = private_data;
+	entry->private_data_destroy = private_data_destroy;
+}
+
 void rrr_msg_holder_decref_while_locked_and_unlock (
 		struct rrr_msg_holder *entry
 ) {
@@ -118,11 +142,12 @@ void rrr_msg_holder_decref_while_locked_and_unlock (
 	}
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
+		rrr_msg_holder_private_data_clear(entry);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_msg_holder_unlock(entry);
 		__rrr_msg_holder_util_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
-		free(entry);
+		rrr_free(entry);
 	}
 	else {
 		rrr_msg_holder_unlock(entry);
@@ -181,19 +206,19 @@ void rrr_msg_holder_decref_void (
 
 int rrr_msg_holder_new (
 		struct rrr_msg_holder **result,
-		ssize_t data_length,
+		rrr_biglength data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		void *message
 ) {
 	int ret = 0;
 
 	*result = NULL;
 
-	struct rrr_msg_holder *entry = malloc(sizeof(*entry));
+	struct rrr_msg_holder *entry = rrr_allocate_group(sizeof(*entry), RRR_ALLOCATOR_GROUP_MSG_HOLDER);
 	if (entry == NULL) {
-		RRR_MSG_0("Could not allocate memory in message_holder_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_msg_holder_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -217,7 +242,8 @@ int rrr_msg_holder_new (
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
 	else if (addr_len > sizeof(entry->addr)) {
-		RRR_BUG("Address too long (%u > %lu) in rrr_msg_holder_new\n", addr_len, sizeof(entry->addr));
+		RRR_BUG("Address too long (%llu > %llu) in rrr_msg_holder_new\n",
+			(unsigned long long) addr_len, (unsigned long long) sizeof(entry->addr));
 	}
 	else {
 		memcpy(&entry->addr, addr, addr_len);
@@ -243,7 +269,7 @@ int rrr_msg_holder_new (
 	*result = entry;
 	goto out;
 	out_free:
-		free(entry);
+		rrr_free(entry);
 	out:
 		return ret;
 }
@@ -274,7 +300,7 @@ int rrr_msg_holder_clone_no_data (
 void rrr_msg_holder_set_data_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length
+		rrr_biglength message_data_length
 ) {
 	RRR_FREE_IF_NOT_NULL(target->message);
 	target->message = message;
@@ -284,10 +310,10 @@ void rrr_msg_holder_set_data_unlocked (
 void rrr_msg_holder_set_unlocked (
 		struct rrr_msg_holder *target,
 		void *message,
-		ssize_t message_data_length,
+		rrr_biglength message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol
+		uint8_t protocol
 ) {
 	rrr_msg_holder_set_data_unlocked (target, message, message_data_length);
 	memcpy(&target->addr, addr, addr_len);

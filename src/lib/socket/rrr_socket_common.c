@@ -19,9 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <stdio.h>
-
 #include "../log.h"
+#include "../allocator.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_common.h"
@@ -61,10 +60,10 @@ int rrr_socket_common_receive_array_tree (
 		struct rrr_array *array_final,
 		const struct rrr_array_tree *tree,
 		int do_sync_byte_by_byte,
-		ssize_t read_step_max_size,
+		rrr_biglength read_step_max_size,
 		uint64_t ratelimit_interval_us,
-		ssize_t ratelimit_max_bytes,
-		unsigned int message_max_size,
+		rrr_biglength ratelimit_max_bytes,
+		rrr_length message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, struct rrr_array *array_final, void *arg),
 		void *arg
 ) {
@@ -119,6 +118,7 @@ int rrr_socket_common_receive_array_tree (
 
 	return ret;
 }
+
 int rrr_socket_common_prepare_and_send_msg_blocking (
 		struct rrr_msg *msg,
 		int fd,
@@ -129,14 +129,14 @@ int rrr_socket_common_prepare_and_send_msg_blocking (
 	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
 		struct rrr_msg_msg *message = (struct rrr_msg_msg *) msg;
 
-		ssize_t msg_size = MSG_TOTAL_SIZE(message);
+		const rrr_length msg_size = MSG_TOTAL_SIZE(message);
 
 		rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) message);
 		rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message);
 
 		if ((ret = rrr_socket_send_blocking (
 				fd,
-				message ,
+				message,
 				msg_size
 		)) != 0) {
 			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_msg_msg\n");

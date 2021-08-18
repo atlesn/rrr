@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "stats_tree.h"
 #include "stats_message.h"
@@ -38,7 +39,7 @@ static int __rrr_stats_tree_branch_new (
 
 	*target = NULL;
 
-	struct rrr_stats_tree_branch *result = malloc(sizeof(*result));
+	struct rrr_stats_tree_branch *result = rrr_allocate(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_tree_branch_new A\n");
 		ret = 1;
@@ -47,7 +48,7 @@ static int __rrr_stats_tree_branch_new (
 
 	memset(result, '\0', sizeof(*result));
 
-	result->name = strdup(name);
+	result->name = rrr_strdup(name);
 	if (name == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_tree_branch_new B\n");
 		ret = 1;
@@ -62,7 +63,7 @@ static int __rrr_stats_tree_branch_new (
 //	out_free_name:
 //		free(result->name);
 	out_free_result:
-		free(result);
+		rrr_free(result);
 	out:
 		return ret;
 }
@@ -73,7 +74,7 @@ static int __rrr_stats_tree_branch_destroy (struct rrr_stats_tree_branch *branch
 		rrr_msg_stats_destroy(branch->value);
 	}
 	RRR_FREE_IF_NOT_NULL(branch->name);
-	free(branch);
+	rrr_free(branch);
 	return 0;
 }
 
@@ -119,7 +120,7 @@ static void __rrr_stats_get_first_path_level (
 		return;
 	}
 
-	strncpy(first_level, begin, end - begin);
+	strncpy(first_level, begin, rrr_length_from_ptr_sub_bug_const (end, begin));
 	first_level[end - begin] = '\0';
 
 	if (end >= max) {

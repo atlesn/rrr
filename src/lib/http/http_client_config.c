@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <strings.h>
 
 #include "../log.h"
+#include "../allocator.h"
 
 #include "http_client_config.h"
 #include "http_util.h"
@@ -69,8 +70,13 @@ int rrr_http_client_config_parse (
 	}
 
 	// Allow default port to be set to 0
+	data->server_port = default_port;
 	RRR_INSTANCE_CONFIG_STRING_SET("_port");
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(config_string, RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT(config_string, server_port, default_port));
+	if ((ret = rrr_instance_config_read_optional_port_number (&data->server_port, config, config_string)) != 0) {
+		RRR_MSG_0("Error while parsing %s setting for instance %s\n", config_string, config->name);
+		ret = 1;
+		goto out;
+	}
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_method");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, method_str);
@@ -80,6 +86,9 @@ int rrr_http_client_config_parse (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_concurrent_connections");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, concurrent_connections, default_concurrent_connections);
+
+	RRR_INSTANCE_CONFIG_STRING_SET("_version_10");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_http_10, 0);
 
 	if (data->concurrent_connections < 1 || data->concurrent_connections > 0xffff) {
 		RRR_MSG_0("Parameter %s was out of range, value must be > 0 and < 65536.\n", config_string);

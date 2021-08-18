@@ -38,22 +38,27 @@ int rrr_cmodule_channel_count (
 int rrr_cmodule_channel_send_message_simple (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
-		const struct rrr_msg *message
+		const struct rrr_msg *message,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_cmodule_channel_send_message_and_address (
 		struct rrr_mmap_channel *channel,
 		struct rrr_event_queue *notify_queue,
 		const struct rrr_msg_msg *message,
-		const struct rrr_msg_addr *message_addr
+		const struct rrr_msg_addr *message_addr,
+		unsigned int full_wait_time_us,
+		int wait_attempts_max,
+		int (*check_cancel_callback)(void *arg),
+		void *check_cancel_callback_arg
 );
 int rrr_cmodule_channel_receive_messages (
 		uint16_t *amount,
 		struct rrr_mmap_channel *channel,
-		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
-void rrr_cmodule_channel_bubblesort (
+void rrr_cmodule_channel_maintenance (
 		struct rrr_mmap_channel *channel
 );
 

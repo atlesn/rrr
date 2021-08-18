@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "array.h"
+#include "allocator.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
@@ -99,6 +100,20 @@ int rrr_array_append_from (
 	return ret;
 }
 
+#define SET_AND_VERIFY_TAG_LENGTH()                                                 \
+    rrr_length tag_length = 0;                                                      \
+    do {const rrr_biglength tag_length_big = tag != 0 ? strlen(tag) : 0;            \
+    if (tag_length_big > RRR_TYPE_TAG_MAX) {                                        \
+            RRR_MSG_0("Tag was too long when pushing array value (%llu>%llu)\n",    \
+            (unsigned long long) tag_length_big,                                    \
+            (unsigned long long) RRR_TYPE_TAG_MAX                                   \
+        );                                                                          \
+        ret = RRR_ARRAY_SOFT_ERROR;                                                 \
+        goto out;                                                                   \
+    }                                                                               \
+    tag_length = (rrr_length) tag_length_big;                                       \
+    } while(0);
+
 int rrr_array_push_value_vain_with_tag (
 		struct rrr_array *collection,
 		const char *tag
@@ -107,11 +122,13 @@ int rrr_array_push_value_vain_with_tag (
 
 	int ret = 0;
 
+	SET_AND_VERIFY_TAG_LENGTH();
+
 	if ((ret = rrr_type_value_new (
 			&new_value,
 			&rrr_type_definition_vain,
 			0,
-			strlen(tag),
+			tag_length,
 			tag,
 			0,
 			NULL,
@@ -139,17 +156,19 @@ static int __rrr_array_push_value_64_with_tag (
 		const char *tag,
 		uint64_t value,
 		const struct rrr_type_definition *definition,
-		int flags
+		rrr_type_flags flags
 ) {
 	struct rrr_type_value *new_value = NULL;
 
 	int ret = 0;
 
+	SET_AND_VERIFY_TAG_LENGTH();
+
 	if ((ret = rrr_type_value_new (
 			&new_value,
 			definition,
 			flags,
-			strlen(tag),
+			tag_length,
 			tag,
 			sizeof(uint64_t),
 			NULL,
@@ -216,31 +235,37 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
 		const char *value,
-		size_t value_size,
+		rrr_length value_size,
 		const struct rrr_type_definition *type
 ) {
 	struct rrr_type_value *new_value = NULL;
-	if (rrr_type_value_new (
+
+	int ret = 0;
+
+	SET_AND_VERIFY_TAG_LENGTH();
+
+	if ((ret = rrr_type_value_new (
 			&new_value,
 			type,
 			0,
-			tag != NULL ? strlen(tag) : 0,
+			tag_length,
 			tag,
 			value_size,
 			NULL,
 			1,
 			NULL,
 			value_size
-	) != 0) {
+	)) != 0) {
 		RRR_MSG_0("Could not create value in __rrr_array_push_value_x_with_tag_with_size\n");
-		return 1;
+		goto out;
 	}
 
 	RRR_LL_APPEND(collection, new_value);
 
 	memcpy(new_value->data, value, value_size);
 
-	return 0;
+	out:
+	return ret;
 }
 
 int rrr_array_push_value_fixp_with_tag (
@@ -261,7 +286,7 @@ int rrr_array_push_value_str_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
 		const char *value,
-		size_t value_size
+		rrr_length value_size
 ) {
 	// Don't use the import function, it reads strings with quotes around it
 
@@ -278,7 +303,7 @@ int rrr_array_push_value_blob_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
 		const char *value,
-		size_t value_size
+		rrr_length value_size
 ) {
 	return __rrr_array_push_value_x_with_tag_with_size (
 			collection,
@@ -297,16 +322,22 @@ struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data {
 
 static int __rrr_array_push_value_x_with_tag_nullsafe_callback (
 		const void *str,
-		rrr_length len,
+		rrr_nullsafe_len len,
 		void *arg
 ) {
 	struct rrr_array_push_value_blob_with_tag_nullsafe_callback_data *callback_data = arg;
+
+	if (len > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Value too long while pushing to array (%" PRIrrr_nullsafe_len ">%llu)\n",
+			len, (unsigned long long) RRR_LENGTH_MAX);
+		return 1;
+	}
 
 	return __rrr_array_push_value_x_with_tag_with_size (
 			callback_data->collection,
 			callback_data->tag,
 			str,
-			len,
+			(rrr_length) len,
 			callback_data->definition
 	);
 }
@@ -352,21 +383,29 @@ int rrr_array_push_value_str_with_tag (
 		const char *tag,
 		const char *value
 ) {
-	size_t value_size = strlen(value);
+	rrr_biglength value_size = strlen(value);
+
+	if (value_size > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Value size too big while pushing string to array (%llu > %llu)\n",
+			(unsigned long long) value_size,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+	}
 
 	return rrr_array_push_value_str_with_tag_with_size(
 			collection,
 			tag,
 			value,
-			value_size
+			(rrr_length) value_size
 	);
 }
 
-int rrr_array_get_value_unsigned_64_by_tag (
-		uint64_t *result,
+static int __rrr_array_get_value_64_by_tag (
+		void *result,
 		struct rrr_array *array,
 		const char *tag,
-		int index
+		unsigned int index,
+		int do_signed
 ) {
 	int ret = 0;
 
@@ -378,27 +417,51 @@ int rrr_array_get_value_unsigned_64_by_tag (
 		goto out;
 	}
 
-	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
+	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags) && !do_signed) {
 		RRR_MSG_0("Value '%s' in array was signed but unsigned value was expected\n", tag);
 		ret = 1;
 		goto out;
 	}
-
-	if (index < 0) {
-		RRR_BUG("Negative index given to rrr_array_get_value_unsigned_64_by_tag\n");
+	else if (!RRR_TYPE_FLAG_IS_SIGNED(value->flags) && do_signed) {
+		RRR_MSG_0("Value '%s' in array was unsigned but signed value was expected\n", tag);
+		ret = 1;
+		goto out;
 	}
 
-	if (index - 1 > (int) value->element_count) {
+	if (index >= value->element_count) {
 		RRR_MSG_0("Array value '%s' index %i was requested but there are only %i elements in the value",
 				tag, index, value->element_count);
 		ret = 1;
 		goto out;
 	}
 
-	*result = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+	if (do_signed) {
+		*((int64_t *) result) = *((int64_t*) value->data + (sizeof(int64_t) * index));
+	}
+	else {
+		*((uint64_t *) result) = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+	}
 
 	out:
 	return ret;
+}
+
+int rrr_array_get_value_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		unsigned int index
+) {
+	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 0 /* Not signed */);
+}
+
+int rrr_array_get_value_signed_64_by_tag (
+		int64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		unsigned int index
+) {
+	return __rrr_array_get_value_64_by_tag (result, array, tag, index, 1 /* Signed */);
 }
 
 void rrr_array_strip_type (
@@ -420,15 +483,23 @@ void rrr_array_clear_void (void *collection) {
 	rrr_array_clear(collection);
 }
 
-void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+void rrr_array_clear_by_tag_checked (unsigned int *cleared_count, struct rrr_array *collection, const char *tag) {
+	*cleared_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_type_value);
 		if (node->tag == NULL) {
 			RRR_LL_ITERATE_NEXT();
 		}
 		if (strcmp(node->tag, tag) == 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
+			(*cleared_count)++;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_type_value_destroy(node));
+}
+
+void rrr_array_clear_by_tag (struct rrr_array *collection, const char *tag) {
+	unsigned int cleared_count_dummy = 0;
+	rrr_array_clear_by_tag_checked(&cleared_count_dummy, collection, tag);
 }
 
 struct rrr_type_value *rrr_array_value_get_by_index (
@@ -477,29 +548,53 @@ const struct rrr_type_value *rrr_array_value_get_by_tag_const (
 	return NULL;
 }
 
-ssize_t rrr_array_get_packed_length (
+static int __rrr_array_get_packed_length (
+		rrr_biglength *result,
 		const struct rrr_array *definition
 ) {
-	ssize_t result = 0;
+	rrr_biglength sum = 0;
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
-		result += node->tag_length;
+		rrr_biglength a = node->tag_length + node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
+		rrr_biglength b = sum + a;
+		if (b < sum || b < a) {
+			return 1;
+		}
+		sum = b;
 	RRR_LL_ITERATE_END();
 
-	return result;
+	*result = sum;
+
+	return 0;
 }
 
-static ssize_t __rrr_array_get_exported_length (
+static int __rrr_array_get_exported_length (
+		rrr_biglength *result,
 		const struct rrr_array *definition
 ) {
-	ssize_t result = 0;
+	rrr_biglength sum = 0;
+
+	*result = 0;
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		result += rrr_type_value_get_export_length(node);
+		rrr_length a = 0;
+
+		if (rrr_type_value_get_export_length(&a, node) != 0) {
+			RRR_MSG_0("Value too long while getting export length of array\n");
+			return RRR_ARRAY_SOFT_ERROR;
+		}
+
+		rrr_biglength b = sum + a;
+		if (b < sum || b < a) {
+			RRR_MSG_0("Overfow while getting export length of array\n");
+			return RRR_ARRAY_SOFT_ERROR;
+		}
+		sum = b;
 	RRR_LL_ITERATE_END();
 
-	return result;
+	*result = sum;
+
+	return 0;
 }
 
 static int __rrr_array_collection_iterate_chosen_tags (
@@ -551,7 +646,7 @@ static int __rrr_array_collection_iterate_chosen_tags (
 }
 
 struct pack_callback_data {
-	ssize_t written_bytes_total;
+	rrr_biglength written_bytes_total;
 	char *write_pos;
 };
 
@@ -686,7 +781,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	data->write_pos += written_bytes;
 	data->written_bytes_total += written_bytes;
 
-	RRR_DBG_3("array export type %s size %" PRIrrrl " total size %li\n",
+	RRR_DBG_3("array export type %s size %" PRIrrrl " total size %" PRIrrrbl "\n",
 			node->definition->identifier, written_bytes, data->written_bytes_total);
 
 	if (written_bytes < node->total_stored_length) {
@@ -700,8 +795,8 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 static int __rrr_array_collection_pack_or_export (
 		char *target,
 		int *found_tags,
-		ssize_t *written_bytes_final,
-		ssize_t target_size,
+		rrr_biglength *written_bytes_final,
+		rrr_length target_size,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags,
 		int (*method)(const struct rrr_type_value *node, void *arg)
@@ -738,21 +833,35 @@ static int __rrr_array_collection_pack_or_export (
 
 int rrr_array_selected_tags_export (
 		char **target,
-		ssize_t *target_size,
+		rrr_biglength *target_size,
 		int *found_tags,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags
 ) {
 	int ret = 0;
 
+	char *result = NULL;
+
 	// We over-allocate here if not all tags are used
-	rrr_length total_data_length = __rrr_array_get_exported_length(definition);
+	rrr_biglength total_data_length = 0;
+
+	if ((ret = __rrr_array_get_exported_length(&total_data_length, definition)) != 0) {
+		goto out;
+	}
+
+	if (total_data_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Export size too long while exporting array (%llu > %llu)\n",
+				(unsigned long long) total_data_length,
+				(unsigned long long) RRR_LENGTH_MAX)
+		;
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
 
 	*target = NULL;
 	*target_size = 0;
 
-	char *result = malloc(total_data_length);
-	if (result == NULL) {
+	if ((result = rrr_allocate(total_data_length)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
 		ret = 1;
 		goto out;
@@ -762,7 +871,7 @@ int rrr_array_selected_tags_export (
 			result,
 			found_tags,
 			target_size,
-			total_data_length,
+			(rrr_length) total_data_length,
 			definition,
 			tags,
 			__rrr_array_collection_export_callback
@@ -788,14 +897,29 @@ int rrr_array_new_message_from_collection (
 ) {
 	int ret = 0;
 
+	struct rrr_msg_msg *message = NULL;
+
 	*final_message = NULL;
 
-	rrr_length total_data_length = rrr_array_get_packed_length(definition);
+	rrr_biglength total_data_length = 0;
 
-	struct rrr_msg_msg *message = rrr_msg_msg_new_array(time, topic_length, total_data_length);
-	if (message == NULL) {
-		RRR_MSG_0("Could not create message for data collection\n");
-		ret = RRR_ARRAY_HARD_ERROR;
+	// Allocation errors here are soft errors, likely to be due to big input data
+
+	if (__rrr_array_get_packed_length(&total_data_length, definition) != 0 ||
+	     total_data_length > RRR_LENGTH_MAX
+	) {
+		RRR_MSG_0("Cannot convery array to message, total data length exceeds maximum (%llu>%llu)\n",
+			(unsigned long long) total_data_length,
+			(unsigned long long) RRR_LENGTH_MAX
+		);
+		ret = RRR_ARRAY_SOFT_ERROR;
+		goto out;
+	}
+
+	if ((message = rrr_msg_msg_new_array(time, topic_length, (rrr_u32) total_data_length)) == NULL) {
+		RRR_MSG_0("Could not create message for data collection (size was %llu)\n",
+				(unsigned long long) total_data_length);
+		ret = RRR_ARRAY_SOFT_ERROR;
 		goto out;
 	}
 
@@ -806,14 +930,14 @@ int rrr_array_new_message_from_collection (
 		memcpy(topic_pos, topic, topic_length);
 	}
 
-	ssize_t written_bytes_total = 0;
+	rrr_biglength written_bytes_total = 0;
 	int found_tags = 0;
 
 	if ((ret = __rrr_array_collection_pack_or_export (
 			MSG_DATA_PTR(message),
 			&found_tags,
 			&written_bytes_total,
-			MSG_DATA_LENGTH(message),
+			(rrr_length) MSG_DATA_LENGTH(message),
 			definition,
 			NULL, // Process all elements
 			__rrr_array_collection_pack_callback
@@ -822,16 +946,16 @@ int rrr_array_new_message_from_collection (
 		goto out;
 	}
 
-	if (written_bytes_total != (ssize_t) total_data_length) {
-		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
-				written_bytes_total, MSG_DATA_LENGTH(message));
+	if (written_bytes_total != total_data_length) {
+		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %" PRIrrrbl "<>%llu\n",
+				written_bytes_total, (long long unsigned) MSG_DATA_LENGTH(message));
 	}
 
 	*final_message = (struct rrr_msg_msg *) message;
 	message = NULL;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_ALLOCATOR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
@@ -876,8 +1000,8 @@ int rrr_array_message_iterate (
 		rrr_length elements = rrr_be32toh(data_packed->elements);
 
 		if (pos + tag_length + total_length > end) {
-			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
-					type, i, total_length, end - pos);
+			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %lli)\n",
+					type, i, total_length, (long long int) (end - pos));
 			ret = 1;
 			goto out;
 		}

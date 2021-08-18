@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../log.h"
+#include "../allocator.h"
 #include "message_holder_slot.h"
 #include "message_holder.h"
 #include "message_holder_util.h"
@@ -44,7 +45,7 @@ struct rrr_msg_holder_slot {
 	pthread_cond_t cond;
 	pthread_mutex_t lock;
 
-	int reader_count;
+	rrr_length reader_count;
 	const void **readers;
 	uint8_t *reader_has_read;
 
@@ -59,7 +60,7 @@ int rrr_msg_holder_slot_new (
 
 	*target = NULL;
 
-	struct rrr_msg_holder_slot *slot = malloc(sizeof(*slot));
+	struct rrr_msg_holder_slot *slot = rrr_allocate(sizeof(*slot));
 	if (slot == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_msg_holder_slot_new\n");
 		ret = 1;
@@ -86,14 +87,14 @@ int rrr_msg_holder_slot_new (
 	out_destroy_mutex:
 		pthread_mutex_destroy(&slot->lock);
 	out_free:
-		free(slot);
+		rrr_free(slot);
 	out:
 		return ret;
 }
 
 int rrr_msg_holder_slot_reader_count_set (
 		struct rrr_msg_holder_slot *slot,
-		int reader_count
+		rrr_length reader_count
 ) {
 	int ret = 0;
 
@@ -103,13 +104,13 @@ int rrr_msg_holder_slot_reader_count_set (
 	RRR_FREE_IF_NOT_NULL(slot->reader_has_read);
 
 	if (reader_count > 0) {
-		if ((slot->readers = malloc(sizeof(slot->readers[0]) * reader_count)) == NULL) {
+		if ((slot->readers = rrr_allocate(sizeof(slot->readers[0]) * reader_count)) == NULL) {
 			ret = 1;
 			goto out;
 		}
 		memset(slot->readers, '\0', sizeof(slot->readers[0]) * reader_count);
 
-		if ((slot->reader_has_read = malloc(sizeof(slot->reader_has_read[0]) * reader_count)) == NULL) {
+		if ((slot->reader_has_read = rrr_allocate(sizeof(slot->reader_has_read[0]) * reader_count)) == NULL) {
 			ret = 1;
 			goto out_free_readers;
 		}
@@ -120,7 +121,7 @@ int rrr_msg_holder_slot_reader_count_set (
 
 	goto out;
 	out_free_readers:
-		free(slot->readers);
+		rrr_free(slot->readers);
 	out:
 		pthread_mutex_unlock(&slot->lock);
 		return ret;
@@ -139,7 +140,7 @@ void rrr_msg_holder_slot_destroy (
 	pthread_cond_destroy(&slot->cond);
 	RRR_FREE_IF_NOT_NULL(slot->readers);
 	RRR_FREE_IF_NOT_NULL(slot->reader_has_read);
-	free(slot);
+	rrr_free(slot);
 }
 
 void rrr_msg_holder_slot_get_stats (
@@ -153,10 +154,10 @@ void rrr_msg_holder_slot_get_stats (
 	pthread_mutex_unlock(&slot->lock);
 }
 
-int rrr_msg_holder_slot_count (
+unsigned int rrr_msg_holder_slot_count (
 		struct rrr_msg_holder_slot *slot
 ) {
-	int count = 0;
+	unsigned int count = 0;
 
 	pthread_mutex_lock(&slot->lock);
 
@@ -166,7 +167,7 @@ int rrr_msg_holder_slot_count (
 
 	count++;
 
-	for (int i = 0; i < slot->reader_count; i++) {
+	for (rrr_length i = 0; i < slot->reader_count; i++) {
 		if (slot->reader_has_read[i] == 0) {
 			count++;
 		}
@@ -177,7 +178,7 @@ int rrr_msg_holder_slot_count (
 	return count;
 }
 
-static int __rrr_msg_holder_slot_reader_index_get_unlocked (
+static rrr_slength __rrr_msg_holder_slot_reader_index_get_unlocked (
 		struct rrr_msg_holder_slot *slot,
 		const void *self
 ) {
@@ -185,9 +186,9 @@ static int __rrr_msg_holder_slot_reader_index_get_unlocked (
 		return -1;
 	}
 
-	int self_index = -1;
+	rrr_slength self_index = -1;
 
-	for (int i = 0; i < slot->reader_count; i++) {
+	for (rrr_length i = 0; i < slot->reader_count; i++) {
 		if (slot->readers[i] == (void *) self) {
 			self_index = i;
 			break;
@@ -206,33 +207,11 @@ static int __rrr_msg_holder_slot_reader_index_get_unlocked (
 	return self_index;
 }
 
-static int __rrr_msg_holder_slot_read_wait (
-		struct rrr_msg_holder_slot *slot,
-		unsigned int wait_ms
-) {
-	int ret = 0;
-
-	struct timespec wakeup_time;
-	rrr_time_gettimeofday_timespec(&wakeup_time, wait_ms * 1000); 
-	if ((ret = pthread_cond_timedwait(&slot->cond, &slot->lock, &wakeup_time)) != 0) {
-		if (ret != ETIMEDOUT) {
-			RRR_MSG_0("Failed while waiting on condition in __rrr_msg_holder_slot_read_wait: %s\n", rrr_strerror(ret));
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-
-	out:
-	return ret;
-}
-
 int rrr_msg_holder_slot_read (
 		struct rrr_msg_holder_slot *slot,
 		void *self,
 		int (*callback)(int *do_keep, struct rrr_msg_holder *entry, void *arg),
-		void *callback_arg,
-		unsigned int wait_ms
+		void *callback_arg
 ) {
 	int ret = 0;
 
@@ -241,20 +220,10 @@ int rrr_msg_holder_slot_read (
 	pthread_mutex_lock(&slot->lock);
 
 	if (slot->entry == NULL) {
-		if (wait_ms > 0) {
-			if ((ret =  __rrr_msg_holder_slot_read_wait (slot, wait_ms)) != 0) {
-				goto out;
-			}
-			if (slot->entry == NULL) {
-				goto out;
-			}
-		}
-		else {
-			goto out;
-		}
+		goto out;
 	}
 
-	int self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot, self);
+	rrr_slength self_index = __rrr_msg_holder_slot_reader_index_get_unlocked(slot, self);
 	if (self_index >= 0 && slot->reader_has_read[self_index]) {
 		goto out;
 	}
@@ -285,11 +254,11 @@ int rrr_msg_holder_slot_read (
 	}
 
 	if (!do_keep) {
-		int done_count = 0;
+		rrr_length done_count = 0;
 
 		if (self_index >= 0) {
 			slot->reader_has_read[self_index] = 1;
-			for (int i = 0; i < slot->reader_count; i++) {
+			for (rrr_length i = 0; i < slot->reader_count; i++) {
 				if (slot->reader_has_read[i]) {
 					done_count++;
 				}
@@ -338,7 +307,7 @@ int rrr_msg_holder_slot_discard (
 ) {
 	*did_discard = 0;
 
-	return rrr_msg_holder_slot_read (slot, self, __rrr_msg_holder_slot_discard_callback, did_discard, 0);
+	return rrr_msg_holder_slot_read (slot, self, __rrr_msg_holder_slot_discard_callback, did_discard);
 }
 
 static void __rrr_msg_holder_slot_holder_destroy_double_ptr (
@@ -367,12 +336,11 @@ static int __rrr_msg_holder_slot_write_wait (
 				ret = 1;
 				goto out;
 			}
+			ret = 0;
 		}
-		if (check_cancel_callback != NULL && check_cancel_callback(check_cancel_callback_arg)) {
-			ret = 1;
+		if (check_cancel_callback != NULL && (ret = check_cancel_callback(check_cancel_callback_arg)) != 0) {
 			goto out;
 		}
-		ret = 0;
 	}
 
 	out:
@@ -390,7 +358,7 @@ static void __rrr_msg_holder_slot_unlock_void (void *arg) {
     do {if ((ret = __rrr_msg_holder_slot_write_wait(slot, check_cancel_callback, check_cancel_callback_arg)) != 0) goto out; } while (0)
 
 #define WRITE_AND_RESET()                                                                                                      \
-    do {for (int i = 0; i < slot->reader_count; i++) {                                                                         \
+    do {for (rrr_length i = 0; i < slot->reader_count; i++) {                                                                  \
         slot->reader_has_read[i] = 0;                                                                                          \
     }                                                                                                                          \
     slot->entry = entry_new;                                                                                                   \
@@ -409,7 +377,7 @@ int rrr_msg_holder_slot_write (
 		struct rrr_msg_holder_slot *slot,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
-		int protocol,
+		uint8_t protocol,
 		int (*callback)(int *do_drop, int *do_again, struct rrr_msg_holder *entry, void *arg),
 		void *callback_arg,
 		int (*check_cancel_callback)(void *arg),
