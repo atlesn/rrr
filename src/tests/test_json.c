@@ -103,7 +103,13 @@ int rrr_test_json(void) {
 
 	int counter = 0;
 
-	if ((ret = rrr_json_to_arrays(data_a, strlen(data_a), 3, __rrr_test_json_data_a_callback, &counter)) != 0) {
+	if ((ret = rrr_json_to_arrays (
+			data_a,
+			rrr_length_from_size_t_bug_const(strlen(data_a)),
+			3,
+			__rrr_test_json_data_a_callback,
+			&counter
+	)) != 0) {
 		TEST_MSG("JSON test failed\n");
 		goto out;
 	}

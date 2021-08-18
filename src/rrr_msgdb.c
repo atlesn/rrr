@@ -78,8 +78,12 @@ int main (int argc, const char *argv[], const char *env[]) {
 
 	int ret = EXIT_SUCCESS;
 
+	if (rrr_allocator_init() != 0) {
+		ret = EXIT_FAILURE;
+		goto out_final;
+	}
 	if (rrr_log_init() != 0) {
-		goto out;
+		goto out_cleanup_allocator;
 	}
 	rrr_strerror_init();
 
@@ -149,7 +153,8 @@ int main (int argc, const char *argv[], const char *env[]) {
 		cmd_destroy(&cmd);
 		rrr_strerror_cleanup();
 		rrr_log_cleanup();
-	out:
+	out_cleanup_allocator:
 		rrr_allocator_cleanup();
+	out_final:
 		return ret;
 }

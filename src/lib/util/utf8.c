@@ -25,12 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <string.h>
 
-static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const char **pos, const char *end) {
+static int __rrr_utf8_get_character_continue (uint32_t *result, uint32_t c, const uint8_t **pos, const uint8_t *end) {
 	if (*pos >= end) {
 		return 1;
 	}
 
-	uint8_t d = **pos;
+	uint32_t d = **pos;
 	(*pos)++;
 
 	if (c >= 0xC2 && c <= 0xDF && d >= 0x80 && d <= 0xBF) {
@@ -45,7 +45,7 @@ static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const
 		return 1;
 	}
 
-	uint8_t e = **pos;
+	uint32_t e = **pos;
 	(*pos)++;
 
 	if (	(c == 0xE0              && d >= 0xA0 && d <= 0xBF && e >= 0x80 && e <= 0xBF) ||
@@ -65,7 +65,7 @@ static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const
 		return 1;
 	}
 
-	uint8_t f = **pos;
+	uint32_t f = **pos;
 	(*pos)++;
 
 	if (	(c == 0xF0              && d >= 0x90 && d <= 0xBF && e >= 0x80 && e <= 0xBF && f >= 0x80 && f <= 0xBF) ||
@@ -91,7 +91,7 @@ int rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end)
 		return 0;
 	}
 
-	uint8_t c = **pos;
+	uint8_t c = **((uint8_t**) pos);
 	(*pos)++;
 
 	if (c <= 0x7F) {
@@ -99,10 +99,10 @@ int rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end)
 		return 0;
 	}
 
-	return __rrr_utf8_get_character_continue (result, c, pos, end);
+	return __rrr_utf8_get_character_continue (result, c, (const uint8_t **) pos, (const uint8_t *) end);
 }
 
-int rrr_utf8_validate (const char *buf, int len) {
+int rrr_utf8_validate (const char *buf, rrr_length len) {
 	int ret = 0;
 
 	const char *pos = buf;
@@ -118,7 +118,7 @@ int rrr_utf8_validate (const char *buf, int len) {
 
 int rrr_utf8_validate_and_iterate (
 		const char *buf,
-		int len,
+		rrr_length len,
 		int (*callback)(uint32_t character, void *arg),
 		void *callback_arg
 ) {
@@ -144,6 +144,6 @@ int rrr_utf8_validate_and_iterate (
 // TODO : Currently only converts ASCII
 void rrr_utf8_strtoupper (char *buf) {
 	for (size_t i = 0; i < strlen(buf); i++) {
-		buf[i] = toupper(buf[i]);
+		buf[i] = (char) toupper(buf[i]);
 	}
 }

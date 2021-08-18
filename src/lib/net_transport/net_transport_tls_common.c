@@ -226,7 +226,7 @@ void rrr_net_transport_tls_common_alpn_protos_to_str_comma_separated (
 		out_buf[wpos] = ',';
 		wpos++;
 
-		i += text_length + 1;
+		i += (unsigned int) text_length + 1;
 	}
 
 	// PS ! Don't subtract 1 from 0 (please)

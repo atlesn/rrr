@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2021 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,11 +54,16 @@ struct rrr_poll_helper_counters {
 	uint64_t count = raw_data->counters.total_message_count - raw_data->counters.prev_message_count; \
 	data->counters.prev_message_count = data->counters.total_message_count 
 
-int rrr_poll_do_poll_delete (
+int rrr_poll_do_poll_delete_custom_arg (
 		uint16_t *amount,
 		struct rrr_instance_runtime_data *thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
+		void *callback_arg
+);
+int rrr_poll_do_poll_delete (
+		uint16_t *amount,
+		struct rrr_instance_runtime_data *thread_data,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 );
 int rrr_poll_add_senders_to_broker (
 		struct rrr_instance **faulty_sender,

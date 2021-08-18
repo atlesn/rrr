@@ -70,7 +70,8 @@ static PyObject *__rrr_python3_config_set (PyObject *self, PyObject * const *arg
 	}
 
 	if (argc != 2) {
-		RRR_MSG_0("Wrong number of arguments (%li) to config add or replace function, exactly 2 is required\n", argc);
+		RRR_MSG_0("Wrong number of arguments (%lli) to config add or replace function, exactly 2 is required\n",
+			(long long int) argc);
 		Py_RETURN_FALSE;
 	}
 

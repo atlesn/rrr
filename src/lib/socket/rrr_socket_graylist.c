@@ -80,8 +80,8 @@ static int __rrr_socket_graylist_push (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in __rrr_socket_graylist_push %u > %lu\n",
-			len, sizeof(new_entry->addr));
+		RRR_BUG("BUG: address length too long in __rrr_socket_graylist_push %u > %llu\n",
+			len, (long long unsigned) sizeof(new_entry->addr));
 	}
 
 	memcpy (&new_entry->addr, addr, len);
