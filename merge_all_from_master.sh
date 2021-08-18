@@ -24,8 +24,6 @@ merge_master bugfix
 merge_master testing
 merge_master freebsd
 merge_master voidlinux
-merge_master ubuntu
-merge_master ubuntu-hirsute
 merge_master debian-testing
 merge_master alpine
 merge_master development
@@ -34,3 +32,9 @@ merge_development development-freebsd
 merge_development development-voidlinux
 
 git checkout master || exit 1
+
+echo "The following branches need manual merging to adapt debian packaging:"
+echo "ubuntu, debian-buster, ubuntu-hirsute"
+# merge_master ubuntu
+# merge_master debian-buster
+# merge_master ubuntu-hirsute
